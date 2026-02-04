@@ -1,0 +1,231 @@
+{
+	"pages": [
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/register/register",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/home/home",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/profile/profile",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/guide/guide",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/change-password/change-password",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/map/map",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "垃圾桶查找",
+				"permission": {
+					"scope.userLocation": {
+						"desc": "用于展示您的当前位置和附近垃圾桶"
+					},
+					"location": {
+						"desc": "用于获取您的地理位置，展示附近垃圾桶"
+					}
+				}
+			}
+		},
+		{
+			"path": "pages/scan/scan",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/history/history",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/ranking/ranking",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/shop/shop",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		}
+	],
+	"subPackages": [
+		{
+			"root": "pages-nonTheme",
+			"name": "pages-nonTheme",
+			"pages": [
+				{ 
+					"path": "about",
+					"style": {
+						"navigationBarTitleText": "关于本软件"
+					}
+				},
+				{ 
+					"path": "settings",
+					"style": {
+						"navigationStyle": "custom",
+						"navigationBarTitleText": "设置"
+					}
+				},
+				{ 
+					"path": "edit-profile",
+					"style": {
+						"navigationStyle": "custom",
+						"navigationBarTitleText": "编辑个人资料"
+					}
+				},
+				{
+					"path": "test",
+					"style": {
+						"navigationBarTitleText": "API测试"
+					}
+				},
+				{
+					"path": "test-map",
+					"style": {
+						"navigationBarTitleText": "地图功能测试"
+					}
+				},
+				{
+					"path": "database",
+					"style": {
+						"navigationStyle": "custom",
+						"navigationBarTextStyle": "white"
+					}
+				},
+				{
+					"path": "webview",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "chat",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "chatlist",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				}
+			]
+		},
+		{
+			"root": "pages-dark",
+			"pages": [
+				{
+					"path": "index/index",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "register/register",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "home/home",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "profile/profile",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "guide/guide",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "change-password/change-password",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "map/map",
+					"style": {
+						"navigationBarTitleText": "垃圾桶查找"
+					}
+				},
+				{
+					"path": "scan/scan",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "history/history",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "ranking/ranking",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "shop/shop",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				}
+			]
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "分投侠",
+		"navigationBarBackgroundColor": "#F8F8F8",
+		"backgroundColor": "#F8F8F8"
+	}
+}
