@@ -5,7 +5,7 @@ const ENV = {
     timeout: 30000
   },
   production: {
-    baseUrl: 'https://kwcdasogdvpl.sealosbja.site/', // 生产环境，需要替换为实际部署的服务器地址
+    baseUrl: 'https://kwcdasogdvpl.sealosbja.site', // 生产环境，需要替换为实际部署的服务器地址
     timeout: 30000
   }
 }
