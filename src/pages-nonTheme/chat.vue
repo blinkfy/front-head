@@ -65,8 +65,7 @@
                             <text v-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
 
                             <!-- 图片消息 -->
-                            <view v-else-if="msg.type === 'image'" class="image-content"
-                                @click="previewImage(msg.content)">
+                            <view v-else-if="msg.type === 'image'" class="image-content" @click="previewImage(msg)">
                                 <!-- 列表中优先使用 msg.thumbnail 或通过后端缩略图接口获取的小图以节省流量 -->
                                 <image :src="msg.thumbnail || getThumbnail(msg.content)" mode="widthFix" class="msg-image" 
                                     :class="{ 'image-error': mediaLoadErrors[msg.id]?.type === 'image' }"
@@ -384,6 +383,57 @@
                 </view>
             </view>
         </view>
+
+        <!-- 图片预览面板 -->
+        <view v-if="showImagePreview && currentPreviewMessage" class="image-preview-modal" @touchmove.stop.prevent @click="closeImagePreview">
+            <!-- 背景层 -->
+            <view class="preview-bg-layer"></view>
+            
+            <!-- 预览主容器 -->
+            <view class="preview-container">
+                <!-- 顶部 -->
+                <view class="preview-header">
+                    <view class="preview-close-box">
+                        <text class="close-icon">✕</text>
+                    </view>
+                    <text class="count-tag" v-if="previewImageList.length > 1">{{ previewCurrentIndex + 1 }} / {{ previewImageList.length }}</text>
+                    <view class="header-placeholder"></view>
+                </view>
+                
+                <!-- 图片主体 -->
+                <view class="preview-content-box">
+                    <image :src="loadedOriginalImages[currentPreviewMessage.id] || currentPreviewMessage.thumbnail || getThumbnail(currentPreviewMessage.content)" 
+                        mode="aspectFit" class="preview-img-main"/>
+                    
+                    <!-- 加载中遮罩 -->
+                    <view v-if="previewImageLoading" class="loading-overlay">
+                        <view class="loading-spinner"></view>
+                        <text class="loading-text">正在加载高清原图...</text>
+                    </view>
+                </view>
+                
+                <!-- 左右导航 -->
+                <template v-if="previewImageList.length > 1">
+                    <view class="preview-nav preview-prev" @click.stop="prevPreviewImage">
+                        <text class="nav-symbol">‹</text>
+                    </view>
+                    <view class="preview-nav preview-next" @click.stop="nextPreviewImage">
+                        <text class="nav-symbol">›</text>
+                    </view>
+                </template>
+                
+                <!-- 底部交互层 -->
+                <view class="preview-bottom-bar">
+                    <view class="bar-inner">
+                        <view v-if="isLargeImage(currentPreviewMessage) && !loadedOriginalImages[currentPreviewMessage.id]" 
+                            class="action-btn-primary" @click.stop="loadOriginalImage(currentPreviewMessage)">
+                            <text class="btn-inner-text">查看原图 ({{ formatFileSize(currentPreviewMessage.fileSize) }})</text>
+                        </view>
+                        <text v-else-if="isLargeImage(currentPreviewMessage) && loadedOriginalImages[currentPreviewMessage.id]" class="status-badge">已加载原图</text>
+                    </view>
+                </view>
+            </view>
+        </view>
     </view>
 </template>
 
@@ -494,6 +544,15 @@ export default {
             // 缩略图缓存: { originalPath: thumbnailUrl }
             thumbnailCache: {},
             
+            // 已加载原图的消息: { messageId: originalImageUrl } - 用于缓存大图的原始URL
+            loadedOriginalImages: {},
+            
+            // 图片预览面板
+            showImagePreview: false, // 是否显示图片预览
+            previewImageList: [], // 预览图片列表（按时间排序的所有图片消息）
+            previewCurrentIndex: 0, // 当前预览的图片索引
+            previewImageLoading: false, // 原图加载中
+            
             // 设置面板
             showSettingsModal: false,
             editingNote: false,
@@ -523,6 +582,12 @@ export default {
                 }
                 return msg
             })
+        },
+
+        // 当前预览的消息
+        currentPreviewMessage() {
+            if (this.previewImageList.length === 0) return null
+            return this.previewImageList[this.previewCurrentIndex] || null
         },
         
         voiceBtnText() {
@@ -2107,14 +2172,116 @@ export default {
         },
 
         // ==================== 图片预览 ====================
-        previewImage(url) {
-            const urls = this.messages
-                .filter(m => m.type === 'image')
-                .map(m => m.content)
+        previewImage(msg) {
+            // 构建所有图片消息列表（过滤出图片消息）
+            this.previewImageList = this.messages.filter(m => m.type === 'image')
+            
+            // 找到当前点击的图片在列表中的索引
+            const index = this.previewImageList.findIndex(m => m.id === msg.id)
+            this.previewCurrentIndex = index >= 0 ? index : 0
+            
+            // 打开预览面板
+            this.showImagePreview = true
+            this.previewImageLoading = false
+            
+            // 如果是小于1M的图片，自动加载并缓存原图以直接显示高清
+            if (!this.isLargeImage(msg) && !this.loadedOriginalImages[msg.id] && msg.content) {
+                this.loadOriginalImage(msg)
+            }
+        },
 
-            uni.previewImage({
-                current: url,
-                urls
+        // 关闭图片预览
+        closeImagePreview() {
+            this.showImagePreview = false
+            this.previewImageList = []
+            this.previewCurrentIndex = 0
+            this.previewImageLoading = false
+        },
+
+        // 切换到下一张图片
+        nextPreviewImage() {
+            if (this.previewImageList.length > 0) {
+                this.previewCurrentIndex = (this.previewCurrentIndex + 1) % this.previewImageList.length
+                this.previewImageLoading = false
+                
+                // 获取新的当前图片
+                const currentMsg = this.currentPreviewMessage
+                if (currentMsg) {
+                    // 如果已经加载过原图，确保 UI 能读取到（强制响应式更新）
+                    if (this.loadedOriginalImages[currentMsg.id]) {
+                        this.$forceUpdate()
+                    } else if (!this.isLargeImage(currentMsg) && currentMsg.content) {
+                        // 如果是小图且未加载，自动加载原图
+                        this.loadOriginalImage(currentMsg)
+                    }
+                }
+            }
+        },
+
+        // 切换到上一张图片
+        prevPreviewImage() {
+            if (this.previewImageList.length > 0) {
+                this.previewCurrentIndex = (this.previewCurrentIndex - 1 + this.previewImageList.length) % this.previewImageList.length
+                this.previewImageLoading = false
+                
+                // 获取新的当前图片
+                const currentMsg = this.currentPreviewMessage
+                if (currentMsg) {
+                    // 如果已经加载过原图，确保 UI 能读取到（强制响应式更新）
+                    if (this.loadedOriginalImages[currentMsg.id]) {
+                        this.$forceUpdate()
+                    } else if (!this.isLargeImage(currentMsg) && currentMsg.content) {
+                        // 如果是小图且未加载，自动加载原图
+                        this.loadOriginalImage(currentMsg)
+                    }
+                }
+            }
+        },
+
+        // 判断是否是大图（超过1M）
+        isLargeImage(msg) {
+            if (!msg || msg.type !== 'image') return false
+            // fileSize 字段保存的是字节数
+            const fileSizeBytes = msg.fileSize || 0
+            return fileSizeBytes > 1024 * 1024 // 1M = 1024*1024 字节
+        },
+
+        // 加载原图并缓存
+        loadOriginalImage(msg) {
+            if (!msg || !msg.content) return
+
+            // 如果已经加载过,直接跳过
+            if (this.loadedOriginalImages[msg.id]) {
+                return
+            }
+
+            // 只有大图才显示加载提示，小图快速加载无需提示
+            const showLoadingTip = this.isLargeImage(msg)
+            if (showLoadingTip) {
+                this.previewImageLoading = true
+            }
+
+            // 预加载图片到本地缓存,这样 image 标签可以快速显示
+            uni.getImageInfo({
+                src: msg.content,
+                success: (image) => {
+                    // 设置已加载的原图 URL
+                    this.$set(this.loadedOriginalImages, msg.id, msg.content)
+                    
+                    // 加载成功后隐藏提示
+                    this.previewImageLoading = false
+                    
+                    console.log('原图加载成功:', msg.id)
+                },
+                fail: (err) => {
+                    this.previewImageLoading = false
+                    console.error('原图加载失败:', err)
+                    
+                    uni.showToast({
+                        title: '原图加载失败',
+                        icon: 'none'
+                    })
+                }
             })
         },
 
@@ -4726,5 +4893,173 @@ page {
             }
         }
     }
+}
+
+// 图片预览面板 - 仿系统级沉浸式体验
+.image-preview-modal {
+    position: fixed;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 999999;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #000;
+}
+
+.preview-bg-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.95);
+}
+
+.preview-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    z-index: 10;
+}
+
+// 顶部栏
+.preview-header {
+    height: 100rpx;
+    padding: var(--status-bar-height) 30rpx 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+    z-index: 100;
+
+    .header-placeholder { width: 70rpx; }
+}
+
+.preview-close-box {
+    width: 70rpx;
+    height: 70rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    
+    .close-icon {
+        color: #fff;
+        font-size: 32rpx;
+    }
+}
+
+.count-tag {
+    color: #fff;
+    font-size: 32rpx;
+    font-weight: 500;
+}
+
+// 内容区域
+.preview-content-box {
+    flex: 1;
+    width: 100%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-img-main {
+    width: 100%;
+    height: 100%;
+}
+
+// 加载遮罩
+.loading-overlay {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(0,0,0,0.3);
+    padding: 30rpx;
+    border-radius: 20rpx;
+
+    .loading-spinner {
+        width: 60rpx;
+        height: 60rpx;
+        border: 4rpx solid rgba(255,255,255,0.3);
+        border-top-color: #07c160;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 20rpx;
+    }
+    
+    .loading-text {
+        color: #fff;
+        font-size: 24rpx;
+    }
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+// 导航
+.preview-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 120rpx;
+    height: 200rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    
+    .nav-symbol {
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 120rpx;
+    }
+
+    &:active {
+        opacity: 0.7;
+    }
+}
+.preview-prev { left: 0; }
+.preview-next { right: 0; }
+
+// 底部栏
+.preview-bottom-bar {
+    padding-bottom: calc(var(--window-bottom) + 60rpx);
+    padding-top: 40rpx;
+    background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
+}
+
+.bar-inner {
+    display: flex;
+    justify-content: center;
+}
+
+.action-btn-primary {
+    background: rgba(7, 193, 96, 0.9);
+    padding: 16rpx 40rpx;
+    border-radius: 100rpx;
+    backdrop-filter: blur(10px);
+    
+    .btn-inner-text {
+        color: #fff;
+        font-size: 28rpx;
+        font-weight: 500;
+    }
+}
+
+.status-badge {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 24rpx;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 8rpx 20rpx;
+    border-radius: 10rpx;
 }
 </style>

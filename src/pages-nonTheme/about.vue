@@ -104,7 +104,7 @@
       <!-- 免责声明 -->
       <view class="disclaimer">
         <text class="disclaimer-text">
-          * AI识别结果仅供参考，请结合实际情况进行垃圾分类
+          * AI识别结果仅供参考，请结合实际情况进行分类
         </text>
       </view>
     </view>
