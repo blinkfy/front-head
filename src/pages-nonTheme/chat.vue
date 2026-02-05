@@ -48,7 +48,7 @@
                 </view>
 
                 <!-- 消息内容 -->
-                <view v-else class="message-content">
+                <view v-else :id="`message-${msg.id}`" class="message-content" :class="{ 'message-highlighted': highlightMessageId === msg.id }">
                     <!-- 对方头像 -->
                     <image v-if="!msg.isSelf" class="avatar" :src="otherAvatarUrl"
                         mode="aspectFill" />
@@ -61,6 +61,14 @@
                         </view>
                         
                         <view class="message-bubble" :class="[getBubbleClass(msg), { 'withdraw-message': mode === 'admin' && msg.isWithdraw }]" @longpress="onMessageLongPress(msg)">
+                            <!-- 引用消息 -->
+                            <view v-if="msg.refId" class="ref-message-container" @click.stop="jumpToRefMessage(msg.refId)">
+                                <view class="ref-message-item" :class="[getRefMessageType(msg.refId)]">
+                                    <text class="ref-label">{{ getRefMessageSenderName(msg.refId) }}:</text>
+                                    <text class="ref-content">{{ getRefMessagePreview(msg.refId) }}</text>
+                                </view>
+                            </view>
+
                             <!-- 文本消息 -->
                             <text v-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
 
@@ -178,6 +186,17 @@
 
         <!-- 底部输入区域 -->
         <view class="input-area" :class="{ 'input-area-expanded': showMorePanel }">
+            <!-- 引用消息提示 -->
+            <view v-if="showRefSuggestion && refMessageId" class="ref-tip-container">
+                <view class="ref-tip">
+                    <view class="ref-tip-content">
+                        <text class="ref-tip-label">引用:</text>
+                        <text class="ref-tip-text">{{ getRefMessagePreview(refMessageId) }}</text>
+                    </view>
+                    <text class="ref-tip-close" @click="clearRefMessage">✕</text>
+                </view>
+            </view>
+            
             <!-- 主输入栏 -->
             <view class="input-bar">
                 <!-- 语音/键盘切换 -->
@@ -552,6 +571,11 @@ export default {
             previewImageList: [], // 预览图片列表（按时间排序的所有图片消息）
             previewCurrentIndex: 0, // 当前预览的图片索引
             previewImageLoading: false, // 原图加载中
+            
+            // 消息引用相关
+            refMessageId: null, // 当前要引用的消息ID
+            showRefSuggestion: false, // 是否显示引用建议
+            highlightMessageId: null, // 高亮显示的消息ID（用于跳转后的视觉反馈）
             
             // 设置面板
             showSettingsModal: false,
@@ -1262,7 +1286,8 @@ export default {
                 fileName: serverMsg.fileName || parsedContent?.fileName || parsedContent?.name,
                 fileSize: serverMsg.fileSize || parsedContent?.fileSize || parsedContent?.size,
                 thumbnail: serverMsg.thumbnail || (parsedContent?.thumbnail ? `${baseUrl}/files/download/${parsedContent.thumbnail}` : null),
-                isWithdraw: serverMsg.isWithdraw || false  // 是否已撤回
+                isWithdraw: serverMsg.isWithdraw || false,  // 是否已撤回
+                refId: serverMsg.refId || null  // 引用消息ID
             }
             
             // 如果是位置消息,将content中的属性提升到顶层,保持与本地创建消息的结构一致
@@ -1450,6 +1475,10 @@ export default {
             if (!text) return
 
             const msg = this.createMessage('text', text)
+            // 如果有引用消息，添加到消息中
+            if (this.refMessageId) {
+                msg.refId = this.refMessageId
+            }
             this.addMessage(msg)
             this.inputText = ''
 
@@ -1458,7 +1487,8 @@ export default {
                 const res = await chatApi.sendTextMessage({
                     chatId: this.chatId,
                     targetUserId: this.otherUserId,
-                    content: text
+                    content: text,
+                    refId: this.refMessageId  // 传送 refId 到后端
                 })
 
                 // 更新消息ID和状态
@@ -1468,6 +1498,9 @@ export default {
                 } else {
                     this.updateMessageStatus(msg.id, 'sent')
                 }
+                
+                // 清除引用
+                this.clearRefMessage()
             } catch (e) {
                 console.error('发送文本消息失败', e)
                 this.updateMessageStatus(msg.id, 'failed')
@@ -1654,6 +1687,7 @@ export default {
                 isSelf: true,
                 timestamp: Date.now(),
                 status: 'sending',
+                refId: null,  // 引用消息ID
                 ...extra
             }
         },
@@ -3159,7 +3193,7 @@ export default {
         },
 
         onMessageLongPress(msg) {
-            const items = ['复制', '删除']
+            const items = ['复制', '删除', '引用']
             if (msg.isSelf && msg.status === 'sent') {
                 items.push('撤回')
             }
@@ -3190,6 +3224,11 @@ export default {
                             uni.showToast({ title: '已删除', icon: 'none' })
                         }
                     } else if (res.tapIndex === 2) {
+                        // 引用
+                        this.refMessageId = msg.id
+                        this.showRefSuggestion = true
+                        uni.showToast({ title: '已选择引用消息', icon: 'success' })
+                    } else if (res.tapIndex === 3) {
                         // 撤回（通知服务器）
                         try {
                             await chatApi.recallMessage(msg.id)
@@ -3318,7 +3357,9 @@ export default {
                             // 触发图片重新加载(通过修改src)
                             const msgIndex = this.messages.findIndex(m => m.id === msg.id)
                             if (msgIndex !== -1) {
-                                const originalUrl = this.messages[msgIndex].content
+                                let originalUrl = this.messages[msgIndex].content
+                                // 移除已存在的?retry=参数，防止参数堆积
+                                originalUrl = originalUrl.split('?retry=')[0]
                                 this.messages[msgIndex].content = ''
                                 this.$nextTick(() => {
                                     this.messages[msgIndex].content = originalUrl + '?retry=' + Date.now()
@@ -3430,6 +3471,125 @@ export default {
             }
 
             return icons[ext] || '📄'
+        },
+
+        // ==================== 消息引用相关 ====================
+        // 获取被引用消息的预览文本
+        getRefMessagePreview(refId) {
+            const refMsg = this.messages.find(m => m.id === refId)
+            if (!refMsg) return '[消息已删除]'
+            
+            switch (refMsg.type) {
+                case 'text':
+                    return refMsg.content.substring(0, 50) + (refMsg.content.length > 50 ? '...' : '')
+                case 'image':
+                    return '[图片]'
+                case 'video':
+                    return '[视频]'
+                case 'voice':
+                    return `[语音 ${refMsg.duration}秒]`
+                case 'file':
+                    return `[文件 ${refMsg.fileName}]`
+                case 'location':
+                    return `[位置 ${refMsg.locationName}]`
+                default:
+                    return '[消息]'
+            }
+        },
+
+        // 获取被引用消息的发送者名称
+        getRefMessageSenderName(refId) {
+            const refMsg = this.messages.find(m => m.id === refId)
+            if (!refMsg) return '用户'
+            return refMsg.isSelf ? '你' : (this.otherNote || this.otherUsername || '对方')
+        },
+
+        // 获取被引用消息的类型，用于样式判断
+        getRefMessageType(refId) {
+            const refMsg = this.messages.find(m => m.id === refId)
+            if (!refMsg) return 'unknown'
+            return refMsg.isSelf ? 'self' : 'other'
+        },
+
+        // 清除当前选择的引用消息
+        clearRefMessage() {
+            this.refMessageId = null
+            this.showRefSuggestion = false
+        },
+
+        // 跳转到被引用的消息
+        jumpToRefMessage(refId) {
+            const refMsg = this.messages.find(m => m.id === refId)
+            if (!refMsg) {
+                uni.showToast({ title: '消息已删除', icon: 'none' })
+                return
+            }
+
+            // 找到消息在列表中的索引
+            const messageIndex = this.messages.findIndex(m => m.id === refId)
+            if (messageIndex === -1) {
+                uni.showToast({ title: '消息未找到', icon: 'none' })
+                return
+            }
+
+            // 在下一帧检查消息位置并滚动
+            this.$nextTick(() => {
+                setTimeout(() => {
+                    const query = uni.createSelectorQuery().in(this)
+                    
+                    // 同时获取目标消息和 scroll-view 的位置信息
+                    query.select(`#message-${refId}`).boundingClientRect()
+                    query.selectViewport().scrollOffset()
+                    
+                    query.exec((results) => {
+                        if (results && results[0]) {
+                            const messageRect = results[0]
+                            const scrollOffset = results[1]
+                            
+                            // 获取 scroll-view 的高度（通常是视口高度减去输入框等高度）
+                            const viewportQuery = uni.createSelectorQuery().in(this)
+                            viewportQuery.select('.message-list').boundingClientRect()
+                            viewportQuery.exec((viewportResults) => {
+                                if (viewportResults && viewportResults[0]) {
+                                    const scrollViewRect = viewportResults[0]
+                                    const scrollViewHeight = scrollViewRect.height
+                                    const scrollViewTop = scrollViewRect.top
+                                    
+                                    // 计算消息相对于 scroll-view 的位置
+                                    const messageTop = messageRect.top - scrollViewTop
+                                    const messageBottom = messageTop + messageRect.height
+                                    
+                                    // 判断消息是否在可见范围内（留出顶部和底部的缓冲区）
+                                    const topBuffer = 100
+                                    const bottomBuffer = 100
+                                    
+                                    const isInView = messageTop >= -topBuffer && messageBottom <= scrollViewHeight + bottomBuffer
+                                    
+                                    if (!isInView) {
+                                        // 消息不在可见范围，需要滚动
+                                        // 直接使用 :scroll-into-view 进行垂直锚点跳转
+                                        this.scrollToMessage = '' // 先清空，确保能触发变更
+                                        this.$nextTick(() => {
+                                            this.scrollToMessage = `message-${refId}`
+                                            
+                                            // 1秒后清空锚点，防止影响正常的滚动交互
+                                            setTimeout(() => {
+                                                this.scrollToMessage = ''
+                                            }, 1000)
+                                        })
+                                    }
+                                }
+                            })
+                        }
+                    })
+
+                    // 高亮该消息（闪烁效果）
+                    this.highlightMessageId = refId
+                    setTimeout(() => {
+                        this.highlightMessageId = null
+                    }, 2000) // 2秒后取消高亮
+                }, 50)
+            })
         },
 
         // 生成基于用户名的头像 URL (使用第三方服务)
@@ -3835,6 +3995,20 @@ page {
 .message-content {
     display: flex;
     align-items: flex-start;
+    transition: background-color 0.3s ease;
+    
+    &.message-highlighted {
+        animation: pulse-highlight 0.6s ease-in-out;
+    }
+}
+
+@keyframes pulse-highlight {
+    0%, 100% {
+        background-color: transparent;
+    }
+    50% {
+        background-color: rgba(7, 193, 96, 0.2);
+    }
 }
 
 .message-self .message-content {
@@ -4296,6 +4470,111 @@ page {
     &:not(.dark-theme) {
         border-top-color: var(--border-color);
     }
+}
+
+// 引用消息提示
+.ref-tip-container {
+    padding: 0rpx 20rpx;
+    background: linear-gradient(135deg, rgba(7, 193, 96, 0.15) 0%, rgba(7, 193, 96, 0.08) 100%);
+    border-bottom: 3rpx solid #07c160;
+    box-shadow: 0 2rpx 8rpx rgba(7, 193, 96, 0.12);
+}
+
+.ref-tip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12rpx;
+    padding: 8rpx 0;
+}
+
+.ref-tip-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10rpx;
+    min-width: 0;
+}
+
+.ref-tip-label {
+    color: #07c160;
+    font-weight: 700;
+    font-size: 26rpx;
+    white-space: nowrap;
+    background: rgba(7, 193, 96, 0.1);
+    padding: 4rpx 10rpx;
+    border-radius: 8rpx;
+}
+
+.ref-tip-text {
+    color: #333;
+    font-size: 26rpx;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ref-tip-close {
+    color: #07c160;
+    font-size: 32rpx;
+    padding: 4rpx 8rpx;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    
+    &:active {
+        transform: scale(0.9);
+    }
+}
+
+// 消息气泡中的引用
+.ref-message-container {
+    padding: 10rpx 12rpx;
+    margin-bottom: 12rpx;
+    border-left: 4rpx solid #07c160;
+    padding-left: 12rpx;
+    background: rgba(7, 193, 96, 0.08);
+    border-radius: 6rpx;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    
+    &:active {
+        background: rgba(7, 193, 96, 0.15);
+        transform: scale(0.98);
+    }
+    
+    &:hover {
+        background: rgba(7, 193, 96, 0.12);
+    }
+}
+
+.ref-message-item {
+    display: flex;
+    align-items: center;
+    gap: 8rpx;
+    font-size: 24rpx;
+    line-height: 1.4;
+    
+    &.self {
+        color: #555;
+    }
+    
+    &.other {
+        color: #555;
+    }
+}
+
+.ref-label {
+    font-weight: 700;
+    color: #07c160;
+    flex-shrink: 0;
+}
+
+.ref-content {
+    color: #666;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .input-bar {
