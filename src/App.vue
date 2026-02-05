@@ -53,7 +53,6 @@ export default {
     
     // 立即尝试检查主题重定向
     const theme = ThemeManager.getTheme()
-    console.log('onLaunch: Current theme =', theme)
     
     // 在 H5 端的默认首页通常是 pages/index/index
     // 如果主题是 dark，立即跳转到对应的暗色页面

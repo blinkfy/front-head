@@ -18,7 +18,6 @@ export const ThemeManager = {
   // 获取当前主题
   getTheme() {
     const cached = uni.getStorageSync('app_theme')
-    console.log('getTheme: cached =', cached)
     return cached || 'light'
   },
 

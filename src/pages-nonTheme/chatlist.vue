@@ -226,7 +226,6 @@ computed: {
 				const userInfo = uni.getStorageSync('userInfo')
 				const userId = userInfo?.id || userInfo?.userId || 'unknown'
 				this.cacheKey = `chatlist_${userId}`
-				console.log('缓存 key:', this.cacheKey)
 			} catch (e) {
 				console.error('初始化缓存 key 失败:', e)
 				this.cacheKey = 'chatlist_unknown'
@@ -266,7 +265,6 @@ computed: {
 					timestamp: Date.now()
 				}
 				uni.setStorageSync(this.cacheKey, JSON.stringify(cacheData))
-				console.log('用户列表已保存到缓存')
 			} catch (e) {
 				console.error('保存缓存失败:', e)
 			}
@@ -313,8 +311,6 @@ computed: {
 				let page = 1
 				let hasMoreData = true
 				const maxPages = 15 // 稍微增加，覆盖 200*15=3000 用户
-				
-				console.log('--- 开始全量同步用户列表 (优化版) ---')
 				
 				// 使用较大的 pageSize 一次性拉取尽可能多
 				const BIG_PAGE_SIZE = 200 
@@ -381,7 +377,6 @@ computed: {
 				this.hasMore = false 
 				
 				this.saveToCache()
-				console.log(`=== 全量同步完成，最终去重后用户总数: ${this.userList.length} ===`)
 			} catch (e) {
 				console.error('全量同步失败:', e)
 				uni.showToast({
@@ -420,16 +415,10 @@ computed: {
 		 */
 		async refreshFirstPage() {
 			if (!this.isPageActive || this.loading) return
-			console.log('=== refreshFirstPage 开始 ===')
 			try {
 				const res = await chatApi.getChatUserList({
 					page: 1,
 					pageSize: this.pageSize
-				})
-
-				console.log('=== refreshFirstPage 响应 ===', {
-					code: res.code,
-					dataLength: res.data?.list?.length || res.data?.length || 0
 				})
 
 				if (res.code === 0 && res.data) {
@@ -464,11 +453,6 @@ computed: {
 		 * 处理：新增用户、更新用户信息、顺序调整
 		 */
 		mergeUserList(newList, page) {
-			console.log(`=== mergeUserList 开始 (第 ${page} 页) ===`, {
-				newListLength: newList.length,
-				currentListLength: this.userList.length
-			})
-			
 			if (page === 1) {
 				// 第一页：完全替换或合并
 				const newUserMap = new Map(newList.map(u => [u.otherId, u]))
@@ -596,7 +580,6 @@ computed: {
 			try {
 				const theme = uni.getStorageSync('app_theme') || 'light'
 				this.isDarkTheme = theme === 'dark'
-				console.log('当前主题:', theme)
 			} catch (e) {
 				console.error('检测主题失败:', e)
 				this.isDarkTheme = false
@@ -751,16 +734,8 @@ computed: {
 		},
 
 		// 加载更多
-		async loadMore() {
-			console.log('=== loadMore 被调用 ===', {
-				loadingMore: this.loadingMore,
-				hasMore: this.hasMore,
-				currentPage: this.page,
-				totalUsers: this.userList.length
-			})
-			
+		async loadMore() {			
 			if (this.loadingMore || !this.hasMore) {
-				console.log('loadMore 被跳过:', { loadingMore: this.loadingMore, hasMore: this.hasMore })
 				return
 			}
 			this.loadingMore = true

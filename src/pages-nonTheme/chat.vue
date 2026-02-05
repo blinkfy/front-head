@@ -678,14 +678,6 @@ export default {
         this.initRecorder()
         this.initAudioPlayer()
         this.loadUserInfo() // 会读取userInfo.isAdmin并设置mode
-        
-        // URL参数可以覆盖mode
-        if (options.mode) {
-            this.mode = options.mode
-            console.log('URL参数指定聊天模式:', this.mode)
-        } else {
-            console.log('当前聊天模式:', this.mode)
-        }
 
         if (options.chatId) {
             this.chatId = options.chatId
@@ -887,21 +879,13 @@ export default {
         loadUserInfo() {
             try {
                 const userInfo = uni.getStorageSync('userInfo')
-                console.log('=== loadUserInfo 从存储读取 ===', {
-                    userInfo: userInfo,
-                    'userInfo.avatar': userInfo?.avatar,
-                    avatarType: userInfo?.avatar ? (userInfo.avatar.startsWith('data:') ? 'base64' : userInfo.avatar.startsWith('http') ? 'url' : 'other') : 'none'
-                })
-                
                 if (userInfo) {
                     if (userInfo.avatar) {
                         this.userAvatar = userInfo.avatar
-                        console.log('已设置 this.userAvatar:', this.userAvatar.substring(0, 100))
                     }
                     // 读取管理员标识
                     if (userInfo.isAdmin) {
                         this.mode = 'admin'
-                        console.log('检测到管理员身份,启用管理员模式')
                     }
                 }
             } catch (e) {
