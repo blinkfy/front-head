@@ -367,6 +367,10 @@
                                         <rich-text class="data-value"
                                             :nodes="highlightText((item.content || '').substring(0, 100))"></rich-text>
                                     </view>
+                                    <view v-if="item.refId" class="data-row">
+                                        <text class="data-label">引用消息ID:</text>
+                                        <text class="data-value">{{ item.refId}}</text>
+                                    </view>
                                     <view class="data-row">
                                         <text class="data-label">状态:</text>
                                         <text class="data-value">
@@ -660,6 +664,10 @@
                         <view class="form-item">
                             <text class="form-label">消息内容</text>
                             <textarea class="form-textarea" v-model="editForm.content" placeholder="请输入消息内容（JSON格式）" />
+                        </view>
+                        <view class="form-item">
+                            <text class="form-label">引用消息ID</text>
+                            <input class="form-input" v-model="editForm.refId" type="number" placeholder="请输入引用消息ID（可选）" />
                         </view>
                         <view class="form-item checkbox-item">
                             <text class="form-label">已读</text>
@@ -1355,7 +1363,17 @@ function handleAdd() {
     } else if (currentTable.value === 'History') {
         editForm.value = { userId: '', category: '可回收垃圾', imageUrl: '', confidence: '', source: 'online' }
     } else if (currentTable.value === 'Messages') {
-        editForm.value = { senderId: '', receiverId: '', type: 'text', content: '', isRead: false, isWithdraw: false, isDeletedBySender: false, isDeletedByReceiver: false }
+        editForm.value = { 
+            senderId: '', 
+            receiverId: '', 
+            type: 'text', 
+            content: '', 
+            refId: '',
+            isRead: false, 
+            isWithdraw: false, 
+            isDeletedBySender: false, 
+            isDeletedByReceiver: false 
+        }
     } else if (currentTable.value === 'Chat') {
         editForm.value = { userId: '', otherId: '', relationship: 'friend', note: '', mute: false, top: false, latestContentId: '' }
     }
