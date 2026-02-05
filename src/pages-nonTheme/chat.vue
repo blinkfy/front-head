@@ -623,7 +623,9 @@ export default {
 
         // 存储 key
         storageKey() {
-            return CHAT_STORAGE_PREFIX + this.chatId
+            const userInfo = uni.getStorageSync('userInfo')
+            const userId = userInfo?.id || userInfo?.userId || 'unknown'
+            return CHAT_STORAGE_PREFIX + userId + '_' + this.chatId
         },
 
         // 当前用户头像 (计算属性，避免重复调用)
@@ -1097,7 +1099,9 @@ export default {
         // ==================== 本地文件缓存 ====================
         loadLocalFileCache() {
             try {
-                const cacheKey = `file_cache_${this.chatId}`
+                const userInfo = uni.getStorageSync('userInfo')
+                const userId = userInfo?.id || userInfo?.userId || 'unknown'
+                const cacheKey = `file_cache_${userId}_${this.chatId}`
                 const cached = uni.getStorageSync(cacheKey)
                 if (cached) {
                     this.localFileCache = JSON.parse(cached)
@@ -1110,7 +1114,9 @@ export default {
 
         saveLocalFileCache() {
             try {
-                const cacheKey = `file_cache_${this.chatId}`
+                const userInfo = uni.getStorageSync('userInfo')
+                const userId = userInfo?.id || userInfo?.userId || 'unknown'
+                const cacheKey = `file_cache_${userId}_${this.chatId}`
                 uni.setStorageSync(cacheKey, JSON.stringify(this.localFileCache))
             } catch (e) {
                 console.error('保存文件缓存失败', e)
