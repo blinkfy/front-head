@@ -106,7 +106,15 @@ function validate() {
 }
 
 function onInput(e) {
-  const val = e?.detail?.value ?? e?.target?.value ?? ''
+  // 兼容写法，避免使用 nullish 合并符 (??) 和可选链在部分小程序环境中不被支持
+  let val = ''
+  if (e && e.detail && typeof e.detail.value !== 'undefined') {
+    val = e.detail.value
+  } else if (e && e.target && typeof e.target.value !== 'undefined') {
+    val = e.target.value
+  } else {
+    val = ''
+  }
   emit('update:modelValue', val)
 }
 
