@@ -1,0 +1,92 @@
+<main class="screen">
+  <section class="panel top">
+    <div class="row">
+      <div>
+        <h1 class="title">智慧城市社区治理大屏</h1>
+        <div class="sub">社区使用情况、分类质量与用户积极性监测</div>
+      </div>
+      <div class="actions meta-actions">
+        <div class="clock" id="clockText">--:--:--</div>
+        <div class="status" id="statusText">准备就绪</div>
+      </div>
+    </div>
+    <div class="row control-row">
+      <div class="toolbar">
+        <label class="field">周期
+          <select id="daysSelect">
+            <option value="7">近7天</option>
+            <option value="30" selected>近30天</option>
+            <option value="90">近90天</option>
+            <option value="180">近180天</option>
+          </select>
+        </label>
+        <label class="field">区
+          <select id="districtSelect"></select>
+        </label>
+        <label class="field">社区
+          <select id="communitySelect"></select>
+        </label>
+      </div>
+      <div class="actions main-actions">
+        <a class="btn ghost nav-link-btn" id="toCollectionBtn" title="前往清运大屏" href="/collection-dashboard">🚛 清运大屏</a>
+        <button class="btn main" id="refreshBtn">刷新数据</button>
+        <button class="btn ok" id="syncBtn">重算日汇总</button>
+        <button class="btn ghost" id="backBtn">返回首页</button>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">社区总数</div><div class="v" id="kpiCommunities">0</div><div class="m" id="kpiCommunitiesMeta">--</div></div>
+      <div class="card"><div class="k">活跃社区</div><div class="v" id="kpiActiveCommunities">0</div><div class="m" id="kpiActiveCommunitiesMeta">--</div></div>
+      <div class="card major"><div class="k">活跃用户</div><div class="v" id="kpiActiveUsers">0</div><div class="m" id="kpiActiveUsersMeta">--</div></div>
+      <div class="card major"><div class="k">分类总次数</div><div class="v" id="kpiEvents">0</div><div class="m" id="kpiEventsMeta">--</div></div>
+      <div class="card"><div class="k">低置信度占比</div><div class="v" id="kpiLowConf">0%</div><div class="m" id="kpiLowConfMeta">--</div></div>
+      <div class="card"><div class="k">平均置信度</div><div class="v" id="kpiAvgConf">0%</div><div class="m" id="kpiAvgConfMeta">--</div></div>
+    </div>
+  </section>
+
+  <section class="main">
+    <aside class="col side">
+      <section class="panel block">
+        <h3>社区积极性排行 <span class="note">按综合积极性分值</span></h3>
+        <div class="list" id="communityRank"></div>
+      </section>
+      <section class="panel block">
+        <h3>分类结构环图 <span class="note">垃圾类别占比</span></h3>
+        <div class="donut-wrap">
+          <svg id="categoryDonutSvg" viewBox="0 0 320 220" preserveAspectRatio="xMidYMid meet"></svg>
+          <div class="donut-legend" id="categoryDonutLegend"></div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="col mid">
+      <section class="panel block">
+        <h3>趋势监控 <span class="note">活跃 + 风险组合趋势（日）</span></h3>
+        <div class="chart-wrap">
+          <div class="legend"><span><i class="dot events"></i>分类次数</span><span><i class="dot active"></i>活跃用户</span><span><i class="dot" style="background:#ffbf57"></i>风险指数</span></div>
+          <svg id="trendSvg" viewBox="0 0 860 300" preserveAspectRatio="none"></svg>
+        </div>
+      </section>
+      <section class="panel block">
+        <h3>区级治理能力 <span class="note">雷达评分 + 区级对比</span></h3>
+        <div class="dual-chart">
+          <div class="radar-wrap">
+            <svg id="districtRadarSvg" viewBox="0 0 320 260" preserveAspectRatio="xMidYMid meet"></svg>
+          </div>
+          <div class="district-grid" id="districtGrid"></div>
+        </div>
+      </section>
+    </section>
+
+    <aside class="col side">
+      <section class="panel block">
+        <h3>社区分类详情 <span class="note">Top 12 社区</span></h3>
+        <div class="list" id="communityList"></div>
+      </section>
+      <section class="panel block">
+        <h3>风险预警 <span class="note" id="alertSummary">P1 0 | P2 0 | P3 0</span></h3>
+        <div class="alerts" id="alertList"></div>
+      </section>
+    </aside>
+  </section>
+</main>

@@ -1,0 +1,88 @@
+<main class="layout">
+    <section class="panel">
+      <div class="top">
+        <div>
+          <div class="title">垃圾清运规划</div>
+          <div class="sub">结合地理位置、当前满载率与历史趋势，自动生成“先清哪几个、何时清、如何走”。</div>
+        </div>
+        <div class="btns">
+          <button class="btn" id="backBtn">返回首页</button>
+          <button class="btn blue" id="refreshBtn">刷新桶位</button>
+          <button class="btn" id="mockBtn">生成历史样本</button>
+          <button class="btn primary" id="planBtn">一键规划路线</button>
+        </div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="k">总桶位</div><div class="v" id="metricTotal">0</div></div>
+        <div class="metric"><div class="k">紧急桶位</div><div class="v" id="metricUrgent">0</div></div>
+        <div class="metric"><div class="k">平均满载率</div><div class="v" id="metricAverage">0%</div></div>
+        <div class="metric"><div class="k">计划总里程</div><div class="v" id="metricDistance">0 km</div></div>
+      </div>
+    </section>
+
+    <section class="main">
+      <aside class="panel controls">
+        <section class="card">
+          <h3>规划参数</h3>
+          <div class="form-grid">
+            <label>紧急阈值(%)
+              <input id="urgentThreshold" type="number" min="50" max="98" value="80" />
+            </label>
+            <label>预测窗口(小时)
+              <input id="planningHorizonHours" type="number" min="1" max="72" value="8" />
+            </label>
+            <label>车辆速度(km/h)
+              <input id="speedKmh" type="number" min="5" max="80" value="25" />
+            </label>
+            <label>每站作业(分钟)
+              <input id="serviceMinutesPerStop" type="number" min="1" max="40" value="6" />
+            </label>
+            <label>最多停靠点
+              <input id="maxStops" type="number" min="1" max="100" value="12" />
+            </label>
+            <label>最少停靠点
+              <input id="minStops" type="number" min="1" max="30" value="3" />
+            </label>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>车辆起点</h3>
+          <div class="form-grid">
+            <label>纬度
+              <input id="startLat" type="number" step="0.000001" placeholder="点击地图选择" />
+            </label>
+            <label>经度
+              <input id="startLng" type="number" step="0.000001" placeholder="点击地图选择" />
+            </label>
+          </div>
+          <div class="btns" style="margin-top:8px;">
+            <button class="btn" id="useCenterBtn">使用地图中心</button>
+            <button class="btn" id="saveSnapshotsBtn">保存当前快照</button>
+          </div>
+          <div class="status" id="statusText"></div>
+        </section>
+
+        <section class="card">
+          <h3>桶位调度列表</h3>
+          <div class="legend">
+            <span><i style="background:#1fb57d"></i>低负载</span>
+            <span><i style="background:#e0a100"></i>临界</span>
+            <span><i style="background:#d06919"></i>高负载</span>
+            <span><i style="background:#c63b3b"></i>紧急</span>
+          </div>
+          <div class="bin-list" id="binList"></div>
+        </section>
+      </aside>
+
+      <section class="panel map-wrap">
+        <div id="map"></div>
+        <div class="route">
+          <div class="route-summary" id="routeSummary">还未生成路线。</div>
+          <div class="route-list" id="routeList">
+            <div class="empty">请先点击“一键规划路线”。</div>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
