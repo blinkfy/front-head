@@ -1,4 +1,6 @@
 (function () {
+  // 从全局 window 获取 baseUrl（由 Vue 包装器注入）
+  const baseUrl = window.__APP_BASE_URL__ || '';
   const QUEUE_KEY = 'achievement_unlock_queue_v1';
 
   const refs = {
@@ -345,7 +347,7 @@
       throw new Error('未登录，请先登录后查看成就。');
     }
 
-    const response = await fetch('/api/achievements', {
+    const response = await fetch(`${baseUrl}/api/achievements`, {
       method: 'GET',
       headers: {
         Authorization: token

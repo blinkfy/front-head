@@ -1,3 +1,6 @@
+// 从全局 window 获取 baseUrl（由 Vue 包装器注入）
+const baseUrl = window.__APP_BASE_URL__ || '';
+
 const imageInput = document.getElementById('imageInput');
     const pickedImageWrap = document.getElementById('pickedImageWrap');
     const pickedImageName = document.getElementById('pickedImageName');
@@ -380,7 +383,7 @@ const imageInput = document.getElementById('imageInput');
       stopBtn.disabled = false;
       sendBtn.disabled = true;
 
-      const response = await fetch('/api/ai/chat/stream', {
+      const response = await fetch(`${baseUrl}/api/ai/chat/stream`, {
         method: 'POST',
         headers: buildAuthHeaders(true),
         body: JSON.stringify({
@@ -496,7 +499,7 @@ const imageInput = document.getElementById('imageInput');
       const token = localStorage.getItem('token') || '';
       if (!token) return [];
 
-      const response = await fetch('/api/ai/chat/history?limit=100', {
+      const response = await fetch(`${baseUrl}/api/ai/chat/history?limit=100`, {
         method: 'GET',
         headers: buildAuthHeaders(false)
       });

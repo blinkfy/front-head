@@ -147,6 +147,42 @@
 					"style": {
 						"navigationStyle": "custom"
 					}
+				},
+				{
+					"path": "ai-chat",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "admin-ai-settings",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "achievements",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "collection-dashboard",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "collection-planning",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "community-dashboard",
+					"style": {
+						"navigationStyle": "custom"
+					}
 				}
 			]
 		},

@@ -86,10 +86,12 @@ function collectData() {
   };
 }
 
+const baseUrl = window.__APP_BASE_URL__ || ''
+
 async function loadSettings() {
   setStatus('读取中...');
   try {
-    const res = await fetch('/api/admin/ai-settings', {
+    const res = await fetch(`${baseUrl}/api/admin/ai-settings`, {
       method: 'GET',
       headers: authHeaders()
     });
@@ -108,7 +110,7 @@ async function saveSettings() {
   const payload = collectData();
   setStatus('保存中...');
   try {
-    const res = await fetch('/api/admin/ai-settings', {
+    const res = await fetch(`${baseUrl}/api/admin/ai-settings`, {
       method: 'PUT',
       headers: authHeaders(),
       body: JSON.stringify(payload)

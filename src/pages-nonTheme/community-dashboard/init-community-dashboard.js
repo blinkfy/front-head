@@ -1,3 +1,5 @@
+const baseUrl = window.__APP_BASE_URL__ || ''
+
 const refs = {
   clockText: document.getElementById('clockText'),
   statusText: document.getElementById('statusText'),
@@ -92,7 +94,8 @@ function authHeaders() {
 }
 
 async function api(path, options) {
-  const res = await fetch(path, {
+  const fullPath = path.startsWith('/') ? `${baseUrl}${path}` : path;
+  const res = await fetch(fullPath, {
     ...(options || {}),
     headers: {
       ...authHeaders(),
