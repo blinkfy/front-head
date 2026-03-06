@@ -254,6 +254,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { recognizeImage } from '@/api/recognize'
 import { useDeviceConnection } from '@/composables/useDeviceConnection'
+import { resolveH5StandalonePath } from '@/utils/h5-route'
 import {
   appendAchievementQueue,
   buildExpandedUpcyclingText,
@@ -547,7 +548,7 @@ function applyEnhancedRecognitionData(recognizeData) {
 function goAiChatFromResult() {
   if (!resultImage.value) return
   if (isH5Platform.value && typeof window !== 'undefined') {
-    window.location.href = '/ai-chat'
+    window.location.href = resolveH5StandalonePath('/ai-chat', '/pages-nonTheme/ai-chat')
     return
   }
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })

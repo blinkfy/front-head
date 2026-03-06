@@ -291,6 +291,7 @@ import { userinfo } from '@/api/user'
 import { useDeviceConnection } from '@/composables/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
+import { resolveH5StandalonePath } from '@/utils/h5-route'
 
 const username = ref('')
 const userInfo = ref({})
@@ -533,7 +534,7 @@ function goAchievements() {
     !window.my
   )
   if (isH5Page) {
-    window.location.href = '/achievements'
+    window.location.href = resolveH5StandalonePath('/achievements', '/pages-nonTheme/achievements')
     return
   }
   uni.navigateTo({ url: '/pages-nonTheme/achievements' })
