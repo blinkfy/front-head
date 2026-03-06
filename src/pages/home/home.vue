@@ -299,27 +299,29 @@ const recognizeBBoxSpace = ref('')
 let bboxRefreshTimer = 0
 const bboxLoadBoundImages = new WeakSet()
 
-// 数字动画函数
+// 数字动画函数（兼容小程序：小程序无 requestAnimationFrame，用 setTimeout 模拟）
 const animateNumber = (target, duration = 800) => {
   const start = 0
   const startTime = Date.now()
-  
+  // 帧间隔约 16ms（≈60fps），小程序和 H5 均兼容
+  const frameInterval = 16
+
   const updateNumber = () => {
     const elapsed = Date.now() - startTime
     const progress = Math.min(elapsed / duration, 1)
-    
+
     // 使用 easeOutQuart 缓动函数
     const easeProgress = 1 - Math.pow(1 - progress, 4)
     const current = Math.round(start + (target - start) * easeProgress)
-    
+
     resultConfidence.value = current + '%'
-    
+
     if (progress < 1) {
-      requestAnimationFrame(updateNumber)
+      setTimeout(updateNumber, frameInterval)
     }
   }
-  
-  requestAnimationFrame(updateNumber)
+
+  setTimeout(updateNumber, frameInterval)
 }
 
 const { hasConnection, connectedDevice, goToDeviceConnection, points } = useDeviceConnection()
@@ -617,10 +619,6 @@ function applyEnhancedRecognitionData(recognizeData) {
 
 function goAiChatFromResult() {
   if (!resultImage.value) return
-  if (isH5Platform.value && typeof window !== 'undefined') {
-    window.location.href = resolveH5StandalonePath('/ai-chat', '/pages-nonTheme/ai-chat')
-    return
-  }
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
@@ -1634,6 +1632,17 @@ function closeGuideModal() {
 .result-image-wrap {
   position: relative;
   margin-bottom: 24rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.result-image {
+  width: 100%;
+  height: 400rpx;
+  border-radius: 16rpx;
+  display: block;
 }
 
 
@@ -2658,16 +2667,3 @@ function closeGuideModal() {
   100% { transform: scale(1.15) translateY(-4rpx); }
 }
 </style>
-
-
-
-
-
-
-
-
-
-
-
-
-

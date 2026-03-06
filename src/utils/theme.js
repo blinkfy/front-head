@@ -117,27 +117,47 @@ export const ThemeManager = {
 }
 export function applyStoredTheme() {
   try {
-    const theme = localStorage.getItem('app_theme') === 'dark' ? 'dark' : 'light';
-    document.body.classList.toggle('dark-theme', theme === 'dark');
-    document.body.classList.toggle('light-theme', theme === 'light');
-    document.documentElement.setAttribute('data-theme', theme);
-    return theme;
+    let mode = 'light';
+    // #ifdef H5
+    mode = localStorage.getItem('app_theme') === 'dark' ? 'dark' : 'light';
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.toggle('dark-theme', mode === 'dark');
+      document.body.classList.toggle('light-theme', mode === 'light');
+      document.documentElement.setAttribute('data-theme', mode);
+    }
+    // #endif
+    // #ifndef H5
+    mode = uni.getStorageSync('app_theme') === 'dark' ? 'dark' : 'light';
+    // #endif
+    return mode;
   } catch (_) {
-    document.body.classList.remove('dark-theme');
-    document.body.classList.add('light-theme');
-    document.documentElement.setAttribute('data-theme', 'light');
+    // #ifdef H5
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('dark-theme');
+      document.body.classList.add('light-theme');
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+    // #endif
     return 'light';
   }
 }
 
 export function bindThemeStorageSync() {
+  // #ifdef H5
   const handler = (event) => {
     if (!event || event.key === 'app_theme') {
       applyStoredTheme();
     }
   };
-  window.addEventListener('storage', handler);
-  return () => {
-    window.removeEventListener('storage', handler);
-  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener('storage', handler);
+    };
+  }
+  return () => {};
+  // #endif
+  // #ifndef H5
+  return () => {};
+  // #endif
 }

@@ -215,7 +215,7 @@ const recommendSource = ref('rule-dom')
 const recommendedNames = ref([])
 
 const categories = ref([
-  { name: '✨ 猜您喜欢', icon: '✨', type: 'recommend' },
+  { name: '猜您喜欢', icon: '✨', type: 'recommend' },
   { name: '全部', icon: '🛍️', type: 'all' },
   { name: '环保用品', icon: '🌿', type: 'category', categoryId: 1 },
   { name: '数码配件', icon: '📱', type: 'category', categoryId: 2 },
@@ -1591,7 +1591,6 @@ const goProfile = () => {
   }
 
   .products-grid {
-    grid-template-columns: 1fr;
     gap: 18rpx;
   }
 

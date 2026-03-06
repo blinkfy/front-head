@@ -547,10 +547,6 @@ function applyEnhancedRecognitionData(recognizeData) {
 
 function goAiChatFromResult() {
   if (!resultImage.value) return
-  if (isH5Platform.value && typeof window !== 'undefined') {
-    window.location.href = resolveH5StandalonePath('/ai-chat', '/pages-nonTheme/ai-chat')
-    return
-  }
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 
@@ -2245,4 +2241,3 @@ function closeGuideModal() {
   letter-spacing: 1rpx;
 }
 </style>
-

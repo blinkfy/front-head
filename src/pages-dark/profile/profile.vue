@@ -276,6 +276,10 @@
         <view class="admin-btn" @click="go2048">🎲 2048后台</view>
         <view class="admin-btn" @click="goDbMonitor">📊 数据库管理</view>
         <view class="admin-btn" @click="goAPITest">🧪 接口测试</view>
+        <view class="admin-btn" @click="goAdminAISettings">⚙️ AI设置</view>
+        <view class="admin-btn" @click="goCollectionDashboard">🗺️ 清运仪表板</view>
+        <view class="admin-btn" @click="goCollectionPlanning">📋 清运规划</view>
+        <view class="admin-btn" @click="goCommunityDashboard">🏘️ 社区仪表板</view>
       </view>
     </view>
 
@@ -750,6 +754,38 @@ function go2048() {
         const target = encodeURIComponent(baseUrl + '/2048')
         uni.navigateTo({ url: `/pages-nonTheme/webview?url=${target}` })
       }, 1000)
+    }
+  })
+}
+
+function goAdminAISettings() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/admin-ai-settings' })
+    }
+  })
+}
+
+function goCollectionDashboard() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/collection-dashboard' })
+    }
+  })
+}
+
+function goCollectionPlanning() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/collection-planning' })
+    }
+  })
+}
+
+function goCommunityDashboard() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/community-dashboard' })
     }
   })
 }
@@ -1697,7 +1733,7 @@ body {
 .function-grid {
   position: relative;
   z-index: 10;
-  margin: 0 40rpx 120rpx;
+  margin: 0 40rpx 10rpx;
 }
 
 .function-row {
@@ -2238,7 +2274,7 @@ body {
 
 @media screen and (max-width: 768px) {
   .function-grid {
-    margin: 0 20rpx 120rpx;
+    margin: 0 20rpx 10rpx;
   }
 
   .function-row {

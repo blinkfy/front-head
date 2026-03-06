@@ -1,4 +1,41 @@
-const baseUrl = window.__APP_BASE_URL__ || ''
+export default function initPage() {
+const baseUrl = (typeof window !== 'undefined' && window.__APP_BASE_URL__) ? window.__APP_BASE_URL__ : ''
+
+// 定时器管理（防止内存泄漏）
+const timers = new Set()
+
+function addTimer(id) {
+  timers.add(id)
+  return id
+}
+
+function clearAllTimers() {
+  timers.forEach(id => clearInterval(id))
+  timers.clear()
+}
+
+// 暴露清理函数到全局（供 Vue 组件卸载时调用）
+window.__clearPageTimers = clearAllTimers
+
+// 兼容性辅助函数
+function getStorage(key) {
+  // #ifdef H5
+  return localStorage.getItem(key)
+  // #endif
+  // #ifndef H5
+  const result = uni.getStorageSync(key)
+  return result || null
+  // #endif
+}
+
+function setStorage(key, value) {
+  // #ifdef H5
+  localStorage.setItem(key, value)
+  // #endif
+  // #ifndef H5
+  uni.setStorageSync(key, value)
+  // #endif
+}
 
 const refs = {
   clockText: document.getElementById('clockText'),
@@ -45,16 +82,6 @@ const state = {
   revealed: false
 };
 
-function safeNavigate(path) {
-  const target = String(path || '/');
-  if (!target) return;
-  try {
-    window.location.assign(target);
-  } catch (_) {
-    window.location.href = target;
-  }
-}
-
 function setHtml(el, html) {
   if (!el) return;
   el.innerHTML = html;
@@ -65,10 +92,12 @@ const ALERT_META = {
   p2: { label: 'P2', order: 2 },
   p3: { label: 'P3', order: 3 }
 };
-
+let theme='light'
 function applyTheme() {
-  const theme = localStorage.getItem('app_theme') === 'light' ? 'light' : 'dark';
-  document.body.classList.toggle('light-theme', theme === 'light');
+  theme = getStorage('app_theme') === 'light' ? 'light' : 'dark'
+  // #ifdef H5
+  document.body.classList.toggle('light-theme', theme === 'light')
+  // #endif
 }
 
 function setStatus(text, cls) {
@@ -87,10 +116,10 @@ function esc(value) {
 }
 
 function authHeaders() {
-  const token = localStorage.getItem('token') || '';
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = token;
-  return headers;
+  const token = getStorage('token') || ''
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers.Authorization = token
+  return headers
 }
 
 async function api(path, options) {
@@ -268,13 +297,20 @@ function bindToolbar() {
   if (refs.toCollectionBtn) {
     refs.toCollectionBtn.addEventListener('click', (event) => {
       event.preventDefault();
-      safeNavigate('/collection-dashboard');
+      uni.navigateTo({ url: '/pages-nonTheme/collection-dashboard' });
     });
   }
   if (refs.backBtn) {
     refs.backBtn.addEventListener('click', (event) => {
       event.preventDefault();
-      safeNavigate('/');
+      const pages = getCurrentPages();
+      if (pages.length > 1) {
+        uni.navigateBack();
+      } else if(theme=='light'){
+        uni.reLaunch({url: '/pages/home/home'})
+      }else{
+        uni.reLaunch({url:'/pages-dark/home/home'})
+      }
     });
   }
   if (refs.syncBtn) refs.syncBtn.addEventListener('click', syncDaily);
@@ -862,12 +898,17 @@ async function syncDaily() {
 
 async function init() {
   applyTheme();
-  window.addEventListener('storage', (event) => {
+  
+  // #ifdef H5
+  const onStorage = (event) => {
     if (!event || event.key === 'app_theme') applyTheme();
-  });
+  };
+  window.addEventListener('storage', onStorage);
+  // #endif
+  
   bindToolbar();
   renderClock();
-  setInterval(renderClock, 1000);
+  addTimer(setInterval(renderClock, 1000));
 
   try {
     await loadOptions();
@@ -876,7 +917,14 @@ async function init() {
     console.error('[community-dashboard] init failed:', error);
     setStatus(`初始化失败：${error && error.message ? error.message : '未知错误'}`, 'err');
   }
+
+  return function cleanup() {
+    clearAllTimers();
+    // #ifdef H5
+    window.removeEventListener('storage', onStorage);
+    // #endif
+  };
 }
 
-init();
-
+return init();
+}

@@ -65,8 +65,8 @@
       <!-- 商品列表 -->
       <view class="products-section">
         <view class="section-title">
-          <text class="title-icon">{{ selectedCategory.icon }}</text>
-          <text class="title-text">{{ displayCategoryTitle }}</text>
+          <text class="title2-icon">{{ selectedCategory.icon }}</text>
+          <text class="title2-text">{{ displayCategoryTitle }}</text>
           <text class="product-count">({{ filteredProducts.length }}件商品)</text>
         </view>
 
@@ -227,7 +227,7 @@ const recommendedNames = ref([])
 
 // 商品分类
 const categories = ref([
-  { name: '✨ 猜您喜欢', icon: '✨', type: 'recommend' },
+  { name: '猜您喜欢', icon: '✨', type: 'recommend' },
   { name: '全部', icon: '🛍️', type: 'all' },
   { name: '环保用品', icon: '🌿', type: 'category', categoryId: 1 },
   { name: '数码配件', icon: '📱', type: 'category', categoryId: 2 },
@@ -459,7 +459,7 @@ const selectedCategory = computed(() => {
 })
 
 const displayCategoryTitle = computed(() => {
-  return isRecommendCategory.value ? 'AI推荐' : selectedCategory.value.name
+  return isRecommendCategory.value ? 'AI推荐 ' : selectedCategory.value.name
 })
 
 function getProductsByRecommendedNames(names) {
@@ -743,7 +743,7 @@ const goProfile = () => {
 }
 
 .title-icon {
-  font-size: 36rpx;
+  font-size: 46rpx;
   margin: 0 20rpx;
   filter: drop-shadow(0 0 20rpx rgba(64, 224, 255, 0.8));
   animation: titleIconFloat 3s ease-in-out infinite;
@@ -760,8 +760,8 @@ const goProfile = () => {
 
 .title-text {
   display: block;
-  font-size: 44rpx;
-  font-weight: 800;
+  font-size: 36rpx;
+  font-weight: 600;
   background: linear-gradient(135deg, #40e0ff 0%, #4ecdc4 50%, #44a08d 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -786,13 +786,14 @@ const goProfile = () => {
 
 .title-subtitle {
   display: block;
-  font-size: 34rpx;
+  font-size: 30rpx;
   color: rgba(255, 255, 255, 0.7);
   font-weight: 400;
   letter-spacing: 2rpx;
   text-transform: uppercase;
   opacity: 0.8;
   animation: titleSubtitleFade 2s ease-in-out infinite alternate;
+  margin-bottom: -10px;
 }
 
 @keyframes titleSubtitleFade {
@@ -1030,13 +1031,13 @@ const goProfile = () => {
   padding: 0 8rpx;
 }
 
-.title-icon {
+.title2-icon {
   font-size: 36rpx;
   margin-right: 16rpx;
   filter: drop-shadow(0 0 12rpx rgba(64, 224, 255, 0.6));
 }
 
-.title-text {
+.title2-text {
   color: #40e0ff;
   font-size: 32rpx;
   font-weight: 600;
@@ -1676,19 +1677,6 @@ const goProfile = () => {
     font-size: 22rpx;
     text-align: center;
     line-height: 1.5;
-  }
-
-  .products-grid {
-    grid-template-columns: 1fr;
-    gap: 18rpx;
-  }
-
-  .product-image-container {
-    height: 280rpx;
-  }
-
-  .product-info {
-    padding: 18rpx;
   }
 
   .product-name {

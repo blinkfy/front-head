@@ -35,8 +35,7 @@
     "build:mp-xhs": "uni build -p mp-xhs",
     "build:quickapp-webview": "uni build -p quickapp-webview",
     "build:quickapp-webview-huawei": "uni build -p quickapp-webview-huawei",
-    "build:quickapp-webview-union": "uni build -p quickapp-webview-union",
-    "predev:h5": "npm run check:mojibake"
+    "build:quickapp-webview-union": "uni build -p quickapp-webview-union"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-4060620250520001",

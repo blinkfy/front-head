@@ -28,11 +28,16 @@
       --shadow: 0 16px 42px rgba(0, 0, 0, 0.36);
     }
 
+    /* #ifdef H5 */
     * {
-      box-sizing: border-box;
+        box-sizing: border-box;
     }
-
-    body {
+    /* #endif */
+    /* #ifndef H5 */
+    page, view, text, scroll-view, swiper, button, form, input, textarea, label, navigator, image, div, span, p, h1, h2, h3, h4, h5, h6, ul, li, article, section, nav, main, header, footer {
+        box-sizing: border-box;
+    }
+    /* #endif */    body {
       margin: 0;
       min-height: 100vh;
       font-family: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;

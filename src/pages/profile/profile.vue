@@ -168,6 +168,10 @@
         <view class="admin-item" @click="go2048">🎲 2048后台</view>
         <view class="admin-item" @click="goDbMonitor">📊 数据库</view>
         <view class="admin-item" @click="goAPITest">🧪 接口测试</view>
+        <view class="admin-item" @click="goAdminAISettings">⚙️ AI设置</view>
+        <view class="admin-item" @click="goCollectionDashboard">🗺️ 清运仪表板</view>
+        <view class="admin-item" @click="goCollectionPlanning">📋 清运规划</view>
+        <view class="admin-item" @click="goCommunityDashboard">🏘️ 社区仪表板</view>
       </view>
     </view>
 
@@ -593,6 +597,38 @@ function go2048() {
         const target = encodeURIComponent(baseUrl + '/2048')
         uni.navigateTo({ url: `/pages-nonTheme/webview?url=${target}` })
       }, 1000)
+    }
+  })
+}
+
+function goAdminAISettings() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/admin-ai-settings' })
+    }
+  })
+}
+
+function goCollectionDashboard() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/collection-dashboard' })
+    }
+  })
+}
+
+function goCollectionPlanning() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/collection-planning' })
+    }
+  })
+}
+
+function goCommunityDashboard() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/community-dashboard' })
     }
   })
 }
@@ -2062,14 +2098,13 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 
   .user-card,
-  .menu-section,
   .admin-section {
     margin-left: 20rpx;
     margin-right: 20rpx;
   }
 
   .menu-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14rpx;
   }
 
@@ -2110,7 +2145,6 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 
   .user-card,
-  .menu-section,
   .admin-section {
     margin-left: 16rpx;
     margin-right: 16rpx;

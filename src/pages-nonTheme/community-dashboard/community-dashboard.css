@@ -35,7 +35,12 @@
       --tone-other:#ffce74;
       --glow-cyan:rgba(73,208,227,.24);
     }
+    /* #ifdef H5 */
     *{box-sizing:border-box}
+    /* #endif */
+    /* #ifndef H5 */
+    page, view, text, scroll-view, swiper, button, form, input, textarea, label, navigator, image, div, span, p, h1, h2, h3, h4, h5, h6, ul, li, article, section, nav, main, header, footer { box-sizing: border-box; }
+    /* #endif */
     html,body{height:100%;min-height:100%;margin:0;color:var(--text);font-family:"Source Han Sans SC","Microsoft YaHei",sans-serif;background:
       radial-gradient(1000px 600px at 110% -20%,rgba(24,216,156,.2),transparent 62%),
       radial-gradient(900px 520px at -15% 22%,rgba(41,184,211,.24),transparent 57%),
