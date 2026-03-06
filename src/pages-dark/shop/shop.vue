@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <view class="shop-bg">
     <!-- 自定义状态栏 -->
     <view class="custom-statusbar"></view>
@@ -45,11 +45,11 @@
         </view>
         <view class="points-tips">
           <text class="tip-icon">💡</text>
-          <text class="tip-text">每次垃圾识别可获得1-3积分</text>
+          <text class="tip-text">每次垃圾识别可获得-3积分</text>
         </view>
       </view>
       
-      <!-- 商品分类选项卡 -->
+      <!-- 商品分类选项卡-->
       <view class="category-tabs">
         <view 
           v-for="(category, index) in categories" 
@@ -65,9 +65,13 @@
       <!-- 商品列表 -->
       <view class="products-section">
         <view class="section-title">
-          <text class="title-icon">{{ categories[currentCategory].icon }}</text>
-          <text class="title-text">{{ categories[currentCategory].name }}</text>
+          <text class="title-icon">{{ selectedCategory.icon }}</text>
+          <text class="title-text">{{ displayCategoryTitle }}</text>
           <text class="product-count">({{ filteredProducts.length }}件商品)</text>
+        </view>
+
+        <view v-if="isRecommendCategory && recommendLoading" class="recommend-loading-mask">
+          <text class="recommend-loading-text">AI 正在生成推荐，请稍候...</text>
         </view>
         
         <view class="products-grid">
@@ -79,8 +83,9 @@
           >
             <view class="product-image-container">
               <image :src="product.image" class="product-image" mode="aspectFill" />
+              <view v-if="isRecommendCategory" class="product-badge ai">AI推荐</view>
               <view v-if="product.hot" class="product-badge hot">🔥 热门</view>
-              <view v-if="product.limited" class="product-badge limited">⚡ 限量</view>
+              <view v-if="product.limited" class="product-badge limited">🔥 限量</view>
             </view>
             
             <view class="product-info">
@@ -172,7 +177,7 @@
       </view>
     </view>
     
-    <!-- 底部导航栏 -->
+    <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
         <text class="tabbar-icon">🏠</text>
@@ -197,24 +202,38 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { userinfo } from '@/api/user'
+import { fetchShopRecommendations } from '@/api/shop'
+import {
+  SHOP_RECOMMEND_LIMIT,
+  buildCandidateProducts,
+  filterProductsByRecommendation,
+  getFallbackRecommendedNames,
+  normalizeRecommendationResult,
+  orderProductsByRecommendation
+} from '@/utils/shop-recommendation'
 
 // 响应式数据
-const userPoints = ref(0) // 用户当前积分
-const loading = ref(false) // 加载状态
-const currentCategory = ref(0) // 当前选中的分类
-const showDetailModal = ref(false) // 显示商品详情弹窗
-const showSuccessModal = ref(false) // 显示兑换成功弹窗
-const selectedProduct = ref({}) // 选中的商品
-const exchangedProduct = ref({}) // 兑换成功的商品
+const userPoints = ref(0)
+const loading = ref(false)
+const currentCategory = ref(0)
+const showDetailModal = ref(false)
+const showSuccessModal = ref(false)
+const selectedProduct = ref({})
+const exchangedProduct = ref({})
+const recommendLoading = ref(false)
+const recommendReady = ref(false)
+const recommendSource = ref('rule-dom')
+const recommendedNames = ref([])
 
 // 商品分类
 const categories = ref([
-  { name: '全部', icon: '🛍️' },
-  { name: '环保用品', icon: '🌱' },
-  { name: '数码配件', icon: '📱' },
-  { name: '生活用品', icon: '🏠' },
-  { name: '学习用品', icon: '📚' },
-  { name: '美食券', icon: '🍔' }
+  { name: '✨ 猜您喜欢', icon: '✨', type: 'recommend' },
+  { name: '全部', icon: '🛍️', type: 'all' },
+  { name: '环保用品', icon: '🌿', type: 'category', categoryId: 1 },
+  { name: '数码配件', icon: '📱', type: 'category', categoryId: 2 },
+  { name: '生活用品', icon: '🏠', type: 'category', categoryId: 3 },
+  { name: '学习用品', icon: '📚', type: 'category', categoryId: 4 },
+  { name: '美食券', icon: '🍜', type: 'category', categoryId: 5 }
 ])
 
 // 模拟商品数据
@@ -229,7 +248,7 @@ const products = ref([
     stock: 10,
     category: 1,
     hot: true,
-    features: '防水耐用，可折叠收纳，承重20kg'
+    features: '闃叉按鑰愮敤锛屽彲鎶樺彔鏀剁撼锛屾壙閲?0kg'
   },
   {
     id: 2,
@@ -239,7 +258,7 @@ const products = ref([
     points: 120,
     stock: 2,
     category: 1,
-    features: '天然抗菌，轻便易携带，包含筷子勺子叉子'
+    features: '天然抗菌，轻便易携带，包含筷勺叉'
   },
   {
     id: 3,
@@ -257,7 +276,7 @@ const products = ref([
   {
     id: 4,
     name: '无线蓝牙耳机',
-    description: '高品质音效，舒适佩戴体验',
+    description: '高品质音效，佩戴舒适',
     image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN01ARkqoe1lp8bxmr56x_%21%212207796144867-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1772604226&t=71875439063552b8fc4046a5bd82cece',
     points: 200,
     stock: 1,
@@ -319,7 +338,7 @@ const products = ref([
     points: 30,
     stock: 5,
     category: 4,
-    features: 'A5尺寸，180页，方格/横线可选'
+    features: 'A5尺寸，80页，方格/横线可选'
   },
   {
     id: 10,
@@ -337,7 +356,7 @@ const products = ref([
   {
     id: 11,
     name: '星巴克咖啡券',
-    description: '任意饮品通用券，有效期6个月',
+    description: '任意饮品通用券，有效期1个月',
     image: 'https://p6.itc.cn/q_70/images01/20210903/15249c7e53fb43d1bff2f80175dac604.jpeg',
     points: 80,
     stock: 5,
@@ -348,7 +367,7 @@ const products = ref([
   {
     id: 12,
     name: '肯德基套餐券',
-    description: '指定套餐优惠券，美味享不停',
+    description: '指定套餐优惠券，美味不停',
     image: 'https://p6.itc.cn/q_70/images03/20211204/92f834b2ea8a4cb7b9bb993602b42279.jpeg',
     points: 120,
     stock: 0,
@@ -359,7 +378,7 @@ const products = ref([
 
 // 检测平台类型
 onMounted(async () => {
-  // 获取系统状态栏高度
+  // 鑾峰彇绯荤粺鐘舵€佹爮楂樺害
   let statusBarHeight = 0
   try {
     const windowInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
@@ -376,6 +395,9 @@ onMounted(async () => {
   
   // 获取用户真实积分数据
   await fetchUserPoints()
+  if (currentCategory.value === 0) {
+    await ensureRecommendations()
+  }
 })
 
 // 获取用户积分信息
@@ -427,11 +449,72 @@ const refreshPoints = async () => {
 }
 
 // 计算属性：过滤商品
-const filteredProducts = computed(() => {
-  if (currentCategory.value === 0) {
-    return products.value // 显示所有商品
+const isRecommendCategory = computed(() => {
+  const current = categories.value[currentCategory.value]
+  return !!(current && current.type === 'recommend')
+})
+
+const selectedCategory = computed(() => {
+  return categories.value[currentCategory.value] || categories.value[0] || { icon: '🛍️', name: '全部', type: 'all' }
+})
+
+const displayCategoryTitle = computed(() => {
+  return isRecommendCategory.value ? 'AI推荐' : selectedCategory.value.name
+})
+
+function getProductsByRecommendedNames(names) {
+  const sourceNames = Array.isArray(names) ? names : []
+  const matched = filterProductsByRecommendation(products.value, sourceNames)
+  const ordered = orderProductsByRecommendation(matched, sourceNames)
+  return ordered.slice(0, SHOP_RECOMMEND_LIMIT)
+}
+
+async function ensureRecommendations(force = false) {
+  if (recommendLoading.value) return
+  if (recommendReady.value && !force) return
+
+  recommendLoading.value = true
+  try {
+    const apiResult = await fetchShopRecommendations({
+      limit: SHOP_RECOMMEND_LIMIT,
+      currentPoints: Number(userPoints.value || 0),
+      candidateProducts: buildCandidateProducts(products.value)
+    })
+
+    const normalized = normalizeRecommendationResult(
+      apiResult,
+      products.value,
+      userPoints.value,
+      SHOP_RECOMMEND_LIMIT
+    )
+    recommendedNames.value = Array.isArray(normalized.names) ? normalized.names : []
+    recommendSource.value = normalized.source || 'rule-dom'
+    recommendReady.value = true
+  } catch (_) {
+    recommendedNames.value = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
+    recommendSource.value = 'rule-dom'
+    recommendReady.value = true
+  } finally {
+    recommendLoading.value = false
   }
-  return products.value.filter(product => product.category === currentCategory.value)
+}
+
+const recommendProducts = computed(() => {
+  const fromApi = getProductsByRecommendedNames(recommendedNames.value)
+  if (fromApi.length) return fromApi
+
+  const fallbackNames = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
+  const fromFallback = getProductsByRecommendedNames(fallbackNames)
+  if (fromFallback.length) return fromFallback
+
+  return products.value.slice(0, SHOP_RECOMMEND_LIMIT)
+})
+
+const filteredProducts = computed(() => {
+  const current = selectedCategory.value
+  if (current.type === 'recommend') return recommendProducts.value
+  if (current.type === 'all') return products.value
+  return products.value.filter(product => product.category === current.categoryId)
 })
 
 // 计算属性：是否可以兑换
@@ -453,8 +536,11 @@ const getParticleStyle = (index) => {
 }
 
 // 切换商品分类
-const switchCategory = (index) => {
+const switchCategory = async (index) => {
   currentCategory.value = index
+  if (categories.value[index] && categories.value[index].type === 'recommend') {
+    await ensureRecommendations()
+  }
 }
 
 // 显示商品详情
@@ -510,7 +596,7 @@ const exchangeProduct = async () => {
   exchangeHistory.unshift(exchangeRecord)
   uni.setStorageSync('exchangeHistory', exchangeHistory)
   
-  // 兑换成功后刷新积分数据（确保与服务器同步）
+  // 兑换成功后刷新积分数据，确保与服务器同步
 //   setTimeout(() => {
 //     fetchUserPoints()
 //   }, 1000)
@@ -537,7 +623,7 @@ const goProfile = () => {
 </script>
 
 <style scoped>
-/* 主背景 */
+/* 主背景*/
 .shop-bg {
   min-height: 100vh;
   background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 25%, #2d1b69 50%, #0f0f23 100%);
@@ -603,7 +689,7 @@ const goProfile = () => {
   50% { transform: translateY(-20px) scale(1.2); opacity: 1; }
 }
 
-/* 主容器 */
+/* 主容器*/
 .shop-container {
   position: relative;
   z-index: 2;
@@ -884,7 +970,7 @@ const goProfile = () => {
   font-size: 24rpx;
 }
 
-/* 分类选项卡 */
+/* 分类选项卡*/
 .category-tabs {
   display: flex;
   background: rgba(15, 15, 35, 0.8);
@@ -934,6 +1020,7 @@ const goProfile = () => {
 /* 商品区域 */
 .products-section {
   flex: 1;
+  position: relative;
 }
 
 .section-title {
@@ -959,6 +1046,23 @@ const goProfile = () => {
 .product-count {
   color: rgba(255, 255, 255, 0.6);
   font-size: 24rpx;
+}
+
+.recommend-loading-mask {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16rpx;
+  padding: 16rpx 18rpx;
+  margin: 0 8rpx 18rpx;
+  background: linear-gradient(135deg, rgba(64, 224, 255, 0.14), rgba(78, 205, 196, 0.16));
+  border: 1px solid rgba(64, 224, 255, 0.3);
+}
+
+.recommend-loading-text {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #aaf4ff;
 }
 
 /* 商品网格 */
@@ -1038,6 +1142,13 @@ const goProfile = () => {
 .product-badge.hot {
   background: linear-gradient(45deg, #ff6b35, #f7931e);
   box-shadow: 0 4rpx 12rpx rgba(255, 107, 53, 0.4);
+}
+
+.product-badge.ai {
+  left: 12rpx;
+  right: auto;
+  background: linear-gradient(45deg, #00b4ff, #2ee6d6);
+  box-shadow: 0 4rpx 12rpx rgba(0, 180, 255, 0.35);
 }
 
 .product-badge.limited {
@@ -1451,7 +1562,7 @@ const goProfile = () => {
   text-shadow: 0 0 10rpx rgba(0, 0, 0, 0.5);
 }
 
-/* 底部导航栏 */
+/* 底部导航栏*/
 .tabbar {
   position: fixed;
   left: 0;
@@ -1524,8 +1635,96 @@ const goProfile = () => {
   letter-spacing: 1rpx;
 }
 
+@media (max-width: 768px) {
+  .shop-container {
+    padding: 0 20rpx 140rpx;
+  }
+
+  .page-title {
+    margin-bottom: 20rpx;
+  }
+
+  .points-card {
+    padding: 24rpx;
+  }
+
+  .category-tabs {
+    padding: 6rpx;
+    margin-bottom: 24rpx;
+  }
+
+  .tab-item {
+    min-width: 106rpx;
+    padding: 16rpx 10rpx;
+  }
+
+  .tab-icon {
+    font-size: 28rpx;
+  }
+
+  .tab-text {
+    font-size: 20rpx;
+  }
+
+  .section-title {
+    flex-wrap: wrap;
+    gap: 8rpx;
+    margin-bottom: 16rpx;
+  }
+
+  .recommend-loading-text {
+    font-size: 22rpx;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .products-grid {
+    grid-template-columns: 1fr;
+    gap: 18rpx;
+  }
+
+  .product-image-container {
+    height: 280rpx;
+  }
+
+  .product-info {
+    padding: 18rpx;
+  }
+
+  .product-name {
+    font-size: 26rpx;
+  }
+
+  .product-desc {
+    font-size: 22rpx;
+  }
+}
+
+@media (max-width: 420px) {
+  .shop-container {
+    padding: 0 16rpx 136rpx;
+  }
+
+  .tab-item {
+    min-width: 96rpx;
+    padding: 14rpx 8rpx;
+  }
+
+  .product-image-container {
+    height: 240rpx;
+  }
+
+  .product-badge {
+    font-size: 18rpx;
+    padding: 4rpx 10rpx;
+  }
+}
+
 @keyframes fadeIn {
   0% { opacity: 0; }
   100% { opacity: 1; }
 }
 </style>
+
+
+

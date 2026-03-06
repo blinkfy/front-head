@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <view class="home-page">
     <!-- 背景装饰 -->
     <view class="bg-decoration">
@@ -39,9 +39,9 @@
       </view>
     </view>
 
-    <!-- 主内容区域 -->
+    <!-- 主内容区域-->
     <view class="content-wrapper">
-      <!-- 设备连接状态卡片 -->
+      <!-- 设备连接状态卡片-->
       <view v-if="hasConnection" class="device-card" @click="goToDeviceConnection">
         <view class="device-card-content">
           <view class="device-status">
@@ -53,7 +53,7 @@
           </view>
           <view class="device-action">
             <text class="action-text">管理</text>
-            <text class="action-arrow">›</text>
+            <text class="action-arrow">→</text>
           </view>
         </view>
       </view>
@@ -72,7 +72,7 @@
           <text class="upload-title" v-if="!isProcessing">点击拍照识别</text>
           <text class="upload-title processing" v-else>{{ processStatus }}</text>
           <text class="upload-desc" v-if="!isProcessing">支持 JPG、PNG 格式</text>
-          <text class="upload-desc processing" v-else>正在分析中...</text>
+          <text class="upload-desc processing" v-else>正在分析中..</text>
         </view>
       </view>
 
@@ -85,15 +85,52 @@
           </view>
         </view>
         
-        <image :src="resultImage" class="result-image" mode="aspectFit" />
-        
-        <view class="result-info">
-          <view class="category-tag" :class="getCategoryClass(resultCategory)">
-            <text class="tag-icon">{{ getCategoryIcon(resultCategory) }}</text>
-            <text class="tag-text">{{ resultCategory }}</text>
+        <view class="result-image-wrap">
+          <image :src="resultImage" class="result-image" mode="aspectFit" />
+          <view v-if="displayBboxes.length" class="recognition-bbox-layer">
+            <view
+              v-for="(bbox, index) in displayBboxes"
+              :key="`bbox-${index}`"
+              class="recognition-bbox-item"
+              :style="bbox.boxStyle"
+            >
+              <view class="recognition-bbox-label" :style="bbox.labelStyle">{{ bbox.label }}</view>
+            </view>
           </view>
-          
-          <view v-if="resultDesc" class="desc-box">
+        </view>
+
+        <view class="result-info">
+          <view class="category-row">
+            <view class="category-tag" :class="getCategoryClass(resultCategory)">
+              <text class="tag-icon">{{ getCategoryIcon(resultCategory) }}</text>
+              <text class="tag-text">{{ resultCategory }}</text>
+            </view>
+            <view class="ai-helper-btn" @click="goAiChatFromResult">AI对话</view>
+          </view>
+
+          <view v-if="recognizedItems.length" class="recognized-items-box">
+            <text class="recognized-items-title">识别到的具体物品</text>
+            <view class="recognized-items-list">
+              <text
+                v-for="(item, index) in recognizedItems"
+                :key="`recognized-${index}`"
+                class="recognized-item-chip"
+              >{{ item }}</text>
+            </view>
+          </view>
+
+          <view v-if="upcyclingSections.length" class="upcycling-plan">
+            <view
+              v-for="(section, index) in upcyclingSections"
+              :key="`upcycling-${index}`"
+              :class="['upcycling-plan-item', { 'is-warning': /提醒|风险|注意/.test(section.title) }]"
+            >
+              <text class="upcycling-plan-title">{{ section.title }}</text>
+              <text class="upcycling-plan-content">{{ section.content }}</text>
+            </view>
+          </view>
+
+          <view v-else-if="resultDesc" class="desc-box">
             <text class="desc-label">💡 处理建议</text>
             <text class="desc-text">{{ resultDesc }}</text>
           </view>
@@ -105,7 +142,7 @@
         <view class="tips-card">
           <text class="tips-icon">🌱</text>
           <text class="tips-title">开始智能分类</text>
-          <text class="tips-desc">上传图片，AI将为您识别垃圾类型</text>
+          <text class="tips-desc">上传图片，AI 将为您识别垃圾类型</text>
         </view>
 
         <!-- 垃圾分类指南 -->
@@ -205,7 +242,7 @@
       </view>
     </view>
 
-    <!-- 底部导航栏 -->
+    <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item active">
         <text class="tabbar-icon">🏠</text>
@@ -228,20 +265,39 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { recognizeImage } from '@/api/recognize'
 import { useDeviceConnection } from '@/composables/useDeviceConnection'
+import { resolveH5StandalonePath } from '@/utils/h5-route'
+import {
+  appendAchievementQueue,
+  buildExpandedUpcyclingText,
+  buildSeedFromRecognizeData,
+  extractRecognizedItems,
+  getBboxColor,
+  mapBboxToDisplay,
+  parseLabelBbox,
+  saveSeed,
+  splitUpcyclingSections
+} from '@/utils/recognition-sync'
 
 const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
 const isProcessing = ref(false)
-const processStatus = ref('处理中...')
+const processStatus = ref('处理中..')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
 const isH5Platform = ref(false)
 const targetConfidence = ref(0)
+const recognizedItems = ref([])
+const upcyclingSections = ref([])
+const rawBboxes = ref([])
+const displayBboxes = ref([])
+const recognizeBBoxSpace = ref('')
+let bboxRefreshTimer = 0
+const bboxLoadBoundImages = new WeakSet()
 
 // 数字动画函数
 const animateNumber = (target, duration = 800) => {
@@ -351,7 +407,7 @@ onMounted(() => {
       })
     }
     
-    // 快捷操作选项卡鼠标追踪效果
+    // 蹇嵎鎿嶄綔閫夐」鍗￠紶鏍囪拷韪晥鏋?
     const actionItems = document.querySelectorAll('.action-item')
     actionItems.forEach(item => {
       item.addEventListener('mousemove', (e) => {
@@ -372,30 +428,201 @@ onMounted(() => {
       })
     })
   }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', queueRefreshDisplayBboxes)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (bboxRefreshTimer) {
+    if (typeof window !== 'undefined') {
+      window.clearTimeout(bboxRefreshTimer)
+    } else {
+      clearTimeout(bboxRefreshTimer)
+    }
+    bboxRefreshTimer = 0
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', queueRefreshDisplayBboxes)
+  }
 })
 
 function getCategoryClass(category) {
-  const classMap = {
-    '可回收物': 'recyclable',
-    '可回收垃圾': 'recyclable',
-    '有害垃圾': 'harmful',
-    '厨余垃圾': 'kitchen',
-    '其他垃圾': 'other'
-  }
-  return classMap[category] || 'other'
+  const text = String(category || '')
+  if (text.includes('可回收') || text.toLowerCase().includes('recycl')) return 'recyclable'
+  if (text.includes('有害') || text.toLowerCase().includes('harm')) return 'harmful'
+  if (text.includes('厨余') || text.toLowerCase().includes('kitchen')) return 'kitchen'
+  return 'other'
 }
 
 function getCategoryIcon(category) {
-  const iconMap = {
-    '可回收物': '♻️',
-    '可回收垃圾': '♻️',
-    '有害垃圾': '☢️',
-    '厨余垃圾': '🍎',
-    '其他垃圾': '🗑️'
-  }
-  return iconMap[category] || '❓'
+  const cls = getCategoryClass(category)
+  if (cls === 'recyclable') return '♻️'
+  if (cls === 'harmful') return '☠️'
+  if (cls === 'kitchen') return '🍃'
+  return '🗑️'
 }
 
+function resetEnhancedRecognition() {
+  recognizedItems.value = []
+  upcyclingSections.value = []
+  rawBboxes.value = []
+  displayBboxes.value = []
+  recognizeBBoxSpace.value = ''
+}
+
+function getResultImageElement() {
+  if (typeof document === 'undefined') return null
+  const host = document.querySelector('.result-image')
+  if (!host) return null
+  if (host.tagName === 'IMG') return host
+  return host.querySelector ? host.querySelector('img') : null
+}
+
+function queueRefreshDisplayBboxes() {
+  if (!isH5Platform.value) {
+    displayBboxes.value = []
+    return
+  }
+
+  if (bboxRefreshTimer) {
+    window.clearTimeout(bboxRefreshTimer)
+  }
+
+  bboxRefreshTimer = window.setTimeout(() => {
+    nextTick(() => {
+      refreshDisplayBboxes()
+    })
+  }, 60)
+}
+
+function refreshDisplayBboxes() {
+  if (!isH5Platform.value || typeof window === 'undefined') {
+    displayBboxes.value = []
+    return
+  }
+
+  if (!rawBboxes.value.length) {
+    displayBboxes.value = []
+    return
+  }
+
+  const img = getResultImageElement()
+  if (!img) {
+    displayBboxes.value = []
+    return
+  }
+
+  if (!img.complete || !(img.naturalWidth > 0)) {
+    if (!bboxLoadBoundImages.has(img)) {
+      bboxLoadBoundImages.add(img)
+      img.addEventListener('load', () => queueRefreshDisplayBboxes(), { once: true })
+    }
+    return
+  }
+
+  const displayWidth = Number(img.clientWidth || 0)
+  const displayHeight = Number(img.clientHeight || 0)
+  if (displayWidth <= 0 || displayHeight <= 0) {
+    displayBboxes.value = []
+    return
+  }
+
+  const metrics = {
+    displayWidth,
+    displayHeight,
+    naturalWidth: Number(img.naturalWidth || 0),
+    naturalHeight: Number(img.naturalHeight || 0),
+    objectFit: String(window.getComputedStyle(img).objectFit || 'contain')
+  }
+  const compact = window.innerWidth <= 768
+
+  const next = []
+  for (let i = 0; i < rawBboxes.value.length; i += 1) {
+    const item = rawBboxes.value[i]
+    const mapped = mapBboxToDisplay(
+      item.bbox,
+      metrics,
+      recognizeBBoxSpace.value,
+      item && item.label ? item.label.bbox_space : ''
+    )
+    if (!mapped) continue
+
+    const color = getBboxColor(item.label, item.index)
+    const labelName = String((item.label && (item.label.name || item.label.source_name)) || `目标${item.index + 1}`)
+    const confidence = Number(item.label && item.label.confidence)
+    const confidenceText = Number.isFinite(confidence)
+      ? ` ${Math.max(0, Math.min(100, Math.round(confidence * 100)))}%`
+      : ''
+
+    const boxStyle = {
+      left: `${mapped.left}px`,
+      top: `${mapped.top}px`,
+      width: `${mapped.width}px`,
+      height: `${mapped.height}px`,
+      borderColor: color
+    }
+
+    const labelStyle = {
+      background: color,
+      top: mapped.top <= 24 || mapped.height < 38 ? '2px' : (compact ? '-20px' : '-24px')
+    }
+
+    if (mapped.left + mapped.width >= (displayWidth - 120)) {
+      labelStyle.left = 'auto'
+      labelStyle.right = '-1px'
+    }
+
+    next.push({
+      label: `${labelName}${confidenceText}`,
+      boxStyle,
+      labelStyle
+    })
+  }
+
+  displayBboxes.value = next
+}
+
+function applyEnhancedRecognitionData(recognizeData) {
+  if (!recognizeData || typeof recognizeData !== 'object') {
+    resetEnhancedRecognition()
+    return
+  }
+
+  recognizedItems.value = extractRecognizedItems(recognizeData)
+  const upcyclingText = buildExpandedUpcyclingText(recognizeData)
+  upcyclingSections.value = upcyclingText ? splitUpcyclingSections(upcyclingText) : []
+
+  recognizeBBoxSpace.value = String(recognizeData.bbox_space || '')
+  const labels = Array.isArray(recognizeData.labels) ? recognizeData.labels : []
+  rawBboxes.value = labels
+    .map((label, index) => ({ index, label, bbox: parseLabelBbox(label) }))
+    .filter((item) => Array.isArray(item.bbox) && item.bbox.length >= 4)
+
+  const unlocks = Array.isArray(
+    recognizeData &&
+    recognizeData.achievementInfo &&
+    recognizeData.achievementInfo.newlyUnlocked
+  ) ? recognizeData.achievementInfo.newlyUnlocked : []
+  appendAchievementQueue(unlocks)
+
+  const seed = buildSeedFromRecognizeData(recognizeData)
+  if (seed) {
+    saveSeed(seed)
+  }
+
+  queueRefreshDisplayBboxes()
+}
+
+function goAiChatFromResult() {
+  if (!resultImage.value) return
+  if (isH5Platform.value && typeof window !== 'undefined') {
+    window.location.href = resolveH5StandalonePath('/ai-chat', '/pages-nonTheme/ai-chat')
+    return
+  }
+  uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
+}
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
   return new Promise((resolve, reject) => {
     if (typeof document === 'undefined') {
@@ -428,9 +655,9 @@ function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
           (blob) => {
             if (blob) {
               console.log('图片压缩完成:', {
-                原始尺寸: `${originalWidth}×${originalHeight}`,
-                压缩后尺寸: `${width}×${height}`,
-                压缩后大小: (blob.size / 1024 / 1024).toFixed(2) + 'MB'
+                originalSize: `${originalWidth}x${originalHeight}`,
+                compressedSize: `${width}x${height}`,
+                compressedMb: (blob.size / 1024 / 1024).toFixed(2) + 'MB'
               })
               resolve(blob)
             } else {
@@ -490,8 +717,9 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 
 async function processImage(filePath) {
   try {
-    processStatus.value = '图片处理中...'
-    uni.showLoading({ title: '处理中...' })
+    resetEnhancedRecognition()
+    processStatus.value = '图片处理中..'
+    uni.showLoading({ title: '处理中..' })
     
     let compressedFile = filePath
     let compressedBlob = null
@@ -510,7 +738,7 @@ async function processImage(filePath) {
         compressedFile = await compressImageMiniProgram(filePath, quality, maxSize)
       }
     } catch (compressError) {
-      console.warn('图片压缩失败，使用原图:', compressError)
+      console.warn('图片压缩失败，使用原图', compressError)
       compressedFile = filePath
     }
     
@@ -520,8 +748,8 @@ async function processImage(filePath) {
       resultImage.value = compressedFile
     }
     
-    processStatus.value = 'AI识别中...'
-    uni.showLoading({ title: '识别中...' })
+    processStatus.value = 'AI识别中..'
+    uni.showLoading({ title: '识别中..' })
     const res = await recognizeImage(compressedFile)
     
     if (res.labels && res.labels.length > 0) {
@@ -530,7 +758,7 @@ async function processImage(filePath) {
       // 保存目标置信度并启动动画
       const confidenceValue = label.confidence ? Math.round(label.confidence * 100) : 0
       targetConfidence.value = confidenceValue
-      resultConfidence.value = '0%' // 先设为0
+      resultConfidence.value = '0%' // 先设为 0
       resultImage.value = res.result_img_base64.startsWith('data:image/jpeg;base64,')
         ? res.result_img_base64
         : 'data:image/jpeg;base64,' + res.result_img_base64
@@ -547,7 +775,9 @@ async function processImage(filePath) {
         ? res.result_img_base64
         : 'data:image/jpeg;base64,' + res.result_img_base64
     }
-    
+
+    applyEnhancedRecognitionData(res)
+
     if (isH5Platform.value && resultImage.value && resultImage.value.startsWith('blob:')) {
       setTimeout(() => URL.revokeObjectURL(resultImage.value), 10000)
     }
@@ -556,6 +786,7 @@ async function processImage(filePath) {
     uni.showToast({ title: '识别完成！', icon: 'success' })
     
   } catch (err) {
+    resetEnhancedRecognition()
     resultImage.value = ''
     resultCategory.value = ''
     resultConfidence.value = ''
@@ -573,13 +804,13 @@ async function processImage(filePath) {
   } finally {
     uni.hideLoading()
     isProcessing.value = false
-    processStatus.value = '处理中...'
+    processStatus.value = '处理中..'
   }
 }
 
 function onAddImage() {
   if (isProcessing.value) {
-    uni.showToast({ title: '正在处理中...', icon: 'none' })
+    uni.showToast({ title: '姝ｅ湪处理中..', icon: 'none' })
     return
   }
   
@@ -675,25 +906,25 @@ function showGuideDetail(type) {
       type: 'recyclable',
       icon: '♻️',
       title: '可回收垃圾',
-      content: '包括废纸、塑料、玻璃、金属和布料五大类。这些垃圾可以通过综合处理回收利用，减少污染，节省资源。正确分类投放可以大大提高回收效率，为环保事业贡献力量。'
+      content: '包括废纸、塑料、玻璃、金属和布料等。可回收物经过分类处理后可再利用，能减少污染并节约资源。'
     },
     harmful: {
       type: 'harmful',
       icon: '☢️',
       title: '有害垃圾',
-      content: '包括废电池、废灯管、废药品、废油漆及其容器等。这些垃圾含有有毒有害物质，需要特殊处理，避免对环境和人体造成危害。请务必投放到专门的有害垃圾收集点。'
+      content: '包括废电池、废灯管、废药品、废油漆及其容器等，需投放到有害垃圾回收点进行专门处理。'
     },
     kitchen: {
       type: 'kitchen',
       icon: '🍎',
       title: '厨余垃圾',
-      content: '包括剩菜剩饭、骨头、菜根菜叶、果皮等食品类废物。这些有机垃圾可以通过生物技术就地处理堆肥，转化为有机肥料，实现资源循环利用。'
+      content: '包括剩菜剩饭、果皮果核、骨头、菜叶等厨余废弃物，可通过堆肥等方式资源化处理。'
     },
     other: {
       type: 'other',
       icon: '🗑️',
       title: '其他垃圾',
-      content: '包括除上述几类垃圾之外的砖瓦陶瓷、渣土、卫生间废纸、纸巾等难以回收的废弃物。这些垃圾通常采用卫生填埋等方式进行无害化处理。'
+      content: '包括砖瓦陶瓷、卫生纸、尘土等难以回收利用的废弃物，一般采用卫生填埋等方式处理。'
     }
   }
   
@@ -1118,7 +1349,7 @@ function closeGuideModal() {
   border: 1rpx solid rgba(255, 255, 255, 0.4);
 }
 
-/* 玻璃反光层 */
+/* 玻璃反光层*/
 .upload-card .glass-reflection {
   position: absolute;
   top: 0;
@@ -1152,7 +1383,7 @@ function closeGuideModal() {
   animation: techScan 2.5s linear infinite;
 }
 
-/* 第二层波纹 - 错位动画 */
+/* 第二层波纹- 错位动画 */
 .upload-card .tech-wave-2 {
   position: absolute;
   top: -50%;
@@ -1399,26 +1630,32 @@ function closeGuideModal() {
   text-align: center;
 }
 
-.result-image {
-  width: 100%;
-  height: 360rpx;
-  border-radius: 16rpx;
+
+.result-image-wrap {
+  position: relative;
   margin-bottom: 24rpx;
-  background: #f3f4f6;
 }
 
-.result-info {
+
+.category-row {
   display: flex;
-  flex-direction: column;
-  gap: 20rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
 }
 
-.category-tag {
+
+.ai-helper-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  border-radius: 20rpx;
   padding: 12rpx 24rpx;
-  border-radius: 32rpx;
-  align-self: flex-start;
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0ea56b, #36c98e);
+  box-shadow: 0 8rpx 18rpx rgba(14, 165, 107, 0.28);
 }
 
 .category-tag.recyclable {
@@ -1466,10 +1703,109 @@ function closeGuideModal() {
   margin-bottom: 8rpx;
 }
 
-.desc-text {
-  font-size: 26rpx;
-  color: #4b5563;
-  line-height: 1.5;
+
+.recognized-items-box {
+  border: 1rpx solid rgba(16, 185, 129, 0.2);
+  background: rgba(16, 185, 129, 0.06);
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+}
+
+.recognized-items-title {
+  font-size: 24rpx;
+  margin-bottom: 12rpx;
+  color: #0f766e;
+  font-weight: 700;
+}
+
+.recognized-items-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.recognized-item-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  border: 1rpx solid rgba(15, 118, 110, 0.2);
+  background: rgba(255, 255, 255, 0.78);
+  color: #0f4c5a;
+  font-size: 22rpx;
+  padding: 8rpx 16rpx;
+}
+
+.upcycling-plan {
+  display: grid;
+  gap: 12rpx;
+}
+
+.upcycling-plan-item {
+  border: 1rpx solid rgba(24, 117, 255, 0.15);
+  border-radius: 16rpx;
+  padding: 16rpx 20rpx;
+  background: linear-gradient(135deg, rgba(245, 250, 255, 0.98), rgba(236, 248, 242, 0.92));
+}
+
+.upcycling-plan-item.is-warning {
+  border-color: rgba(215, 125, 20, 0.22);
+  background: linear-gradient(135deg, rgba(255, 249, 236, 0.97), rgba(255, 242, 226, 0.92));
+}
+
+.upcycling-plan-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: rgba(21, 103, 255, 0.12);
+  color: #1e5ed8;
+  font-size: 20rpx;
+  font-weight: 700;
+  padding: 6rpx 14rpx;
+}
+
+.upcycling-plan-item.is-warning .upcycling-plan-title {
+  background: rgba(215, 125, 20, 0.16);
+  color: #b45d08;
+}
+
+.upcycling-plan-content {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #334155;
+}
+
+.recognition-bbox-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+}
+
+.recognition-bbox-item {
+  position: absolute;
+  border: 2px solid #2f6fed;
+  border-radius: 10rpx;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.recognition-bbox-label {
+  position: absolute;
+  left: -1px;
+  top: -24px;
+  max-width: 220rpx;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 20rpx;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid rgba(255, 255, 255, 0.28);
 }
 
 /* 欢迎区域 */
@@ -1703,7 +2039,7 @@ function closeGuideModal() {
   cursor: pointer;
 }
 
-/* 鼠标悬停时图标容器效果 */
+/* 榧犳爣鎮仠鏃跺浘鏍囧鍣ㄦ晥鏋?*/
 .guide-item:hover .guide-icon-wrapper {
   transform: scale(1.1);
   box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.1);
@@ -1877,7 +2213,7 @@ function closeGuideModal() {
   pointer-events: none;
 }
 
-/* 底部阴影增强立体感 */
+/* 搴曢儴闃村奖澧炲己绔嬩綋鎰?*/
 .action-icon-wrapper::after {
   content: '';
   position: absolute;
@@ -2208,6 +2544,113 @@ function closeGuideModal() {
   transition: all 0.3s ease;
 }
 
+@media (max-width: 768px) {
+  .category-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12rpx;
+  }
+
+  .ai-helper-btn {
+    padding: 10rpx 20rpx;
+    font-size: 20rpx;
+  }
+
+  .recognized-items-box {
+    padding: 16rpx 18rpx;
+  }
+
+  .recognized-item-chip {
+    font-size: 20rpx;
+    padding: 6rpx 14rpx;
+  }
+
+  .upcycling-plan-item {
+    padding: 14rpx 16rpx;
+  }
+
+  .upcycling-plan-content {
+    font-size: 22rpx;
+  }
+
+  .recognition-bbox-label {
+    max-width: 180rpx;
+    font-size: 18rpx;
+  }
+}
+
+@media (max-width: 420px) {
+  .result-card {
+    padding: 22rpx 20rpx;
+  }
+
+  .tag-text {
+    font-size: 24rpx;
+  }
+
+  .ai-helper-btn {
+    width: 100%;
+  }
+
+  .desc-box {
+    padding: 16rpx;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .home-page {
+    background: linear-gradient(180deg, #0f172a 0%, #111827 38%, #0b1120 100%);
+  }
+
+  .result-card {
+    background: rgba(15, 23, 42, 0.9);
+    border-color: rgba(148, 163, 184, 0.24);
+    box-shadow: 0 8rpx 24rpx rgba(2, 6, 23, 0.55);
+  }
+
+  .tag-text {
+    color: #dbeafe;
+  }
+
+  .desc-box {
+    background: rgba(30, 41, 59, 0.7);
+  }
+
+  .desc-label {
+    color: #5eead4;
+  }
+
+  .recognized-items-box {
+    border-color: rgba(45, 212, 191, 0.28);
+    background: rgba(13, 38, 33, 0.6);
+  }
+
+  .recognized-item-chip {
+    background: rgba(15, 23, 42, 0.84);
+    border-color: rgba(45, 212, 191, 0.28);
+    color: #ccfbf1;
+  }
+
+  .upcycling-plan-item {
+    border-color: rgba(96, 165, 250, 0.28);
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.86));
+  }
+
+  .upcycling-plan-content {
+    color: rgba(226, 232, 240, 0.95);
+  }
+
+  .tabbar {
+    background: rgba(15, 23, 42, 0.88);
+    border-top: 2rpx solid rgba(148, 163, 184, 0.2);
+  }
+
+  .tabbar-icon,
+  .tabbar-label {
+    color: #94a3b8;
+  }
+}
+
 @keyframes iconBounce {
   0% { transform: scale(1) translateY(0); }
   40% { transform: scale(1.2) translateY(-8rpx); }
@@ -2215,3 +2658,16 @@ function closeGuideModal() {
   100% { transform: scale(1.15) translateY(-4rpx); }
 }
 </style>
+
+
+
+
+
+
+
+
+
+
+
+
+

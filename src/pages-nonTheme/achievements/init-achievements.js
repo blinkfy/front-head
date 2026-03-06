@@ -28,8 +28,8 @@
     first_sort: { tier: 'common', label: '普通' },
     online_novice: { tier: 'rare', label: '稀有' },
     device_novice: { tier: 'rare', label: '稀有' },
-    category_collector: { tier: 'epic', label: '史诗' },
-    streak_3_days: { tier: 'epic', label: '史诗' },
+    category_collector: { tier: 'epic', label: 'ʷʫ' },
+    streak_3_days: { tier: 'epic', label: 'ʷʫ' },
     points_100: { tier: 'legendary', label: '传说' }
   };
 

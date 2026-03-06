@@ -22,7 +22,7 @@
         <view class="subtitle">智能分类 · 绿色环保 · 科技赋能</view>
       </view>
       
-      <!-- 设备连接状态横幅 -->
+      <!-- 设备连接状态横幅-->
       <view v-if="hasConnection" class="device-connection-banner" @click="goToDeviceConnection">
         <view class="connection-glow"></view>
         <view class="connection-content">
@@ -40,7 +40,7 @@
             </view>
           </view>
           <view class="connection-action">
-            <view class="action-icon">⚡</view>
+            <view class="action-icon">⚙️</view>
             <text class="action-text">管理</text>
           </view>
         </view>
@@ -61,7 +61,7 @@
               </view>
               <text class="upload-text" v-if="!isProcessing">点击上传图片</text>
               <text class="upload-text processing" v-else>{{ processStatus }}</text>
-              <text class="upload-hint" v-if="!isProcessing">支持JPG、PNG格式，自动压缩优化</text>
+              <text class="upload-hint" v-if="!isProcessing">支持 JPG、PNG 格式，自动压缩优化</text>
               <text class="upload-hint processing" v-else>请稍候，正在处理您的图片...</text>
             </view>
           </view>
@@ -79,18 +79,56 @@
             </view>
           </view>
           
-          <image :src="resultImage" class="result-image" mode="aspectFit" />
+          <view class="result-image-wrap">
+            <image :src="resultImage" class="result-image" mode="aspectFit" />
+            <view v-if="displayBboxes.length" class="recognition-bbox-layer">
+              <view
+                v-for="(bbox, index) in displayBboxes"
+                :key="`bbox-${index}`"
+                class="recognition-bbox-item"
+                :style="bbox.boxStyle"
+              >
+                <view class="recognition-bbox-label" :style="bbox.labelStyle">{{ bbox.label }}</view>
+              </view>
+            </view>
+          </view>
           
           <view class="result-details">
-            <view class="category-display">
-              <view class="category-icon">♻️</view>
+            <view class="category-row">
+              <view :class="['category-display', getCategoryClass(resultCategory)]">
+                <view class="category-icon">{{ getCategoryIcon(resultCategory) }}</view>
               <view class="category-info">
                 <text class="category-label">分类结果</text>
                 <text class="category-name">{{ resultCategory }}</text>
               </view>
             </view>
             
-            <view v-if="resultDesc" class="description-panel">
+              <view class="ai-helper-btn" @click="goAiChatFromResult">AI对话</view>
+            </view>
+
+            <view v-if="recognizedItems.length" class="recognized-items-box">
+              <text class="recognized-items-title">识别到的具体物品</text>
+              <view class="recognized-items-list">
+                <text
+                  v-for="(item, index) in recognizedItems"
+                  :key="`recognized-${index}`"
+                  class="recognized-item-chip"
+                >{{ item }}</text>
+              </view>
+            </view>
+
+            <view v-if="upcyclingSections.length" class="upcycling-plan">
+              <view
+                v-for="(section, index) in upcyclingSections"
+                :key="`upcycling-${index}`"
+                :class="['upcycling-plan-item', { 'is-warning': /提醒|风险|注意/.test(section.title) }]"
+              >
+                <text class="upcycling-plan-title">{{ section.title }}</text>
+                <text class="upcycling-plan-content">{{ section.content }}</text>
+              </view>
+            </view>
+
+            <view v-else-if="resultDesc" class="description-panel">
               <text class="desc-label">💡 处理建议</text>
               <text class="desc-content">{{ resultDesc }}</text>
             </view>
@@ -103,7 +141,7 @@
         <view class="welcome-card">
           <text class="welcome-icon">🌱</text>
           <text class="welcome-title">开始智能分类</text>
-          <text class="welcome-desc">上传图片，AI将为您识别垃圾类型<br/>共同践行绿色环保理念</text>
+          <text class="welcome-desc">上传图片，AI 将为您识别垃圾类型<br/>共同践行绿色环保理念</text>
         </view>
         
         <!-- 垃圾分类指南卡片 -->
@@ -170,7 +208,7 @@
       </view>
     </view>
     
-    <!-- 自定义分类指南弹窗 -->
+    <!-- 自定义分类指南弹窗-->
     <view v-if="showGuideModal && currentGuide.title" class="guide-modal-overlay" @click="closeGuideModal">
       <view class="guide-modal" @click.stop="">
         <view class="modal-header">
@@ -213,20 +251,39 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { recognizeImage } from '@/api/recognize'
 import { useDeviceConnection } from '@/composables/useDeviceConnection'
+import { resolveH5StandalonePath } from '@/utils/h5-route'
+import {
+  appendAchievementQueue,
+  buildExpandedUpcyclingText,
+  buildSeedFromRecognizeData,
+  extractRecognizedItems,
+  getBboxColor,
+  mapBboxToDisplay,
+  parseLabelBbox,
+  saveSeed,
+  splitUpcyclingSections
+} from '@/utils/recognition-sync'
 
 const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
 const isProcessing = ref(false)
-const processStatus = ref('处理中...')
+const processStatus = ref('处理中..')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
+const recognizedItems = ref([])
+const upcyclingSections = ref([])
+const rawBboxes = ref([])
+const displayBboxes = ref([])
+const recognizeBBoxSpace = ref('')
+let bboxRefreshTimer = 0
+const bboxLoadBoundImages = new WeakSet()
 
-// 检测是否为H5平台
+// 检测是否为 H5 平台
 const isH5Platform = ref(false)
 
 // 使用设备连接状态管理
@@ -237,10 +294,10 @@ const compressionConfig = {
   h5: {
     quality: 0.99,        // H5压缩质量 (0-1)
     maxWidth: 800,      // 最大宽度
-    maxHeight: 800,     // 最大高度
+    maxHeight: 800      // 最大高度
   },
   miniProgram: {
-    quality: 100,         // 小程序压缩质量 (0-100)
+    quality: 100,         // 小程序压缩质量(0-100)
     maxSize: 800,        // 最长边尺寸 (px)
   }
 }
@@ -265,7 +322,7 @@ onMounted(() => {
     uniPlatform = 'unknown'
   }
   
-  // 更精确的H5平台检测
+  // 更精确的 H5 平台检测
   isH5Platform.value = (
     uniPlatform === 'web' || 
     (platform === 'devtools' && typeof window !== 'undefined' && window.location) ||
@@ -274,7 +331,7 @@ onMounted(() => {
   
   console.log('Platform detected:', { platform, uniPlatform, isH5Platform: isH5Platform.value })
   
-  // 获取系统状态栏高度
+  // 鑾峰彇绯荤粺鐘舵€佹爮楂樺害
   let statusBarHeight = 0
   try {
     const windowInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
@@ -287,6 +344,24 @@ onMounted(() => {
   // 只在H5环境中设置CSS变量
   if (typeof document !== 'undefined' && document.documentElement) {
     document.documentElement.style.setProperty('--status-bar-height', statusBarHeight + 'px')
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', queueRefreshDisplayBboxes)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (bboxRefreshTimer) {
+    if (typeof window !== 'undefined') {
+      window.clearTimeout(bboxRefreshTimer)
+    } else {
+      clearTimeout(bboxRefreshTimer)
+    }
+    bboxRefreshTimer = 0
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', queueRefreshDisplayBboxes)
   }
 })
 
@@ -303,9 +378,185 @@ const getParticleStyle = (index) => {
   return positions[index - 1] || positions[0]
 }
 // 图片压缩函数
+function getCategoryClass(category) {
+  const text = String(category || '')
+  if (text.includes('可回收') || text.toLowerCase().includes('recycl')) return 'recyclable'
+  if (text.includes('有害') || text.toLowerCase().includes('harm')) return 'harmful'
+  if (text.includes('厨余') || text.toLowerCase().includes('kitchen')) return 'kitchen'
+  return 'other'
+}
+
+function getCategoryIcon(category) {
+  const cls = getCategoryClass(category)
+  if (cls === 'recyclable') return '♻️'
+  if (cls === 'harmful') return '☠️'
+  if (cls === 'kitchen') return '🍃'
+  return '🗑️'
+}
+
+function resetEnhancedRecognition() {
+  recognizedItems.value = []
+  upcyclingSections.value = []
+  rawBboxes.value = []
+  displayBboxes.value = []
+  recognizeBBoxSpace.value = ''
+}
+
+function getResultImageElement() {
+  if (typeof document === 'undefined') return null
+  const host = document.querySelector('.result-image')
+  if (!host) return null
+  if (host.tagName === 'IMG') return host
+  return host.querySelector ? host.querySelector('img') : null
+}
+
+function queueRefreshDisplayBboxes() {
+  if (!isH5Platform.value) {
+    displayBboxes.value = []
+    return
+  }
+
+  if (bboxRefreshTimer) {
+    window.clearTimeout(bboxRefreshTimer)
+  }
+
+  bboxRefreshTimer = window.setTimeout(() => {
+    nextTick(() => {
+      refreshDisplayBboxes()
+    })
+  }, 60)
+}
+
+function refreshDisplayBboxes() {
+  if (!isH5Platform.value || typeof window === 'undefined') {
+    displayBboxes.value = []
+    return
+  }
+
+  if (!rawBboxes.value.length) {
+    displayBboxes.value = []
+    return
+  }
+
+  const img = getResultImageElement()
+  if (!img) {
+    displayBboxes.value = []
+    return
+  }
+
+  if (!img.complete || !(img.naturalWidth > 0)) {
+    if (!bboxLoadBoundImages.has(img)) {
+      bboxLoadBoundImages.add(img)
+      img.addEventListener('load', () => queueRefreshDisplayBboxes(), { once: true })
+    }
+    return
+  }
+
+  const displayWidth = Number(img.clientWidth || 0)
+  const displayHeight = Number(img.clientHeight || 0)
+  if (displayWidth <= 0 || displayHeight <= 0) {
+    displayBboxes.value = []
+    return
+  }
+
+  const metrics = {
+    displayWidth,
+    displayHeight,
+    naturalWidth: Number(img.naturalWidth || 0),
+    naturalHeight: Number(img.naturalHeight || 0),
+    objectFit: String(window.getComputedStyle(img).objectFit || 'contain')
+  }
+  const compact = window.innerWidth <= 768
+
+  const next = []
+  for (let i = 0; i < rawBboxes.value.length; i += 1) {
+    const item = rawBboxes.value[i]
+    const mapped = mapBboxToDisplay(
+      item.bbox,
+      metrics,
+      recognizeBBoxSpace.value,
+      item && item.label ? item.label.bbox_space : ''
+    )
+    if (!mapped) continue
+
+    const color = getBboxColor(item.label, item.index)
+    const labelName = String((item.label && (item.label.name || item.label.source_name)) || `目标${item.index + 1}`)
+    const confidence = Number(item.label && item.label.confidence)
+    const confidenceText = Number.isFinite(confidence)
+      ? ` ${Math.max(0, Math.min(100, Math.round(confidence * 100)))}%`
+      : ''
+
+    const boxStyle = {
+      left: `${mapped.left}px`,
+      top: `${mapped.top}px`,
+      width: `${mapped.width}px`,
+      height: `${mapped.height}px`,
+      borderColor: color
+    }
+
+    const labelStyle = {
+      background: color,
+      top: mapped.top <= 24 || mapped.height < 38 ? '2px' : (compact ? '-20px' : '-24px')
+    }
+
+    if (mapped.left + mapped.width >= (displayWidth - 120)) {
+      labelStyle.left = 'auto'
+      labelStyle.right = '-1px'
+    }
+
+    next.push({
+      label: `${labelName}${confidenceText}`,
+      boxStyle,
+      labelStyle
+    })
+  }
+
+  displayBboxes.value = next
+}
+
+function applyEnhancedRecognitionData(recognizeData) {
+  if (!recognizeData || typeof recognizeData !== 'object') {
+    resetEnhancedRecognition()
+    return
+  }
+
+  recognizedItems.value = extractRecognizedItems(recognizeData)
+  const upcyclingText = buildExpandedUpcyclingText(recognizeData)
+  upcyclingSections.value = upcyclingText ? splitUpcyclingSections(upcyclingText) : []
+
+  recognizeBBoxSpace.value = String(recognizeData.bbox_space || '')
+  const labels = Array.isArray(recognizeData.labels) ? recognizeData.labels : []
+  rawBboxes.value = labels
+    .map((label, index) => ({ index, label, bbox: parseLabelBbox(label) }))
+    .filter((item) => Array.isArray(item.bbox) && item.bbox.length >= 4)
+
+  const unlocks = Array.isArray(
+    recognizeData &&
+    recognizeData.achievementInfo &&
+    recognizeData.achievementInfo.newlyUnlocked
+  ) ? recognizeData.achievementInfo.newlyUnlocked : []
+  appendAchievementQueue(unlocks)
+
+  const seed = buildSeedFromRecognizeData(recognizeData)
+  if (seed) {
+    saveSeed(seed)
+  }
+
+  queueRefreshDisplayBboxes()
+}
+
+function goAiChatFromResult() {
+  if (!resultImage.value) return
+  if (isH5Platform.value && typeof window !== 'undefined') {
+    window.location.href = resolveH5StandalonePath('/ai-chat', '/pages-nonTheme/ai-chat')
+    return
+  }
+  uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
+}
+
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
   return new Promise((resolve, reject) => {
-    // 检查是否支持canvas
+    // 检查是否支持 canvas
     if (typeof document === 'undefined') {
       reject(new Error('当前环境不支持canvas压缩'))
       return
@@ -346,10 +597,10 @@ function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
           (blob) => {
             if (blob) {
               console.log('图片压缩完成:', {
-                原始尺寸: `${originalWidth}×${originalHeight}`,
-                压缩后尺寸: `${width}×${height}`,
-                压缩后大小: (blob.size / 1024 / 1024).toFixed(2) + 'MB',
-                压缩质量: Math.round(quality * 100) + '%'
+                originalSize: `${originalWidth}x${originalHeight}`,
+                compressedSize: `${width}x${height}`,
+                compressedFileSize: (blob.size / 1024 / 1024).toFixed(2) + 'MB',
+                quality: Math.round(quality * 100) + '%'
               })
               resolve(blob)
             } else {
@@ -397,11 +648,11 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
           targetHeight = Math.round(originalHeight * scale)
         }
         
-        console.log('小程序图片尺寸计算:', {
-          原始尺寸: `${originalWidth}×${originalHeight}`,
-          最长边限制: maxSize + 'px',
-          计算后尺寸: `${targetWidth}×${targetHeight}`,
-          缩放比例: (maxOriginalSize > maxSize ? (maxSize / maxOriginalSize).toFixed(3) : '无需缩放')
+        console.log('小程序图片尺寸计算', {
+          originalSize: `${originalWidth}x${originalHeight}`,
+          maxSideLimit: maxSize + 'px',
+          targetSize: `${targetWidth}x${targetHeight}`,
+          scaleRatio: (maxOriginalSize > maxSize ? (maxSize / maxOriginalSize).toFixed(3) : '1.000')
         })
         
         // 执行压缩
@@ -411,11 +662,11 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
           compressedWidth: targetWidth,   // 使用计算后的宽度
           compressedHeight: targetHeight, // 使用计算后的高度
           success: (res) => {
-            console.log('小程序图片压缩完成:', {
-              原始路径: filePath,
-              压缩后路径: res.tempFilePath,
-              压缩质量: quality + '%',
-              最终尺寸: `${targetWidth}×${targetHeight}`
+            console.log('小程序图片压缩完成', {
+              originalPath: filePath,
+              compressedPath: res.tempFilePath,
+              quality: quality + '%',
+              finalSize: `${targetWidth}x${targetHeight}`
             })
             resolve(res.tempFilePath)
           },
@@ -426,16 +677,16 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
         })
       },
       fail: (err) => {
-        console.warn('获取图片信息失败，直接使用质量压缩:', err)
+        console.warn('获取图片信息失败，直接使用质量压缩', err)
         // 如果获取图片信息失败，只进行质量压缩
         uni.compressImage({
           src: filePath,
           quality: quality,
           success: (res) => {
-            console.log('小程序图片质量压缩完成:', {
-              原始路径: filePath,
-              压缩后路径: res.tempFilePath,
-              压缩质量: quality + '%'
+            console.log('小程序图片质量压缩完成', {
+              originalPath: filePath,
+              compressedPath: res.tempFilePath,
+              quality: quality + '%'
             })
             resolve(res.tempFilePath)
           },
@@ -451,8 +702,9 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 
 async function processImage(filePath) {
   try {
-    processStatus.value = '图片处理中...'
-    uni.showLoading({ title: '图片处理中...' })
+    resetEnhancedRecognition()
+    processStatus.value = '图片处理中..'
+    uni.showLoading({ title: '图片处理中..' })
     
     // 第一步：图片压缩
     let compressedFile = filePath
@@ -461,7 +713,7 @@ async function processImage(filePath) {
       if (isH5Platform.value) {
         // H5环境使用canvas压缩
         processStatus.value = '正在压缩图片...'
-        console.log('H5环境：开始图片压缩...')
+        console.log('H5环境：开始图片压缩..')
         const { quality, maxWidth } = compressionConfig.h5
         compressedBlob = await compressImage(filePath, quality, maxWidth)
         
@@ -474,18 +726,18 @@ async function processImage(filePath) {
           type: 'image/jpeg'
         })
         
-        console.log('H5图片压缩完成，文件大小:', (compressedFile.size / 1024 / 1024).toFixed(2) + 'MB')
+        console.log('H5图片压缩完成，文件大小', (compressedFile.size / 1024 / 1024).toFixed(2) + 'MB')
       } else {
         // 小程序环境使用uni.compressImage
         processStatus.value = '正在优化图片...'
-        console.log('小程序环境：开始图片压缩...')
+        console.log('小程序环境：开始图片压缩..')
         const { quality, maxSize } = compressionConfig.miniProgram
         compressedFile = await compressImageMiniProgram(filePath, quality, maxSize)
       }
       
       console.log('图片压缩成功')
     } catch (compressError) {
-      console.warn('图片压缩失败，使用原图:', compressError)
+      console.warn('图片压缩失败，使用原图', compressError)
       compressedFile = filePath
     }
     
@@ -499,8 +751,8 @@ async function processImage(filePath) {
     }
     
     // 第三步：调用识别API
-    processStatus.value = 'AI智能识别中...'
-    uni.showLoading({ title: 'AI识别中...' })
+    processStatus.value = 'AI智能识别中..'
+    uni.showLoading({ title: 'AI识别中..' })
     const res = await recognizeImage(compressedFile)
     // console.log('后端返回数据:', res) // 调试日志
 
@@ -527,19 +779,22 @@ async function processImage(filePath) {
     }
     
     // 清理H5环境下的临时URL（延迟清理，避免影响显示）
+    applyEnhancedRecognitionData(res)
+
     if (isH5Platform.value && resultImage.value && resultImage.value.startsWith('blob:')) {
       setTimeout(() => {
         URL.revokeObjectURL(resultImage.value)
       }, 10000) // 10秒后清理预览URL
     }
     
-    processStatus.value = '识别完成！'
+    processStatus.value = '识别完成'
     uni.showToast({
-      title: '识别完成！',
+      title: '识别完成',
       icon: 'success'
     })
     
   } catch (err) {
+    resetEnhancedRecognition()
     resultImage.value = ''
     resultCategory.value = ''
     resultConfidence.value = ''
@@ -551,7 +806,7 @@ async function processImage(filePath) {
         title: err.msg || '识别失败',
         icon: 'none'
       })
-      if(err.msg=='未登录'){
+      if (err.msg == '未登录') {
         uni.redirectTo({ url: '/pages-dark/index/index' })
       }
     }else{ 
@@ -564,14 +819,14 @@ async function processImage(filePath) {
   } finally {
     uni.hideLoading()
     isProcessing.value = false
-    processStatus.value = '处理中...' // 重置状态
+    processStatus.value = '处理中..' // 閲嶇疆状态
   }
 }
 
 function onAddImage() {
   if (isProcessing.value) {
     uni.showToast({
-      title: '正在处理中，请稍候...',
+      title: '正在处理中，请稍候..',
       icon: 'none'
     })
     return
@@ -587,8 +842,8 @@ function onAddImage() {
     success: chooseRes => {
       const filePath = chooseRes.tempFilePaths[0]
       console.log('图片选择成功:', {
-        路径: filePath,
-        大小: chooseRes.tempFiles?.[0]?.size ? (chooseRes.tempFiles[0].size / 1024 / 1024).toFixed(2) + 'MB' : '未知'
+        path: filePath,
+        size: chooseRes.tempFiles?.[0]?.size ? (chooseRes.tempFiles[0].size / 1024 / 1024).toFixed(2) + 'MB' : 'unknown'
       })
       
       isProcessing.value = true
@@ -634,7 +889,7 @@ function goRanking() {
 }
 
 function scanDeviceQR() {
-  // 检查当前平台 - 使用与onMounted相同的逻辑
+  // 检查当前平台，使用与 onMounted 相同的逻辑
   let platform
   let uniPlatform
   let isH5 = false
@@ -653,7 +908,7 @@ function scanDeviceQR() {
     uniPlatform = 'unknown'
   }
   
-  // 更精确的H5平台检测
+  // 更精确的 H5 平台检测
   isH5 = (
     uniPlatform === 'web' || 
     (platform === 'devtools' && typeof window !== 'undefined' && window.location) ||
@@ -701,14 +956,14 @@ function connectDevice(deviceId) {
     })
     return
   }
-  //截取deviceId中#后面的内容
+  //截取deviceId涓?鍚庨潰鐨勫唴瀹?
   const targetId = deviceId.split('#')[1]
   console.log('Connecting to device with ID:', targetId)
   uni.navigateTo({ url: targetId })
   return
   // 显示连接中的提示
   uni.showLoading({
-    title: '连接设备中...'
+    title: '连接设备中..'
   })
   
   // 模拟连接设备的过程
@@ -740,42 +995,36 @@ function connectDevice(deviceId) {
 }
 
 function showGuideDetail(type) {
-  // 确保type有效
-  if (!type) {
-    console.warn('showGuideDetail: type参数为空')
-    return
-  }
-  
+  if (!type) return
+
   const guides = {
     recyclable: {
       icon: '♻️',
       title: '可回收垃圾',
-      content: '包括废纸、塑料、玻璃、金属和布料五大类。这些垃圾可以通过综合处理回收利用，减少污染，节省资源。正确分类投放可以大大提高回收效率，为环保事业贡献力量。'
+      content: '包括废纸、塑料、玻璃、金属和布料等。可回收物经过分类处理后可再利用，能减少污染并节约资源。'
     },
     harmful: {
       icon: '☢️',
       title: '有害垃圾',
-      content: '包括废电池、废灯管、废药品、废油漆及其容器等。这些垃圾含有有毒有害物质，需要特殊处理，避免对环境和人体造成危害。请务必投放到专门的有害垃圾收集点。'
+      content: '包括废电池、废灯管、废药品、废油漆及其容器等，需投放到有害垃圾回收点进行专门处理。'
     },
     kitchen: {
       icon: '🍎',
       title: '厨余垃圾',
-      content: '包括剩菜剩饭、骨头、菜根菜叶、果皮等食品类废物。这些有机垃圾可以通过生物技术就地处理堆肥，转化为有机肥料，实现资源循环利用。'
+      content: '包括剩菜剩饭、果皮果核、骨头、菜叶等厨余废弃物，可通过堆肥等方式资源化处理。'
     },
     other: {
       icon: '🗑️',
       title: '其他垃圾',
-      content: '包括除上述几类垃圾之外的砖瓦陶瓷、渣土、卫生间废纸、纸巾等难以回收的废弃物。这些垃圾通常采用卫生填埋等方式进行无害化处理。'
+      content: '包括砖瓦陶瓷、卫生纸、尘土等难以回收利用的废弃物，一般采用卫生填埋等方式处理。'
     }
   }
-  
+
   const guide = guides[type]
-  if (guide && guide.title && guide.content) {
-    currentGuide.value = { ...guide } // 使用对象拷贝避免引用问题
+  if (guide) {
+    currentGuide.value = { ...guide }
     showGuideModal.value = true
   } else {
-    console.warn(`showGuideDetail: 未找到类型'${type}'对应的指南信息`)
-    // 显示一个通用的错误提示
     currentGuide.value = {
       icon: '❓',
       title: '信息缺失',
@@ -795,7 +1044,7 @@ function closeGuideModal() {
 </script>
 
 <style scoped>
-/* 主背景 */
+/* 主背景*/
 .home-bg {
   min-height: 100vh;
   background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 25%, #2d1b69 50%, #0f0f23 100%);
@@ -861,11 +1110,11 @@ function closeGuideModal() {
   50% { transform: translateY(-20px) scale(1.2); opacity: 1; }
 }
 
-/* 主容器 */
+/* 主容器*/
 .home-container {
   position: relative;
   z-index: 2;
-  padding: 40rpx 32rpx 140rpx 32rpx; /* 恢复原来的padding，因为已有自定义状态栏 */
+  padding: 40rpx 32rpx 140rpx 32rpx; /* 恢复原来的 padding，因为已有自定义状态栏 */
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - var(--status-bar-height));
@@ -1195,7 +1444,7 @@ function closeGuideModal() {
   font-size: 22rpx;
 }
 
-/* 扫描线动效 */
+/* 扫描线动画*/
 .scan-line {
   position: absolute;
   top: 0;
@@ -1263,8 +1512,33 @@ function closeGuideModal() {
   box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.3);
 }
 
+.result-image-wrap {
+  position: relative;
+}
+
 .result-details {
   margin-top: 32rpx;
+}
+
+.category-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.ai-helper-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  border-radius: 999rpx;
+  padding: 12rpx 24rpx;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: #031521;
+  background: linear-gradient(135deg, #40e0ff, #58e8d4);
+  box-shadow: 0 8rpx 20rpx rgba(64, 224, 255, 0.3);
 }
 
 .category-display {
@@ -1275,6 +1549,22 @@ function closeGuideModal() {
   border-radius: 16rpx;
   margin-bottom: 24rpx;
   border-left: 6rpx solid #40e0ff;
+}
+
+.category-display.recyclable {
+  border-left-color: #2ad47a;
+}
+
+.category-display.harmful {
+  border-left-color: #ff8a6b;
+}
+
+.category-display.kitchen {
+  border-left-color: #ffc76c;
+}
+
+.category-display.other {
+  border-left-color: #73a4c4;
 }
 
 .category-icon {
@@ -1304,6 +1594,113 @@ function closeGuideModal() {
   padding: 24rpx;
   border-radius: 16rpx;
   border-left: 6rpx solid #4ecdc4;
+}
+
+.recognized-items-box {
+  border: 1px solid rgba(64, 224, 255, 0.26);
+  background: rgba(12, 31, 58, 0.62);
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.recognized-items-title {
+  display: block;
+  font-size: 24rpx;
+  color: #9ceeff;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.recognized-items-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.recognized-item-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  border: 1px solid rgba(120, 229, 255, 0.35);
+  background: rgba(23, 51, 85, 0.7);
+  color: #c7f6ff;
+  font-size: 22rpx;
+  padding: 8rpx 16rpx;
+}
+
+.upcycling-plan {
+  display: grid;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.upcycling-plan-item {
+  border: 1px solid rgba(91, 204, 255, 0.26);
+  border-radius: 16rpx;
+  padding: 16rpx 20rpx;
+  background: linear-gradient(135deg, rgba(20, 41, 71, 0.82), rgba(11, 27, 48, 0.86));
+}
+
+.upcycling-plan-item.is-warning {
+  border-color: rgba(255, 174, 92, 0.35);
+  background: linear-gradient(135deg, rgba(63, 41, 18, 0.88), rgba(48, 30, 12, 0.88));
+}
+
+.upcycling-plan-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: rgba(64, 224, 255, 0.18);
+  color: #8eefff;
+  font-size: 20rpx;
+  font-weight: 700;
+  padding: 6rpx 14rpx;
+}
+
+.upcycling-plan-item.is-warning .upcycling-plan-title {
+  background: rgba(255, 196, 120, 0.22);
+  color: #ffe2af;
+}
+
+.upcycling-plan-content {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: rgba(235, 247, 255, 0.9);
+}
+
+.recognition-bbox-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+}
+
+.recognition-bbox-item {
+  position: absolute;
+  border: 2px solid #40e0ff;
+  border-radius: 10rpx;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.recognition-bbox-label {
+  position: absolute;
+  left: -1px;
+  top: -24px;
+  max-width: 220rpx;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 20rpx;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid rgba(255, 255, 255, 0.28);
 }
 
 .desc-label {
@@ -1540,7 +1937,7 @@ function closeGuideModal() {
   50% { transform: scale(1.1); }
 }
 
-/* 自定义分类指南弹窗 */
+/* 自定义分类指南弹窗*/
 .guide-modal-overlay {
   position: fixed;
   top: 0;
@@ -1729,7 +2126,54 @@ function closeGuideModal() {
   z-index: 2;
 }
 
-/* 底部导航栏 */
+/* 底部导航栏*/
+@media (max-width: 768px) {
+  .category-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ai-helper-btn {
+    padding: 10rpx 20rpx;
+    font-size: 20rpx;
+  }
+
+  .recognized-items-box {
+    padding: 16rpx 18rpx;
+  }
+
+  .recognized-item-chip {
+    font-size: 20rpx;
+  }
+
+  .upcycling-plan-item {
+    padding: 14rpx 16rpx;
+  }
+
+  .upcycling-plan-content {
+    font-size: 22rpx;
+  }
+
+  .recognition-bbox-label {
+    max-width: 180rpx;
+    font-size: 18rpx;
+  }
+}
+
+@media (max-width: 420px) {
+  .result-card {
+    padding: 22rpx 20rpx;
+  }
+
+  .ai-helper-btn {
+    width: 100%;
+  }
+
+  .desc-content {
+    font-size: 22rpx;
+  }
+}
+
 .tabbar {
   position: fixed;
   left: 0;
@@ -1801,3 +2245,4 @@ function closeGuideModal() {
   letter-spacing: 1rpx;
 }
 </style>
+

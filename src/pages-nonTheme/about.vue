@@ -466,7 +466,7 @@ onMounted(() => {
   transition: color 0.3s ease;
 }
 
-/* 浅色模式icon */
+/* ǳɫģʽicon */
 .about-container .back-icon {
   color: #059669;
 }

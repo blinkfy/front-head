@@ -282,7 +282,7 @@ async function testRecognize() {
       // 这里尝试使用 window 中可能存在的 compressImage 函数（H5）或使用 uni.compressImage（小程序）
       if (typeof window !== 'undefined' && typeof window.compressImage === 'function') {
         const blob = await window.compressImage(filePath, 0.8, 1024)
-        // 将 blob 转为 File（H5 环境）
+        // 将 blob תΪ File（H5 环境）
         const timestamp = Date.now()
         uploadFile = new File([blob], `test_${timestamp}.jpg`, { type: 'image/jpeg' })
       } else if (typeof uni.compressImage === 'function') {

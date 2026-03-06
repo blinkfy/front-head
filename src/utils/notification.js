@@ -17,7 +17,7 @@
  * 
  * 平台支持对比：
  * ============================================
- * | 平台          | 系统通知 | 应用内提示 | 后台通知 |
+ * | ƽ̨          | ϵͳ֪ͨ | 应用内提示 | 后台通知 |
  * |--------------|--------|----------|--------|
  * | Android App  | ✅     | ✅       | ✅     |
  * | iOS App      | ⚠️     | ✅       | ❌     |
@@ -64,7 +64,7 @@ export function showNotification(options = {}) {
 }
 
 /**
- * 显示系统通知（模态框风格）- iOS/Android 系统通知
+ * 显示系统通知（模态框风格）- iOS/Android ϵͳ֪ͨ
  * @param {Object} options - 配置选项
  * @param {string} options.title - 通知标题
  * @param {string} options.content - 通知内容
@@ -316,7 +316,7 @@ export async function notifyNewMessage(msgData, options = {}) {
   // 格式化消息内容
   let displayContent = content
   if (type === 'image') {
-    displayContent = '[图片]'
+    displayContent = '[ͼƬ]'
   } else if (type === 'voice') {
     displayContent = '[语音]'
   } else if (type === 'video') {
@@ -365,7 +365,7 @@ export async function notifyNewMessage(msgData, options = {}) {
       }
     }
   } else {
-    // 显示 toast 通知
+    // 显示 toast ֪ͨ
     if (show) {
       showNotification({
         title: senderName,

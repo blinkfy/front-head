@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <view class="profile-page">
     <!-- 背景装饰 -->
     <view class="bg-decoration">
@@ -19,7 +19,7 @@
           <text class="header-title">👤 个人中心</text>
           <view class="carbon-badge">
             <text class="carbon-icon">🍃</text>
-            <text class="carbon-text">已减碳 {{ calculateCarbonReduction(points || 0) }}</text>
+            <text class="carbon-text">已减碳{{ calculateCarbonReduction(points || 0) }}</text>
           </view>
         </view>
       </view>
@@ -92,11 +92,11 @@
 
       <view class="loading-state" v-else>
         <view class="loading-spinner"></view>
-        <text class="loading-text">数据同步中...</text>
+        <text class="loading-text">数据同步中..</text>
       </view>
     </view>
 
-    <!-- 设备连接状态卡片 -->
+    <!-- 设备连接状态卡片-->
     <view v-if="hasConnection" class="device-card">
       <view class="device-header">
         <view class="device-title">
@@ -114,7 +114,7 @@
           <text class="device-name">{{ connectedDevice?.device_name || '智能垃圾分类设备' }}</text>
           <text class="device-id">ID: {{ connectedDevice?.device_id || connectedDevice?.id || 'N/A' }}</text>
         </view>
-        <text class="device-arrow">›</text>
+        <text class="device-arrow">→</text>
       </view>
       
       <view class="device-footer">
@@ -141,9 +141,9 @@
           <view class="menu-icon orange">🏆</view>
           <text class="menu-text">排行榜</text>
         </view>
-        <view class="menu-item" @click="goMap">
-          <view class="menu-icon green">🗺️</view>
-          <text class="menu-text">垃圾桶地图</text>
+                <view class="menu-item" @click="goAchievements">
+          <view class="menu-icon green">🏅</view>
+          <text class="menu-text">成就系统</text>
         </view>
         <view class="menu-item" @click="goGuide">
           <view class="menu-icon purple">📚</view>
@@ -160,18 +160,18 @@
       </view>
     </view>
 
-    <!-- 管理员功能 -->
+    <!-- 管理员功能-->
     <view v-if="isAdmin" class="admin-section">
       <view class="menu-title">管理员功能</view>
       <view class="admin-grid">
         <view class="admin-item" @click="goFileManagement">📂 文件管理</view>
         <view class="admin-item" @click="go2048">🎲 2048后台</view>
         <view class="admin-item" @click="goDbMonitor">📊 数据库</view>
-        <view class="admin-item" @click="goAPITest">☁ 接口测试</view>
+        <view class="admin-item" @click="goAPITest">🧪 接口测试</view>
       </view>
     </view>
 
-    <!-- 底部导航栏 -->
+    <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
         <text class="tabbar-icon">🏠</text>
@@ -243,7 +243,7 @@
             <view class="info-content">
               <text class="info-title">可回收垃圾分类</text>
               <text class="info-desc">每次正确分类可回收垃圾</text>
-              <text class="info-tag">减排约36g CO₂</text>
+              <text class="info-tag">减排约 6g CO₂</text>
             </view>
           </view>
           <view class="info-item">
@@ -251,7 +251,7 @@
             <view class="info-content">
               <text class="info-title">厨余垃圾分类</text>
               <text class="info-desc">避免厨余垃圾填埋产生甲烷</text>
-              <text class="info-tag">减排约19g CO₂</text>
+              <text class="info-tag">减排约 9g CO₂</text>
             </view>
           </view>
           <view class="info-item">
@@ -259,7 +259,7 @@
             <view class="info-content">
               <text class="info-title">有害垃圾分类</text>
               <text class="info-desc">专业处理避免环境污染</text>
-              <text class="info-tag">减排约57g CO₂</text>
+              <text class="info-tag">减排约 7g CO₂</text>
             </view>
           </view>
         </view>
@@ -291,6 +291,7 @@ import { userinfo } from '@/api/user'
 import { useDeviceConnection } from '@/composables/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
+import { resolveH5StandalonePath } from '@/utils/h5-route'
 
 const username = ref('')
 const userInfo = ref({})
@@ -525,6 +526,19 @@ function goRanking() { uni.navigateTo({ url: '/pages/ranking/ranking' }) }
 function goSettings() { uni.navigateTo({ url: '/pages-nonTheme/settings' }) }
 function goAbout() { uni.navigateTo({ url: '/pages-nonTheme/about' }) }
 function goGuide() { uni.navigateTo({ url: '/pages/guide/guide' }) }
+function goAchievements() {
+  const isH5Page = (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined' &&
+    !window.wx &&
+    !window.my
+  )
+  if (isH5Page) {
+    window.location.href = resolveH5StandalonePath('/achievements', '/pages-nonTheme/achievements')
+    return
+  }
+  uni.navigateTo({ url: '/pages-nonTheme/achievements' })
+}
 
 async function verifyAdminPermission() {
   const localAdminFlag = uni.getStorageSync('isAdmin')
@@ -847,7 +861,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 第二层波纹 - 错位 */
+/* 第二层波纹- 错位 */
 .user-card .ripple-effect-2 {
   position: absolute;
   top: 50%;
@@ -1035,7 +1049,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 第二层波纹 */
+/* 第二层波纹*/
 .stats-card .ripple-effect-2 {
   position: absolute;
   top: 50%;
@@ -1434,12 +1448,12 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(219, 234, 254, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
 
-/* 排行榜 - 橙色 */
+/* 排行榜- 橙色 */
 .menu-item:nth-child(2) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 237, 213, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
 
-/* 垃圾桶地图 - 绿色 */
+/* 垃圾桶地图- 绿色 */
 .menu-item:nth-child(3) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(209, 250, 229, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
@@ -1481,7 +1495,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 菜单图标悬浮效果 - 增强版 */
+/* 菜单图标悬浮效果 - 澧炲己鐗?*/
 .menu-item:hover .menu-icon,
 .menu-item:active .menu-icon {
   animation: menuIconHoverBounce 0.6s ease;
@@ -1494,7 +1508,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   100% { transform: scale(1) rotate(0deg); }
 }
 
-/* 鼠标悬停时的打招呼动画 */
+/* 鼠标悬停时的招呼动画*/
 @keyframes menuIconHoverBounce {
   0% {
     transform: scale(1) rotate(0deg);
@@ -1531,7 +1545,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   color: #4b5563;
 }
 
-/* 管理员功能 */
+/* 管理员功能*/
 .admin-section {
   margin: 0 32rpx 24rpx;
   position: relative;
@@ -1741,7 +1755,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   position: relative;
 }
 
-/* 背景纹理增加纵深感 */
+/* 背景纹理增加纵深感*/
 .modal-body::before {
   content: '';
   position: absolute;
@@ -2021,7 +2035,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   pointer-events: none;
 }
 
-/* 悬浮效果增加纵深感 */
+/* 悬浮效果增加纵深感*/
 .equivalent-item:hover {
   transform: translateY(-4rpx);
   box-shadow:
@@ -2041,4 +2055,179 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   text-align: center;
   line-height: 1.3;
 }
+
+@media (max-width: 768px) {
+  .profile-header {
+    padding: 72rpx 20rpx 64rpx;
+  }
+
+  .user-card,
+  .menu-section,
+  .admin-section {
+    margin-left: 20rpx;
+    margin-right: 20rpx;
+  }
+
+  .menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14rpx;
+  }
+
+  .menu-item {
+    padding: 24rpx 12rpx;
+  }
+
+  .menu-icon {
+    width: 68rpx;
+    height: 68rpx;
+    font-size: 34rpx;
+  }
+
+  .menu-text {
+    font-size: 22rpx;
+  }
+
+  .info-modal {
+    width: calc(100vw - 40rpx);
+    max-width: none;
+  }
+
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding-left: 24rpx;
+    padding-right: 24rpx;
+  }
+
+  .equivalent-list {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 420px) {
+  .profile-header {
+    padding: 64rpx 16rpx 56rpx;
+  }
+
+  .user-card,
+  .menu-section,
+  .admin-section {
+    margin-left: 16rpx;
+    margin-right: 16rpx;
+  }
+
+  .menu-item {
+    padding: 20rpx 10rpx;
+  }
+
+  .menu-icon {
+    width: 60rpx;
+    height: 60rpx;
+    font-size: 30rpx;
+  }
+
+  .info-modal {
+    width: calc(100vw - 28rpx);
+  }
+
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding-left: 20rpx;
+    padding-right: 20rpx;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .profile-page {
+    background: linear-gradient(180deg, #0f172a 0%, #111827 38%, #0b1120 100%);
+  }
+
+  .user-card {
+    background: rgba(15, 23, 42, 0.9);
+    border-color: rgba(148, 163, 184, 0.22);
+    box-shadow: 0 10rpx 30rpx rgba(2, 6, 23, 0.5);
+  }
+
+  .username,
+  .menu-title,
+  .menu-text,
+  .modal-title,
+  .info-title {
+    color: #e2e8f0;
+  }
+
+  .menu-item {
+    border-color: rgba(148, 163, 184, 0.18);
+    box-shadow: 0 8rpx 18rpx rgba(2, 6, 23, 0.45);
+  }
+
+  .menu-item:nth-child(1),
+  .menu-item:nth-child(2),
+  .menu-item:nth-child(3),
+  .menu-item:nth-child(4),
+  .menu-item:nth-child(5),
+  .menu-item:nth-child(6) {
+    background: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.85));
+  }
+
+  .menu-icon.blue,
+  .menu-icon.orange,
+  .menu-icon.green,
+  .menu-icon.purple,
+  .menu-icon.gray,
+  .menu-icon.cyan {
+    background: linear-gradient(145deg, rgba(30, 41, 59, 0.92), rgba(51, 65, 85, 0.86));
+  }
+
+  .admin-item {
+    background: rgba(15, 23, 42, 0.9);
+    color: #cbd5e1;
+    border-color: rgba(148, 163, 184, 0.2);
+  }
+
+  .info-modal {
+    background: #0f172a;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+  }
+
+  .modal-header,
+  .modal-footer {
+    background: #111827;
+    border-color: rgba(148, 163, 184, 0.22);
+    box-shadow: none;
+  }
+
+  .modal-body {
+    background: #0f172a;
+  }
+
+  .info-desc,
+  .footer-tip,
+  .equivalent-item text:last-child {
+    color: #94a3b8;
+  }
+
+  .info-tag {
+    background: rgba(20, 83, 45, 0.45);
+    color: #6ee7b7;
+  }
+
+  .equivalent-item {
+    background: linear-gradient(145deg, rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.92));
+    border-color: rgba(45, 212, 191, 0.24);
+    box-shadow: none;
+  }
+
+  .tabbar {
+    background: rgba(15, 23, 42, 0.9);
+    border-top: 2rpx solid rgba(148, 163, 184, 0.22);
+  }
+
+  .tabbar-icon,
+  .tabbar-label {
+    color: #94a3b8;
+  }
+}
 </style>
+

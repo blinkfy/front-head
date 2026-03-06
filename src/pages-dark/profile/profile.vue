@@ -1,6 +1,6 @@
-<template>
+﻿<template>
   <view class="profile-page">
-    <!-- 动态科技背景 - 固定定位，不影响滚动 -->
+    <!-- 鍔ㄦ€佺鎶€鑳屾櫙 - 固定定位，不影响滚动 -->
     <view class="tech-background">
       <view class="grid-overlay"></view>
       <view class="floating-particles">
@@ -16,7 +16,7 @@
       </view>
     </view>
     
-    <!-- 可滚动内容区域 -->
+    <!-- 可滚动内容区域-->
     <scroll-view 
       class="profile-scroll-container" 
       scroll-y 
@@ -28,7 +28,7 @@
     >
       <view class="profile-container">
 
-    <!-- 头部状态栏 -->
+    <!-- 顶部状态栏 -->
     <view class="status-bar">
       <!-- 顶部安全区域占位 -->
       <view class="safe-area-top"></view>
@@ -39,12 +39,12 @@
         </view>
         <text class="title-text">个人中心</text>
         <view class="carbon-display">
-          <text class="carbon-text">CO₂ -{{ calculateCarbonReduction(points || 0) }}</text>
+          <text class="carbon-text">CO₂-{{ calculateCarbonReduction(points || 0) }}</text>
         </view>
       </view>
     </view>
 
-    <!-- 用户信息主卡片 -->
+    <!-- 用户信息主卡片-->
     <view class="user-main-card">
       <view class="hologram-border"></view>
       <view class="card-glow"></view>
@@ -55,7 +55,7 @@
           <view class="avatar-inner">
             <image class="person-avatar" :src="getAvatarUrl(userInfo.avatar || '/static/person.jpeg', baseUrl)" mode="aspectFill"></image>
           </view>
-          <!-- 四种垃圾桶围绕 -->
+          <!-- 四种垃圾桶围绕-->
           <view class="trash-bins">
             <view class="trash-bin recyclable">
               <view class="bin-content">
@@ -133,7 +133,7 @@
           <view class="stat-info">
             <text class="stat-label">减碳量</text>
             <text class="stat-value">{{ calculateCarbonReduction(points || 0) }}</text>
-            <text class="stat-unit">CO₂ SAVED</text>
+            <text class="stat-unit">CO₂SAVED</text>
           </view>
           <view class="info-icon" @click="showCarbonInfo">
             <text class="info-symbol">ℹ️</text>
@@ -161,11 +161,11 @@
 
       <view class="loading-display" v-else>
         <view class="loading-spinner eco"></view>
-        <text class="loading-text">环保数据同步中...</text>
+        <text class="loading-text">环保数据同步中..</text>
       </view>
     </view>
 
-    <!-- 设备连接状态卡片 -->
+    <!-- 设备连接状态卡片-->
     <view v-if="hasConnection" class="device-status-card">
       <view class="device-status-header">
         <text class="device-status-title">
@@ -200,7 +200,7 @@
       </view>
     </view>
 
-    <!-- 功能操作区 -->
+    <!-- 功能操作区-->
     <view class="function-grid">
       <view class="function-row">
         <view class="function-item" @click="goHistory">
@@ -224,13 +224,13 @@
         </view>
 
         
-        <view class="function-item" @click="goMap">
+                <view class="function-item" @click="goAchievements">
           <view class="function-icon">
-            <text class="icon">🗺️</text>
+            <text class="icon">🏅</text>
             <view class="icon-glow green"></view>
           </view>
-          <text class="function-title">垃圾桶地图</text>
-          <text class="function-desc">就近投放</text>
+          <text class="function-title">成就系统</text>
+          <text class="function-desc">任务与徽章</text>
           <view class="hover-effect"></view>
         </view>
       </view>
@@ -268,14 +268,14 @@
       </view>
     </view>
 
-    <!-- 管理员专属功能 -->
+    <!-- 管理员专属功能-->
     <view v-if="isAdmin" class="admin-card">
       <view class="admin-header">&nbsp;<text style="font-size:large;"> 🔧 </text>&nbsp;<text>管理员功能</text></view>
       <view class="admin-buttons">
         <view class="admin-btn" @click="goFileManagement">📂 文件管理</view>
         <view class="admin-btn" @click="go2048">🎲 2048后台</view>
         <view class="admin-btn" @click="goDbMonitor">📊 数据库管理</view>
-        <view class="admin-btn" @click="goAPITest">☁ 接口测试</view>
+        <view class="admin-btn" @click="goAPITest">🧪 接口测试</view>
       </view>
     </view>
 
@@ -313,7 +313,7 @@
     </view>
 
     <!-- 积分信息弹窗 -->
-    <!-- 信息弹窗：增加内部滚动与触摸事件拦截，避免背景页面滚动 -->
+    <!-- 信息弹窗：增加内部滚动与触摸事件拦截，避免背景页面滚动-->
     <view v-if="showInfoModal" class="info-modal-overlay" @click="closePointsInfo" @touchmove.stop.prevent>
       <view class="info-modal" @click.stop @touchmove.stop>
         <view class="info-modal-header">
@@ -381,7 +381,7 @@
             <view class="info-text">
               <text class="info-title">可回收垃圾分类</text>
               <text class="info-desc">每次正确分类可回收垃圾</text>
-              <text class="info-limit">减排约36g CO₂当量</text>
+              <text class="info-limit">减排约 6g CO₂ 当量</text>
             </view>
           </view>
           
@@ -392,7 +392,7 @@
             <view class="info-text">
               <text class="info-title">厨余垃圾分类</text>
               <text class="info-desc">避免厨余垃圾填埋产生甲烷</text>
-              <text class="info-limit">减排约19g CO₂当量</text>
+              <text class="info-limit">减排约 9g CO₂ 当量</text>
             </view>
           </view>
 
@@ -403,7 +403,7 @@
             <view class="info-text">
               <text class="info-title">有害垃圾分类</text>
               <text class="info-desc">专业处理避免环境污染</text>
-              <text class="info-limit">减排约57g CO₂当量</text>
+              <text class="info-limit">减排约 7g CO₂ 当量</text>
             </view>
           </view>
 
@@ -413,7 +413,7 @@
             </view>
             <view class="info-text">
               <text class="info-title">计算依据</text>
-              <text class="info-desc">基于联合国IPCC报告和国内垃圾处理数据，综合考虑回收利用、堆肥处理和避免填埋的环境效益</text>
+              <text class="info-desc">基于联合国 IPCC 报告和国内垃圾处理数据，综合考虑回收利用、堆肥处理和避免填埋的环境效益</text>
             </view>
           </view>
         </view>
@@ -450,6 +450,7 @@ import { userinfo } from '@/api/user'
 import { useDeviceConnection } from '@/composables/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
+import { resolveH5StandalonePath } from '@/utils/h5-route'
 
 const username = ref('')
 const userInfo = ref({})
@@ -462,12 +463,12 @@ const isAdmin = ref(false)
 const calculateCarbonReduction = (points) => {
   if (!points || points <= 0) return '0g'
   
-  // 基于科学数据的减排系数
+  // 基于科学数据的减碳系数
   const CARBON_FACTORS = {
     // 垃圾分类行为的平均减排效果 (kg CO₂/次)
-    recyclable: 0.036,     // 可回收垃圾分类：避免生产新材料
+    recyclable: 0.036,     // 可回收垃圾分类：减少新材料生产
     kitchen: 0.019,        // 厨余垃圾分类：避免填埋产生甲烷
-    hazardous: 0.57,      // 有害垃圾分类：避免环境污染的间接效益
+    hazardous: 0.57,       // 有害垃圾分类：避免环境污染的间接效益
     other: 0.0075,          // 其他垃圾分类：基础减排
     base_classification: 0  // 基础分类行为减排
   }
@@ -492,7 +493,7 @@ const calculateCarbonReduction = (points) => {
   totalReduction += points * distribution.other * CARBON_FACTORS.other
   totalReduction += points * distribution.hazardous * CARBON_FACTORS.hazardous
   
-  // 格式化显示
+  // 鏍煎紡鍖栨樉绀?
   if (totalReduction < 0.01) {
     return '0g'
   } else if (totalReduction < 1) {
@@ -513,7 +514,7 @@ const calculateCarbonProgress = (points) => {
   return Math.min((rawReduction / 100) * 100, 100)
 }
 
-// 计算减碳当量（便于理解的对比）
+// 计算减碳当量，便于理解的对比
 const getCarbonEquivalents = (points) => {
   const carbonText = calculateCarbonReduction(points)
   let carbonKg = 0
@@ -529,7 +530,7 @@ const getCarbonEquivalents = (points) => {
   
   return {
     trees: Math.round((carbonKg / 22) * 10) / 10, // 一棵树年吸收约22kg CO₂
-    carKm: Math.round(carbonKg / 0.2), // 小轿车每公里排放约0.2kg CO₂
+    carKm: Math.round(carbonKg / 0.2), // 小汽车每公里排放约 0.2kg CO₂
     electricity: Math.round(carbonKg / 0.85) // 每度电约产生0.85kg CO₂
   }
 }
@@ -569,12 +570,12 @@ const fetchUserInfo = async () => {
     if (response.code === 0) {
       userInfo.value = response.data
       points.value = response.data.points || 0
-      // 同时更新username（以防本地存储的不是最新的）
+      // 同时更新 username，避免本地存储不是最新值
       if (response.data.username) {
         username.value = response.data.username
       }
       // 后端会返回 isAdmin 字段，保存到本地以便全局读取
-      // 严格安全检查：只有后端明确返回 isAdmin=true，才能赋予权限
+      // 严格安全检查：只有后端明确返回 isAdmin=true，才赋予管理员权限
       const isAdminFromServer = !!(response.data && response.data.isAdmin === true)
       isAdmin.value = isAdminFromServer&&uni.getStorageSync('isAdmin')
       try {
@@ -620,8 +621,7 @@ onMounted(async () => {
   // 获取完整的用户信息（包括积分和权限）
   await fetchUserInfo()
   
-  // 安全防护：验证本地存储的 isAdmin 是否与服务端一致
-  // 若本地有 isAdmin 但服务端返回无权限，立即清除本地标记
+  // 安全防护：验证本地存储的 isAdmin 鏄惁涓庢湇鍔＄涓€鑷?  // 若本地有 isAdmin 但服务端返回无权限，立即清除本地标记
   if (uni.getStorageSync('isAdmin') && !isAdmin.value) {
     uni.removeStorageSync('isAdmin')
   }
@@ -668,6 +668,19 @@ function goRanking() {uni.navigateTo({ url: '/pages-dark/ranking/ranking' })}
 function goSettings() { uni.navigateTo({ url: '/pages-nonTheme/settings' }) }
 function goAbout() {uni.navigateTo({ url: '/pages-nonTheme/about' })}
 function goGuide() {uni.navigateTo({ url: '/pages-dark/guide/guide' })}
+function goAchievements() {
+  const isH5Page = (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined' &&
+    !window.wx &&
+    !window.my
+  )
+  if (isH5Page) {
+    window.location.href = resolveH5StandalonePath('/achievements', '/pages-nonTheme/achievements')
+    return
+  }
+  uni.navigateTo({ url: '/pages-nonTheme/achievements' })
+}
 
 // 权限验证函数：在导航前验证用户是否真正拥有管理员权限
 async function verifyAdminPermission() {
@@ -767,7 +780,7 @@ body {
 }
 /* #endif */
 
-/* 页面根容器 */
+/* 椤甸潰鏍瑰鍣?*/
 .profile-page {
   height: 100vh;
   position: relative;
@@ -809,7 +822,7 @@ body {
 }
 /* #endif */
 
-/* 动态科技背景系统 */
+/* 鍔ㄦ€佺鎶€鑳屾櫙绯荤粺 */
 .tech-background {
   position: fixed;
   top: 0;
@@ -931,7 +944,7 @@ body {
   50% { opacity: 0.6; transform: rotate(45deg) scale(1.1); }
 }
 
-/* 数据流效果 */
+/* 鏁版嵁娴佹晥鏋?*/
 .data-streams {
   position: absolute;
   top: 0;
@@ -975,11 +988,11 @@ body {
   background: rgba(0, 25, 45, 0.9);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(64, 224, 255, 0.4);
-  /* 这里不再加 env(safe-area-inset-top)，统一由 .safe-area-top 占位，避免 iOS 顶部空白过大 */
+  /* 这里不再叠加 env(safe-area-inset-top)，统一用 .safe-area-top 占位，避免 iOS 顶部空白过大 */
 }
 
 .safe-area-top {
-  /* 单一安全区占位：iOS 刘海区高度；在 Android 通常为 0 */
+  /* 单一安全区占位：iOS 刘海区高度；Android 通常为 0 */
   height: env(safe-area-inset-top);
   min-height: 44rpx; /* 兜底的状态栏视觉高度 */
 }
@@ -1139,7 +1152,7 @@ body {
   border-radius: 50%;
 }
 
-/* 垃圾桶围绕动画 */
+/* 垃圾桶围绕动画*/
 .trash-bins {
   position: absolute;
   top: 0;
@@ -1157,7 +1170,7 @@ body {
   height: 80rpx;
 }
 
-.trash-bin:nth-child(1) { /* 可回收 */
+.trash-bin:nth-child(1) { /* 可回收*/
   transform: translate(-50%, -50%) rotate(0deg) translateY(-120rpx) rotate(0deg);
 }
 
@@ -1507,7 +1520,7 @@ body {
   50% { opacity: 1; }
 }
 
-/* 加载状态 */
+/* 鍔犺浇状态*/
 .loading-display {
   display: flex;
   flex-direction: column;
@@ -1538,7 +1551,7 @@ body {
   font-size: 28rpx;
 }
 
-/* 设备连接状态卡片 */
+/* 设备连接状态卡片*/
 .device-status-card {
   position: relative;
   z-index: 10;
@@ -1904,7 +1917,7 @@ body {
   border: 2px solid rgba(64, 224, 255, 0.5);
   max-width: 650rpx;
   width: 100%;
-  /* 在不同平台优先使用 80vh，兼容部分小程序对 vh 支持差：再限制一个像素高度 */
+  /* 在不同平台优先使用 80vh，兼容部分小程序对 vh 支持差异，再限制一个像素高度 */
   max-height: min(90vh, 1200rpx);
   display: flex;
   flex-direction: column;
@@ -1968,7 +1981,7 @@ body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   flex: 1; /* 占据可滚动区域 */
-  min-height: 0; /* 解决 flex 子项在部分小程序中无法收缩导致不能滚动问题 */
+  min-height: 0; /* 解决 flex 子项在部分小程序中无法收缩导致不能滚动的问题 */
 }
 
 /* H5环境下隐藏滚动条 */
@@ -2221,10 +2234,96 @@ body {
   transform: translateY(2rpx) scale(0.99);
   box-shadow: inset 0 0 8rpx rgba(0, 0, 0, 0.12);
 }
+
+@media screen and (max-width: 768px) {
+  .function-grid {
+    margin: 0 20rpx 120rpx;
+  }
+
+  .function-row {
+    gap: 12rpx;
+    margin-bottom: 12rpx;
+  }
+
+  .function-item {
+    padding: 14rpx 12rpx;
+  }
+
+  .function-title {
+    font-size: 24rpx;
+  }
+
+  .function-desc {
+    font-size: 20rpx;
+  }
+
+  .tab-item {
+    padding: 16rpx 0;
+  }
+
+  .tab-icon {
+    font-size: 40rpx;
+  }
+
+  .tab-label {
+    font-size: 20rpx;
+  }
+
+  .info-modal {
+    width: calc(100vw - 40rpx);
+  }
+
+  .info-modal-header {
+    padding: 26rpx 24rpx 16rpx;
+  }
+
+  .info-modal-content {
+    padding: 10rpx 24rpx 14rpx;
+  }
+
+  .info-modal-footer {
+    padding: 14rpx 24rpx 24rpx;
+  }
+
+  .admin-card {
+    margin: 16rpx 20rpx 0;
+    padding: 18rpx;
+  }
+
+  .admin-btn {
+    padding: 16rpx 10rpx;
+    font-size: 24rpx;
+  }
+
+  .admin-btn text {
+    font-size: 22rpx;
+  }
+}
+
 @media screen and (max-width: 420px) {
+  .function-grid {
+    margin-left: 16rpx;
+    margin-right: 16rpx;
+  }
+
+  .function-row {
+    flex-wrap: wrap;
+  }
+
+  .function-item {
+    flex: 1 1 calc(50% - 6rpx);
+    min-width: 0;
+  }
+
+  .info-modal {
+    width: calc(100vw - 28rpx);
+  }
+
   .admin-btn {
     flex: 1 1 100%;
     min-width: 0;
   }
 }
 </style>
+
+

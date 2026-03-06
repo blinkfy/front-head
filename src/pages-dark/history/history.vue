@@ -51,7 +51,7 @@
           <view class="selected-info">
             <view class="select-all-section">
               <text class="select-all-btn" @click="toggleSelectAll">
-                {{ isAllSelected ? '取消全选' : '全选' }}
+                {{ isAllSelected ? '取消全选' : 'ȫѡ' }}
               </text>
               <text class="selected-count">已选择 {{ selectedItems.length }}/{{ historyList.length }} 项</text>
             </view>
@@ -365,13 +365,13 @@ function toggleSelect(id) {
   }
 }
 
-// 全选/取消全选
+// ȫѡ/取消全选
 function toggleSelectAll() {
   if (isAllSelected.value) {
     // 取消全选
     selectedItems.value = []
   } else {
-    // 全选
+    // ȫѡ
     selectedItems.value = historyList.value.map(item => item.id)
   }
 }
@@ -490,7 +490,7 @@ function formatTime(timeString) {
     return '刚刚'
   }
   
-  // 小于1小时
+  // 小于1Сʱ
   if (diff < 60 * 60 * 1000) {
     const minutes = Math.floor(diff / (60 * 1000))
     return `${minutes}分钟前`
@@ -499,7 +499,7 @@ function formatTime(timeString) {
   // 小于1天
   if (diff < 24 * 60 * 60 * 1000) {
     const hours = Math.floor(diff / (60 * 60 * 1000))
-    return `${hours}小时前`
+    return `${hours}Сʱǰ`
   }
   
   // 小于7天

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <view class="shop-page">
     <!-- 背景装饰 -->
     <view class="bg-decoration">
@@ -15,12 +15,12 @@
     <!-- 顶部绿色背景区域 -->
     <view class="shop-header">
       <view class="header-content">
-        <text class="header-title">🛍️ 积分商城</text>
+        <text class="header-title">🛍️积分商城</text>
         <text class="header-subtitle">环保积分 · 兑换好礼</text>
       </view>
     </view>
 
-    <!-- 主内容区域 -->
+    <!-- 主内容区域-->
     <view class="content-wrapper">
       <!-- 积分卡片 -->
       <view class="points-card">
@@ -46,13 +46,13 @@
         <text class="tip-icon">💡</text>
         <view class="tip-text-wrapper">
           <view class="tip-text-track">
-            <text class="tip-text">每次垃圾识别可获得1-3积分</text>
-            <text class="tip-text">每次垃圾识别可获得1-3积分</text>
+            <text class="tip-text">每次垃圾识别可获得-3积分</text>
+            <text class="tip-text">每次垃圾识别可获得-3积分</text>
           </view>
         </view>
       </view>
 
-      <!-- 商品分类选项卡 -->
+      <!-- 商品分类选项卡-->
       <view class="category-tabs">
         <view 
           v-for="(category, index) in categories" 
@@ -68,9 +68,13 @@
       <!-- 商品列表 -->
       <view class="products-section">
         <view class="section-header">
-          <text class="section-icon">{{ categories[currentCategory].icon }}</text>
-          <text class="section-title">{{ categories[currentCategory].name }}</text>
-          <text class="product-count">共 {{ filteredProducts.length }} 件</text>
+          <text class="section-icon">{{ selectedCategory.icon }}</text>
+          <text class="section-title">{{ displayCategoryTitle }}</text>
+          <text class="product-count">共{{ filteredProducts.length }} 件</text>
+        </view>
+
+        <view v-if="isRecommendCategory && recommendLoading" class="recommend-loading-mask">
+          <text class="recommend-loading-text">AI 正在生成推荐，请稍候...</text>
         </view>
         
         <view class="products-grid">
@@ -82,8 +86,9 @@
           >
             <view class="product-image-wrapper">
               <image :src="product.image" class="product-image" mode="aspectFill" />
+              <view v-if="isRecommendCategory" class="product-badge ai">AI推荐</view>
               <view v-if="product.hot" class="product-badge hot">🔥 热门</view>
-              <view v-if="product.limited" class="product-badge limited">⚡ 限量</view>
+              <view v-if="product.limited" class="product-badge limited">🔥 限量</view>
             </view>
             
             <view class="product-info">
@@ -162,7 +167,7 @@
       </view>
     </view>
 
-    <!-- 底部导航栏 -->
+    <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
         <text class="tabbar-icon">🏠</text>
@@ -187,6 +192,15 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { userinfo } from '@/api/user'
+import { fetchShopRecommendations } from '@/api/shop'
+import {
+  SHOP_RECOMMEND_LIMIT,
+  buildCandidateProducts,
+  filterProductsByRecommendation,
+  getFallbackRecommendedNames,
+  normalizeRecommendationResult,
+  orderProductsByRecommendation
+} from '@/utils/shop-recommendation'
 
 const userPoints = ref(0)
 const loading = ref(false)
@@ -195,14 +209,19 @@ const showDetailModal = ref(false)
 const showSuccessModal = ref(false)
 const selectedProduct = ref({})
 const exchangedProduct = ref({})
+const recommendLoading = ref(false)
+const recommendReady = ref(false)
+const recommendSource = ref('rule-dom')
+const recommendedNames = ref([])
 
 const categories = ref([
-  { name: '全部', icon: '🛍️' },
-  { name: '环保用品', icon: '🌱' },
-  { name: '数码配件', icon: '📱' },
-  { name: '生活用品', icon: '🏠' },
-  { name: '学习用品', icon: '📚' },
-  { name: '美食券', icon: '🍔' }
+  { name: '✨ 猜您喜欢', icon: '✨', type: 'recommend' },
+  { name: '全部', icon: '🛍️', type: 'all' },
+  { name: '环保用品', icon: '🌿', type: 'category', categoryId: 1 },
+  { name: '数码配件', icon: '📱', type: 'category', categoryId: 2 },
+  { name: '生活用品', icon: '🏠', type: 'category', categoryId: 3 },
+  { name: '学习用品', icon: '📚', type: 'category', categoryId: 4 },
+  { name: '美食券', icon: '🍜', type: 'category', categoryId: 5 }
 ])
 
 const products = ref([
@@ -215,7 +234,7 @@ const products = ref([
     stock: 10,
     category: 1,
     hot: true,
-    features: '防水耐用，可折叠收纳，承重20kg'
+    features: '闃叉按鑰愮敤锛屽彲鎶樺彔鏀剁撼锛屾壙閲?0kg'
   },
   {
     id: 2,
@@ -225,7 +244,7 @@ const products = ref([
     points: 120,
     stock: 2,
     category: 1,
-    features: '天然抗菌，轻便易携带，包含筷子勺子叉子'
+    features: '天然抗菌，轻便易携带，包含筷勺叉'
   },
   {
     id: 3,
@@ -241,7 +260,7 @@ const products = ref([
   {
     id: 4,
     name: '无线蓝牙耳机',
-    description: '高品质音效，舒适佩戴体验',
+    description: '高品质音效，佩戴舒适',
     image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN01ARkqoe1lp8bxmr56x_%21%212207796144867-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1772604226&t=71875439063552b8fc4046a5bd82cece',
     points: 200,
     stock: 1,
@@ -299,7 +318,7 @@ const products = ref([
     points: 30,
     stock: 5,
     category: 4,
-    features: 'A5尺寸，180页，方格/横线可选'
+    features: 'A5尺寸，80页，方格/横线可选'
   },
   {
     id: 10,
@@ -315,7 +334,7 @@ const products = ref([
   {
     id: 11,
     name: '星巴克咖啡券',
-    description: '任意饮品通用券，有效期6个月',
+    description: '任意饮品通用券，有效期1个月',
     image: 'https://p6.itc.cn/q_70/images01/20210903/15249c7e53fb43d1bff2f80175dac604.jpeg',
     points: 80,
     stock: 5,
@@ -326,7 +345,7 @@ const products = ref([
   {
     id: 12,
     name: '肯德基套餐券',
-    description: '指定套餐优惠券，美味享不停',
+    description: '指定套餐优惠券，美味不停',
     image: 'https://p6.itc.cn/q_70/images03/20211204/92f834b2ea8a4cb7b9bb993602b42279.jpeg',
     points: 120,
     stock: 0,
@@ -337,6 +356,9 @@ const products = ref([
 
 onMounted(async () => {
   await fetchUserPoints()
+  if (currentCategory.value === 0) {
+    await ensureRecommendations()
+  }
   
   // 添加商品卡片鼠标追踪效果
   if (typeof document !== 'undefined') {
@@ -414,17 +436,83 @@ const refreshPoints = async () => {
   }
 }
 
+const isRecommendCategory = computed(() => {
+  const current = categories.value[currentCategory.value]
+  return !!(current && current.type === 'recommend')
+})
+
+const selectedCategory = computed(() => {
+  return categories.value[currentCategory.value] || categories.value[0] || { icon: '🛍️', name: '全部', type: 'all' }
+})
+
+const displayCategoryTitle = computed(() => {
+  return isRecommendCategory.value ? 'AI推荐' : selectedCategory.value.name
+})
+
+function getProductsByRecommendedNames(names) {
+  const sourceNames = Array.isArray(names) ? names : []
+  const matched = filterProductsByRecommendation(products.value, sourceNames)
+  const ordered = orderProductsByRecommendation(matched, sourceNames)
+  return ordered.slice(0, SHOP_RECOMMEND_LIMIT)
+}
+
+async function ensureRecommendations(force = false) {
+  if (recommendLoading.value) return
+  if (recommendReady.value && !force) return
+
+  recommendLoading.value = true
+  try {
+    const apiResult = await fetchShopRecommendations({
+      limit: SHOP_RECOMMEND_LIMIT,
+      currentPoints: Number(userPoints.value || 0),
+      candidateProducts: buildCandidateProducts(products.value)
+    })
+
+    const normalized = normalizeRecommendationResult(
+      apiResult,
+      products.value,
+      userPoints.value,
+      SHOP_RECOMMEND_LIMIT
+    )
+    recommendedNames.value = Array.isArray(normalized.names) ? normalized.names : []
+    recommendSource.value = normalized.source || 'rule-dom'
+    recommendReady.value = true
+  } catch (_) {
+    recommendedNames.value = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
+    recommendSource.value = 'rule-dom'
+    recommendReady.value = true
+  } finally {
+    recommendLoading.value = false
+  }
+}
+
+const recommendProducts = computed(() => {
+  const fromApi = getProductsByRecommendedNames(recommendedNames.value)
+  if (fromApi.length) return fromApi
+
+  const fallbackNames = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
+  const fromFallback = getProductsByRecommendedNames(fallbackNames)
+  if (fromFallback.length) return fromFallback
+
+  return products.value.slice(0, SHOP_RECOMMEND_LIMIT)
+})
+
 const filteredProducts = computed(() => {
-  if (currentCategory.value === 0) return products.value
-  return products.value.filter(product => product.category === currentCategory.value)
+  const current = selectedCategory.value
+  if (current.type === 'recommend') return recommendProducts.value
+  if (current.type === 'all') return products.value
+  return products.value.filter(product => product.category === current.categoryId)
 })
 
 const canExchange = computed(() => {
   return userPoints.value >= selectedProduct.value.points && selectedProduct.value.stock > 0
 })
 
-const switchCategory = (index) => {
+const switchCategory = async (index) => {
   currentCategory.value = index
+  if (categories.value[index] && categories.value[index].type === 'recommend') {
+    await ensureRecommendations()
+  }
 }
 
 const showProductDetail = (product) => {
@@ -676,7 +764,7 @@ const goProfile = () => {
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* 主内容区域 */
+/* 主内容区域*/
 .content-wrapper {
   padding: 0 32rpx;
   margin-top: -40rpx;
@@ -890,7 +978,7 @@ const goProfile = () => {
   }
 }
 
-/* 分类选项卡 */
+/* 分类选项卡*/
 .category-tabs {
   display: flex;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 253, 244, 0.95) 50%, rgba(255, 255, 255, 0.98) 100%);
@@ -985,6 +1073,7 @@ const goProfile = () => {
 /* 商品区域 */
 .products-section {
   margin-bottom: 32rpx;
+  position: relative;
 }
 
 .section-header {
@@ -1008,6 +1097,23 @@ const goProfile = () => {
 .product-count {
   font-size: 24rpx;
   color: #9ca3af;
+}
+
+.recommend-loading-mask {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16rpx;
+  padding: 16rpx 18rpx;
+  margin-bottom: 18rpx;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(59, 130, 246, 0.1));
+  border: 1rpx solid rgba(16, 185, 129, 0.2);
+}
+
+.recommend-loading-text {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #0f766e;
 }
 
 /* 商品网格 */
@@ -1091,6 +1197,13 @@ const goProfile = () => {
 
 .product-badge.hot {
   background: linear-gradient(45deg, #f97316, #fb923c);
+}
+
+.product-badge.ai {
+  left: 12rpx;
+  right: auto;
+  background: linear-gradient(45deg, #0ea5e9, #14b8a6);
+  box-shadow: 0 4rpx 12rpx rgba(14, 165, 233, 0.35);
 }
 
 .product-badge.limited {
@@ -1427,6 +1540,189 @@ const goProfile = () => {
   transition: all 0.3s ease;
 }
 
+@media (max-width: 768px) {
+  .content-wrapper {
+    padding: 0 20rpx;
+    margin-top: -28rpx;
+  }
+
+  .points-card {
+    padding: 24rpx;
+  }
+
+  .points-icon-wrapper {
+    width: 72rpx;
+    height: 72rpx;
+    margin-right: 16rpx;
+  }
+
+  .category-tabs {
+    padding: 10rpx;
+    margin-bottom: 24rpx;
+  }
+
+  .tab-item {
+    min-width: 106rpx;
+    padding: 16rpx 10rpx;
+  }
+
+  .tab-icon {
+    font-size: 28rpx;
+  }
+
+  .tab-text {
+    font-size: 20rpx;
+  }
+
+  .section-header {
+    flex-wrap: wrap;
+    gap: 8rpx;
+    margin-bottom: 16rpx;
+  }
+
+  .section-title {
+    font-size: 28rpx;
+  }
+
+  .recommend-loading-text {
+    font-size: 22rpx;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .products-grid {
+    grid-template-columns: 1fr;
+    gap: 18rpx;
+  }
+
+  .product-image-wrapper {
+    height: 280rpx;
+  }
+
+  .product-info {
+    padding: 18rpx;
+  }
+
+  .product-name {
+    font-size: 26rpx;
+  }
+
+  .product-desc {
+    font-size: 22rpx;
+  }
+}
+
+@media (max-width: 420px) {
+  .content-wrapper {
+    padding: 0 16rpx;
+  }
+
+  .points-card {
+    padding: 20rpx;
+  }
+
+  .tab-item {
+    min-width: 96rpx;
+    padding: 14rpx 8rpx;
+  }
+
+  .product-image-wrapper {
+    height: 240rpx;
+  }
+
+  .product-badge {
+    font-size: 18rpx;
+    padding: 4rpx 10rpx;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .shop-page {
+    background: linear-gradient(180deg, #0f172a 0%, #111827 38%, #0b1120 100%);
+  }
+
+  .content-wrapper {
+    color: #e2e8f0;
+  }
+
+  .points-card {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(17, 94, 89, 0.45));
+    border-color: rgba(45, 212, 191, 0.25);
+    box-shadow: 0 8rpx 28rpx rgba(2, 6, 23, 0.5);
+  }
+
+  .section-title,
+  .product-name {
+    color: #e2e8f0;
+  }
+
+  .product-count,
+  .product-desc {
+    color: #94a3b8;
+  }
+
+  .category-tabs {
+    background: rgba(15, 23, 42, 0.88);
+    border-color: rgba(148, 163, 184, 0.22);
+  }
+
+  .tab-item {
+    background: rgba(30, 41, 59, 0.72);
+    border-color: rgba(148, 163, 184, 0.18);
+    box-shadow: none;
+  }
+
+  .tab-item.active {
+    background: linear-gradient(135deg, #0891b2 0%, #14b8a6 100%);
+  }
+
+  .tab-text {
+    color: #cbd5e1;
+  }
+
+  .recommend-loading-mask {
+    background: linear-gradient(135deg, rgba(20, 184, 166, 0.2), rgba(14, 116, 144, 0.2));
+    border-color: rgba(45, 212, 191, 0.35);
+  }
+
+  .recommend-loading-text {
+    color: #99f6e4;
+  }
+
+  .product-card {
+    background: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88));
+    border-color: rgba(148, 163, 184, 0.2);
+    box-shadow: 0 8rpx 20rpx rgba(2, 6, 23, 0.55);
+  }
+
+  .detail-modal {
+    background: #0f172a;
+    border-color: rgba(148, 163, 184, 0.3);
+  }
+
+  .modal-body {
+    background: #0f172a;
+  }
+
+  .modal-name {
+    color: #e2e8f0;
+  }
+
+  .modal-desc {
+    color: #94a3b8;
+  }
+
+  .tabbar {
+    background: rgba(15, 23, 42, 0.9);
+    border-top: 2rpx solid rgba(148, 163, 184, 0.22);
+  }
+
+  .tabbar-icon,
+  .tabbar-label {
+    color: #94a3b8;
+  }
+}
+
 @keyframes iconBounce {
   0% { transform: scale(1) translateY(0); }
   40% { transform: scale(1.2) translateY(-8rpx); }
@@ -1434,3 +1730,5 @@ const goProfile = () => {
   100% { transform: scale(1.15) translateY(-4rpx); }
 }
 </style>
+
+

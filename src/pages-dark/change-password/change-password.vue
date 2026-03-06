@@ -72,7 +72,7 @@ function onChangePassword() {
   }
   // 密码强度校验
   if (newPassword.value.length < 6) {
-    uni.showToast({ title: '密码长度至少6位', icon: 'none' }, 1500)
+    uni.showToast({ title: '密码长度至少6λ', icon: 'none' }, 1500)
     return
   }
   let complexity = 0;
