@@ -255,7 +255,7 @@
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #43cea2, #185a9d);">
                             <text class="more-icon">🖼️</text>
                         </view>
-                        <text class="more-text">图片</text>
+                        <text class="more-text">ͼƬ</text>
                     </view>
                     <view class="more-item" @click="shootPhoto">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #667eea, #764ba2);">
@@ -462,7 +462,7 @@ import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
 
-// 本地存储 key 前缀
+// 本地存储 key ǰ׺
 const CHAT_STORAGE_PREFIX = 'chat_messages_'
 
 // 关系标签映射
@@ -1247,7 +1247,7 @@ export default {
                     if (serverMsg.type === 'location') {
                         content = contentObj
                     }
-                    // 图片/视频/文件/语音消息 - 提取path并拼接完整URL
+                    // ͼƬ/视频/文件/语音消息 - 提取path并拼接完整URL
                     else if ((serverMsg.type === 'image' || serverMsg.type === 'video' || serverMsg.type === 'file' || serverMsg.type === 'voice') && contentObj.path) {
                         content = `${baseUrl}/files/download/${contentObj.path}`
                     }
@@ -1256,7 +1256,7 @@ export default {
                 }
             }
             
-            // 处理非JSON格式的语音/图片/视频/文件相对路径
+            // 处理非JSON格式的语音/ͼƬ/视频/文件相对路径
             // 如果content是字符串且不是以http开头,可能是相对路径,需要拼接完整URL
             if (typeof content === 'string' && 
                 !content.startsWith('http://') && 
@@ -3256,9 +3256,9 @@ export default {
             // 标记加载失败
             this.$set(this.mediaLoadErrors, msg.id, { type: 'image', error: true, retryCount: 0 })
             
-            // 如果是 blob URL 失效,尝试从服务器重新加载
+            // 如果是 blob URL ʧЧ,尝试从服务器重新加载
             if (msg.content && msg.content.startsWith('blob:')) {
-                console.log('检测到 blob URL 失效,尝试从服务器重新加载...')
+                console.log('检测到 blob URL ʧЧ,尝试从服务器重新加载...')
                 
                 // 清除失效的缓存
                 if (this.localFileCache[msg.id]) {
@@ -3307,7 +3307,7 @@ export default {
             const currentRetry = this.mediaLoadErrors[msg.id]?.retryCount || 0
             if (currentRetry >= 3) {
                 uni.showToast({
-                    title: `${type === 'image' ? '图片' : type === 'voice' ? '语音' : type === 'video' ? '视频' : '文件'}重试次数过多，请稍后再试`,
+                    title: `${type === 'image' ? 'ͼƬ' : type === 'voice' ? '语音' : type === 'video' ? '视频' : '文件'}重试次数过多，请稍后再试`,
                     icon: 'none',
                     duration: 2000
                 })
@@ -3330,7 +3330,7 @@ export default {
                     case 'image':
                         // 图片重试:尝试从服务器重新获取
                         if (msg.content && msg.content.startsWith('blob:')) {
-                            // blob URL失效,从服务器重新加载
+                            // blob URLʧЧ,从服务器重新加载
                             const res = await chatApi.getChatHistory({ 
                                 chatId: this.chatId, 
                                 messageId: msg.id 
@@ -3473,7 +3473,7 @@ export default {
                 case 'text':
                     return refMsg.content.substring(0, 50) + (refMsg.content.length > 50 ? '...' : '')
                 case 'image':
-                    return '[图片]'
+                    return '[ͼƬ]'
                 case 'video':
                     return '[视频]'
                 case 'voice':

@@ -1,6 +1,6 @@
 ﻿<template>
   <view class="profile-page">
-    <!-- 鑳屾櫙瑁呴グ -->
+    <!-- 背景装饰 -->
     <view class="bg-decoration">
       <view class="bg-circle circle-1"></view>
       <view class="bg-circle circle-2"></view>
@@ -12,20 +12,20 @@
       </view>
     </view>
     
-    <!-- 椤堕儴缁胯壊鑳屾櫙鍖哄煙 -->
+    <!-- 顶部绿色背景区域 -->
     <view class="profile-header">
       <view class="header-content">
         <view class="header-top">
-          <text class="header-title">馃懁 涓汉涓績</text>
+          <text class="header-title">👤 个人中心</text>
           <view class="carbon-badge">
-            <text class="carbon-icon">馃崈</text>
-            <text class="carbon-text">宸插噺纰?{{ calculateCarbonReduction(points || 0) }}</text>
+            <text class="carbon-icon">🍃</text>
+            <text class="carbon-text">已减碳{{ calculateCarbonReduction(points || 0) }}</text>
           </view>
         </view>
       </view>
     </view>
 
-    <!-- 鐢ㄦ埛淇℃伅鍗＄墖 -->
+    <!-- 用户信息卡片 -->
     <view class="user-card">
       <view class="user-avatar-section">
         <view class="avatar-wrapper">
@@ -34,7 +34,7 @@
         </view>
         <view class="user-level">
           <text class="level-badge">LV.{{ Math.floor((points || 0) / 100) + 1 }}</text>
-          <text class="level-text">鐜繚杈句汉</text>
+          <text class="level-text">环保达人</text>
         </view>
       </view>
       
@@ -42,241 +42,241 @@
         <text class="username">{{ userInfo.username || username }}</text>
         <text class="user-id">ID: {{ (userInfo.username || username).toUpperCase() }}</text>
         <view class="user-badges">
-          <text class="badge" v-if="(points || 0) >= 100">馃尶 鍒嗙被涓撳</text>
-          <text class="badge" v-if="(points || 0) >= 300">鈾伙笍 鍥炴敹鐜嬭€?</text>
-          <text class="badge" v-if="(points || 0) >= 500">馃實 鍦扮悆瀹堟姢鑰?</text>
+          <text class="badge" v-if="(points || 0) >= 100">🌿 分类专家</text>
+          <text class="badge" v-if="(points || 0) >= 300">♻️ 回收王者</text>
+          <text class="badge" v-if="(points || 0) >= 500">🌍 地球守护者</text>
         </view>
       </view>
     </view>
 
-    <!-- 缁熻鏁版嵁鍗＄墖 -->
+    <!-- 统计数据卡片 -->
     <view class="stats-card">
       <view class="stats-header">
-        <text class="stats-title">馃實 鐜繚璐＄尞</text>
+        <text class="stats-title">🌍 环保贡献</text>
         <view class="refresh-btn" @click="handleRefresh" :class="{ rotating: loading }">
-          <text>鈾伙笍</text>
+          <text>♻️</text>
         </view>
       </view>
       
       <view class="stats-grid" v-if="!loading">
         <view class="stat-item" @click="showPointsInfo">
           <view class="stat-icon-wrapper green">
-            <text class="stat-icon">馃専</text>
+            <text class="stat-icon">🌟</text>
           </view>
           <view class="stat-data">
             <text class="stat-value">{{ points || 0 }}</text>
-            <text class="stat-label">鐜繚绉垎</text>
+            <text class="stat-label">环保积分</text>
           </view>
         </view>
 
         <view class="stat-item" @click="showCarbonInfo">
           <view class="stat-icon-wrapper blue">
-            <text class="stat-icon">馃崈</text>
+            <text class="stat-icon">🍃</text>
           </view>
           <view class="stat-data">
             <text class="stat-value">{{ calculateCarbonReduction(points || 0) }}</text>
-            <text class="stat-label">鍑忕⒊閲?</text>
+            <text class="stat-label">减碳量</text>
           </view>
         </view>
 
         <view class="stat-item">
           <view class="stat-icon-wrapper orange">
-            <text class="stat-icon">鈾伙笍</text>
+            <text class="stat-icon">♻️</text>
           </view>
           <view class="stat-data">
             <text class="stat-value">{{ Math.floor((points || 0) / 8) }}</text>
-            <text class="stat-label">鍥炴敹璐＄尞</text>
+            <text class="stat-label">回收贡献</text>
           </view>
         </view>
       </view>
 
       <view class="loading-state" v-else>
         <view class="loading-spinner"></view>
-        <text class="loading-text">鏁版嵁鍚屾涓?..</text>
+        <text class="loading-text">数据同步中..</text>
       </view>
     </view>
 
-    <!-- 璁惧杩炴帴鐘舵€佸崱鐗?-->
+    <!-- 设备连接状态卡片-->
     <view v-if="hasConnection" class="device-card">
       <view class="device-header">
         <view class="device-title">
-          <text class="device-icon">馃摫</text>
-          <text>璁惧杩炴帴</text>
+          <text class="device-icon">📱</text>
+          <text>设备连接</text>
         </view>
         <view class="device-status">
           <view class="status-dot"></view>
-          <text>鍦ㄧ嚎</text>
+          <text>在线</text>
         </view>
       </view>
       
       <view class="device-content" @click="goToDeviceConnection">
         <view class="device-info">
-          <text class="device-name">{{ connectedDevice?.device_name || '鏅鸿兘鍨冨溇鍒嗙被璁惧' }}</text>
+          <text class="device-name">{{ connectedDevice?.device_name || '智能垃圾分类设备' }}</text>
           <text class="device-id">ID: {{ connectedDevice?.device_id || connectedDevice?.id || 'N/A' }}</text>
         </view>
-        <text class="device-arrow">鈥?</text>
+        <text class="device-arrow">→</text>
       </view>
       
       <view class="device-footer">
         <view class="device-stat">
-          <text class="stat-label">杩炴帴鏃堕暱</text>
+          <text class="stat-label">连接时长</text>
           <text class="stat-value">{{ connectionDuration }}</text>
         </view>
         <view class="device-stat">
-          <text class="stat-label">杩愯鐘舵€?</text>
-          <text class="stat-value">姝ｅ父</text>
+          <text class="stat-label">运行状态</text>
+          <text class="stat-value">正常</text>
         </view>
       </view>
     </view>
 
-    <!-- 鍔熻兘鑿滃崟 -->
+    <!-- 功能菜单 -->
     <view class="menu-section">
-      <view class="menu-title">鍔熻兘鏈嶅姟</view>
+      <view class="menu-title">功能服务</view>
       <view class="menu-grid">
         <view class="menu-item" @click="goHistory">
-          <view class="menu-icon blue">馃搵</view>
-          <text class="menu-text">璇嗗埆鍘嗗彶</text>
+          <view class="menu-icon blue">📋</view>
+          <text class="menu-text">识别历史</text>
         </view>
         <view class="menu-item" @click="goRanking">
-          <view class="menu-icon orange">馃弳</view>
-          <text class="menu-text">鎺掕姒?</text>
+          <view class="menu-icon orange">🏆</view>
+          <text class="menu-text">排行榜</text>
         </view>
                 <view class="menu-item" @click="goAchievements">
           <view class="menu-icon green">🏅</view>
           <text class="menu-text">成就系统</text>
         </view>
         <view class="menu-item" @click="goGuide">
-          <view class="menu-icon purple">馃摎</view>
-          <text class="menu-text">鍒嗙被鎸囧崡</text>
+          <view class="menu-icon purple">📚</view>
+          <text class="menu-text">分类指南</text>
         </view>
         <view class="menu-item" @click="goSettings">
-          <view class="menu-icon gray">鈿欙笍</view>
-          <text class="menu-text">鐢ㄦ埛璁剧疆</text>
+          <view class="menu-icon gray">⚙️</view>
+          <text class="menu-text">用户设置</text>
         </view>
         <view class="menu-item" @click="goAbout">
-          <view class="menu-icon cyan">鈩癸笍</view>
-          <text class="menu-text">鍏充簬杞欢</text>
+          <view class="menu-icon cyan">ℹ️</view>
+          <text class="menu-text">关于软件</text>
         </view>
       </view>
     </view>
 
-    <!-- 绠＄悊鍛樺姛鑳?-->
+    <!-- 管理员功能-->
     <view v-if="isAdmin" class="admin-section">
-      <view class="menu-title">绠＄悊鍛樺姛鑳?</view>
+      <view class="menu-title">管理员功能</view>
       <view class="admin-grid">
-        <view class="admin-item" @click="goFileManagement">馃搨 鏂囦欢绠＄悊</view>
-        <view class="admin-item" @click="go2048">馃幉 2048鍚庡彴</view>
-        <view class="admin-item" @click="goDbMonitor">馃搳 鏁版嵁搴?</view>
-        <view class="admin-item" @click="goAPITest">鈽?鎺ュ彛娴嬭瘯</view>
+        <view class="admin-item" @click="goFileManagement">📂 文件管理</view>
+        <view class="admin-item" @click="go2048">🎲 2048后台</view>
+        <view class="admin-item" @click="goDbMonitor">📊 数据库</view>
+        <view class="admin-item" @click="goAPITest">🧪 接口测试</view>
       </view>
     </view>
 
-    <!-- 搴曢儴瀵艰埅鏍?-->
+    <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
-        <text class="tabbar-icon">馃彔</text>
-        <text class="tabbar-label">棣栭〉</text>
+        <text class="tabbar-icon">🏠</text>
+        <text class="tabbar-label">首页</text>
       </view>
       <view class="tabbar-item" @click="goMap">
-        <text class="tabbar-icon">馃椇锔?</text>
-        <text class="tabbar-label">鍦板浘</text>
+        <text class="tabbar-icon">🗺️</text>
+        <text class="tabbar-label">地图</text>
       </view>
       <view class="tabbar-item" @click="goShop">
-        <text class="tabbar-icon">馃泹锔?</text>
-        <text class="tabbar-label">鍟嗗煄</text>
+        <text class="tabbar-icon">🛍️</text>
+        <text class="tabbar-label">商城</text>
       </view>
       <view class="tabbar-item active">
-        <text class="tabbar-icon">馃懁</text>
-        <text class="tabbar-label">鎴戠殑</text>
+        <text class="tabbar-icon">👤</text>
+        <text class="tabbar-label">我的</text>
       </view>
     </view>
 
-    <!-- 绉垎淇℃伅寮圭獥 -->
+    <!-- 积分信息弹窗 -->
     <view v-if="showInfoModal" class="modal-overlay" @click="closePointsInfo">
       <view class="info-modal" @click.stop>
         <view class="modal-header">
-          <text class="modal-title">馃挵 绉垎鑾峰彇璇存槑</text>
-          <view class="modal-close" @click="closePointsInfo">鉁?</view>
+          <text class="modal-title">💰 积分获取说明</text>
+          <view class="modal-close" @click="closePointsInfo">✕</view>
         </view>
         <view class="modal-body">
           <view class="info-item">
-            <view class="info-icon blue">馃攳</view>
+            <view class="info-icon blue">🔍</view>
             <view class="info-content">
-              <text class="info-title">鍦ㄧ嚎璇嗗埆</text>
-              <text class="info-desc">姣忔璇嗗埆鍨冨溇鍙幏寰?绉垎</text>
-              <text class="info-tag">姣忔棩涓婇檺锛?绉垎</text>
+              <text class="info-title">在线识别</text>
+              <text class="info-desc">每次识别垃圾可获得1积分</text>
+              <text class="info-tag">每日上限：5积分</text>
             </view>
           </view>
           <view class="info-item">
-            <view class="info-icon green">馃棏锔?</view>
+            <view class="info-icon green">🗑️</view>
             <view class="info-content">
-              <text class="info-title">鏅鸿兘鍒嗙被瑁呯疆</text>
-              <text class="info-desc">浣跨敤鍒嗙被瑁呯疆鎶曟斁鍨冨溇</text>
-              <text class="info-tag">姣忔鑾峰緱1-3绉垎</text>
+              <text class="info-title">智能分类装置</text>
+              <text class="info-desc">使用分类装置投放垃圾</text>
+              <text class="info-tag">每次获得1-3积分</text>
             </view>
           </view>
           <view class="info-item">
-            <view class="info-icon orange">馃巵</view>
+            <view class="info-icon orange">🎁</view>
             <view class="info-content">
-              <text class="info-title">棰濆濂栧姳</text>
-              <text class="info-desc">杩炵画鐧诲綍銆佸畬缇庡垎绫荤瓑鍙幏寰楅澶栫Н鍒?</text>
+              <text class="info-title">额外奖励</text>
+              <text class="info-desc">连续登录、完美分类等可获得额外积分</text>
             </view>
           </view>
         </view>
         <view class="modal-footer">
-          <text class="footer-tip">绉垎鍙湪鍟嗗煄鍏戞崲绮剧編绀煎搧</text>
-          <view class="footer-btn" @click="goToShop">鍓嶅線鍟嗗煄</view>
+          <text class="footer-tip">积分可在商城兑换精美礼品</text>
+          <view class="footer-btn" @click="goToShop">前往商城</view>
         </view>
       </view>
     </view>
 
-    <!-- 鍑忕⒊淇℃伅寮圭獥 -->
+    <!-- 减碳信息弹窗 -->
     <view v-if="showCarbonModal" class="modal-overlay" @click="closeCarbonInfo">
       <view class="info-modal" @click.stop>
         <view class="modal-header">
-          <text class="modal-title">馃崈 鍑忕⒊閲忚绠楄鏄?</text>
-          <view class="modal-close" @click="closeCarbonInfo">鉁?</view>
+          <text class="modal-title">🍃 减碳量计算说明</text>
+          <view class="modal-close" @click="closeCarbonInfo">✕</view>
         </view>
         <view class="modal-body">
           <view class="info-item">
-            <view class="info-icon blue">鈾伙笍</view>
+            <view class="info-icon blue">♻️</view>
             <view class="info-content">
-              <text class="info-title">鍙洖鏀跺瀮鍦惧垎绫?</text>
-              <text class="info-desc">姣忔姝ｇ‘鍒嗙被鍙洖鏀跺瀮鍦?</text>
-              <text class="info-tag">鍑忔帓绾?6g CO鈧?</text>
+              <text class="info-title">可回收垃圾分类</text>
+              <text class="info-desc">每次正确分类可回收垃圾</text>
+              <text class="info-tag">减排约 6g CO₂</text>
             </view>
           </view>
           <view class="info-item">
-            <view class="info-icon green">馃崕</view>
+            <view class="info-icon green">🍎</view>
             <view class="info-content">
-              <text class="info-title">鍘ㄤ綑鍨冨溇鍒嗙被</text>
-              <text class="info-desc">閬垮厤鍘ㄤ綑鍨冨溇濉煁浜х敓鐢茬兎</text>
-              <text class="info-tag">鍑忔帓绾?9g CO鈧?</text>
+              <text class="info-title">厨余垃圾分类</text>
+              <text class="info-desc">避免厨余垃圾填埋产生甲烷</text>
+              <text class="info-tag">减排约 9g CO₂</text>
             </view>
           </view>
           <view class="info-item">
-            <view class="info-icon red">鈽笍</view>
+            <view class="info-icon red">☢️</view>
             <view class="info-content">
-              <text class="info-title">鏈夊鍨冨溇鍒嗙被</text>
-              <text class="info-desc">涓撲笟澶勭悊閬垮厤鐜姹℃煋</text>
-              <text class="info-tag">鍑忔帓绾?7g CO鈧?</text>
+              <text class="info-title">有害垃圾分类</text>
+              <text class="info-desc">专业处理避免环境污染</text>
+              <text class="info-tag">减排约 7g CO₂</text>
             </view>
           </view>
         </view>
         <view class="modal-footer">
-          <text class="equivalent-title">鎮ㄧ殑鍑忕⒊閲忕浉褰撲簬锛?</text>
+          <text class="equivalent-title">您的减碳量相当于：</text>
           <view class="equivalent-list">
             <view class="equivalent-item">
-              <text>馃尦</text>
-              <text>绉嶆 {{ getCarbonEquivalents(points || 0).trees }} 妫垫爲涓€骞寸殑鍚哥⒊閲?</text>
+              <text>🌳</text>
+              <text>种植 {{ getCarbonEquivalents(points || 0).trees }} 棵树一年的吸碳量</text>
             </view>
             <view class="equivalent-item">
-              <text>馃殫</text>
-              <text>鍑忓皯 {{ getCarbonEquivalents(points || 0).carKm }} 鍏噷姹借溅琛岄┒</text>
+              <text>🚗</text>
+              <text>减少 {{ getCarbonEquivalents(points || 0).carKm }} 公里汽车行驶</text>
             </view>
             <view class="equivalent-item">
-              <text>馃挕</text>
-              <text>鑺傜渷 {{ getCarbonEquivalents(points || 0).electricity }} 搴︾數鐨勭⒊鎺掓斁</text>
+              <text>💡</text>
+              <text>节省 {{ getCarbonEquivalents(points || 0).electricity }} 度电的碳排放</text>
             </view>
           </view>
         </view>
@@ -350,17 +350,17 @@ const { hasConnection, connectedDevice, goToDeviceConnection, points } = useDevi
 
 const connectionDuration = computed(() => {
   const connectionTime = uni.getStorageSync('connection')
-  if (!connectionTime) return '0鍒嗛挓'
+  if (!connectionTime) return '0分钟'
   
   const now = Date.now()
   const diffMinutes = Math.floor((now - connectionTime) / (1000 * 60))
   
-  if (diffMinutes < 1) return '鍒氬垰杩炴帴'
-  if (diffMinutes < 60) return `${diffMinutes}鍒嗛挓`
+  if (diffMinutes < 1) return '刚刚连接'
+  if (diffMinutes < 60) return `${diffMinutes}分钟`
   
   const hours = Math.floor(diffMinutes / 60)
   const minutes = diffMinutes % 60
-  return minutes > 0 ? `${hours}灏忔椂${minutes}鍒嗛挓` : `${hours}灏忔椂`
+  return minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`
 })
 
 const fetchUserInfo = async () => {
@@ -368,7 +368,7 @@ const fetchUserInfo = async () => {
     loading.value = true
     const token = uni.getStorageSync('token')
     if (!token) {
-      username.value = '娓稿'
+      username.value = '游客'
       isAdmin.value = false
       uni.removeStorageSync('isAdmin')
       return false
@@ -386,11 +386,11 @@ const fetchUserInfo = async () => {
         return true
       } catch (e) { return false }
     } else {
-      uni.showToast({ title: response.data.msg || '鑾峰彇鐢ㄦ埛淇℃伅澶辫触', icon: 'none' })
+      uni.showToast({ title: response.data.msg || '获取用户信息失败', icon: 'none' })
       return false
     }
   } catch (error) {
-    uni.showToast({ title: error?.msg || '缃戠粶閿欒', icon: 'none' })
+    uni.showToast({ title: error?.msg || '网络错误', icon: 'none' })
     return false
   } finally {
     loading.value = false
@@ -403,7 +403,7 @@ onMounted(async () => {
   await fetchUserInfo()
   if (uni.getStorageSync('isAdmin') && !isAdmin.value) uni.removeStorageSync('isAdmin')
   
-  // 娣诲姞缁熻椤归紶鏍囪拷韪晥鏋?
+  // 添加统计项鼠标追踪效果
   if (typeof document !== 'undefined') {
     const statItems = document.querySelectorAll('.stat-item')
     statItems.forEach(item => {
@@ -425,7 +425,7 @@ onMounted(async () => {
       })
     })
     
-    // 娣诲姞鑿滃崟椤归紶鏍囪拷韪晥鏋?
+    // 添加菜单项鼠标追踪效果
     const menuItems = document.querySelectorAll('.menu-item')
     menuItems.forEach(item => {
       item.addEventListener('mousemove', (e) => {
@@ -446,7 +446,7 @@ onMounted(async () => {
       })
     })
     
-    // 娣诲姞鐢ㄦ埛鍗＄墖榧犳爣杩借釜鏁堟灉
+    // 添加用户卡片鼠标追踪效果
     const userCard = document.querySelector('.user-card')
     if (userCard) {
       userCard.addEventListener('mousemove', (e) => {
@@ -467,7 +467,7 @@ onMounted(async () => {
       })
     }
     
-    // 娣诲姞缁熻鍗＄墖榧犳爣杩借釜鏁堟灉
+    // 添加统计卡片鼠标追踪效果
     const statsCard = document.querySelector('.stats-card')
     if (statsCard) {
       statsCard.addEventListener('mousemove', (e) => {
@@ -488,7 +488,7 @@ onMounted(async () => {
       })
     }
     
-    // 娣诲姞閫€鍑烘寜閽紶鏍囪拷韪晥鏋?
+    // 添加退出按钮鼠标追踪效果
     const logoutBtn = document.querySelector('.logout-btn')
     if (logoutBtn) {
       logoutBtn.addEventListener('mousemove', (e) => {
@@ -512,7 +512,7 @@ onMounted(async () => {
 })
 
 const handleRefresh = async () => {
-  if (await fetchUserInfo()) uni.showToast({ title: '鍒锋柊鎴愬姛', icon: 'success' })
+  if (await fetchUserInfo()) uni.showToast({ title: '刷新成功', icon: 'success' })
 }
 
 const showPointsInfo = () => { showInfoModal.value = true }
@@ -556,7 +556,7 @@ async function verifyAdminPermission() {
       return false
     }
   } catch (err) {
-    uni.showToast({ title: '鏉冮檺楠岃瘉澶辫触', icon: 'none' })
+    uni.showToast({ title: '权限验证失败', icon: 'none' })
     return false
   }
 }
@@ -603,7 +603,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
 </script>
 
 <style scoped>
-/* 椤甸潰鍩虹 */
+/* 页面基础 */
 .profile-page {
   min-height: 100vh;
   background: linear-gradient(180deg, #f0fdf4 0%, #f5f7fa 30%, #f0f9ff 70%, #f5f7fa 100%);
@@ -612,7 +612,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   overflow-x: hidden;
 }
 
-/* 鑳屾櫙瑁呴グ */
+/* 背景装饰 */
 .bg-decoration {
   position: fixed;
   top: 0;
@@ -625,7 +625,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   animation: bgLightShift 15s ease-in-out infinite;
 }
 
-/* 鑳屾櫙鍏夊奖娴佸姩鏁堟灉 */
+/* 背景光影流动效果 */
 @keyframes bgLightShift {
   0%, 100% {
     background: radial-gradient(ellipse at 80% 20%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
@@ -686,7 +686,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   animation: float3 12s ease-in-out infinite;
 }
 
-/* 鐞冨舰娴姩鍔ㄧ敾 */
+/* 球形浮动动画 */
 @keyframes float1 {
   0%, 100% {
     transform: translate(0, 0) scale(1);
@@ -755,7 +755,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   border-radius: 50%;
 }
 
-/* 椤堕儴缁胯壊鑳屾櫙 */
+/* 顶部绿色背景 */
 .profile-header {
   background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
   /* ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ */
@@ -809,7 +809,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   color: #ffffff;
 }
 
-/* 鐢ㄦ埛淇℃伅鍗＄墖 */
+/* 用户信息卡片 */
 .user-card {
   margin: -60rpx 32rpx 24rpx;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(236, 253, 245, 0.9) 30%, rgba(209, 250, 229, 0.85) 50%, rgba(236, 253, 245, 0.9) 70%, rgba(255, 255, 255, 0.95) 100%);
@@ -824,7 +824,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   transition: all 0.3s ease;
 }
 
-/* 鐜荤拑鏉愯川璐ㄦ劅 - 椤堕儴楂樺厜 */
+/* 玻璃材质质感 - 顶部高光 */
 .user-card::before {
   content: '';
   position: absolute;
@@ -837,7 +837,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   border-radius: 24rpx 24rpx 0 0;
 }
 
-/* 鏌斿拰娉㈢汗鍛煎惛鏁堟灉 */
+/* 柔和波纹呼吸效果 */
 .user-card .ripple-effect {
   position: absolute;
   top: 50%;
@@ -861,7 +861,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 绗簩灞傛尝绾?- 閿欎綅 */
+/* 第二层波纹- 错位 */
 .user-card .ripple-effect-2 {
   position: absolute;
   top: 50%;
@@ -885,7 +885,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 鍏夋劅杩介殢榧犳爣鏁堟灉 */
+/* 光感追随鼠标效果 */
 .user-card::after {
   content: '';
   position: absolute;
@@ -997,7 +997,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   font-weight: 500;
 }
 
-/* 缁熻鏁版嵁鍗＄墖 */
+/* 统计数据卡片 */
 .stats-card {
   margin: 0 32rpx 24rpx;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(236, 253, 245, 0.9) 30%, rgba(209, 250, 229, 0.85) 50%, rgba(236, 253, 245, 0.9) 70%, rgba(255, 255, 255, 0.95) 100%);
@@ -1012,7 +1012,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   transition: all 0.3s ease;
 }
 
-/* 纾ㄧ爞鐜荤拑鏉愯川璐ㄦ劅 */
+/* 磨砂玻璃材质质感 */
 .stats-card::before {
   content: '';
   position: absolute;
@@ -1025,7 +1025,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   border-radius: 24rpx 24rpx 0 0;
 }
 
-/* 鏌斿拰娉㈢汗鍛煎惛鏁堟灉 */
+/* 柔和波纹呼吸效果 */
 .stats-card .ripple-effect {
   position: absolute;
   top: 50%;
@@ -1049,7 +1049,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 绗簩灞傛尝绾?*/
+/* 第二层波纹*/
 .stats-card .ripple-effect-2 {
   position: absolute;
   top: 50%;
@@ -1073,7 +1073,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 鍏夋劅杩介殢榧犳爣鏁堟灉 */
+/* 光感追随鼠标效果 */
 .stats-card::after {
   content: '';
   position: absolute;
@@ -1143,7 +1143,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   transition: all 0.3s ease;
 }
 
-/* 鍏夋劅杩介殢榧犳爣鏁堟灉 */
+/* 光感追随鼠标效果 */
 .stat-item::after {
   content: '';
   position: absolute;
@@ -1240,7 +1240,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   color: #6b7280;
 }
 
-/* 璁惧鍗＄墖 */
+/* 设备卡片 */
 .device-card {
   margin: 0 32rpx 24rpx;
   background: rgba(255, 255, 255, 0.95);
@@ -1349,7 +1349,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   color: #10b981;
 }
 
-/* 鍔熻兘鑿滃崟 */
+/* 功能菜单 */
 .menu-section {
   margin: 0 32rpx 24rpx;
   position: relative;
@@ -1382,7 +1382,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   transition: all 0.3s ease;
 }
 
-/* 鐜荤拑鏉愯川璐ㄦ劅 - 椤堕儴楂樺厜 */
+/* 玻璃材质质感 - 顶部高光 */
 .menu-item::before {
   content: '';
   position: absolute;
@@ -1395,7 +1395,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   border-radius: 20rpx 20rpx 0 0;
 }
 
-/* 鏌斿拰娉㈢汗鍛煎惛鏁堟灉 */
+/* 柔和波纹呼吸效果 */
 .menu-item .ripple-effect {
   position: absolute;
   top: 50%;
@@ -1419,7 +1419,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 鍏夋劅杩介殢榧犳爣鏁堟灉 */
+/* 光感追随鼠标效果 */
 .menu-item::after {
   content: '';
   position: absolute;
@@ -1443,32 +1443,32 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   transform: scale(0.95);
 }
 
-/* 璇嗗埆鍘嗗彶 - 钃濊壊 */
+/* 识别历史 - 蓝色 */
 .menu-item:nth-child(1) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(219, 234, 254, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
 
-/* 鎺掕姒?- 姗欒壊 */
+/* 排行榜- 橙色 */
 .menu-item:nth-child(2) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 237, 213, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
 
-/* 鍨冨溇妗跺湴鍥?- 缁胯壊 */
+/* 垃圾桶地图- 绿色 */
 .menu-item:nth-child(3) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(209, 250, 229, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
 
-/* 鍒嗙被鎸囧崡 - 绱壊 */
+/* 分类指南 - 紫色 */
 .menu-item:nth-child(4) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(243, 232, 255, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
 
-/* 璐︽埛瀹夊叏 - 鐏拌壊 */
+/* 账户安全 - 灰色 */
 .menu-item:nth-child(5) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(243, 244, 246, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
 
-/* 鍏充簬杞欢 - 闈掕壊 */
+/* 关于软件 - 青色 */
 .menu-item:nth-child(6) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(207, 250, 254, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
@@ -1495,7 +1495,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 鑿滃崟鍥炬爣鎮诞鏁堟灉 - 澧炲己鐗?*/
+/* 菜单图标悬浮效果 - 澧炲己鐗?*/
 .menu-item:hover .menu-icon,
 .menu-item:active .menu-icon {
   animation: menuIconHoverBounce 0.6s ease;
@@ -1508,7 +1508,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   100% { transform: scale(1) rotate(0deg); }
 }
 
-/* 榧犳爣鎮仠鏃剁殑鎵撴嫑鍛煎姩鐢?*/
+/* 鼠标悬停时的招呼动画*/
 @keyframes menuIconHoverBounce {
   0% {
     transform: scale(1) rotate(0deg);
@@ -1545,7 +1545,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   color: #4b5563;
 }
 
-/* 绠＄悊鍛樺姛鑳?*/
+/* 管理员功能*/
 .admin-section {
   margin: 0 32rpx 24rpx;
   position: relative;
@@ -1570,7 +1570,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   border: 1rpx solid rgba(255, 255, 255, 0.5);
 }
 
-/* 搴曢儴瀵艰埅 */
+/* 底部导航 */
 .tabbar {
   position: fixed;
   left: 0;
@@ -1639,7 +1639,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   100% { transform: scale(1.15) translateY(-4rpx); }
 }
 
-/* 寮圭獥 */
+/* 弹窗 */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1699,7 +1699,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   overflow: hidden;
 }
 
-/* 澶撮儴楂樺厜 */
+/* 头部高光 */
 .modal-header::before {
   content: '';
   position: absolute;
@@ -1755,7 +1755,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   position: relative;
 }
 
-/* 鑳屾櫙绾圭悊澧炲姞绾垫繁鎰?*/
+/* 背景纹理增加纵深感*/
 .modal-body::before {
   content: '';
   position: absolute;
@@ -1791,7 +1791,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   overflow: hidden;
 }
 
-/* 鐜荤拑璐ㄦ劅楂樺厜 */
+/* 玻璃质感高光 */
 .info-item::before {
   content: '';
   position: absolute;
@@ -1845,7 +1845,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   overflow: hidden;
 }
 
-/* 鍥炬爣椤堕儴楂樺厜 */
+/* 图标顶部高光 */
 .info-icon::after {
   content: '';
   position: absolute;
@@ -1935,7 +1935,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   overflow: hidden;
 }
 
-/* 搴曢儴楂樺厜 */
+/* 底部高光 */
 .modal-footer::before {
   content: '';
   position: absolute;
@@ -2019,7 +2019,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   transition: all 0.3s ease;
 }
 
-/* 鍗＄墖椤堕儴楂樺厜 */
+/* 卡片顶部高光 */
 .equivalent-item::before {
   content: '';
   position: absolute;
@@ -2035,7 +2035,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   pointer-events: none;
 }
 
-/* 鎮诞鏁堟灉澧炲姞绾垫繁鎰?*/
+/* 悬浮效果增加纵深感*/
 .equivalent-item:hover {
   transform: translateY(-4rpx);
   box-shadow:

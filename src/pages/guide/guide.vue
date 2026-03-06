@@ -71,7 +71,7 @@
               <text class="example-item">🔋 电池</text>
               <text class="example-item">💡 灯管</text>
               <text class="example-item">🎨 油漆</text>
-              <text class="example-item">💊 药品</text>
+              <text class="example-item">💊 ҩƷ</text>
               <text class="example-item">🌡️ 水银</text>
               <text class="example-item">🧴 清洁剂</text>
               <text class="example-item">🪫 充电宝</text>
@@ -86,7 +86,7 @@
               <text class="example-item">🔋 电池</text>
               <text class="example-item">💡 灯管</text>
               <text class="example-item">🎨 油漆</text>
-              <text class="example-item">💊 药品</text>
+              <text class="example-item">💊 ҩƷ</text>
               <text class="example-item">🌡️ 水银</text>
             </view>
           </view>

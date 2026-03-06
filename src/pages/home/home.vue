@@ -1,6 +1,6 @@
 ﻿<template>
   <view class="home-page">
-    <!-- 鑳屾櫙瑁呴グ -->
+    <!-- 背景装饰 -->
     <view class="bg-decoration">
       <view class="bg-circle circle-1"></view>
       <view class="bg-circle circle-2"></view>
@@ -12,13 +12,13 @@
       </view>
     </view>
     
-    <!-- 椤堕儴缁胯壊鑳屾櫙鍖哄煙 -->
+    <!-- 顶部绿色背景区域 -->
     <view class="header-bg">
-      <!-- 瑁呴グ鍏冪礌 -->
+      <!-- 装饰元素 -->
       <view class="header-deco">
-        <view class="deco-leaf leaf-1">馃尶</view>
-        <view class="deco-leaf leaf-2">馃崈</view>
-        <view class="deco-leaf leaf-3">鈾伙笍</view>
+        <view class="deco-leaf leaf-1">🌿</view>
+        <view class="deco-leaf leaf-2">🍃</view>
+        <view class="deco-leaf leaf-3">♻️</view>
         <view class="deco-circle hc1"></view>
         <view class="deco-circle hc2"></view>
       </view>
@@ -29,57 +29,57 @@
         </svg>
       </view>
       
-      <!-- 椤甸潰鏍囬 -->
+      <!-- 页面标题 -->
       <view class="header-content">
         <view class="main-title">
           <image class="title-icon" src="/static/colorful-bin.png" mode="aspectFill"></image>
-          <text class="title-text">AI鍨冨溇璇嗗埆</text>
+          <text class="title-text">AI垃圾识别</text>
         </view>
-        <text class="subtitle">鏅鸿兘鍒嗙被 路 缁胯壊鐜繚 路 绉戞妧璧嬭兘</text>
+        <text class="subtitle">智能分类 · 绿色环保 · 科技赋能</text>
       </view>
     </view>
 
-    <!-- 涓诲唴瀹瑰尯鍩?-->
+    <!-- 主内容区域-->
     <view class="content-wrapper">
-      <!-- 璁惧杩炴帴鐘舵€佸崱鐗?-->
+      <!-- 设备连接状态卡片-->
       <view v-if="hasConnection" class="device-card" @click="goToDeviceConnection">
         <view class="device-card-content">
           <view class="device-status">
             <view class="status-dot"></view>
             <view class="device-info">
-              <text class="device-title">馃摗 鏅鸿兘璁惧鍦ㄧ嚎</text>
-              <text class="device-name">{{ connectedDevice?.device_name || '鐜繚鍒嗙被璁惧' }}</text>
+              <text class="device-title">📡 智能设备在线</text>
+              <text class="device-name">{{ connectedDevice?.device_name || '环保分类设备' }}</text>
             </view>
           </view>
           <view class="device-action">
-            <text class="action-text">绠＄悊</text>
-            <text class="action-arrow">鈥?</text>
+            <text class="action-text">管理</text>
+            <text class="action-arrow">→</text>
           </view>
         </view>
       </view>
 
-      <!-- 涓婁紶鍖哄煙 -->
+      <!-- 上传区域 -->
       <view class="upload-card" @click="onAddImage" :class="{ 'processing': isProcessing }">
-        <!-- 绉戞妧娉㈢汗鏁堟灉灞?-->
+        <!-- 科技波纹效果层 -->
         <view class="tech-wave-2"></view>
         <view class="tech-wave-3"></view>
         <view class="glass-reflection"></view>
         <view class="upload-content">
           <view class="upload-icon-wrapper">
-            <text v-if="!isProcessing" class="upload-icon">馃摲</text>
+            <text v-if="!isProcessing" class="upload-icon">📷</text>
             <view v-else class="loading-spinner"></view>
           </view>
-          <text class="upload-title" v-if="!isProcessing">鐐瑰嚮鎷嶇収璇嗗埆</text>
+          <text class="upload-title" v-if="!isProcessing">点击拍照识别</text>
           <text class="upload-title processing" v-else>{{ processStatus }}</text>
-          <text class="upload-desc" v-if="!isProcessing">鏀寔 JPG銆丳NG 鏍煎紡</text>
-          <text class="upload-desc processing" v-else>姝ｅ湪鍒嗘瀽涓?..</text>
+          <text class="upload-desc" v-if="!isProcessing">支持 JPG、PNG 格式</text>
+          <text class="upload-desc processing" v-else>正在分析中..</text>
         </view>
       </view>
 
-      <!-- 璇嗗埆缁撴灉鍖哄煙 -->
+      <!-- 识别结果区域 -->
       <view v-if="resultImage" class="result-card">
         <view class="result-header">
-          <text class="result-title">馃幆 璇嗗埆缁撴灉</text>
+          <text class="result-title">🎯 识别结果</text>
           <view class="confidence-badge">
             <text class="confidence-text">{{ resultConfidence }}</text>
           </view>
@@ -137,128 +137,128 @@
         </view>
       </view>
 
-      <!-- 榛樿娆㈣繋鍖哄煙 -->
+      <!-- 默认欢迎区域 -->
       <view v-if="!resultImage" class="welcome-section">
         <view class="tips-card">
-          <text class="tips-icon">馃尡</text>
-          <text class="tips-title">寮€濮嬫櫤鑳藉垎绫?</text>
-          <text class="tips-desc">涓婁紶鍥剧墖锛孉I灏嗕负鎮ㄨ瘑鍒瀮鍦剧被鍨?</text>
+          <text class="tips-icon">🌱</text>
+          <text class="tips-title">开始智能分类</text>
+          <text class="tips-desc">上传图片，AI 将为您识别垃圾类型</text>
         </view>
 
-        <!-- 鍨冨溇鍒嗙被鎸囧崡 -->
+        <!-- 垃圾分类指南 -->
         <view class="guide-section">
-          <text class="section-title">鍨冨溇鍒嗙被鎸囧崡</text>
+          <text class="section-title">垃圾分类指南</text>
           <view class="guide-grid">
             <view class="guide-item recyclable" @click="showGuideDetail('recyclable')">
               <view class="guide-icon-wrapper">
-                <text class="guide-icon">鈾伙笍</text>
+                <text class="guide-icon">♻️</text>
               </view>
               <view class="guide-info">
-                <text class="guide-name">鍙洖鏀?</text>
-                <text class="guide-examples">绾哥被銆佸鏂欍€侀噾灞?</text>
+                <text class="guide-name">可回收</text>
+                <text class="guide-examples">纸类、塑料、金属</text>
               </view>
             </view>
             
             <view class="guide-item harmful" @click="showGuideDetail('harmful')">
               <view class="guide-icon-wrapper">
-                <text class="guide-icon">鈽笍</text>
+                <text class="guide-icon">☢️</text>
               </view>
               <view class="guide-info">
-                <text class="guide-name">鏈夊鍨冨溇</text>
-                <text class="guide-examples">鐢垫睜銆佽嵂鍝併€佺伅绠?</text>
+                <text class="guide-name">有害垃圾</text>
+                <text class="guide-examples">电池、药品、灯管</text>
               </view>
             </view>
             
             <view class="guide-item kitchen" @click="showGuideDetail('kitchen')">
               <view class="guide-icon-wrapper">
-                <text class="guide-icon">馃崕</text>
+                <text class="guide-icon">🍎</text>
               </view>
               <view class="guide-info">
-                <text class="guide-name">鍘ㄤ綑鍨冨溇</text>
-                <text class="guide-examples">鍓╄彍銆佹灉鐨€佽尪鍙?</text>
+                <text class="guide-name">厨余垃圾</text>
+                <text class="guide-examples">剩菜、果皮、茶叶</text>
               </view>
             </view>
             
             <view class="guide-item other" @click="showGuideDetail('other')">
               <view class="guide-icon-wrapper">
-                <text class="guide-icon">馃棏锔?</text>
+                <text class="guide-icon">🗑️</text>
               </view>
               <view class="guide-info">
-                <text class="guide-name">鍏朵粬鍨冨溇</text>
-                <text class="guide-examples">绾稿肪銆佺儫钂傘€侀櫠鐡?</text>
+                <text class="guide-name">其他垃圾</text>
+                <text class="guide-examples">纸巾、烟蒂、陶瓷</text>
               </view>
             </view>
           </view>
         </view>
       </view>
 
-      <!-- 蹇嵎鍔熻兘鍏ュ彛 -->
+      <!-- 快捷功能入口 -->
       <view class="quick-actions">
         <view class="action-item" @click="goShop">
           <view class="action-icon-wrapper shop">
-            <text class="action-icon">馃泹锔?</text>
+            <text class="action-icon">🛍️</text>
           </view>
-          <text class="action-name">绉垎鍟嗗煄</text>
+          <text class="action-name">积分商城</text>
           <text class="action-badge" v-if="points !== null">{{ points }}</text>
         </view>
         
         <view v-if="!isH5Platform" class="action-item" @click="scanDeviceQR">
           <view class="action-icon-wrapper device">
-            <text class="action-icon">馃摫</text>
+            <text class="action-icon">📱</text>
           </view>
-          <text class="action-name">杩炴帴璁惧</text>
+          <text class="action-name">连接设备</text>
         </view>
         
         <view v-if="isH5Platform" class="action-item" @click="goMap">
           <view class="action-icon-wrapper map">
-            <text class="action-icon">馃椇锔?</text>
+            <text class="action-icon">🗺️</text>
           </view>
-          <text class="action-name">鍨冨溇妗跺湴鍥?</text>
+          <text class="action-name">垃圾桶地图</text>
         </view>
         
         <view class="action-item" @click="goRanking">
           <view class="action-icon-wrapper ranking">
-            <text class="action-icon">馃弳</text>
+            <text class="action-icon">🏆</text>
           </view>
-          <text class="action-name">鐜繚鎺掕</text>
+          <text class="action-name">环保排行</text>
         </view>
       </view>
     </view>
 
-    <!-- 鍒嗙被鎸囧崡寮圭獥 -->
+    <!-- 分类指南弹窗 -->
     <view v-if="showGuideModal && currentGuide.title" class="modal-overlay" @click="closeGuideModal">
       <view class="modal-content" @click.stop="">
         <view class="modal-header" :class="currentGuide.type">
           <text class="modal-icon">{{ currentGuide.icon }}</text>
           <text class="modal-title">{{ currentGuide.title }}</text>
-          <text class="modal-close" @click="closeGuideModal">鉁?</text>
+          <text class="modal-close" @click="closeGuideModal">✕</text>
         </view>
         <view class="modal-body">
           <text class="modal-text">{{ currentGuide.content }}</text>
         </view>
         <view class="modal-footer">
-          <button class="modal-btn" @click="closeGuideModal">鎴戠煡閬撲簡</button>
+          <button class="modal-btn" @click="closeGuideModal">我知道了</button>
         </view>
       </view>
     </view>
 
-    <!-- 搴曢儴瀵艰埅鏍?-->
+    <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item active">
-        <text class="tabbar-icon">馃彔</text>
-        <text class="tabbar-label">棣栭〉</text>
+        <text class="tabbar-icon">🏠</text>
+        <text class="tabbar-label">首页</text>
       </view>
       <view class="tabbar-item" @click="goMap">
-        <text class="tabbar-icon">馃椇锔?</text>
-        <text class="tabbar-label">鍦板浘</text>
+        <text class="tabbar-icon">🗺️</text>
+        <text class="tabbar-label">地图</text>
       </view>
       <view class="tabbar-item" @click="goShop">
-        <text class="tabbar-icon">馃泹锔?</text>
-        <text class="tabbar-label">鍟嗗煄</text>
+        <text class="tabbar-icon">🛍️</text>
+        <text class="tabbar-label">商城</text>
       </view>
       <view class="tabbar-item" @click="goProfile">
-        <text class="tabbar-icon">馃懁</text>
-        <text class="tabbar-label">鎴戠殑</text>
+        <text class="tabbar-icon">👤</text>
+        <text class="tabbar-label">我的</text>
       </view>
     </view>
   </view>
@@ -286,7 +286,7 @@ const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
 const isProcessing = ref(false)
-const processStatus = ref('澶勭悊涓?..')
+const processStatus = ref('处理中..')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
 const isH5Platform = ref(false)
@@ -299,7 +299,7 @@ const recognizeBBoxSpace = ref('')
 let bboxRefreshTimer = 0
 const bboxLoadBoundImages = new WeakSet()
 
-// 鏁板瓧鍔ㄧ敾鍑芥暟
+// 数字动画函数
 const animateNumber = (target, duration = 800) => {
   const start = 0
   const startTime = Date.now()
@@ -308,7 +308,7 @@ const animateNumber = (target, duration = 800) => {
     const elapsed = Date.now() - startTime
     const progress = Math.min(elapsed / duration, 1)
     
-    // 浣跨敤 easeOutQuart 缂撳姩鍑芥暟
+    // 使用 easeOutQuart 缓动函数
     const easeProgress = 1 - Math.pow(1 - progress, 4)
     const current = Math.round(start + (target - start) * easeProgress)
     
@@ -364,7 +364,7 @@ onMounted(() => {
     document.documentElement.style.setProperty('--status-bar-height', statusBarHeight + 'px')
   }
   
-  // 娣诲姞鍨冨溇鍒嗙被鍗＄墖榧犳爣杩借釜鏁堟灉
+  // 添加垃圾分类卡片鼠标追踪效果
   if (typeof document !== 'undefined') {
     const guideItems = document.querySelectorAll('.guide-item')
     guideItems.forEach(item => {
@@ -386,7 +386,7 @@ onMounted(() => {
       })
     })
     
-    // 涓婁紶鍗＄墖榧犳爣杩借釜鏁堟灉
+    // 上传卡片鼠标追踪效果
     const uploadCard = document.querySelector('.upload-card')
     if (uploadCard) {
       uploadCard.addEventListener('mousemove', (e) => {
@@ -626,7 +626,7 @@ function goAiChatFromResult() {
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
   return new Promise((resolve, reject) => {
     if (typeof document === 'undefined') {
-      reject(new Error('褰撳墠鐜涓嶆敮鎸乧anvas鍘嬬缉'))
+      reject(new Error('当前环境不支持canvas压缩'))
       return
     }
     
@@ -661,18 +661,18 @@ function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
               })
               resolve(blob)
             } else {
-              reject(new Error('鍥剧墖鍘嬬缉澶辫触'))
+              reject(new Error('图片压缩失败'))
             }
           },
           'image/jpeg',
           quality
         )
       } catch (drawError) {
-        reject(new Error('鍥剧墖缁樺埗澶辫触'))
+        reject(new Error('图片绘制失败'))
       }
     }
     
-    img.onerror = () => reject(new Error('鍥剧墖鍔犺浇澶辫触'))
+    img.onerror = () => reject(new Error('图片加载失败'))
     img.crossOrigin = 'anonymous'
     img.src = filePath
   })
@@ -718,27 +718,27 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 async function processImage(filePath) {
   try {
     resetEnhancedRecognition()
-    processStatus.value = '鍥剧墖澶勭悊涓?..'
-    uni.showLoading({ title: '澶勭悊涓?..' })
+    processStatus.value = '图片处理中..'
+    uni.showLoading({ title: '处理中..' })
     
     let compressedFile = filePath
     let compressedBlob = null
     
     try {
       if (isH5Platform.value) {
-        processStatus.value = '姝ｅ湪鍘嬬缉...'
+        processStatus.value = '正在压缩...'
         const { quality, maxWidth } = compressionConfig.h5
         compressedBlob = await compressImage(filePath, quality, maxWidth)
         const timestamp = Date.now()
         const randomId = Math.random().toString(36).substring(2, 8)
         compressedFile = new File([compressedBlob], `compressed_${timestamp}_${randomId}.jpg`, { type: 'image/jpeg' })
       } else {
-        processStatus.value = '姝ｅ湪浼樺寲...'
+        processStatus.value = '正在优化...'
         const { quality, maxSize } = compressionConfig.miniProgram
         compressedFile = await compressImageMiniProgram(filePath, quality, maxSize)
       }
     } catch (compressError) {
-      console.warn('鍥剧墖鍘嬬缉澶辫触锛屼娇鐢ㄥ師鍥?', compressError)
+      console.warn('图片压缩失败，使用原图', compressError)
       compressedFile = filePath
     }
     
@@ -748,29 +748,29 @@ async function processImage(filePath) {
       resultImage.value = compressedFile
     }
     
-    processStatus.value = 'AI璇嗗埆涓?..'
-    uni.showLoading({ title: '璇嗗埆涓?..' })
+    processStatus.value = 'AI识别中..'
+    uni.showLoading({ title: '识别中..' })
     const res = await recognizeImage(compressedFile)
     
     if (res.labels && res.labels.length > 0) {
       const label = res.labels[0]
-      resultCategory.value = label.name || '鏈煡绫诲埆'
-      // 淇濆瓨鐩爣缃俊搴﹀苟鍚姩鍔ㄧ敾
+      resultCategory.value = label.name || '未知类别'
+      // 保存目标置信度并启动动画
       const confidenceValue = label.confidence ? Math.round(label.confidence * 100) : 0
       targetConfidence.value = confidenceValue
-      resultConfidence.value = '0%' // 鍏堣涓?
+      resultConfidence.value = '0%' // 先设为 0
       resultImage.value = res.result_img_base64.startsWith('data:image/jpeg;base64,')
         ? res.result_img_base64
         : 'data:image/jpeg;base64,' + res.result_img_base64
       resultDesc.value = label.describe
-      // 寤惰繜鍚姩鏁板瓧鍔ㄧ敾锛岃缁撴灉鍗＄墖鍏堟樉绀?
+      // 延迟启动数字动画，让结果卡片先显示
       setTimeout(() => {
         animateNumber(confidenceValue, 800)
       }, 300)
     } else {
-      resultCategory.value = '鏈瘑鍒埌'
+      resultCategory.value = '未识别到'
       resultConfidence.value = ''
-      resultDesc.value = '鏈娴嬪埌浠讳綍鏍囩淇℃伅'
+      resultDesc.value = '未检测到任何标签信息'
       resultImage.value = res.result_img_base64.startsWith('data:image/jpeg;base64,')
         ? res.result_img_base64
         : 'data:image/jpeg;base64,' + res.result_img_base64
@@ -782,8 +782,8 @@ async function processImage(filePath) {
       setTimeout(() => URL.revokeObjectURL(resultImage.value), 10000)
     }
     
-    processStatus.value = '璇嗗埆瀹屾垚锛?'
-    uni.showToast({ title: '璇嗗埆瀹屾垚锛?', icon: 'success' })
+    processStatus.value = '识别完成！'
+    uni.showToast({ title: '识别完成！', icon: 'success' })
     
   } catch (err) {
     resetEnhancedRecognition()
@@ -791,26 +791,26 @@ async function processImage(filePath) {
     resultCategory.value = ''
     resultConfidence.value = ''
     resultDesc.value = ''
-    processStatus.value = '澶勭悊澶辫触'
+    processStatus.value = '处理失败'
     
     if (err && err.msg) {
-      uni.showToast({ title: err.msg || '璇嗗埆澶辫触', icon: 'none' })
-      if (err.msg == '鏈櫥褰?') {
+      uni.showToast({ title: err.msg || '识别失败', icon: 'none' })
+      if (err.msg == '未登录') {
         uni.redirectTo({ url: '/pages/index/index' })
       }
     } else {
-      uni.showToast({ title: '缃戠粶閿欒', icon: 'none' })
+      uni.showToast({ title: '网络错误', icon: 'none' })
     }
   } finally {
     uni.hideLoading()
     isProcessing.value = false
-    processStatus.value = '澶勭悊涓?..'
+    processStatus.value = '处理中..'
   }
 }
 
 function onAddImage() {
   if (isProcessing.value) {
-    uni.showToast({ title: '姝ｅ湪澶勭悊涓?..', icon: 'none' })
+    uni.showToast({ title: '姝ｅ湪处理中..', icon: 'none' })
     return
   }
   
@@ -823,7 +823,7 @@ function onAddImage() {
       isProcessing.value = true
       processImage(filePath).catch(() => isProcessing.value = false)
     },
-    fail: () => uni.showToast({ title: '閫夋嫨鍙栨秷', icon: 'none' })
+    fail: () => uni.showToast({ title: '选择取消', icon: 'none' })
   })
 }
 
@@ -872,10 +872,10 @@ function scanDeviceQR() {
   
   if (isH5) {
     uni.showModal({
-      title: '杩炴帴璁惧',
-      content: '璇疯緭鍏ヨ澶嘔D锛圚5绔殏涓嶆敮鎸佹壂鐮侊級',
+      title: '连接设备',
+      content: '请输入设备ID（H5端暂不支持扫码）',
       editable: true,
-      placeholderText: '璇疯緭鍏ヨ澶嘔D',
+      placeholderText: '请输入设备ID',
       success: (res) => {
         if (res.confirm && res.content) connectDevice(res.content)
       }
@@ -884,14 +884,14 @@ function scanDeviceQR() {
     uni.scanCode({
       scanType: ['qrCode'],
       success: (res) => connectDevice(res.result),
-      fail: () => uni.showToast({ title: '鎵爜澶辫触', icon: 'none' })
+      fail: () => uni.showToast({ title: '扫码失败', icon: 'none' })
     })
   }
 }
 
 function connectDevice(deviceId) {
   if (!deviceId || deviceId.trim() === '') {
-    uni.showToast({ title: '璁惧ID涓嶈兘涓虹┖', icon: 'none' })
+    uni.showToast({ title: '设备ID不能为空', icon: 'none' })
     return
   }
   const targetId = deviceId.split('#')[1]
@@ -904,26 +904,26 @@ function showGuideDetail(type) {
   const guides = {
     recyclable: {
       type: 'recyclable',
-      icon: '鈾伙笍',
+      icon: '♻️',
       title: '可回收垃圾',
       content: '包括废纸、塑料、玻璃、金属和布料等。可回收物经过分类处理后可再利用，能减少污染并节约资源。'
     },
     harmful: {
       type: 'harmful',
-      icon: '鈽笍',
-      title: '鏈夊鍨冨溇',
+      icon: '☢️',
+      title: '有害垃圾',
       content: '包括废电池、废灯管、废药品、废油漆及其容器等，需投放到有害垃圾回收点进行专门处理。'
     },
     kitchen: {
       type: 'kitchen',
-      icon: '馃崕',
-      title: '鍘ㄤ綑鍨冨溇',
+      icon: '🍎',
+      title: '厨余垃圾',
       content: '包括剩菜剩饭、果皮果核、骨头、菜叶等厨余废弃物，可通过堆肥等方式资源化处理。'
     },
     other: {
       type: 'other',
-      icon: '馃棏锔?',
-      title: '鍏朵粬鍨冨溇',
+      icon: '🗑️',
+      title: '其他垃圾',
       content: '包括砖瓦陶瓷、卫生纸、尘土等难以回收利用的废弃物，一般采用卫生填埋等方式处理。'
     }
   }
@@ -942,7 +942,7 @@ function closeGuideModal() {
 </script>
 
 <style scoped>
-/* 椤甸潰鍩虹 */
+/* 页面基础 */
 .home-page {
   min-height: 100vh;
   background: linear-gradient(180deg, #f0fdf4 0%, #f5f7fa 30%, #f0f9ff 70%, #f5f7fa 100%);
@@ -951,7 +951,7 @@ function closeGuideModal() {
   overflow-x: hidden;
 }
 
-/* 鑳屾櫙瑁呴グ */
+/* 背景装饰 */
 .bg-decoration {
   position: fixed;
   top: 0;
@@ -964,7 +964,7 @@ function closeGuideModal() {
   animation: bgLightShift 15s ease-in-out infinite;
 }
 
-/* 鑳屾櫙鍏夊奖娴佸姩鏁堟灉 */
+/* 背景光影流动效果 */
 @keyframes bgLightShift {
   0%, 100% {
     background: radial-gradient(ellipse at 80% 20%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
@@ -1025,7 +1025,7 @@ function closeGuideModal() {
   animation: float3 12s ease-in-out infinite;
 }
 
-/* 鐞冨舰娴姩鍔ㄧ敾 */
+/* 球形浮动动画 */
 @keyframes float1 {
   0%, 100% {
     transform: translate(0, 0) scale(1);
@@ -1094,7 +1094,7 @@ function closeGuideModal() {
   border-radius: 50%;
 }
 
-/* 椤堕儴缁胯壊鑳屾櫙 */
+/* 顶部绿色背景 */
 .header-bg {
   background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
   padding: 60rpx 32rpx 120rpx;
@@ -1103,7 +1103,7 @@ function closeGuideModal() {
   z-index: 1;
 }
 
-/* 澶撮儴瑁呴グ */
+/* 头部装饰 */
 .header-deco {
   position: absolute;
   top: 0;
@@ -1163,7 +1163,7 @@ function closeGuideModal() {
   animation: pulse2 8s ease-in-out infinite;
 }
 
-/* 澶撮儴鍦嗗舰鍛煎惛鍔ㄧ敾 */
+/* 头部圆形呼吸动画 */
 @keyframes pulse1 {
   0%, 100% {
     transform: scale(1);
@@ -1247,7 +1247,7 @@ function closeGuideModal() {
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* 鍐呭鍖哄煙 */
+/* 内容区域 */
 .content-wrapper {
   padding: 0 32rpx;
   margin-top: -60rpx;
@@ -1255,7 +1255,7 @@ function closeGuideModal() {
   z-index: 2;
 }
 
-/* 璁惧杩炴帴鍗＄墖 */
+/* 设备连接卡片 */
 .device-card {
   background: #ffffff;
   border-radius: 20rpx;
@@ -1329,7 +1329,7 @@ function closeGuideModal() {
   margin-left: 4rpx;
 }
 
-/* 涓婁紶鍗＄墖 */
+/* 上传卡片 */
 .upload-card {
   background: 
     linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.2) 100%),
@@ -1349,7 +1349,7 @@ function closeGuideModal() {
   border: 1rpx solid rgba(255, 255, 255, 0.4);
 }
 
-/* 鐜荤拑鍙嶅厜灞?*/
+/* 玻璃反光层*/
 .upload-card .glass-reflection {
   position: absolute;
   top: 0;
@@ -1364,7 +1364,7 @@ function closeGuideModal() {
   pointer-events: none;
 }
 
-/* 绉戞妧娴佸姩娉㈢汗鏁堟灉 - 澶氬眰鍙犲姞 */
+/* 科技流动波纹效果 - 多层叠加 */
 .upload-card::before {
   content: '';
   position: absolute;
@@ -1383,7 +1383,7 @@ function closeGuideModal() {
   animation: techScan 2.5s linear infinite;
 }
 
-/* 绗簩灞傛尝绾?- 閿欎綅鍔ㄧ敾 */
+/* 第二层波纹- 错位动画 */
 .upload-card .tech-wave-2 {
   position: absolute;
   top: -50%;
@@ -1401,7 +1401,7 @@ function closeGuideModal() {
   pointer-events: none;
 }
 
-/* 绗笁灞傛尝绾?- 缁嗙嚎鏁堟灉 */
+/* 第三层波纹 - 细线效果 */
 .upload-card .tech-wave-3 {
   position: absolute;
   top: -50%;
@@ -1420,7 +1420,7 @@ function closeGuideModal() {
   pointer-events: none;
 }
 
-/* 鍏夋劅杩介殢榧犳爣鏁堟灉 */
+/* 光感追随鼠标效果 */
 .upload-card::after {
   content: '';
   position: absolute;
@@ -1488,7 +1488,7 @@ function closeGuideModal() {
   overflow: hidden;
 }
 
-/* 閲戝睘鍏夋辰鏁堟灉 */
+/* 金属光泽效果 */
 .upload-icon-wrapper::before {
   content: '';
   position: absolute;
@@ -1504,7 +1504,7 @@ function closeGuideModal() {
   pointer-events: none;
 }
 
-/* 搴曢儴閲戝睘鍙嶅厜 */
+/* 底部金属反光 */
 .upload-icon-wrapper::after {
   content: '';
   position: absolute;
@@ -1555,7 +1555,7 @@ function closeGuideModal() {
   color: #4b5563;
 }
 
-/* 璇嗗埆缁撴灉鍗＄墖 */
+/* 识别结果卡片 */
 .result-card {
   background: #ffffff;
   border-radius: 24rpx;
@@ -1600,7 +1600,7 @@ function closeGuideModal() {
   }
 }
 
-/* 寰界珷鍏夋晥 */
+/* 徽章光效 */
 .confidence-badge::after {
   content: '';
   position: absolute;
@@ -1808,7 +1808,7 @@ function closeGuideModal() {
   border: 1px solid rgba(255, 255, 255, 0.28);
 }
 
-/* 娆㈣繋鍖哄煙 */
+/* 欢迎区域 */
 .welcome-section {
   margin-bottom: 24rpx;
 }
@@ -1882,7 +1882,7 @@ function closeGuideModal() {
   font-style: italic;
 }
 
-/* 鎸囧崡鍖哄煙 */
+/* 指南区域 */
 .guide-section {
   margin-bottom: 24rpx;
 }
@@ -1915,7 +1915,7 @@ function closeGuideModal() {
     inset 0 1rpx 0 rgba(255, 255, 255, 0.8);
 }
 
-/* 绾歌川绾圭悊鏁堟灉 */
+/* 纸质纹理效果 */
 .guide-item::before {
   content: '';
   position: absolute;
@@ -1931,7 +1931,7 @@ function closeGuideModal() {
   border-radius: 16rpx 16rpx 0 0;
 }
 
-/* 绾歌川绾ょ淮绾圭悊 */
+/* 纸质纤维纹理 */
 .guide-item .paper-texture {
   position: absolute;
   top: 0;
@@ -1946,7 +1946,7 @@ function closeGuideModal() {
   opacity: 0.5;
 }
 
-/* 鍏夋劅杩介殢榧犳爣鏁堟灉 */
+/* 光感追随鼠标效果 */
 .guide-item::after {
   content: '';
   position: absolute;
@@ -2051,7 +2051,7 @@ function closeGuideModal() {
   transition: all 0.3s ease;
 }
 
-/* 榧犳爣鎮仠鏃跺浘鏍囧姩鐢?*/
+/* 鼠标悬停时图标动画 */
 .guide-item:hover .guide-icon {
   animation: iconHoverBounce 0.6s ease;
 }
@@ -2068,7 +2068,7 @@ function closeGuideModal() {
   }
 }
 
-/* 榧犳爣鎮仠鏃剁殑寮硅烦鍔ㄧ敾 */
+/* 鼠标悬停时的弹跳动画 */
 @keyframes iconHoverBounce {
   0% {
     transform: scale(1) rotate(0deg);
@@ -2105,7 +2105,7 @@ function closeGuideModal() {
   margin-top: 4rpx;
 }
 
-/* 蹇嵎鍔熻兘 */
+/* 快捷功能 */
 .quick-actions {
   display: flex;
   justify-content: space-around;
@@ -2138,7 +2138,7 @@ function closeGuideModal() {
   border: 1rpx solid rgba(255, 255, 255, 0.6);
 }
 
-/* 濉戞枡/閲戝睘鍏夋辰鏁堟灉 */
+/* 塑料/金属光泽效果 */
 .action-item::before {
   content: '';
   position: absolute;
@@ -2154,7 +2154,7 @@ function closeGuideModal() {
   border-radius: 16rpx 16rpx 0 0;
 }
 
-/* 鍏夋劅杩介殢榧犳爣鏁堟灉 */
+/* 光感追随鼠标效果 */
 .action-item::after {
   content: '';
   position: absolute;
@@ -2197,7 +2197,7 @@ function closeGuideModal() {
   transition: all 0.3s ease;
 }
 
-/* 3D绔嬩綋鍏夋辰鏁堟灉 */
+/* 3D立体光泽效果 */
 .action-icon-wrapper::before {
   content: '';
   position: absolute;
@@ -2286,7 +2286,7 @@ function closeGuideModal() {
   text-align: center;
 }
 
-/* 寮圭獥 */
+/* 弹窗 */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -2387,7 +2387,7 @@ function closeGuideModal() {
   }
 }
 
-/* 寮圭獥鍥炬爣杞昏交鏅冨姩 */
+/* 弹窗图标轻轻晃动 */
 @keyframes modalIconWiggle {
   0%, 100% {
     transform: rotate(0deg);
@@ -2471,7 +2471,7 @@ function closeGuideModal() {
   overflow: hidden;
 }
 
-/* 鎸夐挳鎮仠鏁堟灉 */
+/* 按钮悬停效果 */
 .modal-btn:hover {
   transform: translateY(-2rpx);
   box-shadow: 0 8rpx 24rpx rgba(16, 185, 129, 0.4);
@@ -2481,7 +2481,7 @@ function closeGuideModal() {
   transform: translateY(0);
 }
 
-/* 搴曢儴瀵艰埅 */
+/* 底部导航 */
 .tabbar {
   position: fixed;
   left: 0;

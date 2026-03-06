@@ -46,7 +46,7 @@ export function userinfo() {
     url: '/api/userinfo',
     method: 'GET',
     header: {
-      'Authorization': `Bearer ${token}`, // 服务器需要Bearer前缀
+      'Authorization': `Bearer ${token}`, // 服务器需要Bearerǰ׺
       'Content-Type': 'application/json'
     }
   })

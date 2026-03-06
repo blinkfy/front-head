@@ -186,7 +186,7 @@ function onRegister() {
   } 
   if (password.value.length < 6) {
     captchaHint.value = '密码过于简单'
-    uni.showToast({ title: '密码长度至少6位', icon: 'none' })
+    uni.showToast({ title: '密码长度至少6λ', icon: 'none' })
     return
   }
   
