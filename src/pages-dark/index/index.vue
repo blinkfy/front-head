@@ -222,7 +222,7 @@ function onLogin(isauto) {
     
     // 获取并保存完整的用户信息
     try {
-      const userInfoRes = await userinfo()
+      const userInfoRes = await userinfo("false")
       if (userInfoRes && userInfoRes.data) {
         uni.setStorageSync('userInfo', userInfoRes.data)
         console.log('用户信息已保存:', userInfoRes.data)

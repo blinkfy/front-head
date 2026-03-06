@@ -40,10 +40,10 @@ export function changePassword({ username, password, new_password }) {
   })
 } 
 
-export function userinfo() {
+export function userinfo(avatar="true") {
   const token = uni.getStorageSync('token')
   return request({
-    url: '/api/userinfo',
+    url: '/api/userinfo?avater='+avatar,
     method: 'GET',
     header: {
       'Authorization': `Bearer ${token}`, // 服务器需要Bearer前缀

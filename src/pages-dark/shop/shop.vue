@@ -388,7 +388,7 @@ const fetchUserPoints = async () => {
       return
     }
     
-    const response = await userinfo()
+    const response = await userinfo("false")
     if (response.code === 0) {
       userPoints.value = response.data.points || 0
       console.log('获取用户积分成功:', userPoints.value)
