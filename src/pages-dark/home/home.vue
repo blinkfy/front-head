@@ -1,9 +1,9 @@
-<template>
+﻿<template>
   <view class="home-bg">
-    <!-- 自定义状态栏 -->
+    <!-- 鑷畾涔夌姸鎬佹爮 -->
     <view class="custom-statusbar"></view>
     
-    <!-- 科技背景动效元素 -->
+    <!-- 绉戞妧鑳屾櫙鍔ㄦ晥鍏冪礌 -->
     <view class="tech-bg">
       <view class="tech-grid"></view>
       <view class="floating-particles">
@@ -11,18 +11,18 @@
       </view>
     </view>
     
-    <!-- 主要内容区域 -->
+    <!-- 涓昏鍐呭鍖哄煙 -->
     <view class="home-container">
-      <!-- 顶部标题区域 -->
+      <!-- 椤堕儴鏍囬鍖哄煙 -->
       <view class="header-section">
         <view class="main-title">
           <image class="title-icon" src="/static/colorful-bin.png" mode="aspectFill"></image>
-          <text class="title-text">AI垃圾识别</text>
+          <text class="title-text">AI鍨冨溇璇嗗埆</text>
         </view>
-        <view class="subtitle">智能分类 · 绿色环保 · 科技赋能</view>
+        <view class="subtitle">鏅鸿兘鍒嗙被 路 缁胯壊鐜繚 路 绉戞妧璧嬭兘</view>
       </view>
       
-      <!-- 设备连接状态横幅 -->
+      <!-- 璁惧杩炴帴鐘舵€佹í骞?-->
       <view v-if="hasConnection" class="device-connection-banner" @click="goToDeviceConnection">
         <view class="connection-glow"></view>
         <view class="connection-content">
@@ -33,64 +33,102 @@
             </view>
             <view class="connection-info">
               <view class="connection-header">
-                <text class="connection-icon">📡</text>
-                <text class="connection-title">智能设备在线</text>
+                <text class="connection-icon">馃摗</text>
+                <text class="connection-title">鏅鸿兘璁惧鍦ㄧ嚎</text>
               </view>
-              <text class="connection-desc">{{ connectedDevice?.device_name || '环保分类设备' }}</text>
+              <text class="connection-desc">{{ connectedDevice?.device_name || '鐜繚鍒嗙被璁惧' }}</text>
             </view>
           </view>
           <view class="connection-action">
-            <view class="action-icon">⚡</view>
-            <text class="action-text">管理</text>
+            <view class="action-icon">鈿?</view>
+            <text class="action-text">绠＄悊</text>
           </view>
         </view>
         <view class="connection-scan-line"></view>
       </view>
       
-      <!-- 上传区域 -->
+      <!-- 涓婁紶鍖哄煙 -->
       <view class="upload-section">
         
         <view class="upload-container" @click="onAddImage" :class="{ 'processing': isProcessing }">
           <view class="upload-border">
             <view class="upload-inner">
               <view class="upload-icon">
-                <text v-if="!isProcessing">📷</text>
+                <text v-if="!isProcessing">馃摲</text>
                 <view v-else class="loading-spinner">
                   <view class="spinner"></view>
                 </view>
               </view>
-              <text class="upload-text" v-if="!isProcessing">点击上传图片</text>
+              <text class="upload-text" v-if="!isProcessing">鐐瑰嚮涓婁紶鍥剧墖</text>
               <text class="upload-text processing" v-else>{{ processStatus }}</text>
-              <text class="upload-hint" v-if="!isProcessing">支持JPG、PNG格式，自动压缩优化</text>
-              <text class="upload-hint processing" v-else>请稍候，正在处理您的图片...</text>
+              <text class="upload-hint" v-if="!isProcessing">鏀寔JPG銆丳NG鏍煎紡锛岃嚜鍔ㄥ帇缂╀紭鍖?</text>
+              <text class="upload-hint processing" v-else>璇风◢鍊欙紝姝ｅ湪澶勭悊鎮ㄧ殑鍥剧墖...</text>
             </view>
           </view>
           <view class="scan-line" v-if="isProcessing"></view>
         </view>
       </view>
       
-      <!-- 识别结果区域 -->
+      <!-- 璇嗗埆缁撴灉鍖哄煙 -->
       <view v-if="resultImage" class="result-section">
         <view class="result-card">
           <view class="result-header">
-            <text class="result-title">🎯 识别结果</text>
+            <text class="result-title">馃幆 璇嗗埆缁撴灉</text>
             <view class="confidence-badge">
               <text class="confidence-text">{{ resultConfidence }}</text>
             </view>
           </view>
           
-          <image :src="resultImage" class="result-image" mode="aspectFit" />
+          <view class="result-image-wrap">
+            <image :src="resultImage" class="result-image" mode="aspectFit" />
+            <view v-if="displayBboxes.length" class="recognition-bbox-layer">
+              <view
+                v-for="(bbox, index) in displayBboxes"
+                :key="`bbox-${index}`"
+                class="recognition-bbox-item"
+                :style="bbox.boxStyle"
+              >
+                <view class="recognition-bbox-label" :style="bbox.labelStyle">{{ bbox.label }}</view>
+              </view>
+            </view>
+          </view>
           
           <view class="result-details">
-            <view class="category-display">
-              <view class="category-icon">♻️</view>
+            <view class="category-row">
+              <view :class="['category-display', getCategoryClass(resultCategory)]">
+                <view class="category-icon">{{ getCategoryIcon(resultCategory) }}</view>
               <view class="category-info">
-                <text class="category-label">分类结果</text>
+                <text class="category-label">鍒嗙被缁撴灉</text>
                 <text class="category-name">{{ resultCategory }}</text>
               </view>
             </view>
             
-            <view v-if="resultDesc" class="description-panel">
+              <view class="ai-helper-btn" @click="goAiChatFromResult">AI对话</view>
+            </view>
+
+            <view v-if="recognizedItems.length" class="recognized-items-box">
+              <text class="recognized-items-title">璇嗗埆鍒扮殑鍏蜂綋鐗╁搧</text>
+              <view class="recognized-items-list">
+                <text
+                  v-for="(item, index) in recognizedItems"
+                  :key="`recognized-${index}`"
+                  class="recognized-item-chip"
+                >{{ item }}</text>
+              </view>
+            </view>
+
+            <view v-if="upcyclingSections.length" class="upcycling-plan">
+              <view
+                v-for="(section, index) in upcyclingSections"
+                :key="`upcycling-${index}`"
+                :class="['upcycling-plan-item', { 'is-warning': /鎻愰啋|椋庨櫓|娉ㄦ剰/.test(section.title) }]"
+              >
+                <text class="upcycling-plan-title">{{ section.title }}</text>
+                <text class="upcycling-plan-content">{{ section.content }}</text>
+              </view>
+            </view>
+
+            <view v-else-if="resultDesc" class="description-panel">
               <text class="desc-label">💡 处理建议</text>
               <text class="desc-content">{{ resultDesc }}</text>
             </view>
@@ -98,156 +136,174 @@
         </view>
       </view>
       
-      <!-- 默认提示区域 -->
+      <!-- 榛樿鎻愮ず鍖哄煙 -->
       <view v-if="!resultImage" class="welcome-section">
         <view class="welcome-card">
-          <text class="welcome-icon">🌱</text>
-          <text class="welcome-title">开始智能分类</text>
-          <text class="welcome-desc">上传图片，AI将为您识别垃圾类型<br/>共同践行绿色环保理念</text>
+          <text class="welcome-icon">馃尡</text>
+          <text class="welcome-title">寮€濮嬫櫤鑳藉垎绫?</text>
+          <text class="welcome-desc">涓婁紶鍥剧墖锛孉I灏嗕负鎮ㄨ瘑鍒瀮鍦剧被鍨?br/>鍏卞悓璺佃缁胯壊鐜繚鐞嗗康</text>
         </view>
         
-        <!-- 垃圾分类指南卡片 -->
+        <!-- 鍨冨溇鍒嗙被鎸囧崡鍗＄墖 -->
         <view class="guide-cards">
           <view class="guide-card recyclable" @click="showGuideDetail('recyclable')">
-            <view class="guide-icon">♻️</view>
+            <view class="guide-icon">鈾伙笍</view>
             <view class="guide-content">
-              <text class="guide-title">可回收垃圾</text>
-              <text class="guide-desc">塑料、纸类、金属等</text>
+              <text class="guide-title">鍙洖鏀跺瀮鍦?</text>
+              <text class="guide-desc">濉戞枡銆佺焊绫汇€侀噾灞炵瓑</text>
             </view>
-            <view class="guide-arrow">→</view>
+            <view class="guide-arrow">鈫?</view>
           </view>
           
           <view class="guide-card harmful" @click="showGuideDetail('harmful')">
-            <view class="guide-icon">☢️</view>
+            <view class="guide-icon">鈽笍</view>
             <view class="guide-content">
-              <text class="guide-title">有害垃圾</text>
-              <text class="guide-desc">电池、药品、化学品</text>
+              <text class="guide-title">鏈夊鍨冨溇</text>
+              <text class="guide-desc">鐢垫睜銆佽嵂鍝併€佸寲瀛﹀搧</text>
             </view>
-            <view class="guide-arrow">→</view>
+            <view class="guide-arrow">鈫?</view>
           </view>
           
           <view class="guide-card kitchen" @click="showGuideDetail('kitchen')">
-            <view class="guide-icon">🍎</view>
+            <view class="guide-icon">馃崕</view>
             <view class="guide-content">
-              <text class="guide-title">厨余垃圾</text>
-              <text class="guide-desc">剩菜剩饭、果皮等</text>
+              <text class="guide-title">鍘ㄤ綑鍨冨溇</text>
+              <text class="guide-desc">鍓╄彍鍓╅キ銆佹灉鐨瓑</text>
             </view>
-            <view class="guide-arrow">→</view>
+            <view class="guide-arrow">鈫?</view>
           </view>
           
           <view class="guide-card other" @click="showGuideDetail('other')">
-            <view class="guide-icon">🗑️</view>
+            <view class="guide-icon">馃棏锔?</view>
             <view class="guide-content">
-              <text class="guide-title">其他垃圾</text>
-              <text class="guide-desc">难以回收的废弃物</text>
+              <text class="guide-title">鍏朵粬鍨冨溇</text>
+              <text class="guide-desc">闅句互鍥炴敹鐨勫簾寮冪墿</text>
             </view>
-            <view class="guide-arrow">→</view>
+            <view class="guide-arrow">鈫?</view>
           </view>
         </view>
       </view>
         
-        <!-- 功能快捷入口 -->
+        <!-- 鍔熻兘蹇嵎鍏ュ彛 -->
       <view class="welcome-section">
         <view class="quick-actions">
           <view class="action-item" @click="goShop">
-            <view class="action-icon shop">🛍️</view>
-            <text class="action-text">积分商城</text>
+            <view class="action-icon shop">馃泹锔?</view>
+            <text class="action-text">绉垎鍟嗗煄</text>
             <text class="points-badge" v-if="points !== null">{{ points }}</text>
           </view>
           <view v-if="!isH5Platform" class="action-item" @click="scanDeviceQR">
-            <view class="action-icon">📱</view>
-            <text class="action-text">连接设备</text>
+            <view class="action-icon">馃摫</view>
+            <text class="action-text">杩炴帴璁惧</text>
           </view>
           <view v-if="isH5Platform" class="action-item" @click="goMap">
-            <view class="action-icon">🗺️</view>
-            <text class="action-text">垃圾桶地图</text>
+            <view class="action-icon">馃椇锔?</view>
+            <text class="action-text">鍨冨溇妗跺湴鍥?</text>
           </view>
           <view class="action-item" @click="goRanking">
-            <view class="action-icon">🏆</view>
-            <text class="action-text">环保排行榜</text>
+            <view class="action-icon">馃弳</view>
+            <text class="action-text">鐜繚鎺掕姒?</text>
           </view>
         </view>
       </view>
     </view>
     
-    <!-- 自定义分类指南弹窗 -->
+    <!-- 鑷畾涔夊垎绫绘寚鍗楀脊绐?-->
     <view v-if="showGuideModal && currentGuide.title" class="guide-modal-overlay" @click="closeGuideModal">
       <view class="guide-modal" @click.stop="">
         <view class="modal-header">
           <view class="modal-icon">{{ currentGuide.icon || '❓' }}</view>
-          <text class="modal-title">{{ currentGuide.title || '未知分类' }}</text>
-          <view class="modal-close" @click="closeGuideModal">✕</view>
+          <text class="modal-title">{{ currentGuide.title || '鏈煡鍒嗙被' }}</text>
+          <view class="modal-close" @click="closeGuideModal">鉁?</view>
         </view>
         <view class="modal-content">
-          <text class="modal-text">{{ currentGuide.content || '暂无相关信息' }}</text>
+          <text class="modal-text">{{ currentGuide.content || '鏆傛棤鐩稿叧淇℃伅' }}</text>
         </view>
         <view class="modal-footer">
           <view class="modal-btn" @click="closeGuideModal">
-            <text class="btn-text">我知道了</text>
+            <text class="btn-text">鎴戠煡閬撲簡</text>
           </view>
         </view>
         <view class="modal-glow"></view>
       </view>
     </view>
     
-    <!-- 科技感底部导航栏 -->
+    <!-- 绉戞妧鎰熷簳閮ㄥ鑸爮 -->
     <view class="tabbar">
       <view class="tabbar-item active">
-        <text class="tabbar-icon">🏠</text>
-        <text class="tabbar-label">首页</text>
+        <text class="tabbar-icon">馃彔</text>
+        <text class="tabbar-label">棣栭〉</text>
       </view>
       <view class="tabbar-item" @click="goMap">
-        <text class="tabbar-icon">🗺️</text>
-        <text class="tabbar-label">地图</text>
+        <text class="tabbar-icon">馃椇锔?</text>
+        <text class="tabbar-label">鍦板浘</text>
       </view>
       <view class="tabbar-item" @click="goShop">
-        <text class="tabbar-icon">🛍️</text>
-        <text class="tabbar-label">商城</text>
+        <text class="tabbar-icon">馃泹锔?</text>
+        <text class="tabbar-label">鍟嗗煄</text>
       </view>
       <view class="tabbar-item" @click="goProfile">
-        <text class="tabbar-icon">👤</text>
-        <text class="tabbar-label">我的</text>
+        <text class="tabbar-icon">馃懁</text>
+        <text class="tabbar-label">鎴戠殑</text>
       </view>
     </view>
   </view>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { recognizeImage } from '@/api/recognize'
 import { useDeviceConnection } from '@/composables/useDeviceConnection'
+import {
+  appendAchievementQueue,
+  buildExpandedUpcyclingText,
+  buildSeedFromRecognizeData,
+  extractRecognizedItems,
+  getBboxColor,
+  mapBboxToDisplay,
+  parseLabelBbox,
+  saveSeed,
+  splitUpcyclingSections
+} from '@/utils/recognition-sync'
 
 const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
 const isProcessing = ref(false)
-const processStatus = ref('处理中...')
+const processStatus = ref('澶勭悊涓?..')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
+const recognizedItems = ref([])
+const upcyclingSections = ref([])
+const rawBboxes = ref([])
+const displayBboxes = ref([])
+const recognizeBBoxSpace = ref('')
+let bboxRefreshTimer = 0
+const bboxLoadBoundImages = new WeakSet()
 
-// 检测是否为H5平台
+// 妫€娴嬫槸鍚︿负H5骞冲彴
 const isH5Platform = ref(false)
 
-// 使用设备连接状态管理
+// 浣跨敤璁惧杩炴帴鐘舵€佺鐞?
 const { hasConnection, connectedDevice, goToDeviceConnection, points } = useDeviceConnection()
 
-// 图片压缩配置
+// 鍥剧墖鍘嬬缉閰嶇疆
 const compressionConfig = {
   h5: {
-    quality: 0.99,        // H5压缩质量 (0-1)
-    maxWidth: 800,      // 最大宽度
-    maxHeight: 800,     // 最大高度
+    quality: 0.99,        // H5鍘嬬缉璐ㄩ噺 (0-1)
+    maxWidth: 800,      // 鏈€澶у搴?
+    maxHeight: 800      // 鏈€澶ч珮搴?
   },
   miniProgram: {
-    quality: 100,         // 小程序压缩质量 (0-100)
-    maxSize: 800,        // 最长边尺寸 (px)
+    quality: 100,         // 灏忕▼搴忓帇缂╄川閲?(0-100)
+    maxSize: 800,        // 鏈€闀胯竟灏哄 (px)
   }
 }
 
-// 检测平台类型
+// 妫€娴嬪钩鍙扮被鍨?
 onMounted(() => {
-  // 更精确的平台检测
+  // 鏇寸簿纭殑骞冲彴妫€娴?
   let platform
   let uniPlatform
   
@@ -265,7 +321,7 @@ onMounted(() => {
     uniPlatform = 'unknown'
   }
   
-  // 更精确的H5平台检测
+  // 鏇寸簿纭殑H5骞冲彴妫€娴?
   isH5Platform.value = (
     uniPlatform === 'web' || 
     (platform === 'devtools' && typeof window !== 'undefined' && window.location) ||
@@ -274,7 +330,7 @@ onMounted(() => {
   
   console.log('Platform detected:', { platform, uniPlatform, isH5Platform: isH5Platform.value })
   
-  // 获取系统状态栏高度
+  // 鑾峰彇绯荤粺鐘舵€佹爮楂樺害
   let statusBarHeight = 0
   try {
     const windowInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
@@ -284,13 +340,31 @@ onMounted(() => {
     statusBarHeight = systemInfo.statusBarHeight || 0
   }
   
-  // 只在H5环境中设置CSS变量
+  // 鍙湪H5鐜涓缃瓹SS鍙橀噺
   if (typeof document !== 'undefined' && document.documentElement) {
     document.documentElement.style.setProperty('--status-bar-height', statusBarHeight + 'px')
   }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', queueRefreshDisplayBboxes)
+  }
 })
 
-// 生成粒子动画样式
+onBeforeUnmount(() => {
+  if (bboxRefreshTimer) {
+    if (typeof window !== 'undefined') {
+      window.clearTimeout(bboxRefreshTimer)
+    } else {
+      clearTimeout(bboxRefreshTimer)
+    }
+    bboxRefreshTimer = 0
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', queueRefreshDisplayBboxes)
+  }
+})
+
+// 鐢熸垚绮掑瓙鍔ㄧ敾鏍峰紡
 const getParticleStyle = (index) => {
   const positions = [
     { left: '10%', animationDelay: '0s' },
@@ -302,26 +376,202 @@ const getParticleStyle = (index) => {
   ]
   return positions[index - 1] || positions[0]
 }
-// 图片压缩函数
+// 鍥剧墖鍘嬬缉鍑芥暟
+function getCategoryClass(category) {
+  const text = String(category || '')
+  if (text.includes('可回收') || text.toLowerCase().includes('recycl')) return 'recyclable'
+  if (text.includes('鏈夊') || text.toLowerCase().includes('harm')) return 'harmful'
+  if (text.includes('鍘ㄤ綑') || text.toLowerCase().includes('kitchen')) return 'kitchen'
+  return 'other'
+}
+
+function getCategoryIcon(category) {
+  const cls = getCategoryClass(category)
+  if (cls === 'recyclable') return '鈾伙笍'
+  if (cls === 'harmful') return '鈽狅笍'
+  if (cls === 'kitchen') return '馃崈'
+  return '馃棏锔?'
+}
+
+function resetEnhancedRecognition() {
+  recognizedItems.value = []
+  upcyclingSections.value = []
+  rawBboxes.value = []
+  displayBboxes.value = []
+  recognizeBBoxSpace.value = ''
+}
+
+function getResultImageElement() {
+  if (typeof document === 'undefined') return null
+  const host = document.querySelector('.result-image')
+  if (!host) return null
+  if (host.tagName === 'IMG') return host
+  return host.querySelector ? host.querySelector('img') : null
+}
+
+function queueRefreshDisplayBboxes() {
+  if (!isH5Platform.value) {
+    displayBboxes.value = []
+    return
+  }
+
+  if (bboxRefreshTimer) {
+    window.clearTimeout(bboxRefreshTimer)
+  }
+
+  bboxRefreshTimer = window.setTimeout(() => {
+    nextTick(() => {
+      refreshDisplayBboxes()
+    })
+  }, 60)
+}
+
+function refreshDisplayBboxes() {
+  if (!isH5Platform.value || typeof window === 'undefined') {
+    displayBboxes.value = []
+    return
+  }
+
+  if (!rawBboxes.value.length) {
+    displayBboxes.value = []
+    return
+  }
+
+  const img = getResultImageElement()
+  if (!img) {
+    displayBboxes.value = []
+    return
+  }
+
+  if (!img.complete || !(img.naturalWidth > 0)) {
+    if (!bboxLoadBoundImages.has(img)) {
+      bboxLoadBoundImages.add(img)
+      img.addEventListener('load', () => queueRefreshDisplayBboxes(), { once: true })
+    }
+    return
+  }
+
+  const displayWidth = Number(img.clientWidth || 0)
+  const displayHeight = Number(img.clientHeight || 0)
+  if (displayWidth <= 0 || displayHeight <= 0) {
+    displayBboxes.value = []
+    return
+  }
+
+  const metrics = {
+    displayWidth,
+    displayHeight,
+    naturalWidth: Number(img.naturalWidth || 0),
+    naturalHeight: Number(img.naturalHeight || 0),
+    objectFit: String(window.getComputedStyle(img).objectFit || 'contain')
+  }
+  const compact = window.innerWidth <= 768
+
+  const next = []
+  for (let i = 0; i < rawBboxes.value.length; i += 1) {
+    const item = rawBboxes.value[i]
+    const mapped = mapBboxToDisplay(
+      item.bbox,
+      metrics,
+      recognizeBBoxSpace.value,
+      item && item.label ? item.label.bbox_space : ''
+    )
+    if (!mapped) continue
+
+    const color = getBboxColor(item.label, item.index)
+    const labelName = String((item.label && (item.label.name || item.label.source_name)) || `鐩爣${item.index + 1}`)
+    const confidence = Number(item.label && item.label.confidence)
+    const confidenceText = Number.isFinite(confidence)
+      ? ` ${Math.max(0, Math.min(100, Math.round(confidence * 100)))}%`
+      : ''
+
+    const boxStyle = {
+      left: `${mapped.left}px`,
+      top: `${mapped.top}px`,
+      width: `${mapped.width}px`,
+      height: `${mapped.height}px`,
+      borderColor: color
+    }
+
+    const labelStyle = {
+      background: color,
+      top: mapped.top <= 24 || mapped.height < 38 ? '2px' : (compact ? '-20px' : '-24px')
+    }
+
+    if (mapped.left + mapped.width >= (displayWidth - 120)) {
+      labelStyle.left = 'auto'
+      labelStyle.right = '-1px'
+    }
+
+    next.push({
+      label: `${labelName}${confidenceText}`,
+      boxStyle,
+      labelStyle
+    })
+  }
+
+  displayBboxes.value = next
+}
+
+function applyEnhancedRecognitionData(recognizeData) {
+  if (!recognizeData || typeof recognizeData !== 'object') {
+    resetEnhancedRecognition()
+    return
+  }
+
+  recognizedItems.value = extractRecognizedItems(recognizeData)
+  const upcyclingText = buildExpandedUpcyclingText(recognizeData)
+  upcyclingSections.value = upcyclingText ? splitUpcyclingSections(upcyclingText) : []
+
+  recognizeBBoxSpace.value = String(recognizeData.bbox_space || '')
+  const labels = Array.isArray(recognizeData.labels) ? recognizeData.labels : []
+  rawBboxes.value = labels
+    .map((label, index) => ({ index, label, bbox: parseLabelBbox(label) }))
+    .filter((item) => Array.isArray(item.bbox) && item.bbox.length >= 4)
+
+  const unlocks = Array.isArray(
+    recognizeData &&
+    recognizeData.achievementInfo &&
+    recognizeData.achievementInfo.newlyUnlocked
+  ) ? recognizeData.achievementInfo.newlyUnlocked : []
+  appendAchievementQueue(unlocks)
+
+  const seed = buildSeedFromRecognizeData(recognizeData)
+  if (seed) {
+    saveSeed(seed)
+  }
+
+  queueRefreshDisplayBboxes()
+}
+
+function goAiChatFromResult() {
+  if (!resultImage.value) return
+  if (isH5Platform.value && typeof window !== 'undefined') {
+    window.location.href = '/ai-chat'
+    return
+  }
+  uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
+}
+
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
   return new Promise((resolve, reject) => {
-    // 检查是否支持canvas
+    // 妫€鏌ユ槸鍚︽敮鎸乧anvas
     if (typeof document === 'undefined') {
-      reject(new Error('当前环境不支持canvas压缩'))
+      reject(new Error('褰撳墠鐜涓嶆敮鎸乧anvas鍘嬬缉'))
       return
     }
     
-    // 创建canvas进行压缩
+    // 鍒涘缓canvas杩涜鍘嬬缉
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
     const img = new Image()
     
     img.onload = function() {
       try {
-        // 计算压缩后的尺寸
+        // 璁＄畻鍘嬬缉鍚庣殑灏哄
         let { width, height } = img
         
-        // 记录原始尺寸
+        // 璁板綍鍘熷灏哄
         const originalWidth = width
         const originalHeight = height
         
@@ -330,117 +580,117 @@ function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
           width = maxWidth
         }
         
-        // 设置canvas尺寸
+        // 璁剧疆canvas灏哄
         canvas.width = width
         canvas.height = height
         
-        // 设置高质量缩放
+        // 璁剧疆楂樿川閲忕缉鏀?
         ctx.imageSmoothingEnabled = true
         ctx.imageSmoothingQuality = 'high'
         
-        // 绘制并压缩
+        // 缁樺埗骞跺帇缂?
         ctx.drawImage(img, 0, 0, width, height)
         
-        // 转换为blob
+        // 杞崲涓篵lob
         canvas.toBlob(
           (blob) => {
             if (blob) {
-              console.log('图片压缩完成:', {
-                原始尺寸: `${originalWidth}×${originalHeight}`,
-                压缩后尺寸: `${width}×${height}`,
-                压缩后大小: (blob.size / 1024 / 1024).toFixed(2) + 'MB',
-                压缩质量: Math.round(quality * 100) + '%'
+              console.log('鍥剧墖鍘嬬缉瀹屾垚:', {
+                originalSize: `${originalWidth}x${originalHeight}`,
+                compressedSize: `${width}x${height}`,
+                compressedFileSize: (blob.size / 1024 / 1024).toFixed(2) + 'MB',
+                quality: Math.round(quality * 100) + '%'
               })
               resolve(blob)
             } else {
-              reject(new Error('图片压缩失败：无法生成Blob'))
+              reject(new Error('鍥剧墖鍘嬬缉澶辫触锛氭棤娉曠敓鎴怋lob'))
             }
           },
           'image/jpeg',
           quality
         )
       } catch (drawError) {
-        reject(new Error('图片绘制失败: ' + drawError.message))
+        reject(new Error('鍥剧墖缁樺埗澶辫触: ' + drawError.message))
       }
     }
     
     img.onerror = (error) => {
-      reject(new Error('图片加载失败: ' + error))
+      reject(new Error('鍥剧墖鍔犺浇澶辫触: ' + error))
     }
     
-    // 设置跨域属性
+    // 璁剧疆璺ㄥ煙灞炴€?
     img.crossOrigin = 'anonymous'
     img.src = filePath
   })
 }
 
-// 小程序环境图片压缩（保持长宽比，按最长边缩放）
+// 灏忕▼搴忕幆澧冨浘鐗囧帇缂╋紙淇濇寔闀垮姣旓紝鎸夋渶闀胯竟缂╂斁锛?
 function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
   return new Promise((resolve, reject) => {
-    // 先获取图片信息
+    // 鍏堣幏鍙栧浘鐗囦俊鎭?
     uni.getImageInfo({
       src: filePath,
       success: (info) => {
         const { width: originalWidth, height: originalHeight } = info
         
-        // 计算缩放后的尺寸（保持长宽比）
+        // 璁＄畻缂╂斁鍚庣殑灏哄锛堜繚鎸侀暱瀹芥瘮锛?
         let targetWidth = originalWidth
         let targetHeight = originalHeight
         
-        // 找出最长边
+        // 鎵惧嚭鏈€闀胯竟
         const maxOriginalSize = Math.max(originalWidth, originalHeight)
         
-        // 如果最长边超过限制，进行等比缩放
+        // 濡傛灉鏈€闀胯竟瓒呰繃闄愬埗锛岃繘琛岀瓑姣旂缉鏀?
         if (maxOriginalSize > maxSize) {
           const scale = maxSize / maxOriginalSize
           targetWidth = Math.round(originalWidth * scale)
           targetHeight = Math.round(originalHeight * scale)
         }
         
-        console.log('小程序图片尺寸计算:', {
-          原始尺寸: `${originalWidth}×${originalHeight}`,
-          最长边限制: maxSize + 'px',
-          计算后尺寸: `${targetWidth}×${targetHeight}`,
-          缩放比例: (maxOriginalSize > maxSize ? (maxSize / maxOriginalSize).toFixed(3) : '无需缩放')
+        console.log('灏忕▼搴忓浘鐗囧昂瀵歌绠?', {
+          originalSize: `${originalWidth}x${originalHeight}`,
+          maxSideLimit: maxSize + 'px',
+          targetSize: `${targetWidth}x${targetHeight}`,
+          scaleRatio: (maxOriginalSize > maxSize ? (maxSize / maxOriginalSize).toFixed(3) : '1.000')
         })
         
-        // 执行压缩
+        // 鎵ц鍘嬬缉
         uni.compressImage({
           src: filePath,
           quality: quality,
-          compressedWidth: targetWidth,   // 使用计算后的宽度
-          compressedHeight: targetHeight, // 使用计算后的高度
+          compressedWidth: targetWidth,   // 浣跨敤璁＄畻鍚庣殑瀹藉害
+          compressedHeight: targetHeight, // 浣跨敤璁＄畻鍚庣殑楂樺害
           success: (res) => {
-            console.log('小程序图片压缩完成:', {
-              原始路径: filePath,
-              压缩后路径: res.tempFilePath,
-              压缩质量: quality + '%',
-              最终尺寸: `${targetWidth}×${targetHeight}`
+            console.log('灏忕▼搴忓浘鐗囧帇缂╁畬鎴?', {
+              originalPath: filePath,
+              compressedPath: res.tempFilePath,
+              quality: quality + '%',
+              finalSize: `${targetWidth}x${targetHeight}`
             })
             resolve(res.tempFilePath)
           },
           fail: (err) => {
-            console.warn('小程序图片压缩失败，使用原图:', err)
-            resolve(filePath) // 压缩失败时使用原图
+            console.warn('灏忕▼搴忓浘鐗囧帇缂╁け璐ワ紝浣跨敤鍘熷浘:', err)
+            resolve(filePath) // 鍘嬬缉澶辫触鏃朵娇鐢ㄥ師鍥?
           }
         })
       },
       fail: (err) => {
-        console.warn('获取图片信息失败，直接使用质量压缩:', err)
-        // 如果获取图片信息失败，只进行质量压缩
+        console.warn('鑾峰彇鍥剧墖淇℃伅澶辫触锛岀洿鎺ヤ娇鐢ㄨ川閲忓帇缂?', err)
+        // 濡傛灉鑾峰彇鍥剧墖淇℃伅澶辫触锛屽彧杩涜璐ㄩ噺鍘嬬缉
         uni.compressImage({
           src: filePath,
           quality: quality,
           success: (res) => {
-            console.log('小程序图片质量压缩完成:', {
-              原始路径: filePath,
-              压缩后路径: res.tempFilePath,
-              压缩质量: quality + '%'
+            console.log('灏忕▼搴忓浘鐗囪川閲忓帇缂╁畬鎴?', {
+              originalPath: filePath,
+              compressedPath: res.tempFilePath,
+              quality: quality + '%'
             })
             resolve(res.tempFilePath)
           },
           fail: (compressErr) => {
-            console.warn('小程序图片压缩失败，使用原图:', compressErr)
+            console.warn('灏忕▼搴忓浘鐗囧帇缂╁け璐ワ紝浣跨敤鍘熷浘:', compressErr)
             resolve(filePath)
           }
         })
@@ -451,21 +701,22 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 
 async function processImage(filePath) {
   try {
-    processStatus.value = '图片处理中...'
-    uni.showLoading({ title: '图片处理中...' })
+    resetEnhancedRecognition()
+    processStatus.value = '鍥剧墖澶勭悊涓?..'
+    uni.showLoading({ title: '鍥剧墖澶勭悊涓?..' })
     
-    // 第一步：图片压缩
+    // 绗竴姝ワ細鍥剧墖鍘嬬缉
     let compressedFile = filePath
     let compressedBlob = null
     try {
       if (isH5Platform.value) {
-        // H5环境使用canvas压缩
-        processStatus.value = '正在压缩图片...'
-        console.log('H5环境：开始图片压缩...')
+        // H5鐜浣跨敤canvas鍘嬬缉
+        processStatus.value = '姝ｅ湪鍘嬬缉鍥剧墖...'
+        console.log('H5鐜锛氬紑濮嬪浘鐗囧帇缂?..')
         const { quality, maxWidth } = compressionConfig.h5
         compressedBlob = await compressImage(filePath, quality, maxWidth)
         
-        // 创建File对象用于API上传，使用时间戳+随机数生成唯一文件名
+        // 鍒涘缓File瀵硅薄鐢ㄤ簬API涓婁紶锛屼娇鐢ㄦ椂闂存埑+闅忔満鏁扮敓鎴愬敮涓€鏂囦欢鍚?
         const timestamp = Date.now()
         const randomId = Math.random().toString(36).substring(2, 8)
         const uniqueFileName = `compressed_${timestamp}_${randomId}.jpg`
@@ -474,133 +725,136 @@ async function processImage(filePath) {
           type: 'image/jpeg'
         })
         
-        console.log('H5图片压缩完成，文件大小:', (compressedFile.size / 1024 / 1024).toFixed(2) + 'MB')
+        console.log('H5鍥剧墖鍘嬬缉瀹屾垚锛屾枃浠跺ぇ灏?', (compressedFile.size / 1024 / 1024).toFixed(2) + 'MB')
       } else {
-        // 小程序环境使用uni.compressImage
-        processStatus.value = '正在优化图片...'
-        console.log('小程序环境：开始图片压缩...')
+        // 灏忕▼搴忕幆澧冧娇鐢╱ni.compressImage
+        processStatus.value = '姝ｅ湪浼樺寲鍥剧墖...'
+        console.log('灏忕▼搴忕幆澧冿細寮€濮嬪浘鐗囧帇缂?..')
         const { quality, maxSize } = compressionConfig.miniProgram
         compressedFile = await compressImageMiniProgram(filePath, quality, maxSize)
       }
       
-      console.log('图片压缩成功')
+      console.log('鍥剧墖鍘嬬缉鎴愬姛')
     } catch (compressError) {
-      console.warn('图片压缩失败，使用原图:', compressError)
+      console.warn('鍥剧墖鍘嬬缉澶辫触锛屼娇鐢ㄥ師鍥?', compressError)
       compressedFile = filePath
     }
     
-    // 第二步：显示压缩后的图片预览
+    // 绗簩姝ワ細鏄剧ず鍘嬬缉鍚庣殑鍥剧墖棰勮
     if (isH5Platform.value && compressedBlob) {
-      // H5环境显示压缩后的预览
+      // H5鐜鏄剧ず鍘嬬缉鍚庣殑棰勮
       resultImage.value = URL.createObjectURL(compressedBlob)
     } else {
-      // 小程序环境显示压缩后的路径
+      // 灏忕▼搴忕幆澧冩樉绀哄帇缂╁悗鐨勮矾寰?
       resultImage.value = compressedFile
     }
     
-    // 第三步：调用识别API
-    processStatus.value = 'AI智能识别中...'
-    uni.showLoading({ title: 'AI识别中...' })
+    // 绗笁姝ワ細璋冪敤璇嗗埆API
+    processStatus.value = 'AI鏅鸿兘璇嗗埆涓?..'
+    uni.showLoading({ title: 'AI璇嗗埆涓?..' })
     const res = await recognizeImage(compressedFile)
-    // console.log('后端返回数据:', res) // 调试日志
+    // console.log('鍚庣杩斿洖鏁版嵁:', res) // 璋冭瘯鏃ュ織
 
-    // 第四步：处理识别结果
-    processStatus.value = '处理识别结果...'
+    // 绗洓姝ワ細澶勭悊璇嗗埆缁撴灉
+    processStatus.value = '澶勭悊璇嗗埆缁撴灉...'
     
-    // 确保后端返回的数据结构正确
+    // 纭繚鍚庣杩斿洖鐨勬暟鎹粨鏋勬纭?
     if (res.labels && res.labels.length > 0) {
       const label = res.labels[0]
-      resultCategory.value = label.name || '未知类别'
+      resultCategory.value = label.name || '鏈煡绫诲埆'
       resultConfidence.value = label.confidence ? (label.confidence * 100).toFixed(2) + '%' : '未知置信度'
-      // 检查并避免重复添加前缀
+      // 妫€鏌ュ苟閬垮厤閲嶅娣诲姞鍓嶇紑
       resultImage.value = res.result_img_base64.startsWith('data:image/jpeg;base64,')
         ? res.result_img_base64
         : 'data:image/jpeg;base64,' + res.result_img_base64
       resultDesc.value = label.describe
     } else {
-      resultCategory.value = '未识别到'
+      resultCategory.value = '鏈瘑鍒埌'
       resultConfidence.value = 'NA'
-      resultDesc.value = '未检测到任何标签信息'
+      resultDesc.value = '鏈娴嬪埌浠讳綍鏍囩淇℃伅'
       resultImage.value = res.result_img_base64.startsWith('data:image/jpeg;base64,')
         ? res.result_img_base64
         : 'data:image/jpeg;base64,' + res.result_img_base64
     }
     
-    // 清理H5环境下的临时URL（延迟清理，避免影响显示）
+    // 娓呯悊H5鐜涓嬬殑涓存椂URL锛堝欢杩熸竻鐞嗭紝閬垮厤褰卞搷鏄剧ず锛?
+    applyEnhancedRecognitionData(res)
+
     if (isH5Platform.value && resultImage.value && resultImage.value.startsWith('blob:')) {
       setTimeout(() => {
         URL.revokeObjectURL(resultImage.value)
-      }, 10000) // 10秒后清理预览URL
+      }, 10000) // 10绉掑悗娓呯悊棰勮URL
     }
     
-    processStatus.value = '识别完成！'
+    processStatus.value = '识别完成'
     uni.showToast({
-      title: '识别完成！',
+      title: '识别完成',
       icon: 'success'
     })
     
   } catch (err) {
+    resetEnhancedRecognition()
     resultImage.value = ''
     resultCategory.value = ''
     resultConfidence.value = ''
     resultDesc.value = ''
-    processStatus.value = '处理失败'
+    processStatus.value = '澶勭悊澶辫触'
     
     if (err && err.msg){
       uni.showToast({
-        title: err.msg || '识别失败',
+        title: err.msg || '璇嗗埆澶辫触',
         icon: 'none'
       })
-      if(err.msg=='未登录'){
+      if (err.msg == '鏈櫥褰?') {
         uni.redirectTo({ url: '/pages-dark/index/index' })
       }
     }else{ 
       uni.showToast({
-        title: '网络错误',
+        title: '缃戠粶閿欒',
         icon: 'none'
       })
     }
-    console.error('图片处理失败:', err)
+    console.error('鍥剧墖澶勭悊澶辫触:', err)
   } finally {
     uni.hideLoading()
     isProcessing.value = false
-    processStatus.value = '处理中...' // 重置状态
+    processStatus.value = '澶勭悊涓?..' // 閲嶇疆鐘舵€?
   }
 }
 
 function onAddImage() {
   if (isProcessing.value) {
     uni.showToast({
-      title: '正在处理中，请稍候...',
+      title: '姝ｅ湪澶勭悊涓紝璇风◢鍊?..',
       icon: 'none'
     })
     return
   }
   
-  console.log('onAddImage 开始选择图片')
+  console.log('onAddImage 寮€濮嬮€夋嫨鍥剧墖')
   
-  // 配置图片选择参数
+  // 閰嶇疆鍥剧墖閫夋嫨鍙傛暟
   const chooseConfig = {
     count: 1,
-    sizeType: ['compressed'], // 优先选择压缩图
-    sourceType: ['album', 'camera'], // 支持相册和拍照
+    sizeType: ['compressed'], // 浼樺厛閫夋嫨鍘嬬缉鍥?
+    sourceType: ['album', 'camera'], // 鏀寔鐩稿唽鍜屾媿鐓?
     success: chooseRes => {
       const filePath = chooseRes.tempFilePaths[0]
-      console.log('图片选择成功:', {
-        路径: filePath,
-        大小: chooseRes.tempFiles?.[0]?.size ? (chooseRes.tempFiles[0].size / 1024 / 1024).toFixed(2) + 'MB' : '未知'
+      console.log('鍥剧墖閫夋嫨鎴愬姛:', {
+        path: filePath,
+        size: chooseRes.tempFiles?.[0]?.size ? (chooseRes.tempFiles[0].size / 1024 / 1024).toFixed(2) + 'MB' : 'unknown'
       })
       
       isProcessing.value = true
       processImage(filePath).catch(err => {
-        console.error('图片处理失败:', err)
+        console.error('鍥剧墖澶勭悊澶辫触:', err)
         isProcessing.value = false
       })
     },
     fail: err => {
-      console.log('图片选择失败:', err)
+      console.log('鍥剧墖閫夋嫨澶辫触:', err)
       uni.showToast({
-        title: '图片选择取消',
+        title: '鍥剧墖閫夋嫨鍙栨秷',
         icon: 'none'
       })
     }
@@ -634,7 +888,7 @@ function goRanking() {
 }
 
 function scanDeviceQR() {
-  // 检查当前平台 - 使用与onMounted相同的逻辑
+  // 妫€鏌ュ綋鍓嶅钩鍙?- 浣跨敤涓巓nMounted鐩稿悓鐨勯€昏緫
   let platform
   let uniPlatform
   let isH5 = false
@@ -653,7 +907,7 @@ function scanDeviceQR() {
     uniPlatform = 'unknown'
   }
   
-  // 更精确的H5平台检测
+  // 鏇寸簿纭殑H5骞冲彴妫€娴?
   isH5 = (
     uniPlatform === 'web' || 
     (platform === 'devtools' && typeof window !== 'undefined' && window.location) ||
@@ -663,12 +917,12 @@ function scanDeviceQR() {
   console.log('scanDeviceQR - Platform:', { platform, uniPlatform, isH5 })
   
   if (isH5) {
-    // H5端使用输入框替代扫码
+    // H5绔娇鐢ㄨ緭鍏ユ鏇夸唬鎵爜
     uni.showModal({
-      title: '连接设备',
-      content: '请输入设备ID（H5端暂不支持扫码）',
+      title: '杩炴帴璁惧',
+      content: '璇疯緭鍏ヨ澶嘔D锛圚5绔殏涓嶆敮鎸佹壂鐮侊級',
       editable: true,
-      placeholderText: '请输入设备ID',
+      placeholderText: '璇疯緭鍏ヨ澶嘔D',
       success: function(res) {
         if (res.confirm && res.content) {
           connectDevice(res.content)
@@ -676,16 +930,16 @@ function scanDeviceQR() {
       }
     })
   } else {
-    // 小程序端使用扫码功能
+    // 灏忕▼搴忕浣跨敤鎵爜鍔熻兘
     uni.scanCode({
       scanType: ['qrCode'],
       success: function(res) {
         connectDevice(res.result)
       },
       fail: function(err) {
-        console.log('扫码失败:', err)
+        console.log('鎵爜澶辫触:', err)
         uni.showToast({
-          title: '扫码失败，请重试',
+          title: '鎵爜澶辫触锛岃閲嶈瘯',
           icon: 'none'
         })
       }
@@ -696,42 +950,42 @@ function scanDeviceQR() {
 function connectDevice(deviceId) {
   if (!deviceId || deviceId.trim() === '') {
     uni.showToast({
-      title: '设备ID不能为空',
+      title: '璁惧ID涓嶈兘涓虹┖',
       icon: 'none'
     })
     return
   }
-  //截取deviceId中#后面的内容
+  //鎴彇deviceId涓?鍚庨潰鐨勫唴瀹?
   const targetId = deviceId.split('#')[1]
   console.log('Connecting to device with ID:', targetId)
   uni.navigateTo({ url: targetId })
   return
-  // 显示连接中的提示
+  // 鏄剧ず杩炴帴涓殑鎻愮ず
   uni.showLoading({
-    title: '连接设备中...'
+    title: '杩炴帴璁惧涓?..'
   })
   
-  // 模拟连接设备的过程
+  // 妯℃嫙杩炴帴璁惧鐨勮繃绋?
   setTimeout(() => {
     uni.hideLoading()
     
-    // 保存设备连接信息到本地存储
+    // 淇濆瓨璁惧杩炴帴淇℃伅鍒版湰鍦板瓨鍌?
     const deviceInfo = {
       device_id: deviceId.trim(),
-      device_name: '智能垃圾分类设备',
+      device_name: '鏅鸿兘鍨冨溇鍒嗙被璁惧',
       connected_time: Date.now()
     }
     
     uni.setStorageSync('connectedDevice', deviceInfo)
     uni.setStorageSync('connection', Date.now())
     
-    // 显示连接成功提示
+    // 鏄剧ず杩炴帴鎴愬姛鎻愮ず
     uni.showToast({
-      title: '设备连接成功',
+      title: '璁惧杩炴帴鎴愬姛',
       icon: 'success'
     })
     
-    // 刷新页面以显示连接状态
+    // 鍒锋柊椤甸潰浠ユ樉绀鸿繛鎺ョ姸鎬?
     setTimeout(() => {
       uni.redirectTo({ url: '/pages-dark/home/home' })
     }, 1500)
@@ -740,42 +994,36 @@ function connectDevice(deviceId) {
 }
 
 function showGuideDetail(type) {
-  // 确保type有效
-  if (!type) {
-    console.warn('showGuideDetail: type参数为空')
-    return
-  }
-  
+  if (!type) return
+
   const guides = {
     recyclable: {
-      icon: '♻️',
+      icon: '鈾伙笍',
       title: '可回收垃圾',
-      content: '包括废纸、塑料、玻璃、金属和布料五大类。这些垃圾可以通过综合处理回收利用，减少污染，节省资源。正确分类投放可以大大提高回收效率，为环保事业贡献力量。'
+      content: '包括废纸、塑料、玻璃、金属和布料等。可回收物经过分类处理后可再利用，能减少污染并节约资源。'
     },
     harmful: {
-      icon: '☢️',
+      icon: '鈽笍',
       title: '有害垃圾',
-      content: '包括废电池、废灯管、废药品、废油漆及其容器等。这些垃圾含有有毒有害物质，需要特殊处理，避免对环境和人体造成危害。请务必投放到专门的有害垃圾收集点。'
+      content: '包括废电池、废灯管、废药品、废油漆及其容器等，需投放到有害垃圾回收点进行专门处理。'
     },
     kitchen: {
-      icon: '🍎',
+      icon: '馃崕',
       title: '厨余垃圾',
-      content: '包括剩菜剩饭、骨头、菜根菜叶、果皮等食品类废物。这些有机垃圾可以通过生物技术就地处理堆肥，转化为有机肥料，实现资源循环利用。'
+      content: '包括剩菜剩饭、果皮果核、骨头、菜叶等厨余废弃物，可通过堆肥等方式资源化处理。'
     },
     other: {
-      icon: '🗑️',
+      icon: '馃棏锔?',
       title: '其他垃圾',
-      content: '包括除上述几类垃圾之外的砖瓦陶瓷、渣土、卫生间废纸、纸巾等难以回收的废弃物。这些垃圾通常采用卫生填埋等方式进行无害化处理。'
+      content: '包括砖瓦陶瓷、卫生纸、尘土等难以回收利用的废弃物，一般采用卫生填埋等方式处理。'
     }
   }
-  
+
   const guide = guides[type]
-  if (guide && guide.title && guide.content) {
-    currentGuide.value = { ...guide } // 使用对象拷贝避免引用问题
+  if (guide) {
+    currentGuide.value = { ...guide }
     showGuideModal.value = true
   } else {
-    console.warn(`showGuideDetail: 未找到类型'${type}'对应的指南信息`)
-    // 显示一个通用的错误提示
     currentGuide.value = {
       icon: '❓',
       title: '信息缺失',
@@ -787,7 +1035,7 @@ function showGuideDetail(type) {
 
 function closeGuideModal() {
   showGuideModal.value = false
-  // 延时清理，避免动画过程中数据闪烁
+  // 寤舵椂娓呯悊锛岄伩鍏嶅姩鐢昏繃绋嬩腑鏁版嵁闂儊
   setTimeout(() => {
     currentGuide.value = {}
   }, 300)
@@ -795,7 +1043,7 @@ function closeGuideModal() {
 </script>
 
 <style scoped>
-/* 主背景 */
+/* 涓昏儗鏅?*/
 .home-bg {
   min-height: 100vh;
   background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 25%, #2d1b69 50%, #0f0f23 100%);
@@ -803,7 +1051,7 @@ function closeGuideModal() {
   overflow: hidden;
 }
 
-/* 自定义状态栏 */
+/* 鑷畾涔夌姸鎬佹爮 */
 .custom-statusbar {
   height: var(--status-bar-height);
   background: transparent;
@@ -811,7 +1059,7 @@ function closeGuideModal() {
   z-index: 10;
 }
 
-/* 科技背景元素 */
+/* 绉戞妧鑳屾櫙鍏冪礌 */
 .tech-bg {
   position: absolute;
   top: 0;
@@ -839,7 +1087,7 @@ function closeGuideModal() {
   100% { transform: translate(50px, 50px); }
 }
 
-/* 浮动粒子 */
+/* 娴姩绮掑瓙 */
 .floating-particles {
   position: absolute;
   width: 100%;
@@ -861,17 +1109,17 @@ function closeGuideModal() {
   50% { transform: translateY(-20px) scale(1.2); opacity: 1; }
 }
 
-/* 主容器 */
+/* 涓诲鍣?*/
 .home-container {
   position: relative;
   z-index: 2;
-  padding: 40rpx 32rpx 140rpx 32rpx; /* 恢复原来的padding，因为已有自定义状态栏 */
+  padding: 40rpx 32rpx 140rpx 32rpx; /* 鎭㈠鍘熸潵鐨刾adding锛屽洜涓哄凡鏈夎嚜瀹氫箟鐘舵€佹爮 */
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - var(--status-bar-height));
 }
 
-/* 标题区域 */
+/* 鏍囬鍖哄煙 */
 .header-section {
   text-align: center;
   margin-bottom: 60rpx;
@@ -912,12 +1160,12 @@ function closeGuideModal() {
   letter-spacing: 2rpx;
 }
 
-/* 上传区域 */
+/* 涓婁紶鍖哄煙 */
 .upload-section {
   margin-bottom: 60rpx;
 }
 
-/* 设备连接横幅 */
+/* 璁惧杩炴帴妯箙 */
 .device-connection-banner {
   position: relative;
   background: linear-gradient(135deg, 
@@ -1195,7 +1443,7 @@ function closeGuideModal() {
   font-size: 22rpx;
 }
 
-/* 扫描线动效 */
+/* 鎵弿绾垮姩鏁?*/
 .scan-line {
   position: absolute;
   top: 0;
@@ -1211,7 +1459,7 @@ function closeGuideModal() {
   100% { transform: translateY(300rpx); opacity: 0; }
 }
 
-/* 结果区域 */
+/* 缁撴灉鍖哄煙 */
 .result-section {
   flex: 1;
   margin-bottom: 10rpx;
@@ -1263,8 +1511,33 @@ function closeGuideModal() {
   box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.3);
 }
 
+.result-image-wrap {
+  position: relative;
+}
+
 .result-details {
   margin-top: 32rpx;
+}
+
+.category-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.ai-helper-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  border-radius: 999rpx;
+  padding: 12rpx 24rpx;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: #031521;
+  background: linear-gradient(135deg, #40e0ff, #58e8d4);
+  box-shadow: 0 8rpx 20rpx rgba(64, 224, 255, 0.3);
 }
 
 .category-display {
@@ -1275,6 +1548,22 @@ function closeGuideModal() {
   border-radius: 16rpx;
   margin-bottom: 24rpx;
   border-left: 6rpx solid #40e0ff;
+}
+
+.category-display.recyclable {
+  border-left-color: #2ad47a;
+}
+
+.category-display.harmful {
+  border-left-color: #ff8a6b;
+}
+
+.category-display.kitchen {
+  border-left-color: #ffc76c;
+}
+
+.category-display.other {
+  border-left-color: #73a4c4;
 }
 
 .category-icon {
@@ -1306,6 +1595,113 @@ function closeGuideModal() {
   border-left: 6rpx solid #4ecdc4;
 }
 
+.recognized-items-box {
+  border: 1px solid rgba(64, 224, 255, 0.26);
+  background: rgba(12, 31, 58, 0.62);
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.recognized-items-title {
+  display: block;
+  font-size: 24rpx;
+  color: #9ceeff;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.recognized-items-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.recognized-item-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  border: 1px solid rgba(120, 229, 255, 0.35);
+  background: rgba(23, 51, 85, 0.7);
+  color: #c7f6ff;
+  font-size: 22rpx;
+  padding: 8rpx 16rpx;
+}
+
+.upcycling-plan {
+  display: grid;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.upcycling-plan-item {
+  border: 1px solid rgba(91, 204, 255, 0.26);
+  border-radius: 16rpx;
+  padding: 16rpx 20rpx;
+  background: linear-gradient(135deg, rgba(20, 41, 71, 0.82), rgba(11, 27, 48, 0.86));
+}
+
+.upcycling-plan-item.is-warning {
+  border-color: rgba(255, 174, 92, 0.35);
+  background: linear-gradient(135deg, rgba(63, 41, 18, 0.88), rgba(48, 30, 12, 0.88));
+}
+
+.upcycling-plan-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: rgba(64, 224, 255, 0.18);
+  color: #8eefff;
+  font-size: 20rpx;
+  font-weight: 700;
+  padding: 6rpx 14rpx;
+}
+
+.upcycling-plan-item.is-warning .upcycling-plan-title {
+  background: rgba(255, 196, 120, 0.22);
+  color: #ffe2af;
+}
+
+.upcycling-plan-content {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: rgba(235, 247, 255, 0.9);
+}
+
+.recognition-bbox-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+}
+
+.recognition-bbox-item {
+  position: absolute;
+  border: 2px solid #40e0ff;
+  border-radius: 10rpx;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.recognition-bbox-label {
+  position: absolute;
+  left: -1px;
+  top: -24px;
+  max-width: 220rpx;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 20rpx;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
 .desc-label {
   display: block;
   font-size: 28rpx;
@@ -1320,7 +1716,7 @@ function closeGuideModal() {
   line-height: 1.6;
 }
 
-/* 欢迎区域 */
+/* 娆㈣繋鍖哄煙 */
 .welcome-section {
   flex: 1;
   display: flex;
@@ -1363,7 +1759,7 @@ function closeGuideModal() {
   line-height: 1.6;
 }
 
-/* 垃圾分类指南卡片 */
+/* 鍨冨溇鍒嗙被鎸囧崡鍗＄墖 */
 .guide-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1445,7 +1841,7 @@ function closeGuideModal() {
   transform: translateX(4rpx);
 }
 
-/* 功能快捷入口 */
+/* 鍔熻兘蹇嵎鍏ュ彛 */
 .quick-actions {
   display: flex;
   justify-content: space-around;
@@ -1496,7 +1892,7 @@ function closeGuideModal() {
   text-align: center;
 }
 
-/* 积分商城入口特殊样式 */
+/* 绉垎鍟嗗煄鍏ュ彛鐗规畩鏍峰紡 */
 .action-item.shop-entry {
   position: relative;
   background: linear-gradient(135deg, 
@@ -1540,7 +1936,7 @@ function closeGuideModal() {
   50% { transform: scale(1.1); }
 }
 
-/* 自定义分类指南弹窗 */
+/* 鑷畾涔夊垎绫绘寚鍗楀脊绐?*/
 .guide-modal-overlay {
   position: fixed;
   top: 0;
@@ -1729,7 +2125,54 @@ function closeGuideModal() {
   z-index: 2;
 }
 
-/* 底部导航栏 */
+/* 搴曢儴瀵艰埅鏍?*/
+@media (max-width: 768px) {
+  .category-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ai-helper-btn {
+    padding: 10rpx 20rpx;
+    font-size: 20rpx;
+  }
+
+  .recognized-items-box {
+    padding: 16rpx 18rpx;
+  }
+
+  .recognized-item-chip {
+    font-size: 20rpx;
+  }
+
+  .upcycling-plan-item {
+    padding: 14rpx 16rpx;
+  }
+
+  .upcycling-plan-content {
+    font-size: 22rpx;
+  }
+
+  .recognition-bbox-label {
+    max-width: 180rpx;
+    font-size: 18rpx;
+  }
+}
+
+@media (max-width: 420px) {
+  .result-card {
+    padding: 22rpx 20rpx;
+  }
+
+  .ai-helper-btn {
+    width: 100%;
+  }
+
+  .desc-content {
+    font-size: 22rpx;
+  }
+}
+
 .tabbar {
   position: fixed;
   left: 0;
@@ -1801,3 +2244,4 @@ function closeGuideModal() {
   letter-spacing: 1rpx;
 }
 </style>
+

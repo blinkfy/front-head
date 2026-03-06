@@ -1,6 +1,6 @@
-<template>
+﻿<template>
   <view class="shop-page">
-    <!-- 背景装饰 -->
+    <!-- 鑳屾櫙瑁呴グ -->
     <view class="bg-decoration">
       <view class="bg-circle circle-1"></view>
       <view class="bg-circle circle-2"></view>
@@ -12,23 +12,23 @@
       </view>
     </view>
     
-    <!-- 顶部绿色背景区域 -->
+    <!-- 椤堕儴缁胯壊鑳屾櫙鍖哄煙 -->
     <view class="shop-header">
       <view class="header-content">
-        <text class="header-title">🛍️ 积分商城</text>
-        <text class="header-subtitle">环保积分 · 兑换好礼</text>
+        <text class="header-title">馃泹锔?绉垎鍟嗗煄</text>
+        <text class="header-subtitle">鐜繚绉垎 路 鍏戞崲濂界ぜ</text>
       </view>
     </view>
 
-    <!-- 主内容区域 -->
+    <!-- 涓诲唴瀹瑰尯鍩?-->
     <view class="content-wrapper">
-      <!-- 积分卡片 -->
+      <!-- 绉垎鍗＄墖 -->
       <view class="points-card">
         <view class="points-icon-wrapper">
-          <text class="points-icon">💎</text>
+          <text class="points-icon">馃拵</text>
         </view>
         <view class="points-info">
-          <text class="points-label">我的积分</text>
+          <text class="points-label">鎴戠殑绉垎</text>
           <text class="points-value" v-if="!loading">{{ userPoints }}</text>
           <view class="loading-dots" v-else>
             <text class="dot"></text>
@@ -37,22 +37,22 @@
           </view>
         </view>
         <view class="points-refresh" @click="refreshPoints" :class="{ rotating: loading }">
-          <text class="refresh-icon">♻️</text>
+          <text class="refresh-icon">鈾伙笍</text>
         </view>
       </view>
 
-      <!-- 积分提示 -->
+      <!-- 绉垎鎻愮ず -->
       <view class="points-tips">
-        <text class="tip-icon">💡</text>
+        <text class="tip-icon">馃挕</text>
         <view class="tip-text-wrapper">
           <view class="tip-text-track">
-            <text class="tip-text">每次垃圾识别可获得1-3积分</text>
-            <text class="tip-text">每次垃圾识别可获得1-3积分</text>
+            <text class="tip-text">姣忔鍨冨溇璇嗗埆鍙幏寰?-3绉垎</text>
+            <text class="tip-text">姣忔鍨冨溇璇嗗埆鍙幏寰?-3绉垎</text>
           </view>
         </view>
       </view>
 
-      <!-- 商品分类选项卡 -->
+      <!-- 鍟嗗搧鍒嗙被閫夐」鍗?-->
       <view class="category-tabs">
         <view 
           v-for="(category, index) in categories" 
@@ -65,12 +65,16 @@
         </view>
       </view>
 
-      <!-- 商品列表 -->
+      <!-- 鍟嗗搧鍒楄〃 -->
       <view class="products-section">
         <view class="section-header">
-          <text class="section-icon">{{ categories[currentCategory].icon }}</text>
-          <text class="section-title">{{ categories[currentCategory].name }}</text>
-          <text class="product-count">共 {{ filteredProducts.length }} 件</text>
+          <text class="section-icon">{{ selectedCategory.icon }}</text>
+          <text class="section-title">{{ displayCategoryTitle }}</text>
+          <text class="product-count">鍏?{{ filteredProducts.length }} 浠?</text>
+        </view>
+
+        <view v-if="isRecommendCategory && recommendLoading" class="recommend-loading-mask">
+          <text class="recommend-loading-text">AI 正在生成推荐，请稍候...</text>
         </view>
         
         <view class="products-grid">
@@ -82,8 +86,9 @@
           >
             <view class="product-image-wrapper">
               <image :src="product.image" class="product-image" mode="aspectFill" />
-              <view v-if="product.hot" class="product-badge hot">🔥 热门</view>
-              <view v-if="product.limited" class="product-badge limited">⚡ 限量</view>
+              <view v-if="isRecommendCategory" class="product-badge ai">AI推荐</view>
+              <view v-if="product.hot" class="product-badge hot">馃敟 鐑棬</view>
+              <view v-if="product.limited" class="product-badge limited">鈿?闄愰噺</view>
             </view>
             
             <view class="product-info">
@@ -92,11 +97,11 @@
               
               <view class="product-footer">
                 <view class="product-price">
-                  <text class="price-icon">💎</text>
+                  <text class="price-icon">馃拵</text>
                   <text class="price-value">{{ product.points }}</text>
                 </view>
                 <view class="product-stock" :class="{ low: product.stock <= 2 }">
-                  <text>库存 {{ product.stock }}</text>
+                  <text>搴撳瓨 {{ product.stock }}</text>
                 </view>
               </view>
             </view>
@@ -105,12 +110,12 @@
       </view>
     </view>
 
-    <!-- 商品详情弹窗 -->
+    <!-- 鍟嗗搧璇︽儏寮圭獥 -->
     <view v-if="showDetailModal" class="modal-overlay" @click="closeProductDetail">
       <view class="detail-modal" @click.stop="">
         <view class="modal-header">
           <image :src="selectedProduct.image" class="modal-image" mode="aspectFill" />
-          <view class="modal-close" @click="closeProductDetail">✕</view>
+          <view class="modal-close" @click="closeProductDetail">鉁?</view>
         </view>
         
         <view class="modal-body">
@@ -119,18 +124,18 @@
           
           <view class="modal-details">
             <view class="detail-row">
-              <text class="detail-label">所需积分</text>
+              <text class="detail-label">鎵€闇€绉垎</text>
               <view class="detail-value points">
-                <text class="value-icon">💎</text>
+                <text class="value-icon">馃拵</text>
                 <text>{{ selectedProduct.points }}</text>
               </view>
             </view>
             <view class="detail-row">
-              <text class="detail-label">剩余库存</text>
-              <text class="detail-value">{{ selectedProduct.stock }} 件</text>
+              <text class="detail-label">鍓╀綑搴撳瓨</text>
+              <text class="detail-value">{{ selectedProduct.stock }} 浠?</text>
             </view>
             <view class="detail-row">
-              <text class="detail-label">商品特点</text>
+              <text class="detail-label">鍟嗗搧鐗圭偣</text>
               <text class="detail-value">{{ selectedProduct.features }}</text>
             </view>
           </view>
@@ -141,44 +146,44 @@
             :class="['exchange-btn', { disabled: !canExchange }]"
             @click="exchangeProduct"
           >
-            <text class="btn-icon">🎁</text>
-            <text class="btn-text">{{ userPoints >= selectedProduct.points ? (selectedProduct.stock > 0 ? '立即兑换' : '库存不足') : '积分不足' }}</text>
+            <text class="btn-icon">馃巵</text>
+            <text class="btn-text">{{ userPoints >= selectedProduct.points ? (selectedProduct.stock > 0 ? '绔嬪嵆鍏戞崲' : '搴撳瓨涓嶈冻') : '绉垎涓嶈冻' }}</text>
           </view>
         </view>
       </view>
     </view>
 
-    <!-- 兑换成功弹窗 -->
+    <!-- 鍏戞崲鎴愬姛寮圭獥 -->
     <view v-if="showSuccessModal" class="modal-overlay" @click="closeSuccessModal">
       <view class="success-modal" @click.stop="">
         <view class="success-icon-wrapper">
-          <text class="success-icon">🎉</text>
+          <text class="success-icon">馃帀</text>
         </view>
-        <text class="success-title">兑换成功！</text>
-        <text class="success-desc">{{ exchangedProduct.name }} 已添加到您的奖品库</text>
+        <text class="success-title">鍏戞崲鎴愬姛锛?</text>
+        <text class="success-desc">{{ exchangedProduct.name }} 宸叉坊鍔犲埌鎮ㄧ殑濂栧搧搴?</text>
         <view class="success-btn" @click="closeSuccessModal">
-          <text>查看我的奖品</text>
+          <text>鏌ョ湅鎴戠殑濂栧搧</text>
         </view>
       </view>
     </view>
 
-    <!-- 底部导航栏 -->
+    <!-- 搴曢儴瀵艰埅鏍?-->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
-        <text class="tabbar-icon">🏠</text>
-        <text class="tabbar-label">首页</text>
+        <text class="tabbar-icon">馃彔</text>
+        <text class="tabbar-label">棣栭〉</text>
       </view>
       <view class="tabbar-item" @click="goMap">
-        <text class="tabbar-icon">🗺️</text>
-        <text class="tabbar-label">地图</text>
+        <text class="tabbar-icon">馃椇锔?</text>
+        <text class="tabbar-label">鍦板浘</text>
       </view>
       <view class="tabbar-item active">
-        <text class="tabbar-icon">🛍️</text>
-        <text class="tabbar-label">商城</text>
+        <text class="tabbar-icon">馃泹锔?</text>
+        <text class="tabbar-label">鍟嗗煄</text>
       </view>
       <view class="tabbar-item" @click="goProfile">
-        <text class="tabbar-icon">👤</text>
-        <text class="tabbar-label">我的</text>
+        <text class="tabbar-icon">馃懁</text>
+        <text class="tabbar-label">鎴戠殑</text>
       </view>
     </view>
   </view>
@@ -187,6 +192,15 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { userinfo } from '@/api/user'
+import { fetchShopRecommendations } from '@/api/shop'
+import {
+  SHOP_RECOMMEND_LIMIT,
+  buildCandidateProducts,
+  filterProductsByRecommendation,
+  getFallbackRecommendedNames,
+  normalizeRecommendationResult,
+  orderProductsByRecommendation
+} from '@/utils/shop-recommendation'
 
 const userPoints = ref(0)
 const loading = ref(false)
@@ -195,53 +209,58 @@ const showDetailModal = ref(false)
 const showSuccessModal = ref(false)
 const selectedProduct = ref({})
 const exchangedProduct = ref({})
+const recommendLoading = ref(false)
+const recommendReady = ref(false)
+const recommendSource = ref('rule-dom')
+const recommendedNames = ref([])
 
 const categories = ref([
-  { name: '全部', icon: '🛍️' },
-  { name: '环保用品', icon: '🌱' },
-  { name: '数码配件', icon: '📱' },
-  { name: '生活用品', icon: '🏠' },
-  { name: '学习用品', icon: '📚' },
-  { name: '美食券', icon: '🍔' }
+  { name: '✨ 猜您喜欢', icon: '✨', type: 'recommend' },
+  { name: '全部', icon: '🛍️', type: 'all' },
+  { name: '环保用品', icon: '🌿', type: 'category', categoryId: 1 },
+  { name: '数码配件', icon: '📱', type: 'category', categoryId: 2 },
+  { name: '生活用品', icon: '🏠', type: 'category', categoryId: 3 },
+  { name: '学习用品', icon: '📚', type: 'category', categoryId: 4 },
+  { name: '美食券', icon: '🍜', type: 'category', categoryId: 5 }
 ])
 
 const products = ref([
   {
     id: 1,
     name: '环保购物袋',
-    description: '可重复使用的环保袋，减少塑料污染',
+    description: '鍙噸澶嶄娇鐢ㄧ殑鐜繚琚嬶紝鍑忓皯濉戞枡姹℃煋',
     image: 'https://image.made-in-china.com/226f3j00UTjleWhIhYoJ/Landscape-Recycle-Shopping-Bag.jpg',
     points: 50,
     stock: 10,
     category: 1,
     hot: true,
-    features: '防水耐用，可折叠收纳，承重20kg'
+    features: '闃叉按鑰愮敤锛屽彲鎶樺彔鏀剁撼锛屾壙閲?0kg'
   },
   {
     id: 2,
-    name: '竹制餐具套装',
-    description: '天然竹制，环保健康的餐具套装',
+    name: '绔瑰埗椁愬叿濂楄',
+    description: '澶╃劧绔瑰埗锛岀幆淇濆仴搴风殑椁愬叿濂楄',
     image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2F2019%2F410%2F976%2F12755679014_1810685200.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634083&t=513c5b5d5a41f80b92a119763c25a5b5',
     points: 120,
     stock: 2,
     category: 1,
-    features: '天然抗菌，轻便易携带，包含筷子勺子叉子'
+    features: '天然抗菌，轻便易携带，包含筷勺叉'
   },
   {
     id: 3,
-    name: '太阳能充电宝',
-    description: '绿色能源，随时随地为设备充电',
+    name: '澶槼鑳藉厖鐢靛疂',
+    description: '缁胯壊鑳芥簮锛岄殢鏃堕殢鍦颁负璁惧鍏呯數',
     image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN01IxpKK61cUg42XsnKB_%21%216000000003604-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634273&t=d300edc54451f9aa092378e6bbd8dc02',
     points: 300,
     stock: 1,
     category: 1,
     limited: true,
-    features: '10000mAh容量，IP65防水，双USB输出'
+    features: '10000mAh瀹归噺锛孖P65闃叉按锛屽弻USB杈撳嚭'
   },
   {
     id: 4,
-    name: '无线蓝牙耳机',
-    description: '高品质音效，舒适佩戴体验',
+    name: '鏃犵嚎钃濈墮鑰虫満',
+    description: '高品质音效，佩戴舒适',
     image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN01ARkqoe1lp8bxmr56x_%21%212207796144867-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1772604226&t=71875439063552b8fc4046a5bd82cece',
     points: 200,
     stock: 1,
@@ -251,7 +270,7 @@ const products = ref([
   },
   {
     id: 5,
-    name: '手机支架',
+    name: '鎵嬫満鏀灦',
     description: '多角度调节，稳固不倒',
     image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fimg.alicdn.com%2Fimgextra%2Fi3%2F91569647%2FO1CN01OquyGx2L8Nq5vUJJV_%21%2191569647.jpg&refer=http%3A%2F%2Fimg.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634468&t=daac5fec3acce16483095a3ffd96d104',
     points: 80,
@@ -263,17 +282,17 @@ const products = ref([
   {
     id: 6,
     name: '无线充电器',
-    description: '快充技术，告别线材束缚',
+    description: '蹇厖鎶€鏈紝鍛婂埆绾挎潗鏉熺細',
     image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN014SwRCT1pepuKwekC3_%21%213686345386-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634522&t=5a627de7988d9f0c7e4eb95fd06fe510',
     points: 150,
     stock: 1,
     category: 2,
-    features: '15W快充，智能识别，过热保护'
+    features: '15W蹇厖锛屾櫤鑳借瘑鍒紝杩囩儹淇濇姢'
   },
   {
     id: 7,
-    name: '保温水杯',
-    description: '316不锈钢，24小时保温',
+    name: '淇濇俯姘存澂',
+    description: '316涓嶉攬閽紝24灏忔椂淇濇俯',
     image: 'https://static.airchina.com.cn/upload/t/ZmcLYCAzi6SjZv_Ye4NMk7k57SI=/670x670/img/store/296/1710832561739.jpg',
     points: 100,
     stock: 1,
@@ -283,7 +302,7 @@ const products = ref([
   {
     id: 8,
     name: '香薰加湿器',
-    description: '净化空气，舒缓心情',
+    description: '鍑€鍖栫┖姘旓紝鑸掔紦蹇冩儏',
     image: 'https://aimg8.dlssyht.cn/u/2061934/ueditor/image/1031/2061934/1736233837447324.jpg',
     points: 180,
     stock: 1,
@@ -293,17 +312,17 @@ const products = ref([
   },
   {
     id: 9,
-    name: '多功能笔记本',
+    name: '澶氬姛鑳界瑪璁版湰',
     description: '高质量纸张，多种规格可选',
     image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN01GmVcgy1udzaV88fGu_%21%212211693156061-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634668&t=de5741858f3adee222381a7c22ee5bc8',
     points: 30,
     stock: 5,
     category: 4,
-    features: 'A5尺寸，180页，方格/横线可选'
+    features: 'A5尺寸，80页，方格/横线可选'
   },
   {
     id: 10,
-    name: '护眼台灯',
+    name: '鎶ょ溂鍙扮伅',
     description: 'LED护眼，智能调光',
     image: 'https://img0.baidu.com/it/u=2083889578,895933530&fm=253&fmt=auto&app=138&f=JPEG?w=825&h=500',
     points: 250,
@@ -314,31 +333,34 @@ const products = ref([
   },
   {
     id: 11,
-    name: '星巴克咖啡券',
-    description: '任意饮品通用券，有效期6个月',
+    name: '鏄熷反鍏嬪挅鍟″埜',
+    description: '浠绘剰楗搧閫氱敤鍒革紝鏈夋晥鏈?涓湀',
     image: 'https://p6.itc.cn/q_70/images01/20210903/15249c7e53fb43d1bff2f80175dac604.jpeg',
     points: 80,
     stock: 5,
     category: 5,
     hot: true,
-    features: '全国门店通用，可叠加使用'
+    features: '鍏ㄥ浗闂ㄥ簵閫氱敤锛屽彲鍙犲姞浣跨敤'
   },
   {
     id: 12,
-    name: '肯德基套餐券',
-    description: '指定套餐优惠券，美味享不停',
+    name: '鑲痉鍩哄椁愬埜',
+    description: '指定套餐优惠券，美味不停',
     image: 'https://p6.itc.cn/q_70/images03/20211204/92f834b2ea8a4cb7b9bb993602b42279.jpeg',
     points: 120,
     stock: 0,
     category: 5,
-    features: '多种套餐可选，部分门店适用'
+    features: '澶氱濂楅鍙€夛紝閮ㄥ垎闂ㄥ簵閫傜敤'
   }
 ])
 
 onMounted(async () => {
   await fetchUserPoints()
+  if (currentCategory.value === 0) {
+    await ensureRecommendations()
+  }
   
-  // 添加商品卡片鼠标追踪效果
+  // 娣诲姞鍟嗗搧鍗＄墖榧犳爣杩借釜鏁堟灉
   if (typeof document !== 'undefined') {
     const productCards = document.querySelectorAll('.product-card')
     productCards.forEach(card => {
@@ -360,7 +382,7 @@ onMounted(async () => {
       })
     })
     
-    // 添加分类标签鼠标追踪效果
+    // 娣诲姞鍒嗙被鏍囩榧犳爣杩借釜鏁堟灉
     const tabItems = document.querySelectorAll('.tab-item')
     tabItems.forEach(item => {
       item.addEventListener('mousemove', (e) => {
@@ -414,17 +436,83 @@ const refreshPoints = async () => {
   }
 }
 
+const isRecommendCategory = computed(() => {
+  const current = categories.value[currentCategory.value]
+  return !!(current && current.type === 'recommend')
+})
+
+const selectedCategory = computed(() => {
+  return categories.value[currentCategory.value] || categories.value[0] || { icon: '🛍️', name: '全部', type: 'all' }
+})
+
+const displayCategoryTitle = computed(() => {
+  return isRecommendCategory.value ? 'AI推荐' : selectedCategory.value.name
+})
+
+function getProductsByRecommendedNames(names) {
+  const sourceNames = Array.isArray(names) ? names : []
+  const matched = filterProductsByRecommendation(products.value, sourceNames)
+  const ordered = orderProductsByRecommendation(matched, sourceNames)
+  return ordered.slice(0, SHOP_RECOMMEND_LIMIT)
+}
+
+async function ensureRecommendations(force = false) {
+  if (recommendLoading.value) return
+  if (recommendReady.value && !force) return
+
+  recommendLoading.value = true
+  try {
+    const apiResult = await fetchShopRecommendations({
+      limit: SHOP_RECOMMEND_LIMIT,
+      currentPoints: Number(userPoints.value || 0),
+      candidateProducts: buildCandidateProducts(products.value)
+    })
+
+    const normalized = normalizeRecommendationResult(
+      apiResult,
+      products.value,
+      userPoints.value,
+      SHOP_RECOMMEND_LIMIT
+    )
+    recommendedNames.value = Array.isArray(normalized.names) ? normalized.names : []
+    recommendSource.value = normalized.source || 'rule-dom'
+    recommendReady.value = true
+  } catch (_) {
+    recommendedNames.value = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
+    recommendSource.value = 'rule-dom'
+    recommendReady.value = true
+  } finally {
+    recommendLoading.value = false
+  }
+}
+
+const recommendProducts = computed(() => {
+  const fromApi = getProductsByRecommendedNames(recommendedNames.value)
+  if (fromApi.length) return fromApi
+
+  const fallbackNames = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
+  const fromFallback = getProductsByRecommendedNames(fallbackNames)
+  if (fromFallback.length) return fromFallback
+
+  return products.value.slice(0, SHOP_RECOMMEND_LIMIT)
+})
+
 const filteredProducts = computed(() => {
-  if (currentCategory.value === 0) return products.value
-  return products.value.filter(product => product.category === currentCategory.value)
+  const current = selectedCategory.value
+  if (current.type === 'recommend') return recommendProducts.value
+  if (current.type === 'all') return products.value
+  return products.value.filter(product => product.category === current.categoryId)
 })
 
 const canExchange = computed(() => {
   return userPoints.value >= selectedProduct.value.points && selectedProduct.value.stock > 0
 })
 
-const switchCategory = (index) => {
+const switchCategory = async (index) => {
   currentCategory.value = index
+  if (categories.value[index] && categories.value[index].type === 'recommend') {
+    await ensureRecommendations()
+  }
 }
 
 const showProductDetail = (product) => {
@@ -486,7 +574,7 @@ const goProfile = () => {
 </script>
 
 <style scoped>
-/* 页面基础 */
+/* 椤甸潰鍩虹 */
 .shop-page {
   min-height: 100vh;
   background: linear-gradient(180deg, #f0fdf4 0%, #f5f7fa 30%, #f0f9ff 70%, #f5f7fa 100%);
@@ -495,7 +583,7 @@ const goProfile = () => {
   overflow-x: hidden;
 }
 
-/* 背景装饰 */
+/* 鑳屾櫙瑁呴グ */
 .bg-decoration {
   position: fixed;
   top: 0;
@@ -508,7 +596,7 @@ const goProfile = () => {
   animation: bgLightShift 15s ease-in-out infinite;
 }
 
-/* 背景光影流动效果 */
+/* 鑳屾櫙鍏夊奖娴佸姩鏁堟灉 */
 @keyframes bgLightShift {
   0%, 100% {
     background: radial-gradient(ellipse at 80% 20%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
@@ -569,7 +657,7 @@ const goProfile = () => {
   animation: float3 12s ease-in-out infinite;
 }
 
-/* 球形浮动动画 */
+/* 鐞冨舰娴姩鍔ㄧ敾 */
 @keyframes float1 {
   0%, 100% {
     transform: translate(0, 0) scale(1);
@@ -638,7 +726,7 @@ const goProfile = () => {
   border-radius: 50%;
 }
 
-/* 顶部绿色背景 */
+/* 椤堕儴缁胯壊鑳屾櫙 */
 .shop-header {
   background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
   padding: 40rpx 32rpx 80rpx;
@@ -676,7 +764,7 @@ const goProfile = () => {
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* 主内容区域 */
+/* 涓诲唴瀹瑰尯鍩?*/
 .content-wrapper {
   padding: 0 32rpx;
   margin-top: -40rpx;
@@ -684,7 +772,7 @@ const goProfile = () => {
   z-index: 2;
 }
 
-/* 积分卡片 */
+/* 绉垎鍗＄墖 */
 .points-card {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(220, 252, 231, 0.9) 30%, rgba(187, 247, 208, 0.85) 50%, rgba(220, 252, 231, 0.9) 70%, rgba(255, 255, 255, 0.98) 100%);
   border-radius: 24rpx;
@@ -844,7 +932,7 @@ const goProfile = () => {
   to { transform: rotate(360deg); }
 }
 
-/* 积分提示 */
+/* 绉垎鎻愮ず */
 .points-tips {
   display: flex;
   align-items: center;
@@ -890,7 +978,7 @@ const goProfile = () => {
   }
 }
 
-/* 分类选项卡 */
+/* 鍒嗙被閫夐」鍗?*/
 .category-tabs {
   display: flex;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 253, 244, 0.95) 50%, rgba(255, 255, 255, 0.98) 100%);
@@ -919,7 +1007,7 @@ const goProfile = () => {
   border: 1rpx solid rgba(255, 255, 255, 0.5);
 }
 
-/* 塑料质感光泽 */
+/* 濉戞枡璐ㄦ劅鍏夋辰 */
 .tab-item::before {
   content: '';
   position: absolute;
@@ -932,7 +1020,7 @@ const goProfile = () => {
   border-radius: 16rpx 16rpx 0 0;
 }
 
-/* 光感追随鼠标效果 */
+/* 鍏夋劅杩介殢榧犳爣鏁堟灉 */
 .tab-item::after {
   content: '';
   position: absolute;
@@ -958,7 +1046,7 @@ const goProfile = () => {
   border: 1rpx solid rgba(255, 255, 255, 0.3);
 }
 
-/* 激活状态的光泽 */
+/* 婵€娲荤姸鎬佺殑鍏夋辰 */
 .tab-item.active::before {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, transparent 100%);
 }
@@ -982,9 +1070,10 @@ const goProfile = () => {
   font-weight: 500;
 }
 
-/* 商品区域 */
+/* 鍟嗗搧鍖哄煙 */
 .products-section {
   margin-bottom: 32rpx;
+  position: relative;
 }
 
 .section-header {
@@ -1010,7 +1099,24 @@ const goProfile = () => {
   color: #9ca3af;
 }
 
-/* 商品网格 */
+.recommend-loading-mask {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16rpx;
+  padding: 16rpx 18rpx;
+  margin-bottom: 18rpx;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(59, 130, 246, 0.1));
+  border: 1rpx solid rgba(16, 185, 129, 0.2);
+}
+
+.recommend-loading-text {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #0f766e;
+}
+
+/* 鍟嗗搧缃戞牸 */
 .products-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1027,7 +1133,7 @@ const goProfile = () => {
   border: 1rpx solid rgba(255, 255, 255, 0.6);
 }
 
-/* 纸质卡片质感 */
+/* 绾歌川鍗＄墖璐ㄦ劅 */
 .product-card::before {
   content: '';
   position: absolute;
@@ -1040,7 +1146,7 @@ const goProfile = () => {
   border-radius: 20rpx 20rpx 0 0;
 }
 
-/* 光感追随鼠标效果 */
+/* 鍏夋劅杩介殢榧犳爣鏁堟灉 */
 .product-card::after {
   content: '';
   position: absolute;
@@ -1091,6 +1197,13 @@ const goProfile = () => {
 
 .product-badge.hot {
   background: linear-gradient(45deg, #f97316, #fb923c);
+}
+
+.product-badge.ai {
+  left: 12rpx;
+  right: auto;
+  background: linear-gradient(45deg, #0ea5e9, #14b8a6);
+  box-shadow: 0 4rpx 12rpx rgba(14, 165, 233, 0.35);
 }
 
 .product-badge.limited {
@@ -1159,7 +1272,7 @@ const goProfile = () => {
   background: #fef2f2;
 }
 
-/* 弹窗遮罩 */
+/* 寮圭獥閬僵 */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1174,7 +1287,7 @@ const goProfile = () => {
   padding: 40rpx;
 }
 
-/* 商品详情弹窗 */
+/* 鍟嗗搧璇︽儏寮圭獥 */
 .detail-modal {
   background: #ffffff;
   border-radius: 32rpx;
@@ -1306,7 +1419,7 @@ const goProfile = () => {
   font-weight: 600;
 }
 
-/* 兑换成功弹窗 */
+/* 鍏戞崲鎴愬姛寮圭獥 */
 .success-modal {
   background: #ffffff;
   border-radius: 32rpx;
@@ -1365,7 +1478,7 @@ const goProfile = () => {
   font-weight: 600;
 }
 
-/* 底部导航 */
+/* 搴曢儴瀵艰埅 */
 .tabbar {
   position: fixed;
   left: 0;
@@ -1427,6 +1540,189 @@ const goProfile = () => {
   transition: all 0.3s ease;
 }
 
+@media (max-width: 768px) {
+  .content-wrapper {
+    padding: 0 20rpx;
+    margin-top: -28rpx;
+  }
+
+  .points-card {
+    padding: 24rpx;
+  }
+
+  .points-icon-wrapper {
+    width: 72rpx;
+    height: 72rpx;
+    margin-right: 16rpx;
+  }
+
+  .category-tabs {
+    padding: 10rpx;
+    margin-bottom: 24rpx;
+  }
+
+  .tab-item {
+    min-width: 106rpx;
+    padding: 16rpx 10rpx;
+  }
+
+  .tab-icon {
+    font-size: 28rpx;
+  }
+
+  .tab-text {
+    font-size: 20rpx;
+  }
+
+  .section-header {
+    flex-wrap: wrap;
+    gap: 8rpx;
+    margin-bottom: 16rpx;
+  }
+
+  .section-title {
+    font-size: 28rpx;
+  }
+
+  .recommend-loading-text {
+    font-size: 22rpx;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .products-grid {
+    grid-template-columns: 1fr;
+    gap: 18rpx;
+  }
+
+  .product-image-wrapper {
+    height: 280rpx;
+  }
+
+  .product-info {
+    padding: 18rpx;
+  }
+
+  .product-name {
+    font-size: 26rpx;
+  }
+
+  .product-desc {
+    font-size: 22rpx;
+  }
+}
+
+@media (max-width: 420px) {
+  .content-wrapper {
+    padding: 0 16rpx;
+  }
+
+  .points-card {
+    padding: 20rpx;
+  }
+
+  .tab-item {
+    min-width: 96rpx;
+    padding: 14rpx 8rpx;
+  }
+
+  .product-image-wrapper {
+    height: 240rpx;
+  }
+
+  .product-badge {
+    font-size: 18rpx;
+    padding: 4rpx 10rpx;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .shop-page {
+    background: linear-gradient(180deg, #0f172a 0%, #111827 38%, #0b1120 100%);
+  }
+
+  .content-wrapper {
+    color: #e2e8f0;
+  }
+
+  .points-card {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(17, 94, 89, 0.45));
+    border-color: rgba(45, 212, 191, 0.25);
+    box-shadow: 0 8rpx 28rpx rgba(2, 6, 23, 0.5);
+  }
+
+  .section-title,
+  .product-name {
+    color: #e2e8f0;
+  }
+
+  .product-count,
+  .product-desc {
+    color: #94a3b8;
+  }
+
+  .category-tabs {
+    background: rgba(15, 23, 42, 0.88);
+    border-color: rgba(148, 163, 184, 0.22);
+  }
+
+  .tab-item {
+    background: rgba(30, 41, 59, 0.72);
+    border-color: rgba(148, 163, 184, 0.18);
+    box-shadow: none;
+  }
+
+  .tab-item.active {
+    background: linear-gradient(135deg, #0891b2 0%, #14b8a6 100%);
+  }
+
+  .tab-text {
+    color: #cbd5e1;
+  }
+
+  .recommend-loading-mask {
+    background: linear-gradient(135deg, rgba(20, 184, 166, 0.2), rgba(14, 116, 144, 0.2));
+    border-color: rgba(45, 212, 191, 0.35);
+  }
+
+  .recommend-loading-text {
+    color: #99f6e4;
+  }
+
+  .product-card {
+    background: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88));
+    border-color: rgba(148, 163, 184, 0.2);
+    box-shadow: 0 8rpx 20rpx rgba(2, 6, 23, 0.55);
+  }
+
+  .detail-modal {
+    background: #0f172a;
+    border-color: rgba(148, 163, 184, 0.3);
+  }
+
+  .modal-body {
+    background: #0f172a;
+  }
+
+  .modal-name {
+    color: #e2e8f0;
+  }
+
+  .modal-desc {
+    color: #94a3b8;
+  }
+
+  .tabbar {
+    background: rgba(15, 23, 42, 0.9);
+    border-top: 2rpx solid rgba(148, 163, 184, 0.22);
+  }
+
+  .tabbar-icon,
+  .tabbar-label {
+    color: #94a3b8;
+  }
+}
+
 @keyframes iconBounce {
   0% { transform: scale(1) translateY(0); }
   40% { transform: scale(1.2) translateY(-8rpx); }
@@ -1434,3 +1730,5 @@ const goProfile = () => {
   100% { transform: scale(1.15) translateY(-4rpx); }
 }
 </style>
+
+
