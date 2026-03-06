@@ -740,7 +740,7 @@ computed: {
 			}
 			this.loadingMore = true
 			this.page++
-			console.log('准备加载第', this.page, 'ҳ')
+			console.log('准备加载第', this.page, '页')
 			await this.loadUserList()
 		},
 
@@ -816,7 +816,7 @@ computed: {
 						}
 					}
 					const imageName = imageContent?.name || imageContent?.fileName || 'ͼƬ'
-					return '[ͼƬ] ' + (imageName.length > 20 ? imageName.slice(0, 20) + '...' : imageName)
+					return '[图片] ' + (imageName.length > 20 ? imageName.slice(0, 20) + '...' : imageName)
 				case 'voice':
 					return '[语音]'
 				case 'video':

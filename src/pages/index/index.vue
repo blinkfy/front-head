@@ -126,7 +126,7 @@
           <button type="submit" class="login-btn" @click="onLogin(false)" :disabled="isLoading" id="loginBtn">
             <view class="light-track"></view>
             <view class="btn-content" v-if="!isLoading">
-              <text class="btn-text">登 ¼</text>
+              <text class="btn-text">登 录</text>
             </view>
             <view class="loading-content" v-else>
               <view class="loading-spinner"></view>

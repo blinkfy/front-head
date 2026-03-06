@@ -137,7 +137,7 @@ const imageInput = document.getElementById('imageInput');
       if (!raw) return '';
       if (raw.length <= max) return raw;
       return `${raw.slice(0, max - 1)}…`;
-    }
+    } 
 
     function formatTimeLabel(isoText) {
       const date = new Date(isoText || Date.now());
@@ -187,7 +187,7 @@ const imageInput = document.getElementById('imageInput');
         .filter(Boolean)
         .join('\n');
 
-      const itemRegex = /([\u4e00-\u9fa5A-Za-z0-9]{1,10}(?:Ƥ|核|ƿ|盒|袋|罐|ֽ|电池|灯管|菜叶|剩饭))/g;
+      const itemRegex = /([\u4e00-\u9fa5A-Za-z0-9]{1,10}(?:皮|核|瓶|盒|袋|罐|纸|电池|灯管|菜叶|剩饭))/g;
       const itemSet = new Set();
       let itemMatch = itemRegex.exec(textPool);
       while (itemMatch && itemSet.size < 2) {

@@ -853,7 +853,7 @@ function startDeviceCheckTimer() {
   stopDeviceCheckTimer()
   // 立即获取一次
   fetchConnectedDevices()
-  // ÿ5秒检查一次已连接设备
+  // 每5秒检查一次已连接设备
   deviceCheckTimer.value = setInterval(() => {
     fetchConnectedDevices()
   }, 5000)

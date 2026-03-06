@@ -247,7 +247,7 @@ export function base64ToBlobUrl(base64String) {
 
     return URL.createObjectURL(blob)
   } catch (error) {
-    console.error('Base64 ת Blob 失败:', error)
+    console.error('Base64 转 Blob 失败:', error)
     return null
   }
 }

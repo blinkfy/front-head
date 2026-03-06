@@ -15,7 +15,7 @@
     <!-- 顶部绿色背景区域 -->
     <view class="shop-header">
       <view class="header-content">
-        <text class="header-title">🛍️积分商城</text>
+        <text class="header-title">🛍️ 积分商城</text>
         <text class="header-subtitle">环保积分 · 兑换好礼</text>
       </view>
     </view>
@@ -46,8 +46,8 @@
         <text class="tip-icon">💡</text>
         <view class="tip-text-wrapper">
           <view class="tip-text-track">
-            <text class="tip-text">每次垃圾识别可获得-3积分</text>
-            <text class="tip-text">每次垃圾识别可获得-3积分</text>
+            <text class="tip-text">每次垃圾识别可获得1-3积分</text>
+            <text class="tip-text">每次垃圾识别可获得1-3积分</text>
           </view>
         </view>
       </view>
@@ -234,7 +234,7 @@ const products = ref([
     stock: 10,
     category: 1,
     hot: true,
-    features: '闃叉按鑰愮敤锛屽彲鎶樺彔鏀剁撼锛屾壙閲?0kg'
+    features: '防水耐用，可折叠收纳，承重20kg'
   },
   {
     id: 2,

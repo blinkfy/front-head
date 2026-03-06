@@ -423,7 +423,7 @@ function renderBrief() {
   const start = state.plan.start || state.startPoint || DEFAULT_CENTER;
   refs.routeBrief.innerHTML = [
     '<strong>路线概览</strong>',
-    `<div>策略：${esc(strategyLabel(state.routeStrategy))} | 车辆：1 ̨</div>`,
+    `<div>策略：${esc(strategyLabel(state.routeStrategy))} | 车辆：1 台</div>`,
     `<div>起点：${esc(start.name || '清运起点')} | 停靠：${route.stops.length} 个</div>`,
     `<div>总里程：${fmtKm(route.totalDistanceKm)} | 总耗时：${fmtMin(route.totalMinutes)}</div>`,
     `<div>开始：${fmtTime(route.startTime)} | 结束：${fmtTime(route.endTime)}</div>`

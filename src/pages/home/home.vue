@@ -53,7 +53,7 @@
           </view>
           <view class="device-action">
             <text class="action-text">管理</text>
-            <text class="action-arrow">→</text>
+            <text class="action-arrow">›</text>
           </view>
         </view>
       </view>
@@ -72,7 +72,7 @@
           <text class="upload-title" v-if="!isProcessing">点击拍照识别</text>
           <text class="upload-title processing" v-else>{{ processStatus }}</text>
           <text class="upload-desc" v-if="!isProcessing">支持 JPG、PNG 格式</text>
-          <text class="upload-desc processing" v-else>正在分析中..</text>
+          <text class="upload-desc processing" v-else>正在分析中...</text>
         </view>
       </view>
 
@@ -142,7 +142,7 @@
         <view class="tips-card">
           <text class="tips-icon">🌱</text>
           <text class="tips-title">开始智能分类</text>
-          <text class="tips-desc">上传图片，AI 将为您识别垃圾类型</text>
+          <text class="tips-desc">上传图片，AI将为您识别垃圾类型</text>
         </view>
 
         <!-- 垃圾分类指南 -->
@@ -286,7 +286,7 @@ const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
 const isProcessing = ref(false)
-const processStatus = ref('处理中..')
+const processStatus = ref('处理中...')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
 const isH5Platform = ref(false)
@@ -407,7 +407,7 @@ onMounted(() => {
       })
     }
     
-    // 蹇嵎鎿嶄綔閫夐」鍗￠紶鏍囪拷韪晥鏋?
+    // 快捷操作选项卡鼠标追踪效果
     const actionItems = document.querySelectorAll('.action-item')
     actionItems.forEach(item => {
       item.addEventListener('mousemove', (e) => {
@@ -718,8 +718,8 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 async function processImage(filePath) {
   try {
     resetEnhancedRecognition()
-    processStatus.value = '图片处理中..'
-    uni.showLoading({ title: '处理中..' })
+    processStatus.value = '图片处理中...'
+    uni.showLoading({ title: '处理中...' })
     
     let compressedFile = filePath
     let compressedBlob = null
@@ -738,7 +738,7 @@ async function processImage(filePath) {
         compressedFile = await compressImageMiniProgram(filePath, quality, maxSize)
       }
     } catch (compressError) {
-      console.warn('图片压缩失败，使用原图', compressError)
+      console.warn('图片压缩失败，使用原图:', compressError)
       compressedFile = filePath
     }
     
@@ -748,8 +748,8 @@ async function processImage(filePath) {
       resultImage.value = compressedFile
     }
     
-    processStatus.value = 'AI识别中..'
-    uni.showLoading({ title: '识别中..' })
+    processStatus.value = 'AI识别中...'
+    uni.showLoading({ title: '识别中...' })
     const res = await recognizeImage(compressedFile)
     
     if (res.labels && res.labels.length > 0) {
@@ -804,13 +804,13 @@ async function processImage(filePath) {
   } finally {
     uni.hideLoading()
     isProcessing.value = false
-    processStatus.value = '处理中..'
+    processStatus.value = '处理中...'
   }
 }
 
 function onAddImage() {
   if (isProcessing.value) {
-    uni.showToast({ title: '姝ｅ湪处理中..', icon: 'none' })
+    uni.showToast({ title: '正在处理中...', icon: 'none' })
     return
   }
   
@@ -906,25 +906,25 @@ function showGuideDetail(type) {
       type: 'recyclable',
       icon: '♻️',
       title: '可回收垃圾',
-      content: '包括废纸、塑料、玻璃、金属和布料等。可回收物经过分类处理后可再利用，能减少污染并节约资源。'
+      content: '包括废纸、塑料、玻璃、金属和布料五大类。这些垃圾可以通过综合处理回收利用，减少污染，节省资源。正确分类投放可以大大提高回收效率，为环保事业贡献力量。'
     },
     harmful: {
       type: 'harmful',
       icon: '☢️',
       title: '有害垃圾',
-      content: '包括废电池、废灯管、废药品、废油漆及其容器等，需投放到有害垃圾回收点进行专门处理。'
+      content: '包括废电池、废灯管、废药品、废油漆及其容器等。这些垃圾含有有毒有害物质，需要特殊处理，避免对环境和人体造成危害。请务必投放到专门的有害垃圾收集点。'
     },
     kitchen: {
       type: 'kitchen',
       icon: '🍎',
       title: '厨余垃圾',
-      content: '包括剩菜剩饭、果皮果核、骨头、菜叶等厨余废弃物，可通过堆肥等方式资源化处理。'
+      content: '包括剩菜剩饭、骨头、菜根菜叶、果皮等食品类废物。这些有机垃圾可以通过生物技术就地处理堆肥，转化为有机肥料，实现资源循环利用。'
     },
     other: {
       type: 'other',
       icon: '🗑️',
       title: '其他垃圾',
-      content: '包括砖瓦陶瓷、卫生纸、尘土等难以回收利用的废弃物，一般采用卫生填埋等方式处理。'
+      content: '包括除上述几类垃圾之外的砖瓦陶瓷、渣土、卫生间废纸、纸巾等难以回收的废弃物。这些垃圾通常采用卫生填埋等方式进行无害化处理。'
     }
   }
   
@@ -2039,7 +2039,7 @@ function closeGuideModal() {
   cursor: pointer;
 }
 
-/* 榧犳爣鎮仠鏃跺浘鏍囧鍣ㄦ晥鏋?*/
+/* 鼠标悬停时图标容器效果 */
 .guide-item:hover .guide-icon-wrapper {
   transform: scale(1.1);
   box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.1);
@@ -2213,7 +2213,7 @@ function closeGuideModal() {
   pointer-events: none;
 }
 
-/* 搴曢儴闃村奖澧炲己绔嬩綋鎰?*/
+/* 底部阴影增强立体感 */
 .action-icon-wrapper::after {
   content: '';
   position: absolute;

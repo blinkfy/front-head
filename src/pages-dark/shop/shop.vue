@@ -45,7 +45,7 @@
         </view>
         <view class="points-tips">
           <text class="tip-icon">💡</text>
-          <text class="tip-text">每次垃圾识别可获得-3积分</text>
+          <text class="tip-text">每次垃圾识别可获得1-3积分</text>
         </view>
       </view>
       
@@ -213,13 +213,13 @@ import {
 } from '@/utils/shop-recommendation'
 
 // 响应式数据
-const userPoints = ref(0)
-const loading = ref(false)
-const currentCategory = ref(0)
-const showDetailModal = ref(false)
-const showSuccessModal = ref(false)
-const selectedProduct = ref({})
-const exchangedProduct = ref({})
+const userPoints = ref(0) // 用户当前积分
+const loading = ref(false) // 加载状态
+const currentCategory = ref(0) // 当前选中的分类
+const showDetailModal = ref(false) // 显示商品详情弹窗
+const showSuccessModal = ref(false) // 显示兑换成功弹窗
+const selectedProduct = ref({}) // 选中的商品
+const exchangedProduct = ref({}) // 兑换成功的商品
 const recommendLoading = ref(false)
 const recommendReady = ref(false)
 const recommendSource = ref('rule-dom')
@@ -248,7 +248,7 @@ const products = ref([
     stock: 10,
     category: 1,
     hot: true,
-    features: '闃叉按鑰愮敤锛屽彲鎶樺彔鏀剁撼锛屾壙閲?0kg'
+    features: '防水耐用，可折叠收纳，承重20kg'
   },
   {
     id: 2,
@@ -338,7 +338,7 @@ const products = ref([
     points: 30,
     stock: 5,
     category: 4,
-    features: 'A5尺寸，80页，方格/横线可选'
+    features: 'A5尺寸，180页，方格/横线可选'
   },
   {
     id: 10,
@@ -378,7 +378,7 @@ const products = ref([
 
 // 检测平台类型
 onMounted(async () => {
-  // 鑾峰彇绯荤粺鐘舵€佹爮楂樺害
+  // 获取系统状态栏高度
   let statusBarHeight = 0
   try {
     const windowInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
