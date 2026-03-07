@@ -542,7 +542,7 @@ onMounted(async () => {
   }
   // 2. 向后端验证权限
   try {
-    const response = await userinfo()
+    const response = await userinfo('false')
     if (response && response.data && response.data.isAdmin){
     
     } else {

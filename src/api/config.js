@@ -2,7 +2,7 @@
 // devbox:  https://kwcdasogdvpl.sealosbja.site
 // app:     https://rgqexbnzzipc.sealosbja.site
 const ENV = {
-    baseUrl: 'https://rgqexbnzzipc.sealosbja.site',
+    baseUrl: 'https://kwcdasogdvpl.sealosbja.site',
     timeout: 30000
 }
 

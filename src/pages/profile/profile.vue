@@ -402,6 +402,10 @@ const fetchUserInfo = async () => {
 }
  
 onMounted(async () => {
+  const theme = uni.getStorageSync('app_theme')
+  if(theme === 'dark'){
+    uni.navigateTo({url:'/pages-dark/profile/profile'})
+  }
   const savedUser = uni.getStorageSync('savedUser')?.username
   if (savedUser && uni.getStorageSync('autoLogin')) username.value = savedUser
   await fetchUserInfo()

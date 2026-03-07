@@ -103,7 +103,7 @@
               </view>
             </view>
             
-              <view class="ai-helper-btn" @click="goAiChatFromResult">AI对话</view>
+              <view class="ai-helper-btn" v-if="aiEnabled" @click="goAiChatFromResult">AI对话</view>
             </view>
 
             <view v-if="recognizedItems.length" class="recognized-items-box">
@@ -271,6 +271,7 @@ const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
+const aiEnabled = ref(false)
 const isProcessing = ref(false)
 const processStatus = ref('处理中...')
 const showGuideModal = ref(false)
@@ -400,6 +401,7 @@ function resetEnhancedRecognition() {
   rawBboxes.value = []
   displayBboxes.value = []
   recognizeBBoxSpace.value = ''
+  aiEnabled.value = false
 }
 
 function getResultImageElement() {
@@ -464,9 +466,19 @@ function refreshDisplayBboxes() {
     displayHeight,
     naturalWidth: Number(img.naturalWidth || 0),
     naturalHeight: Number(img.naturalHeight || 0),
-    objectFit: String(window.getComputedStyle(img).objectFit || 'contain')
+    // 强制使用 contain 模式，对应模板中的 mode="aspectFit"
+    // 避免部分浏览器或 uni-app H5 实现中 getComputedStyle(img).objectFit 返回默认值 'fill' 导致计算偏差
+    objectFit: 'contain'
   }
   const compact = window.innerWidth <= 768
+
+  // 计算其实际渲染尺寸
+  const ratio = Math.min(
+    metrics.displayWidth / metrics.naturalWidth,
+    metrics.displayHeight / metrics.naturalHeight
+  )
+  const finalRenderW = metrics.naturalWidth * ratio
+  const finalRenderH = metrics.naturalHeight * ratio
 
   const next = []
   for (let i = 0; i < rawBboxes.value.length; i += 1) {
@@ -478,6 +490,9 @@ function refreshDisplayBboxes() {
       item && item.label ? item.label.bbox_space : ''
     )
     if (!mapped) continue
+
+    // 过滤掉几乎覆盖整个图片的框（宽或高超过实际渲染尺寸的 90%）
+    if (mapped.width >= finalRenderW * 0.9 && mapped.height >= finalRenderH * 0.9) continue
 
     const color = getBboxColor(item.label, item.index)
     const labelName = String((item.label && (item.label.name || item.label.source_name)) || `目标${item.index + 1}`)
@@ -776,6 +791,9 @@ async function processImage(filePath) {
     
     // 清理H5环境下的临时URL（延迟清理，避免影响显示）
     applyEnhancedRecognitionData(res)
+
+    // 根据后端返回的 aiSettings 决定是否显示 AI对话 按钮
+    aiEnabled.value = !!(res.aiSettings && res.aiSettings.aiEnabled === true)
 
     if (isH5Platform.value && resultImage.value && resultImage.value.startsWith('blob:')) {
       setTimeout(() => {

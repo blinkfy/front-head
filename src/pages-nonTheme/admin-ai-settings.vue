@@ -22,7 +22,7 @@
           <!-- AI 服务开关 -->
           <div class="row">
             <div>
-              <div class="label">AI 服务开关</div>
+              <div class="label">LLM 服务开关</div>
               <div class="desc">关闭后将禁用 AI 识别增强及 AI 对话流式接口。</div>
             </div>
             <view class="switch-row">
@@ -109,6 +109,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref, computed } from 'vue'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
+import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
 
 let unbindThemeWatcher = null
@@ -267,10 +268,43 @@ function goBack() {
     uni.reLaunch({ url: '/pages-dark/home/home' })
   }
 }
+async function adminAuth(){
+  const token = uni.getStorageSync('token')
+  if (!token) {
+    uni.setStorageSync('autoLogin', false)
+    uni.navigateTo({ url: '/pages/index/index' })
+  }
+  const localAdminFlag = uni.getStorageSync('isAdmin')
+  if (!localAdminFlag) {
+    uni.showToast({ title: '无权限访问', icon: 'none' })
+    setTimeout(() => {
+      goBack()
+    }, 1000)
+  }
+  try {
+    const response = await userinfo('false')
+    console.log(response)
+    if (response && response.data && response.data.isAdmin){
+    
+    } else {
+      // 权限验证失败，清除本地伪造的 isAdmin 标记
+      uni.removeStorageSync('isAdmin')
+      uni.showToast({ title: '权限已过期或被撤销', icon: 'none' })
+      goBack()
+    }
+  } catch (err) {
+    console.error('权限验证失败:', err)
+    uni.showToast({ title: '权限验证失败，请重新登录', icon: 'none' })
+    setTimeout(() => {
+      goBack()
+    }, 1000)
+  }
+}
 
 onMounted(() => {
   currentTheme.value = applyStoredTheme()
   unbindThemeWatcher = bindThemeStorageSync()
+  adminAuth()
   loadSettings()
 })
 
