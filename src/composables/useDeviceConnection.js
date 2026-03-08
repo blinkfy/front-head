@@ -74,7 +74,7 @@ export function useDeviceConnection() {
     // 立即检查一次
     checkDeviceConnection()
     
-    // ÿ5秒检查一次
+    // 每5秒检查一次
     checkTimer.value = setInterval(() => {
       checkDeviceConnection()
     }, 5000)

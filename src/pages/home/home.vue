@@ -53,7 +53,7 @@
           </view>
           <view class="device-action">
             <text class="action-text">管理</text>
-            <text class="action-arrow">→</text>
+            <text class="action-arrow">›</text>
           </view>
         </view>
       </view>
@@ -72,7 +72,7 @@
           <text class="upload-title" v-if="!isProcessing">点击拍照识别</text>
           <text class="upload-title processing" v-else>{{ processStatus }}</text>
           <text class="upload-desc" v-if="!isProcessing">支持 JPG、PNG 格式</text>
-          <text class="upload-desc processing" v-else>正在分析中..</text>
+          <text class="upload-desc processing" v-else>正在分析中...</text>
         </view>
       </view>
 
@@ -105,7 +105,7 @@
               <text class="tag-icon">{{ getCategoryIcon(resultCategory) }}</text>
               <text class="tag-text">{{ resultCategory }}</text>
             </view>
-            <view class="ai-helper-btn" @click="goAiChatFromResult">AI对话</view>
+            <view class="ai-helper-btn" v-if="aiEnabled" @click="goAiChatFromResult">AI对话</view>
           </view>
 
           <view v-if="recognizedItems.length" class="recognized-items-box">
@@ -142,7 +142,7 @@
         <view class="tips-card">
           <text class="tips-icon">🌱</text>
           <text class="tips-title">开始智能分类</text>
-          <text class="tips-desc">上传图片，AI 将为您识别垃圾类型</text>
+          <text class="tips-desc">上传图片，AI将为您识别垃圾类型</text>
         </view>
 
         <!-- 垃圾分类指南 -->
@@ -285,8 +285,9 @@ const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
+const aiEnabled = ref(false)
 const isProcessing = ref(false)
-const processStatus = ref('处理中..')
+const processStatus = ref('处理中...')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
 const isH5Platform = ref(false)
@@ -299,27 +300,29 @@ const recognizeBBoxSpace = ref('')
 let bboxRefreshTimer = 0
 const bboxLoadBoundImages = new WeakSet()
 
-// 数字动画函数
+// 数字动画函数（兼容小程序：小程序无 requestAnimationFrame，用 setTimeout 模拟）
 const animateNumber = (target, duration = 800) => {
   const start = 0
   const startTime = Date.now()
-  
+  // 帧间隔约 16ms（≈60fps），小程序和 H5 均兼容
+  const frameInterval = 16
+
   const updateNumber = () => {
     const elapsed = Date.now() - startTime
     const progress = Math.min(elapsed / duration, 1)
-    
+
     // 使用 easeOutQuart 缓动函数
     const easeProgress = 1 - Math.pow(1 - progress, 4)
     const current = Math.round(start + (target - start) * easeProgress)
-    
+
     resultConfidence.value = current + '%'
-    
+
     if (progress < 1) {
-      requestAnimationFrame(updateNumber)
+      setTimeout(updateNumber, frameInterval)
     }
   }
-  
-  requestAnimationFrame(updateNumber)
+
+  setTimeout(updateNumber, frameInterval)
 }
 
 const { hasConnection, connectedDevice, goToDeviceConnection, points } = useDeviceConnection()
@@ -407,7 +410,7 @@ onMounted(() => {
       })
     }
     
-    // 蹇嵎鎿嶄綔閫夐」鍗￠紶鏍囪拷韪晥鏋?
+    // 快捷操作选项卡鼠标追踪效果
     const actionItems = document.querySelectorAll('.action-item')
     actionItems.forEach(item => {
       item.addEventListener('mousemove', (e) => {
@@ -470,6 +473,7 @@ function resetEnhancedRecognition() {
   rawBboxes.value = []
   displayBboxes.value = []
   recognizeBBoxSpace.value = ''
+  aiEnabled.value = false
 }
 
 function getResultImageElement() {
@@ -534,9 +538,20 @@ function refreshDisplayBboxes() {
     displayHeight,
     naturalWidth: Number(img.naturalWidth || 0),
     naturalHeight: Number(img.naturalHeight || 0),
-    objectFit: String(window.getComputedStyle(img).objectFit || 'contain')
+    // 强制使用 contain 模式，对应模板中的 mode="aspectFit"
+    // 避免部分浏览器或 uni-app H5 实现中 getComputedStyle(img).objectFit 返回默认值 'fill' 导致计算偏差
+    objectFit: 'contain'
   }
   const compact = window.innerWidth <= 768
+
+  // 计算其实际渲染尺寸
+  // 当 object-fit 为 contain 时，图片渲染大小取决于容器大小和图片原始纵横比
+  const ratio = Math.min(
+    metrics.displayWidth / metrics.naturalWidth,
+    metrics.displayHeight / metrics.naturalHeight
+  )
+  const finalRenderW = metrics.naturalWidth * ratio
+  const finalRenderH = metrics.naturalHeight * ratio
 
   const next = []
   for (let i = 0; i < rawBboxes.value.length; i += 1) {
@@ -548,6 +563,10 @@ function refreshDisplayBboxes() {
       item && item.label ? item.label.bbox_space : ''
     )
     if (!mapped) continue
+
+    // 过滤掉几乎覆盖整个图片的框（宽或高任意一边超过图片渲染尺寸的 90%，则跳过）
+    // 注意：这里的渲染尺寸是指图片实际在屏幕上占据的宽高（finalRenderW/H），而不是容器的宽高（displayWidth/displayHeight）
+    if (mapped.width >= finalRenderW * 0.9 && mapped.height >= finalRenderH * 0.9) continue
 
     const color = getBboxColor(item.label, item.index)
     const labelName = String((item.label && (item.label.name || item.label.source_name)) || `目标${item.index + 1}`)
@@ -617,10 +636,6 @@ function applyEnhancedRecognitionData(recognizeData) {
 
 function goAiChatFromResult() {
   if (!resultImage.value) return
-  if (isH5Platform.value && typeof window !== 'undefined') {
-    window.location.href = resolveH5StandalonePath('/ai-chat', '/pages-nonTheme/ai-chat')
-    return
-  }
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
@@ -718,8 +733,8 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 async function processImage(filePath) {
   try {
     resetEnhancedRecognition()
-    processStatus.value = '图片处理中..'
-    uni.showLoading({ title: '处理中..' })
+    processStatus.value = '图片处理中...'
+    uni.showLoading({ title: '处理中...' })
     
     let compressedFile = filePath
     let compressedBlob = null
@@ -738,7 +753,7 @@ async function processImage(filePath) {
         compressedFile = await compressImageMiniProgram(filePath, quality, maxSize)
       }
     } catch (compressError) {
-      console.warn('图片压缩失败，使用原图', compressError)
+      console.warn('图片压缩失败，使用原图:', compressError)
       compressedFile = filePath
     }
     
@@ -748,8 +763,8 @@ async function processImage(filePath) {
       resultImage.value = compressedFile
     }
     
-    processStatus.value = 'AI识别中..'
-    uni.showLoading({ title: '识别中..' })
+    processStatus.value = 'AI识别中...'
+    uni.showLoading({ title: '识别中...' })
     const res = await recognizeImage(compressedFile)
     
     if (res.labels && res.labels.length > 0) {
@@ -778,6 +793,9 @@ async function processImage(filePath) {
 
     applyEnhancedRecognitionData(res)
 
+    // 根据后端返回的 aiSettings 决定是否显示 AI对话 按钮
+    aiEnabled.value = !!(res.aiSettings && res.aiSettings.aiEnabled === true)
+
     if (isH5Platform.value && resultImage.value && resultImage.value.startsWith('blob:')) {
       setTimeout(() => URL.revokeObjectURL(resultImage.value), 10000)
     }
@@ -804,13 +822,13 @@ async function processImage(filePath) {
   } finally {
     uni.hideLoading()
     isProcessing.value = false
-    processStatus.value = '处理中..'
+    processStatus.value = '处理中...'
   }
 }
 
 function onAddImage() {
   if (isProcessing.value) {
-    uni.showToast({ title: '姝ｅ湪处理中..', icon: 'none' })
+    uni.showToast({ title: '正在处理中...', icon: 'none' })
     return
   }
   
@@ -906,25 +924,25 @@ function showGuideDetail(type) {
       type: 'recyclable',
       icon: '♻️',
       title: '可回收垃圾',
-      content: '包括废纸、塑料、玻璃、金属和布料等。可回收物经过分类处理后可再利用，能减少污染并节约资源。'
+      content: '包括废纸、塑料、玻璃、金属和布料五大类。这些垃圾可以通过综合处理回收利用，减少污染，节省资源。正确分类投放可以大大提高回收效率，为环保事业贡献力量。'
     },
     harmful: {
       type: 'harmful',
       icon: '☢️',
       title: '有害垃圾',
-      content: '包括废电池、废灯管、废药品、废油漆及其容器等，需投放到有害垃圾回收点进行专门处理。'
+      content: '包括废电池、废灯管、废药品、废油漆及其容器等。这些垃圾含有有毒有害物质，需要特殊处理，避免对环境和人体造成危害。请务必投放到专门的有害垃圾收集点。'
     },
     kitchen: {
       type: 'kitchen',
       icon: '🍎',
       title: '厨余垃圾',
-      content: '包括剩菜剩饭、果皮果核、骨头、菜叶等厨余废弃物，可通过堆肥等方式资源化处理。'
+      content: '包括剩菜剩饭、骨头、菜根菜叶、果皮等食品类废物。这些有机垃圾可以通过生物技术就地处理堆肥，转化为有机肥料，实现资源循环利用。'
     },
     other: {
       type: 'other',
       icon: '🗑️',
       title: '其他垃圾',
-      content: '包括砖瓦陶瓷、卫生纸、尘土等难以回收利用的废弃物，一般采用卫生填埋等方式处理。'
+      content: '包括除上述几类垃圾之外的砖瓦陶瓷、渣土、卫生间废纸、纸巾等难以回收的废弃物。这些垃圾通常采用卫生填埋等方式进行无害化处理。'
     }
   }
   
@@ -1634,6 +1652,17 @@ function closeGuideModal() {
 .result-image-wrap {
   position: relative;
   margin-bottom: 24rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.result-image {
+  width: 100%;
+  height: 400rpx;
+  border-radius: 16rpx;
+  display: block;
 }
 
 
@@ -2039,7 +2068,7 @@ function closeGuideModal() {
   cursor: pointer;
 }
 
-/* 榧犳爣鎮仠鏃跺浘鏍囧鍣ㄦ晥鏋?*/
+/* 鼠标悬停时图标容器效果 */
 .guide-item:hover .guide-icon-wrapper {
   transform: scale(1.1);
   box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.1);
@@ -2213,7 +2242,7 @@ function closeGuideModal() {
   pointer-events: none;
 }
 
-/* 搴曢儴闃村奖澧炲己绔嬩綋鎰?*/
+/* 底部阴影增强立体感 */
 .action-icon-wrapper::after {
   content: '';
   position: absolute;
@@ -2658,16 +2687,3 @@ function closeGuideModal() {
   100% { transform: scale(1.15) translateY(-4rpx); }
 }
 </style>
-
-
-
-
-
-
-
-
-
-
-
-
-

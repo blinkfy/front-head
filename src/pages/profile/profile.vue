@@ -92,7 +92,7 @@
 
       <view class="loading-state" v-else>
         <view class="loading-spinner"></view>
-        <text class="loading-text">数据同步中..</text>
+        <text class="loading-text">数据同步中...</text>
       </view>
     </view>
 
@@ -114,7 +114,7 @@
           <text class="device-name">{{ connectedDevice?.device_name || '智能垃圾分类设备' }}</text>
           <text class="device-id">ID: {{ connectedDevice?.device_id || connectedDevice?.id || 'N/A' }}</text>
         </view>
-        <text class="device-arrow">→</text>
+        <text class="device-arrow">›</text>
       </view>
       
       <view class="device-footer">
@@ -168,6 +168,10 @@
         <view class="admin-item" @click="go2048">🎲 2048后台</view>
         <view class="admin-item" @click="goDbMonitor">📊 数据库</view>
         <view class="admin-item" @click="goAPITest">🧪 接口测试</view>
+        <view class="admin-item" @click="goAdminAISettings">⚙️ AI设置</view>
+        <view class="admin-item" @click="goCollectionDashboard">🗺️ 清运仪表板</view>
+        <view class="admin-item" @click="goCollectionPlanning">📋 清运规划</view>
+        <view class="admin-item" @click="goCommunityDashboard">🏘️ 社区仪表板</view>
       </view>
     </view>
 
@@ -243,7 +247,7 @@
             <view class="info-content">
               <text class="info-title">可回收垃圾分类</text>
               <text class="info-desc">每次正确分类可回收垃圾</text>
-              <text class="info-tag">减排约 6g CO₂</text>
+              <text class="info-tag">减排约36g CO₂</text>
             </view>
           </view>
           <view class="info-item">
@@ -251,7 +255,7 @@
             <view class="info-content">
               <text class="info-title">厨余垃圾分类</text>
               <text class="info-desc">避免厨余垃圾填埋产生甲烷</text>
-              <text class="info-tag">减排约 9g CO₂</text>
+              <text class="info-tag">减排约19g CO₂</text>
             </view>
           </view>
           <view class="info-item">
@@ -259,7 +263,7 @@
             <view class="info-content">
               <text class="info-title">有害垃圾分类</text>
               <text class="info-desc">专业处理避免环境污染</text>
-              <text class="info-tag">减排约 7g CO₂</text>
+              <text class="info-tag">减排约57g CO₂</text>
             </view>
           </view>
         </view>
@@ -396,8 +400,12 @@ const fetchUserInfo = async () => {
     loading.value = false
   }
 }
-
+ 
 onMounted(async () => {
+  const theme = uni.getStorageSync('app_theme')
+  if(theme === 'dark'){
+    uni.navigateTo({url:'/pages-dark/profile/profile'})
+  }
   const savedUser = uni.getStorageSync('savedUser')?.username
   if (savedUser && uni.getStorageSync('autoLogin')) username.value = savedUser
   await fetchUserInfo()
@@ -593,6 +601,38 @@ function go2048() {
         const target = encodeURIComponent(baseUrl + '/2048')
         uni.navigateTo({ url: `/pages-nonTheme/webview?url=${target}` })
       }, 1000)
+    }
+  })
+}
+
+function goAdminAISettings() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/admin-ai-settings' })
+    }
+  })
+}
+
+function goCollectionDashboard() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/collection-dashboard' })
+    }
+  })
+}
+
+function goCollectionPlanning() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/collection-planning' })
+    }
+  })
+}
+
+function goCommunityDashboard() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/community-dashboard' })
     }
   })
 }
@@ -1495,7 +1535,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 }
 
-/* 菜单图标悬浮效果 - 澧炲己鐗?*/
+/* 菜单图标悬浮效果*/
 .menu-item:hover .menu-icon,
 .menu-item:active .menu-icon {
   animation: menuIconHoverBounce 0.6s ease;
@@ -2062,14 +2102,13 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 
   .user-card,
-  .menu-section,
   .admin-section {
     margin-left: 20rpx;
     margin-right: 20rpx;
   }
 
   .menu-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14rpx;
   }
 
@@ -2110,7 +2149,6 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   }
 
   .user-card,
-  .menu-section,
   .admin-section {
     margin-left: 16rpx;
     margin-right: 16rpx;

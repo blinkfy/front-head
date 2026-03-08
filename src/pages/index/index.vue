@@ -126,7 +126,7 @@
           <button type="submit" class="login-btn" @click="onLogin(false)" :disabled="isLoading" id="loginBtn">
             <view class="light-track"></view>
             <view class="btn-content" v-if="!isLoading">
-              <text class="btn-text">登 ¼</text>
+              <text class="btn-text">登 录</text>
             </view>
             <view class="loading-content" v-else>
               <view class="loading-spinner"></view>
@@ -310,7 +310,7 @@ function onLogin(isauto) {
     
     // 获取并保存完整的用户信息
     try {
-      const userInfoRes = await userinfo()
+      const userInfoRes = await userinfo("false")
       if (userInfoRes && userInfoRes.data) {
         uni.setStorageSync('userInfo', userInfoRes.data)
         console.log('用户信息已保存:', userInfoRes.data)

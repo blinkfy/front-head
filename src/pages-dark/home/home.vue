@@ -40,7 +40,7 @@
             </view>
           </view>
           <view class="connection-action">
-            <view class="action-icon">⚙️</view>
+            <view class="action-icon">⚡</view>
             <text class="action-text">管理</text>
           </view>
         </view>
@@ -61,7 +61,7 @@
               </view>
               <text class="upload-text" v-if="!isProcessing">点击上传图片</text>
               <text class="upload-text processing" v-else>{{ processStatus }}</text>
-              <text class="upload-hint" v-if="!isProcessing">支持 JPG、PNG 格式，自动压缩优化</text>
+              <text class="upload-hint" v-if="!isProcessing">支持JPG、PNG格式，自动压缩优化</text>
               <text class="upload-hint processing" v-else>请稍候，正在处理您的图片...</text>
             </view>
           </view>
@@ -103,7 +103,7 @@
               </view>
             </view>
             
-              <view class="ai-helper-btn" @click="goAiChatFromResult">AI对话</view>
+              <view class="ai-helper-btn" v-if="aiEnabled" @click="goAiChatFromResult">AI对话</view>
             </view>
 
             <view v-if="recognizedItems.length" class="recognized-items-box">
@@ -141,7 +141,7 @@
         <view class="welcome-card">
           <text class="welcome-icon">🌱</text>
           <text class="welcome-title">开始智能分类</text>
-          <text class="welcome-desc">上传图片，AI 将为您识别垃圾类型<br/>共同践行绿色环保理念</text>
+          <text class="welcome-desc">上传图片，AI将为您识别垃圾类型<br/>共同践行绿色环保理念</text>
         </view>
         
         <!-- 垃圾分类指南卡片 -->
@@ -271,8 +271,9 @@ const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
+const aiEnabled = ref(false)
 const isProcessing = ref(false)
-const processStatus = ref('处理中..')
+const processStatus = ref('处理中...')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
 const recognizedItems = ref([])
@@ -331,7 +332,7 @@ onMounted(() => {
   
   console.log('Platform detected:', { platform, uniPlatform, isH5Platform: isH5Platform.value })
   
-  // 鑾峰彇绯荤粺鐘舵€佹爮楂樺害
+  // 获取系统状态栏高度
   let statusBarHeight = 0
   try {
     const windowInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
@@ -400,6 +401,7 @@ function resetEnhancedRecognition() {
   rawBboxes.value = []
   displayBboxes.value = []
   recognizeBBoxSpace.value = ''
+  aiEnabled.value = false
 }
 
 function getResultImageElement() {
@@ -464,9 +466,19 @@ function refreshDisplayBboxes() {
     displayHeight,
     naturalWidth: Number(img.naturalWidth || 0),
     naturalHeight: Number(img.naturalHeight || 0),
-    objectFit: String(window.getComputedStyle(img).objectFit || 'contain')
+    // 强制使用 contain 模式，对应模板中的 mode="aspectFit"
+    // 避免部分浏览器或 uni-app H5 实现中 getComputedStyle(img).objectFit 返回默认值 'fill' 导致计算偏差
+    objectFit: 'contain'
   }
   const compact = window.innerWidth <= 768
+
+  // 计算其实际渲染尺寸
+  const ratio = Math.min(
+    metrics.displayWidth / metrics.naturalWidth,
+    metrics.displayHeight / metrics.naturalHeight
+  )
+  const finalRenderW = metrics.naturalWidth * ratio
+  const finalRenderH = metrics.naturalHeight * ratio
 
   const next = []
   for (let i = 0; i < rawBboxes.value.length; i += 1) {
@@ -478,6 +490,9 @@ function refreshDisplayBboxes() {
       item && item.label ? item.label.bbox_space : ''
     )
     if (!mapped) continue
+
+    // 过滤掉几乎覆盖整个图片的框（宽或高超过实际渲染尺寸的 90%）
+    if (mapped.width >= finalRenderW * 0.9 && mapped.height >= finalRenderH * 0.9) continue
 
     const color = getBboxColor(item.label, item.index)
     const labelName = String((item.label && (item.label.name || item.label.source_name)) || `目标${item.index + 1}`)
@@ -547,10 +562,6 @@ function applyEnhancedRecognitionData(recognizeData) {
 
 function goAiChatFromResult() {
   if (!resultImage.value) return
-  if (isH5Platform.value && typeof window !== 'undefined') {
-    window.location.href = resolveH5StandalonePath('/ai-chat', '/pages-nonTheme/ai-chat')
-    return
-  }
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 
@@ -703,8 +714,8 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 async function processImage(filePath) {
   try {
     resetEnhancedRecognition()
-    processStatus.value = '图片处理中..'
-    uni.showLoading({ title: '图片处理中..' })
+    processStatus.value = '图片处理中...'
+    uni.showLoading({ title: '图片处理中...' })
     
     // 第一步：图片压缩
     let compressedFile = filePath
@@ -713,7 +724,7 @@ async function processImage(filePath) {
       if (isH5Platform.value) {
         // H5环境使用canvas压缩
         processStatus.value = '正在压缩图片...'
-        console.log('H5环境：开始图片压缩..')
+        console.log('H5环境：开始图片压缩...')
         const { quality, maxWidth } = compressionConfig.h5
         compressedBlob = await compressImage(filePath, quality, maxWidth)
         
@@ -726,11 +737,11 @@ async function processImage(filePath) {
           type: 'image/jpeg'
         })
         
-        console.log('H5图片压缩完成，文件大小', (compressedFile.size / 1024 / 1024).toFixed(2) + 'MB')
+        console.log('H5图片压缩完成，文件大小:', (compressedFile.size / 1024 / 1024).toFixed(2) + 'MB')
       } else {
         // 小程序环境使用uni.compressImage
         processStatus.value = '正在优化图片...'
-        console.log('小程序环境：开始图片压缩..')
+        console.log('小程序环境：开始图片压缩...')
         const { quality, maxSize } = compressionConfig.miniProgram
         compressedFile = await compressImageMiniProgram(filePath, quality, maxSize)
       }
@@ -751,8 +762,8 @@ async function processImage(filePath) {
     }
     
     // 第三步：调用识别API
-    processStatus.value = 'AI智能识别中..'
-    uni.showLoading({ title: 'AI识别中..' })
+    processStatus.value = 'AI智能识别中...'
+    uni.showLoading({ title: 'AI识别中...' })
     const res = await recognizeImage(compressedFile)
     // console.log('后端返回数据:', res) // 调试日志
 
@@ -780,6 +791,9 @@ async function processImage(filePath) {
     
     // 清理H5环境下的临时URL（延迟清理，避免影响显示）
     applyEnhancedRecognitionData(res)
+
+    // 根据后端返回的 aiSettings 决定是否显示 AI对话 按钮
+    aiEnabled.value = !!(res.aiSettings && res.aiSettings.aiEnabled === true)
 
     if (isH5Platform.value && resultImage.value && resultImage.value.startsWith('blob:')) {
       setTimeout(() => {
@@ -819,14 +833,14 @@ async function processImage(filePath) {
   } finally {
     uni.hideLoading()
     isProcessing.value = false
-    processStatus.value = '处理中..' // 閲嶇疆状态
+    processStatus.value = '处理中...' // 重置状态
   }
 }
 
 function onAddImage() {
   if (isProcessing.value) {
     uni.showToast({
-      title: '正在处理中，请稍候..',
+      title: '正在处理中，请稍候...',
       icon: 'none'
     })
     return
@@ -956,14 +970,14 @@ function connectDevice(deviceId) {
     })
     return
   }
-  //截取deviceId涓?鍚庨潰鐨勫唴瀹?
+  //截取deviceId中#后面的内容
   const targetId = deviceId.split('#')[1]
   console.log('Connecting to device with ID:', targetId)
   uni.navigateTo({ url: targetId })
   return
   // 显示连接中的提示
   uni.showLoading({
-    title: '连接设备中..'
+    title: '连接设备中...'
   })
   
   // 模拟连接设备的过程
@@ -2245,4 +2259,3 @@ function closeGuideModal() {
   letter-spacing: 1rpx;
 }
 </style>
-

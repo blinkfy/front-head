@@ -1,6 +1,6 @@
 ﻿<template>
   <view class="profile-page">
-    <!-- 鍔ㄦ€佺鎶€鑳屾櫙 - 固定定位，不影响滚动 -->
+  <!-- 科技背景（固定定位，不影响滚动） -->
     <view class="tech-background">
       <view class="grid-overlay"></view>
       <view class="floating-particles">
@@ -133,7 +133,7 @@
           <view class="stat-info">
             <text class="stat-label">减碳量</text>
             <text class="stat-value">{{ calculateCarbonReduction(points || 0) }}</text>
-            <text class="stat-unit">CO₂SAVED</text>
+            <text class="stat-unit">CO₂ SAVED</text>
           </view>
           <view class="info-icon" @click="showCarbonInfo">
             <text class="info-symbol">ℹ️</text>
@@ -161,7 +161,7 @@
 
       <view class="loading-display" v-else>
         <view class="loading-spinner eco"></view>
-        <text class="loading-text">环保数据同步中..</text>
+        <text class="loading-text">环保数据同步中...</text>
       </view>
     </view>
 
@@ -276,6 +276,10 @@
         <view class="admin-btn" @click="go2048">🎲 2048后台</view>
         <view class="admin-btn" @click="goDbMonitor">📊 数据库管理</view>
         <view class="admin-btn" @click="goAPITest">🧪 接口测试</view>
+        <view class="admin-btn" @click="goAdminAISettings">⚙️ AI设置</view>
+        <view class="admin-btn" @click="goCollectionDashboard">🗺️ 清运仪表板</view>
+        <view class="admin-btn" @click="goCollectionPlanning">📋 清运规划</view>
+        <view class="admin-btn" @click="goCommunityDashboard">🏘️ 社区仪表板</view>
       </view>
     </view>
 
@@ -381,7 +385,7 @@
             <view class="info-text">
               <text class="info-title">可回收垃圾分类</text>
               <text class="info-desc">每次正确分类可回收垃圾</text>
-              <text class="info-limit">减排约 6g CO₂ 当量</text>
+              <text class="info-limit">减排约36g CO₂当量</text>
             </view>
           </view>
           
@@ -392,7 +396,7 @@
             <view class="info-text">
               <text class="info-title">厨余垃圾分类</text>
               <text class="info-desc">避免厨余垃圾填埋产生甲烷</text>
-              <text class="info-limit">减排约 9g CO₂ 当量</text>
+              <text class="info-limit">减排约19g CO₂当量</text>
             </view>
           </view>
 
@@ -403,7 +407,7 @@
             <view class="info-text">
               <text class="info-title">有害垃圾分类</text>
               <text class="info-desc">专业处理避免环境污染</text>
-              <text class="info-limit">减排约 7g CO₂ 当量</text>
+              <text class="info-limit">减排约57g CO₂当量</text>
             </view>
           </view>
 
@@ -413,7 +417,7 @@
             </view>
             <view class="info-text">
               <text class="info-title">计算依据</text>
-              <text class="info-desc">基于联合国 IPCC 报告和国内垃圾处理数据，综合考虑回收利用、堆肥处理和避免填埋的环境效益</text>
+              <text class="info-desc">基于联合国IPCC报告和国内垃圾处理数据，综合考虑回收利用、堆肥处理和避免填埋的环境效益</text>
             </view>
           </view>
         </view>
@@ -493,7 +497,7 @@ const calculateCarbonReduction = (points) => {
   totalReduction += points * distribution.other * CARBON_FACTORS.other
   totalReduction += points * distribution.hazardous * CARBON_FACTORS.hazardous
   
-  // 鏍煎紡鍖栨樉绀?
+  // 格式化显示
   if (totalReduction < 0.01) {
     return '0g'
   } else if (totalReduction < 1) {
@@ -611,6 +615,10 @@ const fetchUserInfo = async () => {
 }
 
 onMounted(async () => {
+  const theme = uni.getStorageSync('app_theme')
+  if(theme === 'light'){
+    uni.navigateTo({url:'/pages/profile/profile'})
+  }
   const savedUser = uni.getStorageSync('savedUser')?.username
   if (!(savedUser && uni.getStorageSync('autoLogin'))) {
     
@@ -621,7 +629,8 @@ onMounted(async () => {
   // 获取完整的用户信息（包括积分和权限）
   await fetchUserInfo()
   
-  // 安全防护：验证本地存储的 isAdmin 鏄惁涓庢湇鍔＄涓€鑷?  // 若本地有 isAdmin 但服务端返回无权限，立即清除本地标记
+  // 安全防护：验证本地存储的 isAdmin 是否仍有服务端权限
+  // 若本地有 isAdmin 但服务端返回无权限，立即清除本地标记
   if (uni.getStorageSync('isAdmin') && !isAdmin.value) {
     uni.removeStorageSync('isAdmin')
   }
@@ -752,6 +761,38 @@ function go2048() {
     }
   })
 }
+
+function goAdminAISettings() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/admin-ai-settings' })
+    }
+  })
+}
+
+function goCollectionDashboard() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/collection-dashboard' })
+    }
+  })
+}
+
+function goCollectionPlanning() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/collection-planning' })
+    }
+  })
+}
+
+function goCommunityDashboard() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      uni.navigateTo({ url: '/pages-nonTheme/community-dashboard' })
+    }
+  })
+}
 function goHome() {
   uni.redirectTo({ url: '/pages-dark/home/home' })
 }
@@ -780,7 +821,7 @@ body {
 }
 /* #endif */
 
-/* 椤甸潰鏍瑰鍣?*/
+/* 页面根容器*/
 .profile-page {
   height: 100vh;
   position: relative;
@@ -822,7 +863,7 @@ body {
 }
 /* #endif */
 
-/* 鍔ㄦ€佺鎶€鑳屾櫙绯荤粺 */
+/* 科技背景样式 */
 .tech-background {
   position: fixed;
   top: 0;
@@ -944,7 +985,7 @@ body {
   50% { opacity: 0.6; transform: rotate(45deg) scale(1.1); }
 }
 
-/* 鏁版嵁娴佹晥鏋?*/
+/* 数据流效果*/
 .data-streams {
   position: absolute;
   top: 0;
@@ -1520,7 +1561,7 @@ body {
   50% { opacity: 1; }
 }
 
-/* 鍔犺浇状态*/
+/* 加载状态 */
 .loading-display {
   display: flex;
   flex-direction: column;
@@ -1696,7 +1737,7 @@ body {
 .function-grid {
   position: relative;
   z-index: 10;
-  margin: 0 40rpx 120rpx;
+  margin: 0 40rpx 10rpx;
 }
 
 .function-row {
@@ -2237,7 +2278,7 @@ body {
 
 @media screen and (max-width: 768px) {
   .function-grid {
-    margin: 0 20rpx 120rpx;
+    margin: 0 20rpx 10rpx;
   }
 
   .function-row {

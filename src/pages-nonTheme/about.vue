@@ -2,7 +2,7 @@
   <view :class="['about-container', { 'dark-theme': isDarkTheme }]">
     <!-- 顶部安全区域占位 -->
     <view class="safe-area-top"></view>
-    
+
     <!-- 背景效果 -->
     <view class="bg-effects">
       <view class="bg-grid"></view>
@@ -34,7 +34,8 @@
         <view class="info-footer" v-if="hasUpdate">
           <view class="version-block">
             <view v-if="showBadge" :class="['new-badge', { 'shake': badgeShake }]">新版本</view>
-            <text :class="['update-message', { highlight: highlight }]" v-if="updateMessage" @click="latestUrl && downloadAPK(latestUrl)">{{ updateMessage }}</text>
+            <text :class="['update-message', { highlight: highlight }]" v-if="updateMessage"
+              @click="latestUrl && downloadAPK(latestUrl)">{{ updateMessage }}</text>
           </view>
         </view>
       </view>
@@ -88,7 +89,7 @@
           </view>
           <view class="tech-item">
             <text class="tech-label">数据来源：</text>
-            <text class="tech-value">垃圾分类标准数据集·3万张（在线识别）<br/> 自研高质量数据集 · 1万张 （装置识别）</text>
+            <text class="tech-value">垃圾分类标准数据集·3万张（在线识别）<br /> 自研高质量数据集 · 1万张 （装置识别）</text>
           </view>
         </view>
       </view>
@@ -125,17 +126,17 @@ function checkTheme() {
 }
 
 function goBack() {
-    const pages = getCurrentPages()
-    if (pages.length > 1) {
-      uni.navigateBack()
-    } else {
-      uni.reLaunch({
-        url: '/pages/home/home'
-      })
-    }
+  const pages = getCurrentPages()
+  if (pages.length > 1) {
+    uni.navigateBack()
+  } else {
+    uni.reLaunch({
+      url: '/pages/home/home'
+    })
+  }
 }
 
-const currentVersion = manifest?.versionName || '1.3.3'
+const currentVersion = manifest?.versionName || '1.3.4'
 
 const checking = ref(false)
 const updateMessage = ref('')
@@ -147,21 +148,21 @@ const badgeShake = ref(false)
 
 function downloadAPK(apkUrl) {
   let apk = '/files/download/classfication.apk'
-  if(apkUrl&&apkUrl!= '') apk = apkUrl
+  if (apkUrl && apkUrl != '') apk = apkUrl
   // 分环境处理下载
   // #ifdef H5
-    window.open(apk, '_blank')
+  window.open(apk, '_blank')
   // #endif
   // #ifdef APP-PLUS
-    uni.navigateTo({
-      url: `/pages-nonTheme/webview?url=${encodeURIComponent(baseUrl + apk)}`
-    })
+  uni.navigateTo({
+    url: `/pages-nonTheme/webview?url=${encodeURIComponent(baseUrl + apk)}`
+  })
   // #endif
   // #ifdef MP-WEIXIN
-    uni.showToast({ title: '请在浏览器中下载 APK 文件', icon: 'none' })
-    uni.navigateTo({
-      url: `/pages-nonTheme/webview?url=${encodeURIComponent(baseUrl + apk)}`
-    })
+  uni.showToast({ title: '请在浏览器中下载 APK 文件', icon: 'none' })
+  uni.navigateTo({
+    url: `/pages-nonTheme/webview?url=${encodeURIComponent(baseUrl + apk)}`
+  })
   // #endif
 }
 
@@ -172,10 +173,10 @@ function openProfileWebview() {
     'https://github.com/blinkfy'
   ]
   const target = targets[Math.floor(Math.random() * targets.length)]
-  if(target.includes('github')) {
+  if (target.includes('github')) {
     //分环境：
     // #ifdef H5
-      window.open(target, '_blank')
+    window.open(target, '_blank')
     // #endif
     // #ifdef APP-PLUS
     if (typeof plus !== 'undefined' && plus.runtime && plus.runtime.openURL) {
@@ -191,8 +192,8 @@ function openProfileWebview() {
     // #endif
   } else {
     // App 和小程序环境可以尝试 web-view 或系统浏览器
-    uni.navigateTo({ 
-      url: `/pages-nonTheme/webview?url=${encodeURIComponent(target)}` 
+    uni.navigateTo({
+      url: `/pages-nonTheme/webview?url=${encodeURIComponent(target)}`
     })
   }
 }
@@ -237,8 +238,8 @@ async function checkLatestVersion() {
         // trigger short highlight animation
         highlight.value = true
         showBadge.value = false
-        setTimeout(() => { 
-          highlight.value = false; 
+        setTimeout(() => {
+          highlight.value = false;
           showBadge.value = true
           // trigger a short shake animation
           badgeShake.value = true
@@ -307,14 +308,14 @@ onMounted(() => {
 
 /* 浅色模式背景 */
 .about-container .bg-grid {
-  background-image: 
+  background-image:
     radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
     radial-gradient(circle at 80% 70%, rgba(52, 211, 153, 0.06) 0%, transparent 40%);
 }
 
 /* 暗色模式背景 */
 .about-container.dark-theme .bg-grid {
-  background-image: 
+  background-image:
     linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
   background-size: 50px 50px;
@@ -322,8 +323,13 @@ onMounted(() => {
 }
 
 @keyframes gridDrift {
-  0% { transform: translate(0, 0); }
-  100% { transform: translate(50px, 50px); }
+  0% {
+    transform: translate(0, 0);
+  }
+
+  100% {
+    transform: translate(50px, 50px);
+  }
 }
 
 .floating-elements {
@@ -354,16 +360,44 @@ onMounted(() => {
   background: radial-gradient(circle, rgba(255, 255, 255, 0.6) 0%, transparent 70%);
 }
 
-.float-item:nth-child(1) { left: 10%; animation-delay: 0s; }
-.float-item:nth-child(2) { left: 30%; animation-delay: 3s; }
-.float-item:nth-child(3) { left: 60%; animation-delay: 6s; }
-.float-item:nth-child(4) { left: 85%; animation-delay: 9s; }
+.float-item:nth-child(1) {
+  left: 10%;
+  animation-delay: 0s;
+}
+
+.float-item:nth-child(2) {
+  left: 30%;
+  animation-delay: 3s;
+}
+
+.float-item:nth-child(3) {
+  left: 60%;
+  animation-delay: 6s;
+}
+
+.float-item:nth-child(4) {
+  left: 85%;
+  animation-delay: 9s;
+}
 
 @keyframes floatUp {
-  0% { transform: translateY(100vh) scale(0); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+  0% {
+    transform: translateY(100vh) scale(0);
+    opacity: 0;
+  }
+
+  10% {
+    opacity: 1;
+  }
+
+  90% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(-10vh) scale(1);
+    opacity: 0;
+  }
 }
 
 /* ===== 蓝橙球形装饰（仅浅色模式） ===== */
@@ -402,24 +436,63 @@ onMounted(() => {
 }
 
 @keyframes circleFloat1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25% { transform: translate(30rpx, -20rpx) scale(1.02); }
-  50% { transform: translate(20rpx, 30rpx) scale(0.98); }
-  75% { transform: translate(-10rpx, 20rpx) scale(1.01); }
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  25% {
+    transform: translate(30rpx, -20rpx) scale(1.02);
+  }
+
+  50% {
+    transform: translate(20rpx, 30rpx) scale(0.98);
+  }
+
+  75% {
+    transform: translate(-10rpx, 20rpx) scale(1.01);
+  }
 }
 
 @keyframes circleFloat2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(-20rpx, 40rpx) scale(1.03); }
-  66% { transform: translate(30rpx, -30rpx) scale(0.97); }
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(-20rpx, 40rpx) scale(1.03);
+  }
+
+  66% {
+    transform: translate(30rpx, -30rpx) scale(0.97);
+  }
 }
 
 @keyframes circleFloat3 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  20% { transform: translate(40rpx, 10rpx) scale(1.02); }
-  40% { transform: translate(20rpx, -40rpx) scale(0.99); }
-  60% { transform: translate(-30rpx, -20rpx) scale(1.01); }
-  80% { transform: translate(-20rpx, 30rpx) scale(0.98); }
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  20% {
+    transform: translate(40rpx, 10rpx) scale(1.02);
+  }
+
+  40% {
+    transform: translate(20rpx, -40rpx) scale(0.99);
+  }
+
+  60% {
+    transform: translate(-30rpx, -20rpx) scale(1.01);
+  }
+
+  80% {
+    transform: translate(-20rpx, 30rpx) scale(0.98);
+  }
 }
 
 /* ===== 返回按钮 ===== */
@@ -466,7 +539,7 @@ onMounted(() => {
   transition: color 0.3s ease;
 }
 
-/* ǳɫģʽicon */
+/* 浅色模式icon */
 .about-container .back-icon {
   color: #059669;
 }
@@ -513,8 +586,15 @@ onMounted(() => {
 }
 
 @keyframes iconBounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10rpx); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10rpx);
+  }
 }
 
 .app-name {
@@ -591,10 +671,25 @@ onMounted(() => {
 }
 
 @keyframes highlightPulse {
-  0% { box-shadow: 0 0 0rpx rgba(16, 185, 129, 0.0); transform: scale(1); }
-  20% { box-shadow: 0 0 18rpx rgba(16, 185, 129, 0.22); transform: scale(1.02); }
-  60% { box-shadow: 0 0 10rpx rgba(16, 185, 129, 0.12); transform: scale(1.01); }
-  100% { box-shadow: 0 0 0rpx rgba(16, 185, 129, 0.0); transform: scale(1); }
+  0% {
+    box-shadow: 0 0 0rpx rgba(16, 185, 129, 0.0);
+    transform: scale(1);
+  }
+
+  20% {
+    box-shadow: 0 0 18rpx rgba(16, 185, 129, 0.22);
+    transform: scale(1.02);
+  }
+
+  60% {
+    box-shadow: 0 0 10rpx rgba(16, 185, 129, 0.12);
+    transform: scale(1.01);
+  }
+
+  100% {
+    box-shadow: 0 0 0rpx rgba(16, 185, 129, 0.0);
+    transform: scale(1);
+  }
 }
 
 .new-badge {
@@ -615,10 +710,27 @@ onMounted(() => {
 }
 
 @keyframes badgeShake {
-  10%, 90% { transform: translateX(-1rpx); }
-  20%, 80% { transform: translateX(2rpx); }
-  30%, 50%, 70% { transform: translateX(-4rpx); }
-  40%, 60% { transform: translateX(4rpx); }
+
+  10%,
+  90% {
+    transform: translateX(-1rpx);
+  }
+
+  20%,
+  80% {
+    transform: translateX(2rpx);
+  }
+
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4rpx);
+  }
+
+  40%,
+  60% {
+    transform: translateX(4rpx);
+  }
 }
 
 /* ===== 功能介绍 ===== */
@@ -874,11 +986,11 @@ onMounted(() => {
 
 /* 响应式设计 */
 @media (max-width: 420px) {
-  .info-footer { 
-    flex-direction: column; 
-    align-items: stretch; 
+  .info-footer {
+    flex-direction: column;
+    align-items: stretch;
   }
-  
+
   .content-wrapper {
     padding: 20rpx 20rpx 0;
   }

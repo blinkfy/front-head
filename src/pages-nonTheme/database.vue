@@ -210,7 +210,7 @@
                             </view>
 
                             <view class="filter-item">
-                                <text class="filter-label">📡 ״̬</text>
+                                <text class="filter-label">📡 状态</text>
                                 <picker :value="statusFilterIndex" :range="statusFilterOptions"
                                     range-key="label" @change="onStatusFilterChange">
                                     <view class="filter-picker">
@@ -294,7 +294,7 @@
                                         <text class="data-value">{{ getBinTypeLabel(item.type) }}</text>
                                     </view>
                                     <view class="data-row">
-                                        <text class="data-label">״̬:</text>
+                                        <text class="data-label">״状态:</text>
                                         <text class="data-value"
                                             :class="item.status === 'online' ? 'success' : 'error'">{{ item.status
                                             }}</text>
@@ -306,7 +306,7 @@
                                     <view class="data-row">
                                         <text class="data-label">用户:</text>
                                         <rich-text class="data-value highlight"
-                                            :nodes="highlightText(`${item.username || 'δ֪'} (ID: ${item.userId})`)"></rich-text>
+                                            :nodes="highlightText(`${item.username || '未知'} (ID: ${item.userId})`)"></rich-text>
                                     </view>
                                     <view class="data-row">
                                         <text class="data-label">设备:</text>
@@ -329,7 +329,7 @@
                                     <view class="data-row">
                                         <text class="data-label">用户:</text>
                                         <rich-text class="data-value highlight"
-                                            :nodes="highlightText(`${item.username || 'δ֪'} (用户ID: ${item.userId})`)"></rich-text>
+                                            :nodes="highlightText(`${item.username || '未知'} (用户ID: ${item.userId})`)"></rich-text>
                                     </view>
                                     <view class="data-row">
                                         <text class="data-label">分类:</text>
@@ -351,12 +351,12 @@
                                     <view class="data-row">
                                         <text class="data-label">发送者:</text>
                                         <rich-text class="data-value highlight"
-                                            :nodes="highlightText(`${item.senderName || 'δ֪'} (${item.senderId})`)"></rich-text>
+                                            :nodes="highlightText(`${item.senderName || '未知'} (${item.senderId})`)"></rich-text>
                                     </view>
                                     <view class="data-row">
                                         <text class="data-label">接收者:</text>
                                         <rich-text class="data-value highlight"
-                                            :nodes="highlightText(`${item.receiverName || 'δ֪'} (${item.receiverId})`)"></rich-text>
+                                            :nodes="highlightText(`${item.receiverName || '未知'} (${item.receiverId})`)"></rich-text>
                                     </view>
                                     <view class="data-row">
                                         <text class="data-label">类型:</text>
@@ -372,7 +372,7 @@
                                         <text class="data-value">{{ item.refId}}</text>
                                     </view>
                                     <view class="data-row">
-                                        <text class="data-label">״̬:</text>
+                                        <text class="data-label">״状态:</text>
                                         <text class="data-value">
                                             <text v-if="item.isRead" style="color: #40e0ff;">已读</text>
                                             <text v-else style="color: #999;">未读</text>
@@ -390,12 +390,12 @@
                                     <view class="data-row">
                                         <text class="data-label">用户:</text>
                                         <rich-text class="data-value highlight"
-                                            :nodes="highlightText(`${item.userName || 'δ֪'} (${item.userId})`)"></rich-text>
+                                            :nodes="highlightText(`${item.userName || '未知'} (${item.userId})`)"></rich-text>
                                     </view>
                                     <view class="data-row">
                                         <text class="data-label">对方:</text>
                                         <rich-text class="data-value highlight"
-                                            :nodes="highlightText(`${item.otherName || 'δ֪'} (${item.otherId})`)"></rich-text>
+                                            :nodes="highlightText(`${item.otherName || '未知'} (${item.otherId})`)"></rich-text>
                                     </view>
                                     <view class="data-row">
                                         <text class="data-label">关系:</text>
@@ -407,7 +407,7 @@
                                             :nodes="highlightText(item.note || '无')"></rich-text>
                                     </view>
                                     <view class="data-row">
-                                        <text class="data-label">״̬:</text>
+                                        <text class="data-label">状态:</text>
                                         <text class="data-value">
                                             <text v-if="item.mute" style="color: #f44;">勿扰</text>
                                             <text v-if="item.top" style="color: #ffd700; margin-left: 10rpx;">置顶</text>
@@ -550,7 +550,7 @@
                                 color="#40e0ff" />
                         </view>
                         <view class="form-item">
-                            <text class="form-label">״̬</text>
+                            <text class="form-label">状态</text>
                             <picker mode="selector" :range="['online', 'offline']" @change="onStatusChange">
                                 <view class="picker-view">{{ editForm.status || '请选择状态' }}</view>
                             </picker>
@@ -787,7 +787,7 @@ const messageTypeFilterIndex = ref(0)
 const messageTypeFilterOptions = ref([
     { label: '全部类型', value: null },
     { label: '文本', value: 'text' },
-    { label: 'ͼƬ', value: 'image' },
+    { label: '图片', value: 'image' },
     { label: '语音', value: 'voice' },
     { label: '视频', value: 'video' },
     { label: '文件', value: 'file' },
@@ -898,7 +898,7 @@ const sourceLabels = {
 const messageTypes = ['text', 'image', 'voice', 'video', 'file', 'location', 'others']
 const messageTypeLabels = {
     'text': '文本',
-    'image': 'ͼƬ',
+    'image': '图片',
     'voice': '语音',
     'video': '视频',
     'file': '文件',
@@ -925,7 +925,7 @@ function formatTime(timestamp) {
     if (diffMinutes < 60) return `${diffMinutes}分钟前`
 
     const diffHours = Math.floor(diffMinutes / 60)
-    if (diffHours < 24) return `${diffHours}Сʱǰ`
+    if (diffHours < 24) return `${diffHours}小时前`
 
     const diffDays = Math.floor(diffHours / 24)
     if (diffDays < 7) return `${diffDays}天前`
@@ -1507,7 +1507,7 @@ async function handleSave() {
         } else if (currentTable.value === 'History') {
             data.userId = Number(data.userId)
             data.confidence = data.confidence ? Number(data.confidence) : null
-            // 确保 imageUrl Ϊ null 时正确传递（删除图片）
+            // 确保 imageUrl 为 null 时正确传递（删除图片）
             if (data.imageUrl === null || data.imageUrl === '') {
                 data.imageUrl = null
             }

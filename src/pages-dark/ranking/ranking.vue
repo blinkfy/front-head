@@ -421,7 +421,7 @@ const formatUpdateTime = (dateString) => {
   background: rgba(0, 25, 45, 0.9);
   backdrop-filter: blur(15px);
   border-bottom: 1px solid rgba(64, 224, 255, 0.3);
-  /* 不直接在容器上加 env(safe-area-inset-top)，统一用 .safe-area-top ռλ */
+  /* 不直接在容器上加 env(safe-area-inset-top)，统一用 .safe-area-top 占位 */
 }
 
 .safe-area-top {
@@ -433,7 +433,7 @@ const formatUpdateTime = (dateString) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* ԭ 50rpx 顶部 + 多层 safe-area 导致 iOS 顶部空间过大，调低 */
+  /* 原50rpx 顶部 + 多层 safe-area 导致 iOS 顶部空间过大，调低 */
   padding: 20rpx 40rpx 20rpx;
 }
 
