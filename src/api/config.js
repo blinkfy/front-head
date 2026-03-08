@@ -1,14 +1,30 @@
-// 环境配置
-// devbox:  https://kwcdasogdvpl.sealosbja.site
-// app:     https://rgqexbnzzipc.sealosbja.site
-const ENV = {
-    baseUrl: 'https://rgqexbnzzipc.sealosbja.site',
-    timeout: 30000
+// Environment config
+const REMOTE_BASE_URL = 'https://rgqexbnzzipc.sealosbja.site'
+const DEFAULT_TIMEOUT = 30000
+
+function resolveH5BaseUrl() {
+  if (typeof window === 'undefined' || !window.location) {
+    return REMOTE_BASE_URL
+  }
+
+  const { origin, protocol } = window.location
+  if (!origin || origin === 'null') {
+    return REMOTE_BASE_URL
+  }
+
+  if (protocol === 'http:' || protocol === 'https:') {
+    return origin
+  }
+
+  return REMOTE_BASE_URL
 }
 
-// 根据环境获取配置
 export function getConfig() {
-  return ENV
+  const isH5 = process.env.UNI_PLATFORM === 'h5'
+  return {
+    baseUrl: isH5 ? resolveH5BaseUrl() : REMOTE_BASE_URL,
+    timeout: DEFAULT_TIMEOUT
+  }
 }
 
-export const config = getConfig() 
+export const config = getConfig()

@@ -347,6 +347,7 @@ const _state = {
   bins: [],
   plan: null,
   startPoint: null,
+  manualStartPoint: null,
   loading: false,
   mapInstance: null,       // H5 TMap 实例
   mapReady: false,
@@ -483,11 +484,15 @@ function renderBrief() {
   const route = _state.plan && _state.plan.route
   if (!route) { briefLines.value = ['尚未生成路线']; return }
   const start = (_state.plan && _state.plan.start) || _state.startPoint || DEFAULT_CENTER
+  const providerLine = route.provider === 'tencent'
+    ? '路线来源：腾讯道路'
+    : '路线来源：降级直线（当前未拿到腾讯道路）'
   briefLines.value = [
     `策略：${strategyLabel(routeStrategy.value)} | 车辆：1 台`,
     `起点：${start.name || '清运起点'} | 停靠：${route.stops.length} 个`,
     `总里程：${fmtKm(route.totalDistanceKm)} | 总耗时：${fmtMin(route.totalMinutes)}`,
-    `开始：${fmtTime(route.startTime)} | 结束：${fmtTime(route.endTime)}`
+    `开始：${fmtTime(route.startTime)} | 结束：${fmtTime(route.endTime)}`,
+    providerLine
   ]
 }
 
@@ -572,7 +577,18 @@ function mapSignature() {
   const bins = (_state.bins || []).map(b => `${b.id}:${Math.round(n(b.currentFill, 0) * 10) / 10}`).join('|')
   const route = _state.plan && _state.plan.route
   const stops = route && Array.isArray(route.stops) ? route.stops.map(s => `${s.order}:${s.id}`).join('|') : 'none'
-  return `${bins}::${stops}::sel-${selectedBinId.value || ''}-${selectedStopOrder.value || ''}-${routeStrategy.value}`
+  const polyline = route && Array.isArray(route.polyline) ? route.polyline : []
+  const polylineMeta = polyline.length
+    ? `${polyline.length}:${polyline[0][0]},${polyline[0][1]}:${polyline[polyline.length - 1][0]},${polyline[polyline.length - 1][1]}`
+    : 'none'
+  const segmentMeta = route && Array.isArray(route.segments)
+    ? route.segments.map(segment => Array.isArray(segment && segment.polyline) ? segment.polyline.length : 0).join(',')
+    : 'none'
+  const startMeta = _state.startPoint
+    ? `${n(_state.startPoint.latitude, 0)},${n(_state.startPoint.longitude, 0)}`
+    : 'none'
+  const generatedAt = _state.plan && _state.plan.generatedAt ? String(_state.plan.generatedAt) : 'none'
+  return `${bins}::${stops}::poly-${polylineMeta}::seg-${segmentMeta}::start-${startMeta}::gen-${generatedAt}::sel-${selectedBinId.value || ''}-${selectedStopOrder.value || ''}-${routeStrategy.value}`
 }
 function clearH5Map() {
   const s = _state
@@ -656,8 +672,19 @@ function drawMap(force) {
       const idx = (route.stops || []).findIndex(s => Number(s.order) === Number(selectedStopOrder.value))
       if (idx >= 0) {
         const stop = route.stops[idx]
-        const prev = idx === 0 ? [_state.startPoint.latitude, _state.startPoint.longitude] : [route.stops[idx - 1].latitude, route.stops[idx - 1].longitude]
-        _state.focusPolyline = new TMap.MultiPolyline({ id: 'db-focus', map: _state.mapInstance, styles: { focus: new TMap.PolylineStyle({ color: '#ffb04a', width: 7, borderWidth: 2, borderColor: '#fff', lineCap: 'round' }) }, geometries: [{ id: 'focus', styleId: 'focus', paths: [new TMap.LatLng(prev[0], prev[1]), new TMap.LatLng(stop.latitude, stop.longitude)] }] })
+        const segmentPoints = Array.isArray(stop.segmentPolyline) && stop.segmentPolyline.length > 1
+          ? stop.segmentPolyline
+          : (route.segments && Array.isArray(route.segments[idx] && route.segments[idx].polyline) && route.segments[idx].polyline.length > 1
+            ? route.segments[idx].polyline
+            : null)
+        if (segmentPoints) {
+          _state.focusPolyline = new TMap.MultiPolyline({
+            id: 'db-focus',
+            map: _state.mapInstance,
+            styles: { focus: new TMap.PolylineStyle({ color: '#ffb04a', width: 7, borderWidth: 2, borderColor: '#fff', lineCap: 'round' }) },
+            geometries: [{ id: 'focus', styleId: 'focus', paths: segmentPoints.map(p => new TMap.LatLng(p[0], p[1])) }]
+          })
+        }
       }
     }
   }
@@ -759,13 +786,51 @@ function setStatus(text, cls) {
   statusCls.value = cls || ''
 }
 
+function buildDashboardSnapshotPath() {
+  const params = [`routeStrategy=${encodeURIComponent(routeStrategy.value)}`]
+
+  if (_state.manualStartPoint) {
+    params.push(`startLat=${encodeURIComponent(String(n(_state.manualStartPoint.latitude, 0)))}`)
+    params.push(`startLng=${encodeURIComponent(String(n(_state.manualStartPoint.longitude, 0)))}`)
+    params.push(
+      `startName=${encodeURIComponent(_state.manualStartPoint.name || '地图选择起点')}`
+    )
+  }
+
+  return `/api/planning/dashboard-snapshot?${params.join('&')}`
+}
+
+function syncStartPointFromPlan() {
+  if (_state.manualStartPoint) {
+    _state.startPoint = { ..._state.manualStartPoint }
+    return
+  }
+
+  if (_state.plan && _state.plan.start) {
+    _state.startPoint = {
+      name: _state.plan.start.name || '默认起点',
+      latitude: _state.plan.start.latitude,
+      longitude: _state.plan.start.longitude
+    }
+    return
+  }
+
+  if (_state.bins.length) {
+    const first = _state.bins[0]
+    _state.startPoint = { name: '默认起点', latitude: first.latitude, longitude: first.longitude }
+    return
+  }
+
+  _state.startPoint = null
+}
+
 async function doRefresh(options) {
   const silent = !!(options && options.silent)
   if (_state.loading) return
   _state.loading = true
   if (!silent) setStatus(`正在刷新清运数据（${strategyLabel(routeStrategy.value)}）...`, 'warn')
   try {
-    const data = await apiRequest(`/api/planning/dashboard-snapshot?routeStrategy=${encodeURIComponent(routeStrategy.value)}`)
+    const data = await apiRequest(buildDashboardSnapshotPath())
     _state.bins = Array.isArray(data && data.bins) ? data.bins : []
     _state.plan = data && data.plan ? data.plan : null
 
@@ -776,13 +841,7 @@ async function doRefresh(options) {
       routeStrategy.value = normalizeStrategy(_state.plan.options.routeStrategy)
       setStorage('collection_route_strategy', routeStrategy.value)
     }
-    if (!_state.startPoint && _state.plan && _state.plan.start) {
-      _state.startPoint = { name: _state.plan.start.name || '默认起点', latitude: _state.plan.start.latitude, longitude: _state.plan.start.longitude }
-    }
-    if (!_state.startPoint && _state.bins.length) {
-      const first = _state.bins[0]
-      _state.startPoint = { name: '默认起点', latitude: first.latitude, longitude: first.longitude }
-    }
+    syncStartPointFromPlan()
 
     const routeStops = _state.plan?.route?.stops || []
     if (selectedStopOrder.value !== null && !routeStops.some(s => Number(s.order) === Number(selectedStopOrder.value))) selectedStopOrder.value = null
@@ -883,8 +942,9 @@ async function initH5Map() {
     const lat = typeof evt?.latLng?.getLat === 'function' ? evt.latLng.getLat() : null
     const lng = typeof evt?.latLng?.getLng === 'function' ? evt.latLng.getLng() : null
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
-    _state.startPoint = { name: '地图选择起点', latitude: lat, longitude: lng }
-    renderBrief(); drawMap(true)
+    _state.manualStartPoint = { name: '地图选择起点', latitude: lat, longitude: lng }
+    _state.startPoint = { ..._state.manualStartPoint }
+    doRefresh()
   })
   window.addEventListener('resize', () => {
     requestAnimationFrame(() => {

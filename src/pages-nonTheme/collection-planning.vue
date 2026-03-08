@@ -524,7 +524,10 @@ async function doCreatePlan() {
     routeStops.value = plan.route && Array.isArray(plan.route.stops) ? plan.route.stops : []
     if (plan.route && plan.route.stops && plan.route.stops.length) {
       const r = plan.route
-      routeSummary.value = `${routeStrategyLabel.value} | Stops ${r.stops.length}, distance ${Number(r.totalDistanceKm || 0).toFixed(2)} km, total ${Number(r.totalMinutes || 0).toFixed(1)} min.`
+      const providerText = r.provider === 'tencent'
+        ? '腾讯道路'
+        : '降级直线'
+      routeSummary.value = `${routeStrategyLabel.value} | Stops ${r.stops.length}, distance ${Number(r.totalDistanceKm || 0).toFixed(2)} km, total ${Number(r.totalMinutes || 0).toFixed(1)} min | ${providerText}.`
     } else {
       routeSummary.value = 'No route generated yet.'
     }
