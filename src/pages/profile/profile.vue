@@ -292,10 +292,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { userinfo } from '@/api/user'
-import { useDeviceConnection } from '@/composables/useDeviceConnection'
+import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
-import { resolveH5StandalonePath } from '@/utils/h5-route'
 
 const username = ref('')
 const userInfo = ref({})
@@ -534,19 +533,7 @@ function goRanking() { uni.navigateTo({ url: '/pages/ranking/ranking' }) }
 function goSettings() { uni.navigateTo({ url: '/pages-nonTheme/settings' }) }
 function goAbout() { uni.navigateTo({ url: '/pages-nonTheme/about' }) }
 function goGuide() { uni.navigateTo({ url: '/pages/guide/guide' }) }
-function goAchievements() {
-  const isH5Page = (
-    typeof window !== 'undefined' &&
-    typeof document !== 'undefined' &&
-    !window.wx &&
-    !window.my
-  )
-  if (isH5Page) {
-    window.location.href = resolveH5StandalonePath('/achievements', '/pages-nonTheme/achievements')
-    return
-  }
-  uni.navigateTo({ url: '/pages-nonTheme/achievements' })
-}
+function goAchievements() { uni.navigateTo({ url: '/pages-nonTheme/achievements' })}
 
 async function verifyAdminPermission() {
   const localAdminFlag = uni.getStorageSync('isAdmin')

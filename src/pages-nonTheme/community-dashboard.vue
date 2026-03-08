@@ -254,7 +254,7 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { baseUrl } from '@/api/settings'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
-import { describeApiFailure, redirectIfAccessDenied } from './access-guard.js'
+import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { resolveH5StandalonePath } from '@/utils/h5-route'
 
 // ─── 工具函数 ──────────────────────────────────────────

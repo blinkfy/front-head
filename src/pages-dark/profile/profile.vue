@@ -451,10 +451,9 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue'
 import { userinfo } from '@/api/user'
-import { useDeviceConnection } from '@/composables/useDeviceConnection'
+import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
-import { resolveH5StandalonePath } from '@/utils/h5-route'
 
 const username = ref('')
 const userInfo = ref({})
@@ -677,19 +676,7 @@ function goRanking() {uni.navigateTo({ url: '/pages-dark/ranking/ranking' })}
 function goSettings() { uni.navigateTo({ url: '/pages-nonTheme/settings' }) }
 function goAbout() {uni.navigateTo({ url: '/pages-nonTheme/about' })}
 function goGuide() {uni.navigateTo({ url: '/pages-dark/guide/guide' })}
-function goAchievements() {
-  const isH5Page = (
-    typeof window !== 'undefined' &&
-    typeof document !== 'undefined' &&
-    !window.wx &&
-    !window.my
-  )
-  if (isH5Page) {
-    window.location.href = resolveH5StandalonePath('/achievements', '/pages-nonTheme/achievements')
-    return
-  }
-  uni.navigateTo({ url: '/pages-nonTheme/achievements' })
-}
+function goAchievements() { uni.navigateTo({ url: '/pages-nonTheme/achievements' })}
 
 // 权限验证函数：在导航前验证用户是否真正拥有管理员权限
 async function verifyAdminPermission() {

@@ -223,7 +223,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { baseUrl } from '@/api/settings'
 import { mapConfig } from '@/api/map-config'
-import { describeApiFailure, redirectIfAccessDenied } from './access-guard.js'
+import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { resolveH5StandalonePath } from '@/utils/h5-route'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 

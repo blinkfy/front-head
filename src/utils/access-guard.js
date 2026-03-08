@@ -1,5 +1,3 @@
-import { resolveH5StandalonePath } from '../utils/h5-route'
-
 const ACCESS_DENIED_PATTERNS = [
   /管理员/,
   /无权限/,
@@ -43,28 +41,20 @@ export function isAccessDeniedPayload(payload, response) {
 }
 
 export function redirectToNoPermission(options = {}) {
-  const currentPath = window.location && window.location.pathname
+  // 获取当前路径：优先 H5 的 window.location，其次尝试小程序的 getCurrentPages()
+  const currentPath = getCurrentPath()
   if (currentPath === '/no-permission' || currentPath === '/pages-nonTheme/no-permission') {
     return
   }
 
-  const params = new URLSearchParams()
   const from = String(options.from || currentPath || '').trim()
   const reason = String(options.reason || '').trim()
-
-  if (from) params.set('from', from)
-  if (reason) params.set('reason', reason)
-
-  const target = resolveH5StandalonePath(
-    '/no-permission',
-    '/pages-nonTheme/no-permission',
-    params.toString()
-  )
-  try {
-    window.location.replace(target)
-  } catch (_) {
-    window.location.href = target
-  }
+  const params = {}
+  if (from) params.from = from
+  if (reason) params.reason = reason
+  const qs = buildQueryString(params)
+  const url = qs ? '/pages-nonTheme/no-permission?' + qs : '/pages-nonTheme/no-permission'
+  uni.navigateTo({ url })
 }
 
 export function redirectIfAccessDenied(payload, response, options = {}) {
@@ -74,4 +64,39 @@ export function redirectIfAccessDenied(payload, response, options = {}) {
     reason: options.reason || readMessage(payload, response)
   })
   return true
+}
+
+// Cross-platform helpers
+function getCurrentPath() {
+  // H5 environment
+  if (typeof window !== 'undefined' && window.location && window.location.pathname) {
+    return window.location.pathname
+  }
+
+  // 小程序环境：使用 getCurrentPages 获取当前页面 route
+  try {
+    if (typeof getCurrentPages === 'function') {
+      const pages = getCurrentPages()
+      if (pages && pages.length) {
+        const last = pages[pages.length - 1]
+        if (last && last.route) return '/' + String(last.route)
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return ''
+}
+
+function buildQueryString(params) {
+  if (!params || typeof params !== 'object') return ''
+  const parts = []
+  for (const key in params) {
+    if (!Object.prototype.hasOwnProperty.call(params, key)) continue
+    const val = params[key]
+    if (val === undefined || val === null) continue
+    parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(String(val)))
+  }
+  return parts.join('&')
 }
