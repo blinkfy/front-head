@@ -253,8 +253,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { recognizeImage } from '@/api/recognize'
-import { useDeviceConnection } from '@/composables/useDeviceConnection'
-import { resolveH5StandalonePath } from '@/utils/h5-route'
+import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import {
   appendAchievementQueue,
   buildExpandedUpcyclingText,
