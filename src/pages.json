@@ -183,6 +183,12 @@
 					"style": {
 						"navigationStyle": "custom"
 					}
+				},
+				{
+					"path": "no-permission",
+					"style": {
+						"navigationStyle": "custom"
+					}
 				}
 			]
 		},

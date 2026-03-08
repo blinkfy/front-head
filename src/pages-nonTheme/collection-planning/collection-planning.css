@@ -207,7 +207,8 @@
       color: #344f65;
     }
 
-    input {
+    input,
+    select {
       width: 100%;
       border: 1px solid #cbdbe8;
       border-radius: 9px;
@@ -216,13 +217,15 @@
       outline: none;
       background: #fcfeff;
     }
-    body.dark-theme input {
+    body.dark-theme input,
+    body.dark-theme select {
       border-color: #3c5d78;
       background: #132435;
       color: #d4e4f1;
     }
 
-    input:focus {
+    input:focus,
+    select:focus {
       border-color: #87b5ff;
       box-shadow: 0 0 0 3px rgba(79, 136, 241, 0.12);
     }

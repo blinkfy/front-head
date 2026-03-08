@@ -1,3 +1,5 @@
+import { describeApiFailure, redirectIfAccessDenied } from '../access-guard.js'
+
 const baseUrl = window.__APP_BASE_URL__ || ''
 
 const refs = {
@@ -102,8 +104,16 @@ async function api(path, options) {
       ...((options && options.headers) || {})
     }
   });
-  const json = await res.json();
-  if (!json || json.code !== 0) throw new Error((json && json.msg) || `HTTP ${res.status}`);
+  let json = null;
+  try {
+    json = await res.json();
+  } catch (_) {}
+  if (!json || json.code !== 0 || !res.ok) {
+    if (redirectIfAccessDenied(json, res)) {
+      throw new Error(describeApiFailure(json, res));
+    }
+    throw new Error(describeApiFailure(json, res));
+  }
   return json.data;
 }
 
