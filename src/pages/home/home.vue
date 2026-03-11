@@ -126,13 +126,13 @@
               :class="['upcycling-plan-item', { 'is-warning': /提醒|风险|注意/.test(section.title) }]"
             >
               <text class="upcycling-plan-title">{{ section.title }}</text>
-              <text class="upcycling-plan-content">{{ section.content }}</text>
+              <text class="upcycling-plan-content" v-html="formatSemicolonNewline(section.content)"></text>
             </view>
           </view>
 
           <view v-else-if="resultDesc" class="desc-box">
             <text class="desc-label">💡 处理建议</text>
-            <text class="desc-text">{{ resultDesc }}</text>
+            <text class="desc-text" v-html="formatSemicolonNewline(resultDesc)"></text>
           </view>
         </view>
       </view>
@@ -298,6 +298,28 @@ const displayBboxes = ref([])
 const recognizeBBoxSpace = ref('')
 let bboxRefreshTimer = 0
 const bboxLoadBoundImages = new WeakSet()
+
+// 将遇到英文或中文分号且后面还有内容的地方替换为换行展示
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function formatSemicolonNewline(text) {
+  if (!text) return ''
+  // 先做 HTML 转义
+  const safe = escapeHtml(text)
+  // 使用正则：遇到分号（英文或中文）且后面有非空字符，则替换为 分号 + 换行
+  // 保留分号本身
+  return safe.replace(/；|;(\s*)(?=[^\s])/g, (m) => {
+    // m 可能是 ; 或；，我们要在其后插入 <br>
+    return m + '<br/>'
+  })
+}
 
 // 数字动画函数（兼容小程序：小程序无 requestAnimationFrame，用 setTimeout 模拟）
 const animateNumber = (target, duration = 800) => {

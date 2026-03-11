@@ -1,4 +1,6 @@
-﻿const SEED_KEY = 'ai_chat_seed_payload';
+﻿import { Exception } from "sass";
+
+const SEED_KEY = 'ai_chat_seed_payload';
 const LEGACY_IMAGE_KEY = 'ai_chat_seed_image';
 const LEGACY_CATEGORY_KEY = 'ai_chat_seed_category';
 const ACHIEVEMENT_QUEUE_KEY = 'achievement_unlock_queue_v1';
@@ -82,20 +84,29 @@ function getUpcyclingText(data) {
 export function buildExpandedUpcyclingText(data) {
   const upcycling = getUpcyclingText(data);
   if (!upcycling) return '';
-
+  try{
+  // 优先使用后端大模型生成的完整描述（如果存在）
+  if (data.aiInsights && typeof data.aiInsights.expandedUpcycling === 'string' && data.aiInsights.expandedUpcycling.trim()) {
+    let lines=data.aiInsights.expandedUpcycling
+    if (typeof data.aiInsights.disposalAdvice === 'string') {
+      lines=[`垃圾投放：${data.aiInsights.disposalAdvice}\n`]+lines.trim();
+    }
+    return lines;
+  }
+  }catch (e){console.log(e);}
   const items = extractRecognizedItems(data).slice(0, 3);
   const focusItems = items.length ? items.join('、') : '本次识别到的垃圾';
   const disposalAdvice = getDisposalAdvice(data);
 
   const lines = [
-    `核心思路：${upcycling}`,
+    `回收利用：${upcycling}`,
     `可执行步骤：先把${focusItems}分开处理，厨余先沥干，可回收物简单清洁后再进入改造环节。`,
     '改造示例：保留完整容器可做收纳盒或花盆，不适合改造的部分按分类要求直接投放。',
     '安全提醒：处理时建议戴手套；若出现霉变、油污和异味，优先规范投放，不建议继续改造。'
   ];
 
   if (disposalAdvice) {
-    lines.splice(2, 0, `投放补充：${disposalAdvice}`);
+    lines.splice(2, 0, `垃圾投放：${disposalAdvice}`);
   }
 
   return lines.join('\n');
@@ -164,10 +175,12 @@ export function saveSeed(seed) {
   if (!seed.imageBase64 || String(seed.imageBase64).indexOf('data:image/') !== 0) return;
 
   try {
-    localStorage.setItem(SEED_KEY, JSON.stringify(seed));
-    localStorage.setItem(LEGACY_IMAGE_KEY, seed.imageBase64);
+    const seedJson = JSON.stringify(seed);
+
+    uni.setStorageSync(SEED_KEY, seedJson);
+    uni.setStorageSync(LEGACY_IMAGE_KEY, seed.imageBase64);
     if (seed.category) {
-      localStorage.setItem(LEGACY_CATEGORY_KEY, seed.category);
+      uni.setStorageSync(LEGACY_CATEGORY_KEY, seed.category);
     }
   } catch (_) {}
 }

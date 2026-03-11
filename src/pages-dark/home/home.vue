@@ -124,13 +124,13 @@
                 :class="['upcycling-plan-item', { 'is-warning': /提醒|风险|注意/.test(section.title) }]"
               >
                 <text class="upcycling-plan-title">{{ section.title }}</text>
-                <text class="upcycling-plan-content">{{ section.content }}</text>
+                <text class="upcycling-plan-content" v-html="formatSemicolonNewline(section.content)"></text>
               </view>
             </view>
 
             <view v-else-if="resultDesc" class="description-panel">
               <text class="desc-label">💡 处理建议</text>
-              <text class="desc-content">{{ resultDesc }}</text>
+              <text class="desc-content" v-html="formatSemicolonNewline(resultDesc)"></text>
             </view>
           </view>
         </view>
@@ -285,6 +285,22 @@ const bboxLoadBoundImages = new WeakSet()
 
 // 检测是否为 H5 平台
 const isH5Platform = ref(false)
+
+// 将遇到英文或中文分号且后面还有内容的地方替换为换行展示
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function formatSemicolonNewline(text) {
+  if (!text) return ''
+  const safe = escapeHtml(text)
+  return safe.replace(/；|;(\s*)(?=[^\s])/g, (m) => m + '<br/>')
+}
 
 // 使用设备连接状态管理
 const { hasConnection, connectedDevice, goToDeviceConnection, points } = useDeviceConnection()

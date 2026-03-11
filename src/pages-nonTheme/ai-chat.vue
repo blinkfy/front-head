@@ -519,7 +519,9 @@ function ensureSessionId() {
 
 // ─── SSE 流式对话（仅 H5） ────────────────────────────────
 async function streamChat({ text, imageBase64, history }) {
+  // #ifdef H5
   abortCtrl = new AbortController()
+  // #endif
   isStreaming.value = true
   streamingText.value = ''
 
@@ -667,7 +669,14 @@ async function onSend() {
   }
 }
 function onStop() {
+  // #ifdef H5
   if (abortCtrl) abortCtrl.abort()
+  // #endif
+  // #ifndef H5
+  // 小程序端不支持 AbortController，使用标志位中止
+  isStreaming.value = false
+  streamingText.value = ''
+  // #endif
 }
 
 // ─── 生命周期 ─────────────────────────────────────────────
