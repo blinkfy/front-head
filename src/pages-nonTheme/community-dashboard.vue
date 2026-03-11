@@ -255,7 +255,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'v
 import { baseUrl } from '@/api/settings'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
-import { resolveH5StandalonePath } from '@/utils/h5-route'
+import { goBackFromAdminPage, jumpToAdminPage } from '@/utils/admin-page-nav'
 
 // ─── 工具函数 ──────────────────────────────────────────
 function getStorage(key) {
@@ -394,11 +394,6 @@ function authHeaders() {
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers.Authorization = token
   return headers
-}
-
-function navigateStandaloneH5(prettyPath, spaPath, query = '') {
-  const target = resolveH5StandalonePath(prettyPath, spaPath, query)
-  window.location.assign(target)
 }
 
 // ─── API ───────────────────────────────────────────────
@@ -1038,21 +1033,10 @@ function renderCommunityList(breakdown) {
 
 // ─── 导航 ──────────────────────────────────────────────
 function goCollection() {
-  // #ifdef H5
-  navigateStandaloneH5('/collection-dashboard', '/pages-nonTheme/collection-dashboard')
-  return
-  // #endif
-  uni.navigateTo({ url: '/pages-nonTheme/collection-dashboard' })
+  jumpToAdminPage('collectionDashboard', { from: 'communityDashboard' })
 }
 function goBack() {
-  const pages = getCurrentPages()
-  if (pages.length > 1) { uni.navigateBack(); return }
-  // #ifdef H5
-  navigateStandaloneH5('/', '/pages/home/home')
-  return
-  // #endif
-  if (getStorage('app_theme') === 'light') uni.reLaunch({ url: '/pages/home/home' })
-  else uni.reLaunch({ url: '/pages-dark/home/home' })
+  goBackFromAdminPage('communityDashboard')
 }
 
 // ─── 数据刷新 ──────────────────────────────────────────

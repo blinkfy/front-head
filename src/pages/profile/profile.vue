@@ -294,6 +294,7 @@ import { ref, computed, onMounted } from 'vue'
 import { userinfo } from '@/api/user'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
+import { jumpToAdminPage } from '@/utils/admin-page-nav'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 
 const username = ref('')
@@ -603,7 +604,7 @@ function goAdminAISettings() {
 function goCollectionDashboard() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) {
-      uni.navigateTo({ url: '/pages-nonTheme/collection-dashboard' })
+      jumpToAdminPage('collectionDashboard', { from: 'profile' })
     }
   })
 }
@@ -611,7 +612,7 @@ function goCollectionDashboard() {
 function goCollectionPlanning() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) {
-      uni.navigateTo({ url: '/pages-nonTheme/collection-planning' })
+      jumpToAdminPage('collectionPlanning', { from: 'profile' })
     }
   })
 }
@@ -619,7 +620,7 @@ function goCollectionPlanning() {
 function goCommunityDashboard() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) {
-      uni.navigateTo({ url: '/pages-nonTheme/community-dashboard' })
+      jumpToAdminPage('communityDashboard', { from: 'profile' })
     }
   })
 }

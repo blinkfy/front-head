@@ -161,7 +161,15 @@
       <!-- 右侧地图 + 路线 -->
       <view class="panel map-wrap">
         <!-- #ifdef H5 -->
-        <view id="map"></view>
+        <view class="map-stage">
+          <view id="map" :class="{ 'is-ready': h5MapReady }"></view>
+          <view v-if="!h5MapReady" class="map-placeholder">
+            <text class="map-placeholder-title">{{ h5MapError ? '地图暂不可用' : '地图加载中' }}</text>
+            <text class="map-placeholder-desc">
+              {{ h5MapError || (h5MapLoading ? '桶位与路线信息会先展示，地图初始化完成后自动出现。' : '正在准备地图画布。') }}
+            </text>
+          </view>
+        </view>
         <!-- #endif -->
         <!-- #ifndef H5 -->
         <map
@@ -212,7 +220,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { baseUrl } from '@/api/settings'
 import { mapConfig } from '@/api/map-config'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
-import { resolveH5StandalonePath } from '@/utils/h5-route'
+import { goBackFromAdminPage } from '@/utils/admin-page-nav'
 
 // ─── 常量 ─────────────────────────────────────────────
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
@@ -277,11 +285,6 @@ function authHeaders() {
   return headers
 }
 
-function navigateStandaloneH5(prettyPath, spaPath, query = '') {
-  const target = resolveH5StandalonePath(prettyPath, spaPath, query)
-  window.location.assign(target)
-}
-
 // ─── 主题 ──────────────────────────────────────────────
 const isDark = ref(getStorage('app_theme') === 'dark')
 
@@ -327,6 +330,9 @@ const mapCenter = ref({ ...DEFAULT_CENTER })
 const mapScale = ref(12)
 const mapMarkers = ref([])
 const mapPolyline = ref([])
+const h5MapReady = ref(false)
+const h5MapLoading = ref(false)
+const h5MapError = ref('')
 
 // H5 地图内部状态（不响应式）
 const _map = {
@@ -594,15 +600,7 @@ function useMapCenter() {
 
 // ─── 导航 ──────────────────────────────────────────────
 function goBack() {
-  const pages = getCurrentPages()
-  if (pages.length > 1) { uni.navigateBack(); return }
-  // #ifdef H5
-  navigateStandaloneH5('/', '/pages/home/home')
-  return
-  // #endif
-  const theme = getStorage('app_theme')
-  if (theme === 'light') uni.reLaunch({ url: '/pages/home/home' })
-  else uni.reLaunch({ url: '/pages-dark/home/home' })
+  goBackFromAdminPage('collectionPlanning')
 }
 
 // ─── 小程序地图数据 ────────────────────────────────────
@@ -731,7 +729,6 @@ async function loadTMapSdk() {
   throw new Error('腾讯地图 SDK 加载失败')
 }
 async function initH5Map() {
-  setStatus('Loading Tencent map...')
   await loadTMapSdk()
   _map.instance = new window.TMap.Map('map', { center: new window.TMap.LatLng(DEFAULT_CENTER.latitude, DEFAULT_CENTER.longitude), zoom: 12, viewMode: '2D' })
   _map.ready = true
@@ -742,7 +739,6 @@ async function initH5Map() {
     startPoint.value = { name: 'Map Selected Start', latitude: lat, longitude: lng }
     drawH5Map()
   })
-  setStatus('Map ready', 'ok')
 }
 // #endif
 
@@ -753,11 +749,27 @@ onMounted(async () => {
   const onStorage = () => { isDark.value = getStorage('app_theme') === 'dark' }
   window.addEventListener('storage', onStorage)
   // #endif
+  const loadBinsPromise = doLoadBins().catch((error) => {
+    setStatus(error?.message || String(error), 'err')
+  })
   // #ifdef H5
-  try { await initH5Map() } catch (e) { setStatus(e?.message || String(e), 'err'); return }
+  h5MapLoading.value = true
+  h5MapError.value = ''
+  initH5Map()
+    .then(() => {
+      h5MapReady.value = true
+      h5MapLoading.value = false
+      drawH5Map()
+    })
+    .catch((error) => {
+      h5MapLoading.value = false
+      h5MapError.value = error && error.message ? error.message : '地图加载失败'
+      console.error('[collection-planning] map init failed:', error)
+    })
   // #endif
-  try { await doLoadBins() } catch (e) { setStatus(e?.message || String(e), 'err') }
+  await loadBinsPromise
   // #ifdef H5
+  window._planningOnStorage = onStorage
   // 挂载清理函数（onBeforeUnmount 不能捕获 onStorage 闭包，用全局变量中转）
   window._planningOnStorage = onStorage
   // #endif
@@ -995,7 +1007,29 @@ label,navigator,image,div,span { box-sizing: border-box; }
   grid-template-rows: 56vh 1fr; gap: 10px;
 }
 /* #ifdef H5 */
-#map { width: 100%; height: 100%; border-radius: 14px; border: 1px solid var(--line); overflow: hidden; }
+.layout .map-stage { position: relative; width: 100%; height: 100%; }
+#map {
+  width: 100%; height: 100%;
+  border-radius: 14px; border: 1px solid var(--line); overflow: hidden;
+  opacity: 0; transition: opacity .24s ease;
+}
+#map.is-ready { opacity: 1; }
+.layout .map-placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 20px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: rgba(247, 251, 255, 0.92);
+  text-align: center;
+}
+.layout.dark-theme .map-placeholder { background: rgba(18, 31, 45, 0.92); }
+.layout .map-placeholder-title {
+  font-size: 15px; font-weight: 700; color: var(--text);
+}
+.layout .map-placeholder-desc {
+  max-width: 320px; font-size: 12px; line-height: 1.6; color: var(--sub);
+}
 /* #endif */
 .layout .mp-map { width: 100%; height: 100%; border-radius: 14px; border: 1px solid var(--line); overflow: hidden; }
 

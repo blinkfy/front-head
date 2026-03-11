@@ -57,6 +57,167 @@ function getDisposalAdvice(data) {
     : '';
 }
 
+function normalizeCategoryName(raw) {
+  const text = String(raw || '').trim();
+  const lower = text.toLowerCase();
+  if (text.includes('可回收') || lower.includes('recycl')) return '可回收垃圾';
+  if (text.includes('有害') || lower.includes('hazard') || lower.includes('battery')) return '有害垃圾';
+  if (text.includes('厨余') || text.includes('湿垃圾') || lower.includes('kitchen') || lower.includes('food')) {
+    return '厨余垃圾';
+  }
+  if (text.includes('其他') || text.includes('干垃圾') || lower.includes('other')) return '其他垃圾';
+  return text;
+}
+
+function getPrimaryCategory(data) {
+  const labels = Array.isArray(data && data.labels) ? data.labels : [];
+  return normalizeCategoryName(labels[0] && labels[0].name);
+}
+
+function buildCategoryFallbackDisposal(category) {
+  if (category === '可回收垃圾') return '先倒空残留物，再简单冲洗并压扁；能分开的瓶盖、纸塑部件尽量分开投放。';
+  if (category === '有害垃圾') return '保持原包装或单独密封，避免破损泄漏；尽快投放到有害垃圾收集点。';
+  if (category === '厨余垃圾') return '先去掉塑料袋、纸巾和餐具，再沥干水分后单独投放。';
+  if (category === '其他垃圾') return '把尖锐、易脏污或无法回收的部分装好再投放，避免和可回收物混在一起。';
+  return '先判断材质和清洁度，再按当地分类规则投放。';
+}
+
+function buildCategorySafetyReminder(category) {
+  if (category === '有害垃圾') return '不要拆解、电击、加热或与其他垃圾混放，处理后及时洗手。';
+  if (category === '厨余垃圾') return '出现霉变、异味或渗液时不要继续存放，优先及时投放并清洁容器。';
+  if (category === '可回收垃圾') return '裁剪、打孔或改造前先确认边缘不锋利，家里有儿童时避免留下小零件。';
+  return '处理前先看是否有油污、破损或尖角，必要时戴手套，无法确认时直接规范投放。';
+}
+
+function includesAny(source, keywords = []) {
+  const text = String(source || '').toLowerCase();
+  return keywords.some((item) => text.indexOf(String(item || '').toLowerCase()) !== -1);
+}
+
+function hasStructuredUpcycling(text) {
+  const lines = String(text || '').split(/\n+/).map((item) => item.trim()).filter(Boolean);
+  let titledLines = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (/^[^：:]{2,16}[：:]\s*\S+/.test(lines[i])) titledLines += 1;
+  }
+  return titledLines >= 2 || /操作步骤[:：]|所需材料[:：]|安全提醒[:：]|适用前提[:：]/.test(String(text || ''));
+}
+
+function buildActionablePlan({ items = [], category = '', upcycling = '', disposalAdvice = '' } = {}) {
+  const normalizedCategory = normalizeCategoryName(category) || '对应分类';
+  const focusItems = Array.isArray(items) && items.length ? items.join('、') : '该物品';
+  const keywordSource = focusItems.toLowerCase();
+  const disposalText = disposalAdvice || buildCategoryFallbackDisposal(normalizedCategory);
+  const safetyText = buildCategorySafetyReminder(normalizedCategory);
+  const prefixLines = [
+    `识别判断：${focusItems}优先按${normalizedCategory}处理。`,
+    `投放前处理：${disposalText}`,
+    upcycling ? `执行重点：${upcycling}` : ''
+  ].filter(Boolean);
+
+  if (
+    normalizedCategory === '有害垃圾' ||
+    includesAny(keywordSource, ['电池', '药', '灯管', '油漆', '胶水', '喷雾', 'battery', 'drug'])
+  ) {
+    return [
+      ...prefixLines,
+      '方案名称：不建议再利用',
+      '适用前提：存在毒性、泄漏、破损或成分不明风险时，直接放弃改造。',
+      '操作步骤：1. 保持原包装或外层再套一层密封袋 2. 单独放到阴凉干燥处暂存 3. 尽快送到有害垃圾回收点。',
+      '剩余部分处理：全部按有害垃圾流程处置，不要拆解后再分类。',
+      `安全提醒：${safetyText}`
+    ].join('\n');
+  }
+
+  if (includesAny(keywordSource, ['塑料瓶', '饮料瓶', '矿泉水瓶', '瓶子', 'bottle'])) {
+    return [
+      ...prefixLines,
+      '方案名称：简易浇花器',
+      '所需材料：清洗后的瓶子、针或剪刀、细绳可选。',
+      '操作步骤：1. 先把瓶身洗净并晾干 2. 在瓶盖打 3-5 个小孔 3. 装水后倒置插入花盆土壤 4. 观察出水速度后再调整孔径。',
+      `剩余部分处理：标签、破损瓶身或无法继续利用的配件按${normalizedCategory}投放。`,
+      `安全提醒：${safetyText}`
+    ].join('\n');
+  }
+
+  if (includesAny(keywordSource, ['纸箱', '纸盒', '快递盒', 'carton', 'box'])) {
+    return [
+      ...prefixLines,
+      '方案名称：抽屉分隔盒',
+      '所需材料：干燥纸箱、尺子、剪刀、胶带或订书机。',
+      '操作步骤：1. 量好抽屉内部尺寸 2. 按高度裁出几条纸板 3. 切出卡槽后交叉拼接 4. 放进抽屉测试，不合适再微调。',
+      `剩余部分处理：受潮、沾油或裁坏的纸板按${normalizedCategory === '可回收垃圾' ? '其他垃圾或当地规则' : normalizedCategory}处理。`,
+      `安全提醒：${safetyText}`
+    ].join('\n');
+  }
+
+  if (includesAny(keywordSource, ['旧衣', 't恤', '衣服', '布料', 'cloth', 'shirt'])) {
+    return [
+      ...prefixLines,
+      '方案名称：清洁抹布',
+      '所需材料：干净旧衣物、剪刀、针线可选。',
+      '操作步骤：1. 挑出没有发霉和重油污的布料 2. 按手掌大小裁剪 3. 容易脱线的边缘简单锁边 4. 按厨房、卫浴分别收纳使用。',
+      `剩余部分处理：严重污染、发霉或破损太多的部分按${normalizedCategory === '可回收垃圾' ? '其他垃圾' : normalizedCategory}投放。`,
+      `安全提醒：${safetyText}`
+    ].join('\n');
+  }
+
+  if (includesAny(keywordSource, ['橘子皮', '柚子皮', '柠檬皮', '果皮', 'citrus', 'peel'])) {
+    return [
+      ...prefixLines,
+      '方案名称：果皮清洁液',
+      '所需材料：干净果皮、密封瓶、白醋。',
+      '操作步骤：1. 把果皮剪成小块放入瓶中 2. 倒入白醋没过果皮 3. 密封浸泡 10-14 天 4. 过滤后按 1:1 加水稀释，用于擦拭灶台和台面。',
+      `剩余部分处理：泡过的果皮和残渣仍按${normalizedCategory}投放。`,
+      `安全提醒：${safetyText}`
+    ].join('\n');
+  }
+
+  if (includesAny(keywordSource, ['餐盒', '饭盒', '外卖盒', 'container', 'lunch'])) {
+    return [
+      ...prefixLines,
+      '方案名称：桌面收纳盒',
+      '适用前提：仅适合完整、无重油污、无明显异味的硬质餐盒。',
+      '所需材料：清洗后的餐盒、标签贴纸可选。',
+      '操作步骤：1. 先把油污彻底洗掉并晾干 2. 按用途分成数据线、文具或零件收纳盒 3. 贴上标签避免混放 4. 盖子变形后及时淘汰。',
+      `剩余部分处理：有裂纹、异味或洗不净的餐盒按${normalizedCategory === '可回收垃圾' ? '其他垃圾或当地规则' : normalizedCategory}处理。`,
+      `安全提醒：${safetyText}`
+    ].join('\n');
+  }
+
+  if (normalizedCategory === '厨余垃圾') {
+    return [
+      ...prefixLines,
+      '方案名称：少量家庭堆肥尝试',
+      '适用前提：只建议处理无明显油污、无汤汁、无动物骨刺的厨余。',
+      '所需材料：密封小桶、干树叶或纸屑、手套。',
+      '操作步骤：1. 先把厨余切碎并沥水 2. 与干树叶或纸屑交替铺放 3. 盖好桶盖并定期通气 4. 出现强烈异味时立即停止并改为正常投放。',
+      `剩余部分处理：不适合堆肥的残渣继续按${normalizedCategory}投放。`,
+      `安全提醒：${safetyText}`
+    ].join('\n');
+  }
+
+  if (normalizedCategory === '可回收垃圾') {
+    return [
+      ...prefixLines,
+      '方案名称：家庭分类收纳盒',
+      '所需材料：完整容器、剪刀、标签贴纸。',
+      '操作步骤：1. 先把容器洗净晾干 2. 根据大小分区收纳文具、工具或充电线 3. 在外侧标注用途 4. 容器老化后及时停止使用。',
+      `剩余部分处理：破损、发黄或有异味的部分继续按${normalizedCategory}回收。`,
+      `安全提醒：${safetyText}`
+    ].join('\n');
+  }
+
+  return [
+    ...prefixLines,
+    '方案名称：不建议强行改造',
+    '适用前提：材质不明、污染较重、容易碎裂或改造价值低时，直接分类投放更稳妥。',
+    '操作步骤：1. 先把可分离的外包装与内容物拆开 2. 能清理的残留物尽量清理 3. 按当前分类要求完成投放。',
+    '剩余部分处理：不要为了再利用而继续堆放，避免卫生和异味问题。',
+    `安全提醒：${safetyText}`
+  ].join('\n');
+}
+
 function getUpcyclingText(data) {
   const aiInsights = data && data.aiInsights ? data.aiInsights : null;
   if (aiInsights && typeof aiInsights.upcyclingSuggestion === 'string' && aiInsights.upcyclingSuggestion.trim()) {
@@ -80,25 +241,26 @@ function getUpcyclingText(data) {
 }
 
 export function buildExpandedUpcyclingText(data) {
-  const upcycling = getUpcyclingText(data);
-  if (!upcycling) return '';
-
   const items = extractRecognizedItems(data).slice(0, 3);
-  const focusItems = items.length ? items.join('、') : '本次识别到的垃圾';
-  const disposalAdvice = getDisposalAdvice(data);
+  const category = getPrimaryCategory(data);
+  const upcycling = getUpcyclingText(data);
+  const disposalAdvice = getDisposalAdvice(data) || buildCategoryFallbackDisposal(category);
 
-  const lines = [
-    `核心思路：${upcycling}`,
-    `可执行步骤：先把${focusItems}分开处理，厨余先沥干，可回收物简单清洁后再进入改造环节。`,
-    '改造示例：保留完整容器可做收纳盒或花盆，不适合改造的部分按分类要求直接投放。',
-    '安全提醒：处理时建议戴手套；若出现霉变、油污和异味，优先规范投放，不建议继续改造。'
-  ];
-
-  if (disposalAdvice) {
-    lines.splice(2, 0, `投放补充：${disposalAdvice}`);
+  if (upcycling && hasStructuredUpcycling(upcycling)) {
+    const focusItems = items.length ? items.join('、') : '该物品';
+    const lines = [`识别判断：${focusItems}优先按${category || '对应分类'}处理。`];
+    if (disposalAdvice && !/投放前处理[:：]|投放要点[:：]|投放补充[:：]/.test(upcycling)) {
+      lines.push(`投放前处理：${disposalAdvice}`);
+    }
+    lines.push(upcycling);
+    if (!/安全提醒[:：]/.test(upcycling)) {
+      lines.push(`安全提醒：${buildCategorySafetyReminder(category)}`);
+    }
+    return lines.join('\n');
   }
 
-  return lines.join('\n');
+  if (!category && !items.length && !upcycling && !disposalAdvice) return '';
+  return buildActionablePlan({ items, category, upcycling, disposalAdvice });
 }
 
 export function splitUpcyclingSections(text) {
@@ -200,10 +362,11 @@ export function buildSeedFromRecognizeData(data) {
           ? `我已经完成识别，重点是${category}。请继续补充分类依据、投放细节和可执行的变废为宝步骤。`
           : '我已经完成识别，请继续补充具体物品分类、投放细节和可执行的变废为宝步骤。');
 
-  const assistantReply =
-    typeof chatSeed.assistantReply === 'string' && chatSeed.assistantReply.trim()
-      ? chatSeed.assistantReply.trim()
-      : summarizeRecognizeData(data);
+  const seedReply = typeof chatSeed.assistantReply === 'string' ? chatSeed.assistantReply.trim() : '';
+  const preferLocalSummary =
+    !seedReply ||
+    !/(方案名称[:：]|操作步骤[:：]|投放前处理[:：]|识别判断[:：])/.test(seedReply);
+  const assistantReply = preferLocalSummary ? summarizeRecognizeData(data) : seedReply;
 
   return {
     imageBase64,
