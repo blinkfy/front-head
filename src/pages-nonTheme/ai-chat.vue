@@ -963,7 +963,7 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 
 /* ─── shell 根布局 ─── */
 .shell {
-  width: min(1240px, 100%);
+  width: 100%;
   margin: 0 auto;
   height: calc(100vh - 32px);
   display: grid;
@@ -1090,7 +1090,7 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
   display: none;
   position: fixed;
   inset: 0;
-  z-index: 41;
+  z-index: 999; /* ensure backdrop sits above main content */
   opacity: 0;
   pointer-events: none;
   background: rgba(3, 8, 16, 0.46);
@@ -1104,16 +1104,17 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 
 /* ─── 汉堡按钮 ─── */
 .shell .history-toggle {
-  display: none;
+  /* always visible so users can collapse sidebar on wide screens */
+  display: inline-flex;
   border: 1px solid var(--line);
-  background: rgba(10, 24, 36, 0.07);
+  background: rgba(10, 24, 36, 0.04);
   color: var(--text);
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
-  flex: 0 0 38px;
+  flex: 0 0 36px;
   align-items: center;
   justify-content: center;
 }
@@ -1142,11 +1143,11 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 .shell .chat-header-main { min-width: 0; flex: 1; }
 .shell .chat-header {
   border-bottom: 1px solid var(--line);
-  padding: 13px 16px;
+  padding: 8px 12px; /* reduced vertical padding */
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.62));
 }
 .shell.dark-theme .chat-header {
@@ -1154,15 +1155,16 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 }
 .shell .chat-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px; /* slightly smaller */
   letter-spacing: 0.2px;
   font-weight: 600;
+  line-height: 1.15;
 }
 .shell .chat-subtitle {
-  margin: 4px 0 0;
-  font-size: 12px;
+  margin: 2px 0 0; /* tighter */
+  font-size: 11px;
   color: var(--muted);
-  line-height: 1.45;
+  line-height: 1.3;
 }
 
 /* ─── 按钮 ─── */
@@ -1190,10 +1192,10 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 .shell .messages {
   flex: 1;
   overflow: auto;
-  padding: 16px;
+  padding: 10px; /* reduced */
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   background: linear-gradient(180deg, rgba(244, 251, 255, 0.72), rgba(246, 255, 250, 0.6));
 }
 .shell.dark-theme .messages {
@@ -1202,8 +1204,8 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 .shell .msg {
   max-width: min(760px, 88%);
   border-radius: 14px;
-  padding: 10px 12px;
-  line-height: 1.56;
+  padding: 8px 10px; /* slightly reduced */
+  line-height: 1.45;
   word-break: break-word;
   white-space: pre-wrap;
   position: relative;
@@ -1244,9 +1246,9 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
   width: min(640px, 100%);
   border: 1px dashed var(--line);
   border-radius: 14px;
-  padding: 16px;
+  padding: 12px; /* slightly reduced */
   color: var(--muted);
-  line-height: 1.6;
+  line-height: 1.45;
   background: rgba(255, 255, 255, 0.54);
   text-align: center;
   font-size: 14px;
@@ -1257,10 +1259,10 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 .shell .composer {
   border-top: 1px solid var(--line);
   background: var(--composer-bg);
-  padding: 12px;
+  padding: 8px; /* reduced */
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .shell .image-pending {
   border: 1px dashed rgba(64, 127, 195, 0.42);
@@ -1299,8 +1301,8 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 .shell .prompt-textarea {
   width: 100%;
   resize: vertical;
-  min-height: 54px;
-  max-height: 80px;
+  min-height: 40px;
+  max-height: 54px;
   border: 1px solid #ccdeec;
   border-radius: 12px;
   padding: 11px 12px;
@@ -1335,7 +1337,7 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
     top: 0; left: 0; bottom: 0;
     width: min(82vw, 320px);
     max-width: 320px;
-    z-index: 42;
+    z-index: 1000; /* ensure sidebar is above backdrop */
     border-right: 1px solid var(--side-line);
     border-bottom: 0;
     padding: 12px; gap: 8px;
@@ -1373,11 +1375,10 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
   .shell .image-pending { width: 100%; }
   .shell .image-pending-name { max-width: 150px; }
   .shell .composer { padding: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
-  .shell .prompt-textarea { min-height: 52px; }
+  .shell .prompt-textarea { min-height: 48px; }
   .shell .msg { max-width: 100%; font-size: 13px; }
 }
-</style>
-<style>
+
 page {
   background:
     radial-gradient(820px 420px at 18% -6%, rgba(42, 118, 255, 0.18), transparent 68%),
@@ -1410,10 +1411,7 @@ page {
   --shadow-lg: 0 22px 60px rgba(15, 31, 52, 0.12);
   --shadow-md: 0 14px 32px rgba(15, 31, 52, 0.08);
   width: 100%;
-  max-width: 1380px;
-  height: calc(100vh - 36px);
   display: flex;
-  border-radius: 28px;
   background: var(--shell-bg);
   border: 1px solid var(--shell-line);
   box-shadow: var(--shadow-lg);
@@ -1506,13 +1504,13 @@ page {
 }
 .shell .sidebar-stats {
   display: flex;
-  margin-top: 14px;
+  margin-top: 10px;
 }
 .shell .stat-card {
   flex: 1;
   margin-right: 10px;
   border-radius: 18px;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid rgba(189, 210, 236, 0.12);
   background: rgba(255, 255, 255, 0.05);
 }
@@ -1521,7 +1519,7 @@ page {
 }
 .shell .stat-value {
   display: block;
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1.1;
   color: var(--sidebar-text);
   font-weight: 600;
@@ -1534,9 +1532,9 @@ page {
   color: var(--sidebar-muted);
 }
 .shell .new-chat-btn {
-  margin-top: 16px;
-  min-height: 48px;
-  border-radius: 16px;
+  margin-top: 10px;
+  min-height: 32px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1555,7 +1553,7 @@ page {
 .shell .conversation-list {
   flex: 1;
   min-height: 0;
-  margin-top: 18px;
+  margin-top: 0px;
   padding-right: 4px;
 }
 .shell .conversation-item {
@@ -1624,7 +1622,7 @@ page {
   display: none;
   position: fixed;
   inset: 0;
-  z-index: 41;
+  z-index: 999; /* ensure backdrop sits above main content */
   opacity: 0;
   pointer-events: none;
   background: rgba(6, 10, 18, 0.52);
@@ -2028,8 +2026,8 @@ page {
 }
 .shell .prompt-textarea {
   width: 100%;
-  min-height: 96px;
-  max-height: 180px;
+  min-height: 40px;
+  max-height: 54px;
   border: 0;
   padding: 2px 2px 10px;
   background: transparent;
@@ -2063,7 +2061,7 @@ page {
   margin-bottom: 10px;
 }
 .shell .composer-suggestions {
-  margin-top: 12px;
+  margin-top: 0px;
   white-space: nowrap;
 }
 .shell .suggestions-track {
@@ -2174,7 +2172,7 @@ page {
   .shell .header-actions {
     width: 100%;
     margin-left: 0;
-    margin-top: 12px;
+    margin-top: 0px;
     justify-content: space-between;
   }
   .shell .chat-stage {
@@ -2216,7 +2214,7 @@ page {
     padding: 12px;
   }
   .shell .prompt-textarea {
-    min-height: 82px;
+    min-height: 40px;
     font-size: 14px;
   }
   .shell .composer-toolbar {

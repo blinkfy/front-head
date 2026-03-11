@@ -243,26 +243,34 @@ function getUpcyclingText(data) {
 }
 
 export function buildExpandedUpcyclingText(data) {
-  const items = extractRecognizedItems(data).slice(0, 3);
-  const category = getPrimaryCategory(data);
   const upcycling = getUpcyclingText(data);
-  const disposalAdvice = getDisposalAdvice(data) || buildCategoryFallbackDisposal(category);
+  if (!upcycling) return '';
+  try{
+  // 优先使用后端大模型生成的完整描述（如果存在）
+  if (data.aiInsights && typeof data.aiInsights.expandedUpcycling === 'string' && data.aiInsights.expandedUpcycling.trim()) {
+    let lines=data.aiInsights.expandedUpcycling
+    if (typeof data.aiInsights.disposalAdvice === 'string') {
+      lines=[`垃圾投放：${data.aiInsights.disposalAdvice}\n`]+lines.trim();
+    }
+    return lines;
+  }
+  }catch (e){console.log(e);}
+  const items = extractRecognizedItems(data).slice(0, 3);
+  const focusItems = items.length ? items.join('、') : '本次识别到的垃圾';
+  const disposalAdvice = getDisposalAdvice(data);
 
-  if (upcycling && hasStructuredUpcycling(upcycling)) {
-    const focusItems = items.length ? items.join('、') : '该物品';
-    const lines = [`识别判断：${focusItems}优先按${category || '对应分类'}处理。`];
-    if (disposalAdvice && !/投放前处理[:：]|投放要点[:：]|投放补充[:：]/.test(upcycling)) {
-      lines.push(`投放前处理：${disposalAdvice}`);
-    }
-    lines.push(upcycling);
-    if (!/安全提醒[:：]/.test(upcycling)) {
-      lines.push(`安全提醒：${buildCategorySafetyReminder(category)}`);
-    }
-    return lines.join('\n');
+  const lines = [
+    `回收利用：${upcycling}`,
+    `可执行步骤：先把${focusItems}分开处理，厨余先沥干，可回收物简单清洁后再进入改造环节。`,
+    '改造示例：保留完整容器可做收纳盒或花盆，不适合改造的部分按分类要求直接投放。',
+    '安全提醒：处理时建议戴手套；若出现霉变、油污和异味，优先规范投放，不建议继续改造。'
+  ];
+
+  if (disposalAdvice) {
+    lines.splice(2, 0, `垃圾投放：${disposalAdvice}`);
   }
 
-  if (!category && !items.length && !upcycling && !disposalAdvice) return '';
-  return buildActionablePlan({ items, category, upcycling, disposalAdvice });
+  return lines.join('\n');
 }
 
 export function splitUpcyclingSections(text) {
