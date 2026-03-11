@@ -1,13 +1,31 @@
 ﻿<template>
   <view :class="['shell', isDark ? 'dark-theme' : '']">
+    <view class="ambient ambient-one"></view>
+    <view class="ambient ambient-two"></view>
 
     <!-- ===== 侧边栏：对话历史 ===== -->
     <view :class="['sidebar', historyDrawerOpen ? 'drawer-open' : '']">
-      <view>
-        <view class="sidebar-h1">AI环保助手</view>
-        <view class="sidebar-p">基于识别结果继续追问分类细节、投放规范和变废为宝方案。</view>
+      <view class="sidebar-top">
+        <view class="brand-card">
+          <view class="brand-kicker">DEEP MODE</view>
+          <view class="sidebar-h1">AI 环保助手</view>
+          <view class="sidebar-p">围绕识别结果继续追问分类依据、投放顺序和可执行的再利用方案。</view>
+        </view>
+        <view class="sidebar-stats">
+          <view class="stat-card">
+            <text class="stat-value">{{ conversationCount }}</text>
+            <text class="stat-label">会话数</text>
+          </view>
+          <view class="stat-card">
+            <text class="stat-value">{{ activeMessageCount }}</text>
+            <text class="stat-label">当前消息</text>
+          </view>
+        </view>
+        <view class="new-chat-btn" @tap="onNewChat">
+          <text class="new-chat-icon">+</text>
+          <text>新建对话</text>
+        </view>
       </view>
-      <view class="new-chat-btn" @tap="onNewChat">+ 新建对话</view>
       <scroll-view class="conversation-list" scroll-y>
         <view v-if="!conversationList.length" class="history-empty">
           暂无历史会话。完成一次识别后，AI 对话会自动出现在这里。
@@ -18,12 +36,18 @@
           :class="['conversation-item', item.id === activeSessionId ? 'active' : '']"
           @tap="onSelectConversation(item.id)"
         >
-          <view class="conversation-title">智能总结</view>
-          <view class="conversation-summary">智能摘要：{{ item.summary || item.title || '环保分类咨询' }}</view>
-          <view class="conversation-meta">{{ formatTimeLabel(item.updatedAt) }} · {{ item.messages.length }} 条</view>
+          <view class="conversation-item-top">
+            <view class="conversation-title">{{ item.title || '环保分类咨询' }}</view>
+            <view class="conversation-dot"></view>
+          </view>
+          <view class="conversation-summary">{{ item.summary || item.title || '环保分类咨询' }}</view>
+          <view class="conversation-meta">
+            <text>{{ formatTimeLabel(item.updatedAt) }}</text>
+            <text>{{ item.messages.length }} 条消息</text>
+          </view>
         </view>
       </scroll-view>
-      <view class="sidebar-footnote">会话按时间自动保存，点击左侧即可继续。</view>
+      <view class="sidebar-footnote">会话自动保存，移动端可通过左上角按钮展开历史。</view>
     </view>
 
     <!-- 移动端抽屉遮罩 -->
@@ -37,14 +61,25 @@
 
       <!-- 头部 -->
       <view class="chat-header">
-        <view class="history-toggle" @tap="toggleHistoryDrawer">
-          <view class="history-toggle-bar"></view>
+        <view class="header-left">
+          <view class="history-toggle" @tap="toggleHistoryDrawer">
+            <view class="history-toggle-bar"></view>
+          </view>
+          <view class="chat-header-main">
+            <view class="chat-header-row">
+              <view class="chat-title">{{ chatTitle }}</view>
+              <view :class="['status-pill', isStreaming ? 'is-streaming' : '']">
+                <view class="status-dot"></view>
+                <text>{{ isStreaming ? '生成中' : '上下文已保存' }}</text>
+              </view>
+            </view>
+            <view class="chat-subtitle">{{ chatSubtitle }}</view>
+          </view>
         </view>
-        <view class="chat-header-main">
-          <view class="chat-title">{{ chatTitle }}</view>
-          <view class="chat-subtitle">{{ chatSubtitle }}</view>
+        <view class="header-actions">
+          <view class="header-chip">{{ userMessageCount }} 次追问</view>
+          <view class="btn ghost" @tap="goBack">返回识别页</view>
         </view>
-        <view class="btn" @tap="goBack">返回识别页</view>
       </view>
 
       <!-- 消息列表 -->
@@ -53,69 +88,123 @@
         scroll-y
         :scroll-top="messagesScrollTop"
       >
+        <view v-if="showIntroPanel" class="intro-panel">
+          <view class="intro-kicker">深度解析模式</view>
+          <view class="intro-title">继续追问这次识别结果</view>
+          <view class="intro-copy">{{ introDescription }}</view>
+          <view class="intro-tags">
+            <view
+              v-for="item in quickActions"
+              :key="item.label"
+              class="intro-tag"
+              @tap="applyQuickPrompt(item.prompt)"
+            >
+              <text class="intro-tag-title">{{ item.label }}</text>
+              <text class="intro-tag-copy">{{ item.hint }}</text>
+            </view>
+          </view>
+        </view>
         <view v-if="!messageList.length && !isStreaming" class="empty-chat">
           当前对话还没有消息。你可以直接提问，或先发送一张图片继续分析。
         </view>
         <view
           v-for="(msg, idx) in messageList"
-          :key="idx"
-          :class="['msg', msg.role === 'user' ? 'user' : 'assistant']"
+          :key="`${msg.createdAt || idx}_${idx}`"
+          :class="['message-row', msg.role === 'user' ? 'from-user' : 'from-assistant']"
         >
-          <text class="label">{{ msg.role === 'user' ? '你' : 'AI' }}</text>
-          <!-- #ifdef H5 -->
-          <img
-            v-if="msg.imageBase64 && msg.imageBase64.startsWith('data:image/')"
-            class="msg-image"
-            :src="msg.imageBase64"
-            alt="消息图片"
-          />
-          <!-- #endif -->
-          <text class="msg-body">{{ msg.content }}</text>
+          <view v-if="msg.role !== 'user'" class="avatar assistant-avatar">AI</view>
+          <view class="message-content">
+            <view class="message-meta">
+              <text class="message-author">{{ msg.role === 'user' ? '你' : '环保 AI' }}</text>
+              <text class="message-time">{{ formatMessageTime(msg.createdAt) }}</text>
+            </view>
+            <view :class="['msg', msg.role === 'user' ? 'user' : 'assistant']">
+              <image
+                v-if="msg.imageBase64"
+                class="msg-image"
+                :src="msg.imageBase64"
+                mode="aspectFit"
+              />
+              <text class="msg-body">{{ msg.content }}</text>
+            </view>
+          </view>
+          <view v-if="msg.role === 'user'" class="avatar user-avatar">你</view>
         </view>
-        <!-- 流式 AI 回复（实时追加文字） -->
-        <view v-if="isStreaming" class="msg assistant">
-          <text class="label">AI</text>
-          <text class="msg-body">{{ streamingText }}</text>
+        <view v-if="isStreaming" class="message-row from-assistant">
+          <view class="avatar assistant-avatar">AI</view>
+          <view class="message-content">
+            <view class="message-meta">
+              <text class="message-author">环保 AI</text>
+              <text class="message-time">正在生成</text>
+            </view>
+            <view class="msg assistant streaming">
+              <text class="msg-body">{{ streamingPreview }}</text>
+              <view class="typing-dots">
+                <view class="typing-dot"></view>
+                <view class="typing-dot"></view>
+                <view class="typing-dot"></view>
+              </view>
+            </view>
+          </view>
         </view>
       </scroll-view>
 
       <!-- 输入区 -->
       <view class="composer">
-        <!-- 已选图片提示 -->
         <view v-if="pickedImageDataUrl" class="image-pending">
-          <text>已选择图片：</text>
-          <text class="image-pending-name">{{ pickedImageName }}</text>
-          <text>将随下一条消息发送</text>
+          <view class="image-pending-copy">
+            <text class="image-pending-label">已附加图片</text>
+            <text class="image-pending-name">{{ pickedImageName }}</text>
+          </view>
           <text class="image-pending-clear" @tap="clearPickedImage">取消</text>
         </view>
 
-        <!-- #ifdef H5 -->
-        <textarea
-          v-model="promptText"
-          class="prompt-textarea"
-          placeholder="继续追问：比如投放细节、分类依据、可执行改造步骤…"
-          @keydown.enter.exact.prevent="onSend"
-        ></textarea>
-        <!-- #endif -->
-        <!-- #ifndef H5 -->
-        <textarea
-          v-model="promptText"
-          class="prompt-textarea"
-          placeholder="继续追问：比如投放细节、分类依据、可执行改造步骤…"
-        ></textarea>
-        <!-- #endif -->
+        <view class="composer-card">
+          <!-- #ifdef H5 -->
+          <textarea
+            v-model="promptText"
+            class="prompt-textarea"
+            :placeholder="composerPlaceholder"
+            @keydown.enter.exact.prevent="onSend"
+          ></textarea>
+          <!-- #endif -->
+          <!-- #ifndef H5 -->
+          <textarea
+            v-model="promptText"
+            class="prompt-textarea"
+            :placeholder="composerPlaceholder"
+          ></textarea>
+          <!-- #endif -->
 
-        <view class="actions">
-          <view class="btn" @tap="onPickImage">选择图片</view>
-          <view
-            :class="['btn', 'blue', !isStreaming ? 'btn-disabled' : '']"
-            @tap="onStop"
-          >停止</view>
-          <view
-            :class="['btn', 'primary', isStreaming ? 'btn-disabled' : '']"
-            @tap="onSend"
-          >发送</view>
+          <view class="composer-toolbar">
+            <view class="composer-hint">支持文字追问，也可以补一张图片让我继续判断。</view>
+
+            <view class="actions">
+              <view class="btn subtle" @tap="onPickImage">添加图片</view>
+              <view
+                :class="['btn', 'blue', !isStreaming ? 'btn-disabled' : '']"
+                @tap="onStop"
+              >停止</view>
+              <view
+                :class="['btn', 'primary', isStreaming ? 'btn-disabled' : '']"
+                @tap="onSend"
+              >发送</view>
+            </view>
+          </view>
         </view>
+
+        <scroll-view class="composer-suggestions" scroll-x>
+          <view class="suggestions-track">
+            <view
+              v-for="item in quickActions"
+              :key="`composer_${item.label}`"
+              class="suggestion-pill"
+              @tap="applyQuickPrompt(item.prompt)"
+            >
+              {{ item.label }}
+            </view>
+          </view>
+        </scroll-view>
       </view>
     </view>
 
@@ -167,6 +256,46 @@ const historyDrawerOpen = ref(false)
 const pickedImageDataUrl = ref('')
 const pickedImageName    = ref('')
 
+const quickActions = [
+  {
+    label: '分类依据',
+    hint: '逐项解释为什么这样分类',
+    prompt: '请逐项解释这次识别结果的分类依据，并指出最容易分错的地方。'
+  },
+  {
+    label: '投放步骤',
+    hint: '告诉我正确投放顺序和注意事项',
+    prompt: '请给我一个清晰的投放步骤，说明要不要清洗、拆分和沥干。'
+  },
+  {
+    label: '变废为宝',
+    hint: '给出能马上执行的再利用方案',
+    prompt: '请给我一个低门槛、现在就能做的变废为宝方案，材料和步骤尽量具体。'
+  },
+  {
+    label: '易错对比',
+    hint: '帮我区分相似垃圾',
+    prompt: '请列出和它容易混淆的垃圾，并用简短规则帮我快速区分。'
+  }
+]
+
+const conversationCount = computed(() => conversationList.value.length)
+const activeMessageCount = computed(() => messageList.value.length + (isStreaming.value ? 1 : 0))
+const userMessageCount = computed(() =>
+  messageList.value.filter(item => item && item.role === 'user').length
+)
+const showIntroPanel = computed(() => userMessageCount.value === 0 && !isStreaming.value)
+const composerPlaceholder = computed(() =>
+  pickedImageDataUrl.value
+    ? '描述你想让我重点观察的内容，例如瓶盖材质、是否需要拆分投放...'
+    : '继续追问：比如投放细节、分类依据、可执行改造步骤...'
+)
+const introDescription = computed(() => {
+  if (pickedImageName.value) return `已准备好附加图片「${pickedImageName.value}」，发送后我会结合图像继续分析。`
+  return '我会沿着当前识别结果继续给出分类依据、投放建议和可执行的再利用方案。'
+})
+const streamingPreview = computed(() => streamingText.value || '正在整理更细的分析结论...')
+
 // ─── 内部数据（不需要响应式） ─────────────────────────────
 let conversationMap = new Map()       // sessionId -> conversation object
 let abortCtrl = null
@@ -200,6 +329,24 @@ function formatTimeLabel(isoText) {
     return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`
   }
   return `${date.getMonth() + 1}/${date.getDate()}`
+}
+function formatMessageTime(isoText) {
+  const date = new Date(isoText || Date.now())
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const sameDay =
+    now.getFullYear() === date.getFullYear() &&
+    now.getMonth() === date.getMonth() &&
+    now.getDate() === date.getDate()
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mm = String(date.getMinutes()).padStart(2, '0')
+  return sameDay ? `${hh}:${mm}` : `${date.getMonth() + 1}/${date.getDate()} ${hh}:${mm}`
+}
+function applyQuickPrompt(prompt) {
+  const nextPrompt = String(prompt || '').trim()
+  if (!nextPrompt) return
+  const current = String(promptText.value || '').trim()
+  promptText.value = current ? `${current}\n${nextPrompt}` : nextPrompt
 }
 function buildAuthHeaders(withJson) {
   const token = getStorage('token') || ''
@@ -1228,5 +1375,887 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
   .shell .composer { padding: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .shell .prompt-textarea { min-height: 52px; }
   .shell .msg { max-width: 100%; font-size: 13px; }
+}
+</style>
+<style>
+page {
+  background:
+    radial-gradient(820px 420px at 18% -6%, rgba(42, 118, 255, 0.18), transparent 68%),
+    radial-gradient(760px 420px at 100% 8%, rgba(62, 158, 255, 0.12), transparent 62%),
+    linear-gradient(180deg, #f3f6fb 0%, #edf2f9 100%);
+  padding: 18px;
+}
+
+.shell {
+  --shell-bg: rgba(248, 250, 253, 0.92);
+  --shell-line: rgba(151, 170, 198, 0.28);
+  --panel: rgba(255, 255, 255, 0.9);
+  --panel-strong: #ffffff;
+  --panel-line: rgba(160, 179, 205, 0.28);
+  --panel-soft: rgba(245, 248, 252, 0.78);
+  --text: #112033;
+  --muted: #667892;
+  --muted-strong: #465975;
+  --brand-start: #275efe;
+  --brand-end: #4b8dff;
+  --accent: #22a06b;
+  --danger: #dc5b67;
+  --sidebar-bg: linear-gradient(180deg, #0f1726 0%, #141f31 48%, #182538 100%);
+  --sidebar-line: rgba(182, 204, 232, 0.14);
+  --sidebar-text: #eef5ff;
+  --sidebar-muted: rgba(203, 220, 242, 0.68);
+  --assistant-bubble: rgba(255, 255, 255, 0.96);
+  --user-bubble: linear-gradient(135deg, #2e67ff 0%, #63a1ff 100%);
+  --composer-bg: rgba(248, 250, 253, 0.84);
+  --shadow-lg: 0 22px 60px rgba(15, 31, 52, 0.12);
+  --shadow-md: 0 14px 32px rgba(15, 31, 52, 0.08);
+  width: 100%;
+  max-width: 1380px;
+  height: calc(100vh - 36px);
+  display: flex;
+  border-radius: 28px;
+  background: var(--shell-bg);
+  border: 1px solid var(--shell-line);
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+.shell.dark-theme {
+  --shell-bg: rgba(10, 17, 28, 0.94);
+  --shell-line: rgba(104, 128, 162, 0.24);
+  --panel: rgba(14, 23, 36, 0.92);
+  --panel-strong: #121d2d;
+  --panel-line: rgba(88, 111, 144, 0.34);
+  --panel-soft: rgba(15, 26, 40, 0.82);
+  --text: #edf4ff;
+  --muted: #90a4c2;
+  --muted-strong: #b7c8de;
+  --sidebar-bg: linear-gradient(180deg, #08111e 0%, #0c1624 52%, #101b2a 100%);
+  --sidebar-line: rgba(129, 157, 191, 0.14);
+  --sidebar-text: #f4f8ff;
+  --sidebar-muted: rgba(180, 198, 221, 0.68);
+  --assistant-bubble: rgba(16, 28, 42, 0.96);
+  --composer-bg: rgba(9, 16, 26, 0.9);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 14px 28px rgba(0, 0, 0, 0.2);
+}
+
+.ambient {
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0.72;
+  filter: blur(14px);
+}
+.ambient-one {
+  top: -120px;
+  right: 18%;
+  width: 320px;
+  height: 320px;
+  background: rgba(63, 135, 255, 0.12);
+}
+.ambient-two {
+  bottom: -120px;
+  left: 28%;
+  width: 280px;
+  height: 280px;
+  background: rgba(44, 189, 148, 0.1);
+}
+
+.shell .sidebar {
+  width: 320px;
+  flex: 0 0 320px;
+  padding: 22px 18px 18px;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-line);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+  z-index: 2;
+}
+.shell .sidebar-top {
+  flex: 0 0 auto;
+}
+.shell .brand-card {
+  border: 1px solid rgba(197, 216, 240, 0.14);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  border-radius: 22px;
+  padding: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.shell .brand-kicker {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 1.8px;
+  color: rgba(196, 218, 249, 0.72);
+}
+.shell .sidebar-h1 {
+  margin-top: 12px;
+  font-size: 24px;
+  line-height: 1.16;
+  color: var(--sidebar-text);
+  font-weight: 600;
+}
+.shell .sidebar-p {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--sidebar-muted);
+}
+.shell .sidebar-stats {
+  display: flex;
+  margin-top: 14px;
+}
+.shell .stat-card {
+  flex: 1;
+  margin-right: 10px;
+  border-radius: 18px;
+  padding: 14px;
+  border: 1px solid rgba(189, 210, 236, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+}
+.shell .stat-card:last-child {
+  margin-right: 0;
+}
+.shell .stat-value {
+  display: block;
+  font-size: 24px;
+  line-height: 1.1;
+  color: var(--sidebar-text);
+  font-weight: 600;
+}
+.shell .stat-label {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--sidebar-muted);
+}
+.shell .new-chat-btn {
+  margin-top: 16px;
+  min-height: 48px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(125, 176, 255, 0.32);
+  background: linear-gradient(135deg, rgba(45, 102, 255, 0.98), rgba(86, 142, 255, 0.98));
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 14px 28px rgba(33, 73, 161, 0.24);
+}
+.shell .new-chat-icon {
+  margin-right: 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+.shell .conversation-list {
+  flex: 1;
+  min-height: 0;
+  margin-top: 18px;
+  padding-right: 4px;
+}
+.shell .conversation-item {
+  margin-bottom: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--sidebar-text);
+}
+.shell .conversation-item.active {
+  border-color: rgba(116, 172, 255, 0.38);
+  background: linear-gradient(180deg, rgba(43, 95, 197, 0.32), rgba(34, 74, 144, 0.22));
+  box-shadow: 0 14px 24px rgba(7, 19, 38, 0.22);
+}
+.shell .conversation-item-top {
+  display: flex;
+  align-items: center;
+}
+.shell .conversation-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--sidebar-text);
+}
+.shell .conversation-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-left: 10px;
+  background: rgba(143, 186, 255, 0.8);
+  box-shadow: 0 0 0 4px rgba(77, 136, 255, 0.12);
+}
+.shell .conversation-summary {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--sidebar-muted);
+}
+.shell .conversation-meta {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(210, 224, 243, 0.7);
+}
+.shell .history-empty {
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px dashed rgba(172, 201, 236, 0.24);
+  color: var(--sidebar-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.shell .sidebar-footnote {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: rgba(203, 220, 242, 0.62);
+}
+
+.shell .history-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 41;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(6, 10, 18, 0.52);
+}
+.shell .history-backdrop.backdrop-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.shell .history-toggle {
+  display: none;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 14px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--text);
+  align-items: center;
+  justify-content: center;
+}
+.shell.dark-theme .history-toggle {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.shell .chat-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 1;
+}
+.shell .chat-header {
+  padding: 20px 24px 18px;
+  border-bottom: 1px solid var(--shell-line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(255, 255, 255, 0.3));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.shell.dark-theme .chat-header {
+  background: linear-gradient(180deg, rgba(14, 23, 36, 0.9), rgba(14, 23, 36, 0.58));
+}
+.shell .header-left {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1;
+}
+.shell .chat-header-main {
+  min-width: 0;
+  flex: 1;
+}
+.shell .chat-header-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.shell .chat-title {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+.shell .status-pill {
+  margin-left: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  background: rgba(34, 160, 107, 0.12);
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+.shell .status-pill.is-streaming {
+  background: rgba(39, 94, 254, 0.12);
+  color: #2b63f1;
+}
+.shell.dark-theme .status-pill.is-streaming {
+  color: #9ebcff;
+}
+.shell .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-right: 8px;
+  background: var(--accent);
+}
+.shell .status-pill.is-streaming .status-dot {
+  background: #2f6fed;
+  animation: statusPulse 1.2s infinite ease-in-out;
+}
+.shell .chat-subtitle {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.shell .header-actions {
+  display: flex;
+  align-items: center;
+  margin-left: 16px;
+}
+.shell .header-chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  margin-right: 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--panel-line);
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.shell .btn {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.shell .btn.ghost {
+  background: var(--panel-soft);
+  border: 1px solid var(--panel-line);
+  color: var(--text);
+}
+.shell .btn.subtle {
+  background: rgba(122, 146, 179, 0.12);
+  color: var(--muted-strong);
+}
+.shell .btn.primary {
+  background: linear-gradient(135deg, var(--accent) 0%, #43c286 100%);
+  color: #ffffff;
+  box-shadow: 0 14px 26px rgba(34, 160, 107, 0.24);
+}
+.shell .btn.blue {
+  background: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
+  color: #ffffff;
+  box-shadow: 0 14px 26px rgba(39, 94, 254, 0.22);
+}
+.shell .btn.btn-disabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.shell .chat-stage {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 24px 10px;
+}
+.shell .messages {
+  height: 100%;
+  display: block;
+  padding: 0 6px 0 0;
+  background: transparent;
+}
+.shell .intro-panel {
+  max-width: 880px;
+  margin: 0 auto 22px;
+  padding: 24px;
+  border-radius: 28px;
+  border: 1px solid var(--panel-line);
+  background:
+    radial-gradient(240px 140px at 100% 0%, rgba(77, 140, 255, 0.14), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(247, 250, 255, 0.92));
+  box-shadow: var(--shadow-md);
+}
+.shell.dark-theme .intro-panel {
+  background:
+    radial-gradient(240px 140px at 100% 0%, rgba(77, 140, 255, 0.16), transparent 72%),
+    linear-gradient(180deg, rgba(16, 28, 42, 0.94), rgba(14, 23, 36, 0.94));
+}
+.shell .intro-kicker {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 1.8px;
+  color: #5077d8;
+}
+.shell.dark-theme .intro-kicker {
+  color: #9ebcff;
+}
+.shell .intro-title {
+  margin-top: 14px;
+  font-size: 28px;
+  line-height: 1.18;
+  font-weight: 600;
+}
+.shell .intro-copy {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--muted);
+}
+.shell .intro-tags {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.shell .intro-tag {
+  width: calc(50% - 6px);
+  margin-right: 12px;
+  margin-bottom: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.58);
+}
+.shell .intro-tag:nth-child(2n) {
+  margin-right: 0;
+}
+.shell.dark-theme .intro-tag {
+  background: rgba(255, 255, 255, 0.03);
+}
+.shell .intro-tag-title {
+  display: block;
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.shell .intro-tag-copy {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.shell .message-row {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: flex-end;
+}
+.shell .message-row.from-user {
+  justify-content: flex-end;
+}
+.shell .avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.shell .assistant-avatar {
+  margin-right: 12px;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
+  box-shadow: 0 14px 24px rgba(39, 94, 254, 0.18);
+}
+.shell .user-avatar {
+  margin-left: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--panel-line);
+}
+.shell.dark-theme .user-avatar {
+  background: rgba(255, 255, 255, 0.04);
+}
+.shell .message-content {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100% - 52px);
+}
+.shell .message-row.from-user .message-content {
+  align-items: flex-end;
+}
+.shell .message-meta {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.shell .message-row.from-user .message-meta {
+  justify-content: flex-end;
+}
+.shell .message-author {
+  font-weight: 600;
+  color: var(--muted-strong);
+}
+.shell .message-time {
+  margin-left: 8px;
+}
+.shell .msg {
+  max-width: 760px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  line-height: 1.75;
+  font-size: 15px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-md);
+}
+.shell .msg.assistant {
+  background: var(--assistant-bubble);
+  border-color: var(--panel-line);
+  color: var(--text);
+  border-bottom-left-radius: 8px;
+}
+.shell .msg.user {
+  color: #ffffff;
+  background: var(--user-bubble);
+  border-bottom-right-radius: 8px;
+}
+.shell .msg.streaming {
+  min-width: 280px;
+}
+.shell .msg-body {
+  display: block;
+}
+.shell .msg-image {
+  display: block;
+  width: 320px;
+  max-width: 100%;
+  height: 240px;
+  border-radius: 18px;
+  margin-bottom: 12px;
+  background: rgba(113, 136, 167, 0.12);
+}
+.shell .typing-dots {
+  display: flex;
+  align-items: center;
+  margin-top: 14px;
+}
+.shell .typing-dot {
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: rgba(95, 122, 160, 0.78);
+  animation: dotPulse 1.2s infinite ease-in-out;
+}
+.shell .typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.shell .typing-dot:nth-child(3) {
+  margin-right: 0;
+  animation-delay: 0.3s;
+}
+
+.shell .composer {
+  border-top: 1px solid var(--shell-line);
+  background: var(--composer-bg);
+  padding: 14px 24px calc(18px + env(safe-area-inset-bottom));
+}
+.shell .image-pending {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.shell .image-pending-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shell .image-pending-label {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 1.1px;
+  color: var(--muted);
+}
+.shell .image-pending-name {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell .image-pending-clear {
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.4;
+  padding-left: 14px;
+}
+.shell .composer-card {
+  border-radius: 24px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel-strong);
+  padding: 14px;
+  box-shadow: var(--shadow-md);
+}
+.shell.dark-theme .composer-card {
+  background: rgba(17, 28, 43, 0.94);
+}
+.shell .prompt-textarea {
+  width: 100%;
+  min-height: 96px;
+  max-height: 180px;
+  border: 0;
+  padding: 2px 2px 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.7;
+  outline: none;
+}
+.shell .composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.shell .composer-hint {
+  margin-right: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.shell .actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin-right: -10px;
+  margin-bottom: -10px;
+  gap: 0;
+}
+.shell .actions .btn {
+  margin-right: 10px;
+  margin-bottom: 10px;
+}
+.shell .composer-suggestions {
+  margin-top: 12px;
+  white-space: nowrap;
+}
+.shell .suggestions-track {
+  display: flex;
+  align-items: center;
+  padding-right: 8px;
+}
+.shell .suggestion-pill {
+  flex: 0 0 auto;
+  margin-right: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  color: var(--muted-strong);
+  font-size: 12px;
+  line-height: 1.2;
+}
+.shell .suggestion-pill:last-child {
+  margin-right: 0;
+}
+
+@keyframes dotPulse {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+  40% { transform: translateY(-2px); opacity: 1; }
+}
+@keyframes statusPulse {
+  0%, 100% { transform: scale(1); opacity: 0.65; }
+  50% { transform: scale(1.18); opacity: 1; }
+}
+
+@media (max-width: 1180px) {
+  .shell .sidebar {
+    width: 296px;
+    flex-basis: 296px;
+  }
+  .shell .chat-header,
+  .shell .chat-stage,
+  .shell .composer {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .shell .intro-tag {
+    width: 100%;
+    margin-right: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  page {
+    padding: 10px;
+  }
+  .shell {
+    height: calc(100vh - 20px);
+    border-radius: 24px;
+  }
+  .shell .sidebar {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    bottom: 10px;
+    width: 320px;
+    max-width: 84vw;
+    transform: translateX(-112%);
+    transition: transform 0.24s ease;
+    border-right: 1px solid var(--sidebar-line);
+    border-radius: 24px;
+    box-shadow: 0 24px 60px rgba(5, 10, 18, 0.34);
+  }
+  .shell .sidebar.drawer-open {
+    transform: translateX(0);
+  }
+  .shell .history-backdrop {
+    display: block;
+  }
+  .shell .history-toggle {
+    display: inline-flex;
+    margin-right: 12px;
+  }
+  .shell .header-actions {
+    margin-left: 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  page {
+    padding: 0;
+  }
+  .shell {
+    height: 100vh;
+    border-radius: 0;
+    border: 0;
+  }
+  .ambient {
+    display: none;
+  }
+  .shell .chat-header {
+    padding: 14px 14px 12px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .shell .header-left {
+    width: 100%;
+  }
+  .shell .chat-title {
+    font-size: 19px;
+  }
+  .shell .header-actions {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 12px;
+    justify-content: space-between;
+  }
+  .shell .chat-stage {
+    padding: 12px 12px 8px;
+  }
+  .shell .intro-panel {
+    padding: 18px;
+    border-radius: 22px;
+  }
+  .shell .intro-title {
+    font-size: 22px;
+  }
+  .shell .message-row {
+    margin-bottom: 14px;
+  }
+  .shell .avatar {
+    display: none;
+  }
+  .shell .message-content {
+    max-width: 100%;
+  }
+  .shell .msg {
+    max-width: 100%;
+    padding: 14px 15px;
+    font-size: 14px;
+  }
+  .shell .msg.streaming {
+    min-width: 0;
+  }
+  .shell .msg-image {
+    width: 100%;
+    height: 220px;
+  }
+  .shell .composer {
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+  }
+  .shell .composer-card {
+    border-radius: 20px;
+    padding: 12px;
+  }
+  .shell .prompt-textarea {
+    min-height: 82px;
+    font-size: 14px;
+  }
+  .shell .composer-toolbar {
+    display: block;
+  }
+  .shell .composer-hint {
+    margin-right: 0;
+    margin-bottom: 12px;
+  }
+  .shell .actions .btn {
+    flex: 1 1 120px;
+  }
+  .shell .image-pending {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .shell .image-pending-clear {
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .shell .sidebar {
+    top: 0;
+    left: 0;
+    bottom: 0;
+    max-width: 88vw;
+    border-radius: 0 24px 24px 0;
+  }
+  .shell .status-pill,
+  .shell .header-chip {
+    font-size: 11px;
+  }
+  .shell .intro-copy,
+  .shell .composer-hint {
+    font-size: 11px;
+  }
+  .shell .suggestion-pill {
+    padding: 9px 12px;
+  }
 }
 </style>
