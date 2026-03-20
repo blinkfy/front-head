@@ -1,136 +1,238 @@
 <template>
   <view :class="['theme-wrapper', currentTheme === 'light' ? 'light-theme' : '']">
-  <view class="shell">
-    <view class="panel hero">
-      <view>
-        <view class="hero-title">成就中心</view>
-        <view class="hero-desc">以游戏成就面板方式展示你的环保里程碑。完成识别、提升积分、解锁稀有成就。</view>
+    <!-- 动态科技背景 -->
+    <view class="tech-background">
+      <view class="grid-overlay"></view>
+      <view class="floating-particles">
+        <view class="particle" v-for="n in 12" :key="n" :style="{ animationDelay: (n * 0.4) + 's' }"></view>
       </view>
-      <view class="actions">
-        <button class="btn refresh" @click="refreshAchievements" :disabled="loading" type="button">刷新</button>
-        <button class="btn back" @click="goBack" type="button">返回</button>
+      <view class="glow-orbs">
+        <view class="orb orb-1"></view>
+        <view class="orb orb-2"></view>
+        <view class="orb orb-3"></view>
       </view>
     </view>
 
-    <view class="panel summary">
-      <view class="rank-panel">
-        <view class="ring-wrap" :style="{ background: ringBackground }">
-          <view class="ring-core">
-            <view>
-              <view class="rate">{{ summary.completionRate.toFixed(0) }}%</view>
-              <view class="rate-sub">总体完成度</view>
+    <!-- 顶部导航栏 -->
+    <view class="navbar">
+      <view class="safe-area-top"></view>
+      <view class="nav-content">
+        <view class="nav-left">
+          <text class="back-btn" @click="goBack">←</text>
+        </view>
+        <view class="nav-title-wrap">
+          <text class="nav-title">成就中心</text>
+          <text class="nav-subtitle">完成挑战，解锁荣耀</text>
+        </view>
+        <view class="nav-right">
+          <text class="refresh-btn" :class="{ rotating: loading }" @click="refreshAchievements">↻</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 主内容区 -->
+    <view class="main-content">
+      <!-- 成就统计面板 -->
+      <view class="panel stats-panel">
+        <view class="stats-left">
+          <!-- 炫酷仪表盘 -->
+          <view class="gauge-container">
+            <view class="gauge-ring" :style="{ '--progress': summary.completionRate }">
+              <view class="gauge-bg"></view>
+              <view class="gauge-progress"></view>
+              <view class="gauge-glow"></view>
+            </view>
+            <view class="gauge-center">
+              <text class="gauge-value">{{ summary.completionRate.toFixed(0) }}</text>
+              <text class="gauge-unit">%</text>
+              <text class="gauge-label">完成度</text>
+            </view>
+          </view>
+          <!-- 等级徽章 -->
+          <view class="grade-badge" :class="'grade-' + gradeText.toLowerCase()">
+            <text class="grade-letter">{{ gradeText }}</text>
+            <text class="grade-label">段位</text>
+          </view>
+        </view>
+        <view class="stats-right">
+          <view class="stat-item">
+            <view class="stat-icon stat-icon-unlock">✓</view>
+            <view class="stat-info">
+              <text class="stat-value">{{ summary.unlockedCount }}</text>
+              <text class="stat-label">已解锁</text>
+            </view>
+          </view>
+          <view class="stat-item">
+            <view class="stat-icon stat-icon-total">★</view>
+            <view class="stat-info">
+              <text class="stat-value">{{ summary.totalCount }}</text>
+              <text class="stat-label">总成就</text>
+            </view>
+          </view>
+          <view class="stat-item">
+            <view class="stat-icon stat-icon-new">✦</view>
+            <view class="stat-info">
+              <text class="stat-value">{{ newUnlockCount }}</text>
+              <text class="stat-label">新解锁</text>
             </view>
           </view>
         </view>
-        <view class="rank-text">已解锁 {{ summary.unlockedCount }} / {{ summary.totalCount }}</view>
       </view>
 
-      <view class="summary-cards">
-        <view class="summary-card">
-          <view class="k">已解锁成就</view>
-          <view class="v">{{ summary.unlockedCount }}</view>
-          <view class="s">{{ unlockedHint }}</view>
-        </view>
-        <view class="summary-card">
-          <view class="k">总成就数</view>
-          <view class="v">{{ summary.totalCount }}</view>
-          <view class="s">系统定义</view>
-        </view>
-        <view class="summary-card">
-          <view class="k">本次新解锁</view>
-          <view class="v">{{ newUnlockCount }}</view>
-          <view class="s">来自最新识别与同步</view>
-        </view>
-        <view class="summary-card">
-          <view class="k">当前等级</view>
-          <view class="v">{{ gradeText }}</view>
-          <view class="s">更新时间：{{ updatedAtText }}</view>
-        </view>
-      </view>
-    </view>
-
-    <view class="panel latest">
-      <view class="section-head">
-        <view class="section-title">最新解锁</view>
-        <view class="section-note">按解锁时间倒序</view>
-      </view>
-      <view class="latest-list">
-        <template v-if="latestUnlocks.length > 0">
-          <view class="latest-item" v-for="item in latestUnlocks" :key="item.key">
-            <view class="latest-bullet"></view>
-            <text>{{ item.name }}</text>
-            <text>{{ formatDateTime(item.unlockedAt) }}</text>
+      <!-- 最新解锁 -->
+      <view class="panel latest-panel">
+        <view class="panel-header">
+          <view class="panel-title-row">
+            <view class="title-icon">🏆</view>
+            <text class="panel-title">最新成就</text>
           </view>
-        </template>
-        <template v-else>
-          <view class="state" style="grid-column:1/-1;">还没有解锁记录，先完成一次识别吧。</view>
-        </template>
-      </view>
-    </view>
-
-    <view class="panel gallery">
-      <view class="section-head">
-        <view class="section-title">成就图鉴</view>
-        <view class="section-note">支持按状态筛选</view>
-      </view>
-      <view class="filters">
-        <button class="filter-chip" :class="{ active: filter === 'all' }" @click="filter = 'all'" type="button">全部 ({{ achievements.length }})</button>
-        <button class="filter-chip" :class="{ active: filter === 'unlocked' }" @click="filter = 'unlocked'" type="button">已解锁 ({{ unlockedAmount }})</button>
-        <button class="filter-chip" :class="{ active: filter === 'locked' }" @click="filter = 'locked'" type="button">未解锁 ({{ achievements.length - unlockedAmount }})</button>
-      </view>
-      
-      <view class="achievement-grid" v-if="filteredAchievements.length > 0">
-        <view v-for="(item, index) in filteredAchievements" :key="item.key" 
-          class="achievement-card" 
-          :class="[`rarity-${getRarityByKey(item.key).tier}`, item.unlocked ? '' : 'locked']"
-          :style="{ animationDelay: `${Math.min(index * 40, 320)}ms` }">
-          <view class="card-top">
-            <view class="icon-wrap">
-              <achievement-icon :icon-key="item.key" />
-            </view>
-            <view class="badge-set">
-              <view class="badge" :class="`rarity-${getRarityByKey(item.key).tier}`">{{ getRarityByKey(item.key).label }}</view>
-              <view class="badge" :class="item.unlocked ? 'status-unlocked' : 'status-locked'">{{ item.unlocked ? '已解锁' : '未解锁' }}</view>
+          <text class="panel-subtitle">按解锁时间倒序</text>
+        </view>
+        <view class="latest-list" v-if="latestUnlocks.length > 0">
+          <view class="latest-item" v-for="(item, index) in latestUnlocks" :key="item.key" :style="{ animationDelay: `${index * 80}ms` }">
+            <view class="timeline-dot"></view>
+            <view class="timeline-line" v-if="index < latestUnlocks.length - 1"></view>
+            <view class="latest-content">
+              <text class="latest-name">{{ item.name }}</text>
+              <text class="latest-time">{{ formatDateTime(item.unlockedAt) }}</text>
             </view>
           </view>
-          <view class="card-name">{{ item.name }}</view>
-          <view class="card-desc">{{ item.description }}</view>
-          <view class="progress-track">
-            <view class="progress-fill" :style="{ width: `${getPercentage(item)}%` }"></view>
-          </view>
-          <view class="card-meta">
-            <text>{{ item.unlocked ? `解锁时间：${formatDateTime(item.unlockedAt)}` : `进度：${getProgressValue(item)}/${getTargetValue(item)}${item.unit || ''}` }}</text>
-            <text>{{ getPercentage(item) }}%</text>
-          </view>
+        </view>
+        <view class="empty-latest" v-else>
+          <text class="empty-icon">🎯</text>
+          <text class="empty-text">还没有解锁记录，先完成一次识别吧</text>
         </view>
       </view>
-      <view class="state" v-else-if="stateMessage">{{ stateMessage }}</view>
-      <view class="state" v-else>当前筛选条件下没有可展示的成就。</view>
-    </view>
-  </view>
 
-  <view class="modal-mask" :class="{ show: showModal }" @click.self="showModal = false">
-    <view class="modal">
-      <view class="modal-head">
-        <view class="modal-title">新成就解锁</view>
-      </view>
-      <view class="modal-body">
-        <view class="unlock-item" v-for="item in popupUnlocks" :key="item.key">
-          <view class="unlock-icon">
-            <achievement-icon :icon-key="item.key" />
+      <!-- 成就图鉴 -->
+      <view class="panel gallery-panel">
+        <view class="panel-header">
+          <view class="panel-title-row">
+            <view class="title-icon">📜</view>
+            <text class="panel-title">成就图鉴</text>
           </view>
-          <view>
-            <view class="unlock-title">{{ item.name }}</view>
-            <view class="unlock-desc">{{ item.description || '你已达成一个新的里程碑。' }}</view>
-            <view class="unlock-desc">解锁时间：{{ formatDateTime(item.unlockedAt) }}</view>
+          <text class="panel-subtitle">共 {{ achievements.length }} 项成就</text>
+        </view>
+
+        <!-- 筛选标签 -->
+        <view class="filter-tabs">
+          <view class="filter-tab" :class="{ active: filter === 'all' }" @click="filter = 'all'">
+            <text>全部</text>
+            <view class="tab-count">{{ achievements.length }}</view>
+          </view>
+          <view class="filter-tab" :class="{ active: filter === 'unlocked' }" @click="filter = 'unlocked'">
+            <text>已解锁</text>
+            <view class="tab-count">{{ unlockedAmount }}</view>
+          </view>
+          <view class="filter-tab" :class="{ active: filter === 'locked' }" @click="filter = 'locked'">
+            <text>未解锁</text>
+            <view class="tab-count">{{ achievements.length - unlockedAmount }}</view>
           </view>
         </view>
-      </view>
-      <view class="modal-foot">
-        <button class="close-btn" @click="showModal = false" type="button">知道了</button>
+
+        <!-- 成就网格 -->
+        <view class="achievement-grid" v-if="filteredAchievements.length > 0">
+          <view v-for="(item, index) in filteredAchievements" :key="item.key"
+            class="achievement-card"
+            :class="[
+              `rarity-${getRarityByKey(item.key).tier}`,
+              item.unlocked ? 'unlocked' : 'locked',
+              `animate-${index % 4}`
+            ]"
+            :style="{ animationDelay: `${Math.min(index * 50, 300)}ms` }">
+            <!-- 卡顶部光效 -->
+            <view class="card-glare"></view>
+
+            <!-- 图标区域 -->
+            <view class="card-icon-wrap">
+              <view class="icon-bg" :class="item.unlocked ? 'unlocked' : 'locked'">
+                <achievement-icon :icon-key="item.key" />
+              </view>
+              <!-- 稀有度角标 -->
+              <view class="rarity-badge" :class="getRarityByKey(item.key).tier">
+                {{ getRarityByKey(item.key).label }}
+              </view>
+              <!-- 解锁状态 -->
+              <view class="status-badge" :class="item.unlocked ? 'unlocked' : 'locked'">
+                {{ item.unlocked ? '已解锁' : '未解锁' }}
+              </view>
+            </view>
+
+            <!-- 成就信息 -->
+            <view class="card-info">
+              <text class="card-name">{{ item.name }}</text>
+              <text class="card-desc">{{ item.description }}</text>
+            </view>
+
+            <!-- 进度条 -->
+            <view class="card-progress">
+              <view class="progress-track">
+                <view class="progress-fill"
+                  :class="{ 'completed': getPercentage(item) >= 100 }"
+                  :style="{ width: `${getPercentage(item)}%` }">
+                  <view class="progress-shine"></view>
+                </view>
+              </view>
+              <view class="progress-text">
+                <text v-if="item.unlocked">已解锁 · {{ formatDateTime(item.unlockedAt) }}</text>
+                <text v-else>进度 {{ getProgressValue(item) }}/{{ getTargetValue(item) }}{{ item.unit || '' }}</text>
+                <text class="progress-percent">{{ getPercentage(item) }}%</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view class="empty-gallery" v-else>
+          <text class="empty-icon">🔍</text>
+          <text class="empty-text">当前筛选条件下没有可展示的成就</text>
+        </view>
       </view>
     </view>
-  </view>
+
+    <!-- 新成就解锁弹窗 -->
+    <view class="modal-mask" :class="{ show: showModal }" @click.self="showModal = false">
+      <view class="unlock-modal" v-if="popupUnlocks.length > 0">
+        <!-- 闪光背景 -->
+        <view class="modal-bg-effect">
+          <view class="effect-orb effect-orb-1"></view>
+          <view class="effect-orb effect-orb-2"></view>
+          <view class="effect-orb effect-orb-3"></view>
+        </view>
+
+        <!-- 标题 -->
+        <view class="modal-header">
+          <view class="trophy-icon">🏆</view>
+          <text class="modal-title">新成就解锁!</text>
+          <text class="modal-subtitle">恭喜获得 {{ popupUnlocks.length }} 项新成就</text>
+        </view>
+
+        <!-- 成就列表 -->
+        <view class="modal-body">
+          <view class="unlock-list">
+            <view class="unlock-item" v-for="(item, index) in popupUnlocks" :key="item.key" :style="{ animationDelay: `${index * 150}ms` }">
+              <view class="unlock-icon-wrap" :class="getRarityByKey(item.key).tier">
+                <achievement-icon :icon-key="item.key" />
+              </view>
+              <view class="unlock-info">
+                <text class="unlock-name">{{ item.name }}</text>
+                <text class="unlock-desc">{{ item.description || '你已达成一个新的里程碑' }}</text>
+                <text class="unlock-time">{{ formatDateTime(item.unlockedAt) }}</text>
+              </view>
+              <view class="unlock-rarity" :class="getRarityByKey(item.key).tier">
+                {{ getRarityByKey(item.key).label }}
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 底部按钮 -->
+        <view class="modal-footer">
+          <button class="confirm-btn" @click="showModal = false">
+            <text>太棒了!</text>
+          </button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -234,12 +336,6 @@ function clearUnlockQueue() {
   } catch (_) {}
 }
 
-const ringBackground = computed(() => {
-  const value = Math.max(0, Math.min(100, toNumber(summary.completionRate, 0)))
-  const angle = (value / 100) * 360
-  return `conic-gradient(var(--accent) ${angle}deg, rgba(124, 165, 205, 0.24) ${angle}deg)`
-})
-
 const gradeText = computed(() => {
   const v = Math.max(0, Math.min(100, toNumber(summary.completionRate, 0)))
   if (v >= 95) return 'S'
@@ -261,7 +357,7 @@ const latestUnlocks = computed(() => {
   const unlockedFromApi = achievements.value
     .filter((item) => item && item.unlocked)
     .sort((a, b) => new Date(b.unlockedAt || 0).getTime() - new Date(a.unlockedAt || 0).getTime())
-    .slice(0, 6)
+    .slice(0, 5)
     .map((item) => ({
       key: item.key,
       name: item.name,
@@ -269,7 +365,7 @@ const latestUnlocks = computed(() => {
       unlockedAt: item.unlockedAt
     }))
 
-  return dedupeUnlocks([...(popupUnlocks.value || []), ...unlockedFromApi]).slice(0, 6)
+  return dedupeUnlocks([...(popupUnlocks.value || []), ...unlockedFromApi]).slice(0, 5)
 })
 
 function getProgressRatio(item) {
@@ -363,7 +459,7 @@ async function refreshAchievements() {
   try {
     const data = await fetchAchievements()
     achievements.value = Array.isArray(data.achievements) ? data.achievements : []
-    
+
     const sum = data.summary || { unlockedCount: 0, totalCount: 0, completionRate: 0 }
     summary.unlockedCount = Math.max(0, Math.round(toNumber(sum.unlockedCount, 0)))
     summary.totalCount = Math.max(0, Math.round(toNumber(sum.totalCount, 0)))
@@ -416,826 +512,1244 @@ onBeforeUnmount(() => {
     unbindThemeWatcher()
   }
 })
-
 </script>
+
 <style>
-/* ─── 深色主题（默认） ─── */
+/* ==================== CSS 变量定义 ==================== */
 .theme-wrapper {
-  --bg-1: #071a2d;
-  --bg-2: #0e2a43;
-  --bg-3: #142f52;
-  --panel: rgba(18, 33, 54, 0.82);
-  --panel-soft: rgba(20, 41, 65, 0.68);
-  --line: rgba(126, 174, 221, 0.24);
-  --text: #e8f3ff;
-  --muted: #9fbbd7;
-  --accent: #3ad9a4;
-  --accent-2: #5e96ff;
-  --gold: #f5c768;
-  --danger: #ee7b84;
-  --shadow: 0 24px 56px rgba(2, 8, 16, 0.48);
-  --font-main: "Source Han Sans SC", "Microsoft YaHei", sans-serif;
-  --font-num: "Rajdhani", "DIN Alternate", "Segoe UI", sans-serif;
+  /* 深色主题（默认） */
+  --bg-primary: #060d18;
+  --bg-secondary: #0a1628;
+  --bg-card: rgba(15, 28, 48, 0.85);
+  --bg-card-hover: rgba(20, 38, 65, 0.92);
+
+  --text-primary: #e8f0f8;
+  --text-secondary: #8ba3c4;
+  --text-muted: #5a728a;
+
+  --accent-primary: #00d9a5;
+  --accent-secondary: #00b8e6;
+  --accent-gold: #ffd666;
+  --accent-purple: #a78bfa;
+  --accent-pink: #f472b6;
+
+  --rarity-common: #94a3b8;
+  --rarity-rare: #38bdf8;
+  --rarity-epic: #a855f7;
+  --rarity-legendary: #fbbf24;
+
+  --border-subtle: rgba(100, 150, 200, 0.12);
+  --border-medium: rgba(100, 150, 200, 0.2);
+
+  --glow-cyan: rgba(0, 217, 165, 0.4);
+  --glow-gold: rgba(255, 214, 102, 0.4);
+  --glow-purple: rgba(167, 139, 250, 0.4);
+
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 40px rgba(0, 217, 165, 0.15);
+
+  --font-display: "Orbitron", "Rajdhani", "DIN Alternate", sans-serif;
+  --font-body: "Source Han Sans SC", "Microsoft YaHei", sans-serif;
 }
 
-/* ─── 浅色主题 ─── */
+/* 浅色主题 */
 .theme-wrapper.light-theme {
-  --bg-1: #f2f9ff;
-  --bg-2: #e8f3ff;
-  --bg-3: #e5fbf2;
-  --panel: rgba(255, 255, 255, 0.86);
-  --panel-soft: rgba(255, 255, 255, 0.72);
-  --line: rgba(126, 164, 211, 0.34);
-  --text: #11243b;
-  --muted: #5e7b98;
-  --accent: #18ba84;
-  --accent-2: #3977f1;
-  --gold: #eab543;
-  --danger: #dd5a62;
-  --shadow: 0 20px 44px rgba(29, 62, 98, 0.2);
+  --bg-primary: #f0f5ff;
+  --bg-secondary: #e8f0fa;
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --bg-card-hover: rgba(255, 255, 255, 0.98);
+
+  --text-primary: #1a2744;
+  --text-secondary: #4a6080;
+  --text-muted: #7a8aa8;
+
+  --accent-primary: #00b386;
+  --accent-secondary: #0099cc;
+  --accent-gold: #e6a700;
+  --accent-purple: #8b5cf6;
+  --accent-pink: #ec4899;
+
+  --rarity-common: #64748b;
+  --rarity-rare: #0284c7;
+  --rarity-epic: #7c3aed;
+  --rarity-legendary: #d97706;
+
+  --border-subtle: rgba(100, 130, 180, 0.15);
+  --border-medium: rgba(100, 130, 180, 0.25);
+
+  --glow-cyan: rgba(0, 179, 134, 0.3);
+  --glow-gold: rgba(230, 167, 0, 0.3);
+  --glow-purple: rgba(139, 92, 246, 0.3);
+
+  --shadow-card: 0 8px 32px rgba(30, 60, 100, 0.12);
+  --shadow-glow: 0 0 40px rgba(0, 179, 134, 0.15);
 }
 
-/* #ifdef H5 */
+/* ==================== 基础重置 ==================== */
 * {
   box-sizing: border-box;
 }
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(94, 150, 255, 0.4);
-  border-radius: 4px;
-  transition: background 0.3s ease;
+  background: rgba(0, 217, 165, 0.3);
+  border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(80, 130, 180, 0.7);
+  background: rgba(0, 217, 165, 0.5);
 }
-/* #endif */
 
-/* #ifndef H5 */
-page, view, text, scroll-view, swiper, button, form, input, textarea, label, navigator, image, div, span, p, h1, h2, h3, h4, h5, h6, ul, li, article, section, nav, main, header, footer {
-  box-sizing: border-box;
+/* ==================== 页面容器 ==================== */
+.theme-wrapper {
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  position: relative;
+  overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
 }
-/* #endif */
 
-/* ─── SVG 图标样式 ─── */
-.icon-wrap svg {
+/* ==================== 动态背景 ==================== */
+.tech-background {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
 }
-.achievement-card.locked .icon-wrap svg {
+
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 25%, var(--glow-cyan) 0%, transparent 50%),
+    radial-gradient(circle at 80% 75%, var(--glow-purple) 0%, transparent 50%),
+    linear-gradient(180deg, transparent 0%, rgba(0, 217, 165, 0.02) 100%);
+}
+
+.floating-particles {
+  position: absolute;
+  inset: 0;
+}
+
+.particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  opacity: 0.4;
+  animation: floatParticle 8s ease-in-out infinite;
+}
+
+.particle:nth-child(1) { top: 10%; left: 15%; animation-delay: 0s; }
+.particle:nth-child(2) { top: 20%; left: 85%; animation-delay: 0.5s; }
+.particle:nth-child(3) { top: 35%; left: 25%; animation-delay: 1s; }
+.particle:nth-child(4) { top: 50%; left: 75%; animation-delay: 1.5s; }
+.particle:nth-child(5) { top: 65%; left: 10%; animation-delay: 2s; }
+.particle:nth-child(6) { top: 80%; left: 60%; animation-delay: 2.5s; }
+.particle:nth-child(7) { top: 15%; left: 50%; animation-delay: 3s; }
+.particle:nth-child(8) { top: 45%; left: 90%; animation-delay: 3.5s; }
+.particle:nth-child(9) { top: 70%; left: 35%; animation-delay: 4s; }
+.particle:nth-child(10) { top: 25%; left: 65%; animation-delay: 4.5s; }
+.particle:nth-child(11) { top: 55%; left: 20%; animation-delay: 5s; }
+.particle:nth-child(12) { top: 85%; left: 45%; animation-delay: 5.5s; }
+
+@keyframes floatParticle {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.3; }
+  50% { transform: translateY(-20px) scale(1.3); opacity: 0.6; }
+}
+
+.glow-orbs {
+  position: absolute;
+  inset: 0;
+}
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
   opacity: 0.3;
+  animation: orbFloat 15s ease-in-out infinite;
 }
 
-.theme-wrapper {
-  margin: 0;
-  height: 100vh;
-  overflow: auto;
-  color: var(--text);
-  font-family: var(--font-main);
-  background:
-    radial-gradient(900px 520px at 104% -12%, rgba(94, 150, 255, 0.26), transparent 62%),
-    radial-gradient(800px 420px at -18% 20%, rgba(58, 217, 164, 0.16), transparent 56%),
-    linear-gradient(160deg, var(--bg-1), var(--bg-2) 52%, var(--bg-3));
-  padding: 18px;
-  padding-bottom: calc(18px + env(safe-area-inset-bottom));
-  box-sizing: border-box;
+.orb-1 {
+  width: 300px;
+  height: 300px;
+  background: var(--accent-primary);
+  top: -100px;
+  right: -50px;
 }
 
-.shell {
-  width: min(1260px, 100%);
-  margin: 0 auto;
-  display: grid;
-  gap: 14px;
+.orb-2 {
+  width: 250px;
+  height: 250px;
+  background: var(--accent-gold);
+  bottom: 20%;
+  left: -80px;
+  animation-delay: -5s;
 }
 
-.panel {
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(8px);
+.orb-3 {
+  width: 200px;
+  height: 200px;
+  background: var(--accent-purple);
+  top: 50%;
+  right: -50px;
+  animation-delay: -10s;
 }
 
-.hero {
-  padding: 16px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
-  align-items: center;
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -30px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.95); }
+}
+
+/* ==================== 导航栏 ==================== */
+.navbar {
   position: relative;
-  overflow: hidden;
+  z-index: 100;
+  background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.hero::before {
-  content: '';
-  position: absolute;
-  right: -120px;
-  top: -140px;
-  width: 320px;
-  height: 320px;
-  border-radius: 50%;
-  background: radial-gradient(circle at center, rgba(58, 217, 164, 0.24), transparent 68%);
-  pointer-events: none;
+.safe-area-top {
+  height: env(safe-area-inset-top);
+  min-height: 20px;
 }
 
-.hero h1, .hero-title {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 550;
-  letter-spacing: 1px;
-  text-shadow: 0 4px 12px rgba(35, 71, 112, 0.34);
-}
-
-.hero p, .hero-desc {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.6;
-  max-width: 760px;
-}
-
-.actions {
+.nav-content {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
 }
 
-.btn {
-  border: 0;
-  border-radius: 10px;
-  padding: 9px 13px;
-  font-size: 13px;
-  cursor: pointer;
-  color: #fff;
-  white-space: nowrap;
-  transition: transform .16s ease;
+.nav-left, .nav-right {
+  width: 50px;
 }
 
-.btn:hover {
-  transform: translateY(-1px);
+.back-btn {
+  font-size: 24px;
+  color: var(--accent-primary);
+  padding: 8px;
+  transition: transform 0.3s ease;
 }
 
-.btn.refresh {
-  background: linear-gradient(135deg, #1bbf87, #39dfa7);
-  box-shadow: 0 10px 20px rgba(29, 189, 134, 0.28);
+.back-btn:active {
+  transform: scale(0.9);
 }
 
-.btn.back {
-  background: linear-gradient(135deg, #3b7cf6, #6ea4ff);
-  box-shadow: 0 10px 20px rgba(59, 124, 246, 0.26);
-}
-
-.summary {
-  padding: 14px;
-  display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 12px;
-}
-
-.rank-panel {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
-  padding: 12px;
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  position: relative;
-  overflow: hidden;
-}
-
-.rank-panel::after {
-  content: '';
-  position: absolute;
-  inset: auto -40px -48px auto;
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  background: radial-gradient(circle at center, rgba(245, 199, 104, 0.22), transparent 70%);
-  pointer-events: none;
-}
-
-.ring-wrap {
-  width: 188px;
-  height: 188px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: conic-gradient(var(--accent) 0deg, rgba(124, 165, 205, 0.24) 0deg);
-  transition: background .3s ease;
-  box-shadow: inset 0 0 24px rgba(18, 44, 72, 0.24);
-}
-
-.ring-core {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  background: var(--panel-soft);
+.nav-title-wrap {
+  flex: 1;
   text-align: center;
+}
+
+.nav-title {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 2px;
+  text-shadow: 0 0 20px var(--glow-cyan);
+}
+
+.nav-subtitle {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.refresh-btn {
+  font-size: 22px;
+  color: var(--accent-primary);
+  padding: 8px;
+  display: inline-block;
+  transition: transform 0.3s ease;
+}
+
+.refresh-btn:active {
+  transform: scale(0.9);
+}
+
+.refresh-btn.rotating {
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ==================== 主内容区 ==================== */
+.main-content {
+  position: relative;
   z-index: 1;
+  padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-.rate {
-  font-family: var(--font-num);
-  font-size: 38px;
-  line-height: 1;
-  font-weight: 700;
+/* ==================== 面板通用样式 ==================== */
+.panel {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-card);
+  transition: all 0.3s ease;
 }
 
-.rate-sub {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  letter-spacing: .4px;
+.panel:hover {
+  border-color: var(--border-medium);
+  box-shadow: var(--shadow-glow);
 }
 
-.rank-text {
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.summary-cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  align-content: center;
-}
-
-.summary-card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 12px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
-}
-
-.summary-card .k {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.summary-card .v {
-  margin-top: 8px;
-  font-size: 30px;
-  line-height: 1;
-  font-family: var(--font-num);
-  font-weight: 700;
-}
-
-.summary-card .s {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.latest,
-.gallery {
-  padding: 14px;
-}
-
-.section-head {
+.panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 16px;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  margin-bottom: 10px;
 }
 
-.section-head h2, .section-title {
-  margin: 0;
+.title-icon {
+  font-size: 20px;
+}
+
+.panel-title {
+  font-family: var(--font-display);
   font-size: 18px;
-  letter-spacing: .4px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 1px;
 }
 
-.section-note {
-  color: var(--muted);
+.panel-subtitle {
   font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ==================== 统计面板 ==================== */
+.stats-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.stats-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+/* 炫酷仪表盘 */
+.gauge-container {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.gauge-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.gauge-bg {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+}
+
+.gauge-progress {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--accent-primary) calc(var(--progress) * 3.6deg),
+    transparent calc(var(--progress) * 3.6deg)
+  );
+  mask: radial-gradient(transparent 55%, black 56%);
+  -webkit-mask: radial-gradient(transparent 55%, black 56%);
+  animation: gaugeAnim 1.5s ease-out forwards;
+}
+
+@keyframes gaugeAnim {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.gauge-glow {
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  filter: blur(15px);
+  opacity: 0.3;
+  animation: gaugeGlow 2s ease-in-out infinite;
+}
+
+@keyframes gaugeGlow {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.05); }
+}
+
+.gauge-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.gauge-value {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent-primary);
+  line-height: 1;
+}
+
+.gauge-unit {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--accent-primary);
+}
+
+.gauge-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* 等级徽章 */
+.grade-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  border: 2px solid;
+  background: var(--bg-primary);
+}
+
+.grade-letter {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.grade-label {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.grade-s {
+  border-color: var(--rarity-legendary);
+  color: var(--rarity-legendary);
+  box-shadow: 0 0 20px var(--glow-gold), inset 0 0 20px rgba(251, 191, 36, 0.1);
+}
+
+.grade-a {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  box-shadow: 0 0 20px var(--glow-cyan), inset 0 0 20px rgba(0, 217, 165, 0.1);
+}
+
+.grade-b {
+  border-color: var(--accent-secondary);
+  color: var(--accent-secondary);
+  box-shadow: 0 0 15px rgba(0, 184, 230, 0.2);
+}
+
+.grade-c {
+  border-color: var(--rarity-common);
+  color: var(--rarity-common);
+}
+
+.grade-d {
+  border-color: var(--text-muted);
+  color: var(--text-muted);
+}
+
+.stats-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-primary);
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+}
+
+.stat-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.stat-icon-unlock {
+  background: rgba(0, 217, 165, 0.15);
+  color: var(--accent-primary);
+}
+
+.stat-icon-total {
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--accent-purple);
+}
+
+.stat-icon-new {
+  background: rgba(255, 214, 102, 0.15);
+  color: var(--accent-gold);
+}
+
+.stat-info {
+  flex: 1;
+}
+
+.stat-value {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ==================== 最新解锁 ==================== */
+.latest-panel {
+  position: relative;
 }
 
 .latest-list {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .latest-item {
-  border-radius: 12px;
-  border: 1px solid rgba(245, 199, 104, 0.4);
-  background: linear-gradient(135deg, rgba(245, 199, 104, 0.18), rgba(245, 199, 104, 0.08));
-  padding: 10px 12px;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 8px;
-  align-items: center;
-  font-size: 12px;
-}
-
-.latest-bullet {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--gold);
-  box-shadow: 0 0 0 3px rgba(245, 199, 104, 0.2);
-}
-
-.filters {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  background: linear-gradient(180deg, var(--panel), rgba(0, 0, 0, 0));
-  padding: 2px 0 6px;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  position: relative;
+  animation: slideInLeft 0.5s ease-out both;
 }
 
-.filter-chip {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 7px 12px;
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.timeline-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-gold);
+  box-shadow: 0 0 12px var(--glow-gold);
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.timeline-line {
+  position: absolute;
+  left: 6px;
+  top: 32px;
+  width: 2px;
+  height: calc(100% - 18px);
+  background: linear-gradient(180deg, var(--accent-gold) 0%, var(--border-medium) 100%);
+}
+
+.latest-content {
+  flex: 1;
+}
+
+.latest-name {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.latest-time {
   font-size: 12px;
+  color: var(--text-muted);
+}
+
+.empty-latest {
+  text-align: center;
+  padding: 30px 20px;
+  color: var(--text-muted);
+}
+
+.empty-latest .empty-icon {
+  font-size: 40px;
+  display: block;
+  margin-bottom: 10px;
+  opacity: 0.5;
+}
+
+.empty-latest .empty-text {
+  font-size: 14px;
+}
+
+/* ==================== 筛选标签 ==================== */
+.filter-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 25px;
   cursor: pointer;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.06);
-  transition: all .18s ease;
+  transition: all 0.3s ease;
 }
 
-.filter-chip.active {
+.filter-tab text {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.tab-count {
+  font-size: 12px;
+  padding: 2px 8px;
+  background: var(--border-subtle);
+  border-radius: 12px;
+  color: var(--text-muted);
+}
+
+.filter-tab.active {
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  border-color: transparent;
+  box-shadow: 0 4px 15px var(--glow-cyan);
+}
+
+.filter-tab.active text,
+.filter-tab.active .tab-count {
   color: #fff;
-  background: linear-gradient(135deg, #2e78f2, #5f97ff);
-  border-color: rgba(109, 157, 255, 0.72);
-  box-shadow: 0 10px 18px rgba(47, 111, 237, 0.26);
 }
 
+.filter-tab.active .tab-count {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ==================== 成就卡片 ==================== */
 .achievement-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 
 .achievement-card {
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
-  padding: 12px;
-  display: grid;
-  gap: 10px;
   position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   overflow: hidden;
-  animation: cardIn .34s ease both;
+  transition: all 0.3s ease;
+  animation: cardEnter 0.5s ease-out both;
 }
 
-.achievement-card::before {
-  content: '';
-  position: absolute;
-  left: -30%;
-  top: -120%;
-  width: 160%;
-  height: 240%;
-  background: linear-gradient(130deg, transparent 36%, rgba(255, 255, 255, 0.12) 52%, transparent 68%);
-  transform: translateX(-120%);
-  transition: transform .8s ease;
-  pointer-events: none;
+@keyframes cardEnter {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.achievement-card:hover::before {
-  transform: translateX(120%);
+.achievement-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-medium);
+  box-shadow: var(--shadow-card);
 }
 
 .achievement-card.locked {
-  opacity: .82;
-  filter: saturate(.7);
+  opacity: 0.75;
 }
 
+.achievement-card.locked:hover {
+  opacity: 0.9;
+}
+
+/* 卡片光泽效果 */
+.card-glare {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    135deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.05) 50%,
+    transparent 60%
+  );
+  transform: rotate(30deg);
+  transition: all 0.6s ease;
+  pointer-events: none;
+}
+
+.achievement-card:hover .card-glare {
+  transform: rotate(30deg) translateX(30%);
+}
+
+/* 稀有度边框 */
 .achievement-card.rarity-common {
-  box-shadow: inset 0 0 0 1px rgba(152, 185, 218, 0.12);
+  border-color: var(--rarity-common);
 }
 
 .achievement-card.rarity-rare {
-  box-shadow: inset 0 0 0 1px rgba(99, 141, 255, 0.28), 0 8px 22px rgba(55, 96, 210, 0.2);
+  border-color: var(--rarity-rare);
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
 }
 
 .achievement-card.rarity-epic {
-  box-shadow: inset 0 0 0 1px rgba(193, 107, 255, 0.32), 0 10px 24px rgba(117, 67, 176, 0.24);
+  border-color: var(--rarity-epic);
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.2);
 }
 
 .achievement-card.rarity-legendary {
-  box-shadow: inset 0 0 0 1px rgba(245, 199, 104, 0.38), 0 12px 28px rgba(170, 112, 10, 0.24);
+  border-color: var(--rarity-legendary);
+  box-shadow: 0 0 30px var(--glow-gold);
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(251, 191, 36, 0.05) 100%);
 }
 
-.card-top {
+/* 图标区域 */
+.card-icon-wrap {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
-  gap: 10px;
+  justify-content: space-between;
 }
 
-.icon-wrap {
+.icon-bg {
   width: 56px;
   height: 56px;
   border-radius: 14px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04));
-  box-shadow: inset 0 0 22px rgba(66, 114, 161, 0.2);
-  color: #b8d6ff;
-}
-
-.icon-wrap :deep(.icon-img),
-.icon-wrap :deep(.icon-wrap-h5) {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-}
-
-.icon-wrap svg {
-  width: 30px;
-  height: 30px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.badge-set {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid var(--border-subtle);
 }
 
-.badge {
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 11px;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.06);
-  letter-spacing: .3px;
+.icon-bg.unlocked {
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  border-color: transparent;
+  box-shadow: 0 4px 15px var(--glow-cyan);
 }
 
-.badge.status-unlocked {
-  color: #9bf1cf;
-  border-color: rgba(58, 217, 164, 0.4);
-  background: rgba(58, 217, 164, 0.15);
+.icon-bg.locked {
+  opacity: 0.5;
+  filter: grayscale(0.5);
 }
 
-.badge.status-locked {
-  color: #d7e7f8;
-  border-color: rgba(173, 197, 220, 0.3);
-  background: rgba(173, 197, 220, 0.1);
+.rarity-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
-.badge.rarity-common {
-  color: #b8d3ee;
+.rarity-badge.common {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--rarity-common);
 }
 
-.badge.rarity-rare {
-  color: #8eb5ff;
-  border-color: rgba(99, 141, 255, 0.38);
+.rarity-badge.rare {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--rarity-rare);
 }
 
-.badge.rarity-epic {
-  color: #d4a8ff;
-  border-color: rgba(193, 107, 255, 0.4);
+.rarity-badge.epic {
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--rarity-epic);
 }
 
-.badge.rarity-legendary {
-  color: #ffd88c;
-  border-color: rgba(245, 199, 104, 0.42);
+.rarity-badge.legendary {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--rarity-legendary);
+}
+
+.status-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 8px;
+}
+
+.status-badge.unlocked {
+  background: rgba(0, 217, 165, 0.15);
+  color: var(--accent-primary);
+}
+
+.status-badge.locked {
+  background: rgba(100, 116, 139, 0.15);
+  color: var(--text-muted);
+}
+
+/* 成就信息 */
+.card-info {
+  flex: 1;
 }
 
 .card-name {
-  margin: 0;
+  display: block;
   font-size: 16px;
-  letter-spacing: .3px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
 }
 
 .card-desc {
-  margin: 0;
-  min-height: 38px;
-  color: var(--muted);
+  display: block;
   font-size: 13px;
+  color: var(--text-secondary);
   line-height: 1.5;
+}
+
+/* 进度条 */
+.card-progress {
+  margin-top: auto;
 }
 
 .progress-track {
   height: 8px;
-  border-radius: 999px;
-  background: rgba(126, 166, 203, 0.2);
+  background: var(--bg-primary);
+  border-radius: 4px;
   overflow: hidden;
-  position: relative;
+  margin-bottom: 8px;
 }
 
 .progress-fill {
   height: 100%;
-  width: 0;
-  border-radius: 999px;
-  transition: width .4s ease;
-  background: linear-gradient(90deg, #2ecf9a, #42e2bf);
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
   position: relative;
   overflow: hidden;
+  transition: width 0.5s ease;
 }
 
-.progress-fill::after {
-  content: '';
+.progress-fill.completed {
+  background: linear-gradient(90deg, var(--accent-gold) 0%, #ffed4a 100%);
+}
+
+.progress-shine {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 10%, rgba(255, 255, 255, 0.4) 44%, transparent 78%);
-  transform: translateX(-120%);
-  animation: shimmer 2.3s linear infinite;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  animation: shine 2s ease-in-out infinite;
 }
 
-.card-meta {
+@keyframes shine {
+  0% { left: -100%; }
+  50%, 100% { left: 100%; }
+}
+
+.progress-text {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
-.state {
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  padding: 20px;
+.progress-percent {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+/* 空状态 */
+.empty-gallery {
   text-align: center;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.05);
+  padding: 50px 20px;
 }
 
+.empty-gallery .empty-icon {
+  font-size: 50px;
+  display: block;
+  margin-bottom: 16px;
+  opacity: 0.4;
+}
+
+.empty-gallery .empty-text {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* ==================== 解锁弹窗 ==================== */
 .modal-mask {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 1000;
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 9, 16, 0.64);
-  padding: 16px;
-  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  padding: 20px;
 }
 
 .modal-mask.show {
   display: flex;
 }
 
-.modal {
-  width: min(560px, 100%);
-  border-radius: 16px;
-  border: 1px solid rgba(245, 199, 104, 0.42);
-  background: var(--panel);
+.unlock-modal {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: 24px;
   overflow: hidden;
-  box-shadow: var(--shadow);
-  animation: popup .24s ease;
-  max-height: 100%;
+  position: relative;
+  animation: modalEnter 0.4s ease-out;
+}
+
+@keyframes modalEnter {
+  from { opacity: 0; transform: scale(0.9) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 弹窗背景特效 */
+.modal-bg-effect {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.effect-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(40px);
+  animation: modalOrb 8s ease-in-out infinite;
+}
+
+.effect-orb-1 {
+  width: 200px;
+  height: 200px;
+  background: var(--accent-gold);
+  top: -80px;
+  left: -50px;
+  opacity: 0.3;
+}
+
+.effect-orb-2 {
+  width: 150px;
+  height: 150px;
+  background: var(--accent-primary);
+  bottom: -60px;
+  right: -40px;
+  opacity: 0.3;
+  animation-delay: -4s;
+}
+
+.effect-orb-3 {
+  width: 100px;
+  height: 100px;
+  background: var(--accent-purple);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0.2;
+  animation-delay: -2s;
+}
+
+@keyframes modalOrb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(20px, -20px) scale(1.1); }
+}
+
+/* 弹窗头部 */
+.modal-header {
+  position: relative;
+  text-align: center;
+  padding: 30px 20px 20px;
+  background: linear-gradient(180deg, rgba(255, 214, 102, 0.1) 0%, transparent 100%);
+}
+
+.trophy-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 12px;
+  animation: trophyBounce 1s ease-in-out infinite;
+}
+
+@keyframes trophyBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.modal-title {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent-gold);
+  text-shadow: 0 0 30px var(--glow-gold);
+  letter-spacing: 2px;
+}
+
+.modal-subtitle {
+  display: block;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+/* 弹窗内容 */
+.modal-body {
+  position: relative;
+  padding: 0 20px 20px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.unlock-list {
   display: flex;
   flex-direction: column;
-}
-
-.modal-head {
-  padding: 14px 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(135deg, rgba(245, 199, 104, 0.26), rgba(245, 199, 104, 0.08));
-}
-
-.modal-head h3, .modal-title {
-  margin: 0;
-  font-size: 18px;
-  color: var(--gold);
-}
-
-.modal-.theme-wrapper {
-  padding: 14px 16px;
-  display: grid;
-  gap: 8px;
-  max-height: 360px;
-  overflow: auto;
-  min-height: 0;
+  gap: 12px;
 }
 
 .unlock-item {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 10px;
+  display: flex;
   align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: var(--bg-primary);
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  animation: unlockItemEnter 0.5s ease-out both;
 }
 
-.unlock-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  display: grid;
-  place-items: center;
-  color: #ffd88c;
-  background: rgba(245, 199, 104, 0.14);
+@keyframes unlockItemEnter {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
-.unlock-icon :deep(.icon-img),
-.unlock-icon :deep(.icon-wrap-h5) {
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
+.unlock-icon-wrap {
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent-gold) 0%, #ffed4a 100%);
+  box-shadow: 0 4px 15px var(--glow-gold);
+  flex-shrink: 0;
 }
 
-.unlock-icon svg {
-  width: 20px;
-  height: 20px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.unlock-icon-wrap.rarity-common { background: linear-gradient(135deg, var(--rarity-common) 0%, #cbd5e1 100%); }
+.unlock-icon-wrap.rarity-rare { background: linear-gradient(135deg, var(--rarity-rare) 0%, #7dd3fc 100%); box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4); }
+.unlock-icon-wrap.rarity-epic { background: linear-gradient(135deg, var(--rarity-epic) 0%, #c4b5fd 100%); box-shadow: 0 4px 15px var(--glow-purple); }
+.unlock-icon-wrap.rarity-legendary { background: linear-gradient(135deg, var(--rarity-legendary) 0%, #fde68a 100%); box-shadow: 0 4px 20px var(--glow-gold); }
+
+.unlock-info {
+  flex: 1;
+  min-width: 0;
 }
 
-.unlock-title {
-  margin: 0;
+.unlock-name {
+  display: block;
   font-size: 15px;
-  color: var(--text);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .unlock-desc {
-  margin: 4px 0 0;
+  display: block;
   font-size: 12px;
-  color: var(--muted);
-  line-height: 1.45;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.modal-foot {
-  border-top: 1px solid var(--line);
-  padding: 12px 16px;
+.unlock-time {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.unlock-rarity {
+  font-size: 10px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.unlock-rarity.common { background: rgba(148, 163, 184, 0.15); color: var(--rarity-common); }
+.unlock-rarity.rare { background: rgba(56, 189, 248, 0.15); color: var(--rarity-rare); }
+.unlock-rarity.epic { background: rgba(168, 85, 247, 0.15); color: var(--rarity-epic); }
+.unlock-rarity.legendary { background: rgba(251, 191, 36, 0.15); color: var(--rarity-legendary); }
+
+/* 弹窗底部 */
+.modal-footer {
+  position: relative;
+  padding: 16px 20px 24px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
-.close-btn {
-  border: 0;
-  border-radius: 10px;
-  padding: 8px 14px;
+.confirm-btn {
+  padding: 14px 48px;
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  border: none;
+  border-radius: 30px;
   color: #fff;
-  cursor: pointer;
-  background: linear-gradient(135deg, #3b7cf6, #6ea4ff);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  box-shadow: 0 8px 25px var(--glow-cyan);
+  transition: all 0.3s ease;
 }
 
-@keyframes shimmer {
-  from {
-    transform: translateX(-120%);
-  }
-
-  to {
-    transform: translateX(120%);
-  }
+.confirm-btn:active {
+  transform: scale(0.96);
+  box-shadow: 0 4px 15px var(--glow-cyan);
 }
 
-@keyframes popup {
-  from {
-    transform: translateY(10px) scale(.98);
-    opacity: .6;
-  }
-
-  to {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes cardIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (max-width: 1040px) {
-  .summary {
+/* ==================== 响应式 ==================== */
+@media (max-width: 768px) {
+  .stats-panel {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  .summary-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .stats-left {
+    justify-content: center;
+  }
+
+  .stats-right {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .stat-item {
+    flex: 1;
+    min-width: 100px;
   }
 
   .achievement-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 700px) {
-  .theme-wrapper {
-    padding: 10px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
-  }
-
-  .hero {
     grid-template-columns: 1fr;
+  }
+
+  .main-content {
     padding: 12px;
   }
 
-  .actions {
-    justify-content: flex-start;
-    width: 100%;
+  .panel {
+    padding: 16px;
   }
 
-  .actions .btn {
-    flex: 1 1 calc(50% - 4px);
-    min-height: 40px;
-  }
-
-  .hero h1 {
-    font-size: 26px;
-  }
-
-  .summary-cards {
-    grid-template-columns: 1fr;
-  }
-
-  .achievement-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .ring-wrap {
-    width: 162px;
-    height: 162px;
-  }
-
-  .ring-core {
-    width: 124px;
-    height: 124px;
+  .nav-title {
+    font-size: 18px;
   }
 }
 
-@media (max-width: 520px) {
-
-  .summary,
-  .latest,
-  .gallery {
-    padding: 10px;
-  }
-
-  .section-head {
-    align-items: flex-start;
+@media (max-width: 480px) {
+  .stats-right {
     flex-direction: column;
   }
 
-  .filters {
-    gap: 6px;
-    margin-bottom: 8px;
+  .stat-item {
+    min-width: auto;
   }
 
-  .filter-chip {
-    padding: 7px 10px;
-    font-size: 11px;
+  .filter-tabs {
+    gap: 8px;
   }
 
-  .card-desc {
-    min-height: 0;
+  .filter-tab {
+    padding: 8px 12px;
+    font-size: 13px;
   }
 
-  .modal-mask {
-    padding: 10px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  .gauge-container {
+    width: 100px;
+    height: 100px;
   }
 
-  .modal-head,
-  .modal-body,
-  .modal-foot {
-    padding-left: 12px;
-    padding-right: 12px;
+  .gauge-value {
+    font-size: 26px;
   }
 
-  .modal-.theme-wrapper {
-    max-height: 58vh;
+  .grade-badge {
+    width: 50px;
+    height: 50px;
   }
-}
-.legacy-page-host {
-  min-height: 100vh;
+
+  .grade-letter {
+    font-size: 22px;
+  }
 }
 </style>
