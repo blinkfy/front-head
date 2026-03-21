@@ -130,7 +130,7 @@
           </view>
         </view>
 
-        <!-- 成就网格 -->
+        <!-- 成就网格 - 原神风格图标上置布局 -->
         <view class="achievement-grid" v-if="filteredAchievements.length > 0">
           <view v-for="(item, index) in filteredAchievements" :key="item.key"
             class="achievement-card"
@@ -139,22 +139,19 @@
               item.unlocked ? 'unlocked' : 'locked',
               `animate-${index % 4}`
             ]"
-            :style="{ animationDelay: `${Math.min(index * 50, 300)}ms` }">
+            :style="{ animationDelay: `${Math.min(index * 50, 300)}ms` }"
+            hover-class="achievement-card-active">
             <!-- 卡顶部光效 -->
             <view class="card-glare"></view>
 
-            <!-- 图标区域 -->
-            <view class="card-icon-wrap">
-              <view class="icon-bg" :class="item.unlocked ? 'unlocked' : 'locked'">
-                <achievement-icon :icon-key="item.key" />
+            <!-- 图标区域 - 原神风格：大图标居中 -->
+            <view class="card-icon-area">
+              <view class="card-icon-frame" :class="[item.unlocked ? 'unlocked' : 'locked', `rarity-${getRarityByKey(item.key).tier}`]">
+                <achievement-icon :icon-key="item.key" size="large" />
               </view>
-              <!-- 稀有度角标 -->
-              <view class="rarity-badge" :class="getRarityByKey(item.key).tier">
-                {{ getRarityByKey(item.key).label }}
-              </view>
-              <!-- 解锁状态 -->
-              <view class="status-badge" :class="item.unlocked ? 'unlocked' : 'locked'">
-                {{ item.unlocked ? '已解锁' : '未解锁' }}
+              <!-- 稀有度角标 - 左上角 -->
+              <view class="rarity-ribbon" :class="getRarityByKey(item.key).tier">
+                <text class="rarity-ribbon-text">{{ getRarityByKey(item.key).label }}</text>
               </view>
             </view>
 
@@ -174,11 +171,14 @@
                 </view>
               </view>
               <view class="progress-text">
-                <text v-if="item.unlocked">已解锁 · {{ formatDateTime(item.unlockedAt) }}</text>
-                <text v-else>进度 {{ getProgressValue(item) }}/{{ getTargetValue(item) }}{{ item.unit || '' }}</text>
+                <text v-if="item.unlocked">已解锁</text>
+                <text v-else>{{ getProgressValue(item) }}/{{ getTargetValue(item) }}{{ item.unit || '' }}</text>
                 <text class="progress-percent">{{ getPercentage(item) }}%</text>
               </view>
             </view>
+
+            <!-- 解锁时间（仅解锁时显示） -->
+            <text class="card-unlock-time" v-if="item.unlocked">{{ formatDateTime(item.unlockedAt) }}</text>
           </view>
         </view>
 
@@ -550,6 +550,11 @@ onBeforeUnmount(() => {
 
   --font-display: "Orbitron", "Rajdhani", "DIN Alternate", sans-serif;
   --font-body: "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+
+  /* 原神风格金色主色 */
+  --accent-mora: #D3BC8E;
+  --accent-mora-light: #E8D5B0;
+  --glow-mora: rgba(211, 188, 142, 0.45);
 }
 
 /* 浅色主题 */
@@ -583,6 +588,11 @@ onBeforeUnmount(() => {
 
   --shadow-card: 0 8px 32px rgba(30, 60, 100, 0.12);
   --shadow-glow: 0 0 40px rgba(0, 179, 134, 0.15);
+
+  /* 原神风格金色主色 */
+  --accent-mora: #B8860B;
+  --accent-mora-light: #D4A520;
+  --glow-mora: rgba(184, 134, 11, 0.35);
 }
 
 /* ==================== 基础重置 ==================== */
@@ -763,9 +773,9 @@ onBeforeUnmount(() => {
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 2px;
-  text-shadow: 0 0 20px var(--glow-cyan);
+  color: var(--accent-mora);
+  letter-spacing: 3px;
+  text-shadow: 0 0 20px var(--glow-mora);
 }
 
 .nav-subtitle {
@@ -777,7 +787,7 @@ onBeforeUnmount(() => {
 
 .refresh-btn {
   font-size: 22px;
-  color: var(--accent-primary);
+  color: var(--accent-mora);
   padding: 8px;
   display: inline-block;
   transition: transform 0.3s ease;
@@ -809,7 +819,7 @@ onBeforeUnmount(() => {
 .panel {
   background: var(--bg-card);
   backdrop-filter: blur(20px);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid rgba(211, 188, 142, 0.15);
   border-radius: 20px;
   padding: 20px;
   margin-bottom: 16px;
@@ -818,8 +828,8 @@ onBeforeUnmount(() => {
 }
 
 .panel:hover {
-  border-color: var(--border-medium);
-  box-shadow: var(--shadow-glow);
+  border-color: rgba(211, 188, 142, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(211, 188, 142, 0.08);
 }
 
 .panel-header {
@@ -843,8 +853,9 @@ onBeforeUnmount(() => {
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: 1px;
+  color: var(--accent-mora);
+  letter-spacing: 2px;
+  text-shadow: 0 0 12px rgba(211, 188, 142, 0.3);
 }
 
 .panel-subtitle {
@@ -866,7 +877,7 @@ onBeforeUnmount(() => {
   gap: 20px;
 }
 
-/* 炫酷仪表盘 */
+/* 炫酷仪表盘 - 原神金色主题 */
 .gauge-container {
   position: relative;
   width: 120px;
@@ -891,8 +902,8 @@ onBeforeUnmount(() => {
   inset: 0;
   border-radius: 50%;
   background: conic-gradient(
-    var(--accent-primary) calc(var(--progress) * 3.6deg),
-    transparent calc(var(--progress) * 3.6deg)
+    var(--accent-mora) calc(var(--progress) * 3.6deg),
+    rgba(211, 188, 142, 0.12) calc(var(--progress) * 3.6deg)
   );
   mask: radial-gradient(transparent 55%, black 56%);
   -webkit-mask: radial-gradient(transparent 55%, black 56%);
@@ -908,15 +919,15 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: -5px;
   border-radius: 50%;
-  background: var(--accent-primary);
+  background: var(--accent-mora);
   filter: blur(15px);
-  opacity: 0.3;
+  opacity: 0.35;
   animation: gaugeGlow 2s ease-in-out infinite;
 }
 
 @keyframes gaugeGlow {
-  0%, 100% { opacity: 0.3; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.05); }
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.05); }
 }
 
 .gauge-center {
@@ -932,14 +943,15 @@ onBeforeUnmount(() => {
   font-family: var(--font-display);
   font-size: 32px;
   font-weight: 700;
-  color: var(--accent-primary);
+  color: var(--accent-mora);
   line-height: 1;
+  text-shadow: 0 0 20px var(--glow-mora);
 }
 
 .gauge-unit {
   font-family: var(--font-display);
   font-size: 14px;
-  color: var(--accent-primary);
+  color: var(--accent-mora);
 }
 
 .gauge-label {
@@ -974,21 +986,21 @@ onBeforeUnmount(() => {
 }
 
 .grade-s {
-  border-color: var(--rarity-legendary);
-  color: var(--rarity-legendary);
-  box-shadow: 0 0 20px var(--glow-gold), inset 0 0 20px rgba(251, 191, 36, 0.1);
+  border-color: var(--accent-mora);
+  color: var(--accent-mora);
+  box-shadow: 0 0 20px var(--glow-mora), inset 0 0 20px rgba(211, 188, 142, 0.1);
 }
 
 .grade-a {
-  border-color: var(--accent-primary);
-  color: var(--accent-primary);
-  box-shadow: 0 0 20px var(--glow-cyan), inset 0 0 20px rgba(0, 217, 165, 0.1);
+  border-color: var(--accent-mora-light);
+  color: var(--accent-mora-light);
+  box-shadow: 0 0 16px rgba(232, 213, 176, 0.3), inset 0 0 16px rgba(211, 188, 142, 0.08);
 }
 
 .grade-b {
-  border-color: var(--accent-secondary);
-  color: var(--accent-secondary);
-  box-shadow: 0 0 15px rgba(0, 184, 230, 0.2);
+  border-color: var(--accent-mora);
+  color: var(--accent-mora);
+  box-shadow: 0 0 12px rgba(211, 188, 142, 0.2);
 }
 
 .grade-c {
@@ -1004,42 +1016,42 @@ onBeforeUnmount(() => {
 .stats-right {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .stat-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: var(--bg-primary);
-  border-radius: 12px;
-  border: 1px solid var(--border-subtle);
+  gap: 10px;
+  padding: 9px 12px;
+  background: rgba(211, 188, 142, 0.04);
+  border-radius: 10px;
+  border: 1px solid rgba(211, 188, 142, 0.12);
 }
 
 .stat-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: bold;
 }
 
 .stat-icon-unlock {
-  background: rgba(0, 217, 165, 0.15);
-  color: var(--accent-primary);
+  background: rgba(211, 188, 142, 0.18);
+  color: var(--accent-mora);
 }
 
 .stat-icon-total {
-  background: rgba(167, 139, 250, 0.15);
-  color: var(--accent-purple);
+  background: rgba(168, 85, 247, 0.18);
+  color: var(--rarity-epic);
 }
 
 .stat-icon-new {
-  background: rgba(255, 214, 102, 0.15);
+  background: rgba(255, 214, 102, 0.18);
   color: var(--accent-gold);
 }
 
@@ -1142,284 +1154,358 @@ onBeforeUnmount(() => {
 /* ==================== 筛选标签 ==================== */
 .filter-tabs {
   display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 8px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
 }
 
 .filter-tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 25px;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(211, 188, 142, 0.2);
+  border-radius: 20px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.25s ease;
 }
 
 .filter-tab text {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-secondary);
 }
 
 .tab-count {
-  font-size: 12px;
-  padding: 2px 8px;
-  background: var(--border-subtle);
-  border-radius: 12px;
-  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 7px;
+  background: rgba(211, 188, 142, 0.15);
+  border-radius: 10px;
+  color: var(--accent-mora);
 }
 
 .filter-tab.active {
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  background: linear-gradient(135deg, var(--accent-mora) 0%, var(--accent-mora-light) 100%);
   border-color: transparent;
-  box-shadow: 0 4px 15px var(--glow-cyan);
+  box-shadow: 0 4px 14px var(--glow-mora);
 }
 
-.filter-tab.active text,
+.filter-tab.active text {
+  color: #1a1206;
+  font-weight: 600;
+}
+
 .filter-tab.active .tab-count {
-  color: #fff;
+  background: rgba(26, 18, 6, 0.15);
+  color: #1a1206;
 }
 
-.filter-tab.active .tab-count {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-/* ==================== 成就卡片 ==================== */
+/* ==================== 原神风格成就卡片 ==================== */
 .achievement-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 14px;
+}
+
+/* 小程序/非 H5：2 列固定布局 */
+.mp-2-col.achievement-grid {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .achievement-card {
   position: relative;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  padding: 16px;
+  border-radius: 12px;
+  padding: 16px 14px 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
   overflow: hidden;
-  transition: all 0.3s ease;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
   animation: cardEnter 0.5s ease-out both;
+  cursor: pointer;
 }
 
 @keyframes cardEnter {
-  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  from { opacity: 0; transform: translateY(16px) scale(0.94); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* H5 hover */
 .achievement-card:hover {
-  transform: translateY(-4px);
-  border-color: var(--border-medium);
-  box-shadow: var(--shadow-card);
+  transform: translateY(-5px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+/* 小程序/App 点击态 */
+.achievement-card-active {
+  transform: scale(0.96) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
 }
 
 .achievement-card.locked {
-  opacity: 0.75;
+  opacity: 0.72;
 }
 
 .achievement-card.locked:hover {
-  opacity: 0.9;
+  opacity: 0.88;
 }
 
 /* 卡片光泽效果 */
 .card-glare {
   position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(
-    135deg,
-    transparent 40%,
-    rgba(255, 255, 255, 0.05) 50%,
+  top: -60%;
+  left: -60%;
+  width: 220%;
+  height: 220%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(211, 188, 142, 0.06) 0%,
     transparent 60%
   );
-  transform: rotate(30deg);
-  transition: all 0.6s ease;
   pointer-events: none;
+  transition: opacity 0.3s ease;
 }
 
 .achievement-card:hover .card-glare {
-  transform: rotate(30deg) translateX(30%);
+  opacity: 1.5;
 }
 
-/* 稀有度边框 */
+/* 稀有度边框与发光 */
 .achievement-card.rarity-common {
-  border-color: var(--rarity-common);
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.achievement-card.rarity-common:hover {
+  border-color: rgba(148, 163, 184, 0.7);
+  box-shadow: 0 0 18px rgba(148, 163, 184, 0.2);
 }
 
 .achievement-card.rarity-rare {
-  border-color: var(--rarity-rare);
-  box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.achievement-card.rarity-rare:hover {
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow: 0 0 22px rgba(56, 189, 248, 0.25);
 }
 
 .achievement-card.rarity-epic {
-  border-color: var(--rarity-epic);
-  box-shadow: 0 0 25px rgba(168, 85, 247, 0.2);
+  border-color: rgba(168, 85, 247, 0.45);
+}
+
+.achievement-card.rarity-epic:hover {
+  border-color: rgba(168, 85, 247, 0.75);
+  box-shadow: 0 0 28px rgba(168, 85, 247, 0.3);
 }
 
 .achievement-card.rarity-legendary {
-  border-color: var(--rarity-legendary);
-  box-shadow: 0 0 30px var(--glow-gold);
-  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(251, 191, 36, 0.05) 100%);
+  border-color: var(--accent-mora);
+  background: linear-gradient(
+    160deg,
+    var(--bg-card) 0%,
+    rgba(211, 188, 142, 0.07) 60%,
+    var(--bg-card) 100%
+  );
 }
 
-/* 图标区域 */
-.card-icon-wrap {
+.achievement-card.rarity-legendary:hover {
+  border-color: var(--accent-mora-light);
+  box-shadow: 0 0 35px var(--glow-mora);
+}
+
+/* ===== 图标区域（图标上置，原神风）===== */
+.card-icon-area {
+  position: relative;
+  width: 100%;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  justify-content: center;
+  align-items: center;
 }
 
-.icon-bg {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
+.card-icon-frame {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%);
-  border: 1px solid var(--border-subtle);
+  /* 原神金色图标背景 */
+  background: radial-gradient(
+    circle at 40% 35%,
+    rgba(211, 188, 142, 0.3) 0%,
+    rgba(211, 188, 142, 0.08) 60%,
+    transparent 100%
+  );
+  border: 2px solid rgba(211, 188, 142, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-.icon-bg.unlocked {
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-  border-color: transparent;
-  box-shadow: 0 4px 15px var(--glow-cyan);
+.card-icon-frame.unlocked {
+  background: radial-gradient(
+    circle at 40% 35%,
+    rgba(211, 188, 142, 0.5) 0%,
+    rgba(184, 134, 11, 0.2) 50%,
+    rgba(211, 188, 142, 0.05) 100%
+  );
+  border-color: var(--accent-mora);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.35),
+    0 0 20px var(--glow-mora),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.icon-bg.locked {
-  opacity: 0.5;
-  filter: grayscale(0.5);
+.card-icon-frame.locked {
+  opacity: 0.55;
+  filter: grayscale(0.6);
 }
 
-.rarity-badge {
-  font-size: 10px;
-  padding: 3px 8px;
-  border-radius: 8px;
-  font-weight: 600;
+.card-icon-frame:hover {
+  transform: scale(1.06);
+}
+
+/* 稀有度角标 - 左上角飘带 */
+.rarity-ribbon {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent-mora);
+  color: #1a1206;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 0 0 6px 6px;
   letter-spacing: 0.5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
 }
 
-.rarity-badge.common {
-  background: rgba(148, 163, 184, 0.15);
-  color: var(--rarity-common);
-}
+.rarity-ribbon.common { background: rgba(148, 163, 184, 0.8); color: #fff; }
+.rarity-ribbon.rare { background: rgba(56, 189, 248, 0.85); }
+.rarity-ribbon.epic { background: rgba(168, 85, 247, 0.85); }
+.rarity-ribbon.legendary { background: linear-gradient(90deg, #D3BC8E, #F5E6C0); }
 
-.rarity-badge.rare {
-  background: rgba(56, 189, 248, 0.15);
-  color: var(--rarity-rare);
-}
-
-.rarity-badge.epic {
-  background: rgba(168, 85, 247, 0.15);
-  color: var(--rarity-epic);
-}
-
-.rarity-badge.legendary {
-  background: rgba(251, 191, 36, 0.15);
-  color: var(--rarity-legendary);
-}
-
-.status-badge {
-  font-size: 10px;
-  padding: 3px 8px;
-  border-radius: 8px;
-}
-
-.status-badge.unlocked {
-  background: rgba(0, 217, 165, 0.15);
-  color: var(--accent-primary);
-}
-
-.status-badge.locked {
-  background: rgba(100, 116, 139, 0.15);
-  color: var(--text-muted);
+.rarity-ribbon-text {
+  display: block;
+  text-align: center;
 }
 
 /* 成就信息 */
 .card-info {
-  flex: 1;
+  width: 100%;
+  text-align: center;
 }
 
 .card-name {
   display: block;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.3px;
 }
 
 .card-desc {
-  display: block;
-  font-size: 13px;
+  display: -webkit-box;
+  font-size: 11px;
   color: var(--text-secondary);
   line-height: 1.5;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* 进度条 */
 .card-progress {
-  margin-top: auto;
+  width: 100%;
 }
 
 .progress-track {
-  height: 8px;
-  background: var(--bg-primary);
-  border-radius: 4px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .progress-fill {
   height: 100%;
-  border-radius: 4px;
-  background: linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  border-radius: 3px;
+  /* 原神金色进度条 */
+  background: linear-gradient(
+    90deg,
+    #B8860B 0%,
+    var(--accent-mora) 50%,
+    #F5E6C0 100%
+  );
   position: relative;
   overflow: hidden;
-  transition: width 0.5s ease;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .progress-fill.completed {
-  background: linear-gradient(90deg, var(--accent-gold) 0%, #ffed4a 100%);
+  background: linear-gradient(
+    90deg,
+    #D4A520 0%,
+    #F5E6C0 50%,
+    #FFD700 100%
+  );
+  box-shadow: 0 0 8px rgba(245, 230, 192, 0.4);
 }
 
 .progress-shine {
   position: absolute;
   top: 0;
   left: -100%;
-  width: 100%;
+  width: 60%;
   height: 100%;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.5) 50%,
     transparent 100%
   );
-  animation: shine 2s ease-in-out infinite;
+  animation: shine 2.5s ease-in-out infinite;
 }
 
 @keyframes shine {
   0% { left: -100%; }
-  50%, 100% { left: 100%; }
+  50%, 100% { left: 200%; }
 }
 
 .progress-text {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  align-items: center;
+  font-size: 10px;
   color: var(--text-muted);
+  gap: 4px;
 }
 
 .progress-percent {
   font-family: var(--font-display);
-  font-weight: 600;
-  color: var(--accent-primary);
+  font-weight: 700;
+  color: var(--accent-mora);
+  font-size: 11px;
+}
+
+/* 解锁时间 */
+.card-unlock-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: center;
 }
 
 /* 空状态 */
@@ -1448,8 +1534,8 @@ onBeforeUnmount(() => {
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(10px);
   padding: 20px;
 }
 
@@ -1459,17 +1545,18 @@ onBeforeUnmount(() => {
 
 .unlock-modal {
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
   background: var(--bg-card);
-  border: 1px solid var(--border-medium);
-  border-radius: 24px;
+  border: 1px solid rgba(211, 188, 142, 0.4);
+  border-radius: 20px;
   overflow: hidden;
   position: relative;
-  animation: modalEnter 0.4s ease-out;
+  animation: modalEnter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 40px var(--glow-mora);
 }
 
 @keyframes modalEnter {
-  from { opacity: 0; transform: scale(0.9) translateY(20px); }
+  from { opacity: 0; transform: scale(0.85) translateY(30px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
@@ -1484,128 +1571,159 @@ onBeforeUnmount(() => {
 .effect-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(40px);
-  animation: modalOrb 8s ease-in-out infinite;
+  filter: blur(50px);
+  animation: modalOrb 10s ease-in-out infinite;
 }
 
 .effect-orb-1 {
-  width: 200px;
-  height: 200px;
-  background: var(--accent-gold);
-  top: -80px;
-  left: -50px;
-  opacity: 0.3;
+  width: 250px;
+  height: 250px;
+  background: var(--accent-mora);
+  top: -100px;
+  left: -60px;
+  opacity: 0.2;
 }
 
 .effect-orb-2 {
-  width: 150px;
-  height: 150px;
+  width: 180px;
+  height: 180px;
   background: var(--accent-primary);
-  bottom: -60px;
-  right: -40px;
-  opacity: 0.3;
-  animation-delay: -4s;
+  bottom: -70px;
+  right: -50px;
+  opacity: 0.15;
+  animation-delay: -5s;
 }
 
 .effect-orb-3 {
-  width: 100px;
-  height: 100px;
+  width: 120px;
+  height: 120px;
   background: var(--accent-purple);
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  opacity: 0.2;
-  animation-delay: -2s;
+  opacity: 0.15;
+  animation-delay: -2.5s;
 }
 
 @keyframes modalOrb {
   0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(20px, -20px) scale(1.1); }
+  33% { transform: translate(25px, -25px) scale(1.1); }
+  66% { transform: translate(-15px, 20px) scale(0.95); }
 }
 
 /* 弹窗头部 */
 .modal-header {
   position: relative;
   text-align: center;
-  padding: 30px 20px 20px;
-  background: linear-gradient(180deg, rgba(255, 214, 102, 0.1) 0%, transparent 100%);
+  padding: 32px 20px 20px;
+  background: linear-gradient(
+    180deg,
+    rgba(211, 188, 142, 0.12) 0%,
+    rgba(211, 188, 142, 0.04) 50%,
+    transparent 100%
+  );
 }
 
 .trophy-icon {
-  font-size: 48px;
+  font-size: 52px;
   display: block;
-  margin-bottom: 12px;
-  animation: trophyBounce 1s ease-in-out infinite;
+  margin-bottom: 10px;
+  animation: trophyBounce 1.2s ease-in-out infinite;
 }
 
 @keyframes trophyBounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-10px) rotate(3deg); }
 }
 
 .modal-title {
   display: block;
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 700;
-  color: var(--accent-gold);
-  text-shadow: 0 0 30px var(--glow-gold);
-  letter-spacing: 2px;
+  color: var(--accent-mora);
+  text-shadow: 0 0 30px var(--glow-mora), 0 2px 4px rgba(0,0,0,0.3);
+  letter-spacing: 3px;
 }
 
 .modal-subtitle {
   display: block;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-secondary);
-  margin-top: 8px;
+  margin-top: 6px;
+  letter-spacing: 0.5px;
 }
 
 /* 弹窗内容 */
 .modal-body {
   position: relative;
-  padding: 0 20px 20px;
-  max-height: 50vh;
+  padding: 0 20px 16px;
+  max-height: 55vh;
   overflow-y: auto;
 }
 
 .unlock-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .unlock-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px;
-  background: var(--bg-primary);
-  border-radius: 14px;
-  border: 1px solid var(--border-subtle);
-  animation: unlockItemEnter 0.5s ease-out both;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  border: 1px solid rgba(211, 188, 142, 0.2);
+  animation: unlockItemEnter 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 @keyframes unlockItemEnter {
-  from { opacity: 0; transform: translateX(-20px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translateX(-20px) scale(0.95); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
 }
 
 .unlock-icon-wrap {
-  width: 50px;
-  height: 50px;
-  border-radius: 12px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent-gold) 0%, #ffed4a 100%);
-  box-shadow: 0 4px 15px var(--glow-gold);
   flex-shrink: 0;
+  background: radial-gradient(
+    circle at 40% 35%,
+    rgba(211, 188, 142, 0.6) 0%,
+    rgba(184, 134, 11, 0.25) 100%
+  );
+  border: 2px solid var(--accent-mora);
+  box-shadow: 0 0 16px var(--glow-mora);
 }
 
-.unlock-icon-wrap.rarity-common { background: linear-gradient(135deg, var(--rarity-common) 0%, #cbd5e1 100%); }
-.unlock-icon-wrap.rarity-rare { background: linear-gradient(135deg, var(--rarity-rare) 0%, #7dd3fc 100%); box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4); }
-.unlock-icon-wrap.rarity-epic { background: linear-gradient(135deg, var(--rarity-epic) 0%, #c4b5fd 100%); box-shadow: 0 4px 15px var(--glow-purple); }
-.unlock-icon-wrap.rarity-legendary { background: linear-gradient(135deg, var(--rarity-legendary) 0%, #fde68a 100%); box-shadow: 0 4px 20px var(--glow-gold); }
+.unlock-icon-wrap.rarity-common {
+  background: radial-gradient(circle at 40% 35%, rgba(148, 163, 184, 0.5) 0%, rgba(100, 116, 139, 0.2) 100%);
+  border-color: var(--rarity-common);
+  box-shadow: 0 0 12px rgba(148, 163, 184, 0.3);
+}
+
+.unlock-icon-wrap.rarity-rare {
+  background: radial-gradient(circle at 40% 35%, rgba(56, 189, 248, 0.5) 0%, rgba(2, 132, 199, 0.2) 100%);
+  border-color: var(--rarity-rare);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+}
+
+.unlock-icon-wrap.rarity-epic {
+  background: radial-gradient(circle at 40% 35%, rgba(168, 85, 247, 0.5) 0%, rgba(124, 58, 237, 0.2) 100%);
+  border-color: var(--rarity-epic);
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.35);
+}
+
+.unlock-icon-wrap.rarity-legendary {
+  background: radial-gradient(circle at 40% 35%, rgba(245, 230, 192, 0.7) 0%, rgba(211, 188, 142, 0.3) 100%);
+  border-color: var(--accent-mora-light);
+  box-shadow: 0 0 24px var(--glow-mora);
+}
 
 .unlock-info {
   flex: 1;
@@ -1614,10 +1732,10 @@ onBeforeUnmount(() => {
 
 .unlock-name {
   display: block;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1625,7 +1743,7 @@ onBeforeUnmount(() => {
 
 .unlock-desc {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -1634,55 +1752,74 @@ onBeforeUnmount(() => {
 
 .unlock-time {
   display: block;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: 3px;
 }
 
 .unlock-rarity {
-  font-size: 10px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-weight: 600;
+  font-size: 9px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-weight: 700;
   flex-shrink: 0;
+  letter-spacing: 0.3px;
 }
 
 .unlock-rarity.common { background: rgba(148, 163, 184, 0.15); color: var(--rarity-common); }
 .unlock-rarity.rare { background: rgba(56, 189, 248, 0.15); color: var(--rarity-rare); }
 .unlock-rarity.epic { background: rgba(168, 85, 247, 0.15); color: var(--rarity-epic); }
-.unlock-rarity.legendary { background: rgba(251, 191, 36, 0.15); color: var(--rarity-legendary); }
+.unlock-rarity.legendary { background: rgba(211, 188, 142, 0.2); color: var(--accent-mora); }
 
 /* 弹窗底部 */
 .modal-footer {
   position: relative;
-  padding: 16px 20px 24px;
+  padding: 14px 20px 20px;
   display: flex;
   justify-content: center;
 }
 
 .confirm-btn {
-  padding: 14px 48px;
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  padding: 13px 44px;
+  background: linear-gradient(135deg, var(--accent-mora) 0%, var(--accent-mora-light) 100%);
   border: none;
-  border-radius: 30px;
-  color: #fff;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  box-shadow: 0 8px 25px var(--glow-cyan);
+  border-radius: 28px;
+  color: #1a1206;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  box-shadow: 0 6px 20px var(--glow-mora);
   transition: all 0.3s ease;
 }
 
 .confirm-btn:active {
-  transform: scale(0.96);
-  box-shadow: 0 4px 15px var(--glow-cyan);
+  transform: scale(0.95);
+  box-shadow: 0 3px 10px var(--glow-mora);
 }
 
-/* ==================== 响应式 ==================== */
+/* ==================== 完整响应式 ==================== */
+@media (max-width: 1400px) {
+  .achievement-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+@media (max-width: 1100px) {
+  .achievement-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .achievement-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 @media (max-width: 768px) {
   .stats-panel {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 14px;
   }
 
   .stats-left {
@@ -1696,29 +1833,91 @@ onBeforeUnmount(() => {
 
   .stat-item {
     flex: 1;
-    min-width: 100px;
+    min-width: 90px;
   }
 
+  /* 手机上 3 列 */
   .achievement-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
   }
 
   .main-content {
-    padding: 12px;
+    padding: 10px;
   }
 
   .panel {
-    padding: 16px;
+    padding: 14px;
   }
 
   .nav-title {
-    font-size: 18px;
+    font-size: 17px;
+  }
+
+  .card-icon-frame {
+    width: 60px;
+    height: 60px;
+  }
+
+  .card-name {
+    font-size: 13px;
+  }
+
+  .card-desc {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 580px) {
+  /* 手机上 2 列 */
+  .achievement-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .achievement-card {
+    padding: 12px 10px 10px;
+    gap: 8px;
+  }
+
+  .card-icon-frame {
+    width: 54px;
+    height: 54px;
+  }
+
+  .rarity-ribbon {
+    font-size: 8px;
+    padding: 2px 8px;
+  }
+
+  .card-name {
+    font-size: 12px;
+  }
+
+  .card-desc {
+    font-size: 10px;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 400px) {
+  .achievement-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .card-icon-frame {
+    width: 48px;
+    height: 48px;
   }
 }
 
 @media (max-width: 480px) {
   .stats-right {
-    flex-direction: column;
+    flex-direction: row;
   }
 
   .stat-item {
@@ -1726,30 +1925,30 @@ onBeforeUnmount(() => {
   }
 
   .filter-tabs {
-    gap: 8px;
+    gap: 6px;
   }
 
   .filter-tab {
-    padding: 8px 12px;
-    font-size: 13px;
+    padding: 7px 10px;
+    font-size: 12px;
   }
 
   .gauge-container {
-    width: 100px;
-    height: 100px;
+    width: 90px;
+    height: 90px;
   }
 
   .gauge-value {
-    font-size: 26px;
+    font-size: 24px;
   }
 
   .grade-badge {
-    width: 50px;
-    height: 50px;
+    width: 46px;
+    height: 46px;
   }
 
   .grade-letter {
-    font-size: 22px;
+    font-size: 20px;
   }
 }
 </style>
