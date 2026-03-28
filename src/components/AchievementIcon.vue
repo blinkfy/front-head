@@ -51,14 +51,61 @@ const ICON_MP = {
   points_100: points100Icon
 }
 
-// H5 SVG：颜色通过 currentColor 从父级继承（支持 CSS 变量 --achievement-icon-color）
+// H5 SVG：金色纹章风格，颜色通过 currentColor 从父级继承
 const ICON_SVG_H5 = {
-  first_sort: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px"><path d="M12 20c0-5 2-8 7-10-1 5-4 7-9 8"/><path d="M5 14c2-4 5-6 9-7-1 4-3 7-7 9"/><path d="M12 20v-5"/></svg>`,
-  online_novice: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px"><rect x="3" y="7" width="18" height="12" rx="2"/><path d="M8 7l1.5-2h5L16 7"/><circle cx="12" cy="13" r="3"/></svg>`,
-  device_novice: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px"><path d="M9 5h6"/><path d="M5 7h14"/><path d="M7 7l1 12h8l1-12"/><path d="M10 11v5M14 11v5"/></svg>`,
-  category_collector: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>`,
-  streak_3_days: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/><path d="m9 15 2 2 4-4"/></svg>`,
-  points_100: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px"><circle cx="12" cy="12" r="9"/><path d="m12 7 1.5 3 3.5.5-2.5 2.4.6 3.6L12 15l-3.1 1.5.6-3.6L7 10.5l3.5-.5z"/></svg>`
+  first_sort: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px">
+    <!-- 神圣分类徽记：中央盾形 + 橄榄枝环绕 -->
+    <path d="M12 3L4 7v5c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V7l-8-4z"/>
+    <path d="M12 8v5M9.5 10.5l2.5 2.5 2.5-2.5"/>
+    <path d="M4 7c1.5-1 3-1.5 4.5-1.5" opacity="0.6"/>
+    <path d="M20 7c-1.5-1-3-1.5-4.5-1.5" opacity="0.6"/>
+    <path d="M4 9c1.5 0.5 3 0.8 4.5 1" opacity="0.5"/>
+    <path d="M20 9c-1.5 0.5-3 0.8-4.5 1" opacity="0.5"/>
+  </svg>`,
+  online_novice: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px">
+    <!-- 真理之眼纹章：中央慧眼 + 光芒射线 -->
+    <ellipse cx="12" cy="12" rx="9" ry="5.5"/>
+    <circle cx="12" cy="12" r="3.5"/>
+    <circle cx="12" cy="12" r="1.2" fill="currentColor"/>
+    <path d="M12 6.5V3" opacity="0.7"/>
+    <path d="M12 21v-3.5" opacity="0.7"/>
+    <path d="M7 8.5L4.5 6.5" opacity="0.6"/>
+    <path d="M17 8.5L19.5 6.5" opacity="0.6"/>
+    <path d="M7 15.5L4.5 17.5" opacity="0.6"/>
+    <path d="M17 15.5L19.5 17.5" opacity="0.6"/>
+  </svg>`,
+  device_novice: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px">
+    <!-- 盾形分类纹章：盾徽 + 内部分类符号 -->
+    <path d="M12 2L3 6v6c0 5 4 9 9 10 5-1 9-5 9-10V6L12 2z"/>
+    <path d="M8 10h2v2H8zM14 10h2v2h-2zM11 14h2v3h-2z"/>
+    <path d="M8 10h2M14 10h2" opacity="0.5"/>
+  </svg>`,
+  category_collector: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px">
+    <!-- 完美对称钻石徽记：八芒星 + 中央宝石 -->
+    <polygon points="12,2 15,9 22,9 17,14 19,22 12,18 5,22 7,14 2,9 9,9"/>
+    <polygon points="12,7 13.5,11 18,11 14.5,14 16,18 12,15.5 8,18 9.5,14 6,11 10.5,11"/>
+    <circle cx="12" cy="12" r="1.5" fill="currentColor" opacity="0.8"/>
+  </svg>`,
+  streak_3_days: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px">
+    <!-- 连续三星徽章：三日连星 + 缎带底座 -->
+    <circle cx="6" cy="9" r="2.5"/>
+    <circle cx="12" cy="7" r="2.5"/>
+    <circle cx="18" cy="9" r="2.5"/>
+    <path d="M6 9l1.5 1.5L9 9" opacity="0.7"/>
+    <path d="M12 7l1.5 1.5L15 7" opacity="0.7"/>
+    <path d="M3 14h18" opacity="0.5"/>
+    <path d="M5 14l-1 5h16l-1-5" opacity="0.7"/>
+    <path d="M7 17h10" opacity="0.4"/>
+  </svg>`,
+  points_100: (sz) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:${sz}px;height:${sz}px">
+    <!-- 光芒万丈太阳纹章：中央太阳 + 八道光芒 + 圆环 -->
+    <circle cx="12" cy="12" r="4"/>
+    <circle cx="12" cy="12" r="6.5" opacity="0.4"/>
+    <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+    <path d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1"/>
+    <path d="M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>
+    <circle cx="12" cy="12" r="1.2" fill="currentColor"/>
+  </svg>`
 }
 
 const iconPx = computed(() => SIZE_MAP[props.size] || SIZE_MAP.medium)

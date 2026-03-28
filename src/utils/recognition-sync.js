@@ -1,4 +1,4 @@
-﻿import { Exception } from "sass";
+import { Exception } from "sass";
 
 const SEED_KEY = 'ai_chat_seed_payload';
 const LEGACY_IMAGE_KEY = 'ai_chat_seed_image';
@@ -346,16 +346,33 @@ export function saveSeed(seed) {
   } catch (_) {}
 }
 
+function normalizeDataImageUrl(s) {
+  if (typeof s !== 'string' || !s.trim()) return '';
+  const t = s.trim();
+  if (t.indexOf('data:image/') === 0) return t;
+  const cleaned = t.replace(/\s/g, '');
+  if (cleaned.length < 32) return '';
+  return 'data:image/jpeg;base64,' + cleaned;
+}
+
+function stripCompletedRecognitionPrefix(text) {
+  return String(text || '')
+    .replace(/^我已经完成识别[，,]\s*/, '')
+    .replace(/^我已经完成识别\s*/, '')
+    .trim();
+}
+
 export function buildSeedFromRecognizeData(data) {
   if (!data || typeof data !== 'object') return null;
 
   const chatSeed = data.chatSeed && typeof data.chatSeed === 'object' ? data.chatSeed : {};
 
   let imageBase64 = '';
-  if (typeof chatSeed.imageBase64 === 'string' && chatSeed.imageBase64.indexOf('data:image/') === 0) {
-    imageBase64 = chatSeed.imageBase64;
-  } else if (typeof data.result_img_base64 === 'string' && data.result_img_base64.indexOf('data:image/') === 0) {
-    imageBase64 = data.result_img_base64;
+  if (typeof chatSeed.imageBase64 === 'string' && chatSeed.imageBase64.trim()) {
+    imageBase64 = normalizeDataImageUrl(chatSeed.imageBase64);
+  }
+  if (!imageBase64 && typeof data.result_img_base64 === 'string' && data.result_img_base64.trim()) {
+    imageBase64 = normalizeDataImageUrl(data.result_img_base64);
   }
   if (!imageBase64) return null;
 
@@ -367,12 +384,15 @@ export function buildSeedFromRecognizeData(data) {
     category = String(labels[0].name).trim();
   }
 
-  const userPrompt =
+  const fromSeed =
     typeof chatSeed.userPrompt === 'string' && chatSeed.userPrompt.trim()
-      ? chatSeed.userPrompt.trim()
-      : (category
-          ? `我已经完成识别，重点是${category}。请继续补充分类依据、投放细节和可执行的变废为宝步骤。`
-          : '我已经完成识别，请继续补充具体物品分类、投放细节和可执行的变废为宝步骤。');
+      ? stripCompletedRecognitionPrefix(chatSeed.userPrompt.trim())
+      : '';
+  const userPrompt =
+    fromSeed ||
+    (category
+      ? `重点是${category}。请继续补充分类依据、投放细节和可执行的变废为宝步骤。`
+      : '请继续补充具体物品分类、投放细节和可执行的变废为宝步骤。');
 
   const seedReply = typeof chatSeed.assistantReply === 'string' ? chatSeed.assistantReply.trim() : '';
   const preferLocalSummary =
