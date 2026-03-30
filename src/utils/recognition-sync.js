@@ -1,5 +1,3 @@
-import { Exception } from "sass";
-
 const SEED_KEY = 'ai_chat_seed_payload';
 const LEGACY_IMAGE_KEY = 'ai_chat_seed_image';
 const LEGACY_CATEGORY_KEY = 'ai_chat_seed_category';

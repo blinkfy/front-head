@@ -8,7 +8,7 @@ dist
 unpackage
 __pycache__
 *.local
-
+.npm_cache
 # Editor directories and files
 .idea
 *.suo

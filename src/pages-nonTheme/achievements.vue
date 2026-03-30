@@ -479,7 +479,13 @@ onBeforeUnmount(() => {
 }
 
 /* ==================== 基础重置 ==================== */
-* { box-sizing: border-box; }
+.theme-wrapper,
+.theme-wrapper view,
+.theme-wrapper text,
+.theme-wrapper button,
+.theme-wrapper image {
+  box-sizing: border-box;
+}
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 4px; }
@@ -714,7 +720,7 @@ onBeforeUnmount(() => {
 /* ===== 文本信息 ===== */
 .card-info { width: 100%; text-align: center; }
 .card-name { display: block; font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; letter-spacing: 0.5px; }
-.card-desc { display: -webkit-box; font-size: 12px; color: var(--text-secondary); line-height: 1.6; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 38px; }
+.card-desc { display: -webkit-box; font-size: 12px; color: var(--text-secondary); line-height: 1.6; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 38px; }
 
 /* ===== 进度条设计重构 ===== */
 .card-progress { width: 100%; margin-top: 4px; }

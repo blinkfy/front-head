@@ -1,4 +1,4 @@
-import MarkdownIt from 'markdown-it'
+import MarkdownIt from 'markdown-it/index.mjs'
 
 const md = new MarkdownIt({
   html: false,
