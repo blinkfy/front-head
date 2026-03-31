@@ -1217,7 +1217,11 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
   background: linear-gradient(180deg, rgba(8, 52, 62, .34), rgba(8, 40, 49, .12));
 }
 .screen .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
-.screen .control-row { padding-top: 8px; border-top: 1px solid rgba(116, 216, 232, .14); }
+.screen .control-row {
+  padding-top: 8px;
+  border-top: 1px solid rgba(116, 216, 232, .14);
+  flex-wrap: nowrap;
+}
 
 /* ─── 标题 ─── */
 .screen .title {
@@ -1235,8 +1239,19 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
 /* ─── actions ─── */
 .screen .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .screen .meta-actions { justify-content: flex-end; }
-.screen .main-actions { justify-content: flex-end; }
-.screen .main-actions .btn { flex: 0 0 auto; min-width: 112px; }
+.screen .main-actions { justify-content: flex-end; flex-wrap: nowrap; flex: 0 0 auto; }
+.screen .main-actions .btn {
+  flex: 0 0 112px;
+  width: 112px;
+  min-width: 112px;
+  white-space: nowrap;
+}
+.screen .main-actions .btn.main {
+  display: block;
+  width: 112px;
+  min-width: 112px;
+  text-align: center;
+}
 .screen .nav-link-btn { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ─── 时钟 / 状态 ─── */
@@ -1500,7 +1515,7 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
   .screen .main { grid-template-columns: minmax(220px, .8fr) minmax(460px, 1.8fr) minmax(220px, .8fr); gap: 8px; }
   .screen .clock  { min-width: 170px; }
   .screen .status { min-width: 190px; }
-  .screen .main-actions .btn { min-width: 104px; }
+  .screen .main-actions .btn { min-width: 112px; }
 }
 @media (max-width: 1260px) {
   .screen { width: 100%; height: auto; min-height: 100%; padding: 10px; overflow-y: auto; }
@@ -1517,7 +1532,8 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
   .screen .title { font-size: 21px; }
   .screen .clock  { min-width: 144px; font-size: 18px; }
   .screen .status { min-width: 144px; }
-  .screen .main-actions { width: 100%; }
+  .screen .control-row { flex-wrap: wrap; }
+  .screen .main-actions { width: 100%; flex-wrap: wrap; }
   .screen .main-actions .btn { min-width: 0; flex: 1 1 32%; }
   .screen .toolbar { width: 100%; }
   .screen .field   { flex: 1 1 30%; }
