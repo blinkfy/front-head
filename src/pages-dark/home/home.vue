@@ -124,13 +124,13 @@
                 :class="['upcycling-plan-item', { 'is-warning': /提醒|风险|注意/.test(section.title) }]"
               >
                 <text class="upcycling-plan-title">{{ section.title }}</text>
-                <text class="upcycling-plan-content" v-html="formatSemicolonNewline(section.content)"></text>
+                <view class="upcycling-plan-content" v-html="formatSemicolonNewline(section.content)"></view>
               </view>
             </view>
 
             <view v-else-if="resultDesc" class="description-panel">
               <text class="desc-label">💡 处理建议</text>
-              <text class="desc-content" v-html="formatSemicolonNewline(resultDesc)"></text>
+              <view class="desc-content" v-html="formatSemicolonNewline(resultDesc)"></view>
             </view>
           </view>
         </view>
@@ -228,6 +228,39 @@
       </view>
     </view>
     
+    <!-- 成就解锁弹窗 -->
+    <view v-if="showAchievementModal" class="modal-overlay" @click="closeAchievementModal">
+      <view class="achievement-unlock-modal" @click.stop="">
+        <view class="achievement-unlock-bg"></view>
+        <view class="achievement-unlock-header">
+          <text class="achievement-unlock-emoji">🏆</text>
+          <text class="achievement-unlock-title">新成就解锁!</text>
+          <text class="achievement-unlock-subtitle">恭喜获得 {{ achievementModalItems.length }} 项新成就</text>
+        </view>
+        <view class="achievement-unlock-list">
+          <view
+            v-for="(item, idx) in achievementModalItems"
+            :key="item.key"
+            class="achievement-unlock-item"
+          >
+            <view class="achievement-unlock-icon-wrap" :class="getAchievementRarity(item.key)">
+              <text class="achievement-unlock-icon">{{ getAchievementIcon(item.key) }}</text>
+            </view>
+            <view class="achievement-unlock-info">
+              <text class="achievement-unlock-name">{{ item.name }}</text>
+              <text class="achievement-unlock-desc">{{ item.description }}</text>
+            </view>
+            <view class="achievement-unlock-badge" :class="getAchievementRarity(item.key)">
+              <text>{{ getAchievementRarityLabel(item.key) }}</text>
+            </view>
+          </view>
+        </view>
+        <view class="achievement-unlock-footer">
+          <button class="achievement-unlock-btn" @click="closeAchievementModal">太棒了!</button>
+        </view>
+      </view>
+    </view>
+
     <!-- 科技感底部导航栏 -->
     <view class="tabbar">
       <view class="tabbar-item active">
@@ -285,6 +318,11 @@ const bboxLoadBoundImages = new WeakSet()
 
 // 检测是否为 H5 平台
 const isH5Platform = ref(false)
+
+// 成就解锁弹窗相关
+const showAchievementModal = ref(false)
+const achievementModalItems = ref([])
+const shownAchievementKeys = new Set()
 
 // 将遇到英文或中文分号且后面还有内容的地方替换为换行展示
 function escapeHtml(str) {
@@ -566,6 +604,9 @@ function applyEnhancedRecognitionData(recognizeData) {
     recognizeData.achievementInfo.newlyUnlocked
   ) ? recognizeData.achievementInfo.newlyUnlocked : []
   appendAchievementQueue(unlocks)
+  if (unlocks.length) {
+    showAchievementUnlockModal(unlocks)
+  }
 
   const seed = buildSeedFromRecognizeData(recognizeData)
   if (seed) {
@@ -1070,6 +1111,48 @@ function closeGuideModal() {
     currentGuide.value = {}
   }, 300)
 }
+
+function showAchievementUnlockModal(items) {
+  if (!Array.isArray(items) || !items.length) return
+  const newItems = items.filter(item => item && item.key && !shownAchievementKeys.has(item.key))
+  if (!newItems.length) return
+  newItems.forEach(item => shownAchievementKeys.add(item.key))
+  achievementModalItems.value = newItems
+  showAchievementModal.value = true
+}
+
+function closeAchievementModal() {
+  showAchievementModal.value = false
+  setTimeout(() => { achievementModalItems.value = [] }, 300)
+}
+
+function getAchievementIcon(key) {
+  const map = {
+    'first_recognize': '🌱', 'ten_recognize': '🌿', 'fifty_recognize': '🌳',
+    'hundred_recognize': '🏅', 'daily_five': '⭐', 'week_streak': '🔥',
+    'month_streak': '💎', 'category_master': '🎓', 'upcycle_creator': '♻️',
+    'community_contributor': '🤝', 'early_bird': '🌅', 'night_owl': '🌙',
+    'perfect分类': '💯', 'all_categories': '🎯', 'speed_demon': '⚡',
+    'collector': '📚', 'expert': '🧠', 'legend': '👑'
+  }
+  return map[key] || '🏆'
+}
+
+function getAchievementRarity(key) {
+  const epic = ['month_streak', 'legend', 'all_categories']
+  const rare = ['collector', 'expert', 'category_master', 'upcycle_creator']
+  if (epic.includes(key)) return 'epic'
+  if (rare.includes(key)) return 'rare'
+  return 'common'
+}
+
+function getAchievementRarityLabel(key) {
+  const epic = ['month_streak', 'legend', 'all_categories']
+  const rare = ['collector', 'expert', 'category_master', 'upcycle_creator']
+  if (epic.includes(key)) return '史诗'
+  if (rare.includes(key)) return '稀有'
+  return '普通'
+}
 </script>
 
 <style scoped>
@@ -1552,8 +1635,10 @@ function closeGuideModal() {
 .category-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16rpx;
   margin-bottom: 24rpx;
+  flex-wrap: nowrap;
 }
 
 .ai-helper-btn {
@@ -1562,22 +1647,24 @@ function closeGuideModal() {
   justify-content: center;
   white-space: nowrap;
   border-radius: 999rpx;
-  padding: 12rpx 24rpx;
-  font-size: 22rpx;
+  padding: 14rpx 36rpx;
+  font-size: 28rpx;
   font-weight: 700;
   color: #031521;
   background: linear-gradient(135deg, #40e0ff, #58e8d4);
   box-shadow: 0 8rpx 20rpx rgba(64, 224, 255, 0.3);
+  flex-shrink: 0;
 }
 
 .category-display {
   display: flex;
   align-items: center;
   background: rgba(64, 224, 255, 0.1);
-  padding: 24rpx;
+  padding: 18rpx 20rpx;
   border-radius: 16rpx;
-  margin-bottom: 24rpx;
   border-left: 6rpx solid #40e0ff;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .category-display.recyclable {
@@ -1879,11 +1966,11 @@ function closeGuideModal() {
   max-width: 650rpx;
   background: rgba(15, 15, 35, 0.8);
   border-radius: 20rpx;
-  padding: 24rpx 16rpx;
+  padding: 20rpx 12rpx;
   border: 1px solid rgba(64, 224, 255, 0.2);
   backdrop-filter: blur(15px);
   box-sizing: border-box;
-  gap: 16rpx;
+  gap: 8rpx;
 }
 
 .action-item {
@@ -1891,14 +1978,14 @@ function closeGuideModal() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 20rpx 12rpx;
+  padding: 14rpx 8rpx;
   border-radius: 16rpx;
   background: rgba(64, 224, 255, 0.08);
   border: 1px solid rgba(64, 224, 255, 0.2);
   transition: all 0.3s ease;
   cursor: pointer;
   box-sizing: border-box;
-  min-height: 120rpx;
+  min-height: 100rpx;
   flex: 1;
   min-width: 0;
 }
@@ -1910,8 +1997,8 @@ function closeGuideModal() {
 }
 
 .action-icon {
-  font-size: 40rpx;
-  margin-bottom: 12rpx;
+  font-size: 32rpx;
+  margin-bottom: 10rpx;
   filter: drop-shadow(0 0 10rpx rgba(64, 224, 255, 0.5));
 }
 
@@ -2163,8 +2250,15 @@ function closeGuideModal() {
   }
 
   .ai-helper-btn {
-    padding: 10rpx 20rpx;
-    font-size: 20rpx;
+    padding: 14rpx 32rpx;
+    font-size: 28rpx;
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .category-row {
+    align-items: center;
   }
 
   .recognized-items-box {
@@ -2196,6 +2290,8 @@ function closeGuideModal() {
 
   .ai-helper-btn {
     width: 100%;
+    padding: 16rpx 36rpx;
+    font-size: 30rpx;
   }
 
   .desc-content {
@@ -2272,5 +2368,133 @@ function closeGuideModal() {
 .tabbar-label {
   font-size: 22rpx;
   letter-spacing: 1rpx;
+}
+
+/* 成就解锁弹窗 */
+.achievement-unlock-modal {
+  position: relative;
+  width: 90%;
+  max-width: 600rpx;
+  background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+  border-radius: 32rpx;
+  overflow: hidden;
+  animation: achievementModalSlide 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes achievementModalSlide {
+  0% { opacity: 0; transform: translateY(60rpx) scale(0.9); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.achievement-unlock-bg {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 200rpx;
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+  z-index: 0;
+}
+.achievement-unlock-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40rpx 32rpx 24rpx;
+}
+.achievement-unlock-emoji {
+  font-size: 64rpx;
+  margin-bottom: 8rpx;
+  animation: achievementBounce 0.6s ease 0.2s both;
+}
+@keyframes achievementBounce {
+  0% { transform: scale(0) rotate(-20deg); }
+  60% { transform: scale(1.3) rotate(10deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.achievement-unlock-title {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 2rpx 8rpx rgba(0,0,0,0.2);
+}
+.achievement-unlock-subtitle {
+  font-size: 24rpx;
+  color: rgba(255,255,255,0.85);
+  margin-top: 6rpx;
+}
+.achievement-unlock-list {
+  position: relative;
+  z-index: 1;
+  padding: 0 24rpx 16rpx;
+  max-height: 400rpx;
+  overflow-y: auto;
+}
+.achievement-unlock-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  background: rgba(30, 41, 59, 0.9);
+  border-radius: 20rpx;
+  padding: 20rpx;
+  margin-bottom: 12rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0,0,0,0.3);
+  border: 1rpx solid rgba(148, 163, 184, 0.2);
+}
+.achievement-unlock-icon-wrap {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 36rpx;
+}
+.achievement-unlock-icon-wrap.common { background: rgba(75,85,99,0.4); }
+.achievement-unlock-icon-wrap.rare { background: rgba(30,64,175,0.4); }
+.achievement-unlock-icon-wrap.epic { background: rgba(109,40,217,0.4); }
+.achievement-unlock-icon-wrap.legendary { background: rgba(161,98,7,0.4); }
+.achievement-unlock-info {
+  flex: 1;
+  min-width: 0;
+}
+.achievement-unlock-name {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #f3f4f6;
+}
+.achievement-unlock-desc {
+  display: block;
+  font-size: 22rpx;
+  color: #9ca3af;
+  margin-top: 4rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.achievement-unlock-badge {
+  padding: 4rpx 14rpx;
+  border-radius: 20rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.achievement-unlock-badge.common { background: rgba(75,85,99,0.4); color: #d1d5db; }
+.achievement-unlock-badge.rare { background: rgba(30,64,175,0.4); color: #93c5fd; }
+.achievement-unlock-badge.epic { background: rgba(109,40,217,0.4); color: #c4b5fd; }
+.achievement-unlock-badge.legendary { background: rgba(161,98,7,0.4); color: #fcd34d; }
+.achievement-unlock-footer {
+  position: relative;
+  z-index: 1;
+  padding: 8rpx 24rpx 28rpx;
+}
+.achievement-unlock-btn {
+  width: 100%;
+  height: 88rpx;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  font-size: 30rpx;
+  border: none;
+  border-radius: 44rpx;
+  box-shadow: 0 8rpx 24rpx rgba(16,185,129,0.35);
 }
 </style>

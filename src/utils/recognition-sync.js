@@ -27,27 +27,37 @@ export function dedupeTextList(list) {
 }
 
 export function extractRecognizedItems(data) {
-  const out = [];
+  const out = []
   const aiItems = Array.isArray(data && data.aiInsights && data.aiInsights.items)
     ? data.aiInsights.items
-    : [];
+    : []
 
   for (let i = 0; i < aiItems.length; i += 1) {
     const itemName = String(
       (aiItems[i] && (aiItems[i].name || aiItems[i].item || aiItems[i].object)) || ''
-    ).trim();
-    if (itemName) out.push(itemName);
+    ).trim()
+    if (itemName) out.push(itemName)
   }
 
   if (!out.length) {
-    const labels = Array.isArray(data && data.labels) ? data.labels : [];
-    for (let i = 0; i < labels.length; i += 1) {
-      const sourceName = String((labels[i] && labels[i].source_name) || '').trim();
-      if (sourceName) out.push(sourceName);
+    const topLevelItems = Array.isArray(data && data.items) ? data.items : []
+    for (let i = 0; i < topLevelItems.length; i += 1) {
+      const itemName = String(
+        (topLevelItems[i] && (topLevelItems[i].name || topLevelItems[i].item || topLevelItems[i].object)) || ''
+      ).trim()
+      if (itemName) out.push(itemName)
     }
   }
 
-  return dedupeTextList(out).slice(0, 8);
+  if (!out.length) {
+    const labels = Array.isArray(data && data.labels) ? data.labels : []
+    for (let i = 0; i < labels.length; i += 1) {
+      const sourceName = String((labels[i] && labels[i].source_name) || '').trim()
+      if (sourceName) out.push(sourceName)
+    }
+  }
+
+  return dedupeTextList(out).slice(0, 8)
 }
 
 function getDisposalAdvice(data) {
@@ -241,34 +251,46 @@ function getUpcyclingText(data) {
 }
 
 export function buildExpandedUpcyclingText(data) {
-  const upcycling = getUpcyclingText(data);
-  if (!upcycling) return '';
-  try{
-  // 优先使用后端大模型生成的完整描述（如果存在）
-  if (data.aiInsights && typeof data.aiInsights.expandedUpcycling === 'string' && data.aiInsights.expandedUpcycling.trim()) {
-    let lines=data.aiInsights.expandedUpcycling
-    if (typeof data.aiInsights.disposalAdvice === 'string') {
-      lines=[`垃圾投放：${data.aiInsights.disposalAdvice}\n`]+lines.trim();
+  const aiInsights = data && data.aiInsights ? data.aiInsights : null
+  const aiUpcycling = aiInsights && typeof aiInsights.upcyclingSuggestion === 'string' && aiInsights.upcyclingSuggestion.trim()
+    ? aiInsights.upcyclingSuggestion.trim()
+    : ''
+
+  // 优先使用后端大模型生成的完整结构化描述
+  const expandedFromAI = (aiInsights && typeof aiInsights.expandedUpcycling === 'string' && aiInsights.expandedUpcycling.trim())
+    ? aiInsights.expandedUpcycling.trim()
+    : (typeof data.expandedUpcycling === 'string' && data.expandedUpcycling.trim() ? data.expandedUpcycling.trim() : '')
+
+  if (expandedFromAI) {
+    const disposalAdvice = aiInsights && typeof aiInsights.disposalAdvice === 'string' && aiInsights.disposalAdvice.trim()
+      ? aiInsights.disposalAdvice.trim()
+      : (typeof data.disposalAdvice === 'string' && data.disposalAdvice.trim() ? data.disposalAdvice.trim() : '')
+    if (disposalAdvice) {
+      return `垃圾投放：${disposalAdvice}\n` + expandedFromAI
     }
-    return lines;
+    return expandedFromAI
   }
-  }catch (e){console.log(e);}
-  const items = extractRecognizedItems(data).slice(0, 3);
-  const focusItems = items.length ? items.join('、') : '本次识别到的垃圾';
-  const disposalAdvice = getDisposalAdvice(data);
+
+  // 无 AI 结构化建议时，回退到从 upcyclingSuggestion 自行构建
+  if (!aiUpcycling) return ''
+  const items = extractRecognizedItems(data).slice(0, 3)
+  const focusItems = items.length ? items.join('、') : '本次识别到的垃圾'
+  const disposalAdvice = aiInsights && typeof aiInsights.disposalAdvice === 'string' && aiInsights.disposalAdvice.trim()
+    ? aiInsights.disposalAdvice.trim()
+    : ''
 
   const lines = [
-    `回收利用：${upcycling}`,
+    `回收利用：${aiUpcycling}`,
     `可执行步骤：先把${focusItems}分开处理，厨余先沥干，可回收物简单清洁后再进入改造环节。`,
     '改造示例：保留完整容器可做收纳盒或花盆，不适合改造的部分按分类要求直接投放。',
     '安全提醒：处理时建议戴手套；若出现霉变、油污和异味，优先规范投放，不建议继续改造。'
-  ];
+  ]
 
   if (disposalAdvice) {
-    lines.splice(2, 0, `垃圾投放：${disposalAdvice}`);
+    lines.splice(2, 0, `垃圾投放：${disposalAdvice}`)
   }
 
-  return lines.join('\n');
+  return lines.join('\n')
 }
 
 export function splitUpcyclingSections(text) {

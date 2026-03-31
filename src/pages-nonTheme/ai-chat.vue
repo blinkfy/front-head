@@ -53,7 +53,6 @@
             <view class="chat-header-row">
               <view class="chat-title">{{ chatTitle }}</view>
             </view>
-            <view class="chat-subtitle">{{ isStreaming ? '正在生成回答…' : chatSubtitle }}</view>
           </view>
         </view>
         <view class="header-actions">
@@ -168,6 +167,7 @@
         </view>
 
         <view class="composer-card">
+          <!-- #ifdef H5 -->
           <textarea
             v-model="promptText"
             class="prompt-textarea"
@@ -175,6 +175,16 @@
             :placeholder="composerPlaceholder"
             @keydown.enter.exact.prevent="onSend"
           ></textarea>
+          <!-- #endif -->
+          <!-- #ifndef H5 -->
+          <textarea
+            v-model="promptText"
+            class="prompt-textarea"
+            auto-height
+            :placeholder="composerPlaceholder"
+            @confirm="onSend"
+          ></textarea>
+          <!-- #endif -->
 
           <view class="composer-toolbar">
             <view class="composer-left">
@@ -258,6 +268,16 @@ const SEED_CONSUMED_KEY = 'ai_chat_seed_consumed_at'
 
 // ─── 主题 ────────────────────────────────────────────────
 const isDark = ref(getStorage('app_theme') === 'dark')
+
+// ─── 状态栏高度 ──────────────────────────────────────────
+const statusBarHeight = ref(20)
+function initSystemInfo() {
+  const info = uni.getSystemInfoSync()
+  statusBarHeight.value = info.statusBarHeight || 20
+  if (typeof document !== 'undefined') {
+    document.documentElement.style.setProperty('--status-bar-height', statusBarHeight.value + 'px')
+  }
+}
 
 // ─── 响应式状态 ──────────────────────────────────────────
 const chatTitle    = ref('当前对话')
@@ -805,31 +825,40 @@ async function streamChat({ text, imageBase64, history }) {
   // #endif
 
   // #ifndef H5
-  // 非 H5 平台：使用普通 POST 请求（不支持 SSE 流）
+  // 非 H5 平台（小程序/APP）：使用非流式 POST 请求
   return await new Promise((resolve, reject) => {
+    isStreaming.value = true
+    streamingText.value = '正在思考中...'
+    streamingReasoning.value = ''
     uni.request({
-      url: `${baseUrl}/api/ai/chat/stream`,
+      url: `${baseUrl}/api/ai/chat/nonstream`,
       method: 'POST',
       header: buildAuthHeaders(true),
       data: { text, imageBase64, history, sessionId: activeSessionId.value },
+      timeout: 90000,
       success: (res) => {
+        isStreaming.value = false
         const payload = res.data
         if (!payload || (payload.code !== 0 && payload.code !== undefined)) {
-          isStreaming.value = false
-          reject(new Error((payload && payload.msg) || `请求失败（HTTP ${res.statusCode}）`))
+          const errMsg = (payload && payload.msg) || `请求失败（HTTP ${res.statusCode}）`
+          if (errMsg.includes('401') || errMsg.includes('登录')) {
+            reject(new Error('登录已失效，请重新登录后再试。'))
+          } else {
+            reject(new Error(errMsg))
+          }
           return
         }
-        // SSE done 事件结构: { content, reasoning, parsed }
-        // 非 SSE JSON 响应结构: { code, data: { content, reasoning }, ... }
+        // 非流式响应结构: { code, data: { content, reasoning, parsed } }
         const content = (payload.data && payload.data.content) || payload.content || 'AI 暂未返回内容。'
         const reasoning = (payload.data && payload.data.reasoning) || payload.reasoning || ''
         streamingText.value = ''
         streamingReasoning.value = ''
-        isStreaming.value = false
         resolve({ content, reasoning, aborted: false })
       },
       fail: (err) => {
         isStreaming.value = false
+        streamingText.value = ''
+        streamingReasoning.value = ''
         reject(new Error(err && err.errMsg ? err.errMsg : '网络请求失败'))
       }
     })
@@ -854,6 +883,12 @@ async function onSend() {
     uni.showToast({ title: '请先输入问题或选择图片', icon: 'none' })
     return
   }
+  // 小程序端在发送前立即设置状态，防止重复点击
+  // #ifndef H5
+  isStreaming.value = true
+  streamingText.value = '正在思考中...'
+  streamingReasoning.value = ''
+  // #endif
   const userText = rawText || '请基于这张图继续补充具体物品分类和可执行的变废为宝方案。'
   const historyForApi = extractHistoryForRequest()
 
@@ -869,7 +904,9 @@ async function onSend() {
       ? '已停止当前回答。'
       : `请求异常：${err && err.message ? err.message : err}`
     pushMessageToActive('assistant', failedText, '', new Date().toISOString(), '')
+    // #ifdef H5
     isStreaming.value = false
+    // #endif
     streamingText.value = ''
     streamingReasoning.value = ''
   }
@@ -892,6 +929,7 @@ let drawerMediaQuery = null
 let onDrawerMediaChange = null
 
 onMounted(async () => {
+  initSystemInfo()
   isDark.value = getStorage('app_theme') === 'dark'
 
   // #ifdef H5
@@ -1070,10 +1108,18 @@ page {
   font-family: var(--font-main);
 }
 
+/* 微信小程序安全区域适配 */
+page {
+  padding-top: constant(safe-area-inset-top);
+  padding-top: env(safe-area-inset-top);
+}
+
 /* ─── shell根布局 ─── */
 .shell {
   width: 100%;
-  height: 100vh;
+  /* 减去小程序状态栏高度 */
+  height: calc(100vh - constant(safe-area-inset-top));
+  height: calc(100vh - env(safe-area-inset-top));
   display: grid;
   grid-template-columns: 260px 1fr;
   background: var(--bg-primary);
@@ -2643,14 +2689,14 @@ page {
   .shell .chat-header {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: start;
-    padding: 10px 14px;
-    gap: 8px;
+    align-items: center;
+    padding: calc(var(--status-bar-height, 20px) + 34px) 12px 8px;
+    gap: 6px;
   }
   .shell .chat-title { font-size: 15px; }
-  .shell .chat-subtitle { font-size: 11px; }
+  .shell .chat-subtitle--hidden { display: none; }
   .shell .header-chip { font-size: 10px; padding: 4px 8px; }
-  .shell .btn.ghost { font-size: 12px; padding: 6px 10px; }
+  .shell .btn.ghost { font-size: 12px; padding: 5px 8px; }
   .shell .messages { padding: 12px 14px; }
   .shell .msg { max-width: 100%; font-size: 13px; padding: 9px 12px; }
   .shell .composer { padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); }
@@ -2665,18 +2711,19 @@ page {
 /* ─── 响应式：超小屏（≤480px）─── */
 @media (max-width: 480px) {
   .shell .sidebar { max-width: 88vw; }
-  .shell .sidebar-top { padding: 10px; }
+  .shell .sidebar-top { padding: 8px; }
   .shell .brand-icon { width: 26px; height: 26px; border-radius: 6px; }
   .shell .brand-title { font-size: 13px; }
   .shell .new-chat-btn { padding: 8px 12px; font-size: 12px; }
   .shell .conversation-list { padding: 4px 6px; }
   .shell .conversation-item { padding: 8px 10px; }
   .shell .conversation-title { font-size: 12px; }
-  .shell .chat-header { padding: 8px 12px; }
-  .shell .history-toggle { width: 30px; height: 30px; border-radius: 6px; }
-  .shell .welcome-hero { padding: 28px 12px 20px; }
-  .shell .welcome-icon { width: 40px; height: 40px; border-radius: 12px; }
-  .shell .welcome-text { font-size: 16px; }
+  .shell .chat-header { padding: calc(var(--status-bar-height, 20px) + 30px) 12px 6px; }
+  .shell .history-toggle { width: 28px; height: 28px; border-radius: 6px; }
+  .shell .chat-subtitle--hidden { display: none; }
+  .shell .welcome-hero { padding: 20px 12px 16px; }
+  .shell .welcome-icon { width: 36px; height: 36px; border-radius: 10px; }
+  .shell .welcome-text { font-size: 15px; }
   .shell .composer { padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); }
   .shell .composer-card { border-radius: 14px; padding: 8px 10px; }
   .shell .prompt-textarea { font-size: 13px; min-height: 38px; padding: 2px 4px 5px; }

@@ -3,18 +3,21 @@
   <view :class="['md-body', variant ? `md-body--${variant}` : '']" v-html="renderedHtml" />
   <!-- #endif -->
   <!-- #ifndef H5 -->
-  <mp-html
-    :content="renderedHtml"
-    :selectable="false"
-    :lazy-load="true"
-    :preview-img="false"
-    :class="['md-body', variant ? `md-body--${variant}` : '']"
-  />
+  <view :class="['md-body', variant ? `md-body--${variant}` : '']">
+    <mp-html
+      v-if="mpHtmlReady"
+      :content="renderedHtml"
+      :selectable="false"
+      :lazy-load="true"
+      :preview-img="false"
+    />
+    <text v-else class="md-text">{{ plainText }}</text>
+  </view>
   <!-- #endif -->
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 
 const props = defineProps({
@@ -29,6 +32,43 @@ const props = defineProps({
 })
 
 const renderedHtml = computed(() => renderMarkdown(props.markdown || ''))
+
+// #ifndef H5
+// 小程序专用状态：mp-html 组件是否可用
+const mpHtmlReady = ref(false)
+
+onMounted(() => {
+  // #ifndef H5
+  // 检测 mp-html 组件是否可用
+  try {
+    const hasNativePlugin = typeof uni.requireNativePlugin === 'function'
+    mpHtmlReady.value = hasNativePlugin
+  } catch (_) {
+    mpHtmlReady.value = false
+  }
+  // #endif
+})
+// #endif
+
+// 小程序专用：提取纯文本用于降级显示
+// #ifdef H5
+const plainText = computed(() => '')
+// #endif
+// #ifndef H5
+const plainText = computed(() => {
+  if (!props.markdown) return ''
+  return props.markdown
+    .replace(/#{1,6}\s*/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/`(.*?)`/g, '$1')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .replace(/^\s*[-*+]\s*/gm, '')
+    .replace(/^\s*\d+\.\s*/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+})
+// #endif
 </script>
 
 <style scoped>
@@ -139,6 +179,22 @@ const renderedHtml = computed(() => renderMarkdown(props.markdown || ''))
 .md-body :deep(p:empty) {
   min-height: 0;
   margin: 0;
+}
+
+/* 小程序降级纯文本样式 */
+.md-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-primary, #1a1a1a);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* reasoning variant 下的纯文本样式 */
+.md-body.md-body--reasoning .md-text {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary, #6B7280);
 }
 
 /* ── reasoning variant（深度思考折叠区内）：更紧凑、更浅 ── */
