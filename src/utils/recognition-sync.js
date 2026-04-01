@@ -356,10 +356,21 @@ export function saveSeed(seed) {
   if (!seed.imageBase64 || String(seed.imageBase64).indexOf('data:image/') !== 0) return;
 
   try {
-    const seedJson = JSON.stringify(seed);
+    // 检查 base64 是否太大（超过 1MB 约 1,400,000 字符），大图拆分存储避免单条 Storage 配额超限
+    const base64Len = seed.imageBase64.length;
+    const LARGE_IMAGE_THRESHOLD = 1400000;
 
-    uni.setStorageSync(SEED_KEY, seedJson);
-    uni.setStorageSync(LEGACY_IMAGE_KEY, seed.imageBase64);
+    if (base64Len > LARGE_IMAGE_THRESHOLD) {
+      // 将大 base64 存入独立 key，seed 中仅存长度标记
+      uni.setStorageSync('ai_chat_seed_image_large', seed.imageBase64);
+      const lightweightSeed = { ...seed, imageBase64: `__LARGE_IMAGE__:${base64Len}` };
+      uni.setStorageSync(SEED_KEY, JSON.stringify(lightweightSeed));
+    } else {
+      const seedJson = JSON.stringify(seed);
+      uni.setStorageSync(SEED_KEY, seedJson);
+      uni.setStorageSync(LEGACY_IMAGE_KEY, seed.imageBase64);
+    }
+
     if (seed.category) {
       uni.setStorageSync(LEGACY_CATEGORY_KEY, seed.category);
     }
