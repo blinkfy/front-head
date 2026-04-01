@@ -18,7 +18,8 @@
         "modules" : {
             "Maps" : {},
             "Camera" : {},
-            "Barcode" : {}
+            "Barcode" : {},
+            "VideoPlayer" : {}
         },
         "distribute" : {
             "android" : {
