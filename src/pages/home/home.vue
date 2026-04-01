@@ -699,6 +699,14 @@ function applyEnhancedRecognitionData(recognizeData) {
 
 function goAiChatFromResult() {
   if (!resultImage.value) return
+  // seed 已由 applyEnhancedRecognitionData → saveSeed 正确写入，
+  // 只需清除"已消费"标记，确保 ai-chat 能重新加载本次识别结果
+  // #ifndef H5
+  try { uni.removeStorageSync('ai_chat_seed_consumed_at') } catch (e) {}
+  // #endif
+  // #ifdef H5
+  try { localStorage.removeItem('ai_chat_seed_consumed_at') } catch (e) {}
+  // #endif
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
