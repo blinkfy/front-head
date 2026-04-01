@@ -245,19 +245,30 @@ import MarkdownBody from '@/components/MarkdownBody.vue'
 // ─── Storage 工具 ────────────────────────────────────────
 function getStorage(key) {
   // #ifdef H5
-  return localStorage.getItem(key)
+  try {
+    return localStorage.getItem(key)
+  } catch (e) {
+    return null
+  }
   // #endif
   // #ifndef H5
-  const result = uni.getStorageSync(key)
-  return result || null
+  try {
+    return uni.getStorageSync(key)
+  } catch (e) {
+    return null
+  }
   // #endif
 }
 function setStorage(key, value) {
   // #ifdef H5
-  localStorage.setItem(key, value)
+  try {
+    localStorage.setItem(key, value)
+  } catch (e) {}
   // #endif
   // #ifndef H5
-  uni.setStorageSync(key, value)
+  try {
+    uni.setStorageSync(key, value)
+  } catch (e) {}
   // #endif
 }
 
@@ -699,8 +710,23 @@ function maybeStartFromFreshSeed() {
   activeSessionId.value = newSessionId
   setStorage(SESSION_KEY, newSessionId)
 
-  const seedImage = typeof seedPayload.imageBase64 === 'string' && seedPayload.imageBase64.startsWith('data:image/')
-    ? seedPayload.imageBase64 : ''
+  // 优先使用 seed 中的 imageBase64，按以下顺序尝试：
+  // 1. 正常 data:image/ URL
+  // 2. 大图占位符 __LARGE_IMAGE__:len → 从独立 key 读取实际 base64
+  // 3. legacy key（H5 和小程序的兼容路径）
+  let seedImage = ''
+  const rawImage = seedPayload.imageBase64 || ''
+  if (rawImage.startsWith('data:image/')) {
+    seedImage = rawImage
+  } else if (rawImage.startsWith('__LARGE_IMAGE__:')) {
+    // 从拆分存储的大图中恢复
+    seedImage = getStorage('ai_chat_seed_image_large') || ''
+  } else {
+    const legacyImage = getStorage('ai_chat_seed_image')
+    if (typeof legacyImage === 'string' && legacyImage.startsWith('data:image/')) {
+      seedImage = legacyImage
+    }
+  }
   const seedUserText = buildSeedUserText(seedPayload)
   const seedText = buildSeedAssistantText(seedPayload)
   const conversation = ensureConversation(newSessionId)
@@ -2256,8 +2282,6 @@ page {
   overflow-y: auto;
   padding: 20px 24px;
   background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
 }
 
 /* 新建对话欢迎语 */
@@ -2292,90 +2316,7 @@ page {
 }
 .shell .empty-chat { display: none; }
 
-.shell .message-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 18px;
-  width: 100%;
-}
-.shell .message-row.from-user {
-  flex-direction: row-reverse;
-}
-.shell .avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 600;
-}
-.shell .assistant-avatar {
-  background: linear-gradient(135deg, #4D6BFE, #7B9BFF);
-  color: #fff;
-}
-.shell .user-avatar {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-}
-.shell .message-content { flex: 1; min-width: 0; }
-.shell .message-row.from-user .message-content {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-.shell .message-row.from-user .message-meta {
-  flex-direction: row-reverse;
-}
-.shell .message-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 5px;
-}
-.shell .message-author {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-.shell .message-time {
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-.shell .msg {
-  max-width: min(700px, 88%);
-  border-radius: 14px;
-  padding: 10px 14px;
-  line-height: 1.6;
-  word-break: break-word;
-  white-space: pre-wrap;
-  font-size: 14px;
-}
-.shell .msg.assistant {
-  background: var(--bubble-ai-bg);
-  border: 1px solid var(--bubble-ai-border);
-  color: var(--text-primary);
-  border-bottom-left-radius: 4px;
-  white-space: normal;
-}
-.shell .msg.user {
-  background: var(--bubble-user-bg);
-  color: var(--bubble-user-text);
-  border-bottom-right-radius: 4px;
-}
-.shell .msg.streaming { opacity: 0.88; }
-.shell .msg-body { display: block; }
-.shell .msg-image {
-  display: block;
-  max-width: 260px;
-  height: auto;
-  border-radius: 12px;
-  margin-bottom: 8px;
-  background: var(--bg-tertiary);
-}
+.shell .empty-chat { display: none; }
 .shell .typing-dots {
   display: flex;
   align-items: center;
@@ -2698,7 +2639,12 @@ page {
   .shell .header-chip { font-size: 10px; padding: 4px 8px; }
   .shell .btn.ghost { font-size: 12px; padding: 5px 8px; }
   .shell .messages { padding: 12px 14px; }
-  .shell .msg { max-width: 100%; font-size: 13px; padding: 9px 12px; }
+  /* 消息气泡：确保不超出屏幕，防止气泡过窄 */
+  .shell .msg { max-width: 100% !important; width: 100%; font-size: 13px; padding: 9px 12px; }
+  .shell .msg-image { max-width: 100% !important; width: 100%; }
+  /* 消息行：允许换行，内容不被压缩 */
+  .shell .message-row { flex-wrap: wrap; width: 100%; margin-bottom: 14px; }
+  .shell .message-content { flex: 1 1 auto !important; min-width: 0; }
   .shell .composer { padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); }
   .shell .prompt-textarea { font-size: 14px; }
   .shell .composer-card { border-radius: 16px; padding: 9px 12px; }
@@ -2735,6 +2681,11 @@ page {
   .shell .suggestion-pill { padding: 5px 10px; font-size: 10px; }
   .shell .image-pending { padding: 8px 10px; border-radius: 10px; }
   .shell .image-pending-name { max-width: 160px; }
+  /* 消息气泡和小屏进一步保证 */
+  .shell .msg { max-width: 100% !important; width: 100%; }
+  .shell .msg-image { max-width: 100% !important; width: 100%; }
+  .shell .message-row { flex-wrap: wrap; width: 100%; }
+  .shell .message-content { flex: 1 1 auto !important; }
 }
 
 /* ─── 深色主题覆盖 ─── */

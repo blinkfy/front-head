@@ -5,7 +5,7 @@
 // uni-app + Vite: import.meta.env 会被替换为包含环境变量的对象
 // 构建时 VITE_API_BASE_URL="" 会生成相关环境变量
 
-const DEFAULT_PROD_URL = 'https://kwcdasogdvpl.sealosbja.site';
+const DEFAULT_PROD_URL = 'https://rgqexbnzzipc.sealosbja.site';
 
 // uni-app 会将 import.meta.env 替换为 importMetaEnv 对象
 const _env = typeof importMetaEnv !== 'undefined' ? importMetaEnv : null;
