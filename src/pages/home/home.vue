@@ -130,6 +130,26 @@
             </view>
           </view>
 
+          <!-- 变废为宝效果图 -->
+          <view v-if="aiEnabledUpcyclingImage && upcyclingImageUrl" class="upcycling-image-card">
+            <view class="upcycling-image-header">
+              <text class="upcycling-image-title">变废为宝效果图</text>
+            </view>
+            <view class="upcycling-image-wrapper">
+              <image
+                :src="upcyclingImageUrl"
+                mode="aspectFit"
+                class="upcycling-image"
+                @click="previewUpcyclingImage"
+              />
+              <view v-if="imageLoading" class="upcycling-image-loading">
+                <view class="upcycling-loading-ring"></view>
+                <text class="upcycling-loading-text">图片生成中...</text>
+              </view>
+            </view>
+            <text class="upcycling-image-hint">点击图片可全屏预览</text>
+          </view>
+
           <view v-else-if="resultDesc" class="desc-box">
             <text class="desc-label">💡 处理建议</text>
             <view class="desc-text" v-html="formatSemicolonNewline(resultDesc)"></view>
@@ -326,6 +346,9 @@ const isH5Platform = ref(false)
 const targetConfidence = ref(0)
 const recognizedItems = ref([])
 const upcyclingSections = ref([])
+const upcyclingImageUrl = ref('')
+const imageLoading = ref(false)
+const aiEnabledUpcyclingImage = ref(false)
 const rawBboxes = ref([])
 const displayBboxes = ref([])
 const recognizeBBoxSpace = ref('')
@@ -529,6 +552,7 @@ function getCategoryIcon(category) {
 function resetEnhancedRecognition() {
   recognizedItems.value = []
   upcyclingSections.value = []
+  upcyclingImageUrl.value = ''
   rawBboxes.value = []
   displayBboxes.value = []
   recognizeBBoxSpace.value = ''
@@ -672,6 +696,19 @@ function applyEnhancedRecognitionData(recognizeData) {
   const upcyclingText = buildExpandedUpcyclingText(recognizeData)
   upcyclingSections.value = upcyclingText ? splitUpcyclingSections(upcyclingText) : []
 
+  // 处理变废为宝效果图
+  if (recognizeData.upcyclingImageUrl) {
+    upcyclingImageUrl.value = recognizeData.upcyclingImageUrl
+    imageLoading.value = false
+  } else {
+    upcyclingImageUrl.value = ''
+  }
+
+  // 将管理员的开关同步到前端状态
+  if (recognizeData.aiSettings && typeof recognizeData.aiSettings.enableUpcyclingImage === 'boolean') {
+    aiEnabledUpcyclingImage.value = recognizeData.aiSettings.enableUpcyclingImage
+  }
+
   recognizeBBoxSpace.value = String(recognizeData.bbox_space || '')
   const labels = Array.isArray(recognizeData.labels) ? recognizeData.labels : []
   rawBboxes.value = labels
@@ -708,6 +745,15 @@ function goAiChatFromResult() {
   try { localStorage.removeItem('ai_chat_seed_consumed_at') } catch (e) {}
   // #endif
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
+}
+
+function previewUpcyclingImage() {
+  if (!upcyclingImageUrl.value) return
+  uni.previewImage({
+    urls: [upcyclingImageUrl.value],
+    current: 0,
+    fail: () => uni.showToast({ title: '预览失败', icon: 'none' })
+  })
 }
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
   return new Promise((resolve, reject) => {
@@ -1935,6 +1981,80 @@ function closeAchievementModal() {
   color: #334155;
 }
 
+/* 变废为宝效果图卡片 */
+.upcycling-image-card {
+  margin-top: 24rpx;
+  border-radius: 24rpx;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(245, 250, 255, 0.98), rgba(236, 248, 242, 0.92));
+  border: 1rpx solid rgba(76, 175, 80, 0.2);
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.06);
+}
+
+.upcycling-image-header {
+  padding: 20rpx 24rpx 0;
+}
+
+.upcycling-image-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #0ea56b;
+}
+
+.upcycling-image-wrapper {
+  position: relative;
+  margin-top: 16rpx;
+  width: 100%;
+  background: #f0f4f8;
+  overflow: hidden;
+}
+
+.upcycling-image {
+  display: block;
+  width: 100%;
+  min-height: 400rpx;
+  max-height: 600rpx;
+  object-fit: contain;
+  background: #f0f4f8;
+}
+
+.upcycling-image-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(240, 244, 248, 0.88);
+  gap: 16rpx;
+}
+
+.upcycling-loading-ring {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid rgba(14, 165, 107, 0.2);
+  border-top-color: #0ea56b;
+  border-radius: 50%;
+  animation: upcycling-spin 0.8s linear infinite;
+}
+
+.upcycling-loading-text {
+  font-size: 24rpx;
+  color: #0ea56b;
+}
+
+@keyframes upcycling-spin {
+  to { transform: rotate(360deg); }
+}
+
+.upcycling-image-hint {
+  display: block;
+  padding: 12rpx 24rpx 20rpx;
+  font-size: 22rpx;
+  color: #9bb1c3;
+  text-align: center;
+}
+
 .recognition-bbox-layer {
   position: absolute;
   inset: 0;
@@ -2739,6 +2859,15 @@ function closeAchievementModal() {
     font-size: 22rpx;
   }
 
+  .upcycling-image-title {
+    font-size: 26rpx;
+  }
+
+  .upcycling-image {
+    min-height: 320rpx;
+    max-height: 500rpx;
+  }
+
   .recognition-bbox-label {
     max-width: 180rpx;
     font-size: 18rpx;
@@ -2806,6 +2935,36 @@ function closeAchievementModal() {
 
   .upcycling-plan-content {
     color: rgba(226, 232, 240, 0.95);
+  }
+
+  .upcycling-image-card {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.88));
+    border-color: rgba(76, 175, 80, 0.25);
+    box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.4);
+  }
+
+  .upcycling-image-title {
+    color: #34d399;
+  }
+
+  .upcycling-image-wrapper {
+    background: #1e293b;
+  }
+
+  .upcycling-image {
+    background: #1e293b;
+  }
+
+  .upcycling-image-loading {
+    background: rgba(30, 41, 59, 0.88);
+  }
+
+  .upcycling-loading-text {
+    color: #34d399;
+  }
+
+  .upcycling-image-hint {
+    color: #64748b;
   }
 
   .tabbar {

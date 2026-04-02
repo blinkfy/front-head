@@ -10,11 +10,10 @@ const DEFAULT_PROD_URL = 'https://rgqexbnzzipc.sealosbja.site';
 // uni-app 会将 import.meta.env 替换为 importMetaEnv 对象
 const _env = typeof importMetaEnv !== 'undefined' ? importMetaEnv : null;
 const ENV = {
-    // 如果 VITE_API_BASE_URL 存在（可能为空字符串），使用它；否则使用生产地址
-    //baseUrl: (_env && _env.VITE_API_BASE_URL !== undefined) ? _env.VITE_API_BASE_URL : DEFAULT_PROD_URL,
-    // 本地调试改这里，上线前改回 DEFAULT_PROD_URL
-    baseUrl: 'http://127.0.0.1:3002',
-    // baseUrl: DEFAULT_PROD_URL,
+    // 优先用 VITE_API_BASE_URL（来自 .env 或 .env.local），为空则用生产地址
+    baseUrl: (_env && _env.VITE_API_BASE_URL !== undefined && _env.VITE_API_BASE_URL !== '')
+        ? _env.VITE_API_BASE_URL
+        : DEFAULT_PROD_URL,
     timeout: 30000
 }
 
