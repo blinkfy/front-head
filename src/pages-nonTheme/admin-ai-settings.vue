@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <view :class="['theme-wrapper', currentTheme === 'light' ? 'light-theme' : 'dark-theme']">
     <main class="wrap">
       <section class="topbar">
@@ -95,6 +95,18 @@
             <input class="input" type="number" :value="form.thinkingBudget" @input="form.thinkingBudget = Number($event.detail.value) || 4096" />
           </div>
 
+          <!-- 变废为宝效果图 -->
+          <div class="row">
+            <div>
+              <div class="label">变废为宝效果图</div>
+              <div class="desc">开启后，识别结果将生成效果图。</div>
+            </div>
+            <view class="switch-row">
+              <switch :checked="form.enableUpcyclingImage" @change="form.enableUpcyclingImage = $event.detail.value" color="#17b27a" />
+              <text class="switch-label">{{ form.enableUpcyclingImage ? '启用' : '关闭' }}</text>
+            </view>
+          </div>
+
           <div class="btns">
             <button class="btn primary" @click="saveSettings" :disabled="loading" type="button">保存设置</button>
             <button class="btn warn" @click="resetForm" type="button">恢复页面默认</button>
@@ -126,7 +138,8 @@ const DEFAULT_FORM = {
   recommendAlgorithm: 'qwen',
   include3d: true,
   enableThinking: false,
-  thinkingBudget: 4096
+  thinkingBudget: 4096,
+  enableUpcyclingImage: true
 }
 
 const form = reactive({ ...DEFAULT_FORM })
@@ -182,6 +195,7 @@ function applyData(data) {
   form.include3d = !!data.include3d
   form.enableThinking = !!data.enableThinking
   form.thinkingBudget = Number(data.thinkingBudget || 4096)
+  form.enableUpcyclingImage = !!data.enableUpcyclingImage
 }
 
 function resetForm() {
@@ -233,7 +247,8 @@ function saveSettings() {
     recommendAlgorithm: normalizeRecommendAlgorithm(form.recommendAlgorithm),
     include3d: form.include3d,
     enableThinking: form.enableThinking,
-    thinkingBudget: Number(form.thinkingBudget || 4096)
+    thinkingBudget: Number(form.thinkingBudget || 4096),
+    enableUpcyclingImage: form.enableUpcyclingImage
   }
   uni.request({
     url: baseUrl + '/api/admin/ai-settings',

@@ -523,6 +523,106 @@ function ensureWelcomeMessageIfEmpty() {
   refreshConversationMeta(conversation)
 }
 
+// 小程序端：将 seed 消息中的 base64 图片写入临时文件以便 <image> 正确渲染
+// （WeChat mini-program 对超大 inline base64 src 可能静默失败，
+//  且 base64 有 2MB 限制，大图必须走本地文件路径）
+function convertSeedImagesToTempFiles(sessionId) {
+  // #ifndef H5
+  try {
+    const conversation = conversationMap.get(sessionId)
+    if (!conversation) return
+    const fs = uni.getFileSystemManager()
+    // 优先取 wx.env.USER_DATA_PATH，uni.env 作为兜底
+    let basePath = ''
+    try {
+      if (typeof wx !== 'undefined' && wx.env && wx.env.USER_DATA_PATH) {
+        basePath = wx.env.USER_DATA_PATH
+      } else if (typeof uni !== 'undefined' && uni.env && uni.env.USER_DATA_PATH) {
+        basePath = uni.env.USER_DATA_PATH
+      }
+    } catch (_) {}
+
+    if (!basePath) {
+      console.warn('[ai-chat] USER_DATA_PATH unavailable, keeping base64 for seed images')
+      return
+    }
+
+    for (const msg of conversation.messages) {
+      if (msg && msg.imageBase64 && msg.imageBase64.startsWith('data:image/')) {
+        const base64Data = msg.imageBase64.replace(/^data:image\/\w+;base64,/, '')
+        // 生成唯一文件名，避免多图冲突
+        const ext = (msg.imageBase64.match(/^data:image\/(\w+);base64,/) || [, 'jpg'])[1]
+        const tempPath = `${basePath}/ai_seed_img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`
+        try {
+          fs.writeFileSync(tempPath, base64Data, 'base64')
+          // 替换 base64 为本地文件路径（<image> 可直接渲染）
+          msg.imageBase64 = tempPath
+          console.log('[ai-chat] seed image saved to temp file:', tempPath)
+        } catch (e) {
+          console.warn('[ai-chat] writeFileSync failed, keeping base64:', e && e.message)
+          // base64 保留不动，<image> 会尝试渲染（小于 2MB 时有效）
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[ai-chat] convertSeedImagesToTempFiles error:', e && e.message)
+  }
+  // #endif
+}
+
+// 小程序端将本地临时路径转为 base64 data URL，供服务端接收
+function localPathToBase64(filePath) {
+  return new Promise((resolve) => {
+    // #ifndef H5
+    try {
+      const fs = uni.getFileSystemManager()
+      // 优先用同步读取，避免异步回调在某些场景下不触发
+      try {
+        const data = fs.readFileSync(filePath, 'base64')
+        if (data) { resolve('data:image/jpeg;base64,' + data); return }
+      } catch (_) {}
+      // 同步失败则退回异步
+      fs.readFile({
+        filePath,
+        encoding: 'base64',
+        success: (res) => resolve('data:image/jpeg;base64,' + res.data),
+        fail: () => resolve('')
+      })
+    } catch (e) {
+      resolve('')
+    }
+    // #endif
+    // #ifdef H5
+    // H5: filePath 可能是 blob URL 或 data URL，直接返回 data URL
+    // 如果是 blob URL，用 fetch 读取并转成 data URL
+    if (!filePath || typeof filePath !== 'string') { resolve(''); return }
+    if (filePath.startsWith('data:')) { resolve(filePath); return }
+    if (filePath.startsWith('blob:')) {
+      fetch(filePath)
+        .then(r => r.blob())
+        .then(blob => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result || '')
+          reader.onerror = () => resolve('')
+          reader.readAsDataURL(blob)
+        })
+        .catch(() => resolve(''))
+      return
+    }
+    // 相对路径或绝对路径：当作文件 URL 处理
+    fetch(filePath)
+      .then(r => r.blob())
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result || '')
+        reader.onerror = () => resolve('')
+        reader.readAsDataURL(blob)
+      })
+      .catch(() => resolve(''))
+    // #endif
+  })
+}
+
 // ─── 图片选择 ─────────────────────────────────────────────
 function clearPickedImage() {
   pickedImageDataUrl.value = ''
@@ -865,7 +965,8 @@ async function streamChat({ text, imageBase64, history }) {
       success: (res) => {
         isStreaming.value = false
         const payload = res.data
-        if (!payload || (payload.code !== 0 && payload.code !== undefined)) {
+        console.log('[ai-chat] nonstream response: statusCode=', res.statusCode, 'payload=', typeof payload === 'string' ? payload.substring(0, 200) : JSON.stringify(payload))
+        if (!payload || (payload.code !== undefined && payload.code !== 0)) {
           const errMsg = (payload && payload.msg) || `请求失败（HTTP ${res.statusCode}）`
           if (errMsg.includes('401') || errMsg.includes('登录')) {
             reject(new Error('登录已失效，请重新登录后再试。'))
@@ -918,12 +1019,30 @@ async function onSend() {
   const userText = rawText || '请基于这张图继续补充具体物品分类和可执行的变废为宝方案。'
   const historyForApi = extractHistoryForRequest()
 
+  // 小程序端：保留本地路径用于消息气泡显示，另转 base64 发给服务端
+  let apiImage = sendingImage
+  // #ifndef H5
+  console.log('[ai-chat] sendingImage before conversion:', sendingImage, 'startsWith data:', sendingImage && sendingImage.startsWith('data:'), 'startsWith http:', sendingImage && sendingImage.startsWith('http'))
+  if (apiImage && !apiImage.startsWith('data:') && !apiImage.startsWith('http')) {
+    const converted = await localPathToBase64(apiImage)
+    console.log('[ai-chat] apiImage after conversion:', converted ? (converted.substring(0, 50) + '...') : 'empty', 'length:', converted && converted.length)
+    // 只有成功转换出 data URL 才赋值
+    if (converted && converted.startsWith('data:')) {
+      apiImage = converted
+    } else {
+      // 转换失败：保留本地路径给气泡显示，不发给服务端
+      apiImage = ''
+    }
+  }
+  // #endif
+
+  console.log('[ai-chat] onSend: userText=', userText, 'hasImage=', !!apiImage)
   pushMessageToActive('user', userText, sendingImage, new Date().toISOString())
   promptText.value = ''
   clearPickedImage()
 
   try {
-    const streamed = await streamChat({ text: userText, imageBase64: sendingImage, history: historyForApi })
+    const streamed = await streamChat({ text: userText, imageBase64: apiImage, history: historyForApi })
     pushMessageToActive('assistant', streamed.content || 'AI 暂未返回内容。', '', new Date().toISOString(), streamed.reasoning || '')
   } catch (err) {
     const failedText = err && err.name === 'AbortError'
@@ -993,6 +1112,8 @@ onMounted(async () => {
 
   const freshSeedSession = maybeStartFromFreshSeed()
   if (freshSeedSession) {
+    // 小程序端将 seed 消息图片写入临时文件，避免 <image> 渲染大 base64 失败
+    convertSeedImagesToTempFiles(freshSeedSession)
     setActiveSession(freshSeedSession)
   } else {
     const preferredId = normalizeSessionId(ensureSessionId())
