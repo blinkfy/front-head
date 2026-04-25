@@ -7,14 +7,16 @@ export function getCommunityList(district = null) {
   return request({
     url: '/api/community/list',
     method: 'GET',
-    params: district ? { district } : {}
+    data: district ? { district } : {},
+    needAuth: true
   });
 }
 
 export function getMyCommunity() {
   return request({
     url: '/api/community/mine',
-    method: 'GET'
+    method: 'GET',
+    needAuth: true
   });
 }
 
@@ -22,7 +24,8 @@ export function joinCommunity(communityId) {
   return request({
     url: '/api/community/join',
     method: 'POST',
-    data: { communityId }
+    data: { communityId },
+    needAuth: true
   });
 }
 
@@ -30,7 +33,8 @@ export function getCommunityPosts(communityId, tag = null, sort = 'latest', page
   return request({
     url: '/api/community/posts',
     method: 'GET',
-    params: { communityId, tag, sort, page, limit }
+    data: { communityId, tag, sort, page, limit },
+    needAuth: true
   });
 }
 
@@ -38,7 +42,8 @@ export function createPost(communityId, content, images = [], tag = '心得') {
   return request({
     url: '/api/community/post/create',
     method: 'POST',
-    data: { communityId, content, images, tag }
+    data: { communityId, content, images, tag },
+    needAuth: true
   });
 }
 
@@ -46,7 +51,8 @@ export function togglePostLike(postId) {
   return request({
     url: '/api/community/post/like',
     method: 'POST',
-    data: { postId }
+    data: { postId },
+    needAuth: true
   });
 }
 
@@ -54,7 +60,8 @@ export function addComment(postId, content, parentId = null) {
   return request({
     url: '/api/community/post/comment',
     method: 'POST',
-    data: { postId, content, parentId }
+    data: { postId, content, parentId },
+    needAuth: true
   });
 }
 
@@ -62,14 +69,16 @@ export function getComments(postId, page = 1, limit = 20) {
   return request({
     url: '/api/community/post/comments',
     method: 'GET',
-    params: { postId, page, limit }
+    data: { postId, page, limit },
+    needAuth: true
   });
 }
 
 export function getCommunityRanking() {
   return request({
     url: '/api/community/ranking',
-    method: 'GET'
+    method: 'GET',
+    needAuth: true
   });
 }
 
@@ -77,6 +86,7 @@ export function getMemberRanking(communityId, limit = 50) {
   return request({
     url: '/api/community/member-ranking',
     method: 'GET',
-    params: { communityId, limit }
+    data: { communityId, limit },
+    needAuth: true
   });
 }

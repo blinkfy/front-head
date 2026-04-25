@@ -143,15 +143,11 @@ export default {
       }
       this.submitting = true;
       try {
-        const res = await createPost(this.communityId, this.content.trim(), this.uploadedImages, this.selectedTag);
-        if (res.success) {
-          uni.showToast({ title: '发布成功!', icon: 'success' });
-          setTimeout(() => {
-            uni.navigateBack();
-          }, 1500);
-        } else {
-          uni.showToast({ title: res.msg || '发布失败', icon: 'none' });
-        }
+        await createPost(this.communityId, this.content.trim(), this.uploadedImages, this.selectedTag);
+        uni.showToast({ title: '发布成功!', icon: 'success' });
+        setTimeout(() => {
+          uni.navigateBack();
+        }, 1500);
       } catch (e) {
         console.error('发布失败:', e);
         uni.showToast({ title: e.message || '发布失败', icon: 'none' });

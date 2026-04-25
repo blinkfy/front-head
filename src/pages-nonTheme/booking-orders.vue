@@ -85,7 +85,7 @@
             </view>
 
             <!-- 操作按钮 -->
-            <view class="order-actions" v-if="order.status === 'pending' || order.status === 'scheduled'">
+            <view class="order-actions" v-if="order.status === 'pending' || order.status === 'scheduled' || order.status === 'confirmed' || order.status === 'picking'">
               <view class="action-btn cancel-btn" @click="showCancelModal(order)">
                 <text>取消订单</text>
               </view>
@@ -169,13 +169,16 @@ export default {
     this.checkTheme();
   },
   methods: {
+    extractData(res) {
+      return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
+    },
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
     },
     goBack() { uni.navigateBack(); },
     goToBooking() {
-      uni.navigateTo({ url: '/pages-nonTheme/booking/booking' });
+      uni.navigateTo({ url: '/pages-nonTheme/booking' });
     },
     async loadOrders() {
       this.loading = true;
@@ -183,16 +186,13 @@ export default {
       try {
         const status = this.currentStatus === 'all' ? null : this.currentStatus;
         const res = await getBookingList(status, 1, 20);
-        if (res.success && res.data) {
-          this.orders = this.formatOrders(res.data.orders || []);
-          this.hasMore = (res.data.page || 1) < (res.data.totalPages || 1);
-        } else {
-          this.orders = this.getMockOrders();
-          this.hasMore = false;
-        }
+        const data = this.extractData(res) || {};
+        this.orders = this.formatOrders(data.orders || []);
+        this.hasMore = (data.page || 1) < (data.totalPages || 1);
       } catch (e) {
         console.error('获取订单失败:', e);
-        this.orders = this.getMockOrders();
+        this.orders = [];
+        this.hasMore = false;
       }
       this.loading = false;
     },
@@ -203,12 +203,9 @@ export default {
       try {
         const status = this.currentStatus === 'all' ? null : this.currentStatus;
         const res = await getBookingList(status, this.currentPage, 20);
-        if (res.success && res.data) {
-          this.orders = [...this.orders, ...this.formatOrders(res.data.orders || [])];
-          this.hasMore = (res.data.page || 1) < (res.data.totalPages || 1);
-        } else {
-          this.currentPage--;
-        }
+        const data = this.extractData(res) || {};
+        this.orders = [...this.orders, ...this.formatOrders(data.orders || [])];
+        this.hasMore = (data.page || 1) < (data.totalPages || 1);
       } catch (e) {
         this.currentPage--;
       }
@@ -218,44 +215,16 @@ export default {
       return rawOrders.map(o => ({
         id: o.id,
         orderNo: o.orderNo || `BK${Date.now()}`,
-        items: o.items || [],
-        date: o.date || '',
-        timeSlot: o.timeSlot || '',
+        items: (o.items || []).map((item) => ({
+          ...item,
+          price: Number(item.subtotal || item.price || 0)
+        })),
+        date: o.appointmentDate || o.date || '',
+        timeSlot: o.appointmentTimeSlot || o.timeSlot || '',
         address: o.address || '',
         status: o.status || 'pending',
-        estimateAmount: o.estimateAmount || 0
+        estimateAmount: Number(o.totalPrice || o.estimateAmount || 0)
       }));
-    },
-    getMockOrders() {
-      return [
-        {
-          id: 1,
-          orderNo: 'BK202404050001',
-          items: [
-            { name: '废纸', icon: '📄', price: 2.40 },
-            { name: '塑料', icon: '🧴', price: 1.50 },
-            { name: '金属', icon: '🔩', price: 3.00 }
-          ],
-          date: '2024-04-06',
-          timeSlot: '09:00-10:00',
-          address: '北京市朝阳区XX小区XX栋XX室',
-          status: 'pending',
-          estimateAmount: 6.90
-        },
-        {
-          id: 2,
-          orderNo: 'BK202404040001',
-          items: [
-            { name: '旧衣物', icon: '👕', price: 3.00 },
-            { name: '书籍', icon: '📚', price: 4.00 }
-          ],
-          date: '2024-04-04',
-          timeSlot: '14:00-15:00',
-          address: '北京市海淀区XX街道XX号',
-          status: 'completed',
-          estimateAmount: 7.00
-        }
-      ];
     },
     changeStatus(status) {
       this.currentStatus = status;
@@ -265,6 +234,8 @@ export default {
       const map = {
         pending: '待上门',
         scheduled: '待上门',
+        confirmed: '已确认',
+        picking: '回收中',
         completed: '已完成',
         cancelled: '已取消'
       };
@@ -278,14 +249,10 @@ export default {
     async confirmCancel() {
       if (!this.currentCancelOrder) return;
       try {
-        const res = await cancelBooking(this.currentCancelOrder.id, this.cancelReason);
-        if (res.success) {
-          uni.showToast({ title: '取消成功', icon: 'success' });
-          this.showCancelDialog = false;
-          this.loadOrders();
-        } else {
-          uni.showToast({ title: res.msg || '取消失败', icon: 'none' });
-        }
+        await cancelBooking(this.currentCancelOrder.id, this.cancelReason);
+        uni.showToast({ title: '取消成功', icon: 'success' });
+        this.showCancelDialog = false;
+        this.loadOrders();
       } catch (e) {
         uni.showToast({ title: e.message || '取消失败', icon: 'none' });
       }

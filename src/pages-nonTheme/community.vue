@@ -216,6 +216,9 @@ export default {
     if (this.myCommunity) this.loadPosts();
   },
   methods: {
+    extractData(res) {
+      return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
+    },
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
@@ -224,8 +227,8 @@ export default {
     async loadData() {
       this.loading = true;
       try {
+        await this.loadMyCommunity();
         await Promise.all([
-          this.loadMyCommunity(),
           this.loadRanking(),
           this.loadAllCommunities(),
           this.loadPosts()
@@ -238,55 +241,62 @@ export default {
     async loadMyCommunity() {
       try {
         const res = await getMyCommunity();
-        if (res.success && res.data) {
-          this.myCommunity = res.data;
-        }
+        this.myCommunity = this.extractData(res) || null;
       } catch (e) {
         console.error('获取我的社区失败:', e);
+        this.myCommunity = null;
       }
     },
     async loadRanking() {
       try {
         const res = await getCommunityRanking();
-        if (res.success) this.communityRanking = res.data || [];
+        this.communityRanking = this.extractData(res) || [];
       } catch (e) {
         console.error('获取排行榜失败:', e);
+        this.communityRanking = [];
       }
     },
     async loadAllCommunities() {
       try {
         const res = await getCommunityList();
-        if (res.success) this.allCommunities = res.data || [];
+        this.allCommunities = this.extractData(res) || [];
       } catch (e) {
         console.error('获取社区列表失败:', e);
+        this.allCommunities = [];
       }
     },
     async loadPosts() {
+      if (!this.myCommunity) {
+        this.posts = [];
+        this.hasMore = false;
+        return;
+      }
       this.loading = true;
       this.currentPage = 1;
       try {
-        const communityId = this.myCommunity ? this.myCommunity.id : 0;
+        const communityId = this.myCommunity.id;
         const res = await getCommunityPosts(communityId, this.currentTag || null, 'latest', 1, 20);
-        if (res.success) {
-          this.posts = res.data.posts || [];
-          this.hasMore = (res.data.page || 1) < (res.data.totalPages || 1);
-        }
+        const data = this.extractData(res) || {};
+        this.posts = data.posts || [];
+        this.hasMore = (data.page || 1) < (data.totalPages || 1);
       } catch (e) {
         console.error('获取帖子失败:', e);
+        this.posts = [];
+        this.hasMore = false;
       }
       this.loading = false;
     },
     async loadMorePosts() {
       if (this.loadingMore || !this.hasMore) return;
+      if (!this.myCommunity) return;
       this.loadingMore = true;
       this.currentPage++;
       try {
-        const communityId = this.myCommunity ? this.myCommunity.id : 0;
+        const communityId = this.myCommunity.id;
         const res = await getCommunityPosts(communityId, this.currentTag || null, 'latest', this.currentPage, 20);
-        if (res.success) {
-          this.posts = [...this.posts, ...(res.data.posts || [])];
-          this.hasMore = (res.data.page || 1) < (res.data.totalPages || 1);
-        }
+        const data = this.extractData(res) || {};
+        this.posts = [...this.posts, ...(data.posts || [])];
+        this.hasMore = (data.page || 1) < (data.totalPages || 1);
       } catch (e) {
         this.currentPage--;
       }
@@ -294,13 +304,11 @@ export default {
     },
     async joinCommunity(communityId) {
       try {
-        const res = await joinCommunity(communityId);
-        if (res.success) {
-          uni.showToast({ title: '加入成功!', icon: 'success' });
-          this.showCommunityPicker = false;
-          await this.loadMyCommunity();
-          await this.loadPosts();
-        }
+        await joinCommunity(communityId);
+        uni.showToast({ title: '加入成功!', icon: 'success' });
+        this.showCommunityPicker = false;
+        await this.loadMyCommunity();
+        await this.loadPosts();
       } catch (e) {
         uni.showToast({ title: e.message || '加入失败', icon: 'none' });
       }
@@ -308,23 +316,22 @@ export default {
     async toggleLike(post) {
       try {
         const res = await togglePostLike(post.id);
-        if (res.success) {
-          post.liked = res.data.liked;
-          post.likeCount = res.data.likeCount;
-        }
+        const data = this.extractData(res) || {};
+        post.liked = !!data.liked;
+        post.likeCount = Number(data.likeCount || 0);
       } catch (e) {
         uni.showToast({ title: '操作失败', icon: 'none' });
       }
     },
     goToPostDetail(post) {
-      uni.navigateTo({ url: `/pages-nonTheme/community-post/community-post?postId=${post.id}&communityId=${this.myCommunity ? this.myCommunity.id : 0}` });
+      uni.navigateTo({ url: `/pages-nonTheme/community-post?postId=${post.id}&communityId=${this.myCommunity ? this.myCommunity.id : 0}` });
     },
     goToPublish() {
       if (!this.myCommunity) {
         uni.showToast({ title: '请先加入社区', icon: 'none' });
         return;
       }
-      uni.navigateTo({ url: `/pages-nonTheme/community-publish/community-publish?communityId=${this.myCommunity.id}` });
+      uni.navigateTo({ url: `/pages-nonTheme/community-publish?communityId=${this.myCommunity.id}` });
     },
     previewImage(images, index) {
       uni.previewImage({ urls: images, current: index });

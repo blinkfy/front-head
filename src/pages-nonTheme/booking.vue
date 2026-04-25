@@ -180,13 +180,16 @@ export default {
     }
   },
   methods: {
+    extractData(res) {
+      return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
+    },
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
     },
     goBack() { uni.navigateBack(); },
     goToOrders() {
-      uni.navigateTo({ url: '/pages-nonTheme/booking-orders/booking-orders' });
+      uni.navigateTo({ url: '/pages-nonTheme/booking-orders' });
     },
     initDates() {
       const today = new Date();
@@ -199,27 +202,17 @@ export default {
     async loadWasteTypes() {
       try {
         const res = await getWasteTypes();
-        if (res.success && res.data) {
-          this.wasteTypes = res.data;
-        } else {
-          this.wasteTypes = this.getMockWasteTypes();
-        }
+        const data = this.extractData(res);
+        this.wasteTypes = Array.isArray(data)
+          ? data.map((item) => ({
+              ...item,
+              price: Number(item.unitPrice || item.price || 0)
+            }))
+          : [];
       } catch (e) {
         console.error('获取废品类型失败:', e);
-        this.wasteTypes = this.getMockWasteTypes();
+        this.wasteTypes = [];
       }
-    },
-    getMockWasteTypes() {
-      return [
-        { id: 1, name: '废纸', icon: '📄', price: 1.2 },
-        { id: 2, name: '塑料', icon: '🧴', price: 2.5 },
-        { id: 3, name: '金属', icon: '🔩', price: 3.0 },
-        { id: 4, name: '玻璃', icon: '🍶', price: 0.8 },
-        { id: 5, name: '旧衣物', icon: '👕', price: 1.5 },
-        { id: 6, name: '电子产品', icon: '📱', price: 5.0 },
-        { id: 7, name: '书籍', icon: '📚', price: 2.0 },
-        { id: 8, name: '家电', icon: '📺', price: 4.0 }
-      ];
     },
     async loadTimeSlots() {
       const dateStr = this.selectedDate === 'today'
@@ -227,25 +220,17 @@ export default {
         : new Date(Date.now() + 86400000).toISOString().split('T')[0];
       try {
         const res = await getAvailableTimeSlots(dateStr);
-        if (res.success && res.data) {
-          this.timeSlots = res.data;
-        } else {
-          this.timeSlots = this.getMockTimeSlots();
-        }
+        const data = this.extractData(res);
+        this.timeSlots = Array.isArray(data)
+          ? data.map((slot) => ({
+              ...slot,
+              time: slot.slot || slot.time || ''
+            }))
+          : [];
       } catch (e) {
         console.error('获取时间段失败:', e);
-        this.timeSlots = this.getMockTimeSlots();
+        this.timeSlots = [];
       }
-    },
-    getMockTimeSlots() {
-      return [
-        { time: '09:00-10:00', available: true },
-        { time: '10:00-11:00', available: true },
-        { time: '11:00-12:00', available: false },
-        { time: '14:00-15:00', available: true },
-        { time: '15:00-16:00', available: true },
-        { time: '16:00-17:00', available: true }
-      ];
     },
     toggleWasteType(item) {
       const idx = this.selectedTypes.indexOf(item.id);
@@ -274,11 +259,8 @@ export default {
       }));
       try {
         const res = await estimatePrice(items);
-        if (res.success && res.data) {
-          this.estimateAmount = res.data.total || 0;
-        } else {
-          this.estimateAmount = this.selectedWasteItems.reduce((sum, t) => sum + t.price, 0);
-        }
+        const data = this.extractData(res) || {};
+        this.estimateAmount = Number(data.totalPrice || 0);
       } catch (e) {
         this.estimateAmount = this.selectedWasteItems.reduce((sum, t) => sum + t.price, 0);
       }
@@ -302,21 +284,17 @@ export default {
         ? new Date().toISOString().split('T')[0]
         : new Date(Date.now() + 86400000).toISOString().split('T')[0];
       try {
-        const res = await createBooking({
+        await createBooking({
           items: this.selectedTypes.map(id => ({ typeId: id, weight: 1 })),
-          date: dateStr,
-          timeSlot: this.selectedTimeSlot,
+          appointmentDate: dateStr,
+          appointmentTimeSlot: this.selectedTimeSlot,
           address: this.address,
-          remark: this.remark
+          notes: this.remark
         });
-        if (res.success) {
-          uni.showToast({ title: '预约成功!', icon: 'success' });
-          setTimeout(() => {
-            this.goToOrders();
-          }, 1500);
-        } else {
-          uni.showToast({ title: res.msg || '预约失败', icon: 'none' });
-        }
+        uni.showToast({ title: '预约成功!', icon: 'success' });
+        setTimeout(() => {
+          this.goToOrders();
+        }, 1500);
       } catch (e) {
         uni.showToast({ title: e.message || '预约失败', icon: 'none' });
       } finally {

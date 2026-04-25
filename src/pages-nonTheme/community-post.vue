@@ -108,7 +108,7 @@
 </template>
 
 <script>
-import { getComments, addComment, togglePostLike } from '@/api/community.js';
+import { getComments, addComment, togglePostLike, getCommunityPosts } from '@/api/community.js';
 
 export default {
   data() {
@@ -149,67 +149,50 @@ export default {
     this.checkTheme();
   },
   methods: {
+    extractData(res) {
+      return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
+    },
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
     },
     goBack() { uni.navigateBack(); },
     async loadPostDetail() {
-      this.post = {
-        id: this.postId,
-        username: '环保达人',
-        userAvatar: '',
-        content: '今天学习了垃圾分类知识，收获很大！废纸要叠放整齐，塑料瓶要清空内容物，电池要投入有害垃圾收集容器。大家一起努力，让我们的社区更美好！',
-        images: [],
-        tag: '心得',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-        likeCount: 12,
-        liked: false
-      };
+      if (!this.postId || !this.communityId) return;
+      try {
+        const res = await getCommunityPosts(this.communityId, null, 'latest', 1, 50);
+        const data = this.extractData(res) || {};
+        const list = Array.isArray(data.posts) ? data.posts : [];
+        const found = list.find((item) => Number(item.id) === Number(this.postId));
+        if (found) {
+          this.post = { ...this.post, ...found };
+        } else {
+          uni.showToast({ title: '帖子不存在或已删除', icon: 'none' });
+        }
+      } catch (e) {
+        console.error('获取帖子详情失败:', e);
+      }
     },
     async loadComments() {
       this.loadingComments = true;
       try {
         const res = await getComments(this.postId, 1, 50);
-        if (res.success && res.data) {
-          this.comments = res.data.comments || [];
-        } else {
-          this.comments = this.getMockComments();
-        }
+        const data = this.extractData(res) || {};
+        this.comments = data.comments || [];
       } catch (e) {
         console.error('获取评论失败:', e);
-        this.comments = this.getMockComments();
+        this.comments = [];
       }
       this.loadingComments = false;
-    },
-    getMockComments() {
-      return [
-        {
-          id: 1,
-          username: '绿色使者',
-          userAvatar: '',
-          content: '说得太好了！垃圾分类真的很重要',
-          createdAt: new Date(Date.now() - 1800000).toISOString()
-        },
-        {
-          id: 2,
-          username: '环保新手',
-          userAvatar: '',
-          content: '谢谢分享，学到了很多',
-          createdAt: new Date(Date.now() - 900000).toISOString()
-        }
-      ];
     },
     async toggleLike() {
       try {
         const res = await togglePostLike(this.postId);
-        if (res.success) {
-          this.post.liked = res.data.liked;
-          this.post.likeCount = res.data.likeCount;
-        }
+        const data = this.extractData(res) || {};
+        this.post.liked = !!data.liked;
+        this.post.likeCount = Number(data.likeCount || 0);
       } catch (e) {
-        this.post.liked = !this.post.liked;
-        this.post.likeCount += this.post.liked ? 1 : -1;
+        uni.showToast({ title: '操作失败', icon: 'none' });
       }
     },
     focusComment() {
@@ -229,31 +212,12 @@ export default {
       }
       const text = this.commentText.trim();
       try {
-        const res = await addComment(this.postId, text, this.replyTo);
-        if (res.success) {
-          uni.showToast({ title: '评论成功', icon: 'success' });
-          this.commentText = '';
-          this.comments.unshift({
-            id: Date.now(),
-            username: '我',
-            userAvatar: '',
-            content: text,
-            createdAt: new Date().toISOString()
-          });
-          this.comments = [...this.comments];
-        }
-      } catch (e) {
-        const newComment = {
-          id: Date.now(),
-          username: '我',
-          userAvatar: '',
-          content: text,
-          createdAt: new Date().toISOString()
-        };
-        this.comments.unshift(newComment);
-        this.comments = [...this.comments];
-        this.commentText = '';
+        await addComment(this.postId, text, this.replyTo);
         uni.showToast({ title: '评论成功', icon: 'success' });
+        this.commentText = '';
+        await this.loadComments();
+      } catch (e) {
+        uni.showToast({ title: e.message || '评论失败', icon: 'none' });
       }
     },
     previewImage(images, index) {

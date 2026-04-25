@@ -119,8 +119,6 @@
 </template>
 
 <script>
-import { recognizeByText } from '@/api/voice.js';
-
 export default {
   data() {
     return {
@@ -171,30 +169,10 @@ export default {
         return;
       }
       this.statusText = '识别中...';
-      try {
-        const res = await recognizeByText(this.textInput.trim());
-        if (res.success && res.data) {
-          this.currentResult = this.formatResult(res.data);
-          this.addToHistory(this.textInput.trim(), this.currentResult);
-        } else {
-          this.currentResult = this.getMockResult(this.textInput);
-          this.addToHistory(this.textInput.trim(), this.currentResult);
-        }
-        this.statusText = '识别完成';
-      } catch (e) {
-        console.error('识别失败:', e);
-        this.currentResult = this.getMockResult(this.textInput);
-        this.addToHistory(this.textInput.trim(), this.currentResult);
-        this.statusText = '识别完成';
-      }
-    },
-    formatResult(data) {
-      return {
-        icon: data.icon || '♻️',
-        category: data.category || '可回收垃圾',
-        description: data.description || `识别为${data.category || '可回收垃圾'}`,
-        tags: data.tags || ['可回收', '再利用']
-      };
+      const normalizedText = this.textInput.trim();
+      this.currentResult = this.getMockResult(normalizedText);
+      this.addToHistory(normalizedText, this.currentResult);
+      this.statusText = '识别完成';
     },
     getMockResult(text) {
       const lower = text.toLowerCase();

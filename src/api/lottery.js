@@ -6,14 +6,16 @@ import request from '@/api/index.js';
 export function getLotteryConfig() {
   return request({
     url: '/api/lottery/config',
-    method: 'GET'
+    method: 'GET',
+    needAuth: true
   });
 }
 
 export function getLotteryDailyStatus() {
   return request({
     url: '/api/lottery/daily-status',
-    method: 'GET'
+    method: 'GET',
+    needAuth: true
   });
 }
 
@@ -21,7 +23,8 @@ export function drawLottery(usePoints = false) {
   return request({
     url: '/api/lottery/draw',
     method: 'POST',
-    data: { usePoints }
+    data: { usePoints },
+    needAuth: true
   });
 }
 
@@ -29,6 +32,7 @@ export function getLotteryRecords(page = 1, limit = 20) {
   return request({
     url: '/api/lottery/records',
     method: 'GET',
-    params: { page, limit }
+    data: { page, limit },
+    needAuth: true
   });
 }

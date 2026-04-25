@@ -280,6 +280,9 @@ export default {
     if (this.timer) clearInterval(this.timer);
   },
   methods: {
+    extractData(res) {
+      return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
+    },
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
@@ -307,12 +310,11 @@ export default {
     async loadDailyChallenge() {
       try {
         const res = await getDailyChallenge();
-        if (res.success) {
-          this.questions = res.data.questions || [];
-          this.dailyCompleted = res.data.completed;
-          this.correctCount = res.data.correctCount || 0;
-          this.totalCount = res.data.totalCount || 0;
-        }
+        const data = this.extractData(res) || {};
+        this.questions = data.questions || [];
+        this.dailyCompleted = !!data.completed;
+        this.correctCount = data.correctCount || 0;
+        this.totalCount = data.totalCount || 0;
       } catch (e) {
         console.error('加载每日挑战失败:', e);
       }
@@ -320,9 +322,7 @@ export default {
     async loadStats() {
       try {
         const res = await getChallengeStats();
-        if (res.success) {
-          this.stats = res.data || {};
-        }
+        this.stats = this.extractData(res) || {};
       } catch (e) {
         console.error('加载统计失败:', e);
       }
@@ -330,10 +330,9 @@ export default {
     async loadWeeklyCalendar() {
       try {
         const res = await getWeeklyCalendar();
-        if (res.success) {
-          this.weeklyDays = res.data.days || [];
-          this.completedDays = res.data.completedDays || 0;
-        }
+        const data = this.extractData(res) || {};
+        this.weeklyDays = data.days || [];
+        this.completedDays = data.completedDays || 0;
       } catch (e) {
         console.error('加载日历失败:', e);
       }
@@ -341,9 +340,7 @@ export default {
     async loadLeaderboard() {
       try {
         const res = await getChallengeLeaderboard(this.rankType);
-        if (res.success) {
-          this.leaderboard = res.data || [];
-        }
+        this.leaderboard = this.extractData(res) || [];
       } catch (e) {
         console.error('加载排行榜失败:', e);
       }
@@ -383,24 +380,17 @@ export default {
         questionId: q.id,
         answer: value
       });
-      const isCorrect = value === q.correctAnswer;
-      if (isCorrect) {
-        uni.vibrateShort && uni.vibrateShort();
-      }
+      uni.vibrateShort && uni.vibrateShort();
       setTimeout(() => {
-        this.nextQuestion(isCorrect);
+        this.nextQuestion();
       }, 800);
     },
     getOptionClass(value) {
       const ans = this.answers[this.currentQuestionIndex];
       if (!ans) return '';
-      if (ans.answer === value) {
-        return value === this.currentQuestion.correctAnswer ? 'correct' : 'wrong';
-      }
-      if (value === this.currentQuestion.correctAnswer && ans.answer !== value) return 'missed';
-      return '';
+      return ans.answer === value ? 'selected' : '';
     },
-    nextQuestion(wasCorrect) {
+    nextQuestion() {
       if (this.currentQuestionIndex < this.questions.length - 1) {
         this.currentQuestionIndex++;
       } else {
@@ -418,14 +408,13 @@ export default {
           answers: validAnswers,
           timeSpent: this.currentMode === 'speed' ? 60 - this.timeLeft : 0
         });
-        if (res.success) {
-          this.challengeResult = res.data;
-          this.showResult = true;
-          this.dailyCompleted = true;
-          this.correctCount = res.data.correctCount;
-          this.totalCount = res.data.totalCount;
-          uni.showToast({ title: `获得 ${res.data.pointsEarned} 积分!`, icon: 'success' });
-        }
+        const data = this.extractData(res) || {};
+        this.challengeResult = data;
+        this.showResult = true;
+        this.dailyCompleted = true;
+        this.correctCount = data.correctCount || 0;
+        this.totalCount = data.totalCount || 0;
+        uni.showToast({ title: `获得 ${data.pointsEarned || 0} 积分!`, icon: 'success' });
       } catch (e) {
         uni.showToast({ title: e.message || '提交失败', icon: 'none' });
       }
@@ -976,6 +965,7 @@ export default {
 .quiz-option.correct { background: rgba(16, 185, 129, 0.4); border-color: #10b981; }
 .quiz-option.wrong { background: rgba(239, 68, 68, 0.4); border-color: #ef4444; }
 .quiz-option.missed { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); }
+.quiz-option.selected { background: rgba(16, 185, 129, 0.18); border-color: #10b981; }
 .option-label { color: #fff; font-size: 28rpx; font-weight: 600; }
 .quiz-actions { margin-top: 24rpx; display: flex; justify-content: center; position: relative; z-index: 1; }
 .quiz-btn.skip {

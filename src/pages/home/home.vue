@@ -1018,23 +1018,23 @@ function goRanking() {
 }
 
 function goChallenge() {
-  uni.navigateTo({ url: '/pages-nonTheme/challenge/challenge' })
+  uni.navigateTo({ url: '/pages-nonTheme/challenge' })
 }
 
 function goLottery() {
-  uni.navigateTo({ url: '/pages-nonTheme/lottery/lottery' })
+  uni.navigateTo({ url: '/pages-nonTheme/lottery' })
 }
 
 function goCommunity() {
-  uni.navigateTo({ url: '/pages-nonTheme/community/community' })
+  uni.navigateTo({ url: '/pages-nonTheme/community' })
 }
 
 function goBooking() {
-  uni.navigateTo({ url: '/pages-nonTheme/booking/booking' })
+  uni.navigateTo({ url: '/pages-nonTheme/booking' })
 }
 
 function goVoiceScan() {
-  uni.navigateTo({ url: '/pages-nonTheme/voice-scan/voice-scan' })
+  uni.navigateTo({ url: '/pages-nonTheme/voice-scan' })
 }
 
 function scanDeviceQR() {
@@ -2439,11 +2439,12 @@ function closeAchievementModal() {
 
 /* 快捷功能 */
 .quick-actions {
-  display: flex;
-  justify-content: space-around;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18rpx 12rpx;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 253, 244, 0.9) 50%, rgba(255, 255, 255, 0.98) 100%);
   border-radius: 20rpx;
-  padding: 24rpx;
+  padding: 24rpx 18rpx;
   box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.08), 0 2rpx 8rpx rgba(16, 185, 129, 0.05);
   backdrop-filter: blur(10rpx);
   border: 1rpx solid rgba(255, 255, 255, 0.6);
@@ -2453,8 +2454,9 @@ function closeAchievementModal() {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-start;
   position: relative;
-  padding: 12rpx 16rpx;
+  padding: 10rpx 6rpx;
   border-radius: 16rpx;
   transition: all 0.3s ease;
   overflow: hidden;
@@ -2468,7 +2470,6 @@ function closeAchievementModal() {
     inset 0 1rpx 0 rgba(255, 255, 255, 1),
     inset 0 -1rpx 0 rgba(0, 0, 0, 0.02);
   border: 1rpx solid rgba(255, 255, 255, 0.6);
-  flex: 1;
   min-width: 0;
 }
 
@@ -2946,6 +2947,18 @@ function closeAchievementModal() {
   .recognition-bbox-label {
     max-width: 180rpx;
     font-size: 18rpx;
+  }
+}
+
+@media (min-width: 769px) {
+  .quick-actions {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 12rpx;
+    padding: 24rpx;
+  }
+
+  .action-item {
+    padding: 12rpx 12rpx;
   }
 }
 
