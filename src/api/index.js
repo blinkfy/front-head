@@ -30,9 +30,10 @@ function request({ url, method = 'GET', data = {}, header = {}, needAuth = false
       header: headers,
       success: res => {
         if (res.statusCode === 200) {
-          if (res.data.code === 0||res.data.status === 'ok') {
+          // 同时兼容 code:0（社区风格）和 success:true（新增API风格）
+          if (res.data.code === 0 || res.data.status === 'ok' || res.data.success === true) {
             resolve(res.data)
-          } else if (res.data.code === 401) {
+          } else if (res.data.code === 401 || res.data.error === 'Unauthorized') {
             uni.showToast({ title: '请重新登录', icon: 'none' })
             uni.removeStorageSync('token')
             setTimeout(() => {
@@ -45,7 +46,7 @@ function request({ url, method = 'GET', data = {}, header = {}, needAuth = false
             reject(res.data)
           } else if (res.data.code === 2) {
             // 数据库临时关闭：展示后端返回的具体提示信息，并在 storage 中记录状态
-            uni.showToast({ title: res.data.msg || '数据库暂时关闭，该操作暂不可用', icon: 'none' })
+            uni.showToast({ title: res.data.msg || res.data.error || '数据库暂时关闭，该操作暂不可用', icon: 'none' })
             try {
               uni.setStorageSync('dbOffline', true)
             } catch (e) {
@@ -53,7 +54,8 @@ function request({ url, method = 'GET', data = {}, header = {}, needAuth = false
             }
             reject(res.data)
           } else {
-            uni.showToast({ title: res.data.msg || '请求失败', icon: 'none' })
+            // 同时显示 msg（社区风格）或 error（新增API风格）
+            uni.showToast({ title: res.data.msg || res.data.error || '请求失败', icon: 'none' })
             reject(res.data)
           }
         } else {

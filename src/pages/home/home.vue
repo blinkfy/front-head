@@ -242,6 +242,41 @@
           </view>
           <text class="action-name">环保排行</text>
         </view>
+
+        <view class="action-item" @click="goChallenge">
+          <view class="action-icon-wrapper challenge">
+            <text class="action-icon">🏆</text>
+          </view>
+          <text class="action-name">挑战赛</text>
+        </view>
+
+        <view class="action-item" @click="goLottery">
+          <view class="action-icon-wrapper lottery">
+            <text class="action-icon">🎰</text>
+          </view>
+          <text class="action-name">积分抽奖</text>
+        </view>
+
+        <view class="action-item" @click="goCommunity">
+          <view class="action-icon-wrapper community">
+            <text class="action-icon">🏘️</text>
+          </view>
+          <text class="action-name">环保社区</text>
+        </view>
+
+        <view class="action-item" @click="goBooking">
+          <view class="action-icon-wrapper booking">
+            <text class="action-icon">📦</text>
+          </view>
+          <text class="action-name">预约回收</text>
+        </view>
+
+        <view class="action-item" @click="goVoiceScan">
+          <view class="action-icon-wrapper voice">
+            <text class="action-icon">🎤</text>
+          </view>
+          <text class="action-name">语音识别</text>
+        </view>
       </view>
     </view>
 
@@ -980,6 +1015,26 @@ function goMap() {
 
 function goRanking() {
   uni.navigateTo({ url: '/pages/ranking/ranking?from=home' })
+}
+
+function goChallenge() {
+  uni.navigateTo({ url: '/pages-nonTheme/challenge/challenge' })
+}
+
+function goLottery() {
+  uni.navigateTo({ url: '/pages-nonTheme/lottery/lottery' })
+}
+
+function goCommunity() {
+  uni.navigateTo({ url: '/pages-nonTheme/community/community' })
+}
+
+function goBooking() {
+  uni.navigateTo({ url: '/pages-nonTheme/booking/booking' })
+}
+
+function goVoiceScan() {
+  uni.navigateTo({ url: '/pages-nonTheme/voice-scan/voice-scan' })
 }
 
 function scanDeviceQR() {
@@ -2530,6 +2585,26 @@ function closeAchievementModal() {
 
 .action-icon-wrapper.ranking {
   background: linear-gradient(135deg, #fce7f3 0%, #f472b6 50%, #ec4899 100%);
+}
+
+.action-icon-wrapper.challenge {
+  background: linear-gradient(135deg, #fef3c7 0%, #fbbf24 50%, #f59e0b 100%);
+}
+
+.action-icon-wrapper.lottery {
+  background: linear-gradient(135deg, #ede9fe 0%, #a78bfa 50%, #8b5cf6 100%);
+}
+
+.action-icon-wrapper.community {
+  background: linear-gradient(135deg, #d1fae5 0%, #6ee7b7 50%, #10b981 100%);
+}
+
+.action-icon-wrapper.booking {
+  background: linear-gradient(135deg, #fee2e2 0%, #fca5a5 50%, #ef4444 100%);
+}
+
+.action-icon-wrapper.voice {
+  background: linear-gradient(135deg, #e0f2fe 0%, #7dd3fc 50%, #0ea5e9 100%);
 }
 
 .action-icon {
