@@ -5,7 +5,7 @@
 // 根据环境获取配置
 export function getConfig() {
   return {
-    baseUrl: 'http://localhost:3000',
+    baseUrl: 'https://kwcdasogdvpl.sealosbja.site',
     timeout: 30000
   }
 }

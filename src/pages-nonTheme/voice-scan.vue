@@ -124,6 +124,7 @@
 
 <script>
 import { transcribeAudio } from '@/api/voice.js';
+import { baseUrl } from '@/api/settings.js';
 
 let recorderManager = null;
 
@@ -136,7 +137,12 @@ export default {
       historyRecords: [],
       statusText: '点击按钮开始识别',
       isDark: false,
-      isH5: false
+      isH5: false,
+      realtimeSocket: null,
+      realtimeReady: false,
+      realtimeFailed: false,
+      realtimeText: '',
+      realtimeFrameQueue: []
     };
   },
   onLoad() {
@@ -173,18 +179,28 @@ export default {
       recorderManager.onStart(() => {
         this.statusText = '正在聆听...';
       });
+      if (recorderManager.onFrameRecorded) {
+        recorderManager.onFrameRecorded((res) => {
+          if (res && res.frameBuffer) {
+            this.sendRealtimeAudioFrame(res.frameBuffer);
+          }
+        });
+      }
       recorderManager.onStop((res) => {
         this.isListening = false;
         if (res.tempFilePath) {
           this.statusText = '识别中...';
-          this.doTranscribe(res.tempFilePath);
+          this.finishRealtimeOrFallback(res.tempFilePath);
         } else {
+          this.stopRealtimeAsr();
           this.statusText = '录音失败，请重试';
           uni.showToast({ title: '录音失败', icon: 'none' });
         }
       });
       recorderManager.onError((err) => {
         this.isListening = false;
+        this.realtimeFailed = true;
+        this.stopRealtimeAsr();
         this.statusText = '录音出错，请重试';
         console.error('[voice] recorder error:', err);
         uni.showToast({ title: '录音权限未开启或设备不支持', icon: 'none' });
@@ -195,6 +211,7 @@ export default {
         try { recorderManager.stop(); } catch (e) {}
         recorderManager = null;
       }
+      this.stopRealtimeAsr();
     },
     goBack() {
       const pages = getCurrentPages()
@@ -235,6 +252,7 @@ export default {
       if (!recorderManager) {
         this.initRecorder();
       }
+      this.startRealtimeAsr();
       this.isListening = true;
       this.statusText = '准备录音...';
       recorderManager.start({
@@ -242,7 +260,8 @@ export default {
         sampleRate: 16000,
         numberOfChannels: 1,
         encodeBitRate: 48000,
-        format: 'mp3'
+        format: 'mp3',
+        frameSize: 4
       });
     },
     stopListening() {
@@ -250,6 +269,129 @@ export default {
       if (recorderManager) {
         recorderManager.stop();
       }
+    },
+    getRealtimeWsUrl() {
+      const token = uni.getStorageSync('token') || '';
+      const wsBaseUrl = baseUrl.replace(/^http/, 'ws');
+      return `${wsBaseUrl}/ws/ai/asr?token=${encodeURIComponent(token)}&format=mp3&sampleRate=16000`;
+    },
+    startRealtimeAsr() {
+      this.stopRealtimeAsr();
+      this.realtimeReady = false;
+      this.realtimeFailed = false;
+      this.realtimeText = '';
+      this.realtimeFrameQueue = [];
+
+      try {
+        const socketTask = uni.connectSocket({
+          url: this.getRealtimeWsUrl(),
+          complete: () => {}
+        });
+        this.realtimeSocket = socketTask;
+
+        socketTask.onOpen(() => {
+          this.realtimeReady = true;
+          this.flushRealtimeFrames();
+        });
+
+        socketTask.onMessage((event) => {
+          let payload = null;
+          try {
+            payload = typeof event.data === 'string' ? JSON.parse(event.data) : null;
+          } catch (e) {
+            payload = null;
+          }
+          if (!payload) return;
+          if (payload.type === 'partial' || payload.type === 'final') {
+            const text = payload.fullText || payload.text || '';
+            if (text) {
+              this.realtimeText = text;
+              this.textInput = text;
+              this.statusText = payload.type === 'final' ? '识别完成' : '实时识别中...';
+            }
+          } else if (payload.type === 'done' && payload.text) {
+            this.realtimeText = payload.text;
+            this.textInput = payload.text;
+          } else if (payload.type === 'error') {
+            this.realtimeFailed = true;
+            console.warn('[voice] realtime asr error:', payload);
+          }
+        });
+
+        socketTask.onError((err) => {
+          this.realtimeFailed = true;
+          console.warn('[voice] realtime socket error:', err);
+        });
+
+        socketTask.onClose(() => {
+          this.realtimeReady = false;
+        });
+      } catch (e) {
+        this.realtimeFailed = true;
+        console.warn('[voice] start realtime asr failed:', e);
+      }
+    },
+    sendRealtimeAudioFrame(frameBuffer) {
+      if (this.realtimeFailed || !frameBuffer) return;
+      const socketTask = this.realtimeSocket;
+      if (!socketTask || !this.realtimeReady) {
+        if (this.realtimeFrameQueue.length < 40) {
+          this.realtimeFrameQueue.push(frameBuffer);
+        }
+        return;
+      }
+      socketTask.send({
+        data: frameBuffer,
+        fail: (err) => {
+          this.realtimeFailed = true;
+          console.warn('[voice] send realtime frame failed:', err);
+        }
+      });
+    },
+    flushRealtimeFrames() {
+      const queue = this.realtimeFrameQueue.splice(0);
+      queue.forEach(frame => this.sendRealtimeAudioFrame(frame));
+    },
+    stopRealtimeAsr() {
+      const socketTask = this.realtimeSocket;
+      this.realtimeSocket = null;
+      this.realtimeReady = false;
+      this.realtimeFrameQueue = [];
+      if (!socketTask) return;
+      try {
+        socketTask.send({ data: JSON.stringify({ type: 'finish' }) });
+      } catch (e) {}
+      setTimeout(() => {
+        try { socketTask.close(); } catch (e) {}
+      }, 800);
+    },
+    finishRealtimeOrFallback(filePath) {
+      const socketTask = this.realtimeSocket;
+      if (socketTask) {
+        try {
+          socketTask.send({ data: JSON.stringify({ type: 'finish' }) });
+        } catch (e) {
+          this.realtimeFailed = true;
+        }
+      }
+
+      setTimeout(() => {
+        const recognizedText = String(this.realtimeText || '').trim();
+        this.stopRealtimeAsr();
+        if (recognizedText) {
+          this.applyRecognizedText(recognizedText);
+          return;
+        }
+        this.statusText = '识别中...';
+        this.doTranscribe(filePath);
+      }, this.realtimeFailed ? 100 : 1200);
+    },
+    applyRecognizedText(recognizedText) {
+      this.textInput = recognizedText;
+      this.statusText = '识别完成';
+      uni.showToast({ title: '识别成功', icon: 'success' });
+      this.currentResult = this.getMockResult(recognizedText);
+      this.addToHistory(recognizedText, this.currentResult);
     },
     async doTranscribe(filePath) {
       try {
