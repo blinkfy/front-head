@@ -60,7 +60,7 @@
                             <text class="withdraw-text">已撤回</text>
                         </view>
                         
-                        <view class="message-bubble" :class="[getBubbleClass(msg), { 'withdraw-message': mode === 'admin' && msg.isWithdraw }]" @longpress="onMessageLongPress(msg)">
+                        <view class="message-bubble" :class="[getBubbleClass(msg), { 'withdraw-message': mode === 'admin' && msg.isWithdraw }]" @longpress="onMessageLongPressV2(msg)">
                             <!-- 引用消息 -->
                             <view v-if="msg.refId" class="ref-message-container" @click.stop="jumpToRefMessage(msg.refId)">
                                 <view class="ref-message-item" :class="[getRefMessageType(msg.refId)]">
@@ -96,6 +96,10 @@
                                 </view>
 
                                 <text class="voice-duration">{{ mediaLoadErrors[msg.id]?.type === 'voice' ? '加载失败' : msg.duration + '"' }}</text>
+                                <view v-if="transcribingVoiceIds[msg.id] || msg.voiceText" class="voice-transcript">
+                                    <text class="voice-transcript-label">{{ transcribingVoiceIds[msg.id] ? '转写中...' : '转文字' }}</text>
+                                    <text v-if="msg.voiceText" class="voice-transcript-text">{{ msg.voiceText }}</text>
+                                </view>
                             </view>
 
                             <!-- 视频消息 -->
@@ -557,6 +561,7 @@ export default {
             
             // 媒体加载错误状态 - 记录加载失败的消息
             mediaLoadErrors: {}, // { messageId: { type: 'image'|'video'|'voice'|'file', error: true, retryCount: 0 } }
+            transcribingVoiceIds: {},
             
             // 拖拽和粘贴相关
             isDragOver: false, // 是否正在拖拽
@@ -1249,7 +1254,8 @@ export default {
                     }
                     // 图片/视频/文件/语音消息 - 提取path并拼接完整URL
                     else if ((serverMsg.type === 'image' || serverMsg.type === 'video' || serverMsg.type === 'file' || serverMsg.type === 'voice') && contentObj.path) {
-                        content = `${baseUrl}/files/download/${contentObj.path}`
+                        const normalizedPath = String(contentObj.path).replace(/\\/g, '/')
+                        content = `${baseUrl}/files/download/${normalizedPath}`
                     }
                 } catch (e) {
                     console.error('解析消息content JSON失败:', e, content)
@@ -1262,7 +1268,7 @@ export default {
                 !content.startsWith('http://') && 
                 !content.startsWith('https://') &&
                 (serverMsg.type === 'voice' || serverMsg.type === 'image' || serverMsg.type === 'video' || serverMsg.type === 'file')) {
-                content = `${baseUrl}/files/download/${content}`
+                content = `${baseUrl}/files/download/${String(content).replace(/\\/g, '/')}`
             }
             
             const message = {
@@ -1273,6 +1279,8 @@ export default {
                 timestamp: new Date(serverMsg.sendTime || serverMsg.createTime || serverMsg.timestamp).getTime() || Date.now(),
                 status: 'sent',
                 duration: serverMsg.duration || parsedContent?.duration,
+                voiceText: parsedContent?.toText || '',
+                voicePath: parsedContent?.path || '',
                 fileName: serverMsg.fileName || parsedContent?.fileName || parsedContent?.name,
                 fileSize: serverMsg.fileSize || parsedContent?.fileSize || parsedContent?.size,
                 thumbnail: serverMsg.thumbnail || (parsedContent?.thumbnail ? `${baseUrl}/files/download/${parsedContent.thumbnail}` : null),
@@ -1498,7 +1506,7 @@ export default {
         },
 
         async sendVoiceMessage(filePath, duration) {
-            const msg = this.createMessage('voice', filePath, { duration })
+            const msg = this.createMessage('voice', filePath, { duration, voiceText: '' })
             this.addMessage(msg)
 
             // 上传到服务器
@@ -1692,13 +1700,28 @@ export default {
 
         // 添加接收到的消息（供外部调用，如WebSocket接收消息）
         receiveMessage(msgData) {
+            let content = msgData.content
+            let voiceText = ''
+            let duration = msgData.duration
+            if (typeof content === 'string' && content.startsWith('{')) {
+                try {
+                    const parsed = JSON.parse(content)
+                    if (msgData.type === 'voice' && parsed.path) {
+                        content = `${baseUrl}/files/download/${String(parsed.path).replace(/\\/g, '/')}`
+                        voiceText = parsed.toText || ''
+                        duration = duration || parsed.duration
+                    }
+                } catch (e) {}
+            }
             const msg = {
                 id: msgData.id || Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
                 type: msgData.type || 'text',
-                content: msgData.content,
+                content,
                 isSelf: false,
                 timestamp: msgData.timestamp || Date.now(),
                 status: 'sent',
+                voiceText,
+                duration,
                 ...msgData
             }
             this.messages.push(msg)
@@ -3238,6 +3261,92 @@ export default {
             })
         },
 
+        onMessageLongPressV2(msg) {
+            const actions = [
+                { key: 'copy', label: '复制' },
+                { key: 'delete', label: '删除' },
+                { key: 'quote', label: '引用' }
+            ]
+            if (msg.type === 'voice' && msg.status === 'sent') {
+                actions.push({ key: 'transcribe', label: msg.voiceText ? '重新转文字' : '转文字' })
+            }
+            if (msg.isSelf && msg.status === 'sent') {
+                actions.push({ key: 'recall', label: '撤回' })
+            }
+
+            uni.showActionSheet({
+                itemList: actions.map(item => item.label),
+                success: async (res) => {
+                    const action = actions[res.tapIndex] && actions[res.tapIndex].key
+                    if (action === 'copy') {
+                        if (msg.type === 'text') {
+                            uni.setClipboardData({ data: msg.content })
+                        } else if (msg.type === 'location') {
+                            const locationText = `位置 ${msg.locationName}\n${msg.locationAddress}`
+                            uni.setClipboardData({ data: locationText })
+                        } else if (msg.type === 'voice' && msg.voiceText) {
+                            uni.setClipboardData({ data: msg.voiceText })
+                        }
+                    } else if (action === 'delete') {
+                        try {
+                            await chatApi.deleteMessage(msg.id)
+                        } catch (e) {
+                            console.error('删除消息失败:', e)
+                        }
+
+                        const index = this.messages.findIndex(m => m.id === msg.id)
+                        if (index > -1) {
+                            this.messages.splice(index, 1)
+                            this.saveMessagesToStorage()
+                            uni.showToast({ title: '已删除', icon: 'none' })
+                        }
+                    } else if (action === 'quote') {
+                        this.refMessageId = msg.id
+                        this.showRefSuggestion = true
+                        uni.showToast({ title: '已选择引用消息', icon: 'success' })
+                    } else if (action === 'transcribe') {
+                        await this.transcribeVoiceMessage(msg)
+                    } else if (action === 'recall') {
+                        try {
+                            await chatApi.recallMessage(msg.id)
+                            const index = this.messages.findIndex(m => m.id === msg.id)
+                            if (index > -1) {
+                                this.messages.splice(index, 1)
+                                this.saveMessagesToStorage()
+                                uni.showToast({ title: '已撤回', icon: 'none' })
+                            }
+                        } catch (e) {
+                            console.error('撤回消息失败', e)
+                            uni.showToast({ title: '撤回失败', icon: 'none' })
+                        }
+                    }
+                }
+            })
+        },
+
+        async transcribeVoiceMessage(msg) {
+            if (!msg || msg.type !== 'voice' || !msg.id || this.transcribingVoiceIds[msg.id]) return
+            this.$set(this.transcribingVoiceIds, msg.id, true)
+            try {
+                const res = await chatApi.transcribeVoiceMessage(msg.id)
+                const toText = String(res?.data?.toText || '').trim()
+                const target = this.messages.find(item => item.id === msg.id)
+                if (target) {
+                    target.voiceText = toText
+                    this.saveMessagesToStorage()
+                }
+                uni.showToast({
+                    title: toText ? '转文字完成' : '未识别到文字',
+                    icon: 'none'
+                })
+            } catch (e) {
+                console.error('转写语音消息失败:', e)
+                uni.showToast({ title: '转文字失败', icon: 'none' })
+            } finally {
+                delete this.transcribingVoiceIds[msg.id]
+            }
+        },
+
         scrollToBottom() {
             if (this.messages.length > 0) {
                 this.scrollToMessage = 'msg-' + this.messages[this.messages.length - 1].id
@@ -4215,6 +4324,27 @@ page {
         font-size: 28rpx;
         color: #666;
     }
+
+    .voice-transcript {
+        margin-top: 12rpx;
+        padding-top: 12rpx;
+        border-top: 1rpx solid rgba(102, 102, 102, 0.12);
+    }
+
+    .voice-transcript-label {
+        display: block;
+        font-size: 20rpx;
+        color: #999;
+        margin-bottom: 6rpx;
+    }
+
+    .voice-transcript-text {
+        display: block;
+        font-size: 24rpx;
+        line-height: 1.5;
+        color: #333;
+        word-break: break-all;
+    }
 }
 
 .message-self .bubble-voice {
@@ -4226,6 +4356,18 @@ page {
     }
 
     .voice-duration {
+        color: #fff;
+    }
+
+    .voice-transcript {
+        border-top-color: rgba(255, 255, 255, 0.18);
+    }
+
+    .voice-transcript-label {
+        color: rgba(255, 255, 255, 0.72);
+    }
+
+    .voice-transcript-text {
         color: #fff;
     }
 }

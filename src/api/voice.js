@@ -9,7 +9,8 @@ export function recognizeByText(text) {
   return request({
     url: '/api/recognize/by-text',
     method: 'POST',
-    data: { text }
+    data: { text },
+    needAuth: true
   });
 }
 

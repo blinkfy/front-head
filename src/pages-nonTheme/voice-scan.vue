@@ -123,7 +123,7 @@
 </template>
 
 <script>
-import { transcribeAudio } from '@/api/voice.js';
+import { transcribeAudio, recognizeByText } from '@/api/voice.js';
 import { baseUrl } from '@/api/settings.js';
 
 let recorderManager = null;
@@ -142,7 +142,9 @@ export default {
       realtimeReady: false,
       realtimeFailed: false,
       realtimeText: '',
-      realtimeFrameQueue: []
+      realtimeFrameQueue: [],
+      realtimeSocketState: 'closed',
+      realtimeFinishSent: false
     };
   },
   onLoad() {
@@ -281,6 +283,8 @@ export default {
       this.realtimeFailed = false;
       this.realtimeText = '';
       this.realtimeFrameQueue = [];
+      this.realtimeFinishSent = false;
+      this.realtimeSocketState = 'connecting';
 
       try {
         const socketTask = uni.connectSocket({
@@ -290,11 +294,13 @@ export default {
         this.realtimeSocket = socketTask;
 
         socketTask.onOpen(() => {
-          this.realtimeReady = true;
-          this.flushRealtimeFrames();
+          if (this.realtimeSocket !== socketTask) return;
+          this.realtimeSocketState = 'open';
+          this.realtimeReady = false;
         });
 
         socketTask.onMessage((event) => {
+          if (this.realtimeSocket !== socketTask) return;
           let payload = null;
           try {
             payload = typeof event.data === 'string' ? JSON.parse(event.data) : null;
@@ -302,7 +308,10 @@ export default {
             payload = null;
           }
           if (!payload) return;
-          if (payload.type === 'partial' || payload.type === 'final') {
+          if (payload.type === 'ready') {
+            this.realtimeReady = true;
+            this.flushRealtimeFrames();
+          } else if (payload.type === 'partial' || payload.type === 'final') {
             const text = payload.fullText || payload.text || '';
             if (text) {
               this.realtimeText = text;
@@ -315,35 +324,78 @@ export default {
           } else if (payload.type === 'error') {
             this.realtimeFailed = true;
             console.warn('[voice] realtime asr error:', payload);
+          } else if (payload.type === 'closed') {
+            this.realtimeReady = false;
+            this.realtimeFailed = true;
           }
         });
 
         socketTask.onError((err) => {
+          if (this.realtimeSocket !== socketTask) return;
+          this.realtimeSocketState = 'closed';
+          this.realtimeSocket = null;
           this.realtimeFailed = true;
+          this.realtimeReady = false;
           console.warn('[voice] realtime socket error:', err);
         });
 
         socketTask.onClose(() => {
+          if (this.realtimeSocket !== socketTask) return;
+          this.realtimeSocketState = 'closed';
+          this.realtimeSocket = null;
           this.realtimeReady = false;
         });
       } catch (e) {
+        this.realtimeSocketState = 'closed';
         this.realtimeFailed = true;
         console.warn('[voice] start realtime asr failed:', e);
       }
     },
+    isRealtimeTransportOpen(socketTask = this.realtimeSocket) {
+      if (!socketTask || this.realtimeSocketState !== 'open') return false;
+      const readyState = socketTask.readyState;
+      return readyState === undefined || readyState === 1 || readyState === 'OPEN';
+    },
+    isRealtimeSocketOpen(socketTask = this.realtimeSocket) {
+      return this.isRealtimeTransportOpen(socketTask) && this.realtimeReady;
+    },
+    markRealtimeSendFailed(err) {
+      this.realtimeSocketState = 'closed';
+      this.realtimeReady = false;
+      this.realtimeFailed = true;
+      this.realtimeFrameQueue = [];
+      this.realtimeSocket = null;
+      const message = String((err && (err.errMsg || err.message)) || '');
+      return /not connected|readyState is not OPEN|task not found|未完成的操作/i.test(message);
+    },
+    safeSendRealtime(data, onFail) {
+      const socketTask = this.realtimeSocket;
+      if (!this.isRealtimeTransportOpen(socketTask)) return false;
+      try {
+        socketTask.send({
+          data,
+          fail: (err) => {
+            const expectedDisconnect = this.markRealtimeSendFailed(err);
+            if (onFail) onFail(err, expectedDisconnect);
+          }
+        });
+        return true;
+      } catch (err) {
+        const expectedDisconnect = this.markRealtimeSendFailed(err);
+        if (onFail) onFail(err, expectedDisconnect);
+        return false;
+      }
+    },
     sendRealtimeAudioFrame(frameBuffer) {
       if (this.realtimeFailed || !frameBuffer) return;
-      const socketTask = this.realtimeSocket;
-      if (!socketTask || !this.realtimeReady) {
+      if (!this.isRealtimeSocketOpen()) {
         if (this.realtimeFrameQueue.length < 40) {
           this.realtimeFrameQueue.push(frameBuffer);
         }
         return;
       }
-      socketTask.send({
-        data: frameBuffer,
-        fail: (err) => {
-          this.realtimeFailed = true;
+      this.safeSendRealtime(frameBuffer, (err, expectedDisconnect) => {
+        if (!expectedDisconnect) {
           console.warn('[voice] send realtime frame failed:', err);
         }
       });
@@ -354,25 +406,31 @@ export default {
     },
     stopRealtimeAsr() {
       const socketTask = this.realtimeSocket;
+      const socketState = this.realtimeSocketState;
+      const shouldSendFinish = this.isRealtimeTransportOpen(socketTask) && !this.realtimeFinishSent;
       this.realtimeSocket = null;
       this.realtimeReady = false;
       this.realtimeFrameQueue = [];
+      this.realtimeSocketState = 'closed';
       if (!socketTask) return;
-      try {
-        socketTask.send({ data: JSON.stringify({ type: 'finish' }) });
-      } catch (e) {}
-      setTimeout(() => {
-        try { socketTask.close(); } catch (e) {}
-      }, 800);
+      if (shouldSendFinish) {
+        this.realtimeFinishSent = true;
+        try {
+          socketTask.send({
+            data: JSON.stringify({ type: 'finish' }),
+            fail: () => {}
+          });
+        } catch (e) {}
+      }
+      if (socketState === 'open' && socketTask) {
+        setTimeout(() => {
+          try { socketTask.close(); } catch (e) {}
+        }, 800);
+      }
     },
     finishRealtimeOrFallback(filePath) {
-      const socketTask = this.realtimeSocket;
-      if (socketTask) {
-        try {
-          socketTask.send({ data: JSON.stringify({ type: 'finish' }) });
-        } catch (e) {
-          this.realtimeFailed = true;
-        }
+      if (!this.realtimeFinishSent && this.safeSendRealtime(JSON.stringify({ type: 'finish' }))) {
+        this.realtimeFinishSent = true;
       }
 
       setTimeout(() => {
@@ -386,12 +444,39 @@ export default {
         this.doTranscribe(filePath);
       }, this.realtimeFailed ? 100 : 1200);
     },
-    applyRecognizedText(recognizedText) {
-      this.textInput = recognizedText;
+    async applyRecognizedText(recognizedText) {
+      const normalizedText = String(recognizedText || '').trim();
+      if (!normalizedText) return;
+      this.textInput = normalizedText;
       this.statusText = '识别完成';
       uni.showToast({ title: '识别成功', icon: 'success' });
-      this.currentResult = this.getMockResult(recognizedText);
-      this.addToHistory(recognizedText, this.currentResult);
+      await this.classifyRecognizedText(normalizedText);
+    },
+    normalizeTextRecognitionResult(data, fallbackText = '') {
+      const fallback = this.getFallbackTextResult(fallbackText);
+      const payload = (data && data.data) || data || {};
+      if (!payload || typeof payload !== 'object') return fallback;
+      return {
+        icon: payload.icon || fallback.icon,
+        category: payload.category || fallback.category,
+        description: payload.description || payload.advice || fallback.description,
+        tags: Array.isArray(payload.tags) && payload.tags.length ? payload.tags.slice(0, 4) : fallback.tags,
+        source: payload.source || 'ai'
+      };
+    },
+    async classifyRecognizedText(text) {
+      const fallback = this.getFallbackTextResult(text);
+      this.currentResult = fallback;
+      this.statusText = '正在判断垃圾分类...';
+      try {
+        const res = await recognizeByText(text);
+        this.currentResult = this.normalizeTextRecognitionResult(res, text);
+      } catch (e) {
+        console.warn('[voice] text classify fallback:', e);
+        this.currentResult = fallback;
+      }
+      this.addToHistory(text, this.currentResult);
+      this.statusText = 'ç’‡å——åŸ†ç€¹å±¾åžš';
     },
     async doTranscribe(filePath) {
       try {
@@ -405,13 +490,11 @@ export default {
           return;
         }
 
-        this.textInput = recognizedText;
+        await this.applyRecognizedText(recognizedText);
         this.statusText = '识别完成';
         uni.showToast({ title: '识别成功', icon: 'success' });
-
+        return;
         // 自动提交识别结果
-        this.currentResult = this.getMockResult(recognizedText);
-        this.addToHistory(recognizedText, this.currentResult);
       } catch (e) {
         console.error('[voice] transcribe error:', e);
         this.statusText = '识别失败，请重试';
@@ -425,25 +508,60 @@ export default {
       }
       this.statusText = '识别中...';
       const normalizedText = this.textInput.trim();
-      this.currentResult = this.getMockResult(normalizedText);
-      this.addToHistory(normalizedText, this.currentResult);
+      await this.applyRecognizedText(normalizedText);
       this.statusText = '识别完成';
+      return;
     },
-    getMockResult(text) {
-      const lower = text.toLowerCase();
-      if (lower.includes('纸') || lower.includes('报纸')) {
-        return { icon: '📄', category: '可回收垃圾', description: '废纸属于可回收垃圾，建议叠放整齐后投放', tags: ['可回收', '废纸'] };
+    getFallbackTextResult(text) {
+      const raw = String(text || '').trim();
+      const lower = raw.toLowerCase();
+      const rules = [
+        {
+          icon: '♻️',
+          category: '可回收垃圾',
+          keywords: ['纸', '报纸', '纸箱', '纸盒', '塑料瓶', '饮料瓶', '矿泉水瓶', '玻璃瓶', '易拉罐', '金属', '铁罐', '衣服', '书', '快递盒', '包装盒', '牛奶盒'],
+          description: '清空残留并尽量压扁，保持干燥后投放到可回收物桶。',
+          tags: ['可回收', '清空残留', '保持干燥']
+        },
+        {
+          icon: '⚠️',
+          category: '有害垃圾',
+          keywords: ['电池', '纽扣电池', '充电宝', '药', '过期药', '药瓶', '灯管', '荧光灯', '油漆', '杀虫剂', '温度计', '水银'],
+          description: '请单独密封或包好，投放到有害垃圾收集点，避免破损泄漏。',
+          tags: ['有害', '单独投放', '防破损']
+        },
+        {
+          icon: '🍎',
+          category: '厨余垃圾',
+          keywords: ['剩饭', '剩菜', '果皮', '果核', '菜叶', '骨头', '鱼刺', '茶叶', '咖啡渣', '蛋壳', '食物', '饭', '菜', '苹果', '香蕉皮'],
+          description: '沥干水分后投放到厨余垃圾桶，包装袋请另外分类。',
+          tags: ['厨余', '沥干水分', '去包装']
+        },
+        {
+          icon: '🗑️',
+          category: '其他垃圾',
+          keywords: ['纸巾', '湿巾', '口罩', '烟头', '陶瓷', '尘土', '污损纸', '尿不湿', '一次性餐具', '保鲜膜', '包装袋'],
+          description: '这类通常难以再利用，请投放到其他垃圾桶。',
+          tags: ['其他垃圾', '不易回收', '干垃圾']
+        }
+      ];
+      const matchedRule = rules.find(rule => rule.keywords.some(keyword => lower.includes(keyword.toLowerCase())));
+      if (matchedRule) {
+        return {
+          icon: matchedRule.icon,
+          category: matchedRule.category,
+          description: matchedRule.description,
+          tags: matchedRule.tags,
+          source: 'fallback'
+        };
       }
-      if (lower.includes('塑料') || lower.includes('瓶')) {
-        return { icon: '🧴', category: '可回收垃圾', description: '塑料瓶属于可回收垃圾，请清空内容物后投放', tags: ['可回收', '塑料'] };
-      }
-      if (lower.includes('电池')) {
-        return { icon: '🔋', category: '有害垃圾', description: '废旧电池属于有害垃圾，请投入有害垃圾收集容器', tags: ['有害垃圾', '电池'] };
-      }
-      if (lower.includes('厨余') || lower.includes('剩菜') || lower.includes('果皮')) {
-        return { icon: '🍎', category: '厨余垃圾', description: '厨余垃圾请投入绿色垃圾桶，注意沥干水分', tags: ['厨余垃圾', '易腐'] };
-      }
-      return { icon: '♻️', category: '可回收垃圾', description: '该物品属于可回收垃圾，可投入蓝色垃圾桶', tags: ['可回收'] };
+      return {
+        icon: '🔎',
+        category: '其他垃圾',
+        description: raw ? `暂未精确匹配“${raw}”，建议优先确认是否干净可回收；若无法清洁或材质不明，投放其他垃圾更稳妥。` : '请说出或输入具体物品名称，我会判断分类。',
+        tags: ['规则回退', '需确认材质', '按当地标准'],
+        source: 'fallback'
+      };
     },
     addToHistory(text, result) {
       this.historyRecords.unshift({

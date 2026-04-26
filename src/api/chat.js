@@ -107,6 +107,14 @@ export function sendVoiceMessage(chatId, targetUserId, filePath, duration) {
   })
 }
 
+export function transcribeVoiceMessage(messageId) {
+  return request({
+    url: `/api/chat/voice/${messageId}/transcribe`,
+    method: 'POST',
+    needAuth: true
+  })
+}
+
 /**
  * 发送视频消息
  * @param {string} chatId - 聊天ID
@@ -400,6 +408,7 @@ export default {
   sendTextMessage,
   sendImageMessage,
   sendVoiceMessage,
+  transcribeVoiceMessage,
   sendVideoMessage,
   sendFileMessage,
   sendLocationMessage,
