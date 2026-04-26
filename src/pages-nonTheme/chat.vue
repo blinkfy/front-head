@@ -1,4 +1,4 @@
-<template>
+﻿<template>
     <view class="chat-container" :class="{ 'dark-theme': isDarkTheme }" @drop="onDrop" @dragover.prevent="onDragOver" @dragleave="onDragLeave"
         :style="{ 'background': isDragOver ? 'rgba(7, 193, 96, 0.1)' : 'transparent', 'transition': 'background 0.3s ease' }">
         <!-- 拖拽提示 -->
@@ -1283,7 +1283,9 @@ export default {
                 voicePath: parsedContent?.path || '',
                 fileName: serverMsg.fileName || parsedContent?.fileName || parsedContent?.name,
                 fileSize: serverMsg.fileSize || parsedContent?.fileSize || parsedContent?.size,
-                thumbnail: serverMsg.thumbnail || (parsedContent?.thumbnail ? `${baseUrl}/files/download/${parsedContent.thumbnail}` : null),
+                thumbnail: serverMsg.type === 'image'
+                    ? this.buildReviewUrl(parsedContent?.path || content)
+                    : (serverMsg.thumbnail || (parsedContent?.thumbnail ? `${baseUrl}/files/download/${parsedContent.thumbnail}` : null)),
                 isWithdraw: serverMsg.isWithdraw || false,  // 是否已撤回
                 refId: serverMsg.refId || null  // 引用消息ID
             }
@@ -1710,6 +1712,8 @@ export default {
                         content = `${baseUrl}/files/download/${String(parsed.path).replace(/\\/g, '/')}`
                         voiceText = parsed.toText || ''
                         duration = duration || parsed.duration
+                    } else if (msgData.type === 'image' && parsed.path) {
+                        content = `${baseUrl}/files/download/${String(parsed.path).replace(/\\/g, '/')}`
                     }
                 } catch (e) {}
             }
@@ -1723,6 +1727,9 @@ export default {
                 voiceText,
                 duration,
                 ...msgData
+            }
+            if (msg.type === 'image') {
+                msg.thumbnail = this.buildReviewUrl(content)
             }
             this.messages.push(msg)
             this.saveMessagesToStorage()
@@ -3364,6 +3371,14 @@ export default {
             
             // 标记加载失败
             this.$set(this.mediaLoadErrors, msg.id, { type: 'image', error: true, retryCount: 0 })
+
+            const previewUrl = this.buildReviewUrl(msg.content)
+            if (msg.type === 'image' && previewUrl && msg.thumbnail !== previewUrl) {
+                msg.thumbnail = previewUrl
+                delete this.mediaLoadErrors[msg.id]
+                this.saveMessagesToStorage()
+                return
+            }
             
             // 如果是 blob URL 失效,尝试从服务器重新加载
             if (msg.content && msg.content.startsWith('blob:')) {
