@@ -497,3 +497,43 @@
       needAuth: true
     })
   }
+
+  /**
+   * 获取通用表列表
+   * @param {string} tableName
+   * @param {Object} params
+   */
+  export function getGenericTableList(tableName, params = {}) {
+    return request({
+      url: `/api/admin/tables/${tableName}`,
+      method: 'GET',
+      data: params,
+      needAuth: true
+    })
+  }
+
+  export function createGenericTableRecord(tableName, data) {
+    return request({
+      url: `/api/admin/tables/${tableName}`,
+      method: 'POST',
+      data,
+      needAuth: true
+    })
+  }
+
+  export function updateGenericTableRecord(tableName, id, data) {
+    return request({
+      url: `/api/admin/tables/${tableName}/${id}`,
+      method: 'PUT',
+      data,
+      needAuth: true
+    })
+  }
+
+  export function deleteGenericTableRecord(tableName, id) {
+    return request({
+      url: `/api/admin/tables/${tableName}/${id}`,
+      method: 'DELETE',
+      needAuth: true
+    })
+  }

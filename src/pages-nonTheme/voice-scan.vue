@@ -29,7 +29,11 @@
     <view class="content-wrapper">
       <!-- 中央麦克风区域 -->
       <view class="mic-section">
-        <view :class="['mic-ring', isListening ? 'listening' : '']">
+        <view :class="['mic-ring', isListening ? 'listening' : '']"
+          @touchstart="startListening"
+          @touchend="stopListening"
+          @touchcancel="stopListening"
+        >
           <view class="mic-inner">
             <text class="mic-icon">🎤</text>
           </view>
@@ -113,12 +117,16 @@
 
     <!-- 底部提示 -->
     <view class="bottom-hint">
-      <text>语音功能预留中，当前支持文字输入识别</text>
+      <text>{{ isH5 ? 'H5 环境暂不支持录音，请使用文字输入' : '长按录音，松开后自动识别' }}</text>
     </view>
   </view>
 </template>
 
 <script>
+import { transcribeAudio } from '@/api/voice.js';
+
+let recorderManager = null;
+
 export default {
   data() {
     return {
@@ -127,41 +135,146 @@ export default {
       currentResult: null,
       historyRecords: [],
       statusText: '点击按钮开始识别',
-      isDark: false
+      isDark: false,
+      isH5: false
     };
   },
   onLoad() {
     this.checkTheme();
     this.loadHistory();
+    this.initRecorder();
   },
   onShow() {
     this.checkTheme();
+  },
+  onUnload() {
+    this.destroyRecorder();
   },
   methods: {
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
     },
-    goBack() { uni.navigateBack(); },
+    initRecorder() {
+      // 检测平台
+      try {
+        const appBaseInfo = uni.getAppBaseInfo ? uni.getAppBaseInfo() : uni.getSystemInfoSync();
+        this.isH5 = appBaseInfo.uniPlatform === 'web';
+      } catch (e) {
+        this.isH5 = false;
+      }
+
+      if (this.isH5) {
+        // H5 环境暂不支持原生录音，使用文字输入
+        return;
+      }
+
+      recorderManager = uni.getRecorderManager();
+      recorderManager.onStart(() => {
+        this.statusText = '正在聆听...';
+      });
+      recorderManager.onStop((res) => {
+        this.isListening = false;
+        if (res.tempFilePath) {
+          this.statusText = '识别中...';
+          this.doTranscribe(res.tempFilePath);
+        } else {
+          this.statusText = '录音失败，请重试';
+          uni.showToast({ title: '录音失败', icon: 'none' });
+        }
+      });
+      recorderManager.onError((err) => {
+        this.isListening = false;
+        this.statusText = '录音出错，请重试';
+        console.error('[voice] recorder error:', err);
+        uni.showToast({ title: '录音权限未开启或设备不支持', icon: 'none' });
+      });
+    },
+    destroyRecorder() {
+      if (recorderManager) {
+        try { recorderManager.stop(); } catch (e) {}
+        recorderManager = null;
+      }
+    },
+    goBack() {
+      const pages = getCurrentPages()
+      if (pages.length > 1) {
+        uni.navigateBack()
+      } else {
+        if (this.isDark) {
+          uni.reLaunch({url: '/pages-dark/home/home'})
+        } else {
+          uni.reLaunch({url: '/pages/home/home'})
+        }
+      }
+    },
     goToCamera() {
-      uni.navigateTo({ url: '/pages/scan/scan' });
+      uni.chooseImage({
+        count: 1,
+        sizeType: ['compressed'],
+        sourceType: ['album', 'camera'],
+        success: (chooseRes) => {
+          const filePath = chooseRes.tempFilePaths[0];
+          uni.setStorageSync('pending_recognize_image', filePath);
+          const homeUrl = this.isDark ? '/pages-dark/home/home' : '/pages/home/home';
+          uni.reLaunch({ url: homeUrl });
+        },
+        fail: () => {
+          uni.showToast({ title: '选择取消', icon: 'none' });
+        }
+      });
     },
     getWaveHeight(index) {
-      // rpx: 基础高度 20rpx，波动 ±15rpx（共 20~35rpx）
       return 20 + Math.random() * 15;
     },
     startListening() {
+      if (this.isH5) {
+        uni.showToast({ title: 'H5 环境请使用文字输入', icon: 'none' });
+        return;
+      }
+      if (!recorderManager) {
+        this.initRecorder();
+      }
       this.isListening = true;
-      this.statusText = '正在聆听...';
+      this.statusText = '准备录音...';
+      recorderManager.start({
+        duration: 60000,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        encodeBitRate: 48000,
+        format: 'mp3'
+      });
     },
     stopListening() {
       if (!this.isListening) return;
-      this.isListening = false;
-      this.statusText = '识别中...';
-      setTimeout(() => {
-        this.statusText = '语音功能开发中，请使用文字输入';
-        uni.showToast({ title: '语音功能预留中，请输入文字', icon: 'none' });
-      }, 500);
+      if (recorderManager) {
+        recorderManager.stop();
+      }
+    },
+    async doTranscribe(filePath) {
+      try {
+        const res = await transcribeAudio(filePath);
+        const data = (res && res.data) || {};
+        const recognizedText = data.text || '';
+
+        if (!recognizedText) {
+          this.statusText = '未识别到语音内容，请重试';
+          uni.showToast({ title: '未识别到内容', icon: 'none' });
+          return;
+        }
+
+        this.textInput = recognizedText;
+        this.statusText = '识别完成';
+        uni.showToast({ title: '识别成功', icon: 'success' });
+
+        // 自动提交识别结果
+        this.currentResult = this.getMockResult(recognizedText);
+        this.addToHistory(recognizedText, this.currentResult);
+      } catch (e) {
+        console.error('[voice] transcribe error:', e);
+        this.statusText = '识别失败，请重试';
+        uni.showToast({ title: (e && e.msg) || '语音识别失败', icon: 'none' });
+      }
     },
     async submitText() {
       if (!this.textInput.trim()) {
@@ -236,12 +349,30 @@ export default {
   transition: all 0.3s ease;
 }
 .voice-page.dark-mode {
-  background: linear-gradient(135deg, #28285f 0%, #28346f 30%, #322c8a 70%, #442977 100%);
+  background:
+    radial-gradient(circle at 18% 8%, rgba(56, 189, 248, 0.22) 0%, transparent 34%),
+    radial-gradient(circle at 84% 16%, rgba(16, 185, 129, 0.18) 0%, transparent 32%),
+    radial-gradient(circle at 58% 82%, rgba(168, 85, 247, 0.16) 0%, transparent 36%),
+    linear-gradient(180deg, #07111f 0%, #0f172a 46%, #111827 100%);
 }
-.bg-effects { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+.bg-effects { position: fixed; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+.voice-page.dark-mode .bg-effects::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 24rpx, rgba(56, 189, 248, 0.035) 24rpx 26rpx),
+    linear-gradient(rgba(148, 163, 184, 0.035) 1rpx, transparent 1rpx);
+  background-size: 100% 100%, 64rpx 64rpx;
+  -webkit-mask-image: radial-gradient(circle at 50% 22%, rgba(0,0,0,0.58), transparent 66%);
+  mask-image: radial-gradient(circle at 50% 22%, rgba(0,0,0,0.58), transparent 66%);
+}
 .bg-circle { position: absolute; border-radius: 50%; opacity: 0.08; transition: all 0.3s; }
 .voice-page:not(.dark-mode) .bg-circle { background: #10b981; }
-.voice-page.dark-mode .bg-circle { background: rgba(255, 255, 255, 0.1); }
+.voice-page.dark-mode .bg-circle { opacity: 0.18; filter: blur(10rpx); }
+.voice-page.dark-mode .c1 { background: rgba(56, 189, 248, 0.48); }
+.voice-page.dark-mode .c2 { background: rgba(16, 185, 129, 0.36); }
+.voice-page.dark-mode .c3 { background: rgba(168, 85, 247, 0.28); }
 .c1 { width: 600rpx; height: 600rpx; top: -200rpx; right: -200rpx; }
 .c2 { width: 400rpx; height: 400rpx; bottom: 30%; left: -200rpx; }
 .c3 { width: 300rpx; height: 300rpx; bottom: 10%; right: -100rpx; }

@@ -129,23 +129,24 @@
             </view>
 
             <!-- 变废为宝效果图 -->
-            <view v-if="aiEnabledUpcyclingImage && upcyclingImageUrl" class="upcycling-image-card">
+            <view v-if="aiEnabledUpcyclingImage && (upcyclingImageUrl || upcyclingTaskId)" class="upcycling-image-card">
               <view class="upcycling-image-header">
                 <text class="upcycling-image-title">变废为宝效果图</text>
               </view>
               <view class="upcycling-image-wrapper">
                 <image
+                  v-if="upcyclingImageUrl"
                   :src="upcyclingImageUrl"
                   mode="aspectFit"
                   class="upcycling-image"
                   @click="previewUpcyclingImage"
                 />
-                <view v-if="imageLoading" class="upcycling-image-loading">
+                <view v-if="!upcyclingImageUrl && upcyclingTaskId" class="upcycling-image-loading">
                   <view class="upcycling-loading-ring"></view>
-                  <text class="upcycling-loading-text">图片生成中...</text>
+                  <text class="upcycling-loading-text">AI 正在生成效果图...</text>
                 </view>
               </view>
-              <text class="upcycling-image-hint">点击图片可全屏预览</text>
+              <text v-if="upcyclingImageUrl" class="upcycling-image-hint">点击图片可全屏预览</text>
             </view>
 
             <view v-else-if="resultDesc" class="description-panel">
@@ -207,22 +208,61 @@
         <!-- 功能快捷入口 -->
       <view class="welcome-section">
         <view class="quick-actions">
-          <view class="action-item" @click="goShop">
-            <view class="action-icon shop">🛍️</view>
-            <text class="action-text">积分商城</text>
-            <text class="points-badge" v-if="points !== null">{{ points }}</text>
+          <view class="quick-actions-header">
+            <text class="quick-actions-title">常用服务</text>
+            <text class="quick-actions-subtitle">任务、活动与回收工具</text>
           </view>
-          <view v-if="!isH5Platform" class="action-item" @click="scanDeviceQR">
-            <view class="action-icon">📱</view>
-            <text class="action-text">连接设备</text>
+
+          <view class="quick-actions-featured">
+            <view class="action-item featured challenge-card" @click="goChallenge">
+              <view class="action-icon-wrapper challenge">
+                <text class="action-icon">🏆</text>
+              </view>
+              <view class="action-copy">
+                <text class="action-text">挑战赛</text>
+                <text class="action-desc">答题赚积分</text>
+              </view>
+            </view>
+
+            <view class="action-item featured lottery-card" @click="goLottery">
+              <view class="action-icon-wrapper lottery">
+                <text class="action-icon">🎰</text>
+              </view>
+              <view class="action-copy">
+                <text class="action-text">积分抽奖</text>
+                <text class="action-desc">试试今日手气</text>
+              </view>
+            </view>
           </view>
-          <view v-if="isH5Platform" class="action-item" @click="goMap">
-            <view class="action-icon">🗺️</view>
-            <text class="action-text">垃圾桶地图</text>
-          </view>
-          <view class="action-item" @click="goRanking">
-            <view class="action-icon">🏆</view>
-            <text class="action-text">环保排行榜</text>
+
+          <view class="quick-actions-grid" :class="{ 'three-items': isH5Platform }">
+            <view v-if="!isH5Platform" class="action-item compact" @click="scanDeviceQR">
+              <view class="action-icon-wrapper device">
+                <text class="action-icon">📱</text>
+              </view>
+              <text class="action-text">连接设备</text>
+            </view>
+
+            <view class="action-item compact" @click="goCommunity">
+              <view class="action-icon-wrapper community">
+                <text class="action-icon">🏘️</text>
+              </view>
+              <text class="action-text">环保社区</text>
+            </view>
+
+            <view class="action-item compact" @click="goBooking">
+              <view class="action-icon-wrapper booking">
+                <text class="action-icon">📦</text>
+              </view>
+              <text class="action-text">预约回收</text>
+            </view>
+
+            <view class="action-item compact" @click="goVoiceScan">
+              <view class="action-icon-wrapper voice">
+                <text class="action-icon">🎤</text>
+              </view>
+              <text class="action-text">语音识别</text>
+            </view>
           </view>
         </view>
       </view>
@@ -306,6 +346,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { recognizeImage } from '@/api/recognize'
+import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import {
   appendAchievementQueue,
@@ -331,6 +372,8 @@ const currentGuide = ref({})
 const recognizedItems = ref([])
 const upcyclingSections = ref([])
 const upcyclingImageUrl = ref('')
+const upcyclingTaskId = ref('')
+let upcyclingPollTimer = 0
 const imageLoading = ref(false)
 const aiEnabledUpcyclingImage = ref(false)
 const rawBboxes = ref([])
@@ -429,6 +472,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopUpcyclingPoll()
   if (bboxRefreshTimer) {
     if (typeof window !== 'undefined') {
       window.clearTimeout(bboxRefreshTimer)
@@ -475,6 +519,9 @@ function resetEnhancedRecognition() {
   recognizedItems.value = []
   upcyclingSections.value = []
   upcyclingImageUrl.value = ''
+  upcyclingTaskId.value = ''
+  stopUpcyclingPoll()
+  imageLoading.value = false
   rawBboxes.value = []
   displayBboxes.value = []
   recognizeBBoxSpace.value = ''
@@ -619,8 +666,13 @@ function applyEnhancedRecognitionData(recognizeData) {
   if (recognizeData.upcyclingImageUrl) {
     upcyclingImageUrl.value = recognizeData.upcyclingImageUrl
     imageLoading.value = false
+  } else if (recognizeData.upcyclingTaskId) {
+    upcyclingTaskId.value = recognizeData.upcyclingTaskId
+    imageLoading.value = true
+    startUpcyclingPoll()
   } else {
     upcyclingImageUrl.value = ''
+    upcyclingTaskId.value = ''
   }
 
   if (recognizeData.aiSettings && typeof recognizeData.aiSettings.enableUpcyclingImage === 'boolean') {
@@ -671,6 +723,71 @@ function previewUpcyclingImage() {
     current: 0,
     fail: () => uni.showToast({ title: '预览失败', icon: 'none' })
   })
+}
+
+function stopUpcyclingPoll() {
+  if (upcyclingPollTimer) {
+    clearTimeout(upcyclingPollTimer)
+    upcyclingPollTimer = 0
+  }
+}
+
+async function startUpcyclingPoll() {
+  stopUpcyclingPoll()
+  const taskId = upcyclingTaskId.value
+  if (!taskId) return
+
+  const maxRetries = 30
+  let retries = 0
+
+  const poll = async () => {
+    if (retries >= maxRetries) {
+      console.warn('[upcycling poll] 轮询超时')
+      upcyclingTaskId.value = ''
+      imageLoading.value = false
+      return
+    }
+    retries++
+
+    try {
+      const base = getBaseUrl()
+      const token = uni.getStorageSync('token') || ''
+      const res = await new Promise((resolve, reject) => {
+        uni.request({
+          url: `${base}/api/upcycling-image/${taskId}`,
+          method: 'GET',
+          header: { Authorization: token },
+          success: (r) => resolve(r.data),
+          fail: reject
+        })
+      })
+
+      if (res && res.code === 0 && res.data) {
+        if (res.data.status === 'done' && res.data.url) {
+          upcyclingImageUrl.value = res.data.url
+          upcyclingTaskId.value = ''
+          imageLoading.value = false
+          return
+        } else if (res.data.status === 'failed') {
+          upcyclingTaskId.value = ''
+          imageLoading.value = false
+          return
+        }
+      }
+    } catch (e) {
+      console.warn('[upcycling poll] 请求失败:', e)
+    }
+
+    upcyclingPollTimer = setTimeout(poll, 2000)
+  }
+
+  poll()
+}
+
+function getBaseUrl() {
+  // 所有平台都需要完整 URL（小程序/App 不支持相对路径）
+  // 使用顶部静态导入的 baseUrl，避免 require 在小程序中无法解析 @ 别名
+  return baseUrl || ''
 }
 
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
@@ -1008,6 +1125,26 @@ function goGuide() {
 
 function goRanking() {
   uni.navigateTo({ url: '/pages-dark/ranking/ranking?from=home' })
+}
+
+function goChallenge() {
+  uni.navigateTo({ url: '/pages-nonTheme/challenge' })
+}
+
+function goLottery() {
+  uni.navigateTo({ url: '/pages-nonTheme/lottery' })
+}
+
+function goCommunity() {
+  uni.navigateTo({ url: '/pages-nonTheme/community' })
+}
+
+function goBooking() {
+  uni.navigateTo({ url: '/pages-nonTheme/booking' })
+}
+
+function goVoiceScan() {
+  uni.navigateTo({ url: '/pages-nonTheme/voice-scan' })
 }
 
 function scanDeviceQR() {
@@ -1865,8 +2002,12 @@ function getAchievementRarityLabel(key) {
   position: relative;
   margin-top: 16rpx;
   width: 100%;
+  min-height: 300rpx;
   background: #1e293b;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .upcycling-image {
@@ -1879,14 +2020,12 @@ function getAchievementRarityLabel(key) {
 }
 
 .upcycling-image-loading {
-  position: absolute;
-  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(30, 41, 59, 0.88);
   gap: 16rpx;
+  padding: 60rpx 24rpx;
 }
 
 .upcycling-loading-ring {
@@ -2087,33 +2226,92 @@ function getAchievementRarityLabel(key) {
 /* 功能快捷入口 */
 .quick-actions {
   display: flex;
-  justify-content: space-around;
+  flex-direction: column;
+  gap: 20rpx;
   width: 100%;
   max-width: 650rpx;
-  background: rgba(15, 15, 35, 0.8);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(17, 24, 39, 0.86) 52%, rgba(15, 23, 42, 0.92) 100%);
   border-radius: 20rpx;
-  padding: 20rpx 12rpx;
+  padding: 26rpx;
   border: 1px solid rgba(64, 224, 255, 0.2);
   backdrop-filter: blur(15px);
   box-sizing: border-box;
-  gap: 8rpx;
+}
+
+.quick-actions-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.quick-actions-title {
+  color: #f8fafc;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+.quick-actions-subtitle {
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 22rpx;
+  font-weight: 500;
+}
+
+.quick-actions-featured {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+}
+
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.quick-actions-grid.three-items {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .action-item {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  padding: 14rpx 8rpx;
+  gap: 14rpx;
+  padding: 18rpx;
   border-radius: 16rpx;
-  background: rgba(64, 224, 255, 0.08);
+  background: rgba(15, 23, 42, 0.72);
   border: 1px solid rgba(64, 224, 255, 0.2);
   transition: all 0.3s ease;
   cursor: pointer;
   box-sizing: border-box;
-  min-height: 100rpx;
-  flex: 1;
+  min-height: 92rpx;
   min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.action-item.featured {
+  min-height: 136rpx;
+  justify-content: flex-start;
+  padding: 24rpx;
+  border-color: rgba(64, 224, 255, 0.24);
+}
+
+.action-item.challenge-card {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.16) 0%, rgba(15, 23, 42, 0.8) 48%, rgba(16, 185, 129, 0.12) 100%);
+}
+
+.action-item.lottery-card {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.18) 0%, rgba(15, 23, 42, 0.8) 48%, rgba(16, 185, 129, 0.12) 100%);
+}
+
+.action-item.compact {
+  flex-direction: column;
+  gap: 10rpx;
+  min-height: 132rpx;
+  padding: 16rpx 8rpx;
 }
 
 .action-item:active {
@@ -2122,40 +2320,96 @@ function getAchievementRarityLabel(key) {
   box-shadow: 0 4rpx 12rpx rgba(64, 224, 255, 0.2);
 }
 
+.action-icon-wrapper {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 20rpx;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8rpx 22rpx rgba(0, 0, 0, 0.24), inset 0 1rpx 1rpx rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+  position: relative;
+}
+
+.action-icon-wrapper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 56%);
+  pointer-events: none;
+}
+
+.action-item.featured .action-icon-wrapper {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 24rpx;
+}
+
+.action-icon-wrapper.device {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.26) 0%, rgba(14, 165, 233, 0.16) 100%);
+}
+
+.action-icon-wrapper.challenge {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.28) 0%, rgba(251, 191, 36, 0.14) 100%);
+}
+
+.action-icon-wrapper.lottery {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.26) 0%, rgba(99, 102, 241, 0.14) 100%);
+}
+
+.action-icon-wrapper.community {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.26) 0%, rgba(45, 212, 191, 0.13) 100%);
+}
+
+.action-icon-wrapper.booking {
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.24) 0%, rgba(244, 63, 94, 0.13) 100%);
+}
+
+.action-icon-wrapper.voice {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.26) 0%, rgba(56, 189, 248, 0.14) 100%);
+}
+
 .action-icon {
+  position: relative;
+  z-index: 1;
   font-size: 32rpx;
-  margin-bottom: 10rpx;
-  filter: drop-shadow(0 0 10rpx rgba(64, 224, 255, 0.5));
+  filter: drop-shadow(0 2rpx 8rpx rgba(0, 0, 0, 0.26));
+}
+
+.action-item.featured .action-icon {
+  font-size: 38rpx;
 }
 
 .action-text {
-  font-size: 22rpx;
-  color: #40e0ff;
-  font-weight: 500;
+  display: block;
+  font-size: 23rpx;
+  color: #dbeafe;
+  font-weight: 700;
+  line-height: 1.25;
   text-align: center;
 }
 
-/* 积分商城入口特殊样式 */
-.action-item.shop-entry {
-  position: relative;
-  background: linear-gradient(135deg, 
-    rgba(255, 215, 0, 0.15) 0%, 
-    rgba(255, 193, 7, 0.15) 50%, 
-    rgba(255, 152, 0, 0.15) 100%);
-  border: 1px solid rgba(255, 215, 0, 0.4);
+.action-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  min-width: 0;
 }
 
-.action-item.shop-entry:active {
-  background: linear-gradient(135deg, 
-    rgba(255, 215, 0, 0.25) 0%, 
-    rgba(255, 193, 7, 0.25) 50%, 
-    rgba(255, 152, 0, 0.25) 100%);
-  box-shadow: 0 4rpx 12rpx rgba(255, 215, 0, 0.3);
+.action-copy .action-text {
+  text-align: left;
+  color: #f8fafc;
+  font-size: 28rpx;
 }
 
-.action-icon.shop {
-  color: #FFD700;
-  filter: drop-shadow(0 0 10rpx rgba(255, 215, 0, 0.8));
+.action-desc {
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 22rpx;
+  line-height: 1.3;
 }
 
 .points-badge {
@@ -2419,6 +2673,88 @@ function getAchievementRarityLabel(key) {
 }
 
 @media (max-width: 420px) {
+  .quick-actions {
+    gap: 14rpx;
+    padding: 20rpx 16rpx;
+  }
+
+  .quick-actions-header {
+    align-items: flex-end;
+    flex-direction: row;
+    gap: 12rpx;
+  }
+
+  .quick-actions-subtitle {
+    font-size: 20rpx;
+    white-space: nowrap;
+  }
+
+  .quick-actions-featured {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12rpx;
+  }
+
+  .quick-actions-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10rpx;
+  }
+
+  .quick-actions-grid.three-items {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .action-item.featured {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12rpx;
+    min-height: 104rpx;
+    padding: 16rpx 12rpx;
+  }
+
+  .action-item.featured .action-icon-wrapper {
+    width: 68rpx;
+    height: 68rpx;
+    border-radius: 18rpx;
+  }
+
+  .action-item.featured .action-icon {
+    font-size: 30rpx;
+  }
+
+  .action-copy {
+    align-items: flex-start;
+    gap: 4rpx;
+  }
+
+  .action-copy .action-text {
+    text-align: left;
+    font-size: 24rpx;
+  }
+
+  .action-desc {
+    font-size: 20rpx;
+    text-align: left;
+  }
+
+  .action-item.compact {
+    min-height: 116rpx;
+    padding: 14rpx 4rpx;
+  }
+
+  .action-item.compact .action-icon-wrapper {
+    width: 64rpx;
+    height: 64rpx;
+    border-radius: 18rpx;
+  }
+
+  .action-item.compact .action-icon {
+    font-size: 28rpx;
+  }
+
+  .action-item.compact .action-text {
+    font-size: 21rpx;
+  }
+
   .result-card {
     padding: 22rpx 20rpx;
   }
@@ -2431,6 +2767,36 @@ function getAchievementRarityLabel(key) {
 
   .desc-content {
     font-size: 22rpx;
+  }
+}
+
+@media (max-width: 340px) {
+  .quick-actions-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4rpx;
+  }
+
+  .quick-actions-featured,
+  .quick-actions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-actions-grid.three-items {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .action-item.featured {
+    flex-direction: column;
+    justify-content: center;
+    min-height: 140rpx;
+  }
+
+  .action-copy,
+  .action-copy .action-text,
+  .action-desc {
+    align-items: center;
+    text-align: center;
   }
 }
 

@@ -52,3 +52,12 @@ export function getCommunityRanking() {
     needAuth: true
   });
 }
+
+export function getModeQuestions(mode) {
+  return request({
+    url: '/api/challenge/mode-questions',
+    method: 'GET',
+    data: { mode },
+    needAuth: true
+  });
+}

@@ -99,6 +99,21 @@
           </view>
         </view>
 
+        <!-- 联系方式输入 -->
+        <view class="section">
+          <view class="section-title">联系方式</view>
+          <view class="input-card">
+            <input
+              v-model="contactPhone"
+              class="input-field"
+              type="number"
+              maxlength="11"
+              placeholder="请输入联系电话"
+              placeholder-class="input-placeholder"
+            />
+          </view>
+        </view>
+
         <!-- 备注输入 -->
         <view class="section">
           <view class="section-title">备注信息（选填）</view>
@@ -139,6 +154,7 @@
 
 <script>
 import { getWasteTypes, createBooking, getAvailableTimeSlots, estimatePrice } from '@/api/booking.js';
+import { getUserProfile } from '@/api/user.js';
 
 export default {
   data() {
@@ -149,6 +165,7 @@ export default {
       selectedTimeSlot: '',
       timeSlots: [],
       address: '',
+      contactPhone: '',
       remark: '',
       estimateAmount: 0,
       submitting: false,
@@ -162,6 +179,7 @@ export default {
     this.initDates();
     this.loadWasteTypes();
     this.loadTimeSlots();
+    this.loadContactPhone();
   },
   onShow() {
     this.checkTheme();
@@ -187,7 +205,39 @@ export default {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
     },
-    goBack() { uni.navigateBack(); },
+    async loadContactPhone() {
+      const cachedPhone = String(uni.getStorageSync('userPhone') || '').trim();
+      if (cachedPhone) {
+        this.contactPhone = cachedPhone;
+        return;
+      }
+      try {
+        const res = await getUserProfile();
+        const data = this.extractData(res) || {};
+        const phone = String(data.phone || '').trim();
+        if (phone) {
+          this.contactPhone = phone;
+          uni.setStorageSync('userPhone', phone);
+        }
+      } catch (e) {
+        console.warn('获取用户联系方式失败:', e);
+      }
+    },
+    isValidPhone(phone) {
+      return /^1[3-9]\d{9}$/.test(String(phone || '').trim());
+    },
+    goBack() {
+      const pages = getCurrentPages()
+      if (pages.length > 1) {
+        uni.navigateBack()
+      } else {
+        if (this.isDark) {
+          uni.reLaunch({url: '/pages-dark/home/home'})
+        } else {
+          uni.reLaunch({url: '/pages/home/home'})
+        }
+      }
+    },
     goToOrders() {
       uni.navigateTo({ url: '/pages-nonTheme/booking-orders' });
     },
@@ -279,6 +329,14 @@ export default {
         uni.showToast({ title: '请输入回收地址', icon: 'none' });
         return;
       }
+      if (!this.contactPhone.trim()) {
+        uni.showToast({ title: '请输入联系方式', icon: 'none' });
+        return;
+      }
+      if (!this.isValidPhone(this.contactPhone)) {
+        uni.showToast({ title: '请输入正确的手机号', icon: 'none' });
+        return;
+      }
       this.submitting = true;
       const dateStr = this.selectedDate === 'today'
         ? new Date().toISOString().split('T')[0]
@@ -289,6 +347,7 @@ export default {
           appointmentDate: dateStr,
           appointmentTimeSlot: this.selectedTimeSlot,
           address: this.address,
+          contactPhone: this.contactPhone.trim(),
           notes: this.remark
         });
         uni.showToast({ title: '预约成功!', icon: 'success' });
@@ -316,14 +375,32 @@ export default {
   transition: all 0.3s ease;
 }
 .booking-page.dark-mode {
-  background: linear-gradient(135deg, #28285f 0%, #28346f 30%, #322c8a 70%, #442977 100%);
+  background:
+    radial-gradient(circle at 16% 10%, rgba(56, 189, 248, 0.2) 0%, transparent 34%),
+    radial-gradient(circle at 86% 18%, rgba(16, 185, 129, 0.18) 0%, transparent 34%),
+    radial-gradient(circle at 70% 82%, rgba(245, 158, 11, 0.1) 0%, transparent 36%),
+    linear-gradient(180deg, #07111f 0%, #0f172a 46%, #101827 100%);
 }
 
 /* ===== 背景效果 ===== */
-.bg-effects { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+.bg-effects { position: fixed; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+.booking-page.dark-mode .bg-effects::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.045) 1rpx, transparent 1rpx),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1rpx, transparent 1rpx);
+  background-size: 64rpx 64rpx;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.08));
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.08));
+}
 .bg-circle { position: absolute; border-radius: 50%; opacity: 0.08; transition: all 0.3s; }
 .booking-page:not(.dark-mode) .bg-circle { background: #10b981; }
-.booking-page.dark-mode .bg-circle { background: rgba(255, 255, 255, 0.1); }
+.booking-page.dark-mode .bg-circle { opacity: 0.18; filter: blur(10rpx); }
+.booking-page.dark-mode .c1 { background: rgba(56, 189, 248, 0.42); }
+.booking-page.dark-mode .c2 { background: rgba(16, 185, 129, 0.4); }
+.booking-page.dark-mode .c3 { background: rgba(245, 158, 11, 0.22); }
 .c1 { width: 600rpx; height: 600rpx; top: -200rpx; right: -200rpx; }
 .c2 { width: 400rpx; height: 400rpx; bottom: 20%; left: -200rpx; }
 .c3 { width: 300rpx; height: 300rpx; top: 30%; right: -100rpx; }

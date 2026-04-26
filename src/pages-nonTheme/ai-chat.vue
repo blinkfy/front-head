@@ -88,10 +88,11 @@
             </view>
             <view :class="['msg', msg.role === 'user' ? 'user' : 'assistant']">
               <image
-                v-if="msg.imageBase64"
+                v-if="getMessageImageSrc(msg)"
                 class="msg-image"
-                :src="msg.imageBase64"
+                :src="getMessageImageSrc(msg)"
                 mode="aspectFit"
+                @error="handleMessageImageError(idx)"
               />
               <!-- 用户消息保持纯文本，助手消息走 Markdown 渲染 -->
               <text v-if="msg.role === 'user'" class="msg-body">{{ msg.content }}</text>
@@ -319,22 +320,22 @@ const quickActions = [
   {
     label: '分类依据',
     hint: '逐项解释为什么这样分类',
-    prompt: '请逐项解释这次识别结果的分类依据，并指出最容易分错的地方。'
+    prompt: '逐项解释这次识别结果的分类依据，并指出最容易分错的地方。'
   },
   {
     label: '投放步骤',
     hint: '告诉我正确投放顺序和注意事项',
-    prompt: '请给我一个清晰的投放步骤，说明要不要清洗、拆分和沥干。'
+    prompt: '给我一个清晰的投放步骤，说明要不要清洗、拆分和沥干。'
   },
   {
     label: '变废为宝',
     hint: '给出能马上执行的再利用方案',
-    prompt: '请给我一个低门槛、现在就能做的变废为宝方案，材料和步骤尽量具体。'
+    prompt: '给我一个低门槛、现在就能做的变废为宝方案，材料和步骤尽量具体。'
   },
   {
     label: '易错对比',
     hint: '帮我区分相似垃圾',
-    prompt: '请列出和它容易混淆的垃圾，并用简短规则帮我快速区分。'
+    prompt: '列出和它容易混淆的垃圾，并用简短规则帮我快速区分。'
   }
 ]
 
@@ -350,8 +351,38 @@ const composerPlaceholder = computed(() =>
     : '向 AI 环保助手提问...'
 )
 // ─── 内部数据（不需要响应式） ─────────────────────────────
+function isRenderableImageSrc(src) {
+  const value = String(src || '').trim()
+  if (!value) return false
+  if (value.startsWith('__LARGE_IMAGE__:')) return false
+  return true
+}
+
+function getMessageImageSrc(msg) {
+  if (!msg) return ''
+  if (msg._imageLoadFailed) return ''
+  if (isRenderableImageSrc(msg._localImagePath)) return msg._localImagePath
+  if (isRenderableImageSrc(msg.imageBase64)) return msg.imageBase64
+  return ''
+}
+
+function handleMessageImageError(index) {
+  const conversation = ensureConversation(activeSessionId.value)
+  const msg = conversation.messages[index]
+  if (!msg) return
+  if (msg._localImagePath && isRenderableImageSrc(msg.imageBase64) && !msg._imageFallbackTried) {
+    msg._imageFallbackTried = true
+    msg._localImagePath = ''
+    messageList.value = conversation.messages.slice()
+    return
+  }
+  msg._imageLoadFailed = true
+  messageList.value = conversation.messages.slice()
+}
+
 let conversationMap = new Map()       // sessionId -> conversation object
 let abortCtrl = null
+let wsSocket = null                   // WebSocket 连接（小程序/App 流式）
 
 // ─── 工具函数 ─────────────────────────────────────────────
 function safeJsonParse(str) {
@@ -496,15 +527,20 @@ function setActiveSession(sessionId) {
   renderActiveMessages()
   clearPickedImage()
 }
-function pushMessageToActive(role, content, imageBase64, createdAt, reasoning) {
+function pushMessageToActive(role, content, imageBase64, createdAt, reasoning, localImagePath) {
   const conversation = ensureConversation(activeSessionId.value)
-  conversation.messages.push({
+  const msg = {
     role: role === 'assistant' ? 'assistant' : 'user',
     content: String(content || ''),
     imageBase64: typeof imageBase64 === 'string' ? imageBase64 : '',
     createdAt: createdAt || new Date().toISOString(),
     reasoning: role === 'assistant' ? (reasoning || '') : undefined
-  })
+  }
+  // 小程序端：本地文件路径存到 _localImagePath 供 <image> 渲染
+  if (localImagePath && typeof localImagePath === 'string') {
+    msg._localImagePath = localImagePath
+  }
+  conversation.messages.push(msg)
   refreshConversationMeta(conversation)
   syncConversationList()
   updateHeader()
@@ -555,8 +591,9 @@ function convertSeedImagesToTempFiles(sessionId) {
         const tempPath = `${basePath}/ai_seed_img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`
         try {
           fs.writeFileSync(tempPath, base64Data, 'base64')
-          // 替换 base64 为本地文件路径（<image> 可直接渲染）
-          msg.imageBase64 = tempPath
+          // 将本地文件路径存入 _localImagePath 供 <image> 渲染，
+          // 保留原始 imageBase64（data URL）供 API 请求使用
+          msg._localImagePath = tempPath
           console.log('[ai-chat] seed image saved to temp file:', tempPath)
         } catch (e) {
           console.warn('[ai-chat] writeFileSync failed, keeping base64:', e && e.message)
@@ -833,13 +870,15 @@ function maybeStartFromFreshSeed() {
   if (seedUserText || seedImage) {
     conversation.messages.push({
       role: 'user', content: seedUserText || '请继续分析这张图片。',
-      imageBase64: seedImage, createdAt: createdAt || new Date().toISOString()
+      imageBase64: seedImage, createdAt: createdAt || new Date().toISOString(),
+      _pendingPersist: true
     })
   }
   if (seedText) {
     conversation.messages.push({
       role: 'assistant', content: seedText, imageBase64: '',
-      createdAt: createdAt || new Date().toISOString()
+      createdAt: createdAt || new Date().toISOString(),
+      _pendingPersist: true
     })
   }
   refreshConversationMeta(conversation)
@@ -855,7 +894,7 @@ function ensureSessionId() {
 }
 
 // ─── SSE 流式对话（仅 H5） ────────────────────────────────
-async function streamChat({ text, imageBase64, history }) {
+async function streamChat({ text, imageBase64, history, seedMessages, enableThinking }) {
   // #ifdef H5
   abortCtrl = new AbortController()
   // #endif
@@ -866,7 +905,7 @@ async function streamChat({ text, imageBase64, history }) {
   const response = await fetch(`${baseUrl}/api/ai/chat/stream`, {
     method: 'POST',
     headers: buildAuthHeaders(true),
-    body: JSON.stringify({ text, imageBase64, history, sessionId: activeSessionId.value }),
+    body: JSON.stringify({ text, imageBase64, history, seedMessages, sessionId: activeSessionId.value, enableThinking }),
     signal: abortCtrl.signal
   })
 
@@ -951,42 +990,134 @@ async function streamChat({ text, imageBase64, history }) {
   // #endif
 
   // #ifndef H5
-  // 非 H5 平台（小程序/APP）：使用非流式 POST 请求
+  // 非 H5 平台（小程序/APP）：使用 WebSocket 流式输出
   return await new Promise((resolve, reject) => {
     isStreaming.value = true
-    streamingText.value = '正在思考中...'
+    streamingText.value = ''
     streamingReasoning.value = ''
-    uni.request({
-      url: `${baseUrl}/api/ai/chat/nonstream`,
-      method: 'POST',
-      header: buildAuthHeaders(true),
-      data: { text, imageBase64, history, sessionId: activeSessionId.value },
-      timeout: 90000,
-      success: (res) => {
-        isStreaming.value = false
-        const payload = res.data
-        console.log('[ai-chat] nonstream response: statusCode=', res.statusCode, 'payload=', typeof payload === 'string' ? payload.substring(0, 200) : JSON.stringify(payload))
-        if (!payload || (payload.code !== undefined && payload.code !== 0)) {
-          const errMsg = (payload && payload.msg) || `请求失败（HTTP ${res.statusCode}）`
-          if (errMsg.includes('401') || errMsg.includes('登录')) {
-            reject(new Error('登录已失效，请重新登录后再试。'))
-          } else {
-            reject(new Error(errMsg))
-          }
-          return
+
+    const token = getStorage('token') || ''
+    if (!token) {
+      isStreaming.value = false
+      reject(new Error('登录已失效，请重新登录后再试。'))
+      return
+    }
+
+    // 将 http baseUrl 转为 ws/wss 协议
+    const wsBaseUrl = baseUrl.replace(/^http/, 'ws')
+    const wsUrl = `${wsBaseUrl}/ws/ai/chat?token=${encodeURIComponent(token)}`
+
+    let full = ''
+    let reasoning = ''
+    let errorMessage = ''
+    let resolved = false
+
+    const finish = (result) => {
+      if (resolved) return
+      resolved = true
+      isStreaming.value = false
+      streamingText.value = ''
+      streamingReasoning.value = ''
+      if (wsSocket) {
+        try { wsSocket.close() } catch (_) {}
+        wsSocket = null
+      }
+      resolve(result)
+    }
+
+    const fail = (err) => {
+      if (resolved) return
+      resolved = true
+      isStreaming.value = false
+      streamingText.value = ''
+      streamingReasoning.value = ''
+      if (wsSocket) {
+        try { wsSocket.close() } catch (_) {}
+        wsSocket = null
+      }
+      reject(err)
+    }
+
+    try {
+      wsSocket = uni.connectSocket({
+        url: wsUrl,
+        success: () => { console.log('[ai-chat] ws connecting...') },
+        fail: (err) => {
+          console.error('[ai-chat] ws connect fail:', err)
+          fail(new Error('WebSocket 连接失败'))
         }
-        // 非流式响应结构: { code, data: { content, reasoning, parsed } }
-        const content = (payload.data && payload.data.content) || payload.content || 'AI 暂未返回内容。'
-        const reasoning = (payload.data && payload.data.reasoning) || payload.reasoning || ''
-        streamingText.value = ''
-        streamingReasoning.value = ''
-        resolve({ content, reasoning, aborted: false })
-      },
-      fail: (err) => {
-        isStreaming.value = false
-        streamingText.value = ''
-        streamingReasoning.value = ''
-        reject(new Error(err && err.errMsg ? err.errMsg : '网络请求失败'))
+      })
+    } catch (e) {
+      fail(new Error('WebSocket 连接异常'))
+      return
+    }
+
+    wsSocket.onOpen(() => {
+      console.log('[ai-chat] ws connected, sending chat request')
+      wsSocket.send({
+        data: JSON.stringify({
+          type: 'chat',
+          text,
+          imageBase64,
+          history,
+          seedMessages,
+          sessionId: activeSessionId.value,
+          enableThinking
+        })
+      })
+    })
+
+    wsSocket.onMessage((res) => {
+      let data
+      try { data = JSON.parse(res.data) } catch (_) { return }
+      if (!data || !data.type) return
+
+      switch (data.type) {
+        case 'connected':
+          // 连接确认，等待 chat 请求
+          break
+        case 'retrieval':
+          // RAG 检索结果，可忽略或展示
+          break
+        case 'reasoning':
+          reasoning += (data.chunk || '')
+          streamingReasoning.value = reasoning
+          break
+        case 'delta':
+          full = data.full || (full + (data.chunk || ''))
+          streamingText.value = full
+          nextTick(() => { messagesScrollTop.value = 999999 })
+          break
+        case 'usage':
+          // token 用量，可忽略
+          break
+        case 'done':
+          full = data.content || full
+          if (data.reasoning) reasoning = data.reasoning
+          finish({ content: full || 'AI 暂未返回内容。', reasoning, aborted: false })
+          break
+        case 'error':
+          const code = Number(data.code)
+          errorMessage = code === 401 ? '登录已失效，请重新登录后再试。' : String(data.message || '未知错误')
+          fail(new Error(errorMessage))
+          break
+      }
+    })
+
+    wsSocket.onError((err) => {
+      console.error('[ai-chat] ws error:', err)
+      if (!resolved) fail(new Error('WebSocket 连接异常'))
+    })
+
+    wsSocket.onClose((res) => {
+      console.log('[ai-chat] ws closed:', res)
+      if (!resolved) {
+        // 如果有部分内容，返回它；否则报错
+        if (full.trim()) {
+          finish({ content: full, reasoning, aborted: true })
+        } else {
+          fail(new Error('WebSocket 连接已关闭'))
+        }
       }
     })
   })
@@ -997,11 +1128,50 @@ function extractHistoryForRequest() {
   const conversation = ensureConversation(activeSessionId.value)
   return conversation.messages
     .slice(-10)
-    .map(item => ({ role: item.role, content: item.content }))
+    .map(item => {
+      const entry = { role: item.role, content: item.content }
+      // 保留图片信息，让后端能构建多模态消息
+      if (item.role === 'user' && item.imageBase64) {
+        let img = item.imageBase64
+        // 大图占位符：从独立存储 key 恢复实际 base64
+        if (img.startsWith('__LARGE_IMAGE__:')) {
+          img = getStorage('ai_chat_seed_image_large') || ''
+        }
+        // 只发送有效的 data URL 或 http URL，过滤掉本地文件路径
+        if (img && (img.startsWith('data:image/') || img.startsWith('http://') || img.startsWith('https://'))) {
+          entry.imageBase64 = img
+        }
+      }
+      return entry
+    })
     .filter(item => item.content && (item.role === 'user' || item.role === 'assistant'))
 }
 
 // ─── 发送消息 ─────────────────────────────────────────────
+function extractPendingPersistMessages() {
+  const conversation = ensureConversation(activeSessionId.value)
+  return conversation.messages
+    .filter(item => item && item._pendingPersist && (item.role === 'user' || item.role === 'assistant'))
+    .map(item => ({
+      role: item.role,
+      content: item.content,
+      hasImage: !!item.imageBase64
+    }))
+    .filter(item => String(item.content || '').trim())
+}
+
+function markPendingPersistMessagesSaved() {
+  const conversation = ensureConversation(activeSessionId.value)
+  let changed = false
+  conversation.messages.forEach((item) => {
+    if (item && item._pendingPersist) {
+      item._pendingPersist = false
+      changed = true
+    }
+  })
+  if (changed) messageList.value = conversation.messages.slice()
+}
+
 async function onSend() {
   if (isStreaming.value) return
   const rawText = promptText.value.trim()
@@ -1018,6 +1188,7 @@ async function onSend() {
   // #endif
   const userText = rawText || '请基于这张图继续补充具体物品分类和可执行的变废为宝方案。'
   const historyForApi = extractHistoryForRequest()
+  const seedMessagesForPersist = extractPendingPersistMessages()
 
   // 小程序端：保留本地路径用于消息气泡显示，另转 base64 发给服务端
   let apiImage = sendingImage
@@ -1037,12 +1208,28 @@ async function onSend() {
   // #endif
 
   console.log('[ai-chat] onSend: userText=', userText, 'hasImage=', !!apiImage)
-  pushMessageToActive('user', userText, sendingImage, new Date().toISOString())
+  // 小程序端：本地路径存到 _localImagePath 供气泡渲染，imageBase64 存 data URL 供 API
+  // #ifndef H5
+  const displayImage = sendingImage   // 本地路径，用于气泡显示
+  const storedImage = apiImage        // data URL，用于 API 请求
+  // #endif
+  // #ifdef H5
+  const displayImage = sendingImage
+  const storedImage = sendingImage    // H5 下 sendingImage 本身就是 data URL 或 blob URL
+  // #endif
+  pushMessageToActive('user', userText, storedImage, new Date().toISOString(), undefined, displayImage)
   promptText.value = ''
   clearPickedImage()
 
   try {
-    const streamed = await streamChat({ text: userText, imageBase64: apiImage, history: historyForApi })
+    const streamed = await streamChat({
+      text: userText,
+      imageBase64: apiImage,
+      history: historyForApi,
+      seedMessages: seedMessagesForPersist,
+      enableThinking: isDeepThinking.value
+    })
+    markPendingPersistMessagesSaved()
     pushMessageToActive('assistant', streamed.content || 'AI 暂未返回内容。', '', new Date().toISOString(), streamed.reasoning || '')
   } catch (err) {
     const failedText = err && err.name === 'AbortError'
@@ -1061,7 +1248,11 @@ function onStop() {
   if (abortCtrl) abortCtrl.abort()
   // #endif
   // #ifndef H5
-  // 小程序端不支持 AbortController，使用标志位中止
+  // 小程序端：关闭 WebSocket 连接来中止流式输出
+  if (wsSocket) {
+    try { wsSocket.close() } catch (_) {}
+    wsSocket = null
+  }
   isStreaming.value = false
   streamingText.value = ''
   streamingReasoning.value = ''
@@ -1135,6 +1326,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (abortCtrl) abortCtrl.abort()
+  if (wsSocket) {
+    try { wsSocket.close() } catch (_) {}
+    wsSocket = null
+  }
   // #ifdef H5
   if (onStorageHandler) window.removeEventListener('storage', onStorageHandler)
   if (drawerMediaQuery && onDrawerMediaChange) {
@@ -1836,8 +2031,9 @@ page {
 
 .shell .msg-image {
   display: block;
-  max-width: 280px;
-  height: auto;
+  width: auto;
+  max-width: min(280px, 72vw);
+  max-height: 220px;
   border-radius: 12px;
   margin-bottom: 10px;
   background: var(--bg-tertiary);
@@ -2038,7 +2234,7 @@ page {
 /* 快速操作标签 */
 .shell .composer-suggestions {
   max-width: 720px;
-  margin: 12px auto 0;
+  margin: 0px auto 0;
   white-space: nowrap;
   overflow-x: auto;
 }
@@ -2762,7 +2958,7 @@ page {
   .shell .messages { padding: 12px 14px; }
   /* 消息气泡：确保不超出屏幕，防止气泡过窄 */
   .shell .msg { max-width: 100% !important; width: 100%; font-size: 13px; padding: 9px 12px; }
-  .shell .msg-image { max-width: 100% !important; width: 100%; }
+  .shell .msg-image { width: auto; max-width: min(260px, 72vw) !important; max-height: 200px; }
   /* 消息行：允许换行，内容不被压缩 */
   .shell .message-row { flex-wrap: wrap; width: 100%; margin-bottom: 14px; }
   .shell .message-content { flex: 1 1 auto !important; min-width: 0; }
@@ -2804,7 +3000,7 @@ page {
   .shell .image-pending-name { max-width: 160px; }
   /* 消息气泡和小屏进一步保证 */
   .shell .msg { max-width: 100% !important; width: 100%; }
-  .shell .msg-image { max-width: 100% !important; width: 100%; }
+  .shell .msg-image { width: auto; max-width: min(220px, 68vw) !important; max-height: 180px; }
   .shell .message-row { flex-wrap: wrap; width: 100%; }
   .shell .message-content { flex: 1 1 auto !important; }
 }

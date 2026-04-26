@@ -131,23 +131,24 @@
           </view>
 
           <!-- 变废为宝效果图 -->
-          <view v-if="aiEnabledUpcyclingImage && upcyclingImageUrl" class="upcycling-image-card">
+          <view v-if="aiEnabledUpcyclingImage && (upcyclingImageUrl || upcyclingTaskId)" class="upcycling-image-card">
             <view class="upcycling-image-header">
               <text class="upcycling-image-title">变废为宝效果图</text>
             </view>
             <view class="upcycling-image-wrapper">
               <image
+                v-if="upcyclingImageUrl"
                 :src="upcyclingImageUrl"
                 mode="aspectFit"
                 class="upcycling-image"
                 @click="previewUpcyclingImage"
               />
-              <view v-if="imageLoading" class="upcycling-image-loading">
+              <view v-if="!upcyclingImageUrl && upcyclingTaskId" class="upcycling-image-loading">
                 <view class="upcycling-loading-ring"></view>
-                <text class="upcycling-loading-text">图片生成中...</text>
+                <text class="upcycling-loading-text">AI 正在生成效果图...</text>
               </view>
             </view>
-            <text class="upcycling-image-hint">点击图片可全屏预览</text>
+            <text v-if="upcyclingImageUrl" class="upcycling-image-hint">点击图片可全屏预览</text>
           </view>
 
           <view v-else-if="resultDesc" class="desc-box">
@@ -214,68 +215,61 @@
 
       <!-- 快捷功能入口 -->
       <view class="quick-actions">
-        <view class="action-item" @click="goShop">
-          <view class="action-icon-wrapper shop">
-            <text class="action-icon">🛍️</text>
-          </view>
-          <text class="action-name">积分商城</text>
-          <text class="action-badge" v-if="points !== null">{{ points }}</text>
-        </view>
-        
-        <view v-if="!isH5Platform" class="action-item" @click="scanDeviceQR">
-          <view class="action-icon-wrapper device">
-            <text class="action-icon">📱</text>
-          </view>
-          <text class="action-name">连接设备</text>
-        </view>
-        
-        <view v-if="isH5Platform" class="action-item" @click="goMap">
-          <view class="action-icon-wrapper map">
-            <text class="action-icon">🗺️</text>
-          </view>
-          <text class="action-name">垃圾桶地图</text>
-        </view>
-        
-        <view class="action-item" @click="goRanking">
-          <view class="action-icon-wrapper ranking">
-            <text class="action-icon">🏆</text>
-          </view>
-          <text class="action-name">环保排行</text>
+        <view class="quick-actions-header">
+          <text class="quick-actions-title">常用服务</text>
+          <text class="quick-actions-subtitle">任务、活动与回收工具</text>
         </view>
 
-        <view class="action-item" @click="goChallenge">
-          <view class="action-icon-wrapper challenge">
-            <text class="action-icon">🏆</text>
+        <view class="quick-actions-featured">
+          <view class="action-item featured challenge-card" @click="goChallenge">
+            <view class="action-icon-wrapper challenge">
+              <text class="action-icon">🏆</text>
+            </view>
+            <view class="action-copy">
+              <text class="action-name">挑战赛</text>
+              <text class="action-desc">答题赚积分</text>
+            </view>
           </view>
-          <text class="action-name">挑战赛</text>
+
+          <view class="action-item featured lottery-card" @click="goLottery">
+            <view class="action-icon-wrapper lottery">
+              <text class="action-icon">🎰</text>
+            </view>
+            <view class="action-copy">
+              <text class="action-name">积分抽奖</text>
+              <text class="action-desc">试试今日手气</text>
+            </view>
+          </view>
         </view>
 
-        <view class="action-item" @click="goLottery">
-          <view class="action-icon-wrapper lottery">
-            <text class="action-icon">🎰</text>
+        <view class="quick-actions-grid" :class="{ 'three-items': isH5Platform }">
+          <view v-if="!isH5Platform" class="action-item compact" @click="scanDeviceQR">
+            <view class="action-icon-wrapper device">
+              <text class="action-icon">📱</text>
+            </view>
+            <text class="action-name">连接设备</text>
           </view>
-          <text class="action-name">积分抽奖</text>
-        </view>
 
-        <view class="action-item" @click="goCommunity">
-          <view class="action-icon-wrapper community">
-            <text class="action-icon">🏘️</text>
+          <view class="action-item compact" @click="goCommunity">
+            <view class="action-icon-wrapper community">
+              <text class="action-icon">🏘️</text>
+            </view>
+            <text class="action-name">环保社区</text>
           </view>
-          <text class="action-name">环保社区</text>
-        </view>
 
-        <view class="action-item" @click="goBooking">
-          <view class="action-icon-wrapper booking">
-            <text class="action-icon">📦</text>
+          <view class="action-item compact" @click="goBooking">
+            <view class="action-icon-wrapper booking">
+              <text class="action-icon">📦</text>
+            </view>
+            <text class="action-name">预约回收</text>
           </view>
-          <text class="action-name">预约回收</text>
-        </view>
 
-        <view class="action-item" @click="goVoiceScan">
-          <view class="action-icon-wrapper voice">
-            <text class="action-icon">🎤</text>
+          <view class="action-item compact" @click="goVoiceScan">
+            <view class="action-icon-wrapper voice">
+              <text class="action-icon">🎤</text>
+            </view>
+            <text class="action-name">语音识别</text>
           </view>
-          <text class="action-name">语音识别</text>
         </view>
       </view>
     </view>
@@ -354,7 +348,9 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
+import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import {
   appendAchievementQueue,
@@ -382,6 +378,8 @@ const targetConfidence = ref(0)
 const recognizedItems = ref([])
 const upcyclingSections = ref([])
 const upcyclingImageUrl = ref('')
+const upcyclingTaskId = ref('')
+let upcyclingPollTimer = 0
 const imageLoading = ref(false)
 const aiEnabledUpcyclingImage = ref(false)
 const rawBboxes = ref([])
@@ -554,7 +552,22 @@ onMounted(() => {
   }
 })
 
+onShow(() => {
+  // 从语音扫描页面返回时自动处理已选图片
+  const pendingImage = uni.getStorageSync('pending_recognize_image')
+  if (pendingImage) {
+    uni.removeStorageSync('pending_recognize_image')
+    nextTick(() => {
+      setTimeout(() => {
+        isProcessing.value = true
+        processImage(pendingImage).catch(() => { isProcessing.value = false })
+      }, 300)
+    })
+  }
+})
+
 onBeforeUnmount(() => {
+  stopUpcyclingPoll()
   if (bboxRefreshTimer) {
     if (typeof window !== 'undefined') {
       window.clearTimeout(bboxRefreshTimer)
@@ -588,6 +601,9 @@ function resetEnhancedRecognition() {
   recognizedItems.value = []
   upcyclingSections.value = []
   upcyclingImageUrl.value = ''
+  upcyclingTaskId.value = ''
+  stopUpcyclingPoll()
+  imageLoading.value = false
   rawBboxes.value = []
   displayBboxes.value = []
   recognizeBBoxSpace.value = ''
@@ -735,8 +751,14 @@ function applyEnhancedRecognitionData(recognizeData) {
   if (recognizeData.upcyclingImageUrl) {
     upcyclingImageUrl.value = recognizeData.upcyclingImageUrl
     imageLoading.value = false
+  } else if (recognizeData.upcyclingTaskId) {
+    // 异步生成模式：启动轮询
+    upcyclingTaskId.value = recognizeData.upcyclingTaskId
+    imageLoading.value = true
+    startUpcyclingPoll()
   } else {
     upcyclingImageUrl.value = ''
+    upcyclingTaskId.value = ''
   }
 
   // 将管理员的开关同步到前端状态
@@ -789,6 +811,74 @@ function previewUpcyclingImage() {
     current: 0,
     fail: () => uni.showToast({ title: '预览失败', icon: 'none' })
   })
+}
+
+function stopUpcyclingPoll() {
+  if (upcyclingPollTimer) {
+    clearTimeout(upcyclingPollTimer)
+    upcyclingPollTimer = 0
+  }
+}
+
+async function startUpcyclingPoll() {
+  stopUpcyclingPoll()
+  const taskId = upcyclingTaskId.value
+  if (!taskId) return
+
+  const maxRetries = 30
+  let retries = 0
+
+  const poll = async () => {
+    if (retries >= maxRetries) {
+      console.warn('[upcycling poll] 轮询超时')
+      upcyclingTaskId.value = ''
+      imageLoading.value = false
+      return
+    }
+    retries++
+
+    try {
+      const base = getBaseUrl()
+      const token = uni.getStorageSync('token') || ''
+      const res = await new Promise((resolve, reject) => {
+        uni.request({
+          url: `${base}/api/upcycling-image/${taskId}`,
+          method: 'GET',
+          header: { Authorization: token },
+          success: (r) => resolve(r.data),
+          fail: reject
+        })
+      })
+
+      if (res && res.code === 0 && res.data) {
+        if (res.data.status === 'done' && res.data.url) {
+          upcyclingImageUrl.value = res.data.url
+          upcyclingTaskId.value = ''
+          imageLoading.value = false
+          console.log('[upcycling poll] 效果图生成成功')
+          return
+        } else if (res.data.status === 'failed') {
+          console.warn('[upcycling poll] 效果图生成失败')
+          upcyclingTaskId.value = ''
+          imageLoading.value = false
+          return
+        }
+        // status === 'pending'，继续轮询
+      }
+    } catch (e) {
+      console.warn('[upcycling poll] 请求失败:', e)
+    }
+
+    upcyclingPollTimer = setTimeout(poll, 2000)
+  }
+
+  poll()
+}
+
+function getBaseUrl() {
+  // 所有平台都需要完整 URL（小程序/App 不支持相对路径）
+  // 使用顶部静态导入的 baseUrl，避免 require 在小程序中无法解析 @ 别名
+  return baseUrl || ''
 }
 function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
   return new Promise((resolve, reject) => {
@@ -1948,17 +2038,31 @@ function closeAchievementModal() {
 }
 
 .desc-box {
-  background: #f9fafb;
+  border: 1rpx solid rgba(24, 117, 255, 0.15);
   border-radius: 16rpx;
-  padding: 20rpx;
+  padding: 16rpx 20rpx 18rpx;
+  background: linear-gradient(135deg, rgba(245, 250, 255, 0.98), rgba(236, 248, 242, 0.92));
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
 }
 
 .desc-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: rgba(21, 103, 255, 0.12);
+  color: #1e5ed8;
+  font-size: 20rpx;
+  font-weight: 700;
+  padding: 6rpx 14rpx;
+}
+
+.desc-text {
   display: block;
+  margin-top: 10rpx;
   font-size: 24rpx;
-  color: #10b981;
-  font-weight: 600;
-  margin-bottom: 8rpx;
+  line-height: 1.6;
+  color: #334155;
 }
 
 
@@ -2060,8 +2164,12 @@ function closeAchievementModal() {
   position: relative;
   margin-top: 16rpx;
   width: 100%;
+  min-height: 300rpx;
   background: #f0f4f8;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .upcycling-image {
@@ -2074,14 +2182,12 @@ function closeAchievementModal() {
 }
 
 .upcycling-image-loading {
-  position: absolute;
-  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(240, 244, 248, 0.88);
   gap: 16rpx;
+  padding: 60rpx 24rpx;
 }
 
 .upcycling-loading-ring {
@@ -2439,24 +2545,62 @@ function closeAchievementModal() {
 
 /* 快捷功能 */
 .quick-actions {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18rpx 12rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 253, 244, 0.9) 50%, rgba(255, 255, 255, 0.98) 100%);
   border-radius: 20rpx;
-  padding: 24rpx 18rpx;
+  padding: 26rpx;
   box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.08), 0 2rpx 8rpx rgba(16, 185, 129, 0.05);
   backdrop-filter: blur(10rpx);
   border: 1rpx solid rgba(255, 255, 255, 0.6);
 }
 
+.quick-actions-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.quick-actions-title {
+  color: #1f2937;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+.quick-actions-subtitle {
+  color: #9ca3af;
+  font-size: 22rpx;
+  font-weight: 500;
+}
+
+.quick-actions-featured {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+}
+
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.quick-actions-grid.three-items {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .action-item {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
+  gap: 14rpx;
   position: relative;
-  padding: 10rpx 6rpx;
+  min-width: 0;
+  min-height: 92rpx;
+  padding: 18rpx;
   border-radius: 16rpx;
   transition: all 0.3s ease;
   overflow: hidden;
@@ -2470,7 +2614,28 @@ function closeAchievementModal() {
     inset 0 1rpx 0 rgba(255, 255, 255, 1),
     inset 0 -1rpx 0 rgba(0, 0, 0, 0.02);
   border: 1rpx solid rgba(255, 255, 255, 0.6);
-  min-width: 0;
+}
+
+.action-item.featured {
+  min-height: 136rpx;
+  justify-content: flex-start;
+  padding: 24rpx;
+  border-color: rgba(16, 185, 129, 0.12);
+}
+
+.action-item.challenge-card {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 48%, #ecfdf5 100%);
+}
+
+.action-item.lottery-card {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ffffff 48%, #ecfdf5 100%);
+}
+
+.action-item.compact {
+  flex-direction: column;
+  gap: 10rpx;
+  min-height: 132rpx;
+  padding: 16rpx 8rpx;
 }
 
 /* 塑料/金属光泽效果 */
@@ -2515,13 +2680,13 @@ function closeAchievementModal() {
 }
 
 .action-icon-wrapper {
-  width: 80rpx;
-  height: 80rpx;
+  width: 72rpx;
+  height: 72rpx;
   border-radius: 20rpx;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12rpx;
   position: relative;
   overflow: hidden;
   box-shadow: 
@@ -2530,6 +2695,12 @@ function closeAchievementModal() {
     inset 0 1rpx 2rpx rgba(255, 255, 255, 0.6),
     inset 0 -1rpx 2rpx rgba(0, 0, 0, 0.05);
   transition: all 0.3s ease;
+}
+
+.action-item.featured .action-icon-wrapper {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 24rpx;
 }
 
 /* 3D立体光泽效果 */
@@ -2613,6 +2784,10 @@ function closeAchievementModal() {
   animation: iconPulse 2.5s ease-in-out infinite;
 }
 
+.action-item.featured .action-icon {
+  font-size: 38rpx;
+}
+
 @keyframes iconPulse {
   0%, 100% {
     transform: scale(1);
@@ -2623,8 +2798,31 @@ function closeAchievementModal() {
 }
 
 .action-name {
-  font-size: 22rpx;
+  display: block;
+  font-size: 23rpx;
   color: #4b5563;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.action-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  min-width: 0;
+}
+
+.action-copy .action-name {
+  text-align: left;
+  color: #1f2937;
+  font-size: 28rpx;
+}
+
+.action-desc {
+  color: #6b7280;
+  font-size: 22rpx;
+  line-height: 1.3;
 }
 
 .action-badge {
@@ -2951,18 +3149,94 @@ function closeAchievementModal() {
 }
 
 @media (min-width: 769px) {
-  .quick-actions {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-    gap: 12rpx;
-    padding: 24rpx;
-  }
-
-  .action-item {
-    padding: 12rpx 12rpx;
+  .quick-actions-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 420px) {
+  .quick-actions {
+    gap: 14rpx;
+    padding: 20rpx 16rpx;
+  }
+
+  .quick-actions-header {
+    align-items: flex-end;
+    flex-direction: row;
+    gap: 12rpx;
+  }
+
+  .quick-actions-subtitle {
+    font-size: 20rpx;
+    white-space: nowrap;
+  }
+
+  .quick-actions-featured {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12rpx;
+  }
+
+  .quick-actions-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10rpx;
+  }
+
+  .quick-actions-grid.three-items {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .action-item.featured {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12rpx;
+    min-height: 104rpx;
+    padding: 16rpx 12rpx;
+  }
+
+  .action-item.featured .action-icon-wrapper {
+    width: 68rpx;
+    height: 68rpx;
+    border-radius: 18rpx;
+  }
+
+  .action-item.featured .action-icon {
+    font-size: 30rpx;
+  }
+
+  .action-copy {
+    align-items: flex-start;
+    gap: 4rpx;
+  }
+
+  .action-copy .action-name {
+    text-align: left;
+    font-size: 24rpx;
+  }
+
+  .action-desc {
+    font-size: 20rpx;
+    text-align: left;
+  }
+
+  .action-item.compact {
+    min-height: 116rpx;
+    padding: 14rpx 4rpx;
+  }
+
+  .action-item.compact .action-icon-wrapper {
+    width: 64rpx;
+    height: 64rpx;
+    border-radius: 18rpx;
+  }
+
+  .action-item.compact .action-icon {
+    font-size: 28rpx;
+  }
+
+  .action-item.compact .action-name {
+    font-size: 21rpx;
+  }
+
   .result-card {
     padding: 22rpx 20rpx;
   }
@@ -2978,7 +3252,37 @@ function closeAchievementModal() {
   }
 
   .desc-box {
-    padding: 16rpx;
+    padding: 14rpx 16rpx 16rpx;
+  }
+}
+
+@media (max-width: 340px) {
+  .quick-actions-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4rpx;
+  }
+
+  .quick-actions-featured,
+  .quick-actions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-actions-grid.three-items {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .action-item.featured {
+    flex-direction: column;
+    justify-content: center;
+    min-height: 140rpx;
+  }
+
+  .action-copy,
+  .action-copy .action-name,
+  .action-desc {
+    align-items: center;
+    text-align: center;
   }
 }
 
@@ -2998,11 +3302,18 @@ function closeAchievementModal() {
   }
 
   .desc-box {
-    background: rgba(30, 41, 59, 0.7);
+    border-color: rgba(96, 165, 250, 0.28);
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.86));
+    box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.4);
   }
 
   .desc-label {
-    color: #5eead4;
+    background: rgba(96, 165, 250, 0.16);
+    color: #93c5fd;
+  }
+
+  .desc-text {
+    color: rgba(226, 232, 240, 0.95);
   }
 
   .recognized-items-box {
@@ -3044,7 +3355,7 @@ function closeAchievementModal() {
   }
 
   .upcycling-image-loading {
-    background: rgba(30, 41, 59, 0.88);
+    color: #34d399;
   }
 
   .upcycling-loading-text {

@@ -25,6 +25,23 @@ export default defineConfig(({ mode }) => {
           target: 'http://localhost:3002',
           changeOrigin: true,
           secure: false,
+          // SSE 流式传输必须禁用代理缓冲
+          configure: (proxy) => {
+            proxy.on('proxyRes', (proxyRes) => {
+              // 对 SSE 响应禁用缓冲，确保逐事件推送
+              if (proxyRes.headers['content-type'] &&
+                  proxyRes.headers['content-type'].includes('text/event-stream')) {
+                proxyRes.headers['x-accel-buffering'] = 'no'
+                proxyRes.headers['cache-control'] = 'no-cache, no-transform'
+              }
+            })
+          }
+        },
+        // WebSocket 代理：将 /ws 路径转发到后端，支持小程序/H5 开发调试
+        '/ws': {
+          target: 'http://localhost:3002',
+          changeOrigin: true,
+          ws: true  // 启用 WebSocket 代理
         }
       }
     },

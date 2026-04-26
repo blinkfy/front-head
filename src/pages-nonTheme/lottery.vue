@@ -32,6 +32,18 @@
     <scroll-view class="main-scroll" scroll-y>
       <view class="content-wrapper">
 
+        <view class="lottery-hero-card">
+          <view class="hero-copy">
+            <text class="hero-kicker">低门槛试手气</text>
+            <text class="hero-title">识别几次垃圾，就能再转一次</text>
+            <text class="hero-desc">每日先送免费机会，用完后 {{ getDrawCost() }} 积分继续抽。</text>
+          </view>
+          <view class="hero-badge">
+            <text class="hero-badge-num">{{ getDrawCost() }}</text>
+            <text class="hero-badge-label">积分/次</text>
+          </view>
+        </view>
+
         <!-- 积分显示（信息卡片） -->
         <view class="points-card">
           <view class="points-icon-wrap">
@@ -40,6 +52,8 @@
           <view class="points-info">
             <text class="points-label">我的积分</text>
             <text class="points-value">{{ userPoints }}</text>
+            <text class="points-helper" v-if="freeCount <= 0 && userPoints < getDrawCost()">还差 {{ getDrawCost() - userPoints }} 积分可再抽一次</text>
+            <text class="points-helper ready" v-else>{{ freeCount > 0 ? '今日免费机会可用' : '当前积分可继续抽奖' }}</text>
           </view>
         </view>
 
@@ -83,7 +97,7 @@
           </view>
           <view class="status-pill points-usage" v-else>
             <text class="cost-icon">💰</text>
-            <text class="cost-text">免费次数已用完，消耗 {{ config.cost || 50 }} 积分抽奖</text>
+            <text class="cost-text">免费次数已用完，消耗 {{ getDrawCost() }} 积分抽奖</text>
           </view>
         </view>
 
@@ -101,7 +115,7 @@
             <text class="section-title">奖品池</text>
           </view>
           <view class="prizes-grid">
-            <view v-for="prize in config.prizes" :key="prize.id" class="prize-card" :class="`level-${prize.level}`">
+            <view v-for="prize in displayPrizes" :key="prize.id" class="prize-card" :class="`level-${prize.level}`">
               <text class="prize-icon">{{ getPrizeIcon(prize.type) }}</text>
               <text class="prize-name">{{ prize.name }}</text>
               <text class="prize-desc">{{ prize.description }}</text>
@@ -159,7 +173,7 @@
         </view>
         
         <!-- 标题 -->
-        <text class="prize-modal-title">{{ currentPrize && currentPrize.level > 1 ? '恭喜中奖！' : '再接再厉' }}</text>
+        <text class="prize-modal-title">{{ getPrizeModalTitle() }}</text>
         
         <!-- 奖品信息卡片 -->
         <view class="prize-info-card" v-if="currentPrize">
@@ -179,12 +193,16 @@
         
         <!-- 操作按钮 -->
         <view class="prize-modal-actions">
-          <view class="modal-btn primary" v-if="freeCount > 0 && currentPrize && currentPrize.level === 1" @click="continueDraw">
+          <view class="modal-btn primary" v-if="currentPrize && currentPrize.grantsRetry" @click="continueDraw">
+            <text class="btn-icon">🎰</text>
+            <text>再来一次</text>
+          </view>
+          <view class="modal-btn primary" v-else-if="freeCount > 0 && currentPrize && currentPrize.level === 1" @click="continueDraw">
             <text class="btn-icon">🎰</text>
             <text>继续抽奖</text>
           </view>
           <view class="modal-btn secondary" @click="closePrizeModal">
-            <text>{{ freeCount > 0 && currentPrize && currentPrize.level === 1 ? '稍后再说' : '好的' }}</text>
+            <text>{{ shouldShowLaterButton() ? '稍后再说' : '好的' }}</text>
           </view>
         </view>
       </view>
@@ -196,7 +214,7 @@
         <text class="rule-title">抽奖规则</text>
         <view class="rule-list">
           <text class="rule-item">1. 每日可免费参与 {{ config.dailyFreeCount || 1 }} 次抽奖</text>
-          <text class="rule-item">2. 免费次数用完后，可消耗 {{ config.cost || 50 }} 积分继续抽奖</text>
+          <text class="rule-item">2. 免费次数用完后，可消耗 {{ getDrawCost() }} 积分继续抽奖</text>
           <text class="rule-item">3. 积分奖品将直接发放到您的账户</text>
           <text class="rule-item">4. 优惠券奖品可在积分商城中使用</text>
           <text class="rule-item">5. 奖品数量有限，抽完即止</text>
@@ -217,7 +235,7 @@ import { userinfo } from '@/api/user.js';
 export default {
   data() {
     return {
-      config: { prizes: [], cost: 50, dailyFreeCount: 1 },
+      config: { prizes: [], cost: 10, dailyFreeCount: 1 },
       freeCount: 0,
       totalFree: 1,
       userPoints: 0,
@@ -232,6 +250,12 @@ export default {
       isDark: false,
       hasLoadedData: false
     };
+  },
+  computed: {
+    displayPrizes() {
+      const prizes = (this.config && this.config.prizes) || [];
+      return prizes.filter(prize => Number(prize.level) > 1);
+    }
   },
   onLoad() {
     this.checkTheme();
@@ -254,7 +278,18 @@ export default {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
     },
-    goBack() { uni.navigateBack(); },
+    goBack() { 
+      const pages = getCurrentPages()
+      if (pages.length > 1) {
+        uni.navigateBack()
+      } else {
+        if (this.isDark) {
+          uni.reLaunch({url: '/pages-dark/home/home'})
+        } else {
+          uni.reLaunch({url: '/pages/home/home'})
+        }
+      }
+    },
     getParticleStyle(n) {
       const colors = ['#FFD700', '#4CAF50', '#FF6B6B', '#4FC3F7', '#FF9F43', '#1DD1A1'];
       const positions = [
@@ -302,6 +337,12 @@ export default {
         animationDelay: p.delay
       };
     },
+    requestAnimationFrameCompat(callback) {
+      if (typeof requestAnimationFrame === 'function') {
+        return requestAnimationFrame(callback);
+      }
+      return setTimeout(callback, 16);
+    },
     getLevelLabel(level) {
       const map = { 1: '谢谢参与', 2: '幸运奖', 3: '大奖' };
       return map[level] || '奖品';
@@ -309,6 +350,20 @@ export default {
     getPrizeIcon(type) {
       const map = { points: '💎', coupon: '🎟️', goods: '📦' };
       return map[type] || '🎁';
+    },
+    getDrawCost() {
+      return Number(this.config && this.config.cost) || 10;
+    },
+    getPrizeModalTitle() {
+      if (!this.currentPrize) return '';
+      if (this.currentPrize.grantsRetry) return '再来一次';
+      return this.currentPrize.level > 1 ? '恭喜中奖！' : '再接再厉';
+    },
+    shouldShowLaterButton() {
+      return !!(
+        this.currentPrize &&
+        (this.currentPrize.grantsRetry || (this.freeCount > 0 && this.currentPrize.level === 1))
+      );
     },
     requestDrawWheel() {
       this.$nextTick(() => {
@@ -485,7 +540,7 @@ export default {
         this.freeCount = statusData.freeCount || 0;
         this.totalFree = statusData.totalFree || 1;
         this.records = recordData.records || [];
-        this.canDraw = this.freeCount > 0 || this.userPoints >= (this.config.cost || 50);
+        this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
       } catch (e) {
         console.error('加载失败:', e);
       } finally {
@@ -513,7 +568,7 @@ export default {
           this.userPoints = Number(data.userPoints) || 0;
           uni.setStorageSync('userPoints', this.userPoints);
         }
-        if (data.isFree && this.freeCount > 0) this.freeCount--;
+        if (data.isFree && this.freeCount > 0 && !data.grantsRetry) this.freeCount--;
       } catch (e) {
         uni.showToast({ title: e.message || '抽奖失败', icon: 'none' });
         this.isSpinning = false;
@@ -546,16 +601,16 @@ export default {
         this.spinAngle = current;
         this.drawLotteryWheel(current);
         if (progress < 1) {
-          requestAnimationFrame(animate);
+          this.requestAnimationFrameCompat(animate);
         } else {
           this.isSpinning = false;
-          this.canDraw = this.freeCount > 0 || this.userPoints >= (this.config.cost || 50);
+          this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
           setTimeout(() => {
             this.showPrizeModal = true;
           }, 300);
         }
       };
-      requestAnimationFrame(animate);
+      this.requestAnimationFrameCompat(animate);
     },
     continueDraw() {
       this.showPrizeModal = false;
@@ -587,7 +642,11 @@ export default {
   transition: all 0.3s ease;
 }
 .lottery-page.dark-mode {
-  background: linear-gradient(135deg, #28285f 0%, #28346f 30%, #322c8a 70%, #442977 100%);
+  background:
+    radial-gradient(circle at 18% 8%, rgba(251, 191, 36, 0.22) 0%, transparent 32%),
+    radial-gradient(circle at 86% 18%, rgba(16, 185, 129, 0.2) 0%, transparent 34%),
+    radial-gradient(circle at 58% 84%, rgba(168, 85, 247, 0.13) 0%, transparent 36%),
+    linear-gradient(180deg, #0b1220 0%, #101827 48%, #111827 100%);
 }
 
 /* ===== 背景效果 ===== */
@@ -597,11 +656,28 @@ export default {
   width: 100%; height: 100%;
   z-index: 1;
   pointer-events: none;
+  overflow: hidden;
+}
+.lottery-page.dark-mode .bg-effects::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(251, 191, 36, 0.04) 1rpx, transparent 1rpx),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1rpx, transparent 1rpx);
+  background-size: 68rpx 68rpx;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.54), rgba(0,0,0,0.08));
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.54), rgba(0,0,0,0.08));
 }
 .bg-gradient {
   position: absolute; inset: 0;
   background: radial-gradient(ellipse at 50% 0%, rgba(16, 185, 129, 0.1) 0%, transparent 60%);
   transition: all 0.3s;
+}
+.lottery-page.dark-mode .bg-gradient {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(251, 191, 36, 0.13) 0%, transparent 56%),
+    radial-gradient(ellipse at 82% 34%, rgba(16, 185, 129, 0.1) 0%, transparent 46%);
 }
 .particle {
   position: absolute;
@@ -663,6 +739,80 @@ export default {
 .main-scroll { position: relative; z-index: 10; height: calc(100vh - env(safe-area-inset-top) - 88rpx); }
 .content-wrapper { padding: 32rpx; padding-bottom: 120rpx; }
 
+.lottery-hero-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  margin-bottom: 24rpx;
+  padding: 30rpx;
+  border-radius: 26rpx;
+  background:
+    radial-gradient(circle at 82% 18%, rgba(251, 191, 36, 0.34), transparent 34%),
+    linear-gradient(135deg, #ecfdf5 0%, #ffffff 48%, #fff7ed 100%);
+  border: 1rpx solid rgba(16, 185, 129, 0.1);
+  box-shadow: 0 14rpx 36rpx rgba(16, 185, 129, 0.12);
+}
+.lottery-hero-card::after {
+  content: '';
+  position: absolute;
+  right: -60rpx;
+  bottom: -80rpx;
+  width: 240rpx;
+  height: 240rpx;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.1);
+}
+.dark-mode .lottery-hero-card {
+  background:
+    radial-gradient(circle at 82% 18%, rgba(251, 191, 36, 0.18), transparent 36%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.86), rgba(16, 185, 129, 0.14));
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 14rpx 36rpx rgba(0, 0, 0, 0.24);
+}
+.hero-copy { position: relative; z-index: 1; flex: 1; min-width: 0; }
+.hero-kicker {
+  display: block;
+  color: #f59e0b;
+  font-size: 22rpx;
+  font-weight: 800;
+  margin-bottom: 8rpx;
+}
+.hero-title {
+  display: block;
+  color: #0f172a;
+  font-size: 32rpx;
+  font-weight: 900;
+  line-height: 1.35;
+  margin-bottom: 8rpx;
+}
+.dark-mode .hero-title { color: #f8fafc; }
+.hero-desc {
+  display: block;
+  color: #64748b;
+  font-size: 23rpx;
+  line-height: 1.5;
+}
+.dark-mode .hero-desc { color: rgba(255, 255, 255, 0.66); }
+.hero-badge {
+  position: relative;
+  z-index: 1;
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 30rpx;
+  background: linear-gradient(135deg, #10b981, #059669);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12rpx 28rpx rgba(16, 185, 129, 0.28);
+  flex-shrink: 0;
+}
+.hero-badge-num { color: #fff; font-size: 38rpx; font-weight: 900; line-height: 1; }
+.hero-badge-label { color: rgba(255, 255, 255, 0.86); font-size: 20rpx; margin-top: 8rpx; }
+
 /* ===== 积分卡片（对齐 about info-card） ===== */
 .points-card {
   display: flex;
@@ -703,6 +853,16 @@ export default {
   font-weight: 800;
 }
 .dark-mode .points-value { color: #34d399; }
+.points-helper {
+  display: block;
+  color: #f59e0b;
+  font-size: 22rpx;
+  font-weight: 600;
+  margin-top: 8rpx;
+}
+.points-helper.ready { color: #10b981; }
+.dark-mode .points-helper { color: #fbbf24; }
+.dark-mode .points-helper.ready { color: #34d399; }
 
 /* ===== 转盘区域 ===== */
 .wheel-section { display: flex; justify-content: center; margin-bottom: 34rpx; }

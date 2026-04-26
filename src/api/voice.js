@@ -1,9 +1,9 @@
 /**
  * 语音识别 API
- * 预留阿里云 ASR 接口
- * 用户稍后提供 API Key 后可启用
+ * 接入阿里百炼 DashScope ASR
  */
 import request from '@/api/index.js';
+import { baseUrl } from './settings.js';
 
 export function recognizeByText(text) {
   return request({
@@ -13,11 +13,34 @@ export function recognizeByText(text) {
   });
 }
 
-export function recognizeVoice(audioFile) {
-  return request({
-    url: '/api/voice/recognize',
-    method: 'POST',
-    data: { audioFile }
+/**
+ * 上传音频文件进行语音识别
+ * @param {string} filePath - 录音文件临时路径
+ * @returns {Promise<{code: number, data: {text: string, requestId: string}}>}
+ */
+export function transcribeAudio(filePath) {
+  return new Promise((resolve, reject) => {
+    const token = uni.getStorageSync('token') || '';
+    uni.uploadFile({
+      url: baseUrl + '/api/ai/transcribe?token=' + token,
+      filePath: filePath,
+      name: 'audio',
+      success: (res) => {
+        try {
+          const data = JSON.parse(res.data);
+          if (data.code === 0) {
+            resolve(data);
+          } else {
+            reject(data);
+          }
+        } catch (e) {
+          reject({ code: 1, msg: '解析响应失败' });
+        }
+      },
+      fail: (err) => {
+        reject(err);
+      }
+    });
   });
 }
 

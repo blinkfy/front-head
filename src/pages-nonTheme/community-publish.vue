@@ -95,6 +95,7 @@
 
 <script>
 import { createPost } from '@/api/community.js';
+import { compressImageToBase64 } from '@/utils/avatar-handler.js';
 
 export default {
   data() {
@@ -143,7 +144,8 @@ export default {
       }
       this.submitting = true;
       try {
-        await createPost(this.communityId, this.content.trim(), this.uploadedImages, this.selectedTag);
+        const images = await this.getPersistentImages();
+        await createPost(this.communityId, this.content.trim(), images, this.selectedTag);
         uni.showToast({ title: '发布成功!', icon: 'success' });
         setTimeout(() => {
           uni.navigateBack();
@@ -173,6 +175,16 @@ export default {
     },
     removeImage(index) {
       this.uploadedImages.splice(index, 1);
+    },
+    async getPersistentImages() {
+      const tasks = this.uploadedImages.map(async (image) => {
+        if (typeof image !== 'string') return '';
+        if (image.startsWith('data:image/') || image.startsWith('http://') || image.startsWith('https://')) {
+          return image;
+        }
+        return compressImageToBase64(image, 960, 960, 0.76);
+      });
+      return (await Promise.all(tasks)).filter(Boolean);
     }
   }
 };

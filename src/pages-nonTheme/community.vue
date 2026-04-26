@@ -81,7 +81,7 @@
 
         <!-- 帖子筛选（横向滚动） -->
         <view class="filter-bar">
-          <scroll-view class="filter-tabs" scroll-x enable-flex>
+          <view class="filter-tabs">
             <view class="filter-tab" :class="{ active: currentTag === '' }" @click="currentTag = ''; loadPosts()">
               <text>最新</text>
             </view>
@@ -100,7 +100,7 @@
             <view class="filter-tab" :class="{ active: currentTag === '晒单' }" @click="currentTag = '晒单'; loadPosts()">
               <text>晒单</text>
             </view>
-          </scroll-view>
+          </view>
         </view>
 
         <!-- 帖子列表 -->
@@ -117,19 +117,23 @@
                 <text class="post-author">{{ post.username }}</text>
                 <text class="post-time">{{ formatTime(post.createdAt) }}</text>
               </view>
-              <view class="post-tag" :class="`tag-${post.tag}`">
+              <view class="post-tag" :class="getTagClass(post.tag)">
                 <text>{{ post.tag }}</text>
               </view>
+              <view v-if="isAdmin" class="post-admin-delete" @click.stop="confirmDeletePost(post)">删除</view>
             </view>
 
             <view class="post-content">
               <text class="content-text">{{ post.content }}</text>
             </view>
 
-            <view class="post-images" v-if="post.images && post.images.length > 0">
+            <view class="post-images" v-if="post.imageCount > 0">
               <image v-for="(img, idx) in post.images.slice(0, 3)" :key="idx" class="post-image" :src="img" mode="aspectFill" @click.stop="previewImage(post.images, idx)"></image>
-              <view class="image-more" v-if="post.images.length > 3">
-                <text>+{{ post.images.length - 3 }}</text>
+              <view class="image-placeholder" v-if="!post.images || post.images.length === 0">
+                <text>{{ post.imageCount }}图</text>
+              </view>
+              <view class="image-more" v-if="post.images && post.images.length > 0 && post.imageCount > 3">
+                <text>+{{ post.imageCount - 3 }}</text>
               </view>
             </view>
 
@@ -189,7 +193,11 @@
 </template>
 
 <script>
-import { getCommunityList, getMyCommunity, joinCommunity, getCommunityPosts, getCommunityRanking, togglePostLike } from '@/api/community.js';
+import { getCommunityList, getMyCommunity, getCommunityCover, joinCommunity, getCommunityPosts, getCommunityPostImages, getCommunityRanking, togglePostLike, deleteCommunityPost } from '@/api/community.js';
+import { userinfo } from '@/api/user.js';
+import { baseUrl } from '@/api/settings.js';
+import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
+import { getCachedCommunityImage, normalizeCommunityImages, normalizeCommunityImageUrl, setCachedCommunityImage } from '@/utils/community-image.js';
 
 export default {
   data() {
@@ -204,15 +212,18 @@ export default {
       currentPage: 1,
       hasMore: false,
       showCommunityPicker: false,
-      isDark: false
+      isDark: false,
+      isAdmin: false
     };
   },
   onLoad() {
     this.checkTheme();
+    this.checkAdmin();
     this.loadData();
   },
   onShow() {
     this.checkTheme();
+    this.checkAdmin();
     if (this.myCommunity) this.loadPosts();
   },
   methods: {
@@ -223,7 +234,32 @@ export default {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
     },
-    goBack() { uni.navigateBack(); },
+    async checkAdmin() {
+      const cached = !!uni.getStorageSync('isAdmin');
+      if (cached) {
+        this.isAdmin = true;
+        return;
+      }
+      try {
+        const res = await userinfo('false');
+        this.isAdmin = !!(res && res.code === 0 && res.data && res.data.isAdmin);
+        if (this.isAdmin) uni.setStorageSync('isAdmin', true);
+      } catch (e) {
+        this.isAdmin = false;
+      }
+    },
+    goBack() {
+      const pages = getCurrentPages()
+      if (pages.length > 1) {
+        uni.navigateBack()
+      } else {
+        if (this.isDark) {
+          uni.reLaunch({url: '/pages-dark/home/home'})
+        } else {
+          uni.reLaunch({url: '/pages/home/home'})
+        }
+      }
+    },
     async loadData() {
       this.loading = true;
       try {
@@ -242,6 +278,7 @@ export default {
       try {
         const res = await getMyCommunity();
         this.myCommunity = this.extractData(res) || null;
+        this.loadMyCommunityCover();
       } catch (e) {
         console.error('获取我的社区失败:', e);
         this.myCommunity = null;
@@ -277,7 +314,8 @@ export default {
         const communityId = this.myCommunity.id;
         const res = await getCommunityPosts(communityId, this.currentTag || null, 'latest', 1, 20);
         const data = this.extractData(res) || {};
-        this.posts = data.posts || [];
+        this.posts = this.normalizePosts(data.posts || []);
+        this.loadVisiblePostImages(this.posts);
         this.hasMore = (data.page || 1) < (data.totalPages || 1);
       } catch (e) {
         console.error('获取帖子失败:', e);
@@ -295,7 +333,9 @@ export default {
         const communityId = this.myCommunity.id;
         const res = await getCommunityPosts(communityId, this.currentTag || null, 'latest', this.currentPage, 20);
         const data = this.extractData(res) || {};
-        this.posts = [...this.posts, ...(data.posts || [])];
+        const newPosts = this.normalizePosts(data.posts || []);
+        this.posts = [...this.posts, ...newPosts];
+        this.loadVisiblePostImages(newPosts);
         this.hasMore = (data.page || 1) < (data.totalPages || 1);
       } catch (e) {
         this.currentPage--;
@@ -326,6 +366,23 @@ export default {
     goToPostDetail(post) {
       uni.navigateTo({ url: `/pages-nonTheme/community-post?postId=${post.id}&communityId=${this.myCommunity ? this.myCommunity.id : 0}` });
     },
+    confirmDeletePost(post) {
+      uni.showModal({
+        title: '删除帖子',
+        content: '确认删除这条帖子吗？删除后无法恢复。',
+        confirmColor: '#ef4444',
+        success: async (res) => {
+          if (!res.confirm) return;
+          try {
+            await deleteCommunityPost(post.id);
+            this.posts = this.posts.filter((item) => item.id !== post.id);
+            uni.showToast({ title: '已删除', icon: 'success' });
+          } catch (e) {
+            uni.showToast({ title: e.message || '删除失败', icon: 'none' });
+          }
+        }
+      });
+    },
     goToPublish() {
       if (!this.myCommunity) {
         uni.showToast({ title: '请先加入社区', icon: 'none' });
@@ -335,6 +392,78 @@ export default {
     },
     previewImage(images, index) {
       uni.previewImage({ urls: images, current: index });
+    },
+    normalizePosts(posts) {
+      return (posts || []).map((post) => ({
+        ...post,
+        images: normalizeCommunityImages(post.images, baseUrl),
+        imageCount: Number(post.imageCount || (post.images && post.images.length) || 0)
+      }));
+    },
+    async loadMyCommunityCover() {
+      if (!this.myCommunity || !this.myCommunity.id || !this.myCommunity.hasCoverImage) return;
+      const cachedCover = getCachedCommunityImage('cover', this.myCommunity.id);
+      if (cachedCover) {
+        this.myCommunity = {
+          ...this.myCommunity,
+          coverImage: cachedCover
+        };
+        return;
+      }
+      try {
+        const res = await getCommunityCover(this.myCommunity.id);
+        const data = this.extractData(res) || {};
+        const coverImage = data.coverImage || '';
+        if (coverImage) setCachedCommunityImage('cover', this.myCommunity.id, coverImage);
+        this.myCommunity = {
+          ...this.myCommunity,
+          coverImage
+        };
+      } catch (e) {
+        // 封面加载失败不影响社区内容展示
+      }
+    },
+    async loadVisiblePostImages(posts) {
+      const targets = (posts || []).filter(post => post.imageCount > 0 && (!post.images || post.images.length === 0));
+      targets.forEach(async (post) => {
+        const cachedImages = getCachedCommunityImage('post', post.id);
+        if (cachedImages && cachedImages.length) {
+          const index = this.posts.findIndex(item => item.id === post.id);
+          if (index >= 0) {
+            this.posts.splice(index, 1, {
+              ...this.posts[index],
+              images: cachedImages,
+              imageCount: Math.max(this.posts[index].imageCount || 0, cachedImages.length)
+            });
+          }
+          return;
+        }
+        try {
+          const res = await getCommunityPostImages(post.id);
+          const data = this.extractData(res) || {};
+          const images = normalizeCommunityImages(data.images || [], baseUrl);
+          if (images.length) setCachedCommunityImage('post', post.id, images);
+          const index = this.posts.findIndex(item => item.id === post.id);
+          if (index >= 0) {
+            this.posts.splice(index, 1, {
+              ...this.posts[index],
+              images,
+              imageCount: Math.max(this.posts[index].imageCount || 0, images.length)
+            });
+          }
+        } catch (e) {
+          // 图片加载失败不影响帖子内容展示
+        }
+      });
+    },
+    getTagClass(tag) {
+      const map = {
+        '技巧': 'tag-skill',
+        '活动': 'tag-event',
+        '求助': 'tag-help',
+        '晒单': 'tag-share'
+      };
+      return map[tag] || 'tag-note';
     },
     sharePost(post) {
       uni.showToast({ title: '分享功能开发中', icon: 'none' });
@@ -351,19 +480,23 @@ export default {
     },
     getAvatarUrl(avatar) {
       if (!avatar) return '/static/person.jpeg';
-      if (avatar.startsWith('http')) return avatar;
-      return this.baseUrl + avatar;
+      if (typeof avatar !== 'string') return '/static/person.jpeg';
+      if (avatar.startsWith('blob:')) return '/static/person.jpeg';
+      const resolved = resolveAvatarUrl(avatar, baseUrl);
+      if (resolved !== '/static/person.jpeg') return resolved;
+      if (avatar.startsWith('/')) return `${baseUrl}${avatar}`;
+      return `${baseUrl}/${avatar}`;
     },
     getCoverStyle() {
+      const coverImage = this.myCommunity ? this.myCommunity.coverImage : '';
+      const resolved = normalizeCommunityImageUrl(coverImage, baseUrl);
+      if (resolved) {
+        return { backgroundImage: `url(${resolved})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+      }
+      // 无图片时使用纯色兜底
       const colors = ['#4CAF50', '#8BC34A', '#009688', '#00BCD4', '#4DB6AC'];
       const idx = Math.abs(this.myCommunity ? this.myCommunity.id : 0) % colors.length;
       return { background: colors[idx] };
-    },
-    get baseUrl() {
-      try {
-        const cfg = require('@/api/config.js');
-        return cfg.baseUrl || (cfg.config && cfg.config.baseUrl) || 'http://localhost:3000';
-      } catch { return 'http://localhost:3000'; }
     }
   }
 };
@@ -380,16 +513,42 @@ export default {
   transition: all 0.3s ease;
 }
 .community-page.dark-mode {
-  background: linear-gradient(135deg, #28285f 0%, #28346f 30%, #322c8a 70%, #442977 100%);
+  background:
+    radial-gradient(circle at 18% 8%, rgba(16, 185, 129, 0.22) 0%, transparent 34%),
+    radial-gradient(circle at 86% 20%, rgba(56, 189, 248, 0.16) 0%, transparent 32%),
+    radial-gradient(circle at 72% 82%, rgba(245, 158, 11, 0.1) 0%, transparent 34%),
+    linear-gradient(180deg, #07111f 0%, #0f172a 48%, #101827 100%);
 }
 
 /* ===== 背景效果 ===== */
-.bg-effects { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+.bg-effects { position: fixed; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+.community-page.dark-mode .bg-effects::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.05) 1rpx, transparent 1rpx),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1rpx, transparent 1rpx);
+  background-size: 64rpx 64rpx;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.58), rgba(0,0,0,0.1));
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.58), rgba(0,0,0,0.1));
+}
+.community-page.dark-mode .bg-effects::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.08), transparent 48%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0) 0%, rgba(15, 23, 42, 0.18) 100%);
+}
 .bg-circle {
   position: absolute; border-radius: 50%; opacity: 0.08; transition: all 0.3s;
 }
 .community-page:not(.dark-mode) .bg-circle { background: #10b981; }
-.community-page.dark-mode .bg-circle { background: rgba(255, 255, 255, 0.1); }
+.community-page.dark-mode .bg-circle { opacity: 0.18; filter: blur(10rpx); }
+.community-page.dark-mode .c1 { background: rgba(16, 185, 129, 0.52); }
+.community-page.dark-mode .c2 { background: rgba(56, 189, 248, 0.34); }
+.community-page.dark-mode .c3 { background: rgba(245, 158, 11, 0.24); }
 .c1 { width: 600rpx; height: 600rpx; top: -200rpx; right: -200rpx; }
 .c2 { width: 400rpx; height: 400rpx; bottom: 20%; left: -200rpx; }
 .c3 { width: 300rpx; height: 300rpx; top: 30%; right: -100rpx; }
@@ -588,22 +747,25 @@ export default {
 .filter-bar { margin-bottom: 24rpx; }
 .filter-tabs {
   display: flex;
-  gap: 12rpx;
-  overflow-x: auto;
-  white-space: nowrap;
-  padding-bottom: 4rpx;
-  -webkit-overflow-scrolling: touch;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10rpx;
+  width: 100%;
 }
-.filter-tabs::-webkit-scrollbar { display: none; }
 .filter-tab {
-  padding: 12rpx 28rpx;
+  flex: 1;
+  min-width: 0;
+  height: 64rpx;
   border-radius: 40rpx;
   font-size: 24rpx;
   font-weight: 600;
   color: #6b7280;
   background: rgba(0, 0, 0, 0.04);
   transition: all 0.3s;
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
 }
 .dark-mode .filter-tab { color: rgba(255, 255, 255, 0.7); background: rgba(255, 255, 255, 0.1); }
 .filter-tab.active {
@@ -642,20 +804,38 @@ export default {
   flex-shrink: 0;
 }
 .dark-mode .post-tag { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-.post-tag.tag-技巧 { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-.dark-mode .post-tag.tag-技巧 { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
-.post-tag.tag-活动 { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-.dark-mode .post-tag.tag-活动 { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-.post-tag.tag-求助 { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-.dark-mode .post-tag.tag-求助 { background: rgba(239, 68, 68, 0.2); color: #f87171; }
-.post-tag.tag-晒单 { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
-.dark-mode .post-tag.tag-晒单 { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+.post-tag.tag-skill { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+.dark-mode .post-tag.tag-skill { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+.post-tag.tag-event { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.dark-mode .post-tag.tag-event { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.post-tag.tag-help { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.dark-mode .post-tag.tag-help { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.post-tag.tag-share { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
+.dark-mode .post-tag.tag-share { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+
+.post-admin-delete {
+  margin-left: 12rpx;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: #dc2626;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1rpx solid rgba(239, 68, 68, 0.18);
+  flex-shrink: 0;
+}
+.dark-mode .post-admin-delete {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.22);
+}
 
 .post-content { margin-bottom: 16rpx; }
 .content-text {
   color: #374151;
   font-size: 26rpx;
   line-height: 1.7;
+  line-clamp: 3;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -665,16 +845,16 @@ export default {
 
 .post-images { display: flex; gap: 8rpx; margin-bottom: 16rpx; }
 .post-image { width: 160rpx; height: 160rpx; border-radius: 12rpx; flex-shrink: 0; }
-.image-more {
+.image-more, .image-placeholder {
   width: 160rpx; height: 160rpx;
   background: rgba(0, 0, 0, 0.06);
   border-radius: 12rpx;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.dark-mode .image-more { background: rgba(255, 255, 255, 0.1); }
-.image-more text { color: #6b7280; font-size: 28rpx; font-weight: 700; }
-.dark-mode .image-more text { color: rgba(255, 255, 255, 0.8); }
+.dark-mode .image-more, .dark-mode .image-placeholder { background: rgba(255, 255, 255, 0.1); }
+.image-more text, .image-placeholder text { color: #6b7280; font-size: 28rpx; font-weight: 700; }
+.dark-mode .image-more text, .dark-mode .image-placeholder text { color: rgba(255, 255, 255, 0.8); }
 
 .post-actions { display: flex; gap: 40rpx; }
 .action-item { display: flex; align-items: center; gap: 8rpx; }

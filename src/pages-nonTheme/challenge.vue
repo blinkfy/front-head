@@ -51,7 +51,7 @@
           </view>
           <view class="progress-reward">
             <text class="reward-icon">🎁</text>
-            <text class="reward-text">完成挑战可获得 +{{ totalCount * 10 }} 积分</text>
+            <text class="reward-text">完成挑战可获得 +{{ totalCount }} 积分</text>
           </view>
         </view>
 
@@ -79,19 +79,19 @@
               <text class="mode-icon">📝</text>
               <text class="mode-name">每日答题</text>
               <text class="mode-desc">10题挑战</text>
-              <text class="mode-reward">+10积分</text>
+              <text class="mode-reward">每题+1分</text>
             </view>
-            <view class="mode-card" @click="selectMode('speed')">
+            <view class="mode-card" :class="{ active: currentMode === 'speed' }" @click="selectMode('speed')">
               <text class="mode-icon">⚡</text>
               <text class="mode-name">速度挑战</text>
               <text class="mode-desc">限时60秒</text>
-              <text class="mode-reward">+20积分</text>
+              <text class="mode-reward">每题+1分</text>
             </view>
-            <view class="mode-card" @click="selectMode('combo')">
+            <view class="mode-card" :class="{ active: currentMode === 'combo' }" @click="selectMode('combo')">
               <text class="mode-icon">🔥</text>
               <text class="mode-name">连击模式</text>
               <text class="mode-desc">连续答对</text>
-              <text class="mode-reward">+30积分</text>
+              <text class="mode-reward">连击×2分</text>
             </view>
           </view>
         </view>
@@ -129,8 +129,8 @@
         <!-- 结果展示 -->
         <view class="result-section" v-if="showResult">
           <view class="result-card">
-            <text class="result-icon">🎉</text>
-            <text class="result-title">挑战完成!</text>
+            <text class="result-icon">{{ challengeResult.correctCount === challengeResult.totalCount ? '🏆' : '🎉' }}</text>
+            <text class="result-title">{{ challengeResult.correctCount === challengeResult.totalCount ? '全部正确！' : '挑战完成!' }}</text>
             <view class="result-stats">
               <view class="result-item">
                 <text class="result-value">{{ challengeResult.correctCount || 0 }}/{{ challengeResult.totalCount || 0 }}</text>
@@ -141,11 +141,42 @@
                 <text class="result-label">获得积分</text>
               </view>
             </view>
+
+            <!-- 错题回顾 -->
+            <view class="wrong-answers" v-if="wrongAnswers.length > 0">
+              <view class="wrong-header" @click="showWrongDetail = !showWrongDetail">
+                <text class="wrong-title">📋 错题回顾 ({{ wrongAnswers.length }}题)</text>
+                <text class="wrong-arrow" :class="{ open: showWrongDetail }">▼</text>
+              </view>
+              <view class="wrong-list" v-if="showWrongDetail">
+                <view v-for="(item, idx) in wrongAnswers" :key="idx" class="wrong-item">
+                  <view class="wrong-question">
+                    <text class="wrong-q-num">{{ idx + 1 }}.</text>
+                    <text class="wrong-q-text">{{ item.question }}</text>
+                  </view>
+                  <view class="wrong-answer-row">
+                    <text class="wrong-label">你的答案：</text>
+                    <text class="wrong-your">{{ item.yourAnswer }}</text>
+                    <text class="wrong-mark">✗</text>
+                  </view>
+                  <view class="wrong-answer-row correct-row">
+                    <text class="wrong-label">正确答案：</text>
+                    <text class="wrong-correct">{{ item.correctAnswer }}</text>
+                    <text class="wrong-mark correct-mark">✓</text>
+                  </view>
+                  <view class="wrong-explain" v-if="item.explanation">
+                    <text class="explain-icon">💡</text>
+                    <text class="explain-text">{{ item.explanation }}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+
             <view class="result-actions">
-              <view class="action-btn retry" @click="showRetry = true; showResult = false;">
+              <view class="action-btn retry" @click="showRetry = true; showResult = false; showWrongDetail = false;">
                 <text>重新挑战</text>
               </view>
-              <view class="action-btn close" @click="showResult = false; showRetry = false; loadData();">
+              <view class="action-btn close" @click="showResult = false; showRetry = false; showWrongDetail = false; loadData();">
                 <text>返回</text>
               </view>
             </view>
@@ -197,10 +228,11 @@
     <view class="quiz-modal" v-if="showQuiz" @click.stop>
       <view class="quiz-container">
         <view class="quiz-header">
-          <text class="quiz-progress">第 {{ currentQuestionIndex + 1 }}/{{ questions.length }} 题</text>
+          <text class="quiz-progress" v-if="currentMode !== 'combo'">第 {{ currentQuestionIndex + 1 }}/{{ questions.length }} 题</text>
+          <text class="quiz-progress combo-progress" v-else>🔥 连击 ×{{ comboCount }}</text>
           <text class="quiz-timer" v-if="currentMode === 'speed'">⏱️ {{ timeLeft }}s</text>
         </view>
-        <view class="quiz-progress-bar">
+        <view class="quiz-progress-bar" v-if="currentMode !== 'combo'">
           <view class="quiz-progress-fill" :style="{ width: ((currentQuestionIndex) / questions.length * 100) + '%' }"></view>
         </view>
 
@@ -217,7 +249,7 @@
         </view>
 
         <view class="quiz-actions">
-          <view class="quiz-btn skip" @click="nextQuestion(false)" v-if="currentMode !== 'speed'">
+          <view class="quiz-btn skip" @click="nextQuestion()" v-if="currentMode === 'daily'">
             <text>跳过</text>
           </view>
         </view>
@@ -233,7 +265,9 @@
 </template>
 
 <script>
-import { getDailyChallenge, submitChallenge, getChallengeStats, getChallengeLeaderboard, getWeeklyCalendar } from '@/api/challenge.js';
+import { getDailyChallenge, submitChallenge, getChallengeStats, getChallengeLeaderboard, getWeeklyCalendar, getModeQuestions } from '@/api/challenge.js';
+import { baseUrl } from '@/api/settings.js';
+import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 
 export default {
   data() {
@@ -258,7 +292,13 @@ export default {
       leaderboard: [],
       rankType: 'all',
       challengeResult: {},
-      isDark: false
+      isDark: false,
+      // 连击模式
+      comboCount: 0,
+      comboActive: false,
+      comboQuestion: null,
+      comboAnswering: false,
+      showWrongDetail: false
     };
   },
   computed: {
@@ -267,6 +307,10 @@ export default {
     },
     currentQuestion() {
       return this.questions[this.currentQuestionIndex] || {};
+    },
+    wrongAnswers() {
+      const results = this.challengeResult.results || [];
+      return results.filter(r => !r.isCorrect);
     }
   },
   onLoad() {
@@ -288,7 +332,16 @@ export default {
       this.isDark = theme === 'dark';
     },
     goBack() {
-      uni.navigateBack();
+      const pages = getCurrentPages()
+      if (pages.length > 1) {
+        uni.navigateBack()
+      } else {
+        if (this.isDark) {
+          uni.reLaunch({url: '/pages-dark/home/home'})
+        } else {
+          uni.reLaunch({url: '/pages/home/home'})
+        }
+      }
     },
     async refreshAll() {
       await this.loadData();
@@ -347,19 +400,69 @@ export default {
     },
     selectMode(mode) {
       this.currentMode = mode;
+      this.showResult = false;
+      this.showRetry = false;
     },
     async startChallenge() {
-      if (this.questions.length === 0) {
-        uni.showToast({ title: '暂无题目', icon: 'none' });
-        return;
-      }
+      this.showResult = false;
+      this.showRetry = false;
       this.quizLoading = true;
-      this.currentQuestionIndex = 0;
-      this.answers = [];
-      this.showQuiz = true;
-      if (this.currentMode === 'speed') {
-        this.timeLeft = 60;
-        this.startTimer();
+
+      try {
+        if (this.currentMode === 'daily') {
+          // 每日模式：使用已加载的题目
+          if (this.questions.length === 0) {
+            uni.showToast({ title: '暂无题目', icon: 'none' });
+            this.quizLoading = false;
+            return;
+          }
+          this.currentQuestionIndex = 0;
+          this.answers = [];
+          this.showQuiz = true;
+        } else if (this.currentMode === 'speed') {
+          // 速度模式：获取20题，限时60秒
+          const res = await getModeQuestions('speed');
+          const data = this.extractData(res) || {};
+          if (data.completed) {
+            uni.showToast({ title: '今日速度挑战已完成', icon: 'none' });
+            this.quizLoading = false;
+            return;
+          }
+          this.questions = data.questions || [];
+          if (this.questions.length === 0) {
+            uni.showToast({ title: '暂无题目', icon: 'none' });
+            this.quizLoading = false;
+            return;
+          }
+          this.currentQuestionIndex = 0;
+          this.answers = [];
+          this.timeLeft = 60;
+          this.showQuiz = true;
+          this.startTimer();
+        } else if (this.currentMode === 'combo') {
+          // 连击模式：逐题挑战
+          const res = await getModeQuestions('combo');
+          const data = this.extractData(res) || {};
+          if (data.completed) {
+            uni.showToast({ title: '今日连击挑战已完成', icon: 'none' });
+            this.quizLoading = false;
+            return;
+          }
+          this.questions = data.questions || [];
+          if (this.questions.length === 0) {
+            uni.showToast({ title: '暂无题目', icon: 'none' });
+            this.quizLoading = false;
+            return;
+          }
+          this.comboCount = 0;
+          this.comboActive = true;
+          this.comboAnswering = false;
+          this.answers = [];
+          this.currentQuestionIndex = 0;
+          this.showQuiz = true;
+        }
+      } catch (e) {
+        uni.showToast({ title: e.message || '加载失败', icon: 'none' });
       }
       this.quizLoading = false;
     },
@@ -374,20 +477,61 @@ export default {
       }, 1000);
     },
     selectAnswer(value) {
-      if (this.answers[this.currentQuestionIndex]) return;
+      // 连击模式特殊处理
+      if (this.currentMode === 'combo' && this.comboActive) {
+        if (this.comboAnswering) return;
+        this.comboAnswering = true;
+        const q = this.currentQuestion;
+        const isCorrect = q.correctAnswer === value;
+        this.answers.push({ questionId: q.id, answer: value });
+
+        if (isCorrect) {
+          this.comboCount++;
+          uni.vibrateShort && uni.vibrateShort();
+          uni.showToast({ title: `✅ 连击 ×${this.comboCount}`, icon: 'none', duration: 600 });
+          setTimeout(() => {
+            this.comboAnswering = false;
+            this.nextComboQuestion();
+          }, 700);
+        } else {
+          uni.vibrateShort && uni.vibrateShort();
+          uni.showToast({ title: '❌ 答错了！', icon: 'none', duration: 1000 });
+          setTimeout(() => {
+            this.submitQuiz();
+          }, 1000);
+        }
+        return;
+      }
+
+      // 每日/速度模式
+      if (this.answers[this.currentQuestionIndex] !== undefined) return;
       const q = this.currentQuestion;
-      this.answers.push({
-        questionId: q.id,
-        answer: value
-      });
+      this.answers.push({ questionId: q.id, answer: value });
       uni.vibrateShort && uni.vibrateShort();
       setTimeout(() => {
         this.nextQuestion();
-      }, 800);
+      }, 500);
+    },
+    nextComboQuestion() {
+      if (this.currentQuestionIndex < this.questions.length - 1) {
+        this.currentQuestionIndex++;
+      } else {
+        // 题目用完，提交
+        this.submitQuiz();
+      }
     },
     getOptionClass(value) {
+      if (this.currentMode === 'combo' && this.comboActive) {
+        const ans = this.answers[this.currentQuestionIndex];
+        if (!ans) return '';
+        if (ans.answer === value) {
+          const q = this.currentQuestion;
+          return q.correctAnswer === value ? 'correct' : 'wrong';
+        }
+        return '';
+      }
       const ans = this.answers[this.currentQuestionIndex];
-      if (!ans) return '';
+      if (ans === undefined) return '';
       return ans.answer === value ? 'selected' : '';
     },
     nextQuestion() {
@@ -400,6 +544,7 @@ export default {
     async submitQuiz() {
       if (this.timer) clearInterval(this.timer);
       this.showQuiz = false;
+      this.comboActive = false;
       this.quizLoading = true;
       try {
         const validAnswers = this.answers.filter(a => a.questionId);
@@ -411,10 +556,15 @@ export default {
         const data = this.extractData(res) || {};
         this.challengeResult = data;
         this.showResult = true;
-        this.dailyCompleted = true;
-        this.correctCount = data.correctCount || 0;
-        this.totalCount = data.totalCount || 0;
-        uni.showToast({ title: `获得 ${data.pointsEarned || 0} 积分!`, icon: 'success' });
+        if (this.currentMode === 'daily') {
+          this.dailyCompleted = true;
+          this.correctCount = data.correctCount || 0;
+          this.totalCount = data.totalCount || 0;
+        }
+        const msg = this.currentMode === 'combo'
+          ? `连击 ${this.comboCount} 题！获得 ${data.pointsEarned || 0} 积分`
+          : `获得 ${data.pointsEarned || 0} 积分!`;
+        uni.showToast({ title: msg, icon: 'success', duration: 2000 });
       } catch (e) {
         uni.showToast({ title: e.message || '提交失败', icon: 'none' });
       }
@@ -434,9 +584,12 @@ export default {
     },
     getAvatarUrl(avatar) {
       if (!avatar) return '/static/person.jpeg';
-      if (avatar.startsWith('http')) return avatar;
-      const cfg = require('@/api/config.js');
-      return (cfg.baseUrl || (cfg.config && cfg.config.baseUrl) || 'http://localhost:3000') + avatar;
+      if (typeof avatar !== 'string') return '/static/person.jpeg';
+      if (avatar.startsWith('blob:')) return '/static/person.jpeg';
+      const resolved = resolveAvatarUrl(avatar, baseUrl);
+      if (resolved !== '/static/person.jpeg') return resolved;
+      if (avatar.startsWith('/')) return `${baseUrl}${avatar}`;
+      return `${baseUrl}/${avatar}`;
     }
   }
 };
@@ -453,7 +606,11 @@ export default {
   transition: all 0.3s ease;
 }
 .challenge-page.dark-mode {
-  background: linear-gradient(135deg, #28285f 0%, #28346f 30%, #322c8a 70%, #442977 100%);
+  background:
+    radial-gradient(circle at 16% 8%, rgba(16, 185, 129, 0.22) 0%, transparent 34%),
+    radial-gradient(circle at 88% 18%, rgba(56, 189, 248, 0.16) 0%, transparent 32%),
+    radial-gradient(circle at 72% 78%, rgba(245, 158, 11, 0.12) 0%, transparent 34%),
+    linear-gradient(180deg, #07111f 0%, #0f172a 46%, #101827 100%);
 }
 
 /* ===== 背景效果 ===== */
@@ -463,6 +620,26 @@ export default {
   width: 100%; height: 100%;
   z-index: 1;
   pointer-events: none;
+  overflow: hidden;
+}
+.challenge-page.dark-mode .bg-effects::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.055) 1rpx, transparent 1rpx),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1rpx, transparent 1rpx);
+  background-size: 64rpx 64rpx;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.62), rgba(0,0,0,0.12));
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.62), rgba(0,0,0,0.12));
+}
+.challenge-page.dark-mode .bg-effects::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(7, 17, 31, 0) 0%, rgba(7, 17, 31, 0.28) 100%),
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.05), transparent 48%);
 }
 .bg-circle {
   position: absolute;
@@ -474,7 +651,17 @@ export default {
   background: #10b981;
 }
 .challenge-page.dark-mode .bg-circle {
-  background: rgba(255, 255, 255, 0.1);
+  opacity: 0.18;
+  filter: blur(10rpx);
+}
+.challenge-page.dark-mode .c1 {
+  background: rgba(16, 185, 129, 0.52);
+}
+.challenge-page.dark-mode .c2 {
+  background: rgba(56, 189, 248, 0.34);
+}
+.challenge-page.dark-mode .c3 {
+  background: rgba(245, 158, 11, 0.28);
 }
 .c1 { width: 600rpx; height: 600rpx; top: -200rpx; right: -200rpx; }
 .c2 { width: 400rpx; height: 400rpx; bottom: 10%; left: -200rpx; }
@@ -486,6 +673,10 @@ export default {
   opacity: 0.25;
   animation: floatUp 8s ease-in-out infinite;
   filter: drop-shadow(0 4rpx 8rpx rgba(0,0,0,0.1));
+}
+.challenge-page.dark-mode .float-icon {
+  opacity: 0.16;
+  filter: drop-shadow(0 0 12rpx rgba(16, 185, 129, 0.32));
 }
 @keyframes floatUp {
   0%, 100% { transform: translateY(0) rotate(0deg); }
@@ -823,6 +1014,68 @@ export default {
 .dark-mode .action-btn.close { background: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.8); }
 .action-btn:active { transform: scale(0.95); }
 
+/* ===== 错题回顾 ===== */
+.wrong-answers {
+  margin-top: 24rpx;
+  border-top: 1rpx solid rgba(0, 0, 0, 0.06);
+  padding-top: 24rpx;
+}
+.dark-mode .wrong-answers { border-color: rgba(255, 255, 255, 0.1); }
+.wrong-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 0;
+  cursor: pointer;
+}
+.wrong-title { color: #ef4444; font-size: 28rpx; font-weight: 700; }
+.dark-mode .wrong-title { color: #f87171; }
+.wrong-arrow { color: #9ca3af; font-size: 22rpx; transition: transform 0.3s; }
+.wrong-arrow.open { transform: rotate(180deg); }
+.wrong-list { margin-top: 16rpx; }
+.wrong-item {
+  background: rgba(239, 68, 68, 0.04);
+  border-radius: 16rpx;
+  padding: 20rpx;
+  margin-bottom: 16rpx;
+  text-align: left;
+  border-left: 6rpx solid #ef4444;
+}
+.dark-mode .wrong-item { background: rgba(239, 68, 68, 0.1); }
+.wrong-question {
+  display: flex;
+  gap: 8rpx;
+  margin-bottom: 12rpx;
+}
+.wrong-q-num { color: #ef4444; font-size: 26rpx; font-weight: 700; flex-shrink: 0; }
+.wrong-q-text { color: #1f2937; font-size: 26rpx; font-weight: 600; line-height: 1.5; }
+.dark-mode .wrong-q-text { color: #e5e7eb; }
+.wrong-answer-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-bottom: 6rpx;
+  padding-left: 32rpx;
+}
+.wrong-label { color: #9ca3af; font-size: 22rpx; }
+.wrong-your { color: #ef4444; font-size: 24rpx; font-weight: 600; text-decoration: line-through; }
+.wrong-correct { color: #10b981; font-size: 24rpx; font-weight: 600; }
+.wrong-mark { font-size: 20rpx; }
+.wrong-mark.correct-mark { color: #10b981; }
+.wrong-explain {
+  display: flex;
+  gap: 8rpx;
+  margin-top: 10rpx;
+  padding: 12rpx 16rpx;
+  background: rgba(16, 185, 129, 0.06);
+  border-radius: 12rpx;
+  margin-left: 32rpx;
+}
+.dark-mode .wrong-explain { background: rgba(16, 185, 129, 0.1); }
+.explain-icon { font-size: 22rpx; flex-shrink: 0; }
+.explain-text { color: #4b5563; font-size: 22rpx; line-height: 1.6; }
+.dark-mode .explain-text { color: rgba(255, 255, 255, 0.7); }
+
 /* ===== 排行榜（对齐 community 排行榜） ===== */
 .section-header {
   display: flex;
@@ -934,6 +1187,11 @@ export default {
   z-index: 1;
 }
 .quiz-progress { color: rgba(255, 255, 255, 0.9); font-size: 26rpx; font-weight: 600; }
+.combo-progress { color: #fbbf24; font-size: 32rpx; font-weight: 800; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
 .quiz-timer { color: #fbbf24; font-size: 30rpx; font-weight: 800; }
 .quiz-progress-bar {
   height: 8rpx;

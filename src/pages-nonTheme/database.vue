@@ -36,18 +36,26 @@
 
                 <!-- 数据表选择卡片 -->
                 <view class="tables-card">
-                    <scroll-view class="tables-scroll" scroll-x :show-scrollbar="false">
-                        <view class="tables-row">
-                            <view class="table-item" v-for="table in tables" :key="table.name"
-                                :class="{ active: currentTable === table.name }" @click="selectTable(table.name)">
-                                <text class="table-icon">{{ table.icon }}</text>
-                                <view class="table-info">
-                                    <text class="table-name">{{ table.label }}</text>
-                                    <text class="table-count">{{ table.count }}</text>
-                                </view>
+                    <view class="tables-header">
+                        <view class="tables-header-left">
+                            <text class="tables-title">表选择</text>
+                            <text class="tables-subtitle">{{ currentTable ? getCurrentTableLabel() : '请选择表' }}</text>
+                        </view>
+                        <view class="tables-toggle" @click="toggleTablesCollapsed">
+                            <text class="tables-toggle-icon">{{ tablesCollapsed ? '▾' : '▴' }}</text>
+                        </view>
+                    </view>
+                    <view v-show="!tablesCollapsed" class="tables-grid">
+                        <view class="table-item" v-for="table in tables" :key="table.name"
+                            :class="{ active: currentTable === table.name }"
+                            @click="selectTable(table)">
+                            <text class="table-icon">{{ table.icon }}</text>
+                            <view class="table-info">
+                                <text class="table-name">{{ table.label }}</text>
+                                <text class="table-count">{{ table.count }}</text>
                             </view>
                         </view>
-                    </scroll-view>
+                    </view>
                 </view>
 
                 <!-- 搜索栏 -->
@@ -419,6 +427,14 @@
                                         <text class="data-value">{{ item.latestContentId || '-' }}</text>
                                     </view>
                                 </template>
+                                <template v-if="!isSpecialTable(currentTable)">
+                                    <view class="data-row" v-for="field in getGenericPreviewFields(item)"
+                                        :key="field.key">
+                                        <text class="data-label">{{ field.label }}:</text>
+                                        <rich-text class="data-value"
+                                            :nodes="highlightText(String(field.value || '-'))"></rich-text>
+                                    </view>
+                                </template>
                             </view>
 
                             <!-- 操作按钮 -->
@@ -734,6 +750,67 @@
                             <input class="form-input" v-model="editForm.latestContentId" type="number" placeholder="请输入最新消息ID" />
                         </view>
                     </template>
+
+                    <!-- 通用表单 -->
+                    <template v-if="!isSpecialTable(currentTable)">
+                        <view v-if="getGenericEditFields().length">
+                            <view class="form-item" v-for="field in getGenericEditFields()" :key="field.key">
+                                <text class="form-label">
+                                    {{ field.label }}
+                                    <text v-if="field.required" class="required-mark">*</text>
+                                </text>
+
+                                <switch
+                                    v-if="field.editor === 'switch'"
+                                    :checked="!!editForm[field.key]"
+                                    :disabled="field.locked"
+                                    @change="onGenericBooleanChange(field, $event)"
+                                    color="#40e0ff"
+                                />
+
+                                <picker
+                                    v-else-if="field.editor === 'select'"
+                                    mode="selector"
+                                    :range="field.options"
+                                    :range-key="'label'"
+                                    :disabled="field.locked"
+                                    @change="onGenericEnumChange(field, $event)"
+                                >
+                                    <view class="picker-view">
+                                        {{ getGenericDisplayValue(field) }}
+                                    </view>
+                                </picker>
+
+                                <textarea
+                                    v-else-if="field.editor === 'textarea'"
+                                    class="form-textarea"
+                                    v-model="editForm[field.key]"
+                                    :placeholder="field.placeholder"
+                                    :disabled="field.locked"
+                                ></textarea>
+
+                                <input
+                                    v-else
+                                    class="form-input"
+                                    v-model="editForm[field.key]"
+                                    :type="field.inputType"
+                                    :placeholder="field.placeholder"
+                                    :disabled="field.locked"
+                                />
+
+                                <view v-if="field.help" class="form-tip">
+                                    <text class="tip-icon">ℹ️</text>
+                                    <text class="tip-text">{{ field.help }}</text>
+                                </view>
+                            </view>
+                        </view>
+                        <view v-else class="form-item">
+                            <view class="form-tip">
+                                <text class="tip-icon">ℹ️</text>
+                                <text class="tip-text">当前表字段结构暂不可用，请刷新后重试。</text>
+                            </view>
+                        </view>
+                    </template>
                 </scroll-view>
 
                 <view class="modal-footer">
@@ -762,7 +839,8 @@ import {
     getHistoryList, createHistory, updateHistory, deleteHistory,
     getMessagesList, createMessage, updateMessage, deleteMessage,
     getChatList, createChat, updateChat, deleteChat,
-    getDatabaseStats
+    getDatabaseStats,
+    getGenericTableList, createGenericTableRecord, updateGenericTableRecord, deleteGenericTableRecord
 } from '@/api/database'
 
 // 响应式数据
@@ -773,6 +851,9 @@ const showEditModal = ref(false)
 const editMode = ref('add') // 'add' 或 'edit'
 const editForm = ref({})
 const adminUser = ref(false)
+const tablesCollapsed = ref(false)
+const specialTables = new Set(['Users', 'Bin', 'UserDevice', 'History', 'Messages', 'Chat'])
+const tableSchemas = ref({})
 
 // 搜索相关
 const searchKeyword = ref('')
@@ -871,14 +952,32 @@ const totalCount = ref(0)
 const totalPages = ref(0)
 
 // 数据表配置
-const tables = ref([
-    { name: 'Users', label: '用户表', icon: '👤', count: 0 },
-    { name: 'Bin', label: '垃圾桶表', icon: '🗑️', count: 0 },
-    { name: 'UserDevice', label: '用户设备表', icon: '📱', count: 0 },
-    { name: 'History', label: '历史记录表', icon: '📝', count: 0 },
-    { name: 'Messages', label: '消息表', icon: '💬', count: 0 },
-    { name: 'Chat', label: '聊天表', icon: '💭', count: 0 }
-])
+const tableCatalog = [
+    { name: 'Users', label: '用户表', icon: '👤' },
+    { name: 'Bin', label: '垃圾桶表', icon: '🗑️' },
+    { name: 'UserDevice', label: '用户设备表', icon: '📱' },
+    { name: 'History', label: '历史记录表', icon: '📝' },
+    { name: 'Messages', label: '消息表', icon: '💬' },
+    { name: 'Chat', label: '聊天表', icon: '💭' },
+    { name: 'PurchaseRecord', label: '购买记录表', icon: '🛒' },
+    { name: 'CommunityDailyStat', label: '社区日统计表', icon: '📊' },
+    { name: 'AiChatMessage', label: 'AI 对话表', icon: '🤖' },
+    { name: 'ShopRecommendation', label: '商品推荐表', icon: '🏪' },
+    { name: 'AchievementUnlock', label: '成就解锁表', icon: '🏆' },
+    { name: 'ChallengeRecord', label: '挑战记录表', icon: '🎯' },
+    { name: 'ChallengeQuestion', label: '挑战题库表', icon: '🧠' },
+    { name: 'BookingOrder', label: '预约订单表', icon: '📅' },
+    { name: 'WasteType', label: '垃圾分类表', icon: '♻️' },
+    { name: 'Community', label: '社区表', icon: '🏘️' },
+    { name: 'UserCommunity', label: '用户社区表', icon: '🤝' },
+    { name: 'Post', label: '帖子表', icon: '📝' },
+    { name: 'Comment', label: '评论表', icon: '💬' },
+    { name: 'PostLike', label: '帖子点赞表', icon: '👍' },
+    { name: 'Prize', label: '奖品表', icon: '🎁' },
+    { name: 'LotteryConfig', label: '抽奖配置表', icon: '🎯' },
+    { name: 'LotteryRecord', label: '抽奖记录表', icon: '🎟️' }
+]
+const tables = ref(tableCatalog.map(table => ({ ...table, count: 0 })))
 
 // 当前表数据
 const tableData = ref([])
@@ -951,7 +1050,204 @@ function getCurrentTableLabel() {
     return table ? table.label : ''
 }
 
-function selectTable(tableName) {
+function toggleTablesCollapsed() {
+    tablesCollapsed.value = !tablesCollapsed.value
+}
+
+function isSpecialTable(tableName) {
+    return specialTables.has(tableName)
+}
+
+function getTableMeta(tableName) {
+    return tables.value.find(t => t.name === tableName) || null
+}
+
+function formatGenericFieldLabel(key) {
+    return String(key || '')
+        .replace(/_/g, ' ')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^./, ch => ch.toUpperCase())
+}
+
+function getGenericSchema(tableName = currentTable.value) {
+    const schema = tableSchemas.value?.[tableName]
+    return Array.isArray(schema) ? schema : []
+}
+
+function getGenericPrimaryKeyField(tableName = currentTable.value) {
+    const schema = getGenericSchema(tableName)
+    return schema.find(field => field.primaryKey) || schema.find(field => field.key === 'id') || null
+}
+
+function getGenericRecordKey(item = {}, tableName = currentTable.value) {
+    const primaryKeyField = getGenericPrimaryKeyField(tableName)
+    if (!primaryKeyField) return item.id
+    return item[primaryKeyField.key] !== undefined ? item[primaryKeyField.key] : item.id
+}
+
+function isNumericSchemaType(type) {
+    return ['INTEGER', 'BIGINT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'REAL', 'TINYINT', 'SMALLINT'].includes(String(type || '').toUpperCase())
+}
+
+function isTextSchemaType(type) {
+    return ['TEXT', 'CLOB'].includes(String(type || '').toUpperCase())
+}
+
+function isJsonSchemaType(type) {
+    return ['JSON', 'JSONB', 'ARRAY'].includes(String(type || '').toUpperCase())
+}
+
+function isDateSchemaType(type) {
+    return ['DATE', 'DATEONLY'].includes(String(type || '').toUpperCase())
+}
+
+function buildGenericFieldMeta(field = {}) {
+    const type = String(field.type || 'STRING').toUpperCase()
+    const isBoolean = type === 'BOOLEAN'
+    const isEnum = type === 'ENUM'
+    const editor = isBoolean ? 'switch' : (isEnum ? 'select' : (isTextSchemaType(type) || isJsonSchemaType(type) ? 'textarea' : 'input'))
+    const options = isEnum ? (Array.isArray(field.values) ? field.values.map(value => ({ label: String(value), value })) : []) : []
+    const locked = !!field.autoIncrement || (!!field.primaryKey && editMode.value === 'edit')
+    return {
+        ...field,
+        label: field.label || formatGenericFieldLabel(field.key),
+        editor,
+        options,
+        locked,
+        inputType: isNumericSchemaType(type) ? 'digit' : (isDateSchemaType(type) ? 'text' : 'text'),
+        required: !field.allowNull && !field.autoIncrement,
+        placeholder: isJsonSchemaType(type)
+            ? '请输入 JSON'
+            : (isDateSchemaType(type) ? '请输入日期或时间字符串' : `请输入${field.label || formatGenericFieldLabel(field.key)}`)
+    }
+}
+
+function getGenericEditFields(tableName = currentTable.value) {
+    return getGenericSchema(tableName)
+        .filter(field => !['createdAt', 'updatedAt', 'deletedAt'].includes(field.key))
+        .filter(field => !(editMode.value === 'add' && field.autoIncrement))
+        .map(field => buildGenericFieldMeta(field))
+}
+
+function getGenericDisplayValue(field) {
+    if (!field) return '请选择'
+    const current = editForm.value?.[field.key]
+    if (current === undefined || current === null || current === '') {
+        return field.placeholder || '请选择'
+    }
+    const selected = field.options.find(option => String(option.value) === String(current))
+    return selected ? selected.label : String(current)
+}
+
+function coerceGenericValue(field, value, mode = editMode.value) {
+    const type = String(field.type || 'STRING').toUpperCase()
+    if (mode === 'add' && field.autoIncrement) return undefined
+    if (field.editor === 'switch') return !!value
+    if (isNumericSchemaType(type)) {
+        if (value === '' || value === null || value === undefined) {
+            return field.allowNull ? null : (field.defaultValue !== undefined ? field.defaultValue : '')
+        }
+        const parsed = Number(value)
+        return Number.isNaN(parsed) ? value : parsed
+    }
+    if (isJsonSchemaType(type)) {
+        if (value === '' || value === null || value === undefined) {
+            return field.allowNull ? null : null
+        }
+        if (typeof value !== 'string') return value
+        const text = value.trim()
+        if (!text) return field.allowNull ? null : null
+        try {
+            return JSON.parse(text)
+        } catch (error) {
+            throw new Error(`${field.label || field.key} 不是有效的 JSON`)
+        }
+    }
+    if (isDateSchemaType(type)) {
+        return value === undefined || value === null ? '' : String(value)
+    }
+    return value === undefined || value === null ? '' : value
+}
+
+function buildGenericEditForm(tableName, source = {}) {
+    const form = {}
+    const fields = getGenericEditFields(tableName)
+    fields.forEach(field => {
+        if (field.autoIncrement && editMode.value === 'add') return
+        const rawValue = source[field.key]
+        if (editMode.value === 'edit') {
+            if (isJsonSchemaType(field.type) && rawValue !== undefined && rawValue !== null && typeof rawValue !== 'string') {
+                form[field.key] = JSON.stringify(rawValue, null, 2)
+            } else {
+                form[field.key] = coerceGenericValue(field, rawValue, 'edit')
+            }
+            return
+        }
+
+        if (field.editor === 'switch') {
+            form[field.key] = rawValue !== undefined ? !!rawValue : false
+        } else if (field.editor === 'select') {
+            const defaultValue = field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== ''
+                ? field.defaultValue
+                : (field.options[0]?.value ?? '')
+            form[field.key] = rawValue !== undefined && rawValue !== null && rawValue !== '' ? rawValue : defaultValue
+        } else if (isNumericSchemaType(field.type)) {
+            form[field.key] = rawValue !== undefined && rawValue !== null && rawValue !== '' ? rawValue : (field.defaultValue !== undefined ? field.defaultValue : '')
+        } else if (isJsonSchemaType(field.type) && rawValue !== undefined && rawValue !== null && typeof rawValue !== 'string') {
+            form[field.key] = JSON.stringify(rawValue, null, 2)
+        } else if (field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== '') {
+            form[field.key] = field.defaultValue
+        } else {
+            form[field.key] = ''
+        }
+    })
+    return form
+}
+
+function buildGenericPayload(tableName, form = {}) {
+    const payload = {}
+    getGenericEditFields(tableName).forEach(field => {
+        if (field.autoIncrement) return
+        if (field.primaryKey && editMode.value === 'edit') return
+        const serialized = coerceGenericValue(field, form[field.key], editMode.value)
+        if (serialized !== undefined) payload[field.key] = serialized
+    })
+    return payload
+}
+
+function onGenericBooleanChange(field, e) {
+    editForm.value[field.key] = !!e.detail.value
+}
+
+function onGenericEnumChange(field, e) {
+    const index = Number(e.detail.value)
+    const option = field.options[index]
+    editForm.value[field.key] = option ? option.value : ''
+}
+
+function shouldHideGenericPreviewField(key = '', value) {
+    const normalizedKey = String(key || '').toLowerCase()
+    if (/(image|avatar|photo|picture|pic|base64|blob|url)$/i.test(normalizedKey)) return true
+    if (normalizedKey.includes('image') || normalizedKey.includes('base64')) return true
+    if (typeof value === 'string' && value.length > 180 && /^data:image\//i.test(value)) return true
+    return false
+}
+
+function getGenericPreviewFields(item = {}) {
+    const entries = Object.entries(item || {})
+        .filter(([key, value]) => !['id', 'createdAt', 'updatedAt'].includes(key) && !shouldHideGenericPreviewField(key, value))
+        .slice(0, 4)
+    return entries.map(([key, value]) => ({
+        key,
+        label: formatGenericFieldLabel(key),
+        value: typeof value === 'object' && value !== null ? JSON.stringify(value) : value
+    }))
+}
+
+function selectTable(table) {
+    const tableName = typeof table === 'string' ? table : table.name
     currentTable.value = tableName
     currentPage.value = 1  // 重置到第一页
     searchKeyword.value = ''  // 清空搜索
@@ -972,6 +1268,7 @@ function selectTable(tableName) {
     statusFilterIndex.value = 0
     binTypeFilterIndex.value = 0
     
+    showEditModal.value = false
     loadTableData()
 }
 
@@ -1160,6 +1457,13 @@ async function loadTableData() {
     try {
         uni.showLoading({ title: '加载中...', mask: true })
 
+        if (!currentTable.value) {
+            tableData.value = []
+            totalCount.value = 0
+            totalPages.value = 0
+            return
+        }
+
         // 构建分页参数
         const params = {
             page: currentPage.value,
@@ -1236,6 +1540,31 @@ async function loadTableData() {
             if (typeFilter.value !== null) {
                 params.type = typeFilter.value
             }
+        }
+
+        if (!isSpecialTable(currentTable.value)) {
+            const response = await getGenericTableList(currentTable.value, params)
+            if (response && response.code === 0) {
+                tableData.value = response.data.list || []
+                totalCount.value = response.data.total || 0
+                totalPages.value = Math.ceil(totalCount.value / pageSize.value)
+                if (Array.isArray(response.data.schema) && response.data.schema.length) {
+                    tableSchemas.value[currentTable.value] = response.data.schema
+                }
+                const table = tables.value.find(t => t.name === currentTable.value)
+                if (table) {
+                    table.count = totalCount.value
+                }
+            } else {
+                uni.showToast({
+                    title: response?.msg || '加载失败',
+                    icon: 'none'
+                })
+                tableData.value = []
+                totalCount.value = 0
+                totalPages.value = 0
+            }
+            return
         }
 
         console.log('请求参数:', params)
@@ -1342,7 +1671,11 @@ function handleNextPage() {
 
 function handleAdd() {
     editMode.value = 'add'
-    editForm.value = {}
+    if (!isSpecialTable(currentTable.value)) {
+        editForm.value = buildGenericEditForm(currentTable.value, {})
+        showEditModal.value = true
+        return
+    }
 
     // 根据不同表设置默认值
     if (currentTable.value === 'Users') {
@@ -1383,6 +1716,11 @@ function handleAdd() {
 
 function handleEdit(item) {
     editMode.value = 'edit'
+    if (!isSpecialTable(currentTable.value)) {
+        editForm.value = buildGenericEditForm(currentTable.value, item || {})
+        showEditModal.value = true
+        return
+    }
     editForm.value = { ...item }
     showEditModal.value = true
 }
@@ -1400,27 +1738,32 @@ async function handleDelete(item) {
                     uni.showLoading({ title: '删除中...' })
 
                     let response
-                    switch (currentTable.value) {
-                        case 'Users':
-                            response = await deleteUser(item.id)
-                            break
-                        case 'Bin':
-                            response = await deleteBin(item.id)
-                            break
-                        case 'UserDevice':
-                            // UserDevice 使用联合主键 (userId, deviceId)
-                            response = await deleteUserDevice(item.userId, item.deviceId)
-                            break
-                        case 'History':
-                            response = await deleteHistory(item.id)
-                            break
-                        case 'Messages':
-                            response = await deleteMessage(item.id)
-                            break
-                        case 'Chat':
-                            // Chat 使用联合主键 (userId, otherId)
-                            response = await deleteChat(item.userId, item.otherId)
-                            break
+                    if (isSpecialTable(currentTable.value)) {
+                        switch (currentTable.value) {
+                            case 'Users':
+                                response = await deleteUser(item.id)
+                                break
+                            case 'Bin':
+                                response = await deleteBin(item.id)
+                                break
+                            case 'UserDevice':
+                                // UserDevice 使用联合主键 (userId, deviceId)
+                                response = await deleteUserDevice(item.userId, item.deviceId)
+                                break
+                            case 'History':
+                                response = await deleteHistory(item.id)
+                                break
+                            case 'Messages':
+                                response = await deleteMessage(item.id)
+                                break
+                            case 'Chat':
+                                // Chat 使用联合主键 (userId, otherId)
+                                response = await deleteChat(item.userId, item.otherId)
+                                break
+                        }
+                    } else {
+                        const targetId = getGenericRecordKey(item, currentTable.value)
+                        response = await deleteGenericTableRecord(currentTable.value, targetId)
                     }
 
                     if (response && response.code === 0) {
@@ -1448,6 +1791,43 @@ async function handleDelete(item) {
 }
 
 async function handleSave() {
+    if (!isSpecialTable(currentTable.value)) {
+        try {
+            uni.showLoading({ title: '保存中...' })
+            const parsed = buildGenericPayload(currentTable.value, editForm.value || {})
+            let response
+            if (editMode.value === 'add') {
+                response = await createGenericTableRecord(currentTable.value, parsed)
+            } else {
+                const targetId = getGenericRecordKey(editForm.value || {}, currentTable.value)
+                if (targetId === undefined || targetId === null || targetId === '') {
+                    uni.showToast({ title: '缺少主键ID', icon: 'none' })
+                    return
+                }
+                response = await updateGenericTableRecord(currentTable.value, targetId, parsed)
+            }
+            if (response && response.code === 0) {
+                uni.showToast({ title: '保存成功', icon: 'success' })
+                closeEditModal()
+                await loadTableData()
+            } else {
+                uni.showToast({
+                    title: response?.msg || '保存失败',
+                    icon: 'none'
+                })
+            }
+        } catch (error) {
+            console.error('保存失败:', error)
+            uni.showToast({
+                title: '保存失败：' + (error.message || 'JSON 格式错误'),
+                icon: 'none'
+            })
+        } finally {
+            uni.hideLoading()
+        }
+        return
+    }
+
     // 简单验证
     if (currentTable.value === 'Users') {
         if (!editForm.value.username) {
@@ -1682,26 +2062,12 @@ async function loadStats() {
         const response = await getDatabaseStats()
         if (response && response.code === 0) {
             const stats = response.data
+            const countMap = new Map((stats.tables || []).map(table => [table.name, table.count || 0]))
+            if (stats.schemas && typeof stats.schemas === 'object') {
+                tableSchemas.value = stats.schemas
+            }
             tables.value.forEach(table => {
-                switch (table.name) {
-                    case 'Users':
-                        table.count = stats.usersCount || 0
-                        break
-                    case 'Bin':
-                        table.count = stats.binsCount || 0
-                        break
-                    case 'UserDevice':
-                        table.count = stats.userDevicesCount || 0
-                        break
-                    case 'History':
-                        table.count = stats.historyCount || 0
-                        break
-                    case 'Messages':
-                        table.count = stats.messagesCount || 0
-                        break
-                    case 'Chat':
-                        table.count = stats.chatsCount || 0
-                }
+                table.count = countMap.has(table.name) ? countMap.get(table.name) : (table.count || 0)
             })
             adminUser.value = true
         }
@@ -2054,33 +2420,71 @@ onUnmounted(() => {
     padding: 12rpx 0;
 }
 
-.tables-scroll {
-    width: 100%;
-    white-space: nowrap;
+.tables-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20rpx 8rpx;
 }
 
-.tables-row {
-    display: inline-flex;
-    gap: 8rpx;
-    padding: 0 20rpx;
-    min-width: 100%;
+.tables-header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 4rpx;
+}
+
+.tables-title {
+    color: #40e0ff;
+    font-size: 26rpx;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.tables-subtitle {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 20rpx;
+    line-height: 1.2;
+}
+
+.tables-toggle {
+    width: 56rpx;
+    height: 56rpx;
+    display: flex;
+    align-items: center;
     justify-content: center;
+    border-radius: 50%;
+    background: rgba(64, 224, 255, 0.1);
+    border: 1px solid rgba(64, 224, 255, 0.28);
+    color: #40e0ff;
+    flex-shrink: 0;
+}
+
+.tables-toggle:active {
+    transform: scale(0.95);
+}
+
+.tables-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10rpx;
+    padding: 0 20rpx;
 }
 
 .table-item {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4rpx;
-    padding: 8rpx 12rpx;
+    padding: 14rpx 10rpx 12rpx;
     background: rgba(64, 224, 255, 0.05);
     border-radius: 16rpx;
     border: 2px solid rgba(64, 224, 255, 0.2);
     cursor: pointer;
     transition: all 0.3s ease;
-    white-space: nowrap;
     flex-shrink: 0;
-    min-width: 120rpx;
+    min-width: calc(25% - 10rpx);
+    flex: 1 1 calc(25% - 10rpx);
+    position: relative;
 }
 
 .table-item:active {
@@ -2117,6 +2521,25 @@ onUnmounted(() => {
     font-size: 18rpx;
     font-weight: 600;
     line-height: 1;
+}
+
+@media (max-width: 520px) {
+    .table-item {
+        min-width: calc(25% - 10rpx);
+        flex-basis: calc(25% - 10rpx);
+    }
+
+    .tables-header {
+        padding: 0 16rpx 8rpx;
+    }
+
+    .tables-title {
+        font-size: 24rpx;
+    }
+
+    .tables-subtitle {
+        font-size: 18rpx;
+    }
 }
 
 /* 搜索栏 */
@@ -2606,6 +3029,11 @@ rich-text {
     color: rgba(255, 255, 255, 0.8);
     font-size: 26rpx;
     margin-bottom: 12rpx;
+}
+
+.required-mark {
+    color: #ef4444;
+    margin-left: 6rpx;
 }
 
 .checkbox-item .form-label {

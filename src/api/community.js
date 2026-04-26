@@ -29,11 +29,32 @@ export function joinCommunity(communityId) {
   });
 }
 
-export function getCommunityPosts(communityId, tag = null, sort = 'latest', page = 1, limit = 20) {
+export function getCommunityPosts(communityId, tag = null, sort = 'latest', page = 1, limit = 20, includeImages = false) {
+  const data = { communityId, sort, page, limit };
+  if (tag) data.tag = tag;
+  if (includeImages) data.includeImages = 'true';
   return request({
     url: '/api/community/posts',
     method: 'GET',
-    data: { communityId, tag, sort, page, limit },
+    data,
+    needAuth: true
+  });
+}
+
+export function getCommunityCover(communityId) {
+  return request({
+    url: '/api/community/cover',
+    method: 'GET',
+    data: { communityId },
+    needAuth: true
+  });
+}
+
+export function getCommunityPostImages(postId) {
+  return request({
+    url: '/api/community/post/images',
+    method: 'GET',
+    data: { postId },
     needAuth: true
   });
 }
@@ -56,6 +77,14 @@ export function togglePostLike(postId) {
   });
 }
 
+export function deleteCommunityPost(postId) {
+  return request({
+    url: `/api/community/post/${postId}`,
+    method: 'DELETE',
+    needAuth: true
+  });
+}
+
 export function addComment(postId, content, parentId = null) {
   return request({
     url: '/api/community/post/comment',
@@ -70,6 +99,14 @@ export function getComments(postId, page = 1, limit = 20) {
     url: '/api/community/post/comments',
     method: 'GET',
     data: { postId, page, limit },
+    needAuth: true
+  });
+}
+
+export function deleteCommunityComment(commentId) {
+  return request({
+    url: `/api/community/comment/${commentId}`,
+    method: 'DELETE',
     needAuth: true
   });
 }
