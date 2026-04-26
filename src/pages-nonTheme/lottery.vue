@@ -58,10 +58,11 @@
         </view>
 
         <!-- 转盘区域 -->
-        <view class="wheel-section">
+        <view class="wheel-section" v-if="!showPrizeModal">
           <view class="wheel-container" :class="{ spinning: isSpinning }">
             <view class="wheel-shell">
               <view class="wheel-halo"></view>
+              <!-- #ifdef H5 -->
               <canvas
                 canvas-id="lotteryWheel"
                 id="lotteryWheel"
@@ -70,6 +71,28 @@
                 :height="wheelCanvasSize"
                 @click="onWheelClick"
               ></canvas>
+              <!-- #endif -->
+              <!-- #ifndef H5 -->
+              <view class="wheel-rotor" :style="{ transform: `rotate(${spinAngle}deg)` }">
+                <image
+                  v-if="wheelImageSrc"
+                  class="wheel-image"
+                  :src="wheelImageSrc"
+                  mode="aspectFit"
+                  @click="onWheelClick"
+                />
+                <view v-else class="wheel-loading">
+                  <text class="wheel-loading-text">加載中</text>
+                </view>
+              </view>
+              <canvas
+                canvas-id="lotteryWheel"
+                id="lotteryWheel"
+                class="wheel-canvas-stage"
+                :width="wheelCanvasSize"
+                :height="wheelCanvasSize"
+              ></canvas>
+              <!-- #endif -->
               <view
                 v-for="n in 16"
                 :key="`bulb-${n}`"
@@ -245,6 +268,7 @@ export default {
       showRules: false,
       currentPrize: null,
       spinAngle: 0,
+      wheelImageSrc: '',
       wheelCanvasSize: 280,
       canDraw: false,
       isDark: false,
@@ -368,7 +392,7 @@ export default {
     requestDrawWheel() {
       this.$nextTick(() => {
         setTimeout(() => {
-          this.drawLotteryWheel(this.spinAngle);
+          this.drawLotteryWheel(0);
         }, 80);
       });
     },
@@ -492,7 +516,27 @@ export default {
         ctx.setLineWidth(2);
         ctx.stroke();
 
+        // #ifdef H5
         ctx.draw();
+        // #endif
+        // #ifndef H5
+        ctx.draw(false, () => {
+          try {
+            uni.canvasToTempFilePath({
+              canvasId: 'lotteryWheel',
+              success: (res) => {
+                this.wheelImageSrc = (res && res.tempFilePath) || '';
+              },
+              fail: () => {
+                this.wheelImageSrc = '';
+              }
+            }, this);
+          } catch (err) {
+            console.warn('[lottery] export wheel image failed:', err && err.message ? err.message : err);
+            this.wheelImageSrc = '';
+          }
+        });
+        // #endif
       }).exec();
     },
     drawWheelText(ctx, text, x, y) {
@@ -541,6 +585,7 @@ export default {
         this.totalFree = statusData.totalFree || 1;
         this.records = recordData.records || [];
         this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
+        this.wheelImageSrc = '';
       } catch (e) {
         console.error('加载失败:', e);
       } finally {
@@ -599,7 +644,9 @@ export default {
         const easeOut = 1 - Math.pow(1 - progress, 3);
         current = totalAngle * easeOut;
         this.spinAngle = current;
+        // #ifdef H5
         this.drawLotteryWheel(current);
+        // #endif
         if (progress < 1) {
           this.requestAnimationFrameCompat(animate);
         } else {
@@ -615,7 +662,12 @@ export default {
     continueDraw() {
       this.showPrizeModal = false;
       this.currentPrize = null;
-      if (this.canDraw) this.startDraw();
+      if (this.canDraw) {
+        this.$nextTick(() => {
+          this.requestDrawWheel();
+          this.startDraw();
+        });
+      }
     },
     closePrizeModal() {
       this.showPrizeModal = false;
@@ -878,6 +930,7 @@ export default {
   position: relative;
   width: 560rpx;
   height: 560rpx;
+  overflow: visible;
   border-radius: 50%;
   background: linear-gradient(145deg, #f59e0b 0%, #fbbf24 45%, #10b981 100%);
   box-shadow: 0 24rpx 70rpx rgba(16, 185, 129, 0.18), 0 12rpx 32rpx rgba(245, 158, 11, 0.18);
@@ -900,11 +953,52 @@ export default {
   background: radial-gradient(circle, rgba(16, 185, 129, 0.22) 0%, rgba(245, 158, 11, 0.12) 44%, transparent 72%);
   pointer-events: none;
 }
+.wheel-rotor {
+  position: relative;
+  z-index: 1;
+  width: 532rpx;
+  height: 532rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  will-change: transform;
+}
+.wheel-image {
+  width: 532rpx;
+  height: 532rpx;
+  border-radius: 50%;
+  display: block;
+}
+.wheel-loading {
+  width: 532rpx;
+  height: 532rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.88);
+  border: 2rpx dashed rgba(16, 185, 129, 0.28);
+}
+.wheel-loading-text {
+  color: #059669;
+  font-size: 24rpx;
+  font-weight: 700;
+}
 .wheel-canvas {
   position: relative;
   z-index: 1;
   width: 532rpx; height: 532rpx;
   border-radius: 50%;
+}
+.wheel-canvas-stage {
+  position: absolute;
+  left: -9999rpx;
+  top: -9999rpx;
+  width: 532rpx;
+  height: 532rpx;
+  opacity: 0;
+  pointer-events: none;
 }
 .wheel-bulb {
   position: absolute;

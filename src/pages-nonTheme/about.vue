@@ -81,11 +81,11 @@
         <view class="tech-info">
           <view class="tech-item">
             <text class="tech-label">AI模型：</text>
-            <text class="tech-value">YOLO11图像识别</text>
+            <text class="tech-value">YOLO11图像识别 + 图神经网络</text>
           </view>
           <view class="tech-item">
             <text class="tech-label">框架：</text>
-            <text class="tech-value">Node.js + Vue3 + uni-app + Python + MySQL + ultralytics</text>
+            <text class="tech-value">uni-app + Vue3 + Python + MySQL + ultralytics</text>
           </view>
           <view class="tech-item">
             <text class="tech-label">数据来源：</text>

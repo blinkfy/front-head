@@ -115,7 +115,14 @@
                   <MarkdownBody variant="reasoning" :markdown="msg.reasoning" />
                 </view>
               </view>
-              <MarkdownBody v-if="msg.role !== 'user'" :markdown="msg.content" />
+              <!-- #ifdef H5 -->
+              <MarkdownBody v-if="msg.role !== 'user'" :markdown="msg.content || 'AI 暂未返回内容。'" />
+              <!-- #endif -->
+              <!-- #ifndef H5 -->
+              <text v-if="msg.role !== 'user'" class="msg-body assistant-text">
+                {{ getDisplayMessageText(msg) }}
+              </text>
+              <!-- #endif -->
             </view>
           </view>
         </view>
@@ -364,6 +371,20 @@ function getMessageImageSrc(msg) {
   if (isRenderableImageSrc(msg._localImagePath)) return msg._localImagePath
   if (isRenderableImageSrc(msg.imageBase64)) return msg.imageBase64
   return ''
+}
+
+function getDisplayMessageText(msg) {
+  const raw = String(msg && msg.content ? msg.content : '').trim()
+  if (!raw) return 'AI 暂未返回内容。'
+  return raw
+    .replace(/#{1,6}\s*/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/`(.*?)`/g, '$1')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .replace(/^\s*[-*+]\s*/gm, '')
+    .replace(/^\s*\d+\.\s*/gm, '')
+    .trim() || 'AI 暂未返回内容。'
 }
 
 function handleMessageImageError(index) {
@@ -1968,6 +1989,7 @@ page {
   border: 1px solid var(--bubble-ai-border);
   color: var(--text-primary);
   border-bottom-left-radius: 6px;
+  min-height: 44px;
   white-space: normal;
 }
 
@@ -2027,6 +2049,11 @@ page {
 
 .shell .msg-body {
   display: block;
+}
+
+.shell .assistant-text {
+  min-height: 1.5em;
+  white-space: pre-wrap;
 }
 
 .shell .msg-image {
