@@ -20,11 +20,22 @@ export function getMyCommunity() {
   });
 }
 
-export function joinCommunity(communityId) {
+export function getCommunityTree() {
+  return request({
+    url: '/api/community/tree',
+    method: 'GET',
+    needAuth: true
+  });
+}
+
+export function joinCommunity(community) {
+  const data = community && typeof community === 'object'
+    ? community
+    : { communityId: community };
   return request({
     url: '/api/community/join',
     method: 'POST',
-    data: { communityId },
+    data,
     needAuth: true
   });
 }

@@ -90,12 +90,17 @@
         <view class="section">
           <view class="section-title">回收地址</view>
           <view class="input-card">
-            <input
-              v-model="address"
-              class="input-field"
-              placeholder="请输入详细地址"
-              placeholder-class="input-placeholder"
-            />
+            <view class="location-wrapper">
+              <input
+                v-model="address"
+                class="input-field location-field"
+                placeholder="请输入详细地址"
+                placeholder-class="input-placeholder"
+              />
+              <view class="location-action" @click="selectLocation">
+                <text>📍</text>
+              </view>
+            </view>
           </view>
         </view>
 
@@ -132,7 +137,7 @@
         <view class="estimate-card" v-if="estimateAmount > 0">
           <view class="estimate-info">
             <text class="estimate-label">预估收益</text>
-            <text class="estimate-amount">¥{{ estimateAmount.toFixed(2) }}</text>
+            <text class="estimate-amount">¥{{ estimateAmount.toFixed(2) }}/kg</text>
           </view>
           <text class="estimate-note">实际收益以回收员现场称重为准</text>
         </view>
@@ -149,12 +154,46 @@
 
       </view>
     </scroll-view>
+
+    <!-- H5 地图选点弹窗 -->
+    <view v-if="showMapPicker" class="map-picker-overlay" @click.self="closeMapPicker">
+      <view class="map-picker-modal">
+        <view class="map-picker-header">
+          <text class="map-picker-title">选择位置</text>
+          <text class="map-picker-close" @click="closeMapPicker">✕</text>
+        </view>
+        <view class="map-picker-search">
+          <input
+            v-model="mapSearchQuery"
+            type="text"
+            placeholder="搜索地址..."
+            class="map-search-input"
+            @confirm="searchAddress"
+          />
+          <text class="map-search-btn" @click="searchAddress">搜索</text>
+        </view>
+        <view class="map-picker-body">
+          <view id="map-container" class="map-container"></view>
+          <view class="map-center-marker">📍</view>
+        </view>
+        <view class="map-picker-footer">
+          <view class="map-selected-addr">
+            <text class="map-addr-label">已选：</text>
+            <text class="map-addr-text">{{ mapSelectedAddress || '请在地图上点击选择位置' }}</text>
+          </view>
+          <view class="map-picker-actions">
+            <view class="map-btn map-btn-cancel" @click="closeMapPicker">取消</view>
+            <view class="map-btn map-btn-confirm" @click="confirmMapLocation">确认</view>
+          </view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script>
 import { getWasteTypes, createBooking, getAvailableTimeSlots, estimatePrice } from '@/api/booking.js';
-import { getUserProfile } from '@/api/user.js';
+import { getUserProfile, updateUserProfile } from '@/api/user.js';
 
 export default {
   data() {
@@ -171,7 +210,15 @@ export default {
       submitting: false,
       todayStr: '',
       tomorrowStr: '',
-      isDark: false
+      isDark: false,
+      // H5 地图选点
+      showMapPicker: false,
+      mapSearchQuery: '',
+      mapSelectedAddress: '',
+      mapSelectedLat: null,
+      mapSelectedLng: null,
+      _mapInstance: null,
+      _mapMarker: null
     };
   },
   onLoad() {
@@ -180,6 +227,7 @@ export default {
     this.loadWasteTypes();
     this.loadTimeSlots();
     this.loadContactPhone();
+    this.loadAddress();
   },
   onShow() {
     this.checkTheme();
@@ -221,6 +269,25 @@ export default {
         }
       } catch (e) {
         console.warn('获取用户联系方式失败:', e);
+      }
+    },
+    async loadAddress() {
+      // 优先从缓存读取
+      const cached = String(uni.getStorageSync('bookingAddress') || '').trim();
+      if (cached) {
+        this.address = cached;
+        return;
+      }
+      try {
+        const res = await getUserProfile();
+        const data = this.extractData(res) || {};
+        const loc = String(data.location || '').trim();
+        if (loc) {
+          this.address = loc;
+          uni.setStorageSync('bookingAddress', loc);
+        }
+      } catch (e) {
+        console.warn('获取用户地址失败:', e);
       }
     },
     isValidPhone(phone) {
@@ -351,6 +418,8 @@ export default {
           notes: this.remark
         });
         uni.showToast({ title: '预约成功!', icon: 'success' });
+        // 若用户信息中未填 phone/location，提交后自动同步到用户资料
+        this.syncProfileAfterBooking();
         setTimeout(() => {
           this.goToOrders();
         }, 1500);
@@ -358,6 +427,224 @@ export default {
         uni.showToast({ title: e.message || '预约失败', icon: 'none' });
       } finally {
         this.submitting = false;
+      }
+    },
+    selectLocation() {
+      const systemInfo = uni.getSystemInfoSync()
+      const uniPlatform = systemInfo.uniPlatform
+
+      // H5环境：打开地图选点弹窗
+      if (uniPlatform === 'web') {
+        this.openMapPicker()
+        return
+      }
+
+      // 小程序/App端使用 uni 自带的地图选择
+      if (typeof uni.chooseLocation === 'function') {
+        uni.chooseLocation({
+          success: (res) => {
+            this.address = res.address || res.name || `${res.latitude},${res.longitude}`
+            uni.setStorageSync('bookingAddress', this.address)
+          },
+          fail: () => {
+            uni.showToast({ title: '定位失败，请手动输入', icon: 'none' })
+          }
+        })
+      } else {
+        uni.showToast({ title: '当前环境不支持地图选址，请手动输入', icon: 'none' })
+      }
+    },
+
+    // ===== H5 地图选点弹窗 =====
+    openMapPicker() {
+      this.showMapPicker = true
+      this.mapSearchQuery = ''
+      this.mapSelectedAddress = this.address || ''
+      this.mapSelectedLat = null
+      this.mapSelectedLng = null
+
+      setTimeout(() => {
+        this.initMap()
+      }, 300)
+    },
+
+    closeMapPicker() {
+      this.showMapPicker = false
+      if (this._mapInstance) {
+        this._mapInstance.remove()
+        this._mapInstance = null
+        this._mapMarker = null
+      }
+    },
+
+    initMap() {
+      const container = document.getElementById('map-container')
+      if (!container) return
+
+      if (this._mapInstance) {
+        this._mapInstance.remove()
+        this._mapInstance = null
+        this._mapMarker = null
+      }
+
+      if (!document.querySelector('link[href*="leaflet.css"]')) {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+        document.head.appendChild(link)
+      }
+
+      if (typeof window.L === 'undefined') {
+        const script = document.createElement('script')
+        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+        script.onload = () => {
+          this.createMap(container)
+        }
+        document.head.appendChild(script)
+      } else {
+        this.createMap(container)
+      }
+    },
+
+    createMap(container) {
+      const defaultCenter = [35.86, 104.19]
+      let initialCenter = defaultCenter
+      let initialZoom = 5
+
+      if (this.address) {
+        const coords = this.parseCoordsFromAddress(this.address)
+        if (coords) {
+          initialCenter = coords
+          initialZoom = 15
+        }
+      }
+
+      this._mapInstance = window.L.map(container, {
+        center: initialCenter,
+        zoom: initialZoom,
+        zoomControl: true
+      })
+
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>'
+      }).addTo(this._mapInstance)
+
+      this._mapInstance.on('click', (e) => {
+        const { lat, lng } = e.latlng
+        this.placeMarker(lat, lng)
+        this.reverseGeocode(lat, lng)
+      })
+
+      if (this.address && !this.parseCoordsFromAddress(this.address)) {
+        this.mapSearchQuery = this.address
+        setTimeout(() => this.searchAddress(), 500)
+      }
+    },
+
+    placeMarker(lat, lng) {
+      if (this._mapMarker) {
+        this._mapInstance.removeLayer(this._mapMarker)
+      }
+      this._mapMarker = window.L.marker([lat, lng], { draggable: true })
+        .addTo(this._mapInstance)
+        .bindPopup('所选位置')
+        .openPopup()
+
+      this.mapSelectedLat = lat
+      this.mapSelectedLng = lng
+
+      this._mapMarker.on('dragend', () => {
+        const pos = this._mapMarker.getLatLng()
+        this.mapSelectedLat = pos.lat
+        this.mapSelectedLng = pos.lng
+        this.reverseGeocode(pos.lat, pos.lng)
+      })
+    },
+
+    async reverseGeocode(lat, lng) {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=zh`,
+          { headers: { 'User-Agent': 'FenTouXia/1.0' } }
+        )
+        const data = await res.json()
+        this.mapSelectedAddress = data.display_name || `${lat},${lng}`
+      } catch {
+        this.mapSelectedAddress = `${lat},${lng}`
+      }
+    },
+
+    async searchAddress() {
+      const query = this.mapSearchQuery.trim()
+      if (!query || !this._mapInstance) return
+
+      uni.showLoading({ title: '搜索中...' })
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&accept-language=zh`,
+          { headers: { 'User-Agent': 'FenTouXia/1.0' } }
+        )
+        const results = await res.json()
+        uni.hideLoading()
+
+        if (results && results.length > 0) {
+          const r = results[0]
+          const lat = parseFloat(r.lat)
+          const lng = parseFloat(r.lon)
+          this._mapInstance.setView([lat, lng], 16)
+          this.placeMarker(lat, lng)
+          this.mapSelectedAddress = r.display_name
+        } else {
+          uni.showToast({ title: '未找到该地址', icon: 'none' })
+        }
+      } catch {
+        uni.hideLoading()
+        uni.showToast({ title: '搜索失败，请重试', icon: 'none' })
+      }
+    },
+
+    parseCoordsFromAddress(addr) {
+      if (!addr) return null
+      const match = addr.match(/([-+]?\d+\.?\d+)\s*,\s*([-+]?\d+\.?\d+)/)
+      if (match) {
+        return [parseFloat(match[1]), parseFloat(match[2])]
+      }
+      return null
+    },
+
+    confirmMapLocation() {
+      if (this.mapSelectedAddress) {
+        this.address = this.mapSelectedAddress
+      } else if (this.mapSelectedLat && this.mapSelectedLng) {
+        this.address = `${this.mapSelectedLat},${this.mapSelectedLng}`
+      }
+      this.closeMapPicker()
+      uni.setStorageSync('bookingAddress', this.address)
+      uni.showToast({ title: '地址已更新', icon: 'success' })
+    },
+
+    async syncProfileAfterBooking() {
+      try {
+        const res = await getUserProfile();
+        const data = this.extractData(res) || {};
+        const payload = {};
+        // 用户信息中 phone 为空 → 同步
+        if (!String(data.phone || '').trim() && this.contactPhone.trim()) {
+          payload.phone = this.contactPhone.trim();
+        }
+        // 用户信息中 location 为空 → 同步
+        if (!String(data.location || '').trim() && this.address.trim()) {
+          payload.location = this.address.trim();
+        }
+        if (Object.keys(payload).length > 0) {
+          await updateUserProfile(payload);
+          // 更新缓存
+          if (payload.phone) uni.setStorageSync('userPhone', payload.phone);
+          if (payload.location) uni.setStorageSync('bookingAddress', payload.location);
+        }
+      } catch (e) {
+        console.warn('同步资料到用户信息失败:', e);
       }
     }
   }
@@ -553,6 +840,36 @@ export default {
   font-size: 28rpx;
 }
 .dark-mode .input-field { color: #fff; }
+
+/* 地址定位按钮 */
+.location-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+.location-field {
+  flex: 1;
+}
+.location-action {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 50%;
+  background: #10b981;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 28rpx;
+  box-shadow: 0 4rpx 12rpx rgba(16, 185, 129, 0.3);
+  flex-shrink: 0;
+}
+.location-action:active {
+  transform: scale(0.95);
+}
+.dark-mode .location-action {
+  background: #5B8DEE;
+  box-shadow: 0 4rpx 12rpx rgba(91, 141, 238, 0.4);
+}
 .input-placeholder { color: #9ca3af; }
 .dark-mode .input-placeholder { color: rgba(255, 255, 255, 0.5); }
 .textarea-card { padding: 20rpx 24rpx; }
@@ -598,4 +915,111 @@ export default {
 .submit-btn:active:not(.disabled) { transform: scale(0.98); }
 .submit-btn.disabled { opacity: 0.6; }
 .submit-text { color: #fff; font-size: 32rpx; font-weight: 700; letter-spacing: 2rpx; }
+
+/* ===== H5 地图选点弹窗 ===== */
+.map-picker-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30rpx;
+}
+.map-picker-modal {
+  width: 100%;
+  max-width: 700rpx;
+  max-height: 85vh;
+  background: #fff;
+  border-radius: 24rpx;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.3);
+}
+.map-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 30rpx;
+  border-bottom: 1rpx solid #eee;
+}
+.map-picker-title { font-size: 32rpx; font-weight: 700; color: #1f2937; }
+.map-picker-close { font-size: 36rpx; color: #999; padding: 10rpx; }
+.map-picker-close:active { color: #333; }
+.map-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 30rpx;
+  border-bottom: 1rpx solid #eee;
+}
+.map-search-input {
+  flex: 1;
+  height: 64rpx;
+  padding: 0 20rpx;
+  border: 2rpx solid #ddd;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  color: #333;
+  background: #f9f9f9;
+}
+.map-search-input:focus { border-color: #10b981; background: #fff; }
+.map-search-btn {
+  padding: 12rpx 24rpx;
+  background: #10b981;
+  color: #fff;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.map-search-btn:active { opacity: 0.8; }
+.map-picker-body {
+  position: relative;
+  width: 100%;
+  height: 600rpx;
+  min-height: 400rpx;
+}
+.map-container { width: 100%; height: 100%; }
+.map-center-marker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -100%);
+  font-size: 48rpx;
+  z-index: 1000;
+  pointer-events: none;
+  text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.3);
+}
+.map-picker-footer {
+  padding: 20rpx 30rpx;
+  border-top: 1rpx solid #eee;
+  background: #fafafa;
+}
+.map-selected-addr {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
+  margin-bottom: 16rpx;
+}
+.map-addr-label { font-size: 24rpx; color: #666; white-space: nowrap; margin-top: 2rpx; }
+.map-addr-text { font-size: 24rpx; color: #333; line-height: 1.5; word-break: break-all; }
+.map-picker-actions { display: flex; gap: 16rpx; }
+.map-btn {
+  flex: 1;
+  padding: 16rpx 0;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  text-align: center;
+}
+.map-btn-cancel { background: #f0f0f0; color: #666; }
+.map-btn-cancel:active { background: #e0e0e0; }
+.map-btn-confirm { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
+.map-btn-confirm:active { opacity: 0.9; }
 </style>

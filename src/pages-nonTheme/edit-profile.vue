@@ -112,11 +112,66 @@
       </view>
 
       <!-- 操作按钮 -->
+      <view class="form-section">
+        <view class="form-group">
+          <view class="form-label">
+            <text class="label-text">所属社区</text>
+          </view>
+          <picker mode="selector" :range="provinceOptions" range-key="name" :value="provinceIndex" @change="onProvinceChange">
+            <view class="form-input picker-field">{{ selectedProvinceName || '请选择省份' }}</view>
+          </picker>
+          <picker mode="selector" :range="cityOptions" range-key="name" :value="cityIndex" @change="onCityChange">
+            <view class="form-input picker-field">{{ selectedCityName || '请选择城市' }}</view>
+          </picker>
+          <picker mode="selector" :range="districtOptions" range-key="name" :value="districtIndex" @change="onDistrictChange">
+            <view class="form-input picker-field">{{ selectedDistrictName || '请选择区县' }}</view>
+          </picker>
+          <picker mode="selector" :range="communityOptions" range-key="name" :value="communityIndex" @change="onCommunityChange">
+            <view class="form-input picker-field">{{ selectedCommunityName || '请选择社区' }}</view>
+          </picker>
+        </view>
+      </view>
+
       <view class="action-buttons">
         <view class="btn-cancel" @click="goBack">取消</view>
         <view class="btn-save" @click="saveProfile" :class="{ loading: isSaving }">
           <text v-if="!isSaving">保存修改</text>
           <text v-else>保存中...</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- H5 地图选点弹窗 -->
+    <view v-if="showMapPicker" class="map-picker-overlay" @click.self="closeMapPicker">
+      <view class="map-picker-modal">
+        <view class="map-picker-header">
+          <text class="map-picker-title">选择位置</text>
+          <text class="map-picker-close" @click="closeMapPicker">✕</text>
+        </view>
+        <view class="map-picker-search">
+          <input
+            v-model="mapSearchQuery"
+            type="text"
+            placeholder="搜索地址..."
+            class="map-search-input"
+            @confirm="searchAddress"
+          />
+          <text class="map-search-btn" @click="searchAddress">搜索</text>
+        </view>
+        <view class="map-picker-body">
+          <view id="map-container" class="map-container"></view>
+          <!-- 中心标记 -->
+          <view class="map-center-marker">📍</view>
+        </view>
+        <view class="map-picker-footer">
+          <view class="map-selected-addr">
+            <text class="map-addr-label">已选：</text>
+            <text class="map-addr-text">{{ mapSelectedAddress || '请在地图上点击选择位置' }}</text>
+          </view>
+          <view class="map-picker-actions">
+            <view class="map-btn map-btn-cancel" @click="closeMapPicker">取消</view>
+            <view class="map-btn map-btn-confirm" @click="confirmMapLocation">确认</view>
+          </view>
         </view>
       </view>
     </view>
@@ -126,6 +181,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import * as userApi from '@/api/user.js'
+import { getCommunityTree } from '@/api/community.js'
 import { compressImageToBase64, getAvatarUrl, validateAvatarSize } from '@/utils/avatar-handler.js'
 import { baseUrl } from '@/api/settings.js'
 
@@ -133,6 +189,29 @@ const isDarkTheme = ref(false)
 const userInfo = ref({})
 const isSaving = ref(false)
 const isLoading = ref(false)
+const communityTree = ref([])
+const provinceOptions = ref([])
+const cityOptions = ref([])
+const districtOptions = ref([])
+const communityOptions = ref([])
+const provinceIndex = ref(0)
+const cityIndex = ref(0)
+const districtIndex = ref(0)
+const communityIndex = ref(0)
+const selectedProvinceName = ref('')
+const selectedCityName = ref('')
+const selectedDistrictName = ref('')
+const selectedCommunityName = ref('')
+const communitySelectionActive = ref(false)
+
+// H5 地图选点
+const showMapPicker = ref(false)
+const mapSearchQuery = ref('')
+const mapSelectedAddress = ref('')
+const mapSelectedLat = ref(null)
+const mapSelectedLng = ref(null)
+let mapInstance = null
+let mapMarker = null
 
 const formData = reactive({
   username: '',
@@ -141,7 +220,133 @@ const formData = reactive({
   phone: '',
   email: '',
   location: '',
+  provinceCode: '',
+  cityCode: '',
+  districtCode: '',
+  communityCode: ''
 })
+
+function extractData(res) {
+  return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res
+}
+
+function syncSelectedCommunity() {
+  const province = provinceOptions.value[provinceIndex.value] || null
+  const city = cityOptions.value[cityIndex.value] || null
+  const district = districtOptions.value[districtIndex.value] || null
+  const community = communityOptions.value[communityIndex.value] || null
+  if (!communitySelectionActive.value) {
+    formData.provinceCode = ''
+    formData.cityCode = ''
+    formData.districtCode = ''
+    formData.communityCode = ''
+    selectedProvinceName.value = ''
+    selectedCityName.value = ''
+    selectedDistrictName.value = ''
+    selectedCommunityName.value = ''
+    return
+  }
+  formData.provinceCode = province ? province.code : ''
+  formData.cityCode = city ? city.code : ''
+  formData.districtCode = district ? district.code : ''
+  formData.communityCode = community ? community.code : ''
+  selectedProvinceName.value = province ? province.name : ''
+  selectedCityName.value = city ? city.name : ''
+  selectedDistrictName.value = district ? district.name : ''
+  selectedCommunityName.value = community ? community.name : ''
+}
+
+function rebuildCommunityPickers() {
+  const province = provinceOptions.value[provinceIndex.value] || null
+  cityOptions.value = province && Array.isArray(province.children) ? province.children : []
+  if (cityIndex.value >= cityOptions.value.length) cityIndex.value = 0
+  const city = cityOptions.value[cityIndex.value] || null
+  districtOptions.value = city && Array.isArray(city.children) ? city.children : []
+  if (districtIndex.value >= districtOptions.value.length) districtIndex.value = 0
+  const district = districtOptions.value[districtIndex.value] || null
+  communityOptions.value = district && Array.isArray(district.children) ? district.children : []
+  if (communityIndex.value >= communityOptions.value.length) communityIndex.value = 0
+  syncSelectedCommunity()
+}
+
+function onProvinceChange(e) {
+  communitySelectionActive.value = true
+  provinceIndex.value = Number(e.detail.value || 0)
+  cityIndex.value = 0
+  districtIndex.value = 0
+  communityIndex.value = 0
+  rebuildCommunityPickers()
+}
+
+function onCityChange(e) {
+  communitySelectionActive.value = true
+  cityIndex.value = Number(e.detail.value || 0)
+  districtIndex.value = 0
+  communityIndex.value = 0
+  rebuildCommunityPickers()
+}
+
+function onDistrictChange(e) {
+  communitySelectionActive.value = true
+  districtIndex.value = Number(e.detail.value || 0)
+  communityIndex.value = 0
+  rebuildCommunityPickers()
+}
+
+function onCommunityChange(e) {
+  communitySelectionActive.value = true
+  communityIndex.value = Number(e.detail.value || 0)
+  syncSelectedCommunity()
+}
+
+function applyCommunitySelectionByCode(communityCode) {
+  const target = String(communityCode || '').trim()
+  if (!target) {
+    communitySelectionActive.value = false
+    rebuildCommunityPickers()
+    return
+  }
+  for (let p = 0; p < provinceOptions.value.length; p += 1) {
+    const province = provinceOptions.value[p]
+    const cities = province.children || []
+    for (let c = 0; c < cities.length; c += 1) {
+      const city = cities[c]
+      const districts = city.children || []
+      for (let d = 0; d < districts.length; d += 1) {
+        const district = districts[d]
+        const communities = district.children || []
+        const m = communities.findIndex(item => String(item.code || '') === target)
+        if (m >= 0) {
+          communitySelectionActive.value = true
+          provinceIndex.value = p
+          cityIndex.value = c
+          districtIndex.value = d
+          communityIndex.value = m
+          rebuildCommunityPickers()
+          return
+        }
+      }
+    }
+  }
+  communitySelectionActive.value = false
+  rebuildCommunityPickers()
+}
+
+async function loadCommunityTree(currentCommunityCode = '') {
+  try {
+    const res = await getCommunityTree()
+    communityTree.value = extractData(res) || []
+    provinceOptions.value = communityTree.value
+    applyCommunitySelectionByCode(currentCommunityCode)
+  } catch (error) {
+    console.error('load community tree failed:', error)
+    provinceOptions.value = []
+    cityOptions.value = []
+    districtOptions.value = []
+    communityOptions.value = []
+    syncSelectedCommunity()
+  }
+}
 
 function checkTheme() {
   const theme = uni.getStorageSync('app_theme')
@@ -214,37 +419,208 @@ function uploadAvatar() {
 }
 
 function selectLocation() {
-  // 获取当前平台
-  const platform = uni.getSystemInfoSync().platform
-  
-  // H5/Web环境中地图功能需要配置，暂不支持
-  // 仅在小程序环境中启用地图定位
-  if (platform === 'android' || platform === 'ios') {
-    if (typeof uni.chooseLocation === 'function') {
-      uni.chooseLocation({
-        success: function(res) {
-          formData.location = res.address || res.name || `${res.latitude},${res.longitude}`
-        },
-        fail: function(err) {
-          uni.showToast({
-            title: '定位失败，请手动输入',
-            icon: 'none'
-          })
-        }
-      })
-    } else {
-      uni.showToast({
-        title: '当前环境不支持地图选址，请手动输入',
-        icon: 'none'
-      })
-    }
-  } else {
-    // H5环境：显示提示，让用户手动输入
-    uni.showToast({
-      title: 'H5环境暂不支持地图定位，请直接输入城市',
-      icon: 'none'
-    })
+  const systemInfo = uni.getSystemInfoSync()
+  const uniPlatform = systemInfo.uniPlatform
+
+  // H5环境：打开地图选点弹窗（Leaflet + OpenStreetMap，无需 key）
+  if (uniPlatform === 'web') {
+    openMapPicker()
+    return
   }
+
+  // 小程序/App端使用 uni 自带的地图选择
+  if (typeof uni.chooseLocation === 'function') {
+    uni.chooseLocation({
+      success: (res) => {
+        formData.location = res.address || res.name || `${res.latitude},${res.longitude}`
+      },
+      fail: () => {
+        uni.showToast({ title: '定位失败，请手动输入', icon: 'none' })
+      }
+    })
+  } else {
+    uni.showToast({ title: '当前环境不支持地图选址，请手动输入', icon: 'none' })
+  }
+}
+
+// ===== H5 地图选点弹窗 =====
+function openMapPicker() {
+  showMapPicker.value = true
+  mapSearchQuery.value = ''
+  mapSelectedAddress.value = formData.location || ''
+  mapSelectedLat.value = null
+  mapSelectedLng.value = null
+
+  // 等待 DOM 渲染完成后初始化地图
+  setTimeout(() => {
+    initMap()
+  }, 300)
+}
+
+function closeMapPicker() {
+  showMapPicker.value = false
+  // 销毁地图实例
+  if (mapInstance) {
+    mapInstance.remove()
+    mapInstance = null
+    mapMarker = null
+  }
+}
+
+function initMap() {
+  const containerId = 'map-container'
+  // 确保容器存在
+  const container = document.getElementById(containerId)
+  if (!container) return
+
+  // 如果已有实例先销毁
+  if (mapInstance) {
+    mapInstance.remove()
+    mapInstance = null
+    mapMarker = null
+  }
+
+  // 动态加载 Leaflet CSS
+  if (!document.querySelector('link[href*="leaflet.css"]')) {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    document.head.appendChild(link)
+  }
+
+  // 动态加载 Leaflet JS
+  if (typeof window.L === 'undefined') {
+    const script = document.createElement('script')
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    script.onload = () => {
+      createMap(container)
+    }
+    document.head.appendChild(script)
+  } else {
+    createMap(container)
+  }
+}
+
+function createMap(container) {
+  // 默认中心：中国
+  const defaultCenter = [35.86, 104.19]
+  let initialCenter = defaultCenter
+  let initialZoom = 5
+
+  // 如果已有地址坐标，定位到该位置
+  if (formData.location) {
+    const coords = parseCoordsFromAddress(formData.location)
+    if (coords) {
+      initialCenter = coords
+      initialZoom = 15
+    }
+  }
+
+  mapInstance = window.L.map(container, {
+    center: initialCenter,
+    zoom: initialZoom,
+    zoomControl: true
+  })
+
+  window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(mapInstance)
+
+  // 点击地图选点
+  mapInstance.on('click', (e) => {
+    const { lat, lng } = e.latlng
+    placeMarker(lat, lng)
+    reverseGeocode(lat, lng)
+  })
+
+  // 如果已有地址，尝试搜索并标记
+  if (formData.location && !parseCoordsFromAddress(formData.location)) {
+    mapSearchQuery.value = formData.location
+    setTimeout(() => searchAddress(), 500)
+  }
+}
+
+function placeMarker(lat, lng) {
+  if (mapMarker) {
+    mapInstance.removeLayer(mapMarker)
+  }
+  mapMarker = window.L.marker([lat, lng], { draggable: true })
+    .addTo(mapInstance)
+    .bindPopup('所选位置')
+    .openPopup()
+
+  mapSelectedLat.value = lat
+  mapSelectedLng.value = lng
+
+  // 拖拽结束更新
+  mapMarker.on('dragend', () => {
+    const pos = mapMarker.getLatLng()
+    mapSelectedLat.value = pos.lat
+    mapSelectedLng.value = pos.lng
+    reverseGeocode(pos.lat, pos.lng)
+  })
+}
+
+async function reverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=zh`,
+      { headers: { 'User-Agent': 'FenTouXia/1.0' } }
+    )
+    const data = await res.json()
+    mapSelectedAddress.value = data.display_name || `${lat},${lng}`
+  } catch {
+    mapSelectedAddress.value = `${lat},${lng}`
+  }
+}
+
+async function searchAddress() {
+  const query = mapSearchQuery.value.trim()
+  if (!query || !mapInstance) return
+
+  uni.showLoading({ title: '搜索中...' })
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&accept-language=zh`,
+      { headers: { 'User-Agent': 'FenTouXia/1.0' } }
+    )
+    const results = await res.json()
+    uni.hideLoading()
+
+    if (results && results.length > 0) {
+      const r = results[0]
+      const lat = parseFloat(r.lat)
+      const lng = parseFloat(r.lon)
+      mapInstance.setView([lat, lng], 16)
+      placeMarker(lat, lng)
+      mapSelectedAddress.value = r.display_name
+    } else {
+      uni.showToast({ title: '未找到该地址', icon: 'none' })
+    }
+  } catch {
+    uni.hideLoading()
+    uni.showToast({ title: '搜索失败，请重试', icon: 'none' })
+  }
+}
+
+function parseCoordsFromAddress(addr) {
+  if (!addr) return null
+  const match = addr.match(/([-+]?\d+\.?\d+)\s*,\s*([-+]?\d+\.?\d+)/)
+  if (match) {
+    return [parseFloat(match[1]), parseFloat(match[2])]
+  }
+  return null
+}
+
+function confirmMapLocation() {
+  if (mapSelectedAddress.value) {
+    formData.location = mapSelectedAddress.value
+  } else if (mapSelectedLat.value && mapSelectedLng.value) {
+    formData.location = `${mapSelectedLat.value},${mapSelectedLng.value}`
+  }
+  closeMapPicker()
+  uni.showToast({ title: '地址已更新', icon: 'success' })
 }
 
 async function saveProfile() {
@@ -269,14 +645,21 @@ async function saveProfile() {
 
   try {
     // 调用 API 保存用户资料
-    const response = await userApi.updateUserProfile({
+    const payload = {
       username: formData.username,
       avatar: formData.avatar || userInfo.value.avatar,
       bio: formData.bio,
       phone: formData.phone,
       email: formData.email,
       location: formData.location
-    })
+    }
+    if (provinceOptions.value.length && communitySelectionActive.value) {
+      payload.provinceCode = formData.provinceCode
+      payload.cityCode = formData.cityCode
+      payload.districtCode = formData.districtCode
+      payload.communityCode = formData.communityCode
+    }
+    const response = await userApi.updateUserProfile(payload)
 
     // 更新本地存储的 userInfo
     const updatedUserInfo = {
@@ -323,6 +706,7 @@ function loadUserInfo() {
       formData.phone = data.phone || ''
       formData.email = data.email || ''
       formData.location = data.location || ''
+      loadCommunityTree(data.communityCode || '')
     })
     .catch(error => {
         console.error('获取用户资料失败:', error)
@@ -586,6 +970,12 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
+.picker-field {
+  margin-bottom: 12rpx;
+  display: flex;
+  align-items: center;
+}
+
 .form-textarea {
   min-height: 60rpx;
   resize: vertical;
@@ -685,5 +1075,176 @@ onMounted(() => {
 
 .btn-save.loading {
   opacity: 0.8;
+}
+
+/* ===== H5 地图选点弹窗 ===== */
+.map-picker-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30rpx;
+}
+
+.map-picker-modal {
+  width: 100%;
+  max-width: 700rpx;
+  max-height: 85vh;
+  background: #fff;
+  border-radius: 24rpx;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.3);
+}
+
+.map-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 30rpx;
+  border-bottom: 1rpx solid #eee;
+}
+
+.map-picker-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.map-picker-close {
+  font-size: 36rpx;
+  color: #999;
+  padding: 10rpx;
+}
+
+.map-picker-close:active {
+  color: #333;
+}
+
+.map-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 30rpx;
+  border-bottom: 1rpx solid #eee;
+}
+
+.map-search-input {
+  flex: 1;
+  height: 64rpx;
+  padding: 0 20rpx;
+  border: 2rpx solid #ddd;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  color: #333;
+  background: #f9f9f9;
+}
+
+.map-search-input:focus {
+  border-color: #059669;
+  background: #fff;
+}
+
+.map-search-btn {
+  padding: 12rpx 24rpx;
+  background: #059669;
+  color: #fff;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.map-search-btn:active {
+  opacity: 0.8;
+}
+
+.map-picker-body {
+  position: relative;
+  width: 100%;
+  height: 600rpx;
+  min-height: 400rpx;
+}
+
+.map-container {
+  width: 100%;
+  height: 100%;
+}
+
+.map-center-marker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -100%);
+  font-size: 48rpx;
+  z-index: 1000;
+  pointer-events: none;
+  text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.3);
+}
+
+.map-picker-footer {
+  padding: 20rpx 30rpx;
+  border-top: 1rpx solid #eee;
+  background: #fafafa;
+}
+
+.map-selected-addr {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
+  margin-bottom: 16rpx;
+}
+
+.map-addr-label {
+  font-size: 24rpx;
+  color: #666;
+  white-space: nowrap;
+  margin-top: 2rpx;
+}
+
+.map-addr-text {
+  font-size: 24rpx;
+  color: #333;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.map-picker-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.map-btn {
+  flex: 1;
+  padding: 16rpx 0;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  text-align: center;
+}
+
+.map-btn-cancel {
+  background: #f0f0f0;
+  color: #666;
+}
+
+.map-btn-cancel:active {
+  background: #e0e0e0;
+}
+
+.map-btn-confirm {
+  background: linear-gradient(135deg, #059669, #047857);
+  color: #fff;
+}
+
+.map-btn-confirm:active {
+  opacity: 0.9;
 }
 </style>

@@ -9,6 +9,7 @@
         <div class="btns">
           <button class="btn" @click="goBack" type="button">返回</button>
           <button class="btn blue" @click="loadSettings" :disabled="loading" type="button">重新读取</button>
+          <button class="btn" @click="goToAiChat" type="button">AI 聊天</button>
         </div>
       </section>
 
@@ -282,6 +283,9 @@ function goBack() {
   } else {
     uni.reLaunch({ url: '/pages-dark/home/home' })
   }
+}
+function goToAiChat() {
+  uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 async function adminAuth(){
   const token = uni.getStorageSync('token')

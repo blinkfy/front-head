@@ -42,6 +42,11 @@
           <text class="password-tip">密码需包含字母、数字等至少两种字符</text>
         </view>
 
+        <view class="input-group">
+          <text class="input-label">确认新密码</text>
+          <input class="form-input" v-model="confirmPassword" type="password" placeholder="请再次输入新密码" />
+        </view>
+
         <button class="submit-btn" @click="onChangePassword">
           <text class="btn-text">确认修改</text>
           <view class="btn-glow"></view>
@@ -57,6 +62,7 @@ import { changePassword } from '@/api/user'
 const username = ref('')
 const password = ref('')
 const newPassword = ref('')
+const confirmPassword = ref('')
 
 // 页面加载时添加鼠标光感追踪
 onMounted(() => {
@@ -86,8 +92,12 @@ function goBack() {
 }
 
 function onChangePassword() {
-  if (!username.value || !password.value || !newPassword.value) {
+  if (!username.value || !password.value || !newPassword.value || !confirmPassword.value) {
     uni.showToast({ title: '请填写完整信息', icon: 'none' }, 1500)
+    return
+  }
+  if (newPassword.value !== confirmPassword.value) {
+    uni.showToast({ title: '两次输入的新密码不一致', icon: 'none' }, 1500)
     return
   }
   // 密码强度校验

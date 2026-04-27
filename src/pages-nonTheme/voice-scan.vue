@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <view class="voice-page" :class="{ 'dark-mode': isDark }">
     <!-- 动态背景 -->
     <view class="bg-effects">
@@ -275,7 +275,7 @@ export default {
     },
     startListening() {
       if (this.isH5) {
-        uni.showToast({ title: 'H5 环境请使用文字输入', icon: 'none' });
+        this.startH5Recording();
         return;
       }
       if (!recorderManager) {
@@ -292,7 +292,7 @@ export default {
         this.realtimeFailed = true;
       }
       this.isListening = true;
-      this.statusText = '准备录音...';
+      this.statusText = '閸戝棗顦ぐ鏇㈢叾...';
       recorderManager.start({
         duration: 60000,
         sampleRate: 16000,
@@ -304,12 +304,87 @@ export default {
     },
     stopListening() {
       if (!this.isListening) return;
+      if (this.isH5) {
+        this.stopH5Recording();
+        return;
+      }
       if (this.appSegmentMode) {
         this.appSegmentStopRequested = true;
-        this.statusText = '识别中...';
+        this.statusText = '鐠囧棗鍩嗘稉?..';
       }
       if (recorderManager) {
         recorderManager.stop();
+      }
+    },
+    async startH5Recording() {
+      if (this.isListening) return;
+      if (!navigator || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        uni.showToast({ title: '当前浏览器不支持录音', icon: 'none' });
+        return;
+      }
+
+      try {
+        this.statusText = '正在录音...';
+        this.isListening = true;
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        this.h5AudioStream = stream;
+        this.h5AudioChunks = [];
+        const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+        const mimeType = mimeCandidates.find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) || '';
+        this.h5RecordingMimeType = mimeType;
+        this.h5MediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+        this.h5MediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            this.h5AudioChunks.push(event.data);
+          }
+        };
+        this.h5MediaRecorder.onstop = async () => {
+          const chunks = this.h5AudioChunks.slice();
+          this.h5AudioChunks = [];
+          const stoppedStream = this.h5AudioStream;
+          this.h5AudioStream = null;
+          if (stoppedStream) {
+            stoppedStream.getTracks().forEach(track => track.stop());
+          }
+
+          const blob = chunks.length ? new Blob(chunks, { type: this.h5RecordingMimeType || 'audio/webm' }) : null;
+          this.isListening = false;
+          if (!blob || !blob.size) {
+            this.statusText = '未识别到语音内容';
+            return;
+          }
+
+          try {
+            this.statusText = '识别中...';
+            const filename = this.h5RecordingMimeType.includes('mp4') ? 'audio.mp4' : 'audio.webm';
+            const res = await transcribeAudioBlob(blob, filename);
+            const text = String((res && res.data && res.data.text) || '').trim();
+            if (text) {
+              await this.applyRecognizedText(text);
+            } else {
+              this.statusText = '未识别到语音内容';
+              uni.showToast({ title: '未识别到内容', icon: 'none' });
+            }
+          } catch (e) {
+            console.warn('[voice] h5 transcribe failed:', e);
+            this.statusText = '识别失败，请重试';
+            uni.showToast({ title: '识别失败', icon: 'none' });
+          }
+        };
+        this.h5MediaRecorder.start();
+      } catch (e) {
+        this.isListening = false;
+        this.statusText = '录音启动失败';
+        console.error('[voice] h5 recording start failed:', e);
+        uni.showToast({ title: '录音权限不可用', icon: 'none' });
+      }
+    },
+    stopH5Recording() {
+      if (!this.h5MediaRecorder) return;
+      try {
+        this.h5MediaRecorder.stop();
+      } catch (e) {
+        console.warn('[voice] h5 recorder stop failed:', e);
       }
     },
     startAppSegmentRecognition() {

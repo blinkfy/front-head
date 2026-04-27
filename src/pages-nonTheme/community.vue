@@ -174,7 +174,7 @@
           <text class="picker-close" @click="showCommunityPicker = false">×</text>
         </view>
         <scroll-view class="picker-list" scroll-y>
-          <view v-for="c in allCommunities" :key="c.id" class="picker-item" @click="joinCommunity(c.id)">
+          <view v-for="c in allCommunities" :key="c.communityCode || c.id" class="picker-item" @click="joinCommunity(c)">
             <view class="picker-info">
               <text class="picker-name">{{ c.name }}</text>
               <text class="picker-location">{{ c.district }} · {{ c.street }}</text>
@@ -193,7 +193,7 @@
 </template>
 
 <script>
-import { getCommunityList, getMyCommunity, getCommunityCover, joinCommunity, getCommunityPosts, getCommunityPostImages, getCommunityRanking, togglePostLike, deleteCommunityPost } from '@/api/community.js';
+import { getCommunityList, getCommunityTree, getMyCommunity, getCommunityCover, joinCommunity, getCommunityPosts, getCommunityPostImages, getCommunityRanking, togglePostLike, deleteCommunityPost } from '@/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
@@ -295,12 +295,59 @@ export default {
     },
     async loadAllCommunities() {
       try {
+        const treeRes = await getCommunityTree();
+        const tree = this.extractData(treeRes) || [];
+        const flattened = this.flattenCommunityTree(tree);
+        if (flattened.length) {
+          this.allCommunities = flattened;
+          return;
+        }
         const res = await getCommunityList();
-        this.allCommunities = this.extractData(res) || [];
+        this.allCommunities = (this.extractData(res) || []).map((item) => ({
+          ...item,
+          communityCode: item.communityCode || item.code || '',
+          pathLabel: `${item.district || ''}${item.street ? ` · ${item.street}` : ''}`
+        }));
       } catch (e) {
         console.error('获取社区列表失败:', e);
-        this.allCommunities = [];
+        try {
+          const res = await getCommunityList();
+          this.allCommunities = this.extractData(res) || [];
+        } catch (_) {
+          this.allCommunities = [];
+        }
       }
+    },
+    flattenCommunityTree(tree) {
+      const out = [];
+      const walk = (nodes, chain = {}) => {
+        (nodes || []).forEach((node) => {
+          const next = { ...chain };
+          if (node.level === 'province') next.province = node;
+          if (node.level === 'city') next.city = node;
+          if (node.level === 'district') next.district = node;
+          if (node.level === 'community') {
+            out.push({
+              id: node.id || 0,
+              name: node.name,
+              communityCode: node.code,
+              provinceCode: next.province && next.province.code,
+              cityCode: next.city && next.city.code,
+              districtCode: next.district && next.district.code,
+              district: next.district ? next.district.name : '',
+              street: '',
+              memberCount: Number(node.memberCount || 0),
+              pathLabel: [next.province && next.province.name, next.city && next.city.name, next.district && next.district.name]
+                .filter(Boolean)
+                .join(' · ')
+            });
+            return;
+          }
+          walk(node.children || [], next);
+        });
+      };
+      walk(tree || []);
+      return out;
     },
     async loadPosts() {
       if (!this.myCommunity) {
@@ -342,9 +389,12 @@ export default {
       }
       this.loadingMore = false;
     },
-    async joinCommunity(communityId) {
+    async joinCommunity(community) {
       try {
-        await joinCommunity(communityId);
+        await joinCommunity({
+          communityId: community.id || undefined,
+          communityCode: community.communityCode || community.code || undefined
+        });
         uni.showToast({ title: '加入成功!', icon: 'success' });
         this.showCommunityPicker = false;
         await this.loadMyCommunity();

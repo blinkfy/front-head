@@ -44,8 +44,8 @@
         </view>
         <view class="actions main-actions">
           <view class="btn ghost nav-link-btn" @tap="goCollection">🚛 清运大屏</view>
-          <view class="btn main" @tap="refreshDashboard">刷新数据</view>
-          <view class="btn ok" @tap="syncDaily">重算日汇总</view>
+          <view class="btn main" @tap="refreshDashboard">刷新表格</view>
+          <view class="btn ok" @tap="syncDaily">重算区间</view>
           <view class="btn ghost" @tap="goBack">返回</view>
         </view>
       </view>
@@ -1040,28 +1040,33 @@ function goBack() {
 }
 
 // ─── 数据刷新 ──────────────────────────────────────────
+async function loadDashboardData() {
+  const query = buildQuery()
+  const [overview, breakdown, trend] = await Promise.all([
+    api(`/api/admin/community/overview?${query}`),
+    api(`/api/admin/community/by-community?${query}`),
+    api(`/api/admin/community/trend?${query}`)
+  ])
+  _state.lastOverview  = overview
+  _state.lastBreakdown = breakdown
+  _state.lastTrend     = trend
+  renderKpi(overview)
+  renderCommunityRank(breakdown)
+  renderCategoryDonut(breakdown)
+  renderTrend(trend)
+  renderDistrictRadar(overview)
+  renderDistricts(overview)
+  renderCommunityList(breakdown)
+  renderAlerts(breakdown, trend)
+  return overview
+}
+
 async function refreshDashboard() {
   if (_state.loading) return
   _state.loading = true
   setStatus('数据加载中...', 'warn')
   try {
-    const query = buildQuery()
-    const [overview, breakdown, trend] = await Promise.all([
-      api(`/api/admin/community/overview?${query}`),
-      api(`/api/admin/community/by-community?${query}`),
-      api(`/api/admin/community/trend?${query}`)
-    ])
-    _state.lastOverview  = overview
-    _state.lastBreakdown = breakdown
-    _state.lastTrend     = trend
-    renderKpi(overview)
-    renderCommunityRank(breakdown)
-    renderCategoryDonut(breakdown)
-    renderTrend(trend)
-    renderDistrictRadar(overview)
-    renderDistricts(overview)
-    renderCommunityList(breakdown)
-    renderAlerts(breakdown, trend)
+    const overview = await loadDashboardData()
     const syncInfo = overview && overview.sync ? overview.sync : null
     const suffix = syncInfo && syncInfo.rebuilt ? '（已更新日汇总）' : ''
     setStatus(`更新完成${suffix}`, 'ok')
@@ -1076,16 +1081,17 @@ async function refreshDashboard() {
 async function syncDaily() {
   if (_state.loading) return
   _state.loading = true
-  setStatus('正在重算日汇总...', 'warn')
+  setStatus('正在重算当前区间...', 'warn')
   try {
     const query = buildQuery()
     await api(`/api/admin/community/sync?${query}`, { method: 'POST', body: JSON.stringify({}) })
-    setStatus('重算完成，刷新数据中...', 'ok')
-    _state.loading = false
-    await refreshDashboard()
+    setStatus('区间重算完成，正在刷新表格...', 'ok')
+    await loadDashboardData()
+    setStatus('更新完成', 'ok')
   } catch (error) {
     console.error('[community-dashboard] sync failed:', error)
     setStatus(`重算失败：${error && error.message ? error.message : '未知错误'}`, 'err')
+  } finally {
     _state.loading = false
   }
 }

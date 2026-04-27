@@ -65,17 +65,22 @@ export function userinfo(avatar="true") {
  */
 export function updateUserProfile(data) {
   const token = uni.getStorageSync('token')
+  const payload = {
+    username: data.username,
+    avatar: data.avatar,
+    bio: data.bio,
+    phone: data.phone,
+    email: data.email,
+    location: data.location
+  }
+  if (data.provinceCode !== undefined) payload.provinceCode = data.provinceCode
+  if (data.cityCode !== undefined) payload.cityCode = data.cityCode
+  if (data.districtCode !== undefined) payload.districtCode = data.districtCode
+  if (data.communityCode !== undefined) payload.communityCode = data.communityCode
   return request({
     url: '/api/profile',
     method: 'PUT',
-    data: {
-      username: data.username,
-      avatar: data.avatar,
-      bio: data.bio,
-      phone: data.phone,
-      email: data.email,
-      location: data.location
-    },
+    data: payload,
     header: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
