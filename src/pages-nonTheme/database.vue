@@ -969,6 +969,7 @@ const tableCatalog = [
     { name: 'BookingOrder', label: '预约订单表', icon: '📅' },
     { name: 'WasteType', label: '垃圾分类表', icon: '♻️' },
     { name: 'Community', label: '社区表', icon: '🏘️' },
+    { name: 'RegionNode', label: '地区节点表', icon: '🧭' },
     { name: 'UserCommunity', label: '用户社区表', icon: '🤝' },
     { name: 'Post', label: '帖子表', icon: '📝' },
     { name: 'Comment', label: '评论表', icon: '💬' },

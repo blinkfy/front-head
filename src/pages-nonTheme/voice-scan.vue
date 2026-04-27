@@ -460,9 +460,12 @@ export default {
         const res = await transcribeAudioSegments(windowFiles);
         const text = String((res && res.data && res.data.text) || '').trim();
         if (text) {
-          const mergedText = this.mergeAppSegmentWindowText(text, windowStartIndex, isFinal);
-          this.realtimeText = mergedText;
-          this.textInput = mergedText;
+          this.appSegmentBaseText = text;
+          this.appSegmentWindowText = text;
+          this.appSegmentWindowStartIndex = windowStartIndex;
+          this.appSegmentCumulativeText = text;
+          this.realtimeText = text;
+          this.textInput = text;
           this.statusText = isFinal ? '识别完成' : '实时识别中...';
         }
       } catch (e) {
