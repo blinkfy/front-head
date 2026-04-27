@@ -475,6 +475,51 @@ function buildAuthHeaders(withJson) {
   if (token) headers.Authorization = token
   return headers
 }
+function requestJson(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    uni.request({
+      url,
+      method: options.method || 'GET',
+      header: options.header || {},
+      data: options.data,
+      success: (res) => resolve(res.data),
+      fail: reject
+    })
+  })
+}
+async function isCurrentUserAdmin() {
+  const token = getStorage('token') || ''
+  if (!token) return false
+  try {
+    const payload = await requestJson(`${baseUrl}/api/userinfo?avater=false`, {
+      header: buildAuthHeaders(false)
+    })
+    const isAdmin = !!(payload && payload.code === 0 && payload.data && payload.data.isAdmin)
+    if (isAdmin) setStorage('isAdmin', true)
+    else {
+      try { uni.removeStorageSync('isAdmin') } catch (_) {}
+      // #ifdef H5
+      try { localStorage.removeItem('isAdmin') } catch (_) {}
+      // #endif
+    }
+    return isAdmin
+  } catch (_) {
+    return false
+  }
+}
+async function guardAiChatAccess() {
+  try {
+    const payload = await requestJson(`${baseUrl}/api/ai/settings`)
+    const settings = payload && payload.code === 0 ? payload.data : null
+    if (!settings || settings.aiEnabled !== false) return true
+    if (await isCurrentUserAdmin()) return true
+    goBack()
+    return false
+  } catch (err) {
+    console.warn('[ai-chat] check AI settings failed:', err)
+    return true
+  }
+}
 
 // ─── 会话管理 ─────────────────────────────────────────────
 function createConversation(sessionId) {
@@ -1288,6 +1333,8 @@ let onDrawerMediaChange = null
 onMounted(async () => {
   initSystemInfo()
   isDark.value = getStorage('app_theme') === 'dark'
+  const canUseAiChat = await guardAiChatAccess()
+  if (!canUseAiChat) return
 
   // #ifdef H5
   onStorageHandler = (event) => {

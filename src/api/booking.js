@@ -30,10 +30,14 @@ export function createBooking(data) {
 }
 
 export function getBookingList(status = null, page = 1, limit = 20) {
+  const data = { page, limit }
+  if (status !== null && status !== undefined && String(status).trim() !== '' && String(status) !== 'all') {
+    data.status = status
+  }
   return request({
     url: '/api/booking/list',
     method: 'GET',
-    data: { status, page, limit },
+    data,
     needAuth: true
   });
 }

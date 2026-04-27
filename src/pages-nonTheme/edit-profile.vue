@@ -418,6 +418,54 @@ function uploadAvatar() {
   })
 }
 
+function formatLocationResult(res) {
+  const address = res && res.address
+  if (typeof address === 'string' && address.trim()) return address.trim()
+  if (address && typeof address === 'object') {
+    const detail = [
+      address.province,
+      address.city,
+      address.district,
+      address.street,
+      address.streetNum,
+      address.poiName
+    ].filter(Boolean).join('')
+    if (detail) return detail
+  }
+  const name = String((res && (res.name || res.addressName)) || '').trim()
+  if (name) return name
+  if (res && res.latitude && res.longitude) return `${res.latitude},${res.longitude}`
+  return ''
+}
+
+function fillCurrentLocation() {
+  if (typeof uni.getLocation !== 'function') {
+    uni.showToast({ title: '当前环境不支持定位，请手动输入', icon: 'none' })
+    return
+  }
+  uni.showLoading({ title: '定位中...' })
+  uni.getLocation({
+    type: 'gcj02',
+    geocode: true,
+    success: (res) => {
+      const locationText = formatLocationResult(res)
+      if (locationText) {
+        formData.location = locationText
+        uni.showToast({ title: '地址已更新', icon: 'success' })
+      } else {
+        uni.showToast({ title: '定位成功，请补充详细地址', icon: 'none' })
+      }
+    },
+    fail: (err) => {
+      console.warn('获取当前位置失败:', err)
+      uni.showToast({ title: '定位失败，请手动输入', icon: 'none' })
+    },
+    complete: () => {
+      uni.hideLoading()
+    }
+  })
+}
+
 function selectLocation() {
   const systemInfo = uni.getSystemInfoSync()
   const uniPlatform = systemInfo.uniPlatform
@@ -428,7 +476,12 @@ function selectLocation() {
     return
   }
 
-  // 小程序/App端使用 uni 自带的地图选择
+  if (uniPlatform === 'app' || uniPlatform === 'app-plus') {
+    fillCurrentLocation()
+    return
+  }
+
+  // 小程序端使用 uni 自带的地图选择
   if (typeof uni.chooseLocation === 'function') {
     uni.chooseLocation({
       success: (res) => {
