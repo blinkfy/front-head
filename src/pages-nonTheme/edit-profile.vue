@@ -92,16 +92,16 @@
           />
         </view>
 
-        <!-- 所在地区 -->
+        <!-- 收货地址 -->
         <view class="form-group">
           <view class="form-label">
-            <text class="label-text">所在地区</text>
+            <text class="label-text">收货地址</text>
           </view>
           <view class="location-wrapper">
             <input
               v-model="formData.location"
               type="text"
-              placeholder="点击定位或直接输入城市"
+              placeholder="点击定位或直接输入地址"
               class="form-input location-field"
             />
             <view class="location-action" @click="selectLocation">

@@ -123,7 +123,7 @@
 </template>
 
 <script>
-import { transcribeAudio, recognizeByText } from '@/api/voice.js';
+import { transcribeAudio, transcribeAudioBlob, transcribeAudioSegments, recognizeByText } from '@/api/voice.js';
 import { baseUrl } from '@/api/settings.js';
 
 let recorderManager = null;
@@ -138,13 +138,33 @@ export default {
       statusText: '点击按钮开始识别',
       isDark: false,
       isH5: false,
+      isApp: false,
+      realtimeFrameSupported: false,
+      h5MediaRecorder: null,
+      h5AudioStream: null,
+      h5AudioChunks: [],
+      h5RecordingMimeType: '',
       realtimeSocket: null,
       realtimeReady: false,
       realtimeFailed: false,
       realtimeText: '',
+      realtimeCommittedText: '',
+      realtimeLiveText: '',
       realtimeFrameQueue: [],
       realtimeSocketState: 'closed',
-      realtimeFinishSent: false
+      realtimeFinishSent: false,
+      appSegmentMode: false,
+      appSegmentStopRequested: false,
+      appSegmentFiles: [],
+      appSegmentTranscribing: false,
+      appSegmentPendingTranscribe: false,
+      appSegmentFinalizing: false,
+      appSegmentDuration: 1500,
+      appSegmentMaxWindow: 8,
+      appSegmentBaseText: '',
+      appSegmentCumulativeText: '',
+      appSegmentWindowText: '',
+      appSegmentWindowStartIndex: 0
     };
   },
   onLoad() {
@@ -168,8 +188,10 @@ export default {
       try {
         const appBaseInfo = uni.getAppBaseInfo ? uni.getAppBaseInfo() : uni.getSystemInfoSync();
         this.isH5 = appBaseInfo.uniPlatform === 'web';
+        this.isApp = appBaseInfo.uniPlatform === 'app';
       } catch (e) {
         this.isH5 = false;
+        this.isApp = false;
       }
 
       if (this.isH5) {
@@ -178,10 +200,11 @@ export default {
       }
 
       recorderManager = uni.getRecorderManager();
+      this.realtimeFrameSupported = !this.isApp && typeof recorderManager.onFrameRecorded === 'function';
       recorderManager.onStart(() => {
         this.statusText = '正在聆听...';
       });
-      if (recorderManager.onFrameRecorded) {
+      if (this.realtimeFrameSupported) {
         recorderManager.onFrameRecorded((res) => {
           if (res && res.frameBuffer) {
             this.sendRealtimeAudioFrame(res.frameBuffer);
@@ -189,6 +212,10 @@ export default {
         });
       }
       recorderManager.onStop((res) => {
+        if (this.appSegmentMode) {
+          this.handleAppSegmentStop(res);
+          return;
+        }
         this.isListening = false;
         if (res.tempFilePath) {
           this.statusText = '识别中...';
@@ -254,7 +281,16 @@ export default {
       if (!recorderManager) {
         this.initRecorder();
       }
-      this.startRealtimeAsr();
+      if (this.isApp && !this.realtimeFrameSupported) {
+        this.startAppSegmentRecognition();
+        return;
+      }
+      if (this.realtimeFrameSupported) {
+        this.startRealtimeAsr();
+      } else {
+        this.stopRealtimeAsr();
+        this.realtimeFailed = true;
+      }
       this.isListening = true;
       this.statusText = '准备录音...';
       recorderManager.start({
@@ -268,9 +304,253 @@ export default {
     },
     stopListening() {
       if (!this.isListening) return;
+      if (this.appSegmentMode) {
+        this.appSegmentStopRequested = true;
+        this.statusText = '识别中...';
+      }
       if (recorderManager) {
         recorderManager.stop();
       }
+    },
+    startAppSegmentRecognition() {
+      this.stopRealtimeAsr();
+      this.appSegmentMode = true;
+      this.appSegmentStopRequested = false;
+      this.appSegmentFiles = [];
+      this.appSegmentTranscribing = false;
+      this.appSegmentPendingTranscribe = false;
+      this.appSegmentFinalizing = false;
+      this.appSegmentBaseText = '';
+      this.appSegmentCumulativeText = '';
+      this.appSegmentWindowText = '';
+      this.appSegmentWindowStartIndex = 0;
+      this.realtimeFailed = true;
+      this.realtimeText = '';
+      this.textInput = '';
+      this.isListening = true;
+      this.statusText = '正在聆听...';
+      this.startAppSegmentRecorder();
+    },
+    startAppSegmentRecorder() {
+      if (!recorderManager || !this.appSegmentMode || this.appSegmentStopRequested) return;
+      try {
+        recorderManager.start({
+          duration: this.appSegmentDuration,
+          sampleRate: 16000,
+          numberOfChannels: 1,
+          encodeBitRate: 48000,
+          format: 'mp3'
+        });
+      } catch (e) {
+        this.appSegmentMode = false;
+        this.isListening = false;
+        this.statusText = '录音出错，请重试';
+        console.error('[voice] app segment recorder start failed:', e);
+      }
+    },
+    handleAppSegmentStop(res) {
+      const filePath = res && res.tempFilePath;
+      if (filePath) {
+        this.appSegmentFiles.push(filePath);
+        this.transcribeAppSegmentWindow(this.appSegmentStopRequested);
+      }
+
+      if (!this.appSegmentStopRequested) {
+        setTimeout(() => this.startAppSegmentRecorder(), 80);
+        return;
+      }
+
+      this.isListening = false;
+      if (!filePath && !this.textInput.trim()) {
+        this.appSegmentMode = false;
+        this.statusText = '录音失败，请重试';
+        uni.showToast({ title: '录音失败', icon: 'none' });
+      }
+    },
+    async transcribeAppSegmentWindow(isFinal = false) {
+      if (!this.appSegmentFiles.length) return;
+      if (this.appSegmentTranscribing) {
+        this.appSegmentPendingTranscribe = true;
+        this.appSegmentFinalizing = this.appSegmentFinalizing || isFinal;
+        return;
+      }
+
+      this.appSegmentTranscribing = true;
+      this.appSegmentPendingTranscribe = false;
+      this.appSegmentFinalizing = isFinal;
+      const windowFiles = this.appSegmentFiles.slice(-this.appSegmentMaxWindow);
+      const windowStartIndex = Math.max(0, this.appSegmentFiles.length - windowFiles.length);
+
+      try {
+        const res = await transcribeAudioSegments(windowFiles);
+        const text = String((res && res.data && res.data.text) || '').trim();
+        if (text) {
+          const mergedText = this.mergeAppSegmentWindowText(text, windowStartIndex, isFinal);
+          this.realtimeText = mergedText;
+          this.textInput = mergedText;
+          this.statusText = isFinal ? '识别完成' : '实时识别中...';
+        }
+      } catch (e) {
+        console.warn('[voice] app segment transcribe failed:', e);
+      } finally {
+        this.appSegmentTranscribing = false;
+        const shouldRunPending = this.appSegmentPendingTranscribe;
+        const shouldFinalize = this.appSegmentFinalizing || (isFinal && this.appSegmentStopRequested);
+        this.appSegmentPendingTranscribe = false;
+        this.appSegmentFinalizing = false;
+
+        if (shouldRunPending) {
+          this.transcribeAppSegmentWindow(shouldFinalize);
+          return;
+        }
+
+        if (shouldFinalize && this.appSegmentStopRequested) {
+          this.appSegmentMode = false;
+          const recognizedText = String(this.textInput || '').trim();
+          if (recognizedText) {
+            await this.applyRecognizedText(recognizedText);
+          } else {
+            this.statusText = '未识别到语音内容，请重试';
+            uni.showToast({ title: '未识别到内容', icon: 'none' });
+          }
+        }
+      }
+    },
+    mergeAppSegmentWindowText(windowText, windowStartIndex, isFinal = false) {
+      const currentWindowText = String(windowText || '').trim();
+      if (!currentWindowText) {
+        return String(this.appSegmentCumulativeText || this.textInput || '').trim();
+      }
+
+      const previousWindowText = String(this.appSegmentWindowText || '').trim();
+      const previousStartIndex = Number(this.appSegmentWindowStartIndex || 0);
+      const previousFullText = String(this.appSegmentCumulativeText || this.textInput || '').trim();
+      let nextWindowText = currentWindowText;
+
+      if (previousWindowText) {
+        if (windowStartIndex === previousStartIndex) {
+          nextWindowText = this.mergeSameAppSegmentWindowText(previousWindowText, currentWindowText);
+        }
+      }
+
+      this.appSegmentWindowStartIndex = windowStartIndex;
+      this.appSegmentWindowText = nextWindowText;
+      const mergedText = this.mergeAppSegmentCumulativeText(previousFullText, nextWindowText);
+      this.appSegmentCumulativeText = mergedText;
+
+      if (isFinal) {
+        this.appSegmentBaseText = mergedText;
+        this.appSegmentWindowText = '';
+      }
+      return mergedText;
+    },
+    mergeAppSegmentCumulativeText(previousText, windowText) {
+      const prev = String(previousText || '').trim();
+      const curr = String(windowText || '').trim();
+      if (!prev) return curr;
+      if (!curr) return prev;
+      if (curr === prev || curr.includes(prev)) return curr;
+      if (prev.includes(curr)) return prev;
+
+      const maxExactOverlap = Math.min(prev.length, curr.length, 40);
+      for (let len = maxExactOverlap; len >= 3; len--) {
+        if (prev.slice(prev.length - len) === curr.slice(0, len)) {
+          return this.joinAppSegmentText(prev, curr.slice(len));
+        }
+      }
+
+      const maxReplaceTail = Math.min(prev.length, 24);
+      const prevTail = prev.slice(prev.length - maxReplaceTail);
+      const maxPieceLength = Math.min(prevTail.length, curr.length, 24);
+      for (let len = maxPieceLength; len >= 5; len--) {
+        for (let offset = 0; offset <= Math.min(8, curr.length - len); offset++) {
+          const piece = curr.slice(offset, offset + len);
+          const indexInTail = prevTail.lastIndexOf(piece);
+          if (indexInTail < 0) continue;
+
+          const indexInPrev = prev.length - maxReplaceTail + indexInTail;
+          const candidate = this.joinAppSegmentText(prev.slice(0, indexInPrev), curr.slice(offset));
+          if (candidate.length >= prev.length) {
+            return candidate;
+          }
+        }
+      }
+
+      return this.joinAppSegmentText(prev, curr);
+    },
+    mergeSameAppSegmentWindowText(previousText, currentText) {
+      const prev = String(previousText || '').trim();
+      const curr = String(currentText || '').trim();
+      if (!prev) return curr;
+      if (!curr) return prev;
+      if (curr === prev || curr.includes(prev)) return curr;
+      if (prev.includes(curr)) return prev;
+
+      const overlapped = this.joinAppSegmentText(prev, curr);
+      if (overlapped !== prev + curr) return overlapped;
+
+      return this.joinAppSegmentText(prev, curr);
+    },
+    getLeavingAppSegmentPrefix(previousText, currentText, shiftCount = 1) {
+      const prev = String(previousText || '').trim();
+      const curr = String(currentText || '').trim();
+      if (!prev || !curr) return prev;
+
+      const maxOverlap = Math.min(prev.length, curr.length);
+      for (let len = maxOverlap; len >= 3; len--) {
+        if (prev.slice(prev.length - len) === curr.slice(0, len)) {
+          return prev.slice(0, prev.length - len).trim();
+        }
+      }
+
+      const maxCurrentOffset = Math.min(10, Math.max(0, curr.length - 1));
+      let best = null;
+      for (let offset = 0; offset <= maxCurrentOffset; offset++) {
+        for (let len = Math.min(prev.length, curr.length - offset); len >= 4; len--) {
+          const piece = curr.slice(offset, offset + len);
+          const index = prev.indexOf(piece);
+          if (index > 0 && (!best || len > best.len)) {
+            best = { index, len };
+          }
+        }
+      }
+      if (best) {
+        return prev.slice(0, best.index).trim();
+      }
+
+      const ratio = Math.max(1, shiftCount) / Math.max(1, this.appSegmentMaxWindow);
+      const estimatedLength = Math.max(0, Math.min(prev.length, Math.floor(prev.length * ratio)));
+      return prev.slice(0, estimatedLength).trim();
+    },
+    joinTranscriptText(left, right) {
+      const a = String(left || '').trim();
+      const b = String(right || '').trim();
+      if (!a) return b;
+      if (!b) return a;
+      const maxOverlap = Math.min(a.length, b.length, 24);
+      for (let len = maxOverlap; len >= 2; len--) {
+        if (a.slice(a.length - len) === b.slice(0, len)) {
+          return a + b.slice(len);
+        }
+      }
+      return a + b;
+    },
+    joinAppSegmentText(left, right) {
+      const a = String(left || '').trim();
+      const b = String(right || '').trim();
+      if (!a) return b;
+      if (!b) return a;
+
+      const maxOverlap = Math.min(a.length, b.length, 24);
+      for (let len = maxOverlap; len >= 2; len--) {
+        if (a.slice(a.length - len) === b.slice(0, len)) {
+          return a + b.slice(len);
+        }
+      }
+
+      const normalizedLeft = a.replace(/[。！？!?；;，,、：:]$/, '');
+      const normalizedRight = b.replace(/^[。！？!?；;，,、：:]+/, '');
+      return normalizedLeft + normalizedRight;
     },
     getRealtimeWsUrl() {
       const token = uni.getStorageSync('token') || '';
@@ -282,6 +562,8 @@ export default {
       this.realtimeReady = false;
       this.realtimeFailed = false;
       this.realtimeText = '';
+      this.realtimeCommittedText = '';
+      this.realtimeLiveText = '';
       this.realtimeFrameQueue = [];
       this.realtimeFinishSent = false;
       this.realtimeSocketState = 'connecting';
@@ -312,15 +594,20 @@ export default {
             this.realtimeReady = true;
             this.flushRealtimeFrames();
           } else if (payload.type === 'partial' || payload.type === 'final') {
-            const text = payload.fullText || payload.text || '';
+            const text = this.mergeRealtimeTranscript(payload);
             if (text) {
               this.realtimeText = text;
               this.textInput = text;
               this.statusText = payload.type === 'final' ? '识别完成' : '实时识别中...';
             }
           } else if (payload.type === 'done' && payload.text) {
-            this.realtimeText = payload.text;
-            this.textInput = payload.text;
+            const text = this.mergeRealtimeTranscript({
+              type: 'done',
+              text: payload.text,
+              fullText: payload.text
+            });
+            this.realtimeText = text;
+            this.textInput = text;
           } else if (payload.type === 'error') {
             this.realtimeFailed = true;
             console.warn('[voice] realtime asr error:', payload);
@@ -444,6 +731,34 @@ export default {
         this.doTranscribe(filePath);
       }, this.realtimeFailed ? 100 : 1200);
     },
+    mergeRealtimeTranscript(payload) {
+      const rawText = String((payload && payload.text) || '').trim();
+      const fullText = String((payload && payload.fullText) || '').trim();
+      const type = String((payload && payload.type) || '');
+      const sentenceEnd = !!(payload && (payload.sentenceEnd || type === 'final' || type === 'done'));
+
+      if (type === 'done') {
+        const finalText = fullText || rawText || this.realtimeCommittedText || this.realtimeLiveText;
+        this.realtimeCommittedText = finalText;
+        this.realtimeLiveText = '';
+        return finalText;
+      }
+
+      if (sentenceEnd) {
+        const finalText = fullText || [this.realtimeCommittedText, rawText || this.realtimeLiveText].filter(Boolean).join('').trim();
+        this.realtimeCommittedText = finalText;
+        this.realtimeLiveText = '';
+        return finalText;
+      }
+
+      const liveText = rawText || fullText;
+      this.realtimeLiveText = liveText;
+      if (fullText && this.realtimeCommittedText && fullText.startsWith(this.realtimeCommittedText)) {
+        this.realtimeLiveText = fullText.slice(this.realtimeCommittedText.length);
+        return fullText;
+      }
+      return [this.realtimeCommittedText, this.realtimeLiveText].filter(Boolean).join('').trim();
+    },
     async applyRecognizedText(recognizedText) {
       const normalizedText = String(recognizedText || '').trim();
       if (!normalizedText) return;
@@ -476,7 +791,7 @@ export default {
         this.currentResult = fallback;
       }
       this.addToHistory(text, this.currentResult);
-      this.statusText = 'ç’‡å——åŸ†ç€¹å±¾åžš';
+      this.statusText = '识别完成';
     },
     async doTranscribe(filePath) {
       try {

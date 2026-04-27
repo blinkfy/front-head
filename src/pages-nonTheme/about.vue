@@ -136,7 +136,7 @@ function goBack() {
   }
 }
 
-const currentVersion = manifest?.versionName || '1.3.8'
+const currentVersion = manifest?.versionName || '1.3.9'
 
 const checking = ref(false)
 const updateMessage = ref('')
