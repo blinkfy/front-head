@@ -152,7 +152,8 @@ const detectorModeOptions = [
 ]
 const recommendOptions = [
   { label: 'qwen（千问）', value: 'qwen' },
-  { label: 'deep（深度学习）', value: 'deep' }
+  { label: 'deep（深度学习）', value: 'deep' },
+  { label: 'deepseek', value: 'deepseek' }
 ]
 
 const detectorModeIndex = computed(() => {
@@ -183,7 +184,8 @@ function setStatus(text, type) {
 
 function normalizeRecommendAlgorithm(input) {
   const value = String(input || '').trim().toLowerCase()
-  return value === 'deep' ? 'deep' : 'qwen'
+  if (value === 'deep' || value === 'deepseek') return value
+  return 'qwen'
 }
 
 function applyData(data) {

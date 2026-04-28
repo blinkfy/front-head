@@ -59,7 +59,7 @@
       </view>
 
       <!-- 上传区域 -->
-      <view class="upload-card" @click="onAddImage" :class="{ 'processing': isProcessing }">
+      <view class="upload-card onboarding-target-scan" @click="onAddImage" :class="{ 'processing': isProcessing }">
         <!-- 科技波纹效果层 -->
         <view class="tech-wave-2"></view>
         <view class="tech-wave-3"></view>
@@ -243,7 +243,7 @@
         </view>
 
         <view class="quick-actions-grid" :class="{ 'three-items': isH5Platform }">
-          <view v-if="!isH5Platform" class="action-item compact" @click="scanDeviceQR">
+          <view v-if="!isH5Platform" class="action-item compact onboarding-target-device" @click="scanDeviceQR">
             <view class="action-icon-wrapper device">
               <text class="action-icon">📱</text>
             </view>
@@ -257,7 +257,7 @@
             <text class="action-name">环保社区</text>
           </view>
 
-          <view class="action-item compact" @click="goBooking">
+          <view class="action-item compact onboarding-target-booking" @click="goBooking">
             <view class="action-icon-wrapper booking">
               <text class="action-icon">📦</text>
             </view>
@@ -324,17 +324,26 @@
       </view>
     </view>
 
+    <AppOnboarding
+      :visible="showAppOnboarding"
+      :target-rect="onboardingTargetRect"
+      :include-device="!isH5Platform"
+      @dismiss="completeAppOnboarding"
+      @complete="completeAppOnboarding"
+      @step-change="handleOnboardingStepChange"
+    />
+
     <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item active">
         <text class="tabbar-icon">🏠</text>
         <text class="tabbar-label">首页</text>
       </view>
-      <view class="tabbar-item" @click="goMap">
+      <view class="tabbar-item onboarding-target-map" @click="goMap">
         <text class="tabbar-icon">🗺️</text>
         <text class="tabbar-label">地图</text>
       </view>
-      <view class="tabbar-item" @click="goShop">
+      <view class="tabbar-item onboarding-target-shop" @click="goShop">
         <text class="tabbar-icon">🛍️</text>
         <text class="tabbar-label">商城</text>
       </view>
@@ -347,11 +356,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { onPageScroll, onShow } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
+import AppOnboarding from '@/components/AppOnboarding.vue'
 import {
   appendAchievementQueue,
   buildExpandedUpcyclingText,
@@ -392,6 +402,13 @@ const bboxLoadBoundImages = new WeakSet()
 const showAchievementModal = ref(false)
 const achievementModalItems = ref([])
 const shownAchievementKeys = new Set()
+const ONBOARDING_STORAGE_KEY = 'app_onboarding_completed_v1'
+const ONBOARDING_FORCE_KEY = 'app_onboarding_force_open'
+const showAppOnboarding = ref(false)
+const onboardingTargetRect = ref(null)
+const pageScrollTop = ref(0)
+const onboardingAutoScrolling = ref(false)
+let onboardingScrollLockSnapshot = null
 
 // 将遇到英文或中文分号且后面还有内容的地方替换为换行展示
 function escapeHtml(str) {
@@ -442,6 +459,154 @@ const animateNumber = (target, duration = 800) => {
 
 const { hasConnection, connectedDevice, goToDeviceConnection, points } = useDeviceConnection()
 
+function maybeShowAppOnboarding() {
+  try {
+    const forceOpen = uni.getStorageSync(ONBOARDING_FORCE_KEY)
+    if (forceOpen) {
+      uni.removeStorageSync(ONBOARDING_FORCE_KEY)
+    } else if (uni.getStorageSync(ONBOARDING_STORAGE_KEY)) {
+      return
+    }
+    setTimeout(() => {
+      showAppOnboarding.value = true
+    }, 500)
+  } catch (e) {
+    showAppOnboarding.value = true
+  }
+}
+
+function completeAppOnboarding() {
+  showAppOnboarding.value = false
+  onboardingTargetRect.value = null
+  try {
+    uni.setStorageSync(ONBOARDING_STORAGE_KEY, true)
+  } catch (e) {}
+}
+
+function setOnboardingScrollLock(locked) {
+  if (isH5Platform.value) return
+  if (typeof document === 'undefined') return
+  const html = document.documentElement
+  const body = document.body
+  if (!html || !body) return
+
+  if (locked) {
+    if (!onboardingScrollLockSnapshot) {
+      onboardingScrollLockSnapshot = {
+        htmlOverflow: html.style.overflow,
+        htmlHeight: html.style.height,
+        bodyOverflow: body.style.overflow,
+        bodyHeight: body.style.height
+      }
+    }
+    html.style.overflow = 'hidden'
+    html.style.height = '100%'
+    body.style.overflow = 'hidden'
+    body.style.height = '100%'
+    return
+  }
+
+  if (!onboardingScrollLockSnapshot) return
+  html.style.overflow = onboardingScrollLockSnapshot.htmlOverflow || ''
+  html.style.height = onboardingScrollLockSnapshot.htmlHeight || ''
+  body.style.overflow = onboardingScrollLockSnapshot.bodyOverflow || ''
+  body.style.height = onboardingScrollLockSnapshot.bodyHeight || ''
+  onboardingScrollLockSnapshot = null
+}
+
+function handleOnboardingStepChange(step) {
+  onboardingTargetRect.value = null
+  if (!step || !step.selector) return
+
+  const measureTarget = (delay = 320, retries = 2) => {
+    setTimeout(() => {
+      try {
+        uni.createSelectorQuery()
+          .select(step.selector)
+          .boundingClientRect((rect) => {
+            let windowHeight = 0
+            try {
+              const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
+              windowHeight = info.windowHeight || 0
+            } catch (e) {}
+            const isVisible = rect && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && (!windowHeight || rect.top < windowHeight)
+            if (isVisible) {
+              onboardingTargetRect.value = rect
+              return
+            }
+            if (retries > 0) {
+              measureTarget(180, retries - 1)
+              return
+            }
+            onboardingTargetRect.value = null
+          })
+          .exec()
+      } catch (e) {
+        onboardingTargetRect.value = null
+      }
+    }, delay)
+  }
+
+  if (!step.shouldScroll) {
+    onboardingAutoScrolling.value = false
+    measureTarget()
+    return
+  }
+
+  onboardingAutoScrolling.value = true
+  setTimeout(() => {
+    try {
+      const isH5Dom = typeof window !== 'undefined' && typeof document !== 'undefined'
+      if (isH5Dom) {
+        const element = document.querySelector(step.selector)
+        if (element) {
+          const rect = element.getBoundingClientRect()
+          const targetTop = Math.max(0, window.scrollY + rect.top - window.innerHeight * 0.34)
+          window.scrollTo({ top: targetTop, behavior: 'smooth' })
+          measureTarget(520, 3)
+          setTimeout(() => {
+            onboardingAutoScrolling.value = false
+          }, 1100)
+          return
+        }
+      }
+
+      uni.createSelectorQuery()
+        .select(step.selector)
+        .boundingClientRect((rect) => {
+          let windowHeight = 0
+          try {
+            const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
+            windowHeight = info.windowHeight || 0
+          } catch (e) {}
+          if (!rect || !windowHeight) {
+            measureTarget(0)
+            return
+          }
+          const targetTop = Math.max(0, pageScrollTop.value + rect.top - windowHeight * 0.34)
+          uni.pageScrollTo({
+            scrollTop: targetTop,
+            duration: 260,
+            fail: () => {}
+          })
+          measureTarget(420, 3)
+          setTimeout(() => {
+            onboardingAutoScrolling.value = false
+          }, 900)
+        })
+        .exec()
+    } catch (e) {}
+  }, 320)
+}
+
+onPageScroll((event) => {
+  pageScrollTop.value = event.scrollTop || 0
+})
+
+watch([showAppOnboarding, onboardingAutoScrolling], ([visible, autoScrolling]) => {
+  setOnboardingScrollLock(visible && !autoScrolling)
+}, { immediate: true })
+
 const compressionConfig = {
   h5: { quality: 0.99, maxWidth: 800, maxHeight: 800 },
   miniProgram: { quality: 100, maxSize: 800 }
@@ -481,6 +646,7 @@ onMounted(() => {
   if (typeof document !== 'undefined' && document.documentElement) {
     document.documentElement.style.setProperty('--status-bar-height', statusBarHeight + 'px')
   }
+  maybeShowAppOnboarding()
   
   // 添加垃圾分类卡片鼠标追踪效果
   if (typeof document !== 'undefined') {
@@ -567,6 +733,7 @@ onShow(() => {
 })
 
 onBeforeUnmount(() => {
+  setOnboardingScrollLock(false)
   stopUpcyclingPoll()
   if (bboxRefreshTimer) {
     if (typeof window !== 'undefined') {

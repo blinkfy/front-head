@@ -1,242 +1,57 @@
-// 腾讯位置服务API配置
-// 请替换为您的腾讯位置服务API密钥
-const MAP_API_KEY = 'RZPBZ-AXLY3-ENO3Q-O3AZU-JGX4Q-KTFZU'
-
-// 腾讯位置服务API基础URL
-const MAP_BASE_URL = 'https://apis.map.qq.com/ws'
-
-  import request from './index'
+import { mapConfig } from './map-config'
+import request from './index'
 
   // 地点搜索API（兼容H5跨域问题）
   export function searchPlaces(keyword, latitude, longitude, radius = 5000) {
-    const params = {
-      keyword: keyword,
-      boundary: `nearby(${latitude},${longitude},${radius})`,
-      key: MAP_API_KEY,
-      page_size: 20,
-      page_index: 1
-    }
-    
-    const queryString = Object.keys(params)
-      .map(key => `${key}=${encodeURIComponent(params[key])}`)
-      .join('&')
-      
-    return new Promise((resolve, reject) => {
-      // 检测是否为H5环境
-      const isH5 = typeof window !== 'undefined' && !window.wx && !window.my && !window.swan
-      
-      if (isH5) {
-        // H5环境使用JSONP方式避免跨域问题
-        const callbackName = `searchPlacesCallback_${Date.now()}`
-        const script = document.createElement('script')
-        const jsonpUrl = `${MAP_BASE_URL}/place/v1/search?${queryString}&output=jsonp&callback=${callbackName}`
-        
-        // 设置全局回调函数
-        window[callbackName] = function(data) {
-          // 清理
-          document.head.removeChild(script)
-          delete window[callbackName]
-          
-          if (data.status === 0) {
-            resolve(data)
-          } else {
-            reject(new Error(data.message || '搜索失败'))
-          }
-        }
-        
-        script.onerror = function() {
-          // 清理
-          document.head.removeChild(script)
-          delete window[callbackName]
-          reject(new Error('网络请求失败'))
-        }
-        
-        script.src = jsonpUrl
-        document.head.appendChild(script)
-        
-        // 设置超时
-        setTimeout(() => {
-          if (window[callbackName]) {
-            document.head.removeChild(script)
-            delete window[callbackName]
-            reject(new Error('请求超时'))
-          }
-        }, 10000)
-      } else {
-        // 非H5环境使用uni.request
-        uni.request({
-          url: `${MAP_BASE_URL}/place/v1/search?${queryString}`,
-          method: 'GET',
-          success: (res) => {
-            if (res.data.status === 0) {
-              resolve(res.data)
-            } else {
-              reject(new Error(res.data.message || '搜索失败'))
-            }
-          },
-          fail: (err) => {
-            reject(err)
-          }
-        })
-      }
+    return request({
+      url: '/api/map/search-places',
+      method: 'GET',
+      data: {
+        keyword,
+        latitude,
+        longitude,
+        radius
+      },
+      needAuth: true
     })
   }
 
   // 逆地址解析API（兼容H5跨域问题）
   export function reverseGeocoder(latitude, longitude) {
-    const params = {
-      location: `${latitude},${longitude}`,
-      key: MAP_API_KEY
-    }
-    
-    const queryString = Object.keys(params)
-      .map(key => `${key}=${encodeURIComponent(params[key])}`)
-      .join('&')
-      
-    return new Promise((resolve, reject) => {
-      // 检测是否为H5环境
-      const isH5 = typeof window !== 'undefined' && !window.wx && !window.my && !window.swan
-      
-      if (isH5) {
-        // H5环境使用JSONP方式避免跨域问题
-        const callbackName = `reverseGeocoderCallback_${Date.now()}`
-        const script = document.createElement('script')
-        const jsonpUrl = `${MAP_BASE_URL}/geocoder/v1/?${queryString}&output=jsonp&callback=${callbackName}`
-        
-        // 设置全局回调函数
-        window[callbackName] = function(data) {
-          // 清理
-          document.head.removeChild(script)
-          delete window[callbackName]
-          
-          if (data.status === 0) {
-            resolve(data)
-          } else {
-            reject(new Error(data.message || '地址解析失败'))
-          }
-        }
-        
-        script.onerror = function() {
-          // 清理
-          document.head.removeChild(script)
-          delete window[callbackName]
-          reject(new Error('网络请求失败'))
-        }
-        
-        script.src = jsonpUrl
-        document.head.appendChild(script)
-        
-        // 设置超时
-        setTimeout(() => {
-          if (window[callbackName]) {
-            document.head.removeChild(script)
-            delete window[callbackName]
-            reject(new Error('请求超时'))
-          }
-        }, 10000)
-      } else {
-        // 非H5环境使用uni.request
-        uni.request({
-          url: `${MAP_BASE_URL}/geocoder/v1/?${queryString}`,
-          method: 'GET',
-          success: (res) => {
-            if (res.data.status === 0) {
-              resolve(res.data)
-            } else {
-              reject(new Error(res.data.message || '地址解析失败'))
-            }
-          },
-          fail: (err) => {
-            reject(err)
-          }
-        })
-      }
+    return request({
+      url: '/api/map/reverse-geocoder',
+      method: 'GET',
+      data: {
+        latitude,
+        longitude
+      },
+      needAuth: true
     })
   }
 
   // 周边搜索API（兼容H5跨域问题）
   export function searchNearby(category, latitude, longitude, radius = 5000) {
-    const params = {
-      category: category,
-      boundary: `nearby(${latitude},${longitude},${radius})`,
-      key: MAP_API_KEY,
-      page_size: 20,
-      page_index: 1
-    }
-    
-    const queryString = Object.keys(params)
-      .map(key => `${key}=${encodeURIComponent(params[key])}`)
-      .join('&')
-      
-    return new Promise((resolve, reject) => {
-      // 检测是否为H5环境
-      const isH5 = typeof window !== 'undefined' && !window.wx && !window.my && !window.swan
-      
-      if (isH5) {
-        // H5环境使用JSONP方式避免跨域问题
-        const callbackName = `searchNearbyCallback_${Date.now()}`
-        const script = document.createElement('script')
-        const jsonpUrl = `${MAP_BASE_URL}/place/v1/search?${queryString}&output=jsonp&callback=${callbackName}`
-        
-        // 设置全局回调函数
-        window[callbackName] = function(data) {
-          // 清理
-          document.head.removeChild(script)
-          delete window[callbackName]
-          
-          if (data.status === 0) {
-            resolve(data)
-          } else {
-            reject(new Error(data.message || '周边搜索失败'))
-          }
-        }
-        
-        script.onerror = function() {
-          // 清理
-          document.head.removeChild(script)
-          delete window[callbackName]
-          reject(new Error('网络请求失败'))
-        }
-        
-        script.src = jsonpUrl
-        document.head.appendChild(script)
-        
-        // 设置超时
-        setTimeout(() => {
-          if (window[callbackName]) {
-            document.head.removeChild(script)
-            delete window[callbackName]
-            reject(new Error('请求超时'))
-          }
-        }, 10000)
-      } else {
-        // 非H5环境使用uni.request
-        uni.request({
-          url: `${MAP_BASE_URL}/place/v1/search?${queryString}`,
-          method: 'GET',
-          success: (res) => {
-            if (res.data.status === 0) {
-              resolve(res.data)
-            } else {
-              reject(new Error(res.data.message || '周边搜索失败'))
-            }
-          },
-          fail: (err) => {
-            reject(err)
-          }
-        })
-      }
+    return request({
+      url: '/api/map/search-nearby',
+      method: 'GET',
+      data: {
+        category,
+        latitude,
+        longitude,
+        radius
+      },
+      needAuth: true
     })
   }
 
   // 获取API密钥
   export function getMapApiKey() {
-    return MAP_API_KEY
+    return mapConfig.qqMapKey || mapConfig.qqMapKeyBackup || ''
   }
 
   // 检查API密钥是否已配置
   export function isApiKeyConfigured() {
-    return MAP_API_KEY !== 'YOUR_TENCENT_MAP_KEY'
+    return !!getMapApiKey() && getMapApiKey() !== 'YOUR_TENCENT_MAP_KEY'
   }
 
   // 上报设备信息错误（用于用户报错垃圾桶位置/信息）

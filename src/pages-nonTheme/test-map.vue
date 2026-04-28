@@ -124,26 +124,27 @@ export default {
         return;
       }
 
-      const script = document.createElement('script');
-      script.src = `https://apis.map.qq.com/ws/place/v1/search?keyword=${this.testKeyword}&boundary=nearby(${this.locationResult.latitude},${this.locationResult.longitude},5000)&key=RZPBZ-AXLY3-ENO3Q-O3AZU-JGX4Q-KTFZU&page_size=20&page_index=1&callback=handleResponse`;
-      document.body.appendChild(script);
-
-      window.handleResponse = (data) => {
-        if (data.status === 0) {
+      searchPlaces(this.testKeyword, this.locationResult.latitude, this.locationResult.longitude, 5000)
+        .then((res) => {
+          const data = res && res.data
           this.searchResult = {
-            count: data.data ? data.data.length : 0
-          };
+            count: Array.isArray(data) ? data.length : 0
+          }
           uni.showToast({
             title: '搜索测试成功',
             icon: 'success'
-          });
-        } else {
+          })
+        })
+        .catch((error) => {
+          this.searchResult = {
+            count: 0,
+            error: (error && (error.msg || error.message)) || '搜索测试失败'
+          }
           uni.showToast({
             title: '搜索测试失败',
             icon: 'none'
-          });
-        }
-      }
+          })
+        })
     },
 
     goToMap() {

@@ -65,6 +65,17 @@
             <!-- 帮助与反馈 -->
             <view class="settings-section">
                 <view class="section-title">帮助与反馈</view>
+                <view class="setting-item" @click="openAppOnboarding">
+                    <view class="item-left">
+                        <text class="item-icon">🧭</text>
+                        <view class="item-info">
+                            <text class="item-title">App 使用指南</text>
+                            <text class="item-desc">查看识别、地图和预约回收的基础用法</text>
+                        </view>
+                    </view>
+                    <text class="item-arrow">›</text>
+                </view>
+
                 <view class="setting-item" @click="contactService">
                     <view class="item-left">
                         <text class="item-icon">💬</text>
@@ -139,6 +150,7 @@ const showConfirmModal = ref(false)
 const confirmTitle = ref('')
 const confirmMessage = ref('')
 const confirmAction = ref(null)
+const ONBOARDING_FORCE_KEY = 'app_onboarding_force_open'
 
 function checkTheme() {
     const theme = uni.getStorageSync('app_theme')
@@ -186,6 +198,15 @@ function contactService() {
     // 可以跳转到客服页面或者打开客服对话
     uni.navigateTo({
         url: '/pages-nonTheme/chatlist'
+    })
+}
+
+function openAppOnboarding() {
+    try {
+        uni.setStorageSync(ONBOARDING_FORCE_KEY, true)
+    } catch (e) {}
+    uni.reLaunch({
+        url: isDarkTheme.value ? '/pages-dark/home/home' : '/pages/home/home'
     })
 }
 

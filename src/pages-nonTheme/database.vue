@@ -302,7 +302,7 @@
                                         <text class="data-value">{{ getBinTypeLabel(item.type) }}</text>
                                     </view>
                                     <view class="data-row">
-                                        <text class="data-label">״状态:</text>
+                                        <text class="data-label">状态:</text>
                                         <text class="data-value"
                                             :class="item.status === 'online' ? 'success' : 'error'">{{ item.status
                                             }}</text>
@@ -380,7 +380,7 @@
                                         <text class="data-value">{{ item.refId}}</text>
                                     </view>
                                     <view class="data-row">
-                                        <text class="data-label">״状态:</text>
+                                        <text class="data-label">状态:</text>
                                         <text class="data-value">
                                             <text v-if="item.isRead" style="color: #40e0ff;">已读</text>
                                             <text v-else style="color: #999;">未读</text>

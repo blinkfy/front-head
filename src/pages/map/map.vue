@@ -47,7 +47,60 @@
             </cover-view>
           </cover-view>
         </cover-view>
+
+        <cover-view v-if="nearbyLocationModalVisible && !isH5" class="nearby-location-cover">
+          <cover-view class="nearby-location-cover-panel">
+            <cover-view class="nearby-location-cover-header">
+              <cover-view class="nearby-location-cover-title">选择发送地点</cover-view>
+              <cover-view class="nearby-location-cover-close" @click="closeNearbyLocationPicker">×</cover-view>
+            </cover-view>
+            <cover-view v-if="nearbyLocationLoading" class="nearby-location-cover-state">正在加载附近地点...</cover-view>
+            <cover-view v-else>
+              <cover-view v-if="nearbyLocationError" class="nearby-location-cover-state">{{ nearbyLocationError }}</cover-view>
+              <cover-view
+                v-for="(item, index) in visibleNearbyLocationOptions"
+                :key="`${item.name}_${item.address}_${index}`"
+                class="nearby-location-cover-item"
+                @click="selectNearbyLocationOption(item)"
+              >
+                <cover-view class="nearby-location-cover-name">{{ item.name || '位置分享' }}</cover-view>
+                <cover-view class="nearby-location-cover-address">{{ item.address || '无详细地址' }}</cover-view>
+              </cover-view>
+              <cover-view class="nearby-location-cover-send" @click="sendPendingLocation">直接发送当前点</cover-view>
+            </cover-view>
+          </cover-view>
+        </cover-view>
       </map>
+    </view>
+
+    <view v-if="nearbyLocationModalVisible && isH5" class="nearby-location-overlay" @click.self="closeNearbyLocationPicker">
+      <view class="nearby-location-panel">
+        <view class="nearby-location-header">
+          <text class="nearby-location-title">选择发送地点</text>
+          <text class="nearby-location-close" @click="closeNearbyLocationPicker">×</text>
+        </view>
+        <view class="nearby-location-body">
+          <view v-if="nearbyLocationLoading" class="nearby-location-state">正在加载附近地点...</view>
+          <view v-else>
+            <view v-if="nearbyLocationError" class="nearby-location-state">{{ nearbyLocationError }}</view>
+            <scroll-view class="nearby-location-list" scroll-y>
+              <view
+                v-for="(item, index) in nearbyLocationOptions"
+                :key="`${item.name}_${item.address}_${index}`"
+                class="nearby-location-item"
+                @click="selectNearbyLocationOption(item)"
+              >
+                <text class="nearby-location-name">{{ item.name || '位置分享' }}</text>
+                <text class="nearby-location-address">{{ item.address || '无详细地址' }}</text>
+                <text class="nearby-location-coords">{{ Number(item.latitude).toFixed(6) }}, {{ Number(item.longitude).toFixed(6) }}</text>
+              </view>
+            </scroll-view>
+          </view>
+        </view>
+        <view class="nearby-location-actions">
+          <button class="nearby-location-button secondary" @click="sendPendingLocation">直接发送当前点</button>
+        </view>
+      </view>
     </view>
 
     <!-- 底部信息卡（H5 与 小程序/APP 都用，非选择模式且非查看模式才显示） -->
@@ -157,13 +210,19 @@ import { ref, onMounted, computed, getCurrentInstance, nextTick } from 'vue'
 import { onReady } from '@dcloudio/uni-app'
 import { config } from '../../api/config.js'
 import { mapConfig } from '../../api/map-config.js'
-import { reportDeviceError, getTrashBinList } from '../../api/map.js'
+import { reportDeviceError, getTrashBinList, reverseGeocoder, searchPlaces } from '../../api/map.js'
 import AddTrashBinModal from '../../components/AddTrashBinModal.vue'
 
 const isH5 = process.env.UNI_PLATFORM === 'h5'
 // 位置选择模式
 const selectMode = ref(false)
 const selectedLocation = ref(null)
+const nearbyLocationModalVisible = ref(false)
+const nearbyLocationLoading = ref(false)
+const nearbyLocationOptions = ref([])
+const pendingLocationData = ref(null)
+const nearbyLocationError = ref('')
+const visibleNearbyLocationOptions = computed(() => nearbyLocationOptions.value.slice(0, 8))
 
 // 查看位置模式（从聊天消息点击进入）
 const viewMode = ref(false)
@@ -188,7 +247,7 @@ const selectedMarker = ref(null)
 
 // 小程序/APP markers
 const markers = computed(() => {
-  const list = trashPoints.value.map(p => ({
+  const list = selectMode.value ? [] : trashPoints.value.map(p => ({
     id: p.id,
     latitude: typeof p.latitude === 'number' ? p.latitude : parseFloat(p.latitude),
     longitude: typeof p.longitude === 'number' ? p.longitude : parseFloat(p.longitude),
@@ -207,28 +266,6 @@ const markers = computed(() => {
     }
   }));
 
-  // 选择模式下增加选点标记
-  if (selectMode.value && selectedLocation.value) {
-    list.push({
-      id: 999999,
-      latitude: selectedLocation.value.latitude,
-      longitude: selectedLocation.value.longitude,
-      title: '选择位置',
-      iconPath: '/static/smart-marker.png',
-      width: 48,
-      height: 52,
-      anchor: { x: 0.5, y: 1 },
-      callout: {
-        content: '选中的位置',
-        color: '#ffffff',
-        bgColor: '#667eea',
-        padding: 8,
-        borderRadius: 8,
-        display: 'ALWAYS'
-      }
-    });
-  }
-  
   return list;
 })
 
@@ -390,24 +427,111 @@ function moveToMyLocation() {
   }
 }
 
-function confirmSelect() {
-  console.log('confirmSelect 被触发了')
-  console.log('selectedLocation:', selectedLocation.value)
-  
-  if (!selectedLocation.value) {
-    uni.showToast({ title: '请先选择位置', icon: 'none' })
-    return
+function extractReverseLocation(res) {
+  const data = res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res
+  const result = data && data.result ? data.result : data
+  const pois = extractReversePois(res)
+  const poi = pois[0] || null
+  return {
+    name: (poi && (poi.title || poi.name)) || (result && result.formatted_addresses && result.formatted_addresses.recommend) || '位置分享',
+    address: (poi && poi.address) || (result && result.address) || ''
   }
-  
-  console.log('确认选择位置:', selectedLocation.value)
-  
+}
+
+function extractReversePois(res) {
+  const data = res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res
+  const result = data && data.result ? data.result : data
+  return Array.isArray(result && result.pois) ? result.pois : []
+}
+
+async function buildSelectedLocationData() {
+  const source = selectedLocation.value || {}
   const locationData = {
-    latitude: selectedLocation.value.latitude,
-    longitude: selectedLocation.value.longitude,
-    name: selectedLocation.value.name || '位置分享',
-    address: selectedLocation.value.address || ''
+    latitude: source.latitude,
+    longitude: source.longitude,
+    name: source.name || '位置分享',
+    address: source.address || ''
   }
-  
+  const addressIsCoords = /^[-+]?\d+\.?\d+,\s*[-+]?\d+\.?\d+$/.test(String(locationData.address || '').trim())
+  if (locationData.name !== '位置分享' && locationData.name !== '选中的位置' && locationData.address && !addressIsCoords) {
+    return locationData
+  }
+  try {
+    uni.showLoading({ title: '解析位置...' })
+    const resolved = extractReverseLocation(await reverseGeocoder(locationData.latitude, locationData.longitude))
+    locationData.name = resolved.name || locationData.name
+    locationData.address = resolved.address || locationData.address
+  } catch (error) {
+    console.warn('resolve selected location failed:', error)
+  } finally {
+    uni.hideLoading()
+  }
+  return locationData
+}
+
+function normalizePoiLocation(item, fallback) {
+  const location = item && item.location ? item.location : {}
+  return {
+    latitude: Number(location.lat || item.latitude || fallback.latitude),
+    longitude: Number(location.lng || item.longitude || fallback.longitude),
+    name: (item && (item.title || item.name)) || fallback.name || '位置分享',
+    address: (item && item.address) || fallback.address || ''
+  }
+}
+
+function buildNearbyLocationOptions(baseLocation, places) {
+  const options = []
+  const seen = new Set()
+  const pushUnique = (item) => {
+    const key = `${item.name || ''}|${item.address || ''}|${Number(item.latitude).toFixed(6)}|${Number(item.longitude).toFixed(6)}`
+    if (seen.has(key)) return
+    seen.add(key)
+    options.push(item)
+  }
+
+  pushUnique(baseLocation)
+  ;(Array.isArray(places) ? places : []).forEach((place) => {
+    const option = normalizePoiLocation(place, baseLocation)
+    if (Number.isFinite(option.latitude) && Number.isFinite(option.longitude)) {
+      pushUnique(option)
+    }
+  })
+  return options
+}
+
+async function openNearbyLocationPicker(baseLocation) {
+  pendingLocationData.value = baseLocation
+  nearbyLocationOptions.value = [baseLocation]
+  nearbyLocationError.value = ''
+  nearbyLocationModalVisible.value = true
+  nearbyLocationLoading.value = true
+
+  try {
+    const [reverseResult, searchResult] = await Promise.allSettled([
+      reverseGeocoder(baseLocation.latitude, baseLocation.longitude),
+      searchPlaces('小区', baseLocation.latitude, baseLocation.longitude, 1500)
+    ])
+    const reversePois = reverseResult.status === 'fulfilled' ? extractReversePois(reverseResult.value) : []
+    const searchData = searchResult.status === 'fulfilled' ? searchResult.value : null
+    const searchPlacesList = Array.isArray(searchData && searchData.data) ? searchData.data : []
+    const places = reversePois.concat(searchPlacesList)
+    nearbyLocationOptions.value = buildNearbyLocationOptions(baseLocation, places)
+    if (places.length === 0) {
+      nearbyLocationError.value = '未找到附近地点，可直接发送当前点'
+    }
+  } catch (error) {
+    console.warn('load nearby locations failed:', error)
+    nearbyLocationError.value = '附近地点加载失败，可直接发送当前点'
+  } finally {
+    nearbyLocationLoading.value = false
+  }
+}
+
+function closeNearbyLocationPicker() {
+  nearbyLocationModalVisible.value = false
+}
+
+function emitSelectedLocation(locationData) {
   console.log('locationData:', locationData)
   
   // 存储到本地存储，供上一页读取
@@ -445,6 +569,31 @@ function confirmSelect() {
     success: () => console.log('导航成功'),
     fail: (err) => console.error('导航失败:', err)
   })
+}
+
+function selectNearbyLocationOption(item) {
+  emitSelectedLocation(item)
+}
+
+function sendPendingLocation() {
+  if (pendingLocationData.value) {
+    emitSelectedLocation(pendingLocationData.value)
+  }
+}
+
+async function confirmSelect() {
+  console.log('confirmSelect 被触发了')
+  console.log('selectedLocation:', selectedLocation.value)
+  
+  if (!selectedLocation.value) {
+    uni.showToast({ title: '请先选择位置', icon: 'none' })
+    return
+  }
+  
+  console.log('确认选择位置:', selectedLocation.value)
+  
+  const locationData = await buildSelectedLocationData()
+  await openNearbyLocationPicker(locationData)
 }
 
 // 小程序/APP 地图点击
@@ -908,6 +1057,7 @@ async function loadTrashBinList() {
 
 function initH5Markers() {
   if (!isH5 || !tmapInstance || !window.TMap) return
+  if (selectMode.value) return
     // 如果是查看位置模式，只显示该位置的标记
   if (viewMode.value && viewLocationInfo.value) {
     try {
@@ -1235,17 +1385,16 @@ function goProfile() {
 
 .btn-native {
   flex: 1;
-  height: 88rpx;
-  line-height: 88rpx;
+  height: 80rpx;
   border-radius: 44rpx;
   text-align: center;
+  vertical-align: middle;
   font-size: 30rpx;
   font-weight: 600;
   margin: 0 12rpx;
-  display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  padding-bottom: 0;
 }
 
 .btn-native.cancel {
@@ -1617,5 +1766,179 @@ function goProfile() {
   40% { transform: scale(1.2) translateY(-8rpx); }
   70% { transform: scale(1.1) translateY(-2rpx); }
   100% { transform: scale(1.15) translateY(-4rpx); }
+}
+
+.nearby-location-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(17, 24, 39, 0.45);
+  display: flex;
+  align-items: flex-end;
+}
+
+.nearby-location-panel {
+  width: 100%;
+  max-height: 72vh;
+  background: #ffffff;
+  border-radius: 24rpx 24rpx 0 0;
+  overflow: hidden;
+}
+
+.nearby-location-header,
+.nearby-location-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid #eef2f7;
+}
+
+.nearby-location-actions {
+  border-top: 1rpx solid #eef2f7;
+  border-bottom: 0;
+}
+
+.nearby-location-title {
+  font-size: 34rpx;
+  color: #111827;
+  font-weight: 700;
+}
+
+.nearby-location-close {
+  width: 56rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  text-align: center;
+  color: #6b7280;
+  font-size: 44rpx;
+}
+
+.nearby-location-body {
+  max-height: 52vh;
+}
+
+.nearby-location-list {
+  max-height: 52vh;
+}
+
+.nearby-location-state {
+  padding: 40rpx 32rpx;
+  color: #6b7280;
+  font-size: 28rpx;
+}
+
+.nearby-location-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding: 24rpx 32rpx;
+  border-bottom: 1rpx solid #f3f4f6;
+}
+
+.nearby-location-item:active {
+  background: #f9fafb;
+}
+
+.nearby-location-name {
+  color: #111827;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.nearby-location-address,
+.nearby-location-coords {
+  color: #6b7280;
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+
+.nearby-location-button {
+  width: 100%;
+  height: 80rpx;
+  line-height: 80rpx;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  border: 0;
+}
+
+.nearby-location-button.secondary {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.nearby-location-cover {
+  position: absolute;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: 40rpx;
+  z-index: 2000;
+}
+
+.nearby-location-cover-panel {
+  background-color: rgba(255, 255, 255, 0.98);
+  border-radius: 24rpx;
+  padding: 24rpx;
+  box-shadow: 0 12rpx 36rpx rgba(15, 23, 42, 0.22);
+}
+
+.nearby-location-cover-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
+.nearby-location-cover-title {
+  color: #111827;
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.nearby-location-cover-close {
+  width: 56rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  text-align: center;
+  color: #6b7280;
+  font-size: 44rpx;
+}
+
+.nearby-location-cover-state {
+  color: #6b7280;
+  font-size: 26rpx;
+  padding: 16rpx 0;
+}
+
+.nearby-location-cover-item {
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid rgba(229, 231, 235, 0.9);
+}
+
+.nearby-location-cover-name {
+  color: #111827;
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.nearby-location-cover-address {
+  color: #6b7280;
+  font-size: 23rpx;
+  line-height: 1.35;
+  margin-top: 6rpx;
+}
+
+.nearby-location-cover-send {
+  margin-top: 18rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  text-align: center;
+  color: #059669;
+  background-color: #ecfdf5;
+  border-radius: 36rpx;
+  font-size: 28rpx;
+  font-weight: 600;
 }
 </style>

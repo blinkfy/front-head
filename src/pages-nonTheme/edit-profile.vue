@@ -175,6 +175,41 @@
         </view>
       </view>
     </view>
+
+    <!-- App 附近地点弹窗 -->
+    <view v-if="showNearbyPicker" class="nearby-picker-overlay" @click.self="closeNearbyPicker">
+      <view class="nearby-picker-modal">
+        <view class="nearby-picker-header">
+          <text class="nearby-picker-title">选择附近地点</text>
+          <text class="nearby-picker-close" @click="closeNearbyPicker">✕</text>
+        </view>
+        <view class="nearby-picker-search">
+          <input
+            v-model="nearbySearchQuery"
+            type="text"
+            placeholder="搜索小区/学校/写字楼..."
+            class="nearby-search-input"
+            @confirm="onNearbySearch"
+          />
+          <text class="nearby-search-btn" @click="onNearbySearch">搜索</text>
+        </view>
+        <view class="nearby-picker-body">
+          <view v-if="nearbyLoading" class="nearby-loading">正在加载附近地点...</view>
+          <view v-else-if="nearbyError" class="nearby-error">{{ nearbyError }}</view>
+          <scroll-view v-else class="nearby-list" scroll-y>
+            <view
+              v-for="(item, idx) in nearbyResults"
+              :key="`${item.id || item.uid || idx}`"
+              class="nearby-item"
+              @click="selectNearbyPlace(item)"
+            >
+              <text class="nearby-name">{{ item.title || item.name || '未命名地点' }}</text>
+              <text class="nearby-addr">{{ item.address || item.addr || '' }}</text>
+            </view>
+          </scroll-view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -184,6 +219,7 @@ import * as userApi from '@/api/user.js'
 import { getCommunityTree } from '@/api/community.js'
 import { compressImageToBase64, getAvatarUrl, validateAvatarSize } from '@/utils/avatar-handler.js'
 import { baseUrl } from '@/api/settings.js'
+import { searchPlaces } from '@/api/map.js'
 
 const isDarkTheme = ref(false)
 const userInfo = ref({})
@@ -212,6 +248,14 @@ const mapSelectedLat = ref(null)
 const mapSelectedLng = ref(null)
 let mapInstance = null
 let mapMarker = null
+
+// App 附近地点选择
+const showNearbyPicker = ref(false)
+const nearbySearchQuery = ref('')
+const nearbyResults = ref([])
+const nearbyLoading = ref(false)
+const nearbyError = ref('')
+const nearbyLocation = ref(null)
 
 const formData = reactive({
   username: '',
@@ -419,51 +463,196 @@ function uploadAvatar() {
 }
 
 function formatLocationResult(res) {
-  const address = res && res.address
-  if (typeof address === 'string' && address.trim()) return address.trim()
-  if (address && typeof address === 'object') {
-    const detail = [
-      address.province,
-      address.city,
-      address.district,
-      address.street,
-      address.streetNum,
-      address.poiName
-    ].filter(Boolean).join('')
-    if (detail) return detail
-  }
-  const name = String((res && (res.name || res.addressName)) || '').trim()
-  if (name) return name
-  if (res && res.latitude && res.longitude) return `${res.latitude},${res.longitude}`
-  return ''
+    if (res && typeof res.addresses === 'string' && res.addresses.trim()) return res.addresses.trim();
+    const address = res && res.address
+    if (typeof address === 'string' && address.trim()) return address.trim()
+    if (address && typeof address === 'object') {
+      const detail = [
+        address.province,
+        address.city,
+        address.district,
+        address.street,
+        address.streetNum,
+        address.poiName
+      ].filter(Boolean).join('')
+      if (detail) return detail
+    }
+    const name = String((res && (res.name || res.addressName)) || '').trim()
+    if (name) return name
+    const lat = res && (res.latitude || (res.coords && res.coords.latitude))
+    const lng = res && (res.longitude || (res.coords && res.coords.longitude))
+    if (lat && lng) return `${lat},${lng}`
+}
+
+function isAppPlusPlatform() {
+  const platform = uni.getSystemInfoSync().uniPlatform
+  return platform === 'app' || platform === 'app-plus'
+}
+
+function getAppCurrentLocation() {
+  return new Promise((resolve, reject) => {
+    if (typeof plus === 'undefined' || !plus.geolocation || typeof plus.geolocation.getCurrentPosition !== 'function') {
+      reject(new Error('当前环境不支持原生定位'))
+      return
+    }
+    plus.geolocation.getCurrentPosition(
+      (position) => resolve(position),
+      (error) => reject(error),
+      {
+        provider: 'system',
+        geocode: false,
+        timeout: 15000
+      }
+    )
+  })
 }
 
 function fillCurrentLocation() {
-  if (typeof uni.getLocation !== 'function') {
-    uni.showToast({ title: '当前环境不支持定位，请手动输入', icon: 'none' })
-    return
-  }
   uni.showLoading({ title: '定位中...' })
-  uni.getLocation({
-    type: 'gcj02',
-    geocode: true,
-    success: (res) => {
+  const useNativeLocation = isAppPlusPlatform() && typeof plus !== 'undefined'
+  const locationTask = useNativeLocation
+    ? getAppCurrentLocation()
+    : new Promise((resolve, reject) => {
+        if (typeof uni.getLocation !== 'function') {
+          reject(new Error('当前环境不支持定位'))
+          return
+        }
+        uni.getLocation({
+          type: 'gcj02',
+          geocode: false,
+          success: resolve,
+          fail: reject
+        })
+      })
+
+  locationTask
+    .then((res) => {
       const locationText = formatLocationResult(res)
+      const lat = res && (res.latitude || (res.coords && res.coords.latitude))
+      const lng = res && (res.longitude || (res.coords && res.coords.longitude))
+
+      // 如果获取到的地址只是一串经纬度（例如系统提供商未返回详情），使用 OSM 接口进行强制兜底逆地理编码
+      if (locationText && lat && lng && /^[-+]?\d+\.?\d+,\s*[-+]?\d+\.?\d+$/.test(locationText)) {
+        uni.request({
+          url: `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=zh`,
+          header: { 'User-Agent': 'FenTouXia/1.0' },
+          success: (geoRes) => {
+            const data = geoRes.data;
+            const finalAddr = (data && data.display_name) ? data.display_name : locationText;
+            formData.location = finalAddr;
+            uni.setStorageSync('bookingAddress', formData.location);
+            uni.showToast({ title: '地址已更新', icon: 'success' });
+          },
+          fail: () => {
+            formData.location = locationText;
+            uni.setStorageSync('bookingAddress', formData.location);
+            uni.showToast({ title: '地址已更新', icon: 'success' });
+          }
+        });
+        return;
+      }
+
       if (locationText) {
         formData.location = locationText
+        uni.setStorageSync('bookingAddress', formData.location)
         uni.showToast({ title: '地址已更新', icon: 'success' })
       } else {
         uni.showToast({ title: '定位成功，请补充详细地址', icon: 'none' })
       }
-    },
-    fail: (err) => {
+    })
+    .catch((err) => {
       console.warn('获取当前位置失败:', err)
-      uni.showToast({ title: '定位失败，请手动输入', icon: 'none' })
-    },
-    complete: () => {
+      const message = isAppPlusPlatform()
+        ? '定位失败，请检查系统定位权限'
+        : '定位失败，请手动输入'
+      uni.showToast({ title: message, icon: 'none' })
+    })
+    .finally(() => {
       uni.hideLoading()
-    }
+    })
+}
+
+function getCurrentCoords() {
+  const useNativeLocation = isAppPlusPlatform() && typeof plus !== 'undefined'
+  const locationTask = useNativeLocation
+    ? getAppCurrentLocation()
+    : new Promise((resolve, reject) => {
+        if (typeof uni.getLocation !== 'function') {
+          reject(new Error('当前环境不支持定位'))
+          return
+        }
+        uni.getLocation({
+          type: 'gcj02',
+          geocode: false,
+          success: resolve,
+          fail: reject
+        })
+      })
+
+  return locationTask.then((res) => {
+    const lat = res && (res.latitude || (res.coords && res.coords.latitude))
+    const lng = res && (res.longitude || (res.coords && res.coords.longitude))
+    if (!lat || !lng) throw new Error('无法获取定位坐标')
+    return { lat, lng }
   })
+}
+
+function openNearbyPicker() {
+  showNearbyPicker.value = true
+  nearbySearchQuery.value = ''
+  nearbyResults.value = []
+  nearbyError.value = ''
+  loadNearbyPlaces()
+}
+
+function closeNearbyPicker() {
+  showNearbyPicker.value = false
+}
+
+function loadNearbyPlaces(keyword = '') {
+  nearbyLoading.value = true
+  nearbyError.value = ''
+  getCurrentCoords()
+    .then(({ lat, lng }) => {
+      nearbyLocation.value = { lat, lng }
+      const query = String(keyword || '').trim() || '小区'
+      return searchPlaces(query, lat, lng, 2000)
+    })
+    .then((res) => {
+      const list = Array.isArray(res && res.data) ? res.data : []
+      nearbyResults.value = list
+      if (!list.length) nearbyError.value = '附近没有找到可选地点'
+    })
+    .catch((err) => {
+      nearbyError.value = (err && err.message) ? err.message : '加载附近地点失败'
+    })
+    .finally(() => {
+      nearbyLoading.value = false
+    })
+}
+
+function onNearbySearch() {
+  loadNearbyPlaces(nearbySearchQuery.value)
+}
+
+function selectNearbyPlace(item) {
+  const title = String(item && (item.title || item.name) || '').trim()
+  const addr = String(item && (item.address || item.addr) || '').trim()
+  let finalText = ''
+  if (title && addr) {
+    finalText = addr.includes(title) ? addr : `${title} ${addr}`
+  } else {
+    finalText = title || addr
+  }
+  if (!finalText && item && item.location && item.location.lat && item.location.lng) {
+    finalText = `${item.location.lat},${item.location.lng}`
+  }
+  if (finalText) {
+    formData.location = finalText
+    uni.setStorageSync('bookingAddress', formData.location)
+    uni.showToast({ title: '地址已更新', icon: 'success' })
+  }
+  closeNearbyPicker()
 }
 
 function selectLocation() {
@@ -477,7 +666,7 @@ function selectLocation() {
   }
 
   if (uniPlatform === 'app' || uniPlatform === 'app-plus') {
-    fillCurrentLocation()
+    openNearbyPicker()
     return
   }
 
@@ -1300,4 +1489,100 @@ onMounted(() => {
 .map-btn-confirm:active {
   opacity: 0.9;
 }
+
+/* ===== App 附近地点弹窗 ===== */
+.nearby-picker-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30rpx;
+}
+
+.nearby-picker-modal {
+  width: 100%;
+  max-width: 700rpx;
+  max-height: 80vh;
+  background: #fff;
+  border-radius: 24rpx;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.3);
+}
+
+.nearby-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 30rpx;
+  border-bottom: 1rpx solid #eee;
+}
+
+.nearby-picker-title { font-size: 32rpx; font-weight: 700; color: #1f2937; }
+.nearby-picker-close { font-size: 36rpx; color: #999; padding: 10rpx; }
+.nearby-picker-close:active { color: #333; }
+
+.nearby-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 30rpx;
+  border-bottom: 1rpx solid #eee;
+}
+
+.nearby-search-input {
+  flex: 1;
+  height: 64rpx;
+  padding: 0 20rpx;
+  border: 2rpx solid #ddd;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  color: #333;
+  background: #f9f9f9;
+}
+
+.nearby-search-input:focus { border-color: #059669; background: #fff; }
+
+.nearby-search-btn {
+  padding: 12rpx 24rpx;
+  background: #059669;
+  color: #fff;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.nearby-search-btn:active { opacity: 0.8; }
+
+.nearby-picker-body {
+  padding: 12rpx 0 20rpx;
+  max-height: 60vh;
+}
+
+.nearby-loading,
+.nearby-error {
+  padding: 24rpx 30rpx;
+  color: #6b7280;
+  font-size: 26rpx;
+}
+
+.nearby-list { max-height: 56vh; }
+
+.nearby-item {
+  padding: 20rpx 30rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.nearby-item:active { background: #f9fafb; }
+
+.nearby-name { display: block; font-size: 28rpx; font-weight: 600; color: #111827; }
+.nearby-addr { display: block; margin-top: 6rpx; font-size: 24rpx; color: #6b7280; }
 </style>
