@@ -19,7 +19,7 @@
       <!-- 头部区域 -->
       <view class="login-header">
         <view class="app-logo">
-          <image src="/static/person.jpeg" class="logo-image" mode="aspectFit" />
+          <image src="/static/person.webp.png" class="logo-image" mode="aspectFit" />
           <view class="logo-rings">
             <view class="ring ring-1"></view>
             <view class="ring ring-2"></view>

@@ -405,6 +405,7 @@ const ONBOARDING_STORAGE_KEY = 'app_onboarding_completed_v1'
 const ONBOARDING_FORCE_KEY = 'app_onboarding_force_open'
 const showAppOnboarding = ref(false)
 const onboardingTargetRect = ref(null)
+let onboardingStepRequestId = 0
 const pageScrollTop = ref(0)
 const onboardingAutoScrolling = ref(false)
 let onboardingScrollLockSnapshot = null
@@ -484,15 +485,17 @@ function setOnboardingScrollLock(locked) {
 }
 
 function handleOnboardingStepChange(step) {
-  onboardingTargetRect.value = null
   if (!step || !step.selector) return
+  const requestId = ++onboardingStepRequestId
 
   const measureTarget = (delay = 320, retries = 2) => {
     setTimeout(() => {
+      if (requestId !== onboardingStepRequestId) return
       try {
         uni.createSelectorQuery()
           .select(step.selector)
           .boundingClientRect((rect) => {
+            if (requestId !== onboardingStepRequestId) return
             let windowHeight = 0
             try {
               const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
@@ -534,6 +537,7 @@ function handleOnboardingStepChange(step) {
           window.scrollTo({ top: targetTop, behavior: 'smooth' })
           measureTarget(520, 3)
           setTimeout(() => {
+            if (requestId !== onboardingStepRequestId) return
             onboardingAutoScrolling.value = false
           }, 1100)
           return
@@ -543,6 +547,7 @@ function handleOnboardingStepChange(step) {
       uni.createSelectorQuery()
         .select(step.selector)
         .boundingClientRect((rect) => {
+          if (requestId !== onboardingStepRequestId) return
           let windowHeight = 0
           try {
             const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
@@ -560,6 +565,7 @@ function handleOnboardingStepChange(step) {
           })
           measureTarget(420, 3)
           setTimeout(() => {
+            if (requestId !== onboardingStepRequestId) return
             onboardingAutoScrolling.value = false
           }, 900)
         })

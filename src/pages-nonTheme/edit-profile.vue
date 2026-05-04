@@ -24,7 +24,7 @@
       <view class="avatar-section">
         <view class="section-label">头像</view>
         <view class="avatar-wrapper">
-          <image :src="getAvatarUrl(formData.avatar || userInfo.avatar || '/static/person.jpeg', baseUrl)" class="avatar-image" mode="aspectFill"></image>
+          <image :src="getAvatarUrl(formData.avatar || userInfo.avatar || '/static/person.webp.png', baseUrl)" class="avatar-image" mode="aspectFill"></image>
           <view class="avatar-overlay" @click="uploadAvatar">
             <text class="overlay-icon">📷</text>
             <text class="overlay-text">更换头像</text>

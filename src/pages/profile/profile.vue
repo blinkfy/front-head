@@ -29,7 +29,7 @@
     <view class="user-card">
       <view class="user-avatar-section">
         <view class="avatar-wrapper">
-          <image class="user-avatar" :src="getAvatarUrl(userInfo.avatar || '/static/person.jpeg', baseUrl)" mode="aspectFill"></image>
+          <image class="user-avatar" :src="getAvatarUrl(userInfo.avatar || '/static/person.webp.png', baseUrl)" mode="aspectFill"></image>
           <view class="avatar-ring"></view>
         </view>
         <view class="user-level">
@@ -147,7 +147,7 @@
         </view>
         <view class="menu-item" @click="goGuide">
           <view class="menu-icon purple">📚</view>
-          <text class="menu-text">分类指南</text>
+          <text class="menu-text">使用指南</text>
         </view>
         <view class="menu-item" @click="goSettings">
           <view class="menu-icon gray">⚙️</view>
@@ -1486,7 +1486,7 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(209, 250, 229, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
 
-/* 分类指南 - 紫色 */
+/* 使用指南 - 紫色 */
 .menu-item:nth-child(4) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(243, 232, 255, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }

@@ -3,25 +3,153 @@
     <!-- 科技背景 -->
     <view class="tech-background">
       <view class="grid-overlay"></view>
-      <view class="floating-particles">
-        <view class="particle" v-for="n in 8" :key="n"></view>
-      </view>
       <!-- 蓝橙球形装饰 -->
       <view class="bg-circle circle-blue"></view>
       <view class="bg-circle circle-orange"></view>
       <view class="bg-circle circle-green"></view>
     </view>
-
-    <!-- 头部 -->
-    <view class="guide-header">
-      <view class="header-title">
-        <image class="header-icon" src="/static/classfication.png" mode="aspectFill"></image>
-        <text>垃圾分类指南</text>
+    <!-- 返回按钮 -->
+    <view class="back-btn" @click="goBack">
+      <text class="back-icon">←</text>
+    </view>
+    <!-- 顶部封面区 -->
+    <view class="hero-section">
+      <view class="hero-content">
+        <text class="hero-title">分投侠 使用指南</text>
+        <text class="hero-subtitle">看懂 App 怎么用</text>
       </view>
-      <text class="header-subtitle">环保从分类开始</text>
+      
+      <view class="video-card">
+        <!-- #ifdef APP-PLUS -->
+        <view 
+          id="video-container" 
+          class="promo-video"
+          :videoOptions="videoOptions"
+          :change:videoOptions="hlsPlayer.init"
+          :playTrigger="playTrigger"
+          :change:playTrigger="hlsPlayer.play"
+        ></view>
+        <!-- #endif -->
+
+        <!-- #ifndef APP-PLUS -->
+        <video
+          id="promoVideo"
+          class="promo-video"
+          :src="videoUrl"
+          :poster="videoPoster"
+          object-fit="cover"
+          controls
+          @play="showOverlay = false"
+          @pause="showOverlay = true"
+          @ended="showOverlay = true"
+        ></video>
+        <!-- #endif -->
+        
+        <!-- 播放叠加层 (Native 侧控制) -->
+        <view v-if="showOverlay" class="video-overlay" @click="requestPlay">
+          <view class="play-icon-wrapper">
+            <text class="play-icon">▶</text>
+          </view>
+          <text class="overlay-title">分投侠 官方宣传片</text>
+        </view>
+      </view>
+
+      <view class="hero-actions">
+        <view class="action-btn primary" @click="goHome">
+          <text class="btn-icon">🚀</text>
+          <text>立即体验</text>
+        </view>
+        <view class="action-btn secondary" @click="scrollToSteps">
+          <text class="btn-icon">📖</text>
+          <text>查看新手步骤</text>
+        </view>
+      </view>
     </view>
 
-    <!-- 分类卡片网格 -->
+    <!-- 三步上手区 -->
+    <view id="steps-section" class="section-container">
+      <view class="section-header">
+        <text class="section-title">三步上手</text>
+        <view class="title-line"></view>
+      </view>
+      
+      <view class="steps-list">
+        <view class="step-card">
+          <view class="step-number">01</view>
+          <view class="step-info">
+            <text class="step-name">拍照识别垃圾</text>
+            <text class="step-desc">在首页点击“点击拍照识别”，上传一张垃圾照片，AI 会自动分析类别。</text>
+          </view>
+          <image class="step-preview" :src="`${baseUrl}/images/tip1.webp`" mode="aspectFill"></image>
+        </view>
+
+        <view class="step-card">
+          <view class="step-number">02</view>
+          <view class="step-info">
+            <text class="step-name">查看分类建议</text>
+            <text class="step-desc">系统会给出垃圾所属类别（如厨余垃圾）及具体的无害化处理建议。</text>
+          </view>
+          <image class="step-preview" :src="`${baseUrl}/images/tip2.webp`" mode="aspectFill"></image>
+        </view>
+
+        <view class="step-card">
+          <view class="step-number">03</view>
+          <view class="step-info">
+            <text class="step-name">参与后续互动</text>
+            <text class="step-desc">去地图查找最近的投放点，或者连接你的智能分类设备，参与社区讨论分享心得。</text>
+          </view>
+          <view class="step-icons">
+            <text class="s-icon">📍</text>
+            <text class="s-icon">📱</text>
+            <text class="s-icon">🏘️</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 功能分区 -->
+    <view class="section-container">
+      <view class="section-header">
+        <text class="section-title">核心功能</text>
+        <view class="title-line"></view>
+      </view>
+      
+      <view class="features-grid">
+        <view class="feature-item" @click="goHome">
+          <view class="f-icon-box ai">🤖</view>
+          <text class="f-name">AI 识别</text>
+        </view>
+        <view class="feature-item" @click="scrollToGuide">
+          <view class="f-icon-box guide">📋</view>
+          <text class="f-name">分类指南</text>
+        </view>
+        <view class="feature-item" @click="navigateTo('/pages/map/map')">
+          <view class="f-icon-box map">🗺️</view>
+          <text class="f-name">地图找桶</text>
+        </view>
+        <view class="feature-item" @click="goScan">
+          <view class="f-icon-box device">📱</view>
+          <text class="f-name">设备连接</text>
+        </view>
+        <view class="feature-item" @click="navigateTo('/pages-nonTheme/community')">
+          <view class="f-icon-box community">🤝</view>
+          <text class="f-name">社区互动</text>
+        </view>
+        <view class="feature-item" @click="navigateTo('/pages-nonTheme/booking')">
+          <view class="f-icon-box booking">📦</view>
+          <text class="f-name">预约回收</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 垃圾分类指南汇总（紧凑版） -->
+    <view id="guide-all" class="section-container">
+      <view class="section-header">
+        <text class="section-title">分类指南</text>
+        <view class="title-line"></view>
+      </view>
+      
+      <!-- 分类卡片网格 -->
     <view class="categories-grid">
       <!-- 可回收垃圾 -->
       <view class="category-card recyclable">
@@ -185,191 +313,625 @@
         </view>
       </view>
     </view>
+    </view>
 
-    <!-- 返回按钮 -->
-    <view class="back-button" @click="goBack">
-      <text class="back-text">返回</text>
+    <!-- 常见问题区 -->
+    <view class="section-container faq-section">
+      <view class="section-header">
+        <text class="section-title">常见问题</text>
+        <view class="title-line"></view>
+      </view>
+      
+      <view class="faq-list">
+        <view class="faq-item">
+          <text class="faq-q">为什么识别结果不准？</text>
+          <text class="faq-a">AI 识别受拍摄光线、角度以及背景干扰影响。建议在光线充足的环境中对准物体拍摄。</text>
+        </view>
+        <view class="faq-item">
+          <text class="faq-q">视频里的功能在哪里？</text>
+          <text class="faq-a">大部分核心功能（识别、地图）位于首页。其他高级功能（如挑战赛、抽奖）在首页“常用服务”分区中。</text>
+        </view>
+        <view class="faq-item">
+          <text class="faq-q">小程序和 APP 有什么差别？</text>
+          <text class="faq-a">APP 端支持更完整的原生震动反馈和离线识别预热，且在连接蓝牙设备时更加稳定。小程序端则即开即用。</text>
+        </view>
+        <view class="faq-item">
+          <text class="faq-q">如何更新版本？</text>
+          <text class="faq-a">小程序端由微信自动更新。APP 用户可以在“我的 - 关于我们”中检查新版本。</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 底部行动区 -->
+    <view class="footer-actions">
+      <view class="footer-btn ghost" @click="scrollToVideoCard">
+        <text>🎞️ 打开宣传片</text>
+      </view>
+      <view class="footer-btn main" @click="goHome">
+        <text>🏠 去首页体验</text>
+      </view>
+      <view class="footer-link-box">
+        <text class="footer-link" @click="navigateTo('/pages-nonTheme/about')">联系开发者</text>
+        <text class="footer-sep">|</text>
+        <text class="footer-link" @click="navigateTo('/pages-nonTheme/about')">关于页面</text>
+      </view>
     </view>
   </view>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { ref, computed } from "vue"
+import { config } from "@/api/config"
 
-function goBack() {
-    const pages = getCurrentPages()
-    if (pages.length > 1) {
-      uni.navigateBack()
-    } else {
-      uni.reLaunch({
-        url: '/pages/home/home'
-      })
-    }
+const baseUrl = config.baseUrl
+const videoUrl = `${baseUrl}/files/preview/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1/%E5%88%86%E6%8A%95%E4%BE%A0%E5%AE%A3%E4%BC%A0%E7%89%87/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1.m3u8`
+const videoPoster = `${baseUrl}/images/app.svg`
+
+// 用于传递给 renderjs 的响应式对象
+const videoOptions = computed(() => ({
+  src: videoUrl,
+  poster: videoPoster
+}))
+
+const isPlaying = ref(false)
+const showOverlay = ref(true) // 直接控制叠加层显示，避免 renderjs 状态同步延迟
+
+// 响应来自 renderjs 的播放状态改变
+function onPlayerStatusChange(status) {
+  isPlaying.value = status.isPlaying
+  // 视频暂停或结束时，重新显示播放叠加层
+  if (!status.isPlaying) {
+    showOverlay.value = true
+  }
 }
 
-// 鼠标光感追踪
-onMounted(() => {
-  if (typeof window !== 'undefined') {
-    const lightTrackElements = document.querySelectorAll('.tips-section, .back-button')
-    
-    lightTrackElements.forEach(el => {
-      el.addEventListener('mousemove', (e) => {
-        const rect = el.getBoundingClientRect()
-        const x = ((e.clientX - rect.left) / rect.width) * 100
-        const y = ((e.clientY - rect.top) / rect.height) * 100
-        el.style.setProperty('--mouse-x', x + '%')
-        el.style.setProperty('--mouse-y', y + '%')
-      })
-    })
+// 通知 renderjs 播放
+function requestPlay() {
+  // 立即隐藏叠加层，不再等待 renderjs 回调
+  showOverlay.value = false
+  // #ifdef APP-PLUS
+  // 触发 renderjs 播放
+  playTrigger.value = Date.now()
+  // #endif
+  // #ifndef APP-PLUS
+  // 小程序/H5 端：使用原生 video 播放
+  const videoContext = uni.createVideoContext('promoVideo')
+  videoContext.play()
+  // #endif
+}
+const playTrigger = ref(0)
+
+function goHome() {
+  uni.reLaunch({
+    url: "/pages/home/home"
+  })
+}
+function goBack() {
+  const pages = getCurrentPages()
+  if (pages.length > 1) {
+    uni.navigateBack()
+  } else {
+    uni.reLaunch({url: '/pages/profile/profile'})
   }
-})
+}
+
+function navigateTo(url) {
+  uni.navigateTo({ url })
+}
+
+function goScan() {
+  // #ifdef H5
+  uni.showToast({ title: "H5端暂不支持扫码连接", icon: "none" })
+  // #endif
+  // #ifndef H5
+  uni.navigateTo({ url: "/pages/home/home" })
+  // #endif
+}
+
+function scrollToSteps() {
+  uni.pageScrollTo({
+    selector: "#steps-section",
+    duration: 500
+  })
+}
+
+function scrollToGuide() {
+  uni.pageScrollTo({
+    selector: "#guide-all",
+    duration: 500
+  })
+}
+
+function scrollToVideoCard() {
+  uni.pageScrollTo({
+    selector: ".hero-section",
+    duration: 400
+  })
+}
+</script>
+
+<script module="hlsPlayer" lang="renderjs">
+import Hls from 'hls.js'
+
+export default {
+  data() {
+    return {
+      hls: null,
+      video: null
+    }
+  },
+  mounted() {
+    this.createVideo();
+  },
+  methods: {
+    createVideo() {
+      const container = document.getElementById('video-container');
+      if (!container) return;
+      
+      this.video = document.createElement('video');
+      this.video.style.width = '100%';
+      this.video.style.height = '100%';
+      this.video.style.backgroundColor = '#000';
+      this.video.style.objectFit = 'cover'; // 强制填充容器，不留黑边
+      this.video.controls = true;
+      this.video.playsInline = true;
+      this.video.webkitPlaysinline = true;
+      
+      this.video.onplay = () => this.sendStatus(true);
+      this.video.onpause = () => this.sendStatus(false);
+      this.video.onended = () => this.sendStatus(false);
+      
+      container.appendChild(this.video);
+    },
+    init(options) {
+      if (!options || !options.src) return;
+      if (!this.video) this.createVideo();
+      
+      const { src, poster } = options;
+      this.video.poster = poster;
+      
+      if (Hls.isSupported()) {
+        if (this.hls) this.hls.destroy();
+        this.hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true
+        });
+        this.hls.loadSource(src);
+        this.hls.attachMedia(this.video);
+      } else if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
+        this.video.src = src;
+      }
+    },
+    play(trigger) {
+      if (trigger && this.video) {
+        this.video.play().catch(err => {
+          console.warn('Playback failed:', err);
+          // 如果自动播放受限，静音后再试
+          this.video.muted = true;
+          this.video.play();
+        });
+      }
+    },
+    sendStatus(isPlaying) {
+      this.$ownerInstance.callMethod('onPlayerStatusChange', { isPlaying });
+    }
+  }
+}
 </script>
 
 <style scoped>
 .guide-container {
   min-height: 100vh;
-  background: linear-gradient(180deg, #f0fdf4 0%, #f5f7fa 30%, #f0f9ff 70%, #f5f7fa 100%);
+  background: linear-gradient(180deg, #f3fff8 0%, #f7f9fb 34%, #f3fbff 72%, #f7f9fb 100%);
   position: relative;
-  overflow: hidden;
-  padding: 40rpx 0 120rpx 0;
+  overflow-x: hidden;
+  padding-top: 16rpx;
+  padding-bottom: 36rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-/* 清新背景 */
-.tech-background {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.grid-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-image: 
-    radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 70%, rgba(52, 211, 153, 0.06) 0%, transparent 40%);
-}
-
-.floating-particles {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-}
-
-.particle {
-  position: absolute;
-  width: 8rpx;
-  height: 8rpx;
-  background: rgba(16, 185, 129, 0.3);
-  border-radius: 50%;
-  animation: floatParticle 6s ease-in-out infinite;
-}
-
-.particle:nth-child(1) { top: 10%; left: 20%; animation-delay: 0s; }
-.particle:nth-child(2) { top: 30%; left: 80%; animation-delay: 1s; }
-.particle:nth-child(3) { top: 60%; left: 15%; animation-delay: 2s; }
-.particle:nth-child(4) { top: 80%; left: 70%; animation-delay: 3s; }
-
-@keyframes floatParticle {
-  0%, 100% { transform: translateY(0) scale(1); opacity: 0.3; }
-  50% { transform: translateY(-10px) scale(1.2); opacity: 0.6; }
-}
-
-/* 蓝橙球形装饰 */
+/* 背景球 */
 .bg-circle {
-  position: absolute;
+  position: fixed;
   border-radius: 50%;
-  opacity: 0.12;
+  filter: blur(80rpx);
+  opacity: 0.15;
+  z-index: 0;
   pointer-events: none;
 }
 
-.circle-blue {
-  width: 500rpx;
-  height: 500rpx;
-  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
-  top: 300rpx;
-  left: -200rpx;
-  animation: circleFloat1 10s ease-in-out infinite;
-}
+.circle-blue { width: 400rpx; height: 400rpx; background: #3b82f6; top: 10%; left: -100rpx; }
+.circle-orange { width: 350rpx; height: 350rpx; background: #f59e0b; top: 40%; right: -150rpx; }
+.circle-green { width: 300rpx; height: 300rpx; background: #10b981; bottom: 10%; left: 20%; }
 
-.circle-orange {
-  width: 450rpx;
-  height: 450rpx;
-  background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
-  top: 600rpx;
-  right: -180rpx;
-  animation: circleFloat2 12s ease-in-out infinite;
-}
-
-.circle-green {
-  width: 400rpx;
-  height: 400rpx;
-  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
-  bottom: 200rpx;
-  left: 100rpx;
-  animation: circleFloat3 8s ease-in-out infinite;
-}
-
-@keyframes circleFloat1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25% { transform: translate(30rpx, -20rpx) scale(1.02); }
-  50% { transform: translate(20rpx, 30rpx) scale(0.98); }
-  75% { transform: translate(-10rpx, 20rpx) scale(1.01); }
-}
-
-@keyframes circleFloat2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(-20rpx, 40rpx) scale(1.03); }
-  66% { transform: translate(30rpx, -30rpx) scale(0.97); }
-}
-
-@keyframes circleFloat3 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  20% { transform: translate(40rpx, 10rpx) scale(1.02); }
-  40% { transform: translate(20rpx, -40rpx) scale(0.99); }
-  60% { transform: translate(-30rpx, -20rpx) scale(1.01); }
-  80% { transform: translate(-20rpx, 30rpx) scale(0.98); }
-}
-
-/* 头部 */
-.guide-header {
+/* 封面/宣传卡片区 */
+.hero-section {
   position: relative;
   z-index: 10;
+  padding: 48rpx 30rpx 32rpx;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(59, 130, 246, 0) 100%);
   text-align: center;
-  padding: 60rpx 40rpx 40rpx;
+  width: calc(100% - 48rpx);
+  max-width: 1500rpx;
+  box-sizing: border-box;
 }
 
-.header-title {
+.hero-content {
+  margin-bottom: 24rpx;
+}
+
+.hero-title {
+  font-size: 48rpx;
+  font-weight: 800;
+  color: #1f2937;
+  display: block;
+}
+
+.hero-subtitle {
+  font-size: 24rpx;
+  color: #6b7280;
+  margin-top: 12rpx;
+  display: block;
+}
+
+.video-card {
+  position: relative;
+  width: 100%;
+  margin: 0 auto 24rpx;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 20rpx;
+  overflow: hidden;
+  box-shadow: 0 12rpx 28rpx rgba(0, 0, 0, 0.12);
+}
+
+.promo-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+.video-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.play-icon-wrapper {
+  width: 110rpx;
+  height: 110rpx;
+  background: rgba(255, 255, 255, 0.25);
+  border: 4rpx solid #fff;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 20rpx;
-  color: #059669;
-  font-size: 44rpx;
-  font-weight: 700;
-  margin-bottom: 16rpx;
+  margin-bottom: 20rpx;
 }
 
-.header-icon {
-  width: 70rpx;
-  height: 70rpx;
-  object-fit: cover;
-  border-radius: 10rpx;
-  box-shadow: 0 6rpx 14rpx rgba(16, 185, 129, 0.12);
+.play-icon {
+  color: #fff;
+  font-size: 50rpx;
+  margin-left: 10rpx;
 }
 
-.header-subtitle {
+.video-embed-shell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.video-embed {
+  width: 100%;
+  height: 100%;
   display: block;
-  color: #6b7280;
-  font-size: 28rpx;
-  letter-spacing: 2rpx;
+  background: #000;
 }
+
+@media screen and (min-width: 960px) {
+  .hero-section {
+    padding-top: 40rpx;
+  }
+
+  .video-card {
+    width: 100%;
+  }
+}
+
+.video-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 18rpx 22rpx 20rpx;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(8, 18, 32, 0.76) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.overlay-title {
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.video-tip {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 20rpx;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 18rpx;
+  justify-content: center;
+}
+
+.action-btn {
+  padding: 20rpx 28rpx;
+  border-radius: 50rpx;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-weight: 600;
+  font-size: 26rpx;
+  transition: all 0.2s;
+}
+
+.action-btn.primary {
+  background: #10b981;
+  color: #fff;
+  box-shadow: 0 10rpx 20rpx rgba(16, 185, 129, 0.3);
+}
+
+.action-btn.secondary {
+  background: #fff;
+  color: #374151;
+  border: 2rpx solid #e5e7eb;
+}
+
+/* 分区通用样式 */
+.section-container {
+  padding: 40rpx 30rpx;
+  position: relative;
+  z-index: 10;
+  width: calc(100% - 48rpx);
+  max-width: 1500rpx;
+  box-sizing: border-box;
+}
+
+.section-header {
+  margin-bottom: 24rpx;
+}
+
+.section-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.title-line {
+  width: 48rpx;
+  height: 6rpx;
+  background: #10b981;
+  border-radius: 4rpx;
+  margin-top: 8rpx;
+}
+
+/* 步骤卡片 */
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.step-card {
+  background: #fff;
+  border-radius: 24rpx;
+  padding: 28rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.05);
+}
+
+.step-number {
+  font-size: 48rpx;
+  font-weight: 900;
+  color: rgba(16, 185, 129, 0.15);
+  line-height: 1;
+}
+
+.step-name {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #111827;
+  display: block;
+}
+
+.step-desc {
+  font-size: 24rpx;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+.step-preview {
+  width: 400rpx;
+  height: 350rpx;
+  align-self: center;
+  border-radius: 20rpx;
+  background: #f3f4f6;
+}
+
+.step-icons {
+  display: flex;
+  gap: 18rpx;
+  margin-top: 4rpx;
+}
+
+.s-icon {
+  font-size: 36rpx;
+  background: #f0fdf4;
+  width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16rpx;
+}
+
+/* 功能网格 */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18rpx;
+}
+
+.feature-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.f-icon-box {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36rpx;
+  box-shadow: 0 6rpx 16rpx rgba(0,0,0,0.06);
+}
+
+.f-icon-box.ai { background: #e0f2fe; }
+.f-icon-box.guide { background: #fef3c7; }
+.f-icon-box.map { background: #dcfce7; }
+.f-icon-box.device { background: #f3e8ff; }
+.f-icon-box.community { background: #ffedd5; }
+.f-icon-box.booking { background: #d1fae5; }
+
+.f-name {
+  font-size: 22rpx;
+  color: #4b5563;
+  font-weight: 600;
+}
+
+/* 分类胶囊 */
+.categories-compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.cat-pill {
+  padding: 12rpx 22rpx;
+  border-radius: 100rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  border: 2rpx solid transparent;
+}
+
+.cat-pill.recyclable { background: #f0fdf4; color: #16a34a; border-color: rgba(22, 163, 74, 0.2); }
+.cat-pill.harmful { background: #fef2f2; color: #dc2626; border-color: rgba(220, 38, 38, 0.2); }
+.cat-pill.kitchen { background: #fffbeb; color: #d97706; border-color: rgba(217, 119, 6, 0.2); }
+.cat-pill.other { background: #f9fafb; color: #4b5563; border-color: rgba(75, 85, 99, 0.2); }
+
+/* FAQ */
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.faq-item {
+  background: white;
+  padding: 22rpx;
+  border-radius: 18rpx;
+}
+
+.faq-q {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #111827;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.faq-a {
+  font-size: 24rpx;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+/* 底部操作 */
+.footer-actions {
+  padding: 44rpx 30rpx 56rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+  align-items: center;
+  width: calc(100% - 48rpx);
+  max-width: 900rpx;
+  box-sizing: border-box;
+}
+
+.footer-btn {
+  width: 100%;
+  height: 84rpx;
+  border-radius: 42rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 28rpx;
+}
+
+.footer-btn.main {
+  background: #10b981;
+  color: #fff;
+  box-shadow: 0 10rpx 30rpx rgba(16, 185, 129, 0.3);
+}
+
+.footer-btn.ghost {
+  background: #fff;
+  color: #10b981;
+  border: 3rpx solid #10b981;
+}
+
+.footer-link-box {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 8rpx;
+}
+
+.footer-link {
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.footer-sep {
+  color: #e5e7eb;
+}
+
 
 /* 分类网格 */
 .categories-grid {
@@ -378,7 +940,9 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300rpx, 1fr));
   gap: 20rpx;
-  margin: 0 30rpx;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* 移动端和平板 */
@@ -692,84 +1256,30 @@ onMounted(() => {
   flex: 1;
 }
 
-/* 返回按钮 - 3D玻璃材质 + 鼠标光感追踪 */
-.back-button {
-  position: relative;
-  z-index: 10;
-  margin: 40rpx auto 0;
-  width: 200rpx;
+/* ===== 返回按钮 ===== */
+.back-btn {
+  position: absolute;
+  top: 50rpx;
+  left: 20rpx;
+  width: 80rpx;
   height: 80rpx;
-  background: linear-gradient(145deg, 
-    rgba(255, 255, 255, 0.95) 0%, 
-    rgba(236, 253, 245, 0.9) 50%,
-    rgba(209, 250, 229, 0.85) 100%);
-  backdrop-filter: blur(20rpx);
-  border: 2px solid rgba(52, 211, 153, 0.4);
-  border-radius: 40rpx;
+  backdrop-filter: blur(10px);
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 100;
   transition: all 0.3s ease;
-  box-shadow: 
-    inset 0 2rpx 0 rgba(255, 255, 255, 0.9),
-    inset 0 -2rpx 0 rgba(16, 185, 129, 0.2),
-    0 6rpx 20rpx rgba(16, 185, 129, 0.2),
-    0 2rpx 6rpx rgba(0, 0, 0, 0.05);
-  overflow: hidden;
+  cursor: pointer;
 }
 
-/* 鼠标光感追踪效果 */
-.back-button::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(
-    circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    rgba(255, 255, 255, 0.6) 0%,
-    rgba(52, 211, 153, 0.15) 30%,
-    transparent 60%
-  );
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease;
+.about-container .back-btn {
+  background: rgba(16, 185, 129, 0.1);
+  border: 2px solid rgba(16, 185, 129, 0.3);
 }
 
-.back-button:hover::before {
-  opacity: 1;
-}
-
-/* 顶部高光 */
-.back-button::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 10%;
-  right: 10%;
-  height: 1rpx;
-  background: linear-gradient(90deg, 
-    transparent 0%, 
-    rgba(255, 255, 255, 0.9) 50%, 
-    transparent 100%);
-  pointer-events: none;
-}
-
-.back-button:active {
-  transform: scale(0.95) translateY(2rpx);
-  background: linear-gradient(145deg, 
-    rgba(209, 250, 229, 0.95) 0%, 
-    rgba(167, 243, 208, 0.9) 50%,
-    rgba(110, 231, 183, 0.85) 100%);
-  box-shadow: 
-    inset 0 2rpx 4rpx rgba(0, 0, 0, 0.1),
-    0 2rpx 8rpx rgba(16, 185, 129, 0.15);
-}
-
-.back-text {
-  color: #059669;
-  font-size: 32rpx;
-  font-weight: 600;
+.about-container .back-btn:active {
+  transform: scale(0.9);
+  background: rgba(16, 185, 129, 0.2);
 }
 </style>

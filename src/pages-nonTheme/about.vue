@@ -24,7 +24,7 @@
     <view class="content-wrapper">
       <!-- 应用信息卡片 -->
       <view class="info-card">
-        <image class="app-icon" src="/static/Icon.png" mode="aspectFill" @click="downloadAPK('')"></image>
+        <image class="app-icon" src="/static/Icon.webp.png" mode="aspectFill" @click="downloadAPK('')"></image>
         <text class="app-name">分投侠</text>
         <text class="app-slogan">智能垃圾分类助手</text>
         <text class="app-version">Version {{ currentVersion }}</text>
@@ -89,7 +89,7 @@
           </view>
           <view class="tech-item">
             <text class="tech-label">数据来源：</text>
-            <text class="tech-value">垃圾分类标准数据集·3万张（在线识别）<br /> 自研高质量数据集 · 1万张 （装置识别）</text>
+            <text class="tech-value">垃圾分类公开数据集·3万张（在线识别）<br /> 自研高质量数据集 · 1万张 （装置识别）</text>
           </view>
         </view>
       </view>
@@ -136,7 +136,7 @@ function goBack() {
   }
 }
 
-const currentVersion = manifest?.versionName || '1.3.10'
+const currentVersion = manifest?.versionName || '1.3.11'
 
 const checking = ref(false)
 const updateMessage = ref('')

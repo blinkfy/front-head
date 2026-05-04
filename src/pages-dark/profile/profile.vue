@@ -53,7 +53,7 @@
       <view class="avatar-section">
         <view class="avatar-ring">
           <view class="avatar-inner">
-            <image class="person-avatar" :src="getAvatarUrl(userInfo.avatar || '/static/person.jpeg', baseUrl)" mode="aspectFill"></image>
+            <image class="person-avatar" :src="getAvatarUrl(userInfo.avatar || '/static/person.webp.png', baseUrl)" mode="aspectFill"></image>
           </view>
           <!-- 四种垃圾桶围绕-->
           <view class="trash-bins">

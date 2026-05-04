@@ -65,9 +65,23 @@ onMounted(() => {
   applyStoredTheme()
   unbindThemeWatcher = bindThemeStorageSync()
 
-  const params = new URLSearchParams(window.location.search || '')
-  sourcePath.value = params.get('from') || ''
-  reason.value = params.get('reason') || DEFAULT_REASON
+  const query = String(window.location.search || '').replace(/^\?/, '')
+  const params = {}
+
+  if (query) {
+    query.split('&').forEach((pair) => {
+      if (!pair) return
+      const index = pair.indexOf('=')
+      const rawKey = index >= 0 ? pair.slice(0, index) : pair
+      const rawValue = index >= 0 ? pair.slice(index + 1) : ''
+      const key = decodeURIComponent(rawKey.replace(/\+/g, ' '))
+      const value = decodeURIComponent(rawValue.replace(/\+/g, ' '))
+      params[key] = value
+    })
+  }
+
+  sourcePath.value = params.from || ''
+  reason.value = params.reason || DEFAULT_REASON
 })
 
 onBeforeUnmount(() => {

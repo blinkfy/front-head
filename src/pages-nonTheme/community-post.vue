@@ -43,7 +43,7 @@
           </view>
 
           <view class="post-images" v-if="post.images && post.images.length > 0">
-            <image v-for="(img, idx) in post.images" :key="idx" class="post-image" :src="img" mode="aspectFill" @click.stop="previewImage(post.images, idx)"></image>
+            <image v-for="(img, idx) in post.images" :key="idx" class="post-image" :src="img" mode="aspectFill" @tap.stop="previewImage(post.images, idx)" :data-idx="idx" :data-src="img"></image>
           </view>
 
           <view class="post-actions">
@@ -279,8 +279,93 @@ export default {
         uni.showToast({ title: e.message || '评论失败', icon: 'none' });
       }
     },
-    previewImage(images, index) {
-      uni.previewImage({ urls: images, current: index });
+    async previewImage(images, index) {
+      console.log('previewImage called with:', images, index);
+      let urls = normalizeCommunityImages(images, baseUrl);
+      console.log('normalized urls:', urls);
+      if (!urls.length) {
+        uni.showToast({ title: '暂无可预览图片', icon: 'none' });
+        return;
+      }
+      
+      // Fix for App: base64 images cannot be previewed directly via uni.previewImage on some platforms
+      // We convert them to temporary local files
+      const finalUrls = [];
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        if (url.startsWith('data:image/')) {
+          try {
+            const filePath = await this.saveBase64ToTemp(url, `temp_preview_${i}`);
+            finalUrls.push(filePath);
+          } catch (e) {
+            console.error('Failed to convert base64 to temp file:', e);
+            finalUrls.push(url);
+          }
+        } else {
+          finalUrls.push(url);
+        }
+      }
+
+      const currentIndex = Math.min(Math.max(Number(index) || 0, 0), finalUrls.length - 1);
+      const current = finalUrls[currentIndex];
+      console.log('calling uni.previewImage with:', { urls: finalUrls, current });
+      
+      uni.previewImage({ 
+        urls: finalUrls, 
+        current: current,
+        longPressActions: {
+          itemList: ['发送给朋友', '保存图片', '收藏'],
+          success: function(data) {
+            console.log('选中了第' + (data.tapIndex + 1) + '个按钮,第' + (data.index + 1) + '张图片');
+          },
+          fail: function(err) {
+            console.log(err.errMsg);
+          }
+        }
+      });
+    },
+    saveBase64ToTemp(base64Data, name) {
+      return new Promise((resolve, reject) => {
+        // #ifdef APP-PLUS
+        // Ensure name is clean
+        const fileName = `${name.replace(/[^a-z0-9]/gi, '_')}.png`;
+        const bitmap = new plus.nativeObj.Bitmap(name);
+        bitmap.loadBase64Data(base64Data, () => {
+          // Use _doc path which is standard for App-Plus temporary files
+          const savePath = `_doc/${fileName}`;
+          bitmap.save(savePath, { overwrite: true }, (event) => {
+            // event.target is the absolute local path like file:///...
+            resolve(event.target);
+            // Bitmap should be cleared from memory after saving
+            bitmap.clear();
+          }, (err) => {
+            bitmap.clear();
+            reject(err);
+          });
+        }, (err) => {
+          reject(err);
+        });
+        // #endif
+
+        // #ifdef MP-WEIXIN
+        const fs = uni.getFileSystemManager();
+        const parts = base64Data.split(',');
+        const extMatch = parts[0].match(/data:image\/(\w+);base64/);
+        const ext = extMatch ? extMatch[1] : 'png';
+        const filePath = `${uni.env.USER_DATA_PATH}/${name}.${ext}`;
+        fs.writeFile({
+          filePath: filePath,
+          data: parts[1],
+          encoding: 'base64',
+          success: () => resolve(filePath),
+          fail: (err) => reject(err)
+        });
+        // #endif
+
+        // #ifndef APP-PLUS || MP-WEIXIN
+        resolve(base64Data);
+        // #endif
+      });
     },
     confirmDeletePost() {
       uni.showModal({
@@ -338,11 +423,11 @@ export default {
       return `${Math.floor(diff / 86400000)}天前`;
     },
     getAvatarUrl(avatar) {
-      if (!avatar) return '/static/person.jpeg';
-      if (typeof avatar !== 'string') return '/static/person.jpeg';
-      if (avatar.startsWith('blob:')) return '/static/person.jpeg';
+      if (!avatar) return '/static/person.webp.png';
+      if (typeof avatar !== 'string') return '/static/person.webp.png';
+      if (avatar.startsWith('blob:')) return '/static/person.webp.png';
       const resolved = resolveAvatarUrl(avatar, baseUrl);
-      if (resolved !== '/static/person.jpeg') return resolved;
+      if (resolved !== '/static/person.webp.png') return resolved;
       if (avatar.startsWith('/')) return `${baseUrl}${avatar}`;
       return `${baseUrl}/${avatar}`;
     }

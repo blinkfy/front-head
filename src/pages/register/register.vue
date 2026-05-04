@@ -17,7 +17,7 @@
         
         <view class="header-main">
           <view class="logo-wrap">
-            <image src="/static/person.jpeg" class="logo-image" mode="aspectFit" />
+            <image src="/static/person.webp.png" class="logo-image" mode="aspectFit" />
           </view>
           <view class="header-text">
             <text class="welcome-title">欢迎加入</text>

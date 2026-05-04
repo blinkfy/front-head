@@ -196,7 +196,7 @@ export function getAvatarType(avatar) {
  */
 export function getAvatarUrl(avatar, baseUrl = '') {
   if (!avatar) {
-    return '/static/person.jpeg'
+    return '/static/person.webp.png'
   }
 
   const type = getAvatarType(avatar)
@@ -222,7 +222,7 @@ export function getAvatarUrl(avatar, baseUrl = '') {
       return avatar
 
     default:
-      return '/static/person.jpeg'
+      return '/static/person.webp.png'
   }
 }
 

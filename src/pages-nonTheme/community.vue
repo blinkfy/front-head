@@ -128,7 +128,7 @@
             </view>
 
             <view class="post-images" v-if="post.imageCount > 0">
-              <image v-for="(img, idx) in post.images.slice(0, 3)" :key="idx" class="post-image" :src="img" mode="aspectFill" @click.stop="previewImage(post.images, idx)"></image>
+              <image v-for="(img, idx) in post.images.slice(0, 3)" :key="idx" class="post-image" :src="img" mode="aspectFill" @tap.stop="previewImage(post.images, idx)" :data-idx="idx" :data-src="img"></image>
               <view class="image-placeholder" v-if="!post.images || post.images.length === 0">
                 <text>{{ post.imageCount }}图</text>
               </view>
@@ -440,8 +440,77 @@ export default {
       }
       uni.navigateTo({ url: `/pages-nonTheme/community-publish?communityId=${this.myCommunity.id}` });
     },
-    previewImage(images, index) {
-      uni.previewImage({ urls: images, current: index });
+    async previewImage(images, index) {
+      console.log('previewImage called with:', images, index);
+      const urls = normalizeCommunityImages(images, baseUrl);
+      console.log('normalized urls:', urls);
+      if (!urls.length) {
+        uni.showToast({ title: '暂无可预览图片', icon: 'none' });
+        return;
+      }
+      
+      // Fix for App: base64 images cannot be previewed directly via uni.previewImage on some platforms
+      const finalUrls = [];
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        if (url.startsWith('data:image/')) {
+          try {
+            const filePath = await this.saveBase64ToTemp(url, `temp_preview_list_${i}`);
+            finalUrls.push(filePath);
+          } catch (e) {
+            finalUrls.push(url);
+          }
+        } else {
+          finalUrls.push(url);
+        }
+      }
+
+      const currentIndex = Math.min(Math.max(Number(index) || 0, 0), finalUrls.length - 1);
+      const current = finalUrls[currentIndex];
+      console.log('calling uni.previewImage with:', { urls: finalUrls, current });
+      uni.previewImage({ 
+        urls: finalUrls, 
+        current: current
+      });
+    },
+    saveBase64ToTemp(base64Data, name) {
+      return new Promise((resolve, reject) => {
+        // #ifdef APP-PLUS
+        const fileName = `${name.replace(/[^a-z0-9]/gi, '_')}.png`;
+        const bitmap = new plus.nativeObj.Bitmap(name);
+        bitmap.loadBase64Data(base64Data, () => {
+          const savePath = `_doc/${fileName}`;
+          bitmap.save(savePath, { overwrite: true }, (event) => {
+            resolve(event.target);
+            bitmap.clear();
+          }, (err) => {
+            bitmap.clear();
+            reject(err);
+          });
+        }, (err) => {
+          reject(err);
+        });
+        // #endif
+
+        // #ifdef MP-WEIXIN
+        const fs = uni.getFileSystemManager();
+        const parts = base64Data.split(',');
+        const extMatch = parts[0].match(/data:image\/(\w+);base64/);
+        const ext = extMatch ? extMatch[1] : 'png';
+        const filePath = `${uni.env.USER_DATA_PATH}/${name}.${ext}`;
+        fs.writeFile({
+          filePath: filePath,
+          data: parts[1],
+          encoding: 'base64',
+          success: () => resolve(filePath),
+          fail: (err) => reject(err)
+        });
+        // #endif
+
+        // #ifndef APP-PLUS || MP-WEIXIN
+        resolve(base64Data);
+        // #endif
+      });
     },
     normalizePosts(posts) {
       return (posts || []).map((post) => ({
@@ -529,11 +598,11 @@ export default {
       return `${Math.floor(diff / 86400000)}天前`;
     },
     getAvatarUrl(avatar) {
-      if (!avatar) return '/static/person.jpeg';
-      if (typeof avatar !== 'string') return '/static/person.jpeg';
-      if (avatar.startsWith('blob:')) return '/static/person.jpeg';
+      if (!avatar) return '/static/person.webp.png';
+      if (typeof avatar !== 'string') return '/static/person.webp.png';
+      if (avatar.startsWith('blob:')) return '/static/person.webp.png';
       const resolved = resolveAvatarUrl(avatar, baseUrl);
-      if (resolved !== '/static/person.jpeg') return resolved;
+      if (resolved !== '/static/person.webp.png') return resolved;
       if (avatar.startsWith('/')) return `${baseUrl}${avatar}`;
       return `${baseUrl}/${avatar}`;
     },

@@ -16,7 +16,7 @@
       <view class="header-content">
         <view class="app-brand">
           <view class="logo-wrap">
-            <image src="/static/person.jpeg" class="logo-image" mode="aspectFit" />
+            <image src="/static/person.webp.png" class="logo-image" mode="aspectFit" />
           </view>
           <view class="brand-text">
             <text class="app-name">分投侠</text>

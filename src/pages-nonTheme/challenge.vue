@@ -583,11 +583,11 @@ export default {
       return { left: p.left, top: p.top, animationDelay: p.delay };
     },
     getAvatarUrl(avatar) {
-      if (!avatar) return '/static/person.jpeg';
-      if (typeof avatar !== 'string') return '/static/person.jpeg';
-      if (avatar.startsWith('blob:')) return '/static/person.jpeg';
+      if (!avatar) return '/static/person.webp.png';
+      if (typeof avatar !== 'string') return '/static/person.webp.png';
+      if (avatar.startsWith('blob:')) return '/static/person.webp.png';
       const resolved = resolveAvatarUrl(avatar, baseUrl);
-      if (resolved !== '/static/person.jpeg') return resolved;
+      if (resolved !== '/static/person.webp.png') return resolved;
       if (avatar.startsWith('/')) return `${baseUrl}${avatar}`;
       return `${baseUrl}/${avatar}`;
     }
