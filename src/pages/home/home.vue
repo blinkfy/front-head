@@ -331,6 +331,7 @@
       @dismiss="completeAppOnboarding"
       @complete="completeAppOnboarding"
       @step-change="handleOnboardingStepChange"
+      @goGuide="navigateTo('/pages/guide/guide')"
     />
 
     <!-- 底部导航栏-->
@@ -1259,7 +1260,9 @@ function onAddImage() {
     fail: () => uni.showToast({ title: '选择取消', icon: 'none' })
   })
 }
-
+function navigateTo(url) {
+  uni.navigateTo({ url })
+}
 function goHistory() {
   uni.navigateTo({ url: '/pages/history/history?from=home' })
 }

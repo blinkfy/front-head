@@ -241,7 +241,7 @@
             <text class="icon">📚</text>
             <view class="icon-glow green"></view>
           </view>
-          <text class="function-title">分类指南</text>
+          <text class="function-title">使用指南</text>
           <text class="function-desc">学习环保</text>
           <view class="hover-effect"></view>
         </view>
@@ -2336,11 +2336,11 @@ body {
   }
 
   .function-row {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .function-item {
-    flex: 1 1 calc(50% - 6rpx);
+    flex: 1;
     min-width: 0;
   }
 

@@ -69,7 +69,7 @@
                     <view class="item-left">
                         <text class="item-icon">🧭</text>
                         <view class="item-info">
-                            <text class="item-title">App 使用指南</text>
+                            <text class="item-title">新用户引导</text>
                             <text class="item-desc">查看识别、地图和预约回收的基础用法</text>
                         </view>
                     </view>

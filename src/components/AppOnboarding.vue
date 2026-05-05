@@ -26,7 +26,8 @@
       <view class="hint-line" :class="currentStep.arrow"></view>
 
       <view class="tour-actions">
-        <view class="ghost-btn" @click="dismiss">跳过</view>
+        <view v-if="isLastStep" class="ghost-btn" @click="moreInfo">查看更多</view>
+        <view v-else class="ghost-btn" @click="dismiss">跳过</view>
         <view class="solid-btn" @click="nextStep">{{ isLastStep ? '知道了' : 'OK' }}</view>
       </view>
     </view>
@@ -65,7 +66,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['dismiss', 'complete', 'step-change'])
+const emit = defineEmits(['dismiss', 'complete', 'step-change','goGuide'])
 
 const steps = [
   {
@@ -280,6 +281,10 @@ function refreshWindowSize() {
 
 function emitStepChange() {
   emit('step-change', currentStep.value)
+}
+
+function moreInfo() {
+  emit('goGuide')
 }
 
 function dismiss() {

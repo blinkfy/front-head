@@ -329,6 +329,7 @@
       @dismiss="completeAppOnboarding"
       @complete="completeAppOnboarding"
       @step-change="handleOnboardingStepChange"
+      @goGuide="navigateTo('/pages-dark/guide/guide')"
     />
 
     <!-- 科技感底部导航栏 -->
@@ -1277,7 +1278,9 @@ function onAddImage() {
   
   uni.chooseImage(chooseConfig)
 }
-
+function navigateTo(url) {
+  uni.navigateTo({ url })
+}
 function goHistory() {
   uni.navigateTo({ url: '/pages-dark/history/history?from=home' })
 }

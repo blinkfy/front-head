@@ -16,45 +16,45 @@
     <view class="hero-section">
       <view class="hero-content">
         <text class="hero-title">分投侠 使用指南</text>
-        <text class="hero-subtitle">看懂 App 怎么用</text>
+        <text v-if="showVideo" class="hero-subtitle">演示分投侠在日常生活中的应用场景</text>
       </view>
       
-      <view class="video-card">
+      <view v-if="showVideo" class="video-card">
         <!-- #ifdef APP-PLUS -->
         <view 
           id="video-container" 
           class="promo-video"
-          :videoOptions="videoOptions"
+          :videoOptions="scenarioVideoOptions"
           :change:videoOptions="hlsPlayer.init"
-          :playTrigger="playTrigger"
+          :playTrigger="scenarioPlayTrigger"
           :change:playTrigger="hlsPlayer.play"
         ></view>
         <!-- #endif -->
 
         <!-- #ifndef APP-PLUS -->
         <video
-          id="promoVideo"
+          id="scenarioVideo"
           class="promo-video"
-          :src="videoUrl"
-          :poster="videoPoster"
+          :src="scenarioVideoUrl"
+          :poster="scenarioVideoPoster"
           object-fit="cover"
           controls
-          @play="showOverlay = false"
-          @pause="showOverlay = true"
-          @ended="showOverlay = true"
+          @play="showScenarioOverlay = false"
+          @pause="showScenarioOverlay = true"
+          @ended="showScenarioOverlay = true"
         ></video>
         <!-- #endif -->
         
-        <!-- 播放叠加层 (Native 侧控制) -->
-        <view v-if="showOverlay" class="video-overlay" @click="requestPlay">
+        <!-- 播放叠加层 -->
+        <view v-if="showScenarioOverlay" class="video-overlay" @click="requestPlay('scenario')">
           <view class="play-icon-wrapper">
             <text class="play-icon">▶</text>
           </view>
-          <text class="overlay-title">分投侠 官方宣传片</text>
+          <text class="overlay-title">观看 使用场景演示</text>
         </view>
       </view>
 
-      <view class="hero-actions">
+      <view v-if="showVideo" class="hero-actions">
         <view class="action-btn primary" @click="goHome">
           <text class="btn-icon">🚀</text>
           <text>立即体验</text>
@@ -66,78 +66,169 @@
       </view>
     </view>
 
-    <!-- 三步上手区 -->
+    <!-- 使用路径区 -->
     <view id="steps-section" class="section-container">
       <view class="section-header">
-        <text class="section-title">三步上手</text>
+        <text class="section-title">核心使用路径</text>
         <view class="title-line"></view>
       </view>
-      
+
       <view class="steps-list">
-        <view class="step-card">
-          <view class="step-number">01</view>
-          <view class="step-info">
-            <text class="step-name">拍照识别垃圾</text>
-            <text class="step-desc">在首页点击“点击拍照识别”，上传一张垃圾照片，AI 会自动分析类别。</text>
+        <!-- 步骤 01: 图右文左 -->
+        <view class="step-card horizontal">
+          <view class="step-card-top">
+            <view class="step-content-side">
+              <view class="step-number">01</view>
+              <text class="step-name">精准拍照识别</text>
+              <text class="step-desc">在首页点击“点击拍照识别”。将物体置于画面中心，确保光线充足，AI 将在数秒内给出分类建议。</text>
+            </view>
+            <view class="step-image-side">
+              <image class="step-preview-mini" :src="getImageUrl('guide1.webp')" mode="aspectFit"></image>
+            </view>
           </view>
-          <image class="step-preview" :src="`${baseUrl}/images/tip1.webp`" mode="aspectFill"></image>
+          <view class="step-extra full-width">
+            <text class="extra-tag">小技巧</text>
+            <text class="extra-text">避开杂乱背景，单次拍摄一种物体识别率更高</text>
+          </view>
         </view>
 
-        <view class="step-card">
-          <view class="step-number">02</view>
-          <view class="step-info">
-            <text class="step-name">查看分类建议</text>
-            <text class="step-desc">系统会给出垃圾所属类别（如厨余垃圾）及具体的无害化处理建议。</text>
+        <!-- 步骤 02: 图左文右 -->
+        <view class="step-card horizontal reverse">
+          <view class="step-card-top">
+            <view class="step-content-side">
+              <view class="step-number">02</view>
+              <text class="step-name">详尽分类百科</text>
+              <text class="step-desc">识别后不仅能看到类别，还能查看处理建议集。点击“分类指南”可搜索任何不确定的垃圾。</text>
+            </view>
+            <view class="step-image-side">
+              <image class="step-preview-mini" :src="getImageUrl('guide2.webp')" mode="aspectFit"></image>
+            </view>
           </view>
-          <image class="step-preview" :src="`${baseUrl}/images/tip2.webp`" mode="aspectFill"></image>
         </view>
 
-        <view class="step-card">
-          <view class="step-number">03</view>
-          <view class="step-info">
-            <text class="step-name">参与后续互动</text>
-            <text class="step-desc">去地图查找最近的投放点，或者连接你的智能分类设备，参与社区讨论分享心得。</text>
+        <!-- 步骤 03: 图右文左 -->
+        <view class="step-card horizontal">
+          <view class="step-card-top">
+            <view class="step-content-side">
+              <view class="step-number">03</view>
+              <text class="step-name">寻找最近箱体</text>
+              <text class="step-desc">进入“点位地图”，我们将为您规划最近的“分投侠”智能柜路径。支持查看箱体当前承载状态。</text>
+            </view>
+            <view class="step-image-side">
+              <image class="step-preview-mini" :src="getImageUrl('guide3.webp')" mode="aspectFit"></image>
+            </view>
           </view>
-          <view class="step-icons">
-            <text class="s-icon">📍</text>
-            <text class="s-icon">📱</text>
-            <text class="s-icon">🏘️</text>
+        </view>
+
+        <!-- 步骤 04: 图左文右 -->
+        <view class="step-card horizontal reverse">
+          <view class="step-card-top">
+            <view class="step-content-side">
+              <view class="step-number">04</view>
+              <text class="step-name">投递兑换好礼</text>
+              <text class="step-desc">通过扫码开启箱门，投递可回收物后系统自动结算。在“积分商城”兑换生活用品或提取奖励。</text>
+            </view>
+            <view class="step-image-side">
+              <image class="step-preview-mini" :src="getImageUrl('guide4.webp')" mode="aspectFit"></image>
+            </view>
+          </view>
+          <view class="step-extra full-width">
+            <text class="extra-tag">小技巧</text>
+            <text class="extra-text">定期参与社区挑战，可获得额外翻倍积分奖励</text>
+          </view>
+        </view>
+      </view>
+            
+      <!-- 展示视频嵌入到步骤一 -->
+      <view v-if="showVideo" class="app-video-section">
+        <view class="detail-header">
+          <text class="detail-title">📱 APP功能演示</text>
+          <text class="detail-subtitle">直观感受分投侠的操作便捷性</text>
+        </view>
+        <view class="video-card app-video-card">
+          <!-- #ifdef APP-PLUS -->
+          <view 
+            id="video-container-app" 
+            class="app-video"
+            :videoOptions="appVideoOptions"
+            :change:videoOptions="hlsPlayer.initApp"
+            :playTrigger="appPlayTrigger"
+            :change:playTrigger="hlsPlayer.playApp"
+          ></view>
+          <!-- #endif -->
+
+          <!-- #ifndef APP-PLUS -->
+          <video
+            id="appVideo"
+            class="app-video"
+            :src="appVideoUrl"
+            :poster="appVideoPoster"
+            object-fit="contain"
+            controls
+            @play="showAppOverlay = false"
+            @pause="showAppOverlay = true"
+            @ended="showAppOverlay = true"
+          ></video>
+          <!-- #endif -->
+          <view v-if="showAppOverlay" class="video-overlay app-overlay" @click="requestPlay('app')">
+            <view class="play-icon-wrapper mini">
+              <text class="play-icon">▶</text>
+            </view>
+            <text class="overlay-title">App 功能演示</text>
           </view>
         </view>
       </view>
     </view>
 
-    <!-- 功能分区 -->
+    <!-- 深度功能详解 -->
     <view class="section-container">
       <view class="section-header">
-        <text class="section-title">核心功能</text>
+        <text class="section-title">全场景功能矩阵</text>
         <view class="title-line"></view>
       </view>
       
-      <view class="features-grid">
-        <view class="feature-item" @click="goHome">
-          <view class="f-icon-box ai">🤖</view>
-          <text class="f-name">AI 识别</text>
+      <view class="features-detailed-grid">
+        <view class="fd-item ai" @click="goHome">
+          <view class="fd-icon">🤖</view>
+          <view class="fd-info">
+            <text class="fd-name">AI 图像增强识别</text>
+            <text class="fd-desc">万物皆可识别，自研模型持续进化</text>
+          </view>
         </view>
-        <view class="feature-item" @click="scrollToGuide">
-          <view class="f-icon-box guide">📋</view>
-          <text class="f-name">分类指南</text>
+        <view class="fd-item map" @click="navigateTo('/pages/map/map')">
+          <view class="fd-icon">🗺️</view>
+          <view class="fd-info">
+            <text class="fd-name">智能网点地图</text>
+            <text class="fd-desc">一键导航至最近的回收桶点位</text>
+          </view>
         </view>
-        <view class="feature-item" @click="navigateTo('/pages/map/map')">
-          <view class="f-icon-box map">🗺️</view>
-          <text class="f-name">地图找桶</text>
+        <view class="fd-item device" @click="goScan">
+          <view class="fd-icon">📱</view>
+          <view class="fd-info">
+            <text class="fd-name">物联网设备联动</text>
+            <text class="fd-desc">蓝牙/扫码极速连接，智享开盖体验</text>
+          </view>
         </view>
-        <view class="feature-item" @click="goScan">
-          <view class="f-icon-box device">📱</view>
-          <text class="f-name">设备连接</text>
+        <view class="fd-item community" @click="navigateTo('/pages-nonTheme/community')">
+          <view class="fd-icon">🤝</view>
+          <view class="fd-info">
+            <text class="fd-name">绿色先行社区</text>
+            <text class="fd-desc">与邻里分享心得，共同助力碳中和</text>
+          </view>
         </view>
-        <view class="feature-item" @click="navigateTo('/pages-nonTheme/community')">
-          <view class="f-icon-box community">🤝</view>
-          <text class="f-name">社区互动</text>
+        <view class="fd-item booking" @click="navigateTo('/pages-nonTheme/booking')">
+          <view class="fd-icon">📦</view>
+          <view class="fd-info">
+            <text class="fd-name">上门预约服务</text>
+            <text class="fd-desc">大件垃圾处理难？一键预约专业上门</text>
+          </view>
         </view>
-        <view class="feature-item" @click="navigateTo('/pages-nonTheme/booking')">
-          <view class="f-icon-box booking">📦</view>
-          <text class="f-name">预约回收</text>
+        <view class="fd-item shop" @click="navigateTo('/pages-nonTheme/shop')">
+          <view class="fd-icon">🎁</view>
+          <view class="fd-info">
+            <text class="fd-name">积分权益商城</text>
+            <text class="fd-desc">分类产生价值，积分兑换精选好礼</text>
+          </view>
         </view>
       </view>
     </view>
@@ -344,14 +435,14 @@
 
     <!-- 底部行动区 -->
     <view class="footer-actions">
-      <view class="footer-btn ghost" @click="scrollToVideoCard">
+      <view v-if="showVideo" class="footer-btn ghost" @click="scrollToVideoCard">
         <text>🎞️ 打开宣传片</text>
       </view>
       <view class="footer-btn main" @click="goHome">
         <text>🏠 去首页体验</text>
       </view>
       <view class="footer-link-box">
-        <text class="footer-link" @click="navigateTo('/pages-nonTheme/about')">联系开发者</text>
+        <text class="footer-link" @click="navigateTo('/pages-nonTheme/chatlist')">联系我们</text>
         <text class="footer-sep">|</text>
         <text class="footer-link" @click="navigateTo('/pages-nonTheme/about')">关于页面</text>
       </view>
@@ -360,46 +451,130 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue"
+import { ref, computed, onMounted } from "vue"
 import { config } from "@/api/config"
 
 const baseUrl = config.baseUrl
-const videoUrl = `${baseUrl}/files/preview/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1/%E5%88%86%E6%8A%95%E4%BE%A0%E5%AE%A3%E4%BC%A0%E7%89%87/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1.m3u8`
-const videoPoster = `${baseUrl}/images/app.svg`
+const getImageUrl = (url) => {
+  if (!url) return ''
+  // #ifdef MP-WEIXIN
+  return `${baseUrl}/images/${url}`
+  // #endif
+  // #ifndef MP-WEIXIN
+  return `/static/${url}`
+  // #endif
+}
+// 场景视频 (Scenario)
+const scenarioVideoUrl = `${baseUrl}/files/preview/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1/%E5%88%86%E6%8A%95%E4%BE%A0%E5%AE%A3%E4%BC%A0%E7%89%87/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1.m3u8`
+const scenarioVideoPoster = getImageUrl(`cover.webp`)
+
+// App 录屏视频 (App Screencap)
+const appVideoUrl = `${baseUrl}/files/preview/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1/%E5%8A%9F%E8%83%BD%E5%B1%95%E7%A4%BA/%E5%8A%9F%E8%83%BD%E5%B1%95%E7%A4%BA.m3u8`
+const appVideoPoster = getImageUrl(`app.webp`)
 
 // 用于传递给 renderjs 的响应式对象
-const videoOptions = computed(() => ({
-  src: videoUrl,
-  poster: videoPoster
+const scenarioVideoOptions = computed(() => ({
+  src: scenarioVideoUrl,
+  poster: scenarioVideoPoster
+}))
+const appVideoOptions = computed(() => ({
+  src: appVideoUrl,
+  poster: appVideoPoster
 }))
 
 const isPlaying = ref(false)
-const showOverlay = ref(true) // 直接控制叠加层显示，避免 renderjs 状态同步延迟
+const showScenarioOverlay = ref(true) 
+const showAppOverlay = ref(true) 
+const showVideo = ref(false)
 
 // 响应来自 renderjs 的播放状态改变
 function onPlayerStatusChange(status) {
-  isPlaying.value = status.isPlaying
-  // 视频暂停或结束时，重新显示播放叠加层
-  if (!status.isPlaying) {
-    showOverlay.value = true
+  // 根据 status 中的 target 区分
+  if (status.target === 'scenario') {
+    if (!status.isPlaying) showScenarioOverlay.value = true
+  } else {
+    if (!status.isPlaying) showAppOverlay.value = true
   }
 }
 
+const scenarioPlayTrigger = ref(0)
+const appPlayTrigger = ref(0)
+
 // 通知 renderjs 播放
-function requestPlay() {
-  // 立即隐藏叠加层，不再等待 renderjs 回调
-  showOverlay.value = false
-  // #ifdef APP-PLUS
-  // 触发 renderjs 播放
-  playTrigger.value = Date.now()
+function requestPlay(type) {
+  if (type === 'scenario') {
+    showScenarioOverlay.value = false
+    // #ifdef APP-PLUS
+    scenarioPlayTrigger.value = Date.now()
+    // #endif
+    // #ifndef APP-PLUS
+    uni.createVideoContext('scenarioVideo').play()
+    // #endif
+  } else {
+    showAppOverlay.value = false
+    // #ifdef APP-PLUS
+    appPlayTrigger.value = Date.now()
+    // #endif
+    // #ifndef APP-PLUS
+    uni.createVideoContext('appVideo').play()
+    // #endif
+  }
+}
+
+function getAuthToken() {
+  // #ifdef H5
+  try {
+    return localStorage.getItem('token') || ''
+  } catch (error) {
+    return ''
+  }
   // #endif
-  // #ifndef APP-PLUS
-  // 小程序/H5 端：使用原生 video 播放
-  const videoContext = uni.createVideoContext('promoVideo')
-  videoContext.play()
+  // #ifndef H5
+  try {
+    return uni.getStorageSync('token') || ''
+  } catch (error) {
+    return ''
+  }
   // #endif
 }
-const playTrigger = ref(0)
+
+function requestJson(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    uni.request({
+      url,
+      method: options.method || 'GET',
+      header: options.header || {},
+      data: options.data,
+      success: (res) => resolve(res.data),
+      fail: reject
+    })
+  })
+}
+
+async function checkVideoEnabled() {
+  try {
+    const payload = await requestJson(`${baseUrl}/api/ai/settings`)
+    const settings = payload && payload.code === 0 ? payload.data : null
+    if (!settings || settings.aiEnabled !== false) {
+      showVideo.value = true
+      return
+    }
+
+    const token = getAuthToken()
+    if (!token) {
+      showVideo.value = false
+      return
+    }
+
+    const userPayload = await requestJson(`${baseUrl}/api/userinfo?avater=false`, {
+      header: { Authorization: token }
+    })
+    showVideo.value = !!(userPayload && userPayload.code === 0 && userPayload.data && userPayload.data.isAdmin)
+  } catch (error) {
+    console.warn('[guide] check AI settings failed:', error)
+    showVideo.value = true
+  }
+}
 
 function goHome() {
   uni.reLaunch({
@@ -448,6 +623,10 @@ function scrollToVideoCard() {
     duration: 400
   })
 }
+
+onMounted(() => {
+  checkVideoEnabled()
+})
 </script>
 
 <script module="hlsPlayer" lang="renderjs">
@@ -464,56 +643,57 @@ export default {
     this.createVideo();
   },
   methods: {
-    createVideo() {
-      const container = document.getElementById('video-container');
+    createVideo(id, target) {
+      const container = document.getElementById(id);
       if (!container) return;
       
-      this.video = document.createElement('video');
-      this.video.style.width = '100%';
-      this.video.style.height = '100%';
-      this.video.style.backgroundColor = '#000';
-      this.video.style.objectFit = 'cover'; // 强制填充容器，不留黑边
-      this.video.controls = true;
-      this.video.playsInline = true;
-      this.video.webkitPlaysinline = true;
+      const video = document.createElement('video');
+      video.style.width = '100%';
+      video.style.height = '100%';
+      video.style.backgroundColor = '#000';
+      // 场景视频 cover，录屏视频 contain
+      video.style.objectFit = target === 'scenario' ? 'cover' : 'contain';
+      video.controls = true;
+      video.playsInline = true;
+      video.webkitPlaysinline = true;
       
-      this.video.onplay = () => this.sendStatus(true);
-      this.video.onpause = () => this.sendStatus(false);
-      this.video.onended = () => this.sendStatus(false);
+      video.onplay = () => this.sendStatus(true, target);
+      video.onpause = () => this.sendStatus(false, target);
+      video.onended = () => this.sendStatus(false, target);
       
-      container.appendChild(this.video);
+      container.appendChild(video);
+      return video;
     },
     init(options) {
       if (!options || !options.src) return;
-      if (!this.video) this.createVideo();
-      
+      if (!this.video) this.video = this.createVideo('video-container', 'scenario');
+      this._initPlayer(this.video, options);
+    },
+    initApp(options) {
+      if (!options || !options.src) return;
+      if (!this.appVideo) this.appVideo = this.createVideo('video-container-app', 'app');
+      this._initPlayer(this.appVideo, options);
+    },
+    _initPlayer(video, options) {
       const { src, poster } = options;
-      this.video.poster = poster;
+      video.poster = poster;
       
       if (Hls.isSupported()) {
-        if (this.hls) this.hls.destroy();
-        this.hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true
-        });
-        this.hls.loadSource(src);
-        this.hls.attachMedia(this.video);
-      } else if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
-        this.video.src = src;
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+        hls.loadSource(src);
+        hls.attachMedia(video);
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = src;
       }
     },
     play(trigger) {
-      if (trigger && this.video) {
-        this.video.play().catch(err => {
-          console.warn('Playback failed:', err);
-          // 如果自动播放受限，静音后再试
-          this.video.muted = true;
-          this.video.play();
-        });
-      }
+      if (trigger && this.video) this.video.play();
     },
-    sendStatus(isPlaying) {
-      this.$ownerInstance.callMethod('onPlayerStatusChange', { isPlaying });
+    playApp(trigger) {
+      if (trigger && this.appVideo) this.appVideo.play();
+    },
+    sendStatus(isPlaying, target) {
+      this.$ownerInstance.callMethod('onPlayerStatusChange', { isPlaying, target });
     }
   }
 }
@@ -580,7 +760,7 @@ export default {
   position: relative;
   width: 100%;
   margin: 0 auto 24rpx;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 17/9;
   background: #000;
   border-radius: 20rpx;
   overflow: hidden;
@@ -628,19 +808,82 @@ export default {
   margin-left: 10rpx;
 }
 
-.video-embed-shell {
-  position: absolute;
-  top: 0;
-  left: 0;
+/* 方案A：录屏视频样式 */
+.app-video-section {
+  width: 100%;
+  margin-top: 20rpx;
+  margin-bottom: 40rpx;
+}
+
+.detail-header {
+  margin-bottom: 16rpx;
+}
+
+.detail-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #1f2937;
+  display: block;
+}
+
+.detail-subtitle {
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.app-video-card {
+  margin: 0;
+  border: 4rpx solid rgba(16, 185, 129, 0.2);
+  background: #000;
+  box-shadow: 0 8rpx 20rpx rgba(16, 185, 129, 0.08);
+}
+
+.app-video {
   width: 100%;
   height: 100%;
 }
 
-.video-embed {
+.app-overlay {
+  background: rgba(0, 0, 0, 0.45) !important;
+}
+
+.play-icon-wrapper.mini {
+  width: 80rpx;
+  height: 80rpx;
+}
+
+.play-icon-wrapper.mini .play-icon {
+  font-size: 36rpx;
+}
+
+.video-card-disabled {
   width: 100%;
-  height: 100%;
-  display: block;
-  background: #000;
+  height: 380rpx;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 20rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24rpx;
+  border: 2rpx dashed #d1d5db;
+}
+
+.disabled-icon {
+  font-size: 60rpx;
+  margin-bottom: 16rpx;
+}
+
+.disabled-text {
+  font-size: 28rpx;
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.disabled-subtext {
+  font-size: 22rpx;
+  color: #9ca3af;
+  margin-top: 8rpx;
 }
 
 @media screen and (min-width: 960px) {
@@ -739,17 +982,91 @@ export default {
 .steps-list {
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
+  gap: 16rpx;
 }
 
 .step-card {
   background: #fff;
-  border-radius: 24rpx;
-  padding: 28rpx;
+  border-radius: 28rpx;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
   box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+
+.step-card.horizontal {
+  padding: 0;
+}
+
+.step-card-top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 20rpx 24rpx;
+  gap: 10rpx;
+}
+
+.step-card.horizontal.reverse .step-card-top {
+  flex-direction: row-reverse;
+}
+
+.step-content-side {
+  flex: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  text-align: left;
+}
+
+.step-image-side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-preview-mini {
+  width: 100%;
+  height: 200rpx;
+  border-radius: 12rpx;
+}
+
+.step-name {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #111827;
+  display: block;
+  margin-bottom: 2rpx;
+}
+
+.step-desc {
+  font-size: 22rpx;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.step-extra.full-width {
+  background: #fdfdfd;
+  padding: 16rpx 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  border-top: 1rpx solid #f1f5f9;
+}
+
+.extra-tag {
+  font-size: 18rpx;
+  font-weight: 700;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 2rpx 10rpx;
+  border-radius: 4rpx;
+}
+
+.extra-text {
+  font-size: 20rpx;
+  color: #6b7280;
 }
 
 .step-number {
@@ -759,31 +1076,74 @@ export default {
   line-height: 1;
 }
 
-.step-name {
-  font-size: 30rpx;
+.step-icons-box {
+  display: flex;
+  gap: 32rpx;
+  margin-top: 10rpx;
+}
+
+.s-icon-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.s-icon-item text:first-child {
+  font-size: 36rpx;
+}
+
+.s-icon-item text:last-child {
+  font-size: 20rpx;
+  color: #9ca3af;
+}
+
+/* 详尽功能网格 */
+.features-detailed-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20rpx;
+}
+
+.fd-item {
+  background: #fff;
+  padding: 24rpx;
+  border-radius: 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  box-shadow: 0 4rpx 10rpx rgba(0,0,0,0.03);
+}
+
+.fd-icon {
+  width: 70rpx;
+  height: 70rpx;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+}
+
+/* 根据类型设置渐变背景 */
+.fd-item.ai .fd-icon { background: rgba(59, 130, 246, 0.1); }
+.fd-item.map .fd-icon { background: rgba(16, 185, 129, 0.1); }
+.fd-item.device .fd-icon { background: rgba(139, 92, 246, 0.1); }
+.fd-item.community .fd-icon { background: rgba(245, 158, 11, 0.1); }
+.fd-item.booking .fd-icon { background: rgba(236, 72, 153, 0.1); }
+.fd-item.shop .fd-icon { background: rgba(16, 185, 129, 0.1); }
+
+.fd-name {
+  font-size: 26rpx;
   font-weight: 700;
   color: #111827;
   display: block;
 }
 
-.step-desc {
-  font-size: 24rpx;
-  color: #6b7280;
-  line-height: 1.6;
-}
-
-.step-preview {
-  width: 400rpx;
-  height: 350rpx;
-  align-self: center;
-  border-radius: 20rpx;
-  background: #f3f4f6;
-}
-
-.step-icons {
-  display: flex;
-  gap: 18rpx;
-  margin-top: 4rpx;
+.fd-desc {
+  font-size: 20rpx;
+  color: #9ca3af;
+  line-height: 1.4;
 }
 
 .s-icon {
@@ -795,44 +1155,6 @@ export default {
   align-items: center;
   justify-content: center;
   border-radius: 16rpx;
-}
-
-/* 功能网格 */
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18rpx;
-}
-
-.feature-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10rpx;
-}
-
-.f-icon-box {
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: 24rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 36rpx;
-  box-shadow: 0 6rpx 16rpx rgba(0,0,0,0.06);
-}
-
-.f-icon-box.ai { background: #e0f2fe; }
-.f-icon-box.guide { background: #fef3c7; }
-.f-icon-box.map { background: #dcfce7; }
-.f-icon-box.device { background: #f3e8ff; }
-.f-icon-box.community { background: #ffedd5; }
-.f-icon-box.booking { background: #d1fae5; }
-
-.f-name {
-  font-size: 22rpx;
-  color: #4b5563;
-  font-weight: 600;
 }
 
 /* 分类胶囊 */
