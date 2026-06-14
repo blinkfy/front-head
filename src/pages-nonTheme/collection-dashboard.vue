@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <view :class="['screen', isLightTheme ? 'light-theme' : 'dark-theme']">
 
     <!-- ===== 顶部 panel ===== -->
@@ -19,8 +19,19 @@
               @tap="onStrategyTap(s.value)"
             >{{ s.label }}</view>
           </view>
+          <view :class="['btn', 'feature-btn', monitor.scene === 'telemetry' ? 'active' : '']" @tap="startRiskMonitor">
+            <text class="feature-icon">!</text><text>风险预警</text>
+          </view>
+          <view :class="['btn', 'feature-btn', monitor.scene === 'dispatch' ? 'active' : '']" @tap="startDispatchMonitor">
+            <text class="feature-icon">↗</text><text>调度监测</text>
+          </view>
+          <view class="btn fault-btn" @tap="openFaultCenter">
+            <text class="feature-icon">!</text><text>故障处理</text>
+            <text :class="['fault-badge', faultCenter.summary.open ? '' : 'is-placeholder']">{{ faultCenter.summary.open || 0 }}</text>
+          </view>
+          <view v-if="monitor.active" class="btn ghost" @tap="exitMonitor">返回总览</view>
           <view class="btn ghost nav-link-btn" @tap="goToCommunity">🏙 社区治理大屏</view>
-          <view class="btn blue" @tap="doRefresh">立即刷新</view>
+          <view v-if="!monitor.active" class="btn blue" @tap="doRefresh">立即刷新</view>
           <view class="btn ghost" @tap="goBack">返回</view>
         </view>
       </view>
@@ -65,8 +76,94 @@
       </view>
     </view>
 
+    <!-- ===== 风险预警：全部桶位与自选详情 ===== -->
+    <view v-show="monitor.active && monitor.scene === 'telemetry'" class="telemetry-scene">
+      <view class="panel telemetry-selector">
+        <view class="block-title">全部桶位风险 <text class="note">{{ riskMonitorBins.length }} 个点位</text></view>
+        <scroll-view class="list" scroll-y>
+          <view
+            v-for="bin in riskMonitorBins"
+            :key="'monitor-risk-' + bin.id"
+            :class="['risk-monitor-item', String(monitor.binId) === String(bin.id) ? 'active' : '']"
+            @tap="selectRiskMonitorBin(bin.id)"
+          >
+            <view class="risk-top">
+              <view class="name">{{ bin.name }}</view>
+              <view :class="['chip', bin.alertLevel === 'critical' ? 'red' : bin.alertLevel === 'warning' ? 'orange' : 'green']">{{ bin.alertTitle }}</view>
+            </view>
+            <view class="subline"><text>填充率 {{ bin.fill.toFixed(1) }}%</text><text>重量 {{ bin.weight.toFixed(1) }} kg</text></view>
+            <view class="subline"><text>电量 {{ bin.battery.toFixed(0) }}%</text><text>增长 {{ bin.growth.toFixed(2) }}%/h</text></view>
+            <view class="risk-mini-track"><view :class="['risk-mini-fill', bin.alertLevel]" :style="{ width: bin.fill + '%' }"></view></view>
+            <view class="risk-prediction">预计 {{ bin.fullMinutes }} 分钟达到满载阈值</view>
+          </view>
+        </scroll-view>
+      </view>
+      <view class="panel telemetry-hero">
+        <view class="scene-kicker">RISK WARNING · 智能桶实时遥测</view>
+        <view class="telemetry-head">
+          <view>
+            <view class="telemetry-title">{{ monitor.binName }}</view>
+            <view class="telemetry-location">位置 · {{ monitor.locationText }}</view>
+          </view>
+          <view :class="['warning-banner', monitor.alertLevel]">
+            <text class="warning-dot"></text>
+            <view>
+              <view class="warning-title">{{ monitor.alertTitle }}</view>
+              <view class="warning-sub">{{ monitor.alertDescription }}</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="telemetry-grid">
+          <view class="gauge-card primary">
+            <view class="gauge-ring" :style="{ '--gauge-value': monitor.fill.toFixed(1) + '%' }">
+              <view class="gauge-core">
+                <text class="gauge-value">{{ monitor.fill.toFixed(1) }}%</text>
+                <text class="gauge-label">内部填充率</text>
+              </view>
+            </view>
+            <view class="trend-line"><text>近 1 小时</text><text class="trend-up">↑ {{ monitor.growth.toFixed(2) }}%/h</text></view>
+          </view>
+          <view class="gauge-card">
+            <view class="metric-icon">kg</view>
+            <view class="metric-big">{{ monitor.weight.toFixed(1) }}</view>
+            <view class="metric-unit">当前重量 / kg</view>
+            <view class="metric-track"><view class="metric-progress weight" :style="{ width: clamp(monitor.weight / 1.2, 0, 100) + '%' }"></view></view>
+            <view class="trend-line"><text>重量变化</text><text class="trend-up">+{{ monitor.weightDelta.toFixed(1) }} kg</text></view>
+          </view>
+          <view class="gauge-card">
+            <view class="metric-icon battery">BAT</view>
+            <view class="metric-big">{{ monitor.battery.toFixed(0) }}%</view>
+            <view class="metric-unit">设备剩余电量</view>
+            <view class="metric-track"><view :class="['metric-progress', monitor.battery < 20 ? 'danger' : 'battery']" :style="{ width: monitor.battery + '%' }"></view></view>
+            <view class="trend-line"><text>预计续航</text><text>{{ monitor.batteryHours.toFixed(1) }} h</text></view>
+          </view>
+          <view class="gauge-card prediction">
+            <view class="prediction-label">AI 满载预测</view>
+            <view class="prediction-time">{{ monitor.fullMinutes }}<text> 分钟</text></view>
+            <view class="prediction-copy">预计 {{ monitor.fullClock }} 达到满载阈值</view>
+            <view class="prediction-grid">
+              <view><text>增长率</text><b>{{ monitor.growth.toFixed(2) }}%/h</b></view>
+              <view><text>增长率模型</text><b>{{ monitor.growthModelLabel }}</b></view>
+              <view><text>预测置信度</text><b>{{ (monitor.growthModelConfidence * 100).toFixed(1) }}%</b></view>
+            </view>
+          </view>
+        </view>
+
+        <view class="telemetry-chart">
+          <view class="chart-head"><text>填充率与重量变化趋势</text><text>实时采样 · 5 秒</text></view>
+          <view class="chart-bars">
+            <view v-for="(point, index) in monitor.trend" :key="'trend-' + index" class="chart-column">
+              <view class="chart-fill" :style="{ height: point.fill + '%' }"></view>
+              <view class="chart-weight" :style="{ height: point.weight + '%' }"></view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
     <!-- ===== 主体三列 ===== -->
-    <view class="main">
+    <view v-show="!(monitor.active && monitor.scene === 'telemetry')" class="main">
 
       <!-- 左列 -->
       <view class="col left">
@@ -142,16 +239,29 @@
           ></map>
           <!-- #endif -->
           <view class="brief">
-            <text class="brief-title">路线概览</text>
-            <text v-for="(line, i) in briefLines" :key="i" class="brief-line">{{ line }}</text>
+            <text class="brief-title">{{ monitor.active ? '智能调度监测' : '路线概览' }}</text>
+            <text v-for="(line, i) in (monitor.active ? monitor.mapBrief : briefLines)" :key="i" class="brief-line">{{ line }}</text>
+          </view>
+          <view v-if="monitor.active" class="btn ghost reset-view-btn" @tap="resetDispatchView">重置视野</view>
+          <view v-if="monitor.active" :class="['monitor-point-state', monitor.pointStateCls]">
+            <text class="point-state-label">原点位状态</text>
+            <text class="point-state-value">{{ monitor.pointState }}</text>
+            <text v-if="DISPATCH_STAGE_RANK[monitor.pointState] < 3" class="point-state-reason">满载 / 低电量</text>
           </view>
         </view>
 
         <view class="panel timeline">
-          <view class="block-title">清运时间轴 <text class="note">按停靠顺序展示 ETA</text></view>
+          <view class="block-title">{{ monitor.active ? '返航补位时间轴' : '清运时间轴' }} <text class="note">{{ monitor.active ? '双任务协同执行' : '按停靠顺序展示 ETA' }}</text></view>
+          <view v-if="monitor.active" class="monitor-timeline">
+            <view v-for="item in monitor.timeline" :key="item.key" :class="['monitor-tl-step', item.state]">
+              <text class="monitor-tl-dot"></text><text>{{ item.label }}</text>
+            </view>
+          </view>
           <scroll-view class="line" scroll-x>
-            <view v-if="!timelineStops.length" class="tl-empty">暂无路线时间轴</view>
+            <view v-if="monitor.active"></view>
+            <view v-else-if="!timelineStops.length" class="tl-empty">暂无路线时间轴</view>
             <view
+              v-if="!monitor.active"
               v-for="stop in timelineStops"
               :key="'tl-' + stop.order"
               :class="['stop', selectedStopOrder === stop.order ? 'active' : '']"
@@ -167,7 +277,18 @@
 
       <!-- 右列 -->
       <view class="col right">
-        <view class="panel block">
+        <view v-if="monitor.active" class="panel block monitor-task-panel">
+          <view class="block-title">平台任务流 <text class="note">自动生成</text></view>
+          <view class="task-flow">
+            <view v-for="task in monitor.tasks" :key="task.id" :class="['monitor-task', task.state]">
+              <view class="task-top"><text>{{ task.title }}</text><text class="task-chip">{{ task.status }}</text></view>
+              <view class="task-route">{{ task.route }}</view>
+              <view class="metric-track"><view class="metric-progress" :class="task.kind" :style="{ width: task.progress + '%' }"></view></view>
+              <view class="task-meta"><text>{{ task.device }}</text><text>{{ task.progress.toFixed(0) }}%</text></view>
+            </view>
+          </view>
+        </view>
+        <view v-else class="panel block">
           <view class="block-title">实时告警流 <text class="note">单车处置闭环</text></view>
           <scroll-view class="list" scroll-y>
             <view v-if="!alertBins.length" class="empty">当前无告警</view>
@@ -195,7 +316,16 @@
           </scroll-view>
         </view>
 
-        <view class="panel block">
+        <view v-if="monitor.active" class="panel block monitor-event-panel">
+          <view class="block-title">处置事件 <text class="note">实时同步</text></view>
+          <scroll-view class="list" scroll-y>
+            <view v-for="event in monitor.events" :key="event.id" class="monitor-event">
+              <text class="event-time">{{ event.time }}</text>
+              <view><text class="event-title">{{ event.title }}</text><text class="event-desc">{{ event.desc }}</text></view>
+            </view>
+          </scroll-view>
+        </view>
+        <view v-else class="panel block">
           <view class="block-title">车辆调度明细 <text class="note">仅 1 辆清运车</text></view>
           <scroll-view class="list" scroll-y>
             <view v-if="!dispatchStops.length" class="empty">暂无调度任务</view>
@@ -224,11 +354,49 @@
 
     </view><!-- end .main -->
 
+    <view v-if="faultCenter.open" class="fault-mask" @tap="closeFaultCenter">
+      <view class="panel fault-drawer" @tap.stop>
+        <view class="fault-drawer-head">
+          <view>
+            <view class="fault-drawer-title">故障处理中心</view>
+            <view class="fault-drawer-sub">设备执行结果、移动桶返航与分拣中心异常统一处置</view>
+          </view>
+          <view class="btn ghost" @tap="closeFaultCenter">关闭</view>
+        </view>
+        <view class="fault-summary">
+          <view><text>故障总数</text><b>{{ faultCenter.summary.total }}</b></view>
+          <view><text>待确认</text><b>{{ faultCenter.summary.open }}</b></view>
+          <view><text>处理中</text><b>{{ faultCenter.summary.processing }}</b></view>
+          <view><text>已关闭</text><b>{{ faultCenter.summary.resolved }}</b></view>
+        </view>
+        <scroll-view class="fault-list" scroll-y>
+          <view v-if="faultCenter.loading" class="empty">正在同步故障事件...</view>
+          <view v-else-if="!faultCenter.items.length" class="empty">当前没有故障事件</view>
+          <view v-for="fault in faultCenter.items" :key="fault.id" :class="['fault-card', fault.severity, fault.status]">
+            <view class="fault-card-top">
+              <view><text :class="['fault-level', fault.severity]">{{ faultSeverityLabel(fault.severity) }}</text><text class="fault-title">{{ fault.title }}</text></view>
+              <text class="fault-status">{{ faultStatusLabel(fault.status) }}</text>
+            </view>
+            <view class="fault-device">{{ fault.deviceName }} · {{ faultComponentLabel(fault.component) }}</view>
+            <view class="fault-message">{{ fault.message }}</view>
+            <view class="fault-recommend">建议：{{ fault.recommendedAction }}</view>
+            <view class="fault-meta"><text>{{ fault.locationName || '位置未上报' }}</text><text>{{ fmtTime(fault.createdAt, true) }}</text></view>
+            <view v-if="fault.status !== 'resolved'" class="fault-actions">
+              <view v-if="fault.status === 'open'" class="fault-action" @tap="handleFault(fault, 'acknowledge')">确认告警</view>
+              <view class="fault-action return" @tap="handleFault(fault, fault.code === 'sorting_center_fault' ? 'switch_sorting_center' : 'dispatch_return')">{{ fault.code === 'sorting_center_fault' ? '切换备用中心' : '派发安全返航' }}</view>
+              <view class="fault-action manual" @tap="handleFault(fault, 'manual_service')">转人工检修</view>
+              <view class="fault-action resolve" @tap="handleFault(fault, 'resolve')">关闭事件</view>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+    </view>
+
   </view><!-- end .screen -->
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { baseUrl } from '@/api/settings'
 import { mapConfig } from '@/api/map-config'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
@@ -353,6 +521,53 @@ const h5MapReady = ref(false)
 const h5MapLoading = ref(false)
 const h5MapError = ref('')
 
+const monitor = reactive({
+  active: false,
+  completed: false,
+  scene: '',
+  riskBins: [],
+  binId: null,
+  binName: '智能移动桶',
+  locationText: '--',
+  fill: 72,
+  weight: 41,
+  weightDelta: 0,
+  battery: 31,
+  batteryHours: 5.2,
+  growth: 4.2,
+  fullMinutes: 40,
+  fullClock: '--:--',
+  alertLevel: 'normal',
+  alertTitle: '运行状态正常',
+  alertDescription: '遥测数据持续采集中',
+  trend: [],
+  pointState: '异常告警',
+  pointStateCls: 'danger',
+  mapBrief: [],
+  timeline: [],
+  tasks: [],
+  events: [],
+  returnProgress: 0,
+  replaceProgress: 0,
+  returnPosition: null,
+  replacePosition: null,
+  sortingCenter: null,
+  standbyArea: null,
+  targetPoint: null,
+  returnRoute: [],
+  replaceRoute: [],
+  routeAvailable: false,
+  growthModelLabel: '近期区间',
+  growthModelConfidence: 0.64
+})
+const riskMonitorBins = computed(() => monitor.riskBins)
+const faultCenter = reactive({
+  open: false,
+  loading: false,
+  items: [],
+  summary: { total: 0, open: 0, processing: 0, critical: 0, resolved: 0 }
+})
+
 // 内部 state（不需要响应式）
 const _state = {
   bins: [],
@@ -370,7 +585,32 @@ const _state = {
   sequenceMarkers: null,
   startMarker: null,
   focusPolyline: null,
-  kpiSeries: []
+  monitorMarkers: null,
+  monitorPolyline: null,
+  kpiSeries: [],
+  monitorBackup: null,
+  shouldFitMap: false
+}
+
+function interpolatePoint(from, to, progress) {
+  const p = clamp(progress, 0, 1)
+  return {
+    latitude: n(from && from.latitude, 0) + (n(to && to.latitude, 0) - n(from && from.latitude, 0)) * p,
+    longitude: n(from && from.longitude, 0) + (n(to && to.longitude, 0) - n(from && from.longitude, 0)) * p
+  }
+}
+
+function pointAlongRoute(route, progress) {
+  if (!Array.isArray(route) || route.length < 2) return null
+  const p = clamp(progress, 0, 1)
+  const scaled = p * (route.length - 1)
+  const index = Math.min(route.length - 2, Math.floor(scaled))
+  const local = scaled - index
+  return interpolatePoint(
+    { latitude: route[index][0], longitude: route[index][1] },
+    { latitude: route[index + 1][0], longitude: route[index + 1][1] },
+    local
+  )
 }
 
 // ─── KPI 历史 ──────────────────────────────────────────
@@ -488,7 +728,7 @@ function renderMetrics() {
     distance: [deltaTag('较昨日', m.distance, day.distance, 'km', true), deltaTag('较上周', m.distance, week.distance, 'km', true), deltaTag('目标差', m.distance, target.distance, 'km', true)],
     duration: [deltaTag('较昨日', m.duration, day.duration, 'min', true), deltaTag('较上周', m.duration, week.duration, 'min', true), deltaTag('目标差', m.duration, target.duration, 'min', true)]
   }
-  pushKpi(m)
+  if (!monitor.active) pushKpi(m)
 }
 
 function renderBrief() {
@@ -599,7 +839,10 @@ function mapSignature() {
     ? `${n(_state.startPoint.latitude, 0)},${n(_state.startPoint.longitude, 0)}`
     : 'none'
   const generatedAt = _state.plan && _state.plan.generatedAt ? String(_state.plan.generatedAt) : 'none'
-  return `${bins}::${stops}::poly-${polylineMeta}::seg-${segmentMeta}::start-${startMeta}::gen-${generatedAt}::sel-${selectedBinId.value || ''}-${selectedStopOrder.value || ''}-${routeStrategy.value}`
+  const monitorMeta = monitor.active
+    ? `${monitor.scene}:${monitor.pointState}:${Math.round(monitor.returnProgress * 100)}:${Math.round(monitor.replaceProgress * 100)}`
+    : 'off'
+  return `${bins}::${stops}::poly-${polylineMeta}::seg-${segmentMeta}::start-${startMeta}::gen-${generatedAt}::sel-${selectedBinId.value || ''}-${selectedStopOrder.value || ''}-${routeStrategy.value}::monitor-${monitorMeta}`
 }
 function clearH5Map() {
   const s = _state
@@ -608,6 +851,8 @@ function clearH5Map() {
   if (s.sequenceMarkers) { s.sequenceMarkers.setMap(null); s.sequenceMarkers = null }
   if (s.startMarker) { s.startMarker.setMap(null); s.startMarker = null }
   if (s.focusPolyline) { s.focusPolyline.setMap(null); s.focusPolyline = null }
+  if (s.monitorMarkers) { s.monitorMarkers.setMap(null); s.monitorMarkers = null }
+  if (s.monitorPolyline) { s.monitorPolyline.setMap(null); s.monitorPolyline = null }
 }
 function showInfoWindow(lat, lng, html) {
   if (!window.TMap || !_state.mapInstance) return
@@ -639,7 +884,12 @@ function drawMap(force) {
   const geometries = bins.map((bin, i) => {
     const pos = new TMap.LatLng(n(bin.latitude, 0), n(bin.longitude, 0))
     bounds.extend(pos); hasBounds = true
-    const styleId = selectedBinId.value && String(selectedBinId.value) === String(bin.id) ? 'selected' : sev(clampFill(bin.currentFill))
+    const isMonitorTarget = monitor.active && monitor.scene === 'dispatch' && String(monitor.binId) === String(bin.id)
+    const styleId = isMonitorTarget
+      ? (monitor.pointState === '可用' ? 'green' : 'red')
+      : selectedBinId.value && String(selectedBinId.value) === String(bin.id)
+        ? 'selected'
+        : sev(clampFill(bin.currentFill))
     return { id: `bin-${bin.id}-${i}`, styleId, position: pos, properties: { i } }
   })
   if (geometries.length) {
@@ -658,7 +908,7 @@ function drawMap(force) {
   }
 
   const route = _state.plan && _state.plan.route
-  if (route && Array.isArray(route.polyline) && route.polyline.length > 1) {
+  if (!monitor.active && route && Array.isArray(route.polyline) && route.polyline.length > 1) {
     const polyline = route.polyline.map(p => new TMap.LatLng(p[0], p[1]))
     _state.routePolyline = new TMap.MultiPolyline({ id: 'db-route', map: _state.mapInstance, styles: { route: new TMap.PolylineStyle({ color: '#2dc6ff', width: 6, borderWidth: 2, borderColor: '#fff', lineCap: 'round' }) }, geometries: [{ id: 'main', styleId: 'route', paths: polyline }] })
     polyline.forEach(p => { bounds.extend(p); hasBounds = true })
@@ -699,7 +949,50 @@ function drawMap(force) {
       }
     }
   }
-  if (hasBounds && _state.mapInstance.fitBounds) _state.mapInstance.fitBounds(bounds, { padding: 70 })
+  if (monitor.active && monitor.scene === 'dispatch' && monitor.targetPoint) {
+    const monitorStyles = {
+      sorting: new TMap.MarkerStyle({ width: 34, height: 34, anchor: { x: 17, y: 17 }, src: iconSrc('monitor-sorting', '#8859ff', '分') }),
+      standby: new TMap.MarkerStyle({ width: 32, height: 32, anchor: { x: 16, y: 16 }, src: iconSrc('monitor-standby', '#2c8fff', '备') }),
+      returning: new TMap.MarkerStyle({ width: 34, height: 34, anchor: { x: 17, y: 17 }, src: iconSrc('monitor-returning', '#ff5d66', '返') }),
+      replacing: new TMap.MarkerStyle({ width: 34, height: 34, anchor: { x: 17, y: 17 }, src: iconSrc('monitor-replacing', '#16c57c', '补') })
+    }
+    const monitorGeometries = [
+      { id: 'sorting-center', styleId: 'sorting', position: new TMap.LatLng(monitor.sortingCenter.latitude, monitor.sortingCenter.longitude) },
+      { id: 'standby-area', styleId: 'standby', position: new TMap.LatLng(monitor.standbyArea.latitude, monitor.standbyArea.longitude) }
+    ]
+    if (monitor.returnProgress < 1 && monitor.returnPosition) {
+      monitorGeometries.push({ id: 'returning-bin', styleId: 'returning', position: new TMap.LatLng(monitor.returnPosition.latitude, monitor.returnPosition.longitude) })
+    }
+    if (monitor.replacePosition) {
+      monitorGeometries.push({ id: 'replacement-bin', styleId: 'replacing', position: new TMap.LatLng(monitor.replacePosition.latitude, monitor.replacePosition.longitude) })
+    }
+    _state.monitorMarkers = new TMap.MultiMarker({
+      id: 'monitor-special-markers', map: _state.mapInstance, styles: monitorStyles, geometries: monitorGeometries
+    })
+    const routeStyles = {
+      returning: new TMap.PolylineStyle({ color: '#ff5d66', width: 7, borderWidth: 2, borderColor: '#fff', lineCap: 'round' }),
+      replacing: new TMap.PolylineStyle({ color: '#24d9ff', width: 7, borderWidth: 2, borderColor: '#fff', lineCap: 'round' })
+    }
+    const routeGeometries = []
+    if (monitor.returnRoute.length > 1) routeGeometries.push({ id: 'return-route', styleId: 'returning', paths: monitor.returnRoute.map(p => new TMap.LatLng(p[0], p[1])) })
+    if (monitor.replaceRoute.length > 1) routeGeometries.push({ id: 'replace-route', styleId: 'replacing', paths: monitor.replaceRoute.map(p => new TMap.LatLng(p[0], p[1])) })
+    if (routeGeometries.length) {
+      _state.monitorPolyline = new TMap.MultiPolyline({
+        id: 'monitor-routes',
+        map: _state.mapInstance,
+        styles: routeStyles,
+        geometries: routeGeometries
+      })
+    }
+    ;[monitor.targetPoint, monitor.sortingCenter, monitor.standbyArea].forEach(point => {
+      bounds.extend(new TMap.LatLng(point.latitude, point.longitude))
+      hasBounds = true
+    })
+  }
+  if (hasBounds && _state.mapInstance.fitBounds && (!monitor.active || _state.shouldFitMap)) {
+    _state.mapInstance.fitBounds(bounds, { padding: 70 })
+    _state.shouldFitMap = false
+  }
 }
 // #endif
 
@@ -753,11 +1046,13 @@ function authHeaders() {
   return headers
 }
 
-function apiRequest(path) {
+function apiRequest(path, options = {}) {
   return new Promise((resolve, reject) => {
     const url = path.startsWith('/') ? `${baseUrl}${path}` : path
+    const method = options.method || 'GET'
+    const body = options.body === undefined ? undefined : JSON.stringify(options.body)
     // #ifdef H5
-    fetch(url, { headers: authHeaders() })
+    fetch(url, { method, body, headers: authHeaders() })
       .then(async (r) => {
         let json = null
         try {
@@ -775,7 +1070,7 @@ function apiRequest(path) {
     // #endif
     // #ifndef H5
     uni.request({
-      url, header: authHeaders(),
+      url, method, data: options.body, header: authHeaders(),
       success: res => {
         const json = res.data
         if (!json || json.code !== 0) { reject(new Error((json && json.msg) || `HTTP ${res.statusCode}`)); return }
@@ -832,11 +1127,13 @@ function syncStartPointFromPlan() {
 
 async function doRefresh(options) {
   const silent = !!(options && options.silent)
+  if (monitor.active) return
   if (_state.loading) return
   _state.loading = true
   if (!silent) setStatus(`正在刷新清运数据（${strategyLabel(routeStrategy.value)}）...`, 'warn')
   try {
     const data = await apiRequest(buildDashboardSnapshotPath())
+    if (monitor.active) return
     _state.bins = Array.isArray(data && data.bins) ? data.bins : []
     _state.plan = data && data.plan ? data.plan : null
 
@@ -863,8 +1160,469 @@ async function doRefresh(options) {
   }
 }
 
+// ─── 风险预警与调度监测 ───────────────────────────────
+let monitorTimer = null
+let monitorStartedAt = 0
+let monitorLastMapDraw = 0
+const MONITOR_TOTAL_MS = 19000
+const DISPATCH_STAGE_RANK = { '异常告警': 0, '返航中': 1, '待补位': 2, '可用': 3, '处置完成': 4 }
+const PARK_POINTS = {
+  abnormal: { id: 'zhongshan-abnormal', name: '樱花大道南段异常点位', latitude: 36.0626, longitude: 120.3476 },
+  sortingCenter: { id: 'zhongshan-sorting', name: '樱花大道北段管理站', latitude: 36.0684, longitude: 120.3478 },
+  standbyArea: { id: 'zhongshan-standby', name: '小西湖东侧待命区', latitude: 36.0652, longitude: 120.3415 }
+}
+const TENCENT_ROUTE_SNAPSHOT = {
+  returnRoute: {
+    provider: 'tencent_cache', mode: 'walking', distanceMeters: 1045,
+    polyline: [[36.062515,120.347597],[36.062614,120.34705],[36.063006,120.346033],[36.063368,120.345384],[36.063228,120.344863],[36.063633,120.344594],[36.064393,120.345041],[36.064953,120.345525],[36.065502,120.346059],[36.066101,120.346573],[36.066788,120.346875],[36.06717,120.346835],[36.067947,120.346562],[36.068078,120.347148],[36.068085,120.347385],[36.068068,120.34777],[36.0684,120.347792]]
+  },
+  replacementRoute: {
+    provider: 'tencent_cache', mode: 'walking', distanceMeters: 718,
+    polyline: [[36.064993,120.34149],[36.064874,120.341483],[36.064711,120.341968],[36.06474,120.342183],[36.064449,120.3426],[36.064219,120.343142],[36.064139,120.343565],[36.064039,120.344086],[36.063904,120.344328],[36.063633,120.344594],[36.063228,120.344863],[36.063368,120.345384],[36.063043,120.34595],[36.062782,120.346553],[36.062614,120.34705],[36.062515,120.347597]]
+  }
+}
+
+function simulatedFaults() {
+  const now = Date.now()
+  return [
+    {
+      id: 'sim-mechanical-jam', code: 'mechanical_jam', title: '机械卡滞', severity: 'critical', status: 'open',
+      deviceName: '移动桶 M-07', component: 'drop_mechanism', locationName: '樱花大道南段',
+      message: '投放完成后机械臂电流超过安全阈值，抓取机构未复位。',
+      recommendedAction: '停止机械臂并派发人工检修', createdAt: new Date(now - 2 * 60000).toISOString(), simulated: true
+    },
+    {
+      id: 'sim-return-failure', code: 'auto_return_failure', title: '自动返航失败', severity: 'critical', status: 'processing',
+      deviceName: '移动桶 M-03', component: 'navigation', locationName: '小西湖东侧',
+      message: '连续三次路径重规划失败，设备已进入安全停车状态。',
+      recommendedAction: '派发救援任务并转人工遥控', createdAt: new Date(now - 6 * 60000).toISOString(), simulated: true
+    },
+    {
+      id: 'sim-sorting-center', code: 'sorting_center_fault', title: '分拣中心故障', severity: 'high', status: 'open',
+      deviceName: '中山公园分拣中心', component: 'sorting_center', locationName: '樱花大道北段管理站',
+      message: '入料输送带停止响应，当前暂停移动桶入站。',
+      recommendedAction: '切换备用分拣中心并通知值守人员', createdAt: new Date(now - 9 * 60000).toISOString(), simulated: true
+    },
+    {
+      id: 'sim-position-deviation', code: 'position_deviation', title: '位置偏差', severity: 'medium', status: 'acknowledged',
+      deviceName: '备用桶 B-03', component: 'mobile_bin', locationName: '樱花大道南段',
+      message: '补位后与目标点位偏差 1.8 米，等待二次定位校准。',
+      recommendedAction: '重新定位并校验目标点位', createdAt: new Date(now - 12 * 60000).toISOString(), simulated: true
+    }
+  ]
+}
+
+function setFaultItems(items) {
+  faultCenter.items = items
+  faultCenter.summary = {
+    total: items.length,
+    open: items.filter(item => item.status === 'open').length,
+    processing: items.filter(item => ['acknowledged', 'processing'].includes(item.status)).length,
+    critical: items.filter(item => item.severity === 'critical' && item.status !== 'resolved').length,
+    resolved: items.filter(item => item.status === 'resolved').length
+  }
+}
+
+function clearMonitorTimer() {
+  if (monitorTimer) clearInterval(monitorTimer)
+  monitorTimer = null
+}
+
+function monitorTime(offsetMs) {
+  return fmtTime(new Date(monitorStartedAt + offsetMs), true)
+}
+
+function buildMonitorTrend(fill, weight) {
+  return Array.from({ length: 18 }, (_, index) => {
+    const ratio = index / 17
+    const wave = Math.sin(index * 1.4) * 1.6
+    return {
+      fill: clamp(fill - (1 - ratio) * 34 + wave, 8, 100),
+      weight: clamp((weight / 85) * 100 - (1 - ratio) * 38 + wave * 0.7, 8, 100)
+    }
+  })
+}
+
+function faultSeverityLabel(severity) {
+  if (severity === 'critical') return '严重'
+  if (severity === 'high') return '高'
+  if (severity === 'medium') return '中'
+  return '提示'
+}
+function faultStatusLabel(status) {
+  if (status === 'acknowledged') return '已确认'
+  if (status === 'processing') return '处理中'
+  if (status === 'resolved') return '已关闭'
+  return '待确认'
+}
+function faultComponentLabel(component) {
+  const labels = { drop_mechanism: '投放机构', mobile_bin: '移动桶', sorting_center: '分拣中心', navigation: '导航系统', communication: '通信模块' }
+  return labels[component] || component || '设备'
+}
+async function loadFaultEvents(silent = false) {
+  if (!getStorage('token')) {
+    setFaultItems(simulatedFaults())
+    if (!silent) setStatus('当前展示故障模拟数据', 'warn')
+    return
+  }
+  if (!silent) faultCenter.loading = true
+  try {
+    const data = await apiRequest('/api/planning/fault-events?limit=100')
+    const items = Array.isArray(data?.items) ? data.items : []
+    if (items.length) {
+      faultCenter.items = items
+      faultCenter.summary = data?.summary || faultCenter.summary
+    } else {
+      setFaultItems(simulatedFaults())
+    }
+  } catch (error) {
+    setFaultItems(simulatedFaults())
+    if (!silent) setStatus('故障接口暂不可用，当前展示模拟数据', 'warn')
+  } finally {
+    faultCenter.loading = false
+  }
+}
+function openFaultCenter() {
+  faultCenter.open = true
+  loadFaultEvents()
+}
+function closeFaultCenter() {
+  faultCenter.open = false
+}
+async function handleFault(fault, action) {
+  if (fault.simulated) {
+    fault.status = action === 'resolve' ? 'resolved' : action === 'acknowledge' ? 'acknowledged' : 'processing'
+    setFaultItems(faultCenter.items.slice())
+    setStatus(`故障模拟处置已更新：${fault.title}`, 'ok')
+    return
+  }
+  if (!getStorage('token')) {
+    setStatus('故障处置需要管理员登录', 'warn')
+    return
+  }
+  try {
+    const data = await apiRequest(`/api/planning/fault-events/${encodeURIComponent(fault.id)}/action`, { method: 'POST', body: { action } })
+    const index = faultCenter.items.findIndex(item => item.id === fault.id)
+    if (index >= 0 && data?.fault) faultCenter.items[index] = data.fault
+    if (data?.summary) faultCenter.summary = data.summary
+    setStatus(`故障处置已更新：${fault.title}`, 'ok')
+  } catch (error) {
+    setStatus(error?.message || '故障处置失败', 'err')
+  }
+}
+
+function parkFallbackBins() {
+  return [
+    { id: 'park-01', name: '樱花大道南段移动桶', latitude: 36.0626, longitude: 120.3476, currentFill: 91, growthRatePctPerHour: 5.4, predictedFillInHorizon: 100, hoursToFull: 1.7, priorityScore: 0.96, isUrgent: true },
+    { id: 'park-02', name: '小西湖东侧桶位', latitude: 36.0652, longitude: 120.3415, currentFill: 76, growthRatePctPerHour: 3.1, predictedFillInHorizon: 82.2, hoursToFull: 7.7, priorityScore: 0.74, isUrgent: false },
+    { id: 'park-03', name: '樱花大道北段桶位', latitude: 36.0684, longitude: 120.3478, currentFill: 63, growthRatePctPerHour: 2.3, predictedFillInHorizon: 67.6, hoursToFull: 16.1, priorityScore: 0.58, isUrgent: false },
+    { id: 'park-04', name: '孙文莲池北侧桶位', latitude: 36.0668, longitude: 120.3512, currentFill: 48, growthRatePctPerHour: 1.4, predictedFillInHorizon: 50.8, hoursToFull: 37.1, priorityScore: 0.36, isUrgent: false }
+  ]
+}
+
+function ensureMonitorBackup() {
+  if (_state.monitorBackup) return
+  _state.monitorBackup = {
+    bins: JSON.parse(JSON.stringify(_state.bins)),
+    plan: JSON.parse(JSON.stringify(_state.plan || null)),
+    selectedBinId: selectedBinId.value,
+    selectedStopOrder: selectedStopOrder.value
+  }
+}
+
+function restoreMonitorBase() {
+  if (!_state.monitorBackup) return
+  _state.bins = JSON.parse(JSON.stringify(_state.monitorBackup.bins))
+  _state.plan = JSON.parse(JSON.stringify(_state.monitorBackup.plan))
+}
+
+function buildRiskMonitorBins() {
+  const source = (_state.bins || []).length ? _state.bins : parkFallbackBins()
+  return source.map((bin, index) => {
+    const ratio = seededRatio(`${bin.id}-${bin.name}`)
+    const fill = clamp(n(bin.currentFill, 40 + ratio * 48), 8, 98)
+    const growth = clamp(n(bin.growthRatePctPerHour, 1 + ratio * 4), 0.4, 8)
+    const weight = clamp(fill * (0.65 + ratio * 0.18), 8, 86)
+    const battery = clamp(88 - fill * 0.58 + ratio * 16, 12, 92)
+    const fullMinutes = Math.max(2, Math.round((100 - fill) / growth * 60))
+    return {
+      ...bin,
+      baseFill: fill,
+      baseWeight: weight,
+      baseBattery: battery,
+      fill,
+      weight,
+      battery,
+      growth,
+      fullMinutes,
+      phase: index * 0.73,
+      alertLevel: fill >= 90 || battery < 20 ? 'critical' : fill >= 75 ? 'warning' : 'normal',
+      alertTitle: fill >= 90 || battery < 20 ? '红色告警' : fill >= 75 ? '风险预警' : '运行正常'
+    }
+  }).sort((a, b) => b.fill - a.fill)
+}
+
+function syncSelectedRiskMonitor() {
+  const selected = monitor.riskBins.find(bin => String(bin.id) === String(monitor.binId))
+  if (!selected) return
+  monitor.binName = selected.name
+  monitor.locationText = `${n(selected.latitude, 0).toFixed(5)}, ${n(selected.longitude, 0).toFixed(5)}`
+  monitor.fill = selected.fill
+  monitor.weight = selected.weight
+  monitor.weightDelta = Math.max(0, selected.weight - selected.baseWeight)
+  monitor.battery = selected.battery
+  monitor.batteryHours = Math.max(0.6, selected.battery / 7.2)
+  monitor.growth = selected.growth
+  monitor.growthModelLabel = selected.growthModelUsed
+    ? 'Mamba 多特征'
+    : selected.growthModelCandidate === 'mamba_selective_ssm'
+      ? 'Mamba 候选 / 区间降级'
+      : '近期区间'
+  monitor.growthModelConfidence = clamp(n(selected.growthModelConfidence, 0.64), 0, 1)
+  monitor.fullMinutes = selected.fullMinutes
+  monitor.fullClock = fmtTime(new Date(Date.now() + selected.fullMinutes * 60000))
+  monitor.alertLevel = selected.alertLevel
+  monitor.alertTitle = selected.alertLevel === 'critical' ? '满载风险预警升级' : selected.alertLevel === 'warning' ? '满载风险预警' : '运行状态正常'
+  monitor.alertDescription = selected.alertLevel === 'critical'
+    ? '预计短时间内满载，或设备电量低于安全阈值'
+    : selected.alertLevel === 'warning'
+      ? '增长率持续升高，平台已提前关注该点位'
+      : '遥测数据持续采集中'
+  monitor.trend = buildMonitorTrend(selected.fill, selected.weight)
+  selectedBinId.value = String(selected.id)
+}
+
+function selectRiskMonitorBin(binId) {
+  monitor.binId = binId
+  syncSelectedRiskMonitor()
+}
+
+function updateMonitorTasks(elapsed) {
+  const returnState = monitor.returnProgress >= 1 ? 'done' : monitor.returnProgress > 0 ? 'running' : 'pending'
+  const replaceState = monitor.replaceProgress >= 1 ? 'done' : monitor.replaceProgress > 0 ? 'running' : 'pending'
+  monitor.tasks = [
+    {
+      id: 'return', title: '返航任务 RT-2026-0614', kind: 'return', state: returnState,
+      status: returnState === 'done' ? '已到达' : returnState === 'running' ? '返航中' : '待执行',
+      route: `${monitor.binName} → 智能分拣中心`, device: '移动桶 M-07', progress: monitor.returnProgress * 100
+    },
+    {
+      id: 'replace', title: '补位任务 RP-2026-0614', kind: 'replace', state: replaceState,
+      status: replaceState === 'done' ? '补位完成' : replaceState === 'running' ? '补位中' : '待命',
+      route: `备用桶待命区 → ${monitor.binName}`, device: '备用桶 B-03', progress: monitor.replaceProgress * 100
+    }
+  ]
+  monitor.timeline = [
+    { key: 'alert', label: '异常告警', state: 'done' },
+    { key: 'return', label: '移动桶返航', state: returnState },
+    { key: 'replace', label: '备用桶补位', state: replaceState },
+    { key: 'available', label: '点位恢复可用', state: DISPATCH_STAGE_RANK[monitor.pointState] >= 3 ? 'done' : 'pending' },
+    { key: 'closed', label: '处置完成', state: monitor.pointState === '处置完成' ? 'done' : 'pending' }
+  ]
+  const eventDefs = [
+    [0, '异常告警', '樱花大道南段点位检测到满载 / 低电量。'],
+    [1000, '任务自动生成', '平台生成返航与备用桶补位任务。'],
+    [2500, '备用桶出库', '备用桶 B-03 从小西湖东侧待命区出发。'],
+    [5000, '原点位待补位', '移动桶已离开，原点位等待备用桶。'],
+    [13500, '补位完成', '备用桶到达原点位，状态恢复为可用。'],
+    [18500, '处置完成', '移动桶抵达分拣中心，双任务执行完成。']
+  ]
+  monitor.events = eventDefs
+    .filter(item => elapsed >= item[0])
+    .reverse()
+    .map((item, index) => ({ id: `${item[0]}-${index}`, time: monitorTime(item[0]), title: item[1], desc: item[2] }))
+}
+
+function setDispatchStage(nextStage) {
+  if ((DISPATCH_STAGE_RANK[nextStage] ?? -1) <= (DISPATCH_STAGE_RANK[monitor.pointState] ?? -1)) return
+  monitor.pointState = nextStage
+  monitor.pointStateCls = DISPATCH_STAGE_RANK[nextStage] >= 3 ? 'available' : nextStage === '待补位' ? 'waiting' : 'danger'
+}
+
+function updateRiskMonitor() {
+  const elapsed = Date.now() - monitorStartedAt
+  monitor.riskBins.forEach((bin, index) => {
+    const minutes = elapsed / 60000
+    const pulse = Math.sin(elapsed / 2400 + bin.phase) * 0.35
+    bin.fill = clamp(bin.baseFill + bin.growth * minutes + pulse, 0, 100)
+    bin.weight = clamp(bin.baseWeight + bin.growth * 0.72 * minutes + pulse * 0.4, 0, 95)
+    bin.battery = clamp(bin.baseBattery - (0.12 + index * 0.015) * minutes, 5, 100)
+    bin.fullMinutes = Math.max(0, Math.round((100 - bin.fill) / Math.max(bin.growth, 0.1) * 60))
+    bin.alertLevel = bin.fill >= 90 || bin.battery < 20 ? 'critical' : bin.fill >= 75 ? 'warning' : 'normal'
+    bin.alertTitle = bin.alertLevel === 'critical' ? '红色告警' : bin.alertLevel === 'warning' ? '风险预警' : '运行正常'
+  })
+  syncSelectedRiskMonitor()
+}
+
+function updateDispatchMonitor() {
+  const elapsed = Date.now() - monitorStartedAt
+  monitor.returnProgress = monitor.routeAvailable ? clamp((elapsed - 1000) / 17500, 0, 1) : 0
+  monitor.replaceProgress = monitor.routeAvailable ? clamp((elapsed - 2500) / 11000, 0, 1) : 0
+  monitor.returnPosition = pointAlongRoute(monitor.returnRoute, monitor.returnProgress)
+  monitor.replacePosition = pointAlongRoute(monitor.replaceRoute, monitor.replaceProgress)
+
+  if (elapsed >= 18500) setDispatchStage('处置完成')
+  else if (elapsed >= 13500) {
+    setDispatchStage('可用')
+    const target = (_state.bins || []).find(bin => String(bin.id) === String(monitor.binId))
+    if (target) {
+      target.currentFill = 12
+      target.predictedFillInHorizon = 20
+      target.isUrgent = false
+    }
+    renderMetrics()
+    renderLists()
+  } else if (elapsed >= 5000) setDispatchStage('待补位')
+  else if (elapsed >= 1000) setDispatchStage('返航中')
+  updateMonitorTasks(elapsed)
+
+  if (Date.now() - monitorLastMapDraw >= 250) {
+    monitorLastMapDraw = Date.now()
+    // #ifdef H5
+    if (_state.mapReady) drawMap(true)
+    // #endif
+    // #ifndef H5
+    buildMpMapData()
+    // #endif
+  }
+
+  if (elapsed >= MONITOR_TOTAL_MS) {
+    clearMonitorTimer()
+    monitor.completed = true
+    monitor.returnProgress = 1
+    monitor.replaceProgress = 1
+    monitor.returnPosition = pointAlongRoute(monitor.returnRoute, 1)
+    monitor.replacePosition = pointAlongRoute(monitor.replaceRoute, 1)
+    updateMonitorTasks(MONITOR_TOTAL_MS)
+    setStatus('调度处置完成：返航与补位任务已闭环', 'ok')
+    // #ifdef H5
+    if (_state.mapReady) drawMap(true)
+    // #endif
+  }
+}
+
+function startRiskMonitor() {
+  clearMonitorTimer()
+  ensureMonitorBackup()
+  restoreMonitorBase()
+  monitor.active = true
+  if (!_state.bins.length) {
+    _state.bins = parkFallbackBins()
+    _state.plan = null
+    renderMetrics()
+  }
+  monitor.completed = false
+  monitor.scene = 'telemetry'
+  monitor.riskBins = buildRiskMonitorBins()
+  monitor.binId = monitor.riskBins[0]?.id || null
+  syncSelectedRiskMonitor()
+  monitorStartedAt = Date.now()
+  setStatus(`风险预警监测中：正在分析 ${monitor.riskBins.length} 个桶位`, 'warn')
+  monitorTimer = setInterval(updateRiskMonitor, 250)
+  updateRiskMonitor()
+}
+
+async function startDispatchMonitor() {
+  clearMonitorTimer()
+  ensureMonitorBackup()
+  restoreMonitorBase()
+  monitor.active = true
+  monitor.completed = false
+  monitor.scene = 'dispatch'
+  monitor.binId = PARK_POINTS.abnormal.id
+  monitor.binName = PARK_POINTS.abnormal.name
+  monitor.pointState = '异常告警'
+  monitor.pointStateCls = 'danger'
+  monitor.returnProgress = 0
+  monitor.replaceProgress = 0
+  monitor.targetPoint = { ...PARK_POINTS.abnormal }
+  monitor.sortingCenter = { ...PARK_POINTS.sortingCenter }
+  monitor.standbyArea = { ...PARK_POINTS.standbyArea }
+  monitor.returnPosition = { ...monitor.targetPoint }
+  monitor.replacePosition = { ...monitor.standbyArea }
+  monitor.returnRoute = []
+  monitor.replaceRoute = []
+  monitor.routeAvailable = false
+  _state.bins = parkFallbackBins().map(bin => bin.id === 'park-01' ? { ...bin, id: PARK_POINTS.abnormal.id, name: PARK_POINTS.abnormal.name } : bin)
+  _state.plan = null
+  _state.startPoint = null
+  selectedBinId.value = String(monitor.binId)
+  selectedStopOrder.value = null
+  monitor.mapBrief = ['正在获取腾讯步行路径规划...', '异常原因：满载 / 低电量']
+  monitor.timeline = []
+  monitor.tasks = []
+  monitor.events = []
+  renderAll()
+  try {
+    const data = await apiRequest('/api/planning/dispatch-monitor-route')
+    if (!monitor.active || monitor.scene !== 'dispatch') return
+    const points = data?.points || PARK_POINTS
+    monitor.targetPoint = { ...(points.abnormal || PARK_POINTS.abnormal) }
+    monitor.sortingCenter = { ...(points.sortingCenter || PARK_POINTS.sortingCenter) }
+    monitor.standbyArea = { ...(points.standbyArea || PARK_POINTS.standbyArea) }
+    monitor.returnRoute = Array.isArray(data?.returnRoute?.polyline) ? data.returnRoute.polyline : []
+    monitor.replaceRoute = Array.isArray(data?.replacementRoute?.polyline) ? data.replacementRoute.polyline : []
+    monitor.routeAvailable = monitor.returnRoute.length > 1 && monitor.replaceRoute.length > 1
+    if (!monitor.routeAvailable) throw new Error('腾讯步行路径为空')
+    monitor.mapBrief = [
+      `异常点位：${monitor.targetPoint.name}`,
+      `返航：${fmtKm(n(data.returnRoute.distanceMeters, 0) / 1000)} · 腾讯步行路径`,
+      `补位：${fmtKm(n(data.replacementRoute.distanceMeters, 0) / 1000)} · 腾讯步行路径`,
+      '红色路线：返航分拣中心 · 青色路线：备用桶补位'
+    ]
+    monitorStartedAt = Date.now()
+    _state.shouldFitMap = true
+    setStatus('调度监测中：返航与补位任务协同执行', 'warn')
+    monitorTimer = setInterval(updateDispatchMonitor, 100)
+    updateDispatchMonitor()
+  } catch (error) {
+    monitor.returnRoute = TENCENT_ROUTE_SNAPSHOT.returnRoute.polyline
+    monitor.replaceRoute = TENCENT_ROUTE_SNAPSHOT.replacementRoute.polyline
+    monitor.routeAvailable = true
+    monitor.mapBrief = [
+      `异常点位：${monitor.targetPoint.name}`,
+      `返航：${fmtKm(TENCENT_ROUTE_SNAPSHOT.returnRoute.distanceMeters / 1000)} · 腾讯步行路径快照`,
+      `补位：${fmtKm(TENCENT_ROUTE_SNAPSHOT.replacementRoute.distanceMeters / 1000)} · 腾讯步行路径快照`,
+      '路径服务连接恢复后将自动切换实时规划'
+    ]
+    monitorStartedAt = Date.now()
+    setStatus('调度监测中：当前使用腾讯步行路径快照', 'warn')
+    monitorTimer = setInterval(updateDispatchMonitor, 100)
+    updateDispatchMonitor()
+    _state.shouldFitMap = true
+    // #ifdef H5
+    if (_state.mapReady) drawMap(true)
+    // #endif
+  }
+}
+
+function exitMonitor() {
+  clearMonitorTimer()
+  monitor.active = false
+  monitor.completed = false
+  monitor.scene = ''
+  if (_state.monitorBackup) {
+    _state.bins = JSON.parse(JSON.stringify(_state.monitorBackup.bins))
+    _state.plan = JSON.parse(JSON.stringify(_state.monitorBackup.plan))
+    selectedBinId.value = _state.monitorBackup.selectedBinId
+    selectedStopOrder.value = _state.monitorBackup.selectedStopOrder
+    _state.monitorBackup = null
+  }
+  renderAll()
+  setStatus('已返回实时清运总览', 'ok')
+}
+
+function resetDispatchView() {
+  if (!monitor.active || monitor.scene !== 'dispatch') return
+  _state.shouldFitMap = true
+  // #ifdef H5
+  if (_state.mapReady) drawMap(true)
+  // #endif
+}
+
 // ─── 策略切换 ──────────────────────────────────────────
 function onStrategyTap(value) {
+  if (monitor.active) return
   const next = normalizeStrategy(value)
   if (next === routeStrategy.value) return
   routeStrategy.value = next
@@ -902,6 +1660,7 @@ function tick() { clockText.value = fmtTime(new Date(), true) }
 
 // ─── 定时刷新 ──────────────────────────────────────────
 let refreshTimer = null
+let faultRefreshTimer = null
 let unbindThemeWatcher = null
 let storageHandler = null
 
@@ -985,11 +1744,15 @@ onMounted(async () => {
 
   await refreshPromise
   refreshTimer = setInterval(() => doRefresh({ silent: true }), 60000)
+  loadFaultEvents(true)
+  faultRefreshTimer = setInterval(() => loadFaultEvents(true), 15000)
 })
 
 onBeforeUnmount(() => {
+  clearMonitorTimer()
   if (clockTimer) clearInterval(clockTimer)
   if (refreshTimer) clearInterval(refreshTimer)
+  if (faultRefreshTimer) clearInterval(faultRefreshTimer)
   if (typeof unbindThemeWatcher === 'function') unbindThemeWatcher()
   // #ifdef H5
   if (storageHandler) {
@@ -1053,20 +1816,22 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 
 /* ===== 顶部 ===== */
 .screen .top { padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
-.screen .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.screen .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: nowrap; }
 .screen .title { font-size: 26px; font-weight: 700; letter-spacing: 2px; text-shadow: 0 0 18px rgba(36,217,255,.4); }
 .screen .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
-.screen .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.screen .actions { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; min-width: 0; }
+.screen .actions > * { flex-shrink: 0; }
 .screen .clock {
   font-size: 20px; min-width: 150px; text-align: center;
   padding: 6px 10px; border: 1px solid rgba(132,212,255,.4);
   border-radius: 10px; background: rgba(6,35,54,.7);
 }
 .screen .status {
-  font-size: 12px; min-width: 150px; text-align: center;
+  width: 220px; min-width: 220px; font-size: 12px; text-align: center;
   padding: 7px 11px; border-radius: 999px;
   border: 1px solid rgba(151,217,255,.3);
   background: rgba(12,44,69,.7); color: #bde8ff;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .screen .status.ok { color: #9cf8cf; border-color: rgba(25,198,127,.5); background: rgba(13,64,46,.52); }
 .screen .status.warn { color: #ffe6a7; border-color: rgba(245,181,66,.45); background: rgba(94,62,13,.5); }
@@ -1090,22 +1855,50 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .btn {
   border-radius: 10px; padding: 8px 12px; color: #fff;
   font-size: 12px; display: inline-flex; align-items: center; justify-content: center;
+  flex-wrap: nowrap; white-space: nowrap;
 }
 .screen .btn.blue { background: linear-gradient(135deg, #2378e7, #42abff); }
 .screen .btn.ghost { background: rgba(255,255,255,.12); border: 1px solid rgba(151,217,255,.3); }
+.screen .btn.feature-btn {
+  border: 1px solid rgba(83,245,211,.48);
+  background: linear-gradient(135deg, rgba(18,151,131,.9), rgba(39,111,232,.92));
+  box-shadow: 0 0 18px rgba(36,217,255,.18);
+  gap: 6px;
+}
+.screen .btn.feature-btn.active {
+  border-color: rgba(255,202,88,.8);
+  box-shadow: 0 0 20px rgba(255,182,72,.28);
+}
+.screen .feature-icon {
+  width: 17px; height: 17px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.16); font-size: 11px; font-weight: 700;
+}
 .screen .nav-link-btn { gap: 6px; }
+.screen .fault-btn {
+  position: relative; gap: 6px;
+  border: 1px solid rgba(255,126,105,.55);
+  background: linear-gradient(135deg, rgba(135,45,48,.92), rgba(196,82,53,.88));
+}
+.screen .fault-badge {
+  min-width: 17px; height: 17px; padding: 0 4px; border-radius: 99px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; background: #ff3344; font-size: 9px; font-weight: 700;
+  box-shadow: 0 0 10px rgba(255,51,68,.55);
+}
+.screen .fault-badge.is-placeholder { visibility: hidden; }
 
 /* ===== 指标卡片 ===== */
-.screen .cards { display: flex; gap: 7px; flex-wrap: wrap; }
+.screen .cards { height: 100px; flex: 0 0 100px; display: flex; gap: 7px; flex-wrap: nowrap; }
 .screen .card {
-  flex: 1; min-width: 130px;
+  flex: 1; min-width: 130px; height: 100px; box-sizing: border-box; overflow: hidden;
   border: 1px solid rgba(134,206,255,.22); border-radius: 12px;
   padding: 6px 9px;
   background: linear-gradient(180deg, rgba(13,40,63,.7), rgba(10,28,44,.86));
 }
 .screen .card .k { font-size: 12px; color: #9ec9db; }
 .screen .card .v { font-size: 24px; line-height: 1; margin-top: 5px; }
-.screen .delta { font-size: 11px; color: #83afc5; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.screen .delta { min-height: 18px; font-size: 11px; color: #83afc5; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .screen .delta .tag {
   display: inline-flex; align-items: center;
   padding: 1px 6px; border-radius: 999px;
@@ -1115,6 +1908,105 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .delta .tag.up { color: #86f7c3; border-color: rgba(22,197,124,.45); background: rgba(11,66,45,.45); }
 .screen .delta .tag.down { color: #ffd3d5; border-color: rgba(255,93,102,.45); background: rgba(88,22,28,.45); }
 .screen .delta .tag.flat { color: #c8dff0; }
+
+/* ===== 风险预警遥测 ===== */
+.screen .telemetry-scene { flex: 1; min-height: 0; display: flex; gap: 10px; }
+.screen .telemetry-selector {
+  width: 300px; flex: 0 0 300px; min-height: 0; padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.screen .risk-monitor-item {
+  padding: 10px; margin-bottom: 8px; border-radius: 11px;
+  border: 1px solid rgba(124,198,244,.2); background: rgba(10,33,51,.74);
+}
+.screen .risk-monitor-item.active {
+  border-color: rgba(36,217,255,.86); box-shadow: 0 0 18px rgba(36,217,255,.16);
+}
+.screen .risk-mini-track {
+  height: 5px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: rgba(104,159,187,.18);
+}
+.screen .risk-mini-fill { height: 100%; border-radius: inherit; background: var(--green); transition: width .25s linear; }
+.screen .risk-mini-fill.warning { background: linear-gradient(90deg, var(--amber), var(--orange)); }
+.screen .risk-mini-fill.critical { background: linear-gradient(90deg, var(--orange), var(--red)); }
+.screen .risk-prediction { color: #96bed0; font-size: 10px; margin-top: 6px; }
+.screen .telemetry-hero {
+  flex: 1; min-height: 0; padding: 18px 22px; display: flex; flex-direction: column; gap: 14px;
+  background:
+    radial-gradient(700px 380px at 18% 42%, rgba(36,217,255,.12), transparent 64%),
+    linear-gradient(150deg, rgba(7,28,45,.94), rgba(8,39,59,.92));
+}
+.screen .scene-kicker { color: #69dfff; font-size: 11px; letter-spacing: 2px; }
+.screen .telemetry-head { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.screen .telemetry-title { font-size: 28px; font-weight: 700; letter-spacing: 1px; }
+.screen .telemetry-location { color: var(--muted); font-size: 12px; margin-top: 5px; }
+.screen .warning-banner {
+  min-width: 330px; padding: 12px 15px; border-radius: 12px;
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid rgba(56,204,255,.35); background: rgba(19,83,110,.38);
+  transition: all .35s ease;
+}
+.screen .warning-banner.warning { border-color: rgba(245,182,72,.76); background: rgba(105,71,15,.52); box-shadow: 0 0 22px rgba(245,182,72,.18); }
+.screen .warning-banner.critical { border-color: rgba(255,93,102,.82); background: rgba(112,24,31,.62); box-shadow: 0 0 28px rgba(255,93,102,.28); animation: warning-pulse 1s ease-in-out infinite; }
+.screen .warning-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 12px currentColor; flex-shrink: 0; }
+.screen .warning .warning-dot { background: var(--amber); }
+.screen .critical .warning-dot { background: var(--red); }
+.screen .warning-title { font-size: 14px; font-weight: 700; }
+.screen .warning-sub { font-size: 11px; color: #b9d5df; margin-top: 3px; }
+.screen .telemetry-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.25fr 1fr 1fr 1.2fr; gap: 12px; }
+.screen .gauge-card {
+  min-height: 0; padding: 16px; border-radius: 15px; border: 1px solid rgba(123,202,255,.22);
+  background: linear-gradient(180deg, rgba(14,48,70,.75), rgba(8,28,44,.9));
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+}
+.screen .gauge-card.primary { border-color: rgba(36,217,255,.42); }
+.screen .gauge-ring {
+  width: min(18vw, 210px); height: min(18vw, 210px); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: conic-gradient(var(--cyan) var(--gauge-value), rgba(88,145,174,.18) 0);
+  box-shadow: 0 0 35px rgba(36,217,255,.16);
+  position: relative;
+}
+.screen .gauge-ring::before {
+  content: ''; position: absolute; inset: 14px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(15,54,75,.98), rgba(6,25,39,.98));
+}
+.screen .gauge-core { z-index: 1; display: flex; flex-direction: column; align-items: center; }
+.screen .gauge-value { font-size: 34px; font-weight: 700; text-shadow: 0 0 20px rgba(36,217,255,.35); }
+.screen .gauge-label { color: var(--muted); font-size: 12px; margin-top: 5px; }
+.screen .metric-icon {
+  min-width: 42px; height: 28px; border-radius: 8px; padding: 0 7px;
+  display: flex; align-items: center; justify-content: center;
+  color: #8de9ff; border: 1px solid rgba(93,214,255,.35); background: rgba(31,126,255,.18);
+  font-size: 11px; font-weight: 700;
+}
+.screen .metric-icon.battery { color: #8df4c4; border-color: rgba(22,197,124,.42); }
+.screen .metric-big { font-size: 38px; font-weight: 700; margin-top: 14px; }
+.screen .metric-unit { color: var(--muted); font-size: 12px; margin: 3px 0 16px; }
+.screen .metric-track { width: 100%; height: 7px; border-radius: 99px; background: rgba(104,159,187,.18); overflow: hidden; }
+.screen .metric-progress { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2479ed, #24d9ff); transition: width .25s linear; }
+.screen .metric-progress.weight { background: linear-gradient(90deg, #7664f5, #c17cff); }
+.screen .metric-progress.battery, .screen .metric-progress.replace { background: linear-gradient(90deg, #0a9c68, #24dda0); }
+.screen .metric-progress.return, .screen .metric-progress.danger { background: linear-gradient(90deg, #ff9a47, #ff5d66); }
+.screen .trend-line { width: 100%; display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 10px; }
+.screen .trend-up { color: #ffbd70; }
+.screen .gauge-card.prediction { align-items: stretch; justify-content: center; }
+.screen .prediction-label { color: #8de9ff; font-size: 13px; letter-spacing: 1px; }
+.screen .prediction-time { color: #fff; font-size: 50px; font-weight: 700; margin: 10px 0 2px; text-shadow: 0 0 22px rgba(255,93,102,.28); }
+.screen .prediction-time text { font-size: 15px; color: var(--muted); }
+.screen .prediction-copy { color: #ffd5aa; font-size: 12px; }
+.screen .prediction-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; }
+.screen .prediction-grid view { padding: 8px; border: 1px solid rgba(126,198,241,.18); border-radius: 9px; background: rgba(8,29,44,.64); }
+.screen .prediction-grid text, .screen .prediction-grid b { display: block; }
+.screen .prediction-grid text { color: var(--muted); font-size: 10px; }
+.screen .prediction-grid b { color: #c9efff; font-size: 13px; margin-top: 4px; }
+.screen .telemetry-chart { height: 130px; padding: 12px 14px; border-radius: 13px; border: 1px solid rgba(123,202,255,.2); background: rgba(7,26,41,.72); }
+.screen .chart-head { display: flex; justify-content: space-between; color: #a7d1e2; font-size: 11px; }
+.screen .chart-bars { height: 92px; display: flex; align-items: flex-end; gap: 8px; border-bottom: 1px solid rgba(123,202,255,.18); }
+.screen .chart-column { flex: 1; height: 76px; position: relative; display: flex; align-items: flex-end; gap: 2px; }
+.screen .chart-fill, .screen .chart-weight { flex: 1; min-height: 3px; border-radius: 3px 3px 0 0; transition: height .25s linear; }
+.screen .chart-fill { background: linear-gradient(180deg, #24d9ff, #2479ed); }
+.screen .chart-weight { background: linear-gradient(180deg, #ca83ff, #725cf0); opacity: .72; }
+@keyframes warning-pulse { 50% { transform: scale(1.012); box-shadow: 0 0 36px rgba(255,93,102,.4); } }
 
 /* ===== 主体三列 ===== */
 .screen .main { flex: 1; min-height: 0; display: flex; gap: 10px; }
@@ -1245,6 +2137,20 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 }
 .screen .brief-title { color: #8ce6ff; font-size: 13px; font-weight: 600; }
 .screen .brief-line { color: var(--text); font-size: 12px; line-height: 1.5; }
+.screen .monitor-point-state {
+  position: absolute; right: 22px; top: 20px; z-index: 8; min-width: 130px;
+  padding: 9px 12px; border-radius: 10px; display: flex; flex-direction: column; gap: 3px;
+  border: 1px solid rgba(255,93,102,.58); background: rgba(93,19,26,.8);
+}
+.screen .monitor-point-state.waiting { border-color: rgba(245,182,72,.65); background: rgba(92,62,12,.82); }
+.screen .monitor-point-state.available { border-color: rgba(22,197,124,.65); background: rgba(10,70,48,.82); }
+.screen .reset-view-btn {
+  position: absolute; right: 22px; bottom: 20px; z-index: 9;
+  background: rgba(5,34,54,.86);
+}
+.screen .point-state-label { color: #bdd2dc; font-size: 10px; }
+.screen .point-state-value { color: #fff; font-size: 17px; font-weight: 700; }
+.screen .point-state-reason { color: #ffd1d4; font-size: 10px; }
 
 /* ===== 时间轴 ===== */
 .screen .timeline {
@@ -1281,6 +2187,18 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .tl-empty {
   display: inline-flex; align-items: center; font-size: 12px; color: #7090a5; padding: 12px;
 }
+.screen .monitor-timeline { display: flex; align-items: center; min-height: 62px; overflow-x: auto; }
+.screen .monitor-tl-step {
+  min-width: 128px; flex: 1; display: flex; align-items: center; gap: 6px; color: #789cad; font-size: 11px;
+  position: relative;
+}
+.screen .monitor-tl-step::after { content: ''; height: 2px; flex: 1; background: rgba(116,197,255,.18); }
+.screen .monitor-tl-step:last-child::after { display: none; }
+.screen .monitor-tl-dot { width: 10px; height: 10px; border-radius: 50%; background: #667f8c; flex-shrink: 0; }
+.screen .monitor-tl-step.running { color: #8de9ff; }
+.screen .monitor-tl-step.running .monitor-tl-dot { background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+.screen .monitor-tl-step.done { color: #a8f2cf; }
+.screen .monitor-tl-step.done .monitor-tl-dot { background: var(--green); }
 
 /* ===== 告警 / 调度 ===== */
 .screen .alert { border-color: rgba(255,113,96,.3); background: linear-gradient(180deg, rgba(65,19,24,.66), rgba(33,12,17,.74)); }
@@ -1299,6 +2217,71 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   border: 1px solid rgba(88,165,255,.45); background: rgba(28,96,191,.45);
   color: #d5ecff; font-size: 11px; padding: 2px 7px; border-radius: 999px;
 }
+.screen .task-flow { display: flex; flex-direction: column; gap: 10px; }
+.screen .monitor-task { padding: 11px; border: 1px solid rgba(125,199,242,.22); border-radius: 11px; background: rgba(9,31,48,.82); }
+.screen .monitor-task.running { border-color: rgba(36,217,255,.52); box-shadow: 0 0 18px rgba(36,217,255,.1); }
+.screen .monitor-task.done { border-color: rgba(22,197,124,.48); }
+.screen .task-top, .screen .task-meta { display: flex; justify-content: space-between; gap: 6px; }
+.screen .task-top { font-size: 12px; font-weight: 600; }
+.screen .task-chip { padding: 2px 7px; border-radius: 999px; color: #b9d5df; background: rgba(99,126,141,.38); font-size: 10px; }
+.screen .monitor-task.running .task-chip { color: #9cecff; background: rgba(31,126,255,.32); }
+.screen .monitor-task.done .task-chip { color: #a5f2cf; background: rgba(22,197,124,.28); }
+.screen .task-route { color: #88afc2; font-size: 10px; margin: 8px 0; }
+.screen .task-meta { color: #86adbf; font-size: 10px; margin-top: 7px; }
+.screen .monitor-event { display: grid; grid-template-columns: 62px 1fr; gap: 8px; padding: 9px 4px; border-bottom: 1px solid rgba(125,199,242,.15); }
+.screen .event-time { color: #73cfe8; font-size: 10px; }
+.screen .event-title, .screen .event-desc { display: block; }
+.screen .event-title { font-size: 11px; color: #dff6ff; }
+.screen .event-desc { font-size: 10px; color: #82a7b9; line-height: 1.45; margin-top: 3px; }
+
+/* ===== 故障处理抽屉 ===== */
+.screen .fault-mask {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; justify-content: flex-end;
+  background: rgba(2,12,20,.66); backdrop-filter: blur(4px);
+}
+.screen .fault-drawer {
+  width: min(560px, 92vw); height: 100%; padding: 16px;
+  border-radius: 18px 0 0 18px; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 12px;
+  background: linear-gradient(160deg, rgba(8,29,46,.98), rgba(11,43,63,.98));
+}
+.screen .fault-drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.screen .fault-drawer-title { font-size: 20px; font-weight: 700; }
+.screen .fault-drawer-sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.screen .fault-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.screen .fault-summary view {
+  padding: 10px; border-radius: 10px; border: 1px solid rgba(124,198,244,.2);
+  background: rgba(9,31,48,.78);
+}
+.screen .fault-summary text, .screen .fault-summary b { display: block; }
+.screen .fault-summary text { color: var(--muted); font-size: 10px; }
+.screen .fault-summary b { font-size: 22px; margin-top: 3px; }
+.screen .danger-text { color: #ff7e86; }
+.screen .fault-list { flex: 1; min-height: 0; }
+.screen .fault-card {
+  padding: 12px; margin-bottom: 9px; border-radius: 12px;
+  border: 1px solid rgba(125,199,242,.22); background: rgba(8,27,43,.84);
+}
+.screen .fault-card.critical { border-color: rgba(255,75,86,.65); box-shadow: inset 3px 0 #ff4b56; }
+.screen .fault-card.high { border-color: rgba(255,143,71,.55); box-shadow: inset 3px 0 #ff8f47; }
+.screen .fault-card.medium { border-color: rgba(245,182,72,.48); box-shadow: inset 3px 0 #f5b648; }
+.screen .fault-card.resolved { opacity: .62; }
+.screen .fault-card-top, .screen .fault-meta, .screen .fault-actions { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+.screen .fault-level { padding: 2px 6px; margin-right: 7px; border-radius: 999px; font-size: 9px; background: rgba(255,255,255,.12); }
+.screen .fault-level.critical { color: #ffd0d4; background: rgba(255,75,86,.3); }
+.screen .fault-level.high { color: #ffe0c7; background: rgba(255,143,71,.28); }
+.screen .fault-title { font-size: 13px; font-weight: 700; }
+.screen .fault-status { color: #9edfff; font-size: 10px; }
+.screen .fault-device { color: #a6d3e6; font-size: 11px; margin-top: 8px; }
+.screen .fault-message { color: #eefaff; font-size: 11px; line-height: 1.55; margin-top: 5px; }
+.screen .fault-recommend { color: #ffd69c; font-size: 10px; margin-top: 7px; }
+.screen .fault-meta { color: #779eaf; font-size: 9px; margin-top: 8px; }
+.screen .fault-actions { justify-content: flex-start; flex-wrap: wrap; margin-top: 10px; }
+.screen .fault-action { padding: 5px 8px; border-radius: 7px; font-size: 10px; color: #dff6ff; background: rgba(35,112,182,.45); border: 1px solid rgba(78,173,239,.32); }
+.screen .fault-action.return { background: rgba(190,104,32,.4); border-color: rgba(255,166,74,.4); }
+.screen .fault-action.manual { background: rgba(123,74,180,.4); border-color: rgba(188,125,246,.4); }
+.screen .fault-action.resolve { background: rgba(25,139,95,.4); border-color: rgba(47,209,143,.4); }
 
 /* ===== 手机端适配（≤768px） ===== */
 @media (max-width: 768px) {
@@ -1318,11 +2301,19 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   .screen .strategy { padding: 3px; }
   .screen .strategy-btn { font-size: 11px; padding: 4px 7px; }
   .screen .btn { font-size: 11px; padding: 6px 10px; }
-  .screen .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .screen .card { min-width: unset; }
+  .screen .cards { height: auto; flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .screen .card { min-width: unset; height: auto; overflow: visible; }
   .screen .card .v { font-size: 18px; }
   .screen .delta { font-size: 10px; gap: 4px; }
   .screen .main { flex-direction: column; flex: none; gap: 8px; }
+  .screen .telemetry-scene { flex: none; }
+  .screen .telemetry-selector { width: auto; flex: none; height: 280px; }
+  .screen .telemetry-hero { padding: 12px; }
+  .screen .telemetry-head { flex-direction: column; align-items: stretch; }
+  .screen .warning-banner { min-width: unset; }
+  .screen .telemetry-grid { grid-template-columns: 1fr 1fr; }
+  .screen .gauge-ring { width: 150px; height: 150px; }
+  .screen .telemetry-chart { display: none; }
   .screen .col.left, .screen .col.center, .screen .col.right { width: 100%; min-width: unset; }
   .screen .map-wrap { flex: none; height: 300px; }
   .screen .mp-map { min-height: 240px; height: 240px; }
@@ -1332,6 +2323,8 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   .screen .list { height: 220px; }
   .screen .bars { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; scrollbar-width: thin; scrollbar-color: rgba(63,169,233,.72) rgba(6,28,44,.58); }
   .screen .bar { min-width: 48px; flex: 0 0 auto; }
+  .screen .fault-drawer { width: 100%; border-radius: 0; }
+  .screen .fault-summary { grid-template-columns: 1fr 1fr; }
 }
 
 /* ===== 超小屏（≤480px） ===== */
