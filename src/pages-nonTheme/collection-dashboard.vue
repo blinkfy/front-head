@@ -206,7 +206,7 @@
                 ></view>
               </view>
               <text class="bar-val">{{ clamp(bin.predictedFillInHorizon, 0, 100).toFixed(1) }}%</text>
-              <text class="bar-name">{{ String(bin.name || '').slice(0, 4) || '点位' }}</text>
+              <text class="bar-name">{{ String(bin.name || '').slice(0, 5) || '点位' }}</text>
             </view>
           </view>
         </view>
@@ -407,6 +407,13 @@ import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
 const DEFAULT_CENTER = { latitude: 36.0671, longitude: 120.3826 }
 const KPI_HISTORY_KEY = 'collection_dashboard_kpi_history_v2'
+const ZHONGSHAN_PARK_BIN_NAMES = [
+  '中山北门一桶', '中山北门二桶', '中山南门一桶', '中山南门二桶', '樱花大道一桶',
+  '小西湖东岸一桶', '小西湖西岸一桶', '孙文莲池一桶', '会前村遗址一桶', '动物园入口一桶',
+  '观象亭一桶', '太平山索道一桶', '公园广场一桶', '儿童乐园一桶', '桂花园一桶',
+  '牡丹园一桶', '玉兰园一桶', '中山东门一桶', '中山西门一桶', '林荫步道一桶',
+  '湖畔休息区一桶', '迎宾广场一桶', '花卉园一桶', '休闲长廊一桶'
+]
 
 // ─── 工具函数 ──────────────────────────────────────────
 function n(v, fallback = 0) {
@@ -415,6 +422,29 @@ function n(v, fallback = 0) {
 }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, n(v, min))) }
 function clampFill(v) { return clamp(v, 0, 100) }
+function zhongshanParkBinName(index) {
+  const base = ZHONGSHAN_PARK_BIN_NAMES[index % ZHONGSHAN_PARK_BIN_NAMES.length]
+  const group = Math.floor(index / ZHONGSHAN_PARK_BIN_NAMES.length)
+  return group === 0 ? base : `${base}-${group + 1}`
+}
+function applyDashboardBinNames(data) {
+  const bins = Array.isArray(data?.bins)
+    ? data.bins.map((bin, index) => ({ ...bin, name: zhongshanParkBinName(index) }))
+    : []
+  const namesById = new Map(bins.map(bin => [String(bin.id), bin.name]))
+  const plan = data?.plan ? { ...data.plan } : null
+
+  if (plan && Array.isArray(plan.bins)) {
+    plan.bins = plan.bins.map(bin => ({ ...bin, name: namesById.get(String(bin.id)) || bin.name }))
+  }
+  if (plan?.route && Array.isArray(plan.route.stops)) {
+    plan.route = {
+      ...plan.route,
+      stops: plan.route.stops.map(stop => ({ ...stop, name: namesById.get(String(stop.id)) || stop.name }))
+    }
+  }
+  return { bins, plan }
+}
 
 function sev(fill) {
   const f = clampFill(fill)
@@ -751,8 +781,16 @@ function renderLists() {
   const risk = sortedRiskBins().slice(0, 8)
   riskBins.value = risk
 
+  const seenForecastLandmarks = new Set()
   const forecast = (_state.bins || []).slice()
     .sort((a, b) => n(b.predictedFillInHorizon, 0) - n(a.predictedFillInHorizon, 0))
+    .filter((bin) => {
+      const name = String(bin.name || '')
+      const landmark = name.includes('樱花大道') ? '樱花大道' : name
+      if (seenForecastLandmarks.has(landmark)) return false
+      seenForecastLandmarks.add(landmark)
+      return true
+    })
     .slice(0, 6)
   forecastBins.value = forecast
 
@@ -1134,8 +1172,9 @@ async function doRefresh(options) {
   try {
     const data = await apiRequest(buildDashboardSnapshotPath())
     if (monitor.active) return
-    _state.bins = Array.isArray(data && data.bins) ? data.bins : []
-    _state.plan = data && data.plan ? data.plan : null
+    const namedData = applyDashboardBinNames(data)
+    _state.bins = namedData.bins
+    _state.plan = namedData.plan
 
     if (!_state.bins.length) {
       _state.plan = null; renderAll(); setStatus('暂无可用桶位数据', 'warn'); return
@@ -1312,12 +1351,23 @@ async function handleFault(fault, action) {
 }
 
 function parkFallbackBins() {
-  return [
-    { id: 'park-01', name: '樱花大道南段移动桶', latitude: 36.0626, longitude: 120.3476, currentFill: 91, growthRatePctPerHour: 5.4, predictedFillInHorizon: 100, hoursToFull: 1.7, priorityScore: 0.96, isUrgent: true },
-    { id: 'park-02', name: '小西湖东侧桶位', latitude: 36.0652, longitude: 120.3415, currentFill: 76, growthRatePctPerHour: 3.1, predictedFillInHorizon: 82.2, hoursToFull: 7.7, priorityScore: 0.74, isUrgent: false },
-    { id: 'park-03', name: '樱花大道北段桶位', latitude: 36.0684, longitude: 120.3478, currentFill: 63, growthRatePctPerHour: 2.3, predictedFillInHorizon: 67.6, hoursToFull: 16.1, priorityScore: 0.58, isUrgent: false },
-    { id: 'park-04', name: '孙文莲池北侧桶位', latitude: 36.0668, longitude: 120.3512, currentFill: 48, growthRatePctPerHour: 1.4, predictedFillInHorizon: 50.8, hoursToFull: 37.1, priorityScore: 0.36, isUrgent: false }
-  ]
+  return ZHONGSHAN_PARK_BIN_NAMES.slice(0, 21).map((name, index) => {
+    const fill = clamp(91 - index * 2.7, 28, 96)
+    const growth = clamp(5.4 - index * 0.16, 0.8, 6)
+    const predicted = clamp(fill + growth * 2, 0, 100)
+    return {
+      id: `park-${String(index + 1).padStart(2, '0')}`,
+      name,
+      latitude: 36.0626 + Math.floor(index / 5) * 0.00125,
+      longitude: 120.3415 + (index % 5) * 0.00155,
+      currentFill: fill,
+      growthRatePctPerHour: growth,
+      predictedFillInHorizon: predicted,
+      hoursToFull: (100 - fill) / growth,
+      priorityScore: clamp(0.96 - index * 0.028, 0.2, 1),
+      isUrgent: fill >= 85
+    }
+  })
 }
 
 function ensureMonitorBackup() {
@@ -1526,11 +1576,13 @@ async function startDispatchMonitor() {
   clearMonitorTimer()
   ensureMonitorBackup()
   restoreMonitorBase()
+  if (!_state.bins.length) _state.bins = parkFallbackBins()
+  const dispatchTarget = _state.bins.find(bin => String(bin.name).includes('樱花大道')) || _state.bins[0]
   monitor.active = true
   monitor.completed = false
   monitor.scene = 'dispatch'
-  monitor.binId = PARK_POINTS.abnormal.id
-  monitor.binName = PARK_POINTS.abnormal.name
+  monitor.binId = dispatchTarget.id
+  monitor.binName = dispatchTarget.name
   monitor.pointState = '异常告警'
   monitor.pointStateCls = 'danger'
   monitor.returnProgress = 0
@@ -1543,7 +1595,15 @@ async function startDispatchMonitor() {
   monitor.returnRoute = []
   monitor.replaceRoute = []
   monitor.routeAvailable = false
-  _state.bins = parkFallbackBins().map(bin => bin.id === 'park-01' ? { ...bin, id: PARK_POINTS.abnormal.id, name: PARK_POINTS.abnormal.name } : bin)
+  _state.bins = _state.bins.map(bin => String(bin.id) === String(dispatchTarget.id)
+    ? {
+        ...bin,
+        latitude: PARK_POINTS.abnormal.latitude,
+        longitude: PARK_POINTS.abnormal.longitude,
+        currentFill: Math.max(n(bin.currentFill, 0), 96),
+        isUrgent: true
+      }
+    : bin)
   _state.plan = null
   _state.startPoint = null
   selectedBinId.value = String(monitor.binId)
