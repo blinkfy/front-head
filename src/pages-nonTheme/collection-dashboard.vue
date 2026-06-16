@@ -29,7 +29,7 @@
             <text class="feature-icon">!</text><text>故障处理</text>
             <text :class="['fault-badge', faultCenter.summary.open ? '' : 'is-placeholder']">{{ faultCenter.summary.open || 0 }}</text>
           </view>
-          <view v-if="monitor.active" class="btn ghost" @tap="exitMonitor">返回总览</view>
+          <view v-if="monitor.active" class="btn ghost" @tap="openSortingCenterMonitor">分拣中心进度</view>
           <view class="btn ghost nav-link-btn" @tap="goToCommunity">🏙 社区治理大屏</view>
           <view v-if="!monitor.active" class="btn blue" @tap="doRefresh">立即刷新</view>
           <view class="btn ghost" @tap="goBack">返回</view>
@@ -88,9 +88,10 @@
             @tap="selectRiskMonitorBin(bin.id)"
           >
             <view class="risk-top">
-              <view class="name">{{ bin.name }}</view>
+              <view class="name">{{ bin.pointCode || bin.name }}</view>
               <view :class="['chip', bin.alertLevel === 'critical' ? 'red' : bin.alertLevel === 'warning' ? 'orange' : 'green']">{{ bin.alertTitle }}</view>
             </view>
+            <view class="subline"><text>{{ bin.pointName || bin.name }}</text><text>桶体 {{ bin.binCode || '--' }}</text></view>
             <view class="subline"><text>填充率 {{ bin.fill.toFixed(1) }}%</text><text>重量 {{ bin.weight.toFixed(1) }} kg</text></view>
             <view class="subline"><text>电量 {{ bin.battery.toFixed(0) }}%</text><text>增长 {{ bin.growth.toFixed(2) }}%/h</text></view>
             <view class="risk-mini-track"><view :class="['risk-mini-fill', bin.alertLevel]" :style="{ width: bin.fill + '%' }"></view></view>
@@ -163,7 +164,7 @@
     </view>
 
     <!-- ===== 主体三列 ===== -->
-    <view v-show="!(monitor.active && monitor.scene === 'telemetry')" class="main">
+    <view v-show="!(monitor.active && (monitor.scene === 'telemetry' || monitor.scene === 'sorting'))" class="main">
 
       <!-- 左列 -->
       <view class="col left">
@@ -179,15 +180,15 @@
             >
               <view class="risk-top">
                 <view class="rank">{{ index + 1 }}</view>
-                <view class="name">{{ bin.name }}</view>
+                <view class="name">{{ bin.pointCode || bin.name }}</view>
                 <view :class="['chip', sev(bin.currentFill)]">{{ sevLabel(bin.currentFill) }}</view>
               </view>
               <view class="subline">
-                <text>满载率 {{ clampFill(bin.currentFill).toFixed(1) }}%</text>
-                <text>优先级 {{ n(bin.priorityScore, 0).toFixed(3) }}</text>
+                <text>{{ bin.pointName || bin.name }}</text>
+                <text>桶体 {{ bin.binCode || '--' }}</text>
               </view>
               <view class="subline">
-                <text>增长 {{ n(bin.growthRatePctPerHour, 0).toFixed(2) }}%/h</text>
+                <text>满载率 {{ clampFill(bin.currentFill).toFixed(1) }}%</text>
                 <text>{{ countdownToFull(bin.hoursToFull) }}</text>
               </view>
             </view>
@@ -206,9 +207,24 @@
                 ></view>
               </view>
               <text class="bar-val">{{ clamp(bin.predictedFillInHorizon, 0, 100).toFixed(1) }}%</text>
-              <text class="bar-name">{{ String(bin.name || '').slice(0, 5) || '点位' }}</text>
+              <text class="bar-name">{{ bin.pointCode || String(bin.name || '').slice(0, 5) || '点位' }}</text>
             </view>
           </view>
+        </view>
+
+        <view class="panel block slot-status-panel">
+          <view class="block-title">点位有桶状态表 <text class="note">是否有桶 / 当前桶体</text></view>
+          <scroll-view class="list" scroll-y>
+            <view v-if="!pointStatusRows.length" class="empty">暂无点位状态</view>
+            <view v-for="row in pointStatusRows" :key="'slot-' + row.id" :class="['slot-row', row.stateCls]">
+              <view class="slot-row-top">
+                <text class="slot-code">{{ row.pointCode }}</text>
+                <text class="slot-state">{{ row.slotState }}</text>
+              </view>
+              <view class="slot-row-sub"><text>{{ row.pointName }}</text><text>桶体 {{ row.hasBin ? row.binCode : '--' }}</text></view>
+              <view class="slot-row-sub"><text>{{ row.taskLabel }}</text><text :class="['slot-presence', row.hasBin ? 'has' : 'empty-slot']">是否有桶：{{ row.hasBin ? '有桶' : '无桶' }}</text></view>
+            </view>
+          </scroll-view>
         </view>
       </view>
 
@@ -239,11 +255,11 @@
           ></map>
           <!-- #endif -->
           <view class="brief">
-            <text class="brief-title">{{ monitor.active ? '智能调度监测' : '路线概览' }}</text>
+            <text class="brief-title">{{ monitor.scene === 'sorting' ? '分拣中心进度' : monitor.active ? '智能调度监测' : '路线概览' }}</text>
             <text v-for="(line, i) in (monitor.active ? monitor.mapBrief : briefLines)" :key="i" class="brief-line">{{ line }}</text>
           </view>
-          <view v-if="monitor.active" class="btn ghost reset-view-btn" @tap="resetDispatchView">重置视野</view>
-          <view v-if="monitor.active" :class="['monitor-point-state', monitor.pointStateCls]">
+          <view v-if="monitor.active && monitor.scene === 'dispatch'" class="btn ghost reset-view-btn" @tap="resetDispatchView">重置视野</view>
+          <view v-if="monitor.active && monitor.scene === 'dispatch'" :class="['monitor-point-state', monitor.pointStateCls]">
             <text class="point-state-label">原点位状态</text>
             <text class="point-state-value">{{ monitor.pointState }}</text>
             <text v-if="DISPATCH_STAGE_RANK[monitor.pointState] < 3" class="point-state-reason">满载 / 低电量</text>
@@ -251,7 +267,7 @@
         </view>
 
         <view class="panel timeline">
-          <view class="block-title">{{ monitor.active ? '返航补位时间轴' : '清运时间轴' }} <text class="note">{{ monitor.active ? '双任务协同执行' : '按停靠顺序展示 ETA' }}</text></view>
+          <view class="block-title">{{ monitor.scene === 'sorting' ? '分拣清洗时间轴' : monitor.active ? '返航补位时间轴' : '清运时间轴' }} <text class="note">{{ monitor.scene === 'sorting' ? '返航桶处理进度' : monitor.active ? '双任务协同执行' : '按停靠顺序展示 ETA' }}</text></view>
           <view v-if="monitor.active" class="monitor-timeline">
             <view v-for="item in monitor.timeline" :key="item.key" :class="['monitor-tl-step', item.state]">
               <text class="monitor-tl-dot"></text><text>{{ item.label }}</text>
@@ -278,7 +294,7 @@
       <!-- 右列 -->
       <view class="col right">
         <view v-if="monitor.active" class="panel block monitor-task-panel">
-          <view class="block-title">平台任务流 <text class="note">自动生成</text></view>
+          <view class="block-title">{{ monitor.scene === 'sorting' ? '分拣中心任务' : '平台任务流' }} <text class="note">{{ monitor.scene === 'sorting' ? '清洗与备用池' : '自动生成' }}</text></view>
           <view class="task-flow">
             <view v-for="task in monitor.tasks" :key="task.id" :class="['monitor-task', task.state]">
               <view class="task-top"><text>{{ task.title }}</text><text class="task-chip">{{ task.status }}</text></view>
@@ -317,9 +333,13 @@
         </view>
 
         <view v-if="monitor.active" class="panel block monitor-event-panel">
-          <view class="block-title">处置事件 <text class="note">实时同步</text></view>
+          <view class="block-title">{{ monitor.scene === 'sorting' ? '桶体队列' : '处置事件' }} <text class="note">实时同步</text></view>
           <scroll-view class="list" scroll-y>
-            <view v-for="event in monitor.events" :key="event.id" class="monitor-event">
+            <view v-if="monitor.scene === 'sorting'" v-for="event in monitor.sortingQueue" :key="event.id" class="monitor-event">
+              <text class="event-time">{{ event.state }}</text>
+              <view><text class="event-title">{{ event.title }}</text><text class="event-desc">{{ event.desc }}</text></view>
+            </view>
+            <view v-if="monitor.scene !== 'sorting'" v-for="event in monitor.events" :key="event.id" class="monitor-event">
               <text class="event-time">{{ event.time }}</text>
               <view><text class="event-title">{{ event.title }}</text><text class="event-desc">{{ event.desc }}</text></view>
             </view>
@@ -353,6 +373,53 @@
       </view>
 
     </view><!-- end .main -->
+
+    <view v-show="monitor.active && monitor.scene === 'sorting'" class="sorting-scene">
+      <view class="panel sorting-hero">
+        <view class="sorting-head">
+          <view>
+            <view class="scene-kicker">SORTING CENTER · 分拣清洗实时进度</view>
+            <view class="telemetry-title">中山公园分拣中心</view>
+            <view class="telemetry-location">返航桶 {{ monitor.returnBinCode }} · 当前点位 {{ monitor.pointCode }}</view>
+          </view>
+          <view class="sorting-actions">
+            <view class="btn ghost" @tap="backToDispatchMonitor">返回调度监测</view>
+            <view class="btn blue" @tap="exitMonitor">退出监测</view>
+          </view>
+        </view>
+        <view class="sorting-summary">
+          <view><text>待分拣</text><b>{{ monitor.sortingSummary.waiting }}</b></view>
+          <view><text>清洗中</text><b>{{ monitor.sortingSummary.cleaning }}</b></view>
+          <view><text>已清洁待命</text><b>{{ monitor.sortingSummary.ready }}</b></view>
+          <view><text>异常滞留</text><b>{{ monitor.sortingSummary.blocked }}</b></view>
+        </view>
+        <view class="sorting-body">
+          <view class="sorting-progress">
+            <view class="block-title">返航桶清洗状态 <text class="note">{{ monitor.returnBinCode }}</text></view>
+            <view class="monitor-timeline sorting-line">
+              <view v-for="item in monitor.sortingTimeline" :key="item.key" :class="['monitor-tl-step', item.state]">
+                <text class="monitor-tl-dot"></text><text>{{ item.label }}</text>
+              </view>
+            </view>
+            <view class="sorting-card active">
+              <view class="task-top"><text>{{ monitor.returnBinCode }} 清洗进度</text><text class="task-chip">{{ monitor.sortingStatus }}</text></view>
+              <view class="task-route">分拣中心 · 倾倒称重 / 内壁清洗 / 消毒烘干 / 电量检测</view>
+              <view class="metric-track"><view class="metric-progress replace" :style="{ width: monitor.sortingProgress + '%' }"></view></view>
+              <view class="task-meta"><text>{{ monitor.sortingStageText }}</text><text>{{ monitor.sortingProgress.toFixed(0) }}%</text></view>
+            </view>
+          </view>
+          <view class="sorting-queue">
+            <view class="block-title">桶体队列 <text class="note">备用池同步</text></view>
+            <scroll-view class="list" scroll-y>
+              <view v-for="item in monitor.sortingQueue" :key="'sort-q-' + item.id" :class="['sorting-card', item.kind]">
+                <view class="task-top"><text>{{ item.title }}</text><text class="task-chip">{{ item.state }}</text></view>
+                <view class="task-route">{{ item.desc }}</view>
+              </view>
+            </scroll-view>
+          </view>
+        </view>
+      </view>
+    </view>
 
     <view v-if="faultCenter.open" class="fault-mask" @tap="closeFaultCenter">
       <view class="panel fault-drawer" @tap.stop>
@@ -407,12 +474,12 @@ import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
 const DEFAULT_CENTER = { latitude: 36.0671, longitude: 120.3826 }
 const KPI_HISTORY_KEY = 'collection_dashboard_kpi_history_v2'
-const ZHONGSHAN_PARK_BIN_NAMES = [
-  '中山北门一桶', '中山北门二桶', '中山南门一桶', '中山南门二桶', '樱花大道一桶',
-  '小西湖东岸一桶', '小西湖西岸一桶', '孙文莲池一桶', '会前村遗址一桶', '动物园入口一桶',
-  '观象亭一桶', '太平山索道一桶', '公园广场一桶', '儿童乐园一桶', '桂花园一桶',
-  '牡丹园一桶', '玉兰园一桶', '中山东门一桶', '中山西门一桶', '林荫步道一桶',
-  '湖畔休息区一桶', '迎宾广场一桶', '花卉园一桶', '休闲长廊一桶'
+const ZHONGSHAN_PARK_POINT_NAMES = [
+  '中山北门', '中山北门东侧', '中山南门', '中山南门西侧', '樱花大道南段',
+  '小西湖东岸', '小西湖西岸', '孙文莲池', '会前村遗址', '动物园入口',
+  '观象亭', '太平山索道口', '公园广场', '儿童乐园', '桂花园',
+  '牡丹园', '玉兰园', '中山东门', '中山西门', '林荫步道',
+  '湖畔休息区', '迎宾广场', '花卉园', '休闲长廊'
 ]
 
 // ─── 工具函数 ──────────────────────────────────────────
@@ -422,25 +489,48 @@ function n(v, fallback = 0) {
 }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, n(v, min))) }
 function clampFill(v) { return clamp(v, 0, 100) }
-function zhongshanParkBinName(index) {
-  const base = ZHONGSHAN_PARK_BIN_NAMES[index % ZHONGSHAN_PARK_BIN_NAMES.length]
-  const group = Math.floor(index / ZHONGSHAN_PARK_BIN_NAMES.length)
+function pointCode(index) {
+  return `P${String(index + 1).padStart(3, '0')}`
+}
+function defaultBinCode(index) {
+  return `B-M${String(index + 1).padStart(2, '0')}`
+}
+function zhongshanParkPointName(index) {
+  const base = ZHONGSHAN_PARK_POINT_NAMES[index % ZHONGSHAN_PARK_POINT_NAMES.length]
+  const group = Math.floor(index / ZHONGSHAN_PARK_POINT_NAMES.length)
   return group === 0 ? base : `${base}-${group + 1}`
+}
+function withPointIdentity(bin, index) {
+  const code = bin.pointCode || pointCode(index)
+  const pointName = bin.pointName || zhongshanParkPointName(index)
+  return {
+    ...bin,
+    name: code,
+    pointCode: code,
+    pointName,
+    binCode: bin.binCode || defaultBinCode(index),
+    hasBin: bin.hasBin !== false,
+    slotState: bin.slotState || (bin.isUrgent ? '满载告警' : '可用'),
+    taskLabel: bin.taskLabel || '日常监测'
+  }
 }
 function applyDashboardBinNames(data) {
   const bins = Array.isArray(data?.bins)
-    ? data.bins.map((bin, index) => ({ ...bin, name: zhongshanParkBinName(index) }))
+    ? data.bins.map((bin, index) => withPointIdentity(bin, index))
     : []
-  const namesById = new Map(bins.map(bin => [String(bin.id), bin.name]))
+  const binsById = new Map(bins.map(bin => [String(bin.id), bin]))
   const plan = data?.plan ? { ...data.plan } : null
 
   if (plan && Array.isArray(plan.bins)) {
-    plan.bins = plan.bins.map(bin => ({ ...bin, name: namesById.get(String(bin.id)) || bin.name }))
+    plan.bins = plan.bins.map(bin => ({ ...bin, ...(binsById.get(String(bin.id)) || {}) }))
   }
   if (plan?.route && Array.isArray(plan.route.stops)) {
     plan.route = {
       ...plan.route,
-      stops: plan.route.stops.map(stop => ({ ...stop, name: namesById.get(String(stop.id)) || stop.name }))
+      stops: plan.route.stops.map(stop => {
+        const mapped = binsById.get(String(stop.id))
+        return mapped ? { ...stop, ...mapped, name: mapped.pointCode } : stop
+      })
     }
   }
   return { bins, plan }
@@ -538,6 +628,7 @@ const forecastBins = ref([])
 const alertBins = ref([])
 const dispatchStops = ref([])
 const timelineStops = ref([])
+const pointStatusRows = ref([])
 const selectedBinId = ref(null)
 const selectedStopOrder = ref(null)
 const handlingByBin = ref(new Map())
@@ -555,8 +646,13 @@ const monitor = reactive({
   active: false,
   completed: false,
   scene: '',
+  previousScene: '',
   riskBins: [],
   binId: null,
+  pointCode: 'P005',
+  pointName: '樱花大道南段',
+  returnBinCode: 'B-M05',
+  replacementBinCode: 'B-S03',
   binName: '智能移动桶',
   locationText: '--',
   fill: 72,
@@ -588,7 +684,13 @@ const monitor = reactive({
   replaceRoute: [],
   routeAvailable: false,
   growthModelLabel: '近期区间',
-  growthModelConfidence: 0.64
+  growthModelConfidence: 0.64,
+  sortingProgress: 0,
+  sortingStatus: '待接收',
+  sortingStageText: '等待返航桶抵达分拣中心',
+  sortingTimeline: [],
+  sortingQueue: [],
+  sortingSummary: { waiting: 1, cleaning: 0, ready: 2, blocked: 0 }
 })
 const riskMonitorBins = computed(() => monitor.riskBins)
 const faultCenter = reactive({
@@ -777,6 +879,29 @@ function renderBrief() {
   ]
 }
 
+function slotStateClass(state) {
+  if (state === '满载告警' || state === '返航中') return 'danger'
+  if (state === '待补位' || state === '空位') return 'waiting'
+  if (state === '补位完成' || state === '可用') return 'available'
+  return ''
+}
+
+function buildPointStatusRows() {
+  return (_state.bins || []).map((bin, index) => {
+    const row = withPointIdentity(bin, index)
+    return {
+      id: row.id,
+      pointCode: row.pointCode,
+      pointName: row.pointName,
+      binCode: row.binCode,
+      hasBin: row.hasBin,
+      slotState: row.slotState || (row.hasBin ? '可用' : '空位'),
+      taskLabel: row.taskLabel || '日常监测',
+      stateCls: slotStateClass(row.slotState || (row.hasBin ? '可用' : '空位'))
+    }
+  })
+}
+
 function renderLists() {
   const risk = sortedRiskBins().slice(0, 8)
   riskBins.value = risk
@@ -785,8 +910,8 @@ function renderLists() {
   const forecast = (_state.bins || []).slice()
     .sort((a, b) => n(b.predictedFillInHorizon, 0) - n(a.predictedFillInHorizon, 0))
     .filter((bin) => {
-      const name = String(bin.name || '')
-      const landmark = name.includes('樱花大道') ? '樱花大道' : name
+      const name = String(bin.pointName || bin.name || '')
+      const landmark = name.includes('樱花大道') ? '樱花大道' : String(bin.pointCode || name)
       if (seenForecastLandmarks.has(landmark)) return false
       seenForecastLandmarks.add(landmark)
       return true
@@ -803,6 +928,7 @@ function renderLists() {
   timelineStops.value = stops.slice(0, 12)
 
   handlingByBin.value = buildHandlingMap(alerts, stops)
+  pointStatusRows.value = buildPointStatusRows()
 }
 
 function renderAll() {
@@ -922,9 +1048,9 @@ function drawMap(force) {
   const geometries = bins.map((bin, i) => {
     const pos = new TMap.LatLng(n(bin.latitude, 0), n(bin.longitude, 0))
     bounds.extend(pos); hasBounds = true
-    const isMonitorTarget = monitor.active && monitor.scene === 'dispatch' && String(monitor.binId) === String(bin.id)
+    const isMonitorTarget = monitor.active && ['dispatch', 'sorting'].includes(monitor.scene) && String(monitor.binId) === String(bin.id)
     const styleId = isMonitorTarget
-      ? (monitor.pointState === '可用' ? 'green' : 'red')
+      ? (monitor.pointStateCls === 'available' ? 'green' : 'red')
       : selectedBinId.value && String(selectedBinId.value) === String(bin.id)
         ? 'selected'
         : sev(clampFill(bin.currentFill))
@@ -1044,7 +1170,7 @@ function focusBin(binId, forceMap) {
   // #ifdef H5
   if (_state.mapReady && _state.mapInstance) {
     _state.mapInstance.setCenter(new window.TMap.LatLng(bin.latitude, bin.longitude))
-    showInfoWindow(bin.latitude, bin.longitude, `<div style="min-width:180px;padding:2px 4px"><div style="font-size:13px;font-weight:700;color:#17324a">${bin.name}</div><div style="margin-top:4px;font-size:12px;color:#365066">满载率 ${n(bin.currentFill, 0).toFixed(1)}% · 预测 ${n(bin.predictedFillInHorizon, 0).toFixed(1)}%</div><div style="margin-top:2px;font-size:12px;color:#60778b">优先级 ${n(bin.priorityScore, 0).toFixed(3)}</div></div>`)
+    showInfoWindow(bin.latitude, bin.longitude, `<div style="min-width:190px;padding:2px 4px"><div style="font-size:13px;font-weight:700;color:#17324a">${bin.pointCode || bin.name} · ${bin.pointName || ''}</div><div style="margin-top:4px;font-size:12px;color:#365066">桶体 ${bin.hasBin === false ? '无桶' : (bin.binCode || '--')} · ${bin.slotState || '可用'}</div><div style="margin-top:2px;font-size:12px;color:#60778b">满载率 ${n(bin.currentFill, 0).toFixed(1)}% · 预测 ${n(bin.predictedFillInHorizon, 0).toFixed(1)}%</div></div>`)
   }
   drawMap(!!forceMap)
   // #endif
@@ -1065,7 +1191,7 @@ function focusStop(order, forceMap) {
   // #ifdef H5
   if (_state.mapReady && _state.mapInstance) {
     _state.mapInstance.setCenter(new window.TMap.LatLng(stop.latitude, stop.longitude))
-    showInfoWindow(stop.latitude, stop.longitude, `<div style="min-width:185px;padding:2px 4px"><div style="font-size:13px;font-weight:700;color:#17324a">#${stop.order} ${stop.name}</div><div style="margin-top:4px;font-size:12px;color:#365066">ETA ${fmtTime(stop.eta)} · ${fmtKm(stop.travelKm)}</div><div style="margin-top:2px;font-size:12px;color:#60778b">满载率 ${n(stop.currentFill, 0).toFixed(1)}%</div></div>`)
+    showInfoWindow(stop.latitude, stop.longitude, `<div style="min-width:185px;padding:2px 4px"><div style="font-size:13px;font-weight:700;color:#17324a">#${stop.order} ${stop.pointCode || stop.name}</div><div style="margin-top:4px;font-size:12px;color:#365066">${stop.pointName || ''} · ETA ${fmtTime(stop.eta)}</div><div style="margin-top:2px;font-size:12px;color:#60778b">桶体 ${stop.binCode || '--'} · 满载率 ${n(stop.currentFill, 0).toFixed(1)}%</div></div>`)
   }
   drawMap(!!forceMap)
   // #endif
@@ -1351,13 +1477,19 @@ async function handleFault(fault, action) {
 }
 
 function parkFallbackBins() {
-  return ZHONGSHAN_PARK_BIN_NAMES.slice(0, 21).map((name, index) => {
+  return ZHONGSHAN_PARK_POINT_NAMES.slice(0, 21).map((pointName, index) => {
     const fill = clamp(91 - index * 2.7, 28, 96)
     const growth = clamp(5.4 - index * 0.16, 0.8, 6)
     const predicted = clamp(fill + growth * 2, 0, 100)
     return {
       id: `park-${String(index + 1).padStart(2, '0')}`,
-      name,
+      name: pointCode(index),
+      pointCode: pointCode(index),
+      pointName,
+      binCode: defaultBinCode(index),
+      hasBin: true,
+      slotState: fill >= 85 ? '满载告警' : '可用',
+      taskLabel: fill >= 85 ? '待生成清运任务' : '日常监测',
       latitude: 36.0626 + Math.floor(index / 5) * 0.00125,
       longitude: 120.3415 + (index % 5) * 0.00155,
       currentFill: fill,
@@ -1415,8 +1547,11 @@ function buildRiskMonitorBins() {
 function syncSelectedRiskMonitor() {
   const selected = monitor.riskBins.find(bin => String(bin.id) === String(monitor.binId))
   if (!selected) return
-  monitor.binName = selected.name
-  monitor.locationText = `${n(selected.latitude, 0).toFixed(5)}, ${n(selected.longitude, 0).toFixed(5)}`
+  monitor.binName = selected.pointCode || selected.name
+  monitor.pointCode = selected.pointCode || selected.name
+  monitor.pointName = selected.pointName || selected.name
+  monitor.returnBinCode = selected.binCode || monitor.returnBinCode
+  monitor.locationText = `${selected.pointName || selected.name} · 桶体 ${selected.binCode || '--'}`
   monitor.fill = selected.fill
   monitor.weight = selected.weight
   monitor.weightDelta = Math.max(0, selected.weight - selected.baseWeight)
@@ -1454,12 +1589,12 @@ function updateMonitorTasks(elapsed) {
     {
       id: 'return', title: '返航任务 RT-2026-0614', kind: 'return', state: returnState,
       status: returnState === 'done' ? '已到达' : returnState === 'running' ? '返航中' : '待执行',
-      route: `${monitor.binName} → 智能分拣中心`, device: '移动桶 M-07', progress: monitor.returnProgress * 100
+      route: `${monitor.pointCode} · ${monitor.pointName} → 智能分拣中心`, device: monitor.returnBinCode, progress: monitor.returnProgress * 100
     },
     {
       id: 'replace', title: '补位任务 RP-2026-0614', kind: 'replace', state: replaceState,
       status: replaceState === 'done' ? '补位完成' : replaceState === 'running' ? '补位中' : '待命',
-      route: `备用桶待命区 → ${monitor.binName}`, device: '备用桶 B-03', progress: monitor.replaceProgress * 100
+      route: `备用桶待命区 → ${monitor.pointCode} · ${monitor.pointName}`, device: monitor.replacementBinCode, progress: monitor.replaceProgress * 100
     }
   ]
   monitor.timeline = [
@@ -1470,23 +1605,84 @@ function updateMonitorTasks(elapsed) {
     { key: 'closed', label: '处置完成', state: monitor.pointState === '处置完成' ? 'done' : 'pending' }
   ]
   const eventDefs = [
-    [0, '异常告警', '樱花大道南段点位检测到满载 / 低电量。'],
+    [0, '异常告警', `${monitor.pointCode} · ${monitor.pointName} 检测到满载 / 低电量。`],
     [1000, '任务自动生成', '平台生成返航与备用桶补位任务。'],
-    [2500, '备用桶出库', '备用桶 B-03 从小西湖东侧待命区出发。'],
-    [5000, '原点位待补位', '移动桶已离开，原点位等待备用桶。'],
-    [13500, '补位完成', '备用桶到达原点位，状态恢复为可用。'],
-    [18500, '处置完成', '移动桶抵达分拣中心，双任务执行完成。']
+    [2500, '备用桶出库', `${monitor.replacementBinCode} 从小西湖东侧待命区出发。`],
+    [5000, '原点位待补位', `${monitor.returnBinCode} 已离开，${monitor.pointCode} 等待备用桶。`],
+    [13500, '补位完成', `${monitor.replacementBinCode} 到达 ${monitor.pointCode}，点位恢复可用。`],
+    [18500, '返航桶入站', `${monitor.returnBinCode} 抵达分拣中心，进入清洗流程。`]
   ]
   monitor.events = eventDefs
     .filter(item => elapsed >= item[0])
     .reverse()
     .map((item, index) => ({ id: `${item[0]}-${index}`, time: monitorTime(item[0]), title: item[1], desc: item[2] }))
+  updateSortingCenterState(elapsed)
+}
+
+function updateSortingCenterState(elapsed) {
+  const sortingStart = 18500
+  const cleaningElapsed = Math.max(0, elapsed - sortingStart)
+  monitor.sortingProgress = clamp(cleaningElapsed / 9000 * 100, 0, 100)
+  const steps = [
+    { key: 'arrive', label: '抵达分拣中心', at: 0 },
+    { key: 'weigh', label: '倾倒称重', at: 1200 },
+    { key: 'wash', label: '内壁清洗', at: 3200 },
+    { key: 'dry', label: '消毒烘干', at: 5600 },
+    { key: 'battery', label: '电量检测', at: 7400 },
+    { key: 'ready', label: '可再次投放', at: 9000 }
+  ]
+  monitor.sortingTimeline = steps.map((step, index) => {
+    const next = steps[index + 1]
+    const state = cleaningElapsed >= step.at
+      ? (!next || cleaningElapsed >= next.at ? 'done' : 'running')
+      : 'pending'
+    return { ...step, state }
+  })
+  const running = monitor.sortingTimeline.find(step => step.state === 'running')
+  const done = monitor.sortingTimeline.filter(step => step.state === 'done').slice(-1)[0]
+  monitor.sortingStageText = running?.label || done?.label || '等待返航桶抵达分拣中心'
+  monitor.sortingStatus = monitor.sortingProgress >= 100 ? '已清洁待命' : monitor.sortingProgress > 0 ? '清洗中' : '待接收'
+  monitor.sortingSummary = {
+    waiting: monitor.sortingProgress > 0 ? 0 : 1,
+    cleaning: monitor.sortingProgress > 0 && monitor.sortingProgress < 100 ? 1 : 0,
+    ready: monitor.sortingProgress >= 100 ? 3 : 2,
+    blocked: 0
+  }
+  monitor.sortingQueue = [
+    {
+      id: 'return-bin',
+      kind: monitor.sortingProgress >= 100 ? 'ready' : 'active',
+      title: `${monitor.returnBinCode} · 返航桶`,
+      state: monitor.sortingStatus,
+      desc: monitor.sortingProgress > 0 ? `当前阶段：${monitor.sortingStageText}` : '等待进入分拣中心清洗线'
+    },
+    {
+      id: 'replacement-bin',
+      kind: 'ready',
+      title: `${monitor.replacementBinCode} · 在点位服役`,
+      state: monitor.pointState,
+      desc: `${monitor.pointCode} 当前桶体，承担原点位投放任务`
+    },
+    {
+      id: 'standby-bin',
+      kind: 'ready',
+      title: 'B-S04 · 已清洁备用桶',
+      state: '已清洁待命',
+      desc: '备用池可调度，满足下一次补位任务'
+    }
+  ]
 }
 
 function setDispatchStage(nextStage) {
   if ((DISPATCH_STAGE_RANK[nextStage] ?? -1) <= (DISPATCH_STAGE_RANK[monitor.pointState] ?? -1)) return
   monitor.pointState = nextStage
   monitor.pointStateCls = DISPATCH_STAGE_RANK[nextStage] >= 3 ? 'available' : nextStage === '待补位' ? 'waiting' : 'danger'
+}
+
+function updateDispatchTargetSlot(patch) {
+  _state.bins = (_state.bins || []).map(bin => String(bin.id) === String(monitor.binId)
+    ? { ...bin, ...patch }
+    : bin)
 }
 
 function updateRiskMonitor() {
@@ -1514,16 +1710,36 @@ function updateDispatchMonitor() {
   if (elapsed >= 18500) setDispatchStage('处置完成')
   else if (elapsed >= 13500) {
     setDispatchStage('可用')
-    const target = (_state.bins || []).find(bin => String(bin.id) === String(monitor.binId))
-    if (target) {
-      target.currentFill = 12
-      target.predictedFillInHorizon = 20
-      target.isUrgent = false
-    }
+    updateDispatchTargetSlot({
+      currentFill: 12,
+      predictedFillInHorizon: 20,
+      isUrgent: false,
+      hasBin: true,
+      binCode: monitor.replacementBinCode,
+      slotState: '补位完成',
+      taskLabel: `${monitor.replacementBinCode} 已补位`
+    })
     renderMetrics()
     renderLists()
-  } else if (elapsed >= 5000) setDispatchStage('待补位')
-  else if (elapsed >= 1000) setDispatchStage('返航中')
+  } else if (elapsed >= 5000) {
+    setDispatchStage('待补位')
+    updateDispatchTargetSlot({
+      hasBin: false,
+      binCode: '',
+      slotState: '待补位',
+      taskLabel: `${monitor.returnBinCode} 返航，等待 ${monitor.replacementBinCode}`
+    })
+    renderLists()
+  } else if (elapsed >= 1000) {
+    setDispatchStage('返航中')
+    updateDispatchTargetSlot({
+      hasBin: false,
+      binCode: '',
+      slotState: '返航中',
+      taskLabel: `${monitor.returnBinCode} 离开点位`
+    })
+    renderLists()
+  }
   updateMonitorTasks(elapsed)
 
   if (Date.now() - monitorLastMapDraw >= 250) {
@@ -1537,14 +1753,14 @@ function updateDispatchMonitor() {
   }
 
   if (elapsed >= MONITOR_TOTAL_MS) {
-    clearMonitorTimer()
     monitor.completed = true
     monitor.returnProgress = 1
     monitor.replaceProgress = 1
     monitor.returnPosition = pointAlongRoute(monitor.returnRoute, 1)
     monitor.replacePosition = pointAlongRoute(monitor.replaceRoute, 1)
-    updateMonitorTasks(MONITOR_TOTAL_MS)
+    updateMonitorTasks(elapsed)
     setStatus('调度处置完成：返航与补位任务已闭环', 'ok')
+    if (monitor.scene !== 'sorting' || monitor.sortingProgress >= 100) clearMonitorTimer()
     // #ifdef H5
     if (_state.mapReady) drawMap(true)
     // #endif
@@ -1577,12 +1793,16 @@ async function startDispatchMonitor() {
   ensureMonitorBackup()
   restoreMonitorBase()
   if (!_state.bins.length) _state.bins = parkFallbackBins()
-  const dispatchTarget = _state.bins.find(bin => String(bin.name).includes('樱花大道')) || _state.bins[0]
+  const dispatchTarget = _state.bins.find(bin => String(bin.pointName || '').includes('樱花大道')) || _state.bins[0]
   monitor.active = true
   monitor.completed = false
   monitor.scene = 'dispatch'
   monitor.binId = dispatchTarget.id
-  monitor.binName = dispatchTarget.name
+  monitor.pointCode = dispatchTarget.pointCode || dispatchTarget.name
+  monitor.pointName = dispatchTarget.pointName || dispatchTarget.name
+  monitor.returnBinCode = dispatchTarget.binCode || 'B-M05'
+  monitor.replacementBinCode = 'B-S03'
+  monitor.binName = monitor.pointCode
   monitor.pointState = '异常告警'
   monitor.pointStateCls = 'danger'
   monitor.returnProgress = 0
@@ -1601,7 +1821,12 @@ async function startDispatchMonitor() {
         latitude: PARK_POINTS.abnormal.latitude,
         longitude: PARK_POINTS.abnormal.longitude,
         currentFill: Math.max(n(bin.currentFill, 0), 96),
-        isUrgent: true
+        predictedFillInHorizon: 100,
+        isUrgent: true,
+        hasBin: true,
+        binCode: monitor.returnBinCode,
+        slotState: '满载告警',
+        taskLabel: `${monitor.returnBinCode} 待返航`
       }
     : bin)
   _state.plan = null
@@ -1612,6 +1837,7 @@ async function startDispatchMonitor() {
   monitor.timeline = []
   monitor.tasks = []
   monitor.events = []
+  updateSortingCenterState(0)
   renderAll()
   try {
     const data = await apiRequest('/api/planning/dispatch-monitor-route')
@@ -1670,6 +1896,29 @@ function exitMonitor() {
   }
   renderAll()
   setStatus('已返回实时清运总览', 'ok')
+}
+
+function openSortingCenterMonitor() {
+  if (!monitor.active) return
+  monitor.previousScene = monitor.scene || 'dispatch'
+  monitor.scene = 'sorting'
+  updateSortingCenterState(Date.now() - monitorStartedAt)
+  if (!monitorTimer && monitor.sortingProgress < 100) {
+    monitorTimer = setInterval(() => {
+      updateSortingCenterState(Date.now() - monitorStartedAt)
+      if (monitor.sortingProgress >= 100) clearMonitorTimer()
+    }, 250)
+  }
+  setStatus('分拣中心进度：返航桶清洗与备用池状态同步中', 'warn')
+}
+
+function backToDispatchMonitor() {
+  if (!monitor.active) return
+  monitor.scene = 'dispatch'
+  setStatus('调度监测中：返航与补位任务协同执行', 'warn')
+  // #ifdef H5
+  if (_state.mapReady) drawMap(true)
+  // #endif
 }
 
 function resetDispatchView() {
@@ -2152,6 +2401,28 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .bar-val { font-size: 12px; }
 .screen .bar-name { font-size: 10px; color: #84acbf; max-width: 52px; overflow: hidden; text-align: center; }
 
+/* ===== 点位状态表 ===== */
+.screen .slot-status-panel { flex: 1.05; }
+.screen .slot-row {
+  padding: 8px 9px; margin-bottom: 7px; border-radius: 10px;
+  border: 1px solid rgba(124,198,244,.2); background: rgba(8,30,47,.72);
+}
+.screen .slot-row.danger { border-color: rgba(255,93,102,.55); background: rgba(69,20,28,.58); }
+.screen .slot-row.waiting { border-color: rgba(245,182,72,.55); background: rgba(70,49,14,.52); }
+.screen .slot-row.available { border-color: rgba(22,197,124,.42); }
+.screen .slot-row-top, .screen .slot-row-sub {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+}
+.screen .slot-code { color: #8de9ff; font-size: 14px; font-weight: 700; }
+.screen .slot-state { padding: 2px 7px; border-radius: 999px; color: #dff6ff; background: rgba(255,255,255,.13); font-size: 10px; }
+.screen .slot-row-sub { color: #88afc2; font-size: 10px; margin-top: 5px; }
+.screen .slot-presence {
+  padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16);
+  color: #dff6ff; background: rgba(255,255,255,.1);
+}
+.screen .slot-presence.has { color: #a8f2cf; border-color: rgba(22,197,124,.38); background: rgba(22,197,124,.16); }
+.screen .slot-presence.empty-slot { color: #ffd69c; border-color: rgba(245,182,72,.45); background: rgba(245,182,72,.16); }
+
 /* ===== 地图区 ===== */
 .screen .map-wrap {
   flex: 1; min-height: 0; padding: 10px;
@@ -2293,6 +2564,37 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .event-title, .screen .event-desc { display: block; }
 .screen .event-title { font-size: 11px; color: #dff6ff; }
 .screen .event-desc { font-size: 10px; color: #82a7b9; line-height: 1.45; margin-top: 3px; }
+
+/* ===== 分拣中心进度 ===== */
+.screen .sorting-scene { flex: 1; min-height: 0; display: flex; }
+.screen .sorting-hero {
+  flex: 1; min-height: 0; padding: 18px 22px; display: flex; flex-direction: column; gap: 14px;
+  background:
+    radial-gradient(780px 420px at 24% 40%, rgba(36,217,255,.12), transparent 64%),
+    linear-gradient(150deg, rgba(7,28,45,.94), rgba(8,39,59,.92));
+}
+.screen .sorting-head { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.screen .sorting-actions { display: flex; gap: 8px; align-items: center; }
+.screen .sorting-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.screen .sorting-summary view {
+  padding: 12px; border-radius: 12px; border: 1px solid rgba(124,198,244,.22);
+  background: rgba(9,31,48,.78);
+}
+.screen .sorting-summary text, .screen .sorting-summary b { display: block; }
+.screen .sorting-summary text { color: var(--muted); font-size: 11px; }
+.screen .sorting-summary b { font-size: 28px; margin-top: 5px; }
+.screen .sorting-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.2fr .8fr; gap: 12px; }
+.screen .sorting-progress, .screen .sorting-queue {
+  min-height: 0; padding: 14px; border-radius: 14px; border: 1px solid rgba(123,202,255,.2);
+  background: rgba(7,26,41,.72); display: flex; flex-direction: column; gap: 12px;
+}
+.screen .sorting-line { min-height: 90px; }
+.screen .sorting-card {
+  padding: 12px; margin-bottom: 9px; border-radius: 12px;
+  border: 1px solid rgba(125,199,242,.22); background: rgba(8,27,43,.84);
+}
+.screen .sorting-card.active { border-color: rgba(36,217,255,.52); box-shadow: 0 0 18px rgba(36,217,255,.1); }
+.screen .sorting-card.ready { border-color: rgba(22,197,124,.42); }
 
 /* ===== 故障处理抽屉 ===== */
 .screen .fault-mask {
