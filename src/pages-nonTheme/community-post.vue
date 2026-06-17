@@ -94,7 +94,7 @@
     </scroll-view>
 
     <!-- 底部评论输入 -->
-    <view class="comment-bar">
+    <view class="comment-bar" v-if="!isWeixin">
       <view class="comment-input-wrapper">
         <textarea
           id="comment-input-field"
@@ -123,7 +123,18 @@ import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage } from '@/utils/community-image.js';
-
+function requestJson(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    uni.request({
+      url,
+      method: options.method || 'GET',
+      header: options.header || {},
+      data: options.data,
+      success: (res) => resolve(res.data),
+      fail: reject
+    })
+  })
+}
 export default {
   data() {
     return {
@@ -145,7 +156,8 @@ export default {
       commentText: '',
       replyTo: null,
       isDark: false,
-      isAdmin: false
+      isAdmin: false,
+      isWeixin: false
     };
   },
   computed: {
@@ -156,6 +168,13 @@ export default {
   onLoad(options) {
     this.checkTheme();
     this.checkAdmin();
+    // #ifdef MP-WEIXIN
+    this.isWeixin = true;
+    this.checkAvailability();
+    // #endif
+    // #ifndef MP-WEIXIN
+    this.isWeixin = false;
+    // #endif
     this.postId = Number(options.postId) || 0;
     this.communityId = Number(options.communityId) || 0;
     this.loadPostDetail();
@@ -172,6 +191,17 @@ export default {
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
+    },
+    async checkAvailability() {
+      try {
+        const payload = await requestJson(`${baseUrl}/api/ai/settings`)
+        const settings = payload && payload.code === 0 ? payload.data : null
+        if (!settings || settings.aiEnabled !== false) {
+          this.isWeixin = false
+        }
+      } catch (err) {
+        console.warn('[community-publish] check Availability failed:', err)
+      }
     },
     async checkAdmin() {
       const cached = !!uni.getStorageSync('isAdmin');

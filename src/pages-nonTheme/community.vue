@@ -18,7 +18,7 @@
           <view class="title-icon-pill"><text>🏘️</text></view>
           <text class="nav-title">环保社区</text>
         </view>
-        <view class="nav-right">
+        <view class="nav-right" v-if="myCommunity">
           <view class="action-icon-btn" @click="goToPublish">
             <text>📝</text>
           </view>
@@ -197,6 +197,7 @@ import { getCommunityList, getCommunityTree, getMyCommunity, getCommunityCover, 
 import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
+import { buildH5SpaPath } from '@/utils/h5-route.js';
 import { getCachedCommunityImage, normalizeCommunityImages, normalizeCommunityImageUrl, setCachedCommunityImage } from '@/utils/community-image.js';
 
 export default {
@@ -438,7 +439,18 @@ export default {
         uni.showToast({ title: '请先加入社区', icon: 'none' });
         return;
       }
-      uni.navigateTo({ url: `/pages-nonTheme/community-publish?communityId=${this.myCommunity.id}` });
+
+      const publishPath = `/pages-nonTheme/community-publish?communityId=${this.myCommunity.id}`;
+      // #ifdef MP-WEIXIN
+      // const token = uni.getStorageSync('token') || '';
+      // const query = token
+      //   ? `communityId=${this.myCommunity.id}&token=${encodeURIComponent(token)}`
+      //   : `communityId=${this.myCommunity.id}`;
+      // const targetUrl = `${baseUrl}${buildH5SpaPath('/pages-nonTheme/community-publish', query)}`;
+      // const target = encodeURIComponent(targetUrl);
+      // uni.navigateTo({ url: `/pages-nonTheme/webview?url=${target}` });
+      // #endif
+      uni.navigateTo({ url: publishPath });
     },
     async previewImage(images, index) {
       console.log('previewImage called with:', images, index);

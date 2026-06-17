@@ -15,18 +15,22 @@
         </view>
         <view class="nav-title-wrap">
           <view class="title-icon-pill small"><text>✏️</text></view>
-          <text class="nav-title">发布帖子</text>
+          <text class="nav-title">发布信息</text>
         </view>
         <view
+          v-if="!isWeixin"
           :class="['nav-right', 'publish-btn', submitting ? 'disabled' : '']"
           @click="handlePublish"
         >
           <text>发布</text>
         </view>
+        <view v-else class="nav-right publish-btn disabled">
+          <text>未开放</text>
+        </view>
       </view>
     </view>
 
-    <view class="content-wrapper">
+    <view class="content-wrapper" v-if="!isWeixin">
       <!-- 分类标签选择 -->
       <view class="section">
         <view class="section-title">选择分类</view>
@@ -90,12 +94,36 @@
         </view>
       </view>
     </view>
+
+    <view class="content-wrapper unavailable-panel" v-else>
+      <view class="tips-card unavailable-card">
+        <text class="tips-icon">❗</text>
+        <view class="tips-content">
+          <text class="tips-title">该功能未开放</text>
+          <text class="tips-text">暂不支持普通用户发布信息</text>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script>
 import { createPost } from '@/api/community.js';
 import { compressImageToBase64 } from '@/utils/avatar-handler.js';
+import { baseUrl } from '@/api/settings';
+
+function requestJson(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    uni.request({
+      url,
+      method: options.method || 'GET',
+      header: options.header || {},
+      data: options.data,
+      success: (res) => resolve(res.data),
+      fail: reject
+    })
+  })
+}
 
 export default {
   data() {
@@ -106,12 +134,40 @@ export default {
       uploadedImages: [],
       submitting: false,
       tagOptions: ['心得', '技巧', '活动', '求助', '晒单'],
-      isDark: false
+      isDark: false,
+      isWeixin: true
     };
   },
   onLoad(options) {
     this.checkTheme();
+    // #ifdef MP-WEIXIN
+    this.isWeixin = true;
+    this.checkAvailability();
+    // #endif
+    // #ifndef MP-WEIXIN
+    this.isWeixin = false;
+    // #endif
+    if (options && options.token) {
+      try {
+        uni.setStorageSync('token', options.token);
+      } catch (error) {
+        // ignore storage errors
+      }
+    }
+
+    const fallbackToken = this.getTokenFromLocation();
+    if (fallbackToken) {
+      try {
+        uni.setStorageSync('token', fallbackToken);
+      } catch (error) {
+        // ignore storage errors
+      }
+    }
+
     this.communityId = Number(options.communityId) || 0;
+    if (!this.communityId) {
+      this.communityId = Number(this.getQueryValue('communityId')) || 0;
+    }
   },
   onShow() {
     this.checkTheme();
@@ -120,6 +176,39 @@ export default {
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
+    },
+    async checkAvailability() {
+      try {
+        const payload = await requestJson(`${baseUrl}/api/ai/settings`)
+        const settings = payload && payload.code === 0 ? payload.data : null
+        if (!settings || settings.aiEnabled !== false) {
+          this.isWeixin = false
+        }
+      } catch (err) {
+        console.warn('[community-publish] check Availability failed:', err)
+      }
+    },
+    getQueryValue(key) {
+      try {
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href)
+          const searchValue = url.searchParams.get(key)
+          if (searchValue) return searchValue
+
+          const hash = String(window.location.hash || '')
+          const hashQuery = hash.includes('?') ? hash.split('?')[1] : ''
+          if (hashQuery) {
+            const hashParams = new URLSearchParams(hashQuery)
+            return hashParams.get(key) || ''
+          }
+        }
+      } catch (error) {
+        // ignore URL parsing errors
+      }
+      return ''
+    },
+    getTokenFromLocation() {
+      return this.getQueryValue('token') || ''
     },
     handleCancel() {
       if (this.content.trim() || this.uploadedImages.length > 0) {
@@ -244,6 +333,7 @@ export default {
 .publish-btn.disabled { opacity: 0.5; }
 .publish-btn:active:not(.disabled) { transform: scale(0.95); }
 .publish-btn text { color: #fff; font-size: 26rpx; font-weight: 700; }
+.publish-btn.disabled text { color: #fff; opacity: 0.8; }
 
 /* ===== 主内容区 ===== */
 .content-wrapper { position: relative; z-index: 10; padding: 32rpx; }
@@ -304,7 +394,6 @@ export default {
 .word-count text { color: #9ca3af; font-size: 22rpx; }
 .dark-mode .word-count text { color: rgba(255, 255, 255, 0.5); }
 
-.image-upload-area { }
 .upload-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16rpx; }
 .upload-item { position: relative; aspect-ratio: 1; }
 .upload-img { width: 100%; height: 100%; border-radius: 16rpx; }
@@ -345,4 +434,13 @@ export default {
 .dark-mode .tips-title { color: #fff; }
 .tips-text { display: block; color: #6b7280; font-size: 22rpx; line-height: 2; }
 .dark-mode .tips-text { color: rgba(255, 255, 255, 0.7); }
+
+.unavailable-panel {
+  display: flex;
+  align-items: flex-start;
+}
+
+.unavailable-card {
+  width: 100%;
+}
 </style>

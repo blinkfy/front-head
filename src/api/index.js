@@ -2,10 +2,32 @@ import { baseUrl } from './settings'
 
 function getToken() {
   try {
-    return uni.getStorageSync('token') || ''
+    const cachedToken = uni.getStorageSync('token') || ''
+    if (cachedToken) return cachedToken
   } catch (e) {
-    return ''
+    // ignore storage errors and fall back to URL parsing below
   }
+
+  // H5 / webview fallback: extract token from the current URL when storage is unavailable
+  try {
+    if (typeof window !== 'undefined' && window.location) {
+      const url = new URL(window.location.href)
+      const searchToken = url.searchParams.get('token')
+      if (searchToken) return searchToken
+
+      const hash = String(window.location.hash || '')
+      const hashQuery = hash.includes('?') ? hash.split('?')[1] : ''
+      if (hashQuery) {
+        const hashParams = new URLSearchParams(hashQuery)
+        const hashToken = hashParams.get('token')
+        if (hashToken) return hashToken
+      }
+    }
+  } catch (e) {
+    // ignore URL parsing errors
+  }
+
+  return ''
 }
 
 function request({ url, method = 'GET', data = {}, header = {}, needAuth = false, contentType }) {
@@ -18,6 +40,10 @@ function request({ url, method = 'GET', data = {}, header = {}, needAuth = false
   // 根据API文档，token作为查询参数传递
   let finalUrl = baseUrl + url
   if (needAuth && token) {
+    headers['Authorization'] = headers['Authorization'] || token
+    if (method !== 'GET' && data && typeof data === 'object' && !data.token) {
+      data = { ...data, token }
+    }
     const separator = url.includes('?') ? '&' : '?'
     finalUrl += `${separator}token=${token}`
   }
