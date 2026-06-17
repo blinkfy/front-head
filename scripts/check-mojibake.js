@@ -28,18 +28,22 @@ const IGNORE_FILES = new Set([
 
 const SUSPICIOUS_PATTERNS = [
   /\uFFFD/,
-  /馃/,
-  /鉁\?/,
-  /鈫\?/,
-  /锔\?/,
+  /[閸閺閻鐠缁韫娴婢][\u4e00-\u9fff]{2,}/,
+  /[鍙鏂涓闈璁杩][\u4e00-\u9fff]{2,}/,
+  /閸欘垰娲栭弨/,
+  /閺堫亞娅ヨぐ/,
+  /閹碘偓闂団偓/,
+  /杩炴帴鏈嶅姟鍣/,
+  /涓嶈兘涓虹┖/,
+  /闈炴硶璺緞/,
+  /璁惧/,
+  /鍙洖鏀/,
   /鍨冨溇/,
   /鏅鸿兘/,
   /鐜繚/,
-  /璁惧/,
   /绉垎/,
   /鍑忕⒊/,
   /鍟嗗煄/,
-  /鍙洖鏀/,
   /鏈夊/,
   /鍘ㄤ綑/,
   /鏈櫥褰/,
@@ -51,13 +55,19 @@ const SUSPICIOUS_PATTERNS = [
   /蹇厖/,
   /鍑€鍖/,
   /浠绘剰/,
-  /澶氱/
+  /澶氱/,
+  /馃/,
+  /鉁\?/,
+  /鈫\?/,
+  /锔\?/,
+  /鉂\?/
 ];
 
 function isSkippedDir(relPath) {
   const normalized = relPath.split(path.sep).join('/');
+  const segments = normalized.split('/');
   for (const skip of SKIP_DIRS) {
-    if (normalized === skip || normalized.startsWith(skip + '/')) {
+    if (normalized === skip || normalized.startsWith(`${skip}/`) || segments.includes(skip)) {
       return true;
     }
   }

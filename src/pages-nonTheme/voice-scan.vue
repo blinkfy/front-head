@@ -292,7 +292,7 @@ export default {
         this.realtimeFailed = true;
       }
       this.isListening = true;
-      this.statusText = '閸戝棗顦ぐ鏇㈢叾...';
+      this.statusText = '正在录音...';
       recorderManager.start({
         duration: 60000,
         sampleRate: 16000,
@@ -310,7 +310,7 @@ export default {
       }
       if (this.appSegmentMode) {
         this.appSegmentStopRequested = true;
-        this.statusText = '鐠囧棗鍩嗘稉?..';
+        this.statusText = '正在识别...';
       }
       if (recorderManager) {
         recorderManager.stop();
