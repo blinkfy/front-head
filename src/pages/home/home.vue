@@ -335,6 +335,10 @@
     />
 
     <!-- 底部导航栏-->
+    <view class="floating-agent" @click="goAiAssistant">
+      <text class="floating-agent-main">AI</text>
+    </view>
+
     <view class="tabbar">
       <view class="tabbar-item active">
         <text class="tabbar-icon">🏠</text>
@@ -975,6 +979,10 @@ function goAiChatFromResult() {
   // #ifdef H5
   try { localStorage.removeItem('ai_chat_seed_consumed_at') } catch (e) {}
   // #endif
+  uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
+}
+
+function goAiAssistant() {
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 
@@ -3211,6 +3219,31 @@ function closeAchievementModal() {
 }
 
 /* 底部导航 */
+.floating-agent {
+  position: fixed;
+  right: 32rpx;
+  bottom: calc(148rpx + env(safe-area-inset-bottom));
+  width: 92rpx;
+  height: 92rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981, #2563eb);
+  box-shadow: 0 14rpx 34rpx rgba(37, 99, 235, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+}
+
+.floating-agent:active {
+  transform: scale(0.96);
+}
+
+.floating-agent-main {
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
 .tabbar {
   position: fixed;
   left: 0;

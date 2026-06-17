@@ -703,6 +703,9 @@ const faultCenter = reactive({
 // 内部 state（不需要响应式）
 const _state = {
   bins: [],
+  points: [],
+  tasks: [],
+  runtime: null,
   plan: null,
   startPoint: null,
   manualStartPoint: null,
@@ -887,21 +890,45 @@ function slotStateClass(state) {
 }
 
 function buildPointStatusRows() {
+  if (Array.isArray(_state.points) && _state.points.length) {
+    return _state.points.map((point, index) => {
+      const bin = (_state.bins || []).find(item => String(item.id) === String(point.currentDeviceId))
+      const activeTask = (_state.tasks || []).find(task =>
+        String(task.pointId || '') === String(point.id) &&
+        ['pending', 'dispatched', 'running'].includes(task.status)
+      )
+      const slotState = point.state || (bin ? 'available' : 'vacant')
+      return {
+        id: point.id || index,
+        pointCode: point.pointCode || `P${String(index + 1).padStart(3, '0')}`,
+        pointName: point.name || point.pointCode,
+        binCode: bin ? (bin.binCode || bin.name) : '--',
+        hasBin: Boolean(point.currentDeviceId),
+        slotState,
+        taskLabel: activeTask ? `${activeTask.type}/${activeTask.status}` : 'monitoring',
+        stateCls: ['abnormal', 'maintenance'].includes(slotState)
+          ? 'danger'
+          : slotState === 'pending_replacement' || slotState === 'vacant'
+            ? 'waiting'
+            : 'available'
+      }
+    })
+  }
   return (_state.bins || []).map((bin, index) => {
     const row = withPointIdentity(bin, index)
+    const slotState = row.slotState || (row.hasBin ? 'available' : 'vacant')
     return {
       id: row.id,
       pointCode: row.pointCode,
       pointName: row.pointName,
       binCode: row.binCode,
       hasBin: row.hasBin,
-      slotState: row.slotState || (row.hasBin ? '可用' : '空位'),
-      taskLabel: row.taskLabel || '日常监测',
-      stateCls: slotStateClass(row.slotState || (row.hasBin ? '可用' : '空位'))
+      slotState,
+      taskLabel: row.taskLabel || 'monitoring',
+      stateCls: slotStateClass(slotState)
     }
   })
 }
-
 function renderLists() {
   const risk = sortedRiskBins().slice(0, 8)
   riskBins.value = risk
@@ -923,7 +950,29 @@ function renderLists() {
   alertBins.value = alerts
 
   const route = _state.plan && _state.plan.route
-  const stops = route && Array.isArray(route.stops) ? route.stops : []
+  const taskStops = (_state.tasks || [])
+    .filter(task => ['pending', 'dispatched', 'running'].includes(task.status))
+    .map((task, index) => {
+      const point = (_state.points || []).find(item => String(item.id) === String(task.pointId))
+      const device = (_state.bins || []).find(item => String(item.id) === String(task.deviceId))
+      const source = point || device || {}
+      if (!Number.isFinite(n(source.latitude, NaN)) || !Number.isFinite(n(source.longitude, NaN))) return null
+      return {
+        id: task.deviceId || task.id,
+        order: index + 1,
+        name: task.type,
+        pointName: source.name || source.pointCode || task.taskNo,
+        latitude: n(source.latitude, 0),
+        longitude: n(source.longitude, 0),
+        eta: task.startedAt || task.createdAt || new Date().toISOString(),
+        etd: task.completedAt || task.updatedAt || task.createdAt || new Date().toISOString(),
+        priorityScore: n(task.priority, 0) * 10,
+        currentFill: device ? n(device.currentFill, device.currentFillRate || 0) : 0,
+        taskStatus: task.status
+      }
+    })
+    .filter(Boolean)
+  const stops = taskStops.length ? taskStops : (route && Array.isArray(route.stops) ? route.stops : [])
   dispatchStops.value = stops
   timelineStops.value = stops.slice(0, 12)
 
@@ -1301,6 +1350,9 @@ async function doRefresh(options) {
     const namedData = applyDashboardBinNames(data)
     _state.bins = namedData.bins
     _state.plan = namedData.plan
+    _state.points = Array.isArray(data.points) ? data.points : []
+    _state.tasks = Array.isArray(data.tasks) ? data.tasks : []
+    _state.runtime = data.runtime || null
 
     if (!_state.bins.length) {
       _state.plan = null; renderAll(); setStatus('暂无可用桶位数据', 'warn'); return

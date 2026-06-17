@@ -333,6 +333,10 @@
     />
 
     <!-- 科技感底部导航栏 -->
+    <view class="floating-agent" @click="goAiAssistant">
+      <text class="floating-agent-main">AI</text>
+    </view>
+
     <view class="tabbar">
       <view class="tabbar-item active">
         <text class="tabbar-icon">🏠</text>
@@ -889,6 +893,10 @@ function goAiChatFromResult() {
   // #ifdef H5
   try { localStorage.removeItem('ai_chat_seed_consumed_at') } catch (e) {}
   // #endif
+  uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
+}
+
+function goAiAssistant() {
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 
@@ -2976,6 +2984,31 @@ function getAchievementRarityLabel(key) {
     align-items: center;
     text-align: center;
   }
+}
+
+.floating-agent {
+  position: fixed;
+  right: 32rpx;
+  bottom: calc(148rpx + env(safe-area-inset-bottom));
+  width: 92rpx;
+  height: 92rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #22c55e, #38bdf8);
+  box-shadow: 0 14rpx 34rpx rgba(56, 189, 248, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+}
+
+.floating-agent:active {
+  transform: scale(0.96);
+}
+
+.floating-agent-main {
+  color: #051923;
+  font-size: 28rpx;
+  font-weight: 800;
 }
 
 .tabbar {
