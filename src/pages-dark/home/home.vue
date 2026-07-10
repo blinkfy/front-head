@@ -364,6 +364,7 @@ import { onPageScroll } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
+import { resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr'
 import AppOnboarding from '@/components/AppOnboarding.vue'
 import {
   appendAchievementQueue,
@@ -432,7 +433,7 @@ function formatSemicolonNewline(text) {
 }
 
 // 使用设备连接状态管理
-const { hasConnection, connectedDevice, goToDeviceConnection, points } = useDeviceConnection()
+const { hasConnection, connectedDevice, goToDeviceConnection, checkDeviceConnection, points } = useDeviceConnection()
 
 function maybeShowAppOnboarding() {
   try {
@@ -1393,50 +1394,25 @@ function scanDeviceQR() {
   }
 }
 
-function connectDevice(deviceId) {
-  if (!deviceId || deviceId.trim() === '') {
+function connectDevice(rawContent) {
+  const target = resolveDeviceScanTarget(rawContent, '/pages-dark/scan/scan')
+  if (!target.url) {
     uni.showToast({
       title: '设备ID不能为空',
       icon: 'none'
     })
     return
   }
-  //截取deviceId中#后面的内容
-  const targetId = deviceId.split('#')[1]
-  console.log('Connecting to device with ID:', targetId)
-  uni.navigateTo({ url: targetId })
-  return
-  // 显示连接中的提示
-  uni.showLoading({
-    title: '连接设备中...'
-  })
-  
-  // 模拟连接设备的过程
-  setTimeout(() => {
-    uni.hideLoading()
-    
-    // 保存设备连接信息到本地存储
-    const deviceInfo = {
-      device_id: deviceId.trim(),
-      device_name: '智能垃圾分类设备',
-      connected_time: Date.now()
-    }
-    
-    uni.setStorageSync('connectedDevice', deviceInfo)
-    uni.setStorageSync('connection', Date.now())
-    
-    // 显示连接成功提示
-    uni.showToast({
-      title: '设备连接成功',
-      icon: 'success'
+  if (target.isMock) {
+    saveMockDeviceConnection({
+      device_id: target.deviceId,
+      device_name: target.deviceName,
+      device_mode: target.deviceMode
     })
-    
-    // 刷新页面以显示连接状态
-    setTimeout(() => {
-      uni.redirectTo({ url: '/pages-dark/home/home' })
-    }, 1500)
-    
-  }, 2000)
+    checkDeviceConnection()
+  }
+  console.log('Connecting to device route:', target.url)
+  uni.navigateTo({ url: target.url })
 }
 
 function showGuideDetail(type) {

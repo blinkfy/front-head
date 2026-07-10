@@ -366,6 +366,7 @@ import { onPageScroll, onShow } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
+import { resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr'
 import AppOnboarding from '@/components/AppOnboarding.vue'
 import {
   appendAchievementQueue,
@@ -463,7 +464,7 @@ const animateNumber = (target, duration = 800) => {
   setTimeout(updateNumber, frameInterval)
 }
 
-const { hasConnection, connectedDevice, goToDeviceConnection, points } = useDeviceConnection()
+const { hasConnection, connectedDevice, goToDeviceConnection, checkDeviceConnection, points } = useDeviceConnection()
 
 function maybeShowAppOnboarding() {
   try {
@@ -1353,13 +1354,21 @@ function scanDeviceQR() {
   }
 }
 
-function connectDevice(deviceId) {
-  if (!deviceId || deviceId.trim() === '') {
+function connectDevice(rawContent) {
+  const target = resolveDeviceScanTarget(rawContent, '/pages/scan/scan')
+  if (!target.url) {
     uni.showToast({ title: '设备ID不能为空', icon: 'none' })
     return
   }
-  const targetId = deviceId.split('#')[1]
-  uni.navigateTo({ url: targetId })
+  if (target.isMock) {
+    saveMockDeviceConnection({
+      device_id: target.deviceId,
+      device_name: target.deviceName,
+      device_mode: target.deviceMode
+    })
+    checkDeviceConnection()
+  }
+  uni.navigateTo({ url: target.url })
 }
 
 function showGuideDetail(type) {

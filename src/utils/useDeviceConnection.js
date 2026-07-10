@@ -1,5 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getConnectedDevices } from '../api/device.js'
+import { clearMockDeviceConnection, getMockDeviceConnection, normalizeDeviceMode } from './device-qr.js'
 
 /**
  * 设备连接状态管理组合式函数
@@ -27,6 +28,14 @@ export function useDeviceConnection() {
     const timeDiff = now - connectionTime
     if (timeDiff > 10 * 60 * 1000) { // 10分钟
       clearConnectionStorage()
+      return
+    }
+
+    const mockConnection = getMockDeviceConnection()
+    if (mockConnection) {
+      hasConnection.value = true
+      connectedDevice.value = mockConnection
+      points.value = null
       return
     }
 
@@ -63,6 +72,8 @@ export function useDeviceConnection() {
     hasConnection.value = false
     connectedDevice.value = null
     uni.removeStorageSync('connection')
+    uni.removeStorageSync('connected_device_mode')
+    clearMockDeviceConnection()
     console.log('已清除设备连接状态')
   }
 
@@ -94,9 +105,15 @@ export function useDeviceConnection() {
       // 如果有具体设备信息，可以传递参数
       const deviceId = connectedDevice.value.device_id || connectedDevice.value.id
       const deviceName = connectedDevice.value.device_name || connectedDevice.value.name
-      
+      const deviceMode = normalizeDeviceMode(
+        connectedDevice.value.device_mode || uni.getStorageSync('connected_device_mode')
+      )
+      const mockQuery = connectedDevice.value.mock ? '&mock=1' : ''
+
       uni.navigateTo({
-        url: `/pages/scan/scan?connected=true&device_id=${deviceId}&device_name=${encodeURIComponent(deviceName || '')}`
+        url: deviceMode === 'robot'
+          ? `/pages-nonTheme/robot-control?device_id=${encodeURIComponent(deviceId || '')}&device_name=${encodeURIComponent(deviceName || '')}&device_mode=robot${mockQuery}`
+          : `/pages/scan/scan?device_id=${encodeURIComponent(deviceId || '')}&device_name=${encodeURIComponent(deviceName || '')}&device_mode=bin`
       })
     } else {
       // 直接跳转到连接页面

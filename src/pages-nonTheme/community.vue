@@ -69,7 +69,7 @@
             <view class="title-icon-pill small"><text>📊</text></view>
             <text class="section-title">社区排行榜</text>
           </view>
-          <text class="section-sub">一季度环保优秀小区评选中</text>
+          <text class="section-sub">季度环保优秀小区评选中</text>
           <view class="ranking-cards">
             <view v-for="(item, index) in communityRanking.slice(0, 3)" :key="item.id" class="ranking-card" :class="`rank-${index + 1}`">
               <text class="rank-medal">{{ index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉' }}</text>

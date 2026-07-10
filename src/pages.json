@@ -233,6 +233,12 @@
 					}
 				},
 				{
+					"path": "robot-control",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
 					"path": "voice-scan",
 					"style": {
 						"navigationStyle": "custom"

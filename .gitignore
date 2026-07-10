@@ -16,3 +16,4 @@ __pycache__
 *.njsproj
 *.sln
 *.sw?
+config.js

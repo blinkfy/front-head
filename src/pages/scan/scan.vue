@@ -1,119 +1,114 @@
 <template>
   <view class="scan-container">
-    <!-- 背景特效 -->
-    <view class="bg-effects">
-      <view class="bg-grid"></view>
-      <view class="floating-elements">
-        <view class="float-item" v-for="n in 8" :key="n" :style="getFloatItemStyle(n)"></view>
+    <view class="light-eco-decor" aria-hidden="true">
+      <text class="eco-symbol eco-leaf-one">🌿</text>
+      <text class="eco-symbol eco-leaf-two">🍃</text>
+      <text class="eco-symbol eco-recycle">♻️</text>
+    </view>
+    <view class="scan-topbar">
+      <view class="back-btn" @click="goBack" aria-label="返回">
+        <text class="back-icon">‹</text>
       </view>
-      <view class="scan-lines"></view>
-      <view class="energy-orbs">
-        <view class="energy-orb" v-for="n in 4" :key="'orb' + n" :style="getOrbStyle(n)"></view>
+      <view class="topbar-brand">
+        <image class="brand-image" src="/static/colorful-bin.png" mode="aspectFit" />
+        <view class="brand-copy">
+          <text class="brand-title">智能设备连接</text>
+          <text class="brand-subtitle">分投侠设备服务</text>
+        </view>
       </view>
-      <view class="tech-waves">
-        <view class="wave" v-for="n in 3" :key="'wave' + n"></view>
+      <view class="topbar-state" :class="{ online: connected, pending: loading, offline: !connected && !loading }">
+        <view class="state-dot"></view>
+        <text>{{ connected ? '已连接' : loading ? '连接中' : '待连接' }}</text>
       </view>
     </view>
 
-    <!-- 返回按钮 -->
-    <view class="back-btn" @click="goBack">
-      <text class="back-icon">←</text>
-    </view>
-    
-    <!-- 主内容 -->
     <view class="content-wrapper">
-      <!-- 标题区域 -->
-      <view class="title-section">
-        <view class="title-decoration">
-          <view class="title-particles">
-            <view class="particle" v-for="n in 6" :key="'particle' + n"></view>
+      <view class="connection-overview">
+        <view class="device-visual" :class="{ connected, loading, error: !connected && !loading }">
+          <view class="visual-ring ring-one"></view>
+          <view class="visual-ring ring-two"></view>
+          <image class="device-visual-image" src="/static/colorful-bin.png" mode="aspectFit" />
+          <view class="visual-status-mark">
+            <text v-if="loading">···</text>
+            <text v-else-if="connected">✓</text>
+            <text v-else>!</text>
           </view>
-          <text class="title-icon">🌱</text>
         </view>
-        <text class="main-title">智能设备连接</text>
-        <text class="sub-title">Green Tech · Smart Future</text>
-        <view class="title-underline">
-          <view class="underline-segment" v-for="n in 3" :key="'seg' + n"></view>
+        <text class="overview-title">{{ connected ? '设备已准备就绪' : loading ? '正在验证设备' : '等待设备连接' }}</text>
+        <text class="overview-desc">{{ connected ? '连接状态正常，分类数据将实时同步' : loading ? '正在校验设备身份与安全令牌' : '请返回后重新扫描设备二维码' }}</text>
+        <view class="connection-steps">
+          <view class="step-item active"><view class="step-dot"></view><text>设备</text></view>
+          <view class="step-line" :class="{ active: loading || connected }"></view>
+          <view class="step-item" :class="{ active: loading || connected }"><view class="step-dot"></view><text>验证</text></view>
+          <view class="step-line" :class="{ active: connected }"></view>
+          <view class="step-item" :class="{ active: connected }"><view class="step-dot"></view><text>完成</text></view>
         </view>
       </view>
-      
-      <!-- 连接状态卡片 -->
+
       <view class="status-card">
-        <!-- 加载状态 -->
         <view v-if="loading" class="status-section loading-section">
-          <view class="status-icon-wrapper">
-            <view class="loading-ring"></view>
-            <text class="status-icon">🔄</text>
-          </view>
+          <view class="section-kicker">连接状态</view>
           <text class="status-title">正在连接智能设备</text>
-          <text class="status-desc">建立安全连接中，请稍候...</text>
+          <text class="status-desc">建立安全连接中，请稍候</text>
           <view class="device-info-card">
-            <text class="device-label">设备标识</text>
-            <text class="device-value">{{ deviceId || '获取中...' }}</text>
+            <view class="device-info-row">
+              <text class="device-label">设备 ID</text>
+              <text class="device-value mono">{{ deviceId || '获取中' }}</text>
+            </view>
           </view>
           <view class="progress-bar">
             <view class="progress-fill"></view>
           </view>
         </view>
-        
-        <!-- 连接成功状态 -->
+
         <view v-else-if="connected" class="status-section success-section">
-          <view class="status-icon-wrapper success">
-            <text class="status-icon">🎯</text>
-            <view class="success-ring"></view>
-          </view>
-          <text class="status-title">设备连接成功!</text>
-          <text class="status-desc">已建立安全连接，开始环保之旅</text>
+          <view class="section-kicker success">连接成功</view>
+          <text class="status-title">设备连接成功</text>
+          <text class="status-desc">安全连接已建立，可以开始分类投放</text>
           <view class="device-info-card success">
-            <text class="device-label">已连接设备</text>
-            <text v-if="deviceName" class="device-value">{{ "ID"+deviceId+":"+deviceName }}</text>
-            <text v-else class="device-value">{{ deviceId }}</text>
+            <view class="device-info-row">
+              <text class="device-label">设备名称</text>
+              <text class="device-value">{{ deviceName || '智能分类设备' }}</text>
+            </view>
+            <view class="device-info-row">
+              <text class="device-label">设备 ID</text>
+              <text class="device-value mono">{{ deviceId }}</text>
+            </view>
           </view>
-          
-          <!-- 功能按钮组 -->
           <view class="action-group">
             <button class="action-btn primary" @click="goToMap">
-              <text class="btn-icon">🗺️</text>
               <text class="btn-text">查看地图</text>
             </button>
             <button class="action-btn danger" @click="endConnection">
-              <text class="btn-icon">🔌</text>
               <text class="btn-text">结束连接</text>
             </button>
           </view>
-          <text class="status-desc">5分钟内未检测到垃圾投放将自动断开连接</text>
+          <view class="timeout-note"><text>5 分钟无投放记录时将自动断开</text></view>
         </view>
-        
-        <!-- 连接失败状态 -->
+
         <view v-else class="status-section error-section">
-          <view class="status-icon-wrapper error">
-            <text class="status-icon">🔄</text>
-            <view class="error-pulse"></view>
-          </view>
+          <view class="section-kicker error">连接异常</view>
           <text class="status-title">连接暂时中断</text>
           <text class="status-desc">{{ errorMessage || '网络信号不稳定，请重试连接' }}</text>
           <view class="device-info-card error">
-            <text class="device-label">设备ID</text>
-            <text class="device-value">{{ deviceId || '未获取到' }}</text>
+            <view class="device-info-row">
+              <text class="device-label">设备 ID</text>
+              <text class="device-value mono">{{ deviceId || '未获取到' }}</text>
+            </view>
           </view>
-          
-          <!-- 操作按钮组 -->
           <view class="action-group">
             <button v-if="isH5" class="action-btn warning" @click="retryConnection">
-              <text class="btn-icon">🔄</text>
               <text class="btn-text">重新连接</text>
             </button>
             <button v-if="isTokenError && !isH5" class="action-btn secondary" @click="startScan">
-              <text class="btn-icon">📱</text>
               <text class="btn-text">重新扫码</text>
             </button>
           </view>
         </view>
       </view>
-      
-      <!-- 环保提示 -->
+
       <view class="eco-tip">
-        <text class="tip-icon">🌍</text>
+        <view class="eco-dot"></view>
         <text class="tip-text">每次垃圾分类，都是对地球环境的一份贡献</text>
       </view>
     </view>
@@ -123,6 +118,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getDeviceAPI, testDeviceAPI } from '@/utils/device-api-loader.js'
+import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr.js'
 
 // 使用安全的API加载器
 let deviceAPI = null
@@ -149,6 +145,7 @@ function initDeviceAPI() {
 
 const deviceId = ref('')
 const deviceName = ref('')
+const deviceMode = ref('bin')
 const token = ref('')
 const loading = ref(false)
 const connected = ref(false)
@@ -162,6 +159,7 @@ const deviceCheckTimer = ref(null)
 function getPageParams() {
   let deviceIdParam = ''
   let deviceNameParam = ''
+  let deviceModeParam = 'bin'
   let tokenParam = ''
   
   // 首先输出所有可能的调试信息
@@ -188,6 +186,7 @@ function getPageParams() {
       
       deviceIdParam = urlParams.device_id || ''
       deviceNameParam = urlParams.device_name ? decodeURIComponent(urlParams.device_name) : ''
+      deviceModeParam = normalizeDeviceMode(urlParams.device_mode || urlParams.deviceMode)
       tokenParam = urlParams.token || ''
     } else {
       // 小程序/APP端：从页面参数获取
@@ -414,6 +413,7 @@ function getPageParams() {
       
       deviceIdParam = pageParams.device_id || pageParams.deviceId || ''
       deviceNameParam = pageParams.device_name || pageParams.deviceName || ''
+      deviceModeParam = normalizeDeviceMode(pageParams.device_mode || pageParams.deviceMode)
       if (deviceNameParam) {
         try {
           deviceNameParam = decodeURIComponent(deviceNameParam)
@@ -430,6 +430,7 @@ function getPageParams() {
   const finalParams = {
     deviceId: deviceIdParam,
     deviceName: deviceNameParam,
+    deviceMode: deviceModeParam,
     token: tokenParam
   }
   
@@ -635,6 +636,7 @@ onMounted(async () => {
   const params = getPageParams()
   deviceId.value = params.deviceId
   deviceName.value = params.deviceName
+  deviceMode.value = normalizeDeviceMode(params.deviceMode)
   token.value = params.token
   
   console.log('页面参数获取结果:', {
@@ -703,6 +705,7 @@ async function attemptConnection() {
       connected.value = true
       deviceName.value = result.data?.device_name || ''
       uni.setStorageSync('connection', Date.now())
+      uni.setStorageSync('connected_device_mode', deviceMode.value)
       
       startDeviceCheckTimer()// 连接成功后启动定时器检查已连接设备
       uni.showToast({
@@ -710,6 +713,13 @@ async function attemptConnection() {
         icon: 'success',
         duration: 2000
       })
+      if (deviceMode.value === 'robot') {
+        setTimeout(() => {
+          uni.redirectTo({
+            url: `/pages-nonTheme/robot-control?device_id=${encodeURIComponent(deviceId.value || '')}&device_name=${encodeURIComponent(deviceName.value || '')}&device_mode=robot`
+          })
+        }, 600)
+      }
     } else {
       throw new Error(result?.message || '连接失败')
     }
@@ -926,6 +936,41 @@ async function endConnection() {
   })
 }
 
+function handleDeviceScanContent(rawContent) {
+  const target = resolveDeviceScanTarget(rawContent, '/pages/scan/scan')
+  if (!target.url || !target.deviceId) {
+    uni.showToast({ title: '二维码不正确', icon: 'none' })
+    return
+  }
+
+  if (target.isMock) {
+    const connection = saveMockDeviceConnection({
+      device_id: target.deviceId,
+      device_name: target.deviceName,
+      device_mode: target.deviceMode
+    })
+    deviceId.value = connection.device_id
+    deviceName.value = connection.device_name
+    deviceMode.value = normalizeDeviceMode(connection.device_mode)
+    token.value = ''
+    connected.value = true
+    uni.showToast({ title: '模拟设备已连接', icon: 'success' })
+    setTimeout(() => {
+      uni.redirectTo({ url: target.url })
+    }, 350)
+    return
+  }
+
+  deviceId.value = target.deviceId
+  deviceMode.value = normalizeDeviceMode(target.deviceMode)
+  token.value = target.token
+  if (deviceId.value && token.value) {
+    attemptConnection()
+    return
+  }
+  uni.showToast({ title: '设备ID和令牌不正确', icon: 'none' })
+}
+
 function startScan() {
   // 检查当前平台 - 使用与onMounted相同的逻辑
   let platform
@@ -964,24 +1009,7 @@ function startScan() {
       placeholderText: '请输入设备ID',
       success: function(res) {
         if (res.confirm && res.content) {
-          if (!res.content || res.content.trim() === '') {
-            uni.showToast({
-              title: '设备ID不能为空',
-              icon: 'none'
-            })
-            return
-          }
-          const urlParams = parseUrlParams(res.content.split('?')[1] || '')
-          deviceId.value = urlParams.deviceId || urlParams.device_id || ''
-          token.value = urlParams.token || ''
-          if(deviceId.value&&token.value) {
-            attemptConnection()
-          }else{
-            uni.showToast({
-              title: '设备ID和令牌不正确',
-              icon: 'none'
-            })
-          }
+          handleDeviceScanContent(res.content)
         }
       }
     })
@@ -990,24 +1018,7 @@ function startScan() {
     uni.scanCode({
       scanType: ['qrCode'],
       success: function(res) {
-        if (!res.result || res.result.trim() === '') {
-          uni.showToast({
-            title: '设备ID不能为空',
-            icon: 'none'
-          })
-          return
-        }
-        const urlParams = parseUrlParams(res.result.split('?')[1] || '')
-        deviceId.value = urlParams.deviceId || urlParams.device_id || ''
-        token.value = urlParams.token || ''
-        if(deviceId.value && token.value) {
-          attemptConnection()
-        } else {
-          uni.showToast({
-            title: '二维码不正确',
-            icon: 'none'
-          })
-        }
+        handleDeviceScanContent(res.result)
       },
       fail: function(err) {
         console.log('扫码失败:', err)
@@ -1725,5 +1736,693 @@ function goBack() {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+</style>
+
+<style scoped src="../../styles/device-scan-v2.css"></style>
+<style scoped>
+.scan-container {
+  --scan-bg: #f3f7f6;
+  --scan-surface: #ffffff;
+  --scan-surface-soft: #f6faf8;
+  --scan-text: #17211f;
+  --scan-muted: #687673;
+  --scan-subtle: #8a9794;
+  --scan-border: #d9e3e0;
+  --scan-border-strong: #c3d1cd;
+  --scan-primary: #128b66;
+  --scan-primary-strong: #087a59;
+  --scan-primary-soft: #e6f5ef;
+  --scan-danger: #d5443f;
+  --scan-danger-soft: #fff1f0;
+  --scan-warning: #b97818;
+  --scan-shadow: 0 10px 30px rgba(24, 55, 48, 0.08);
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  padding: max(env(safe-area-inset-top), 12px) 20px max(env(safe-area-inset-bottom), 24px);
+  color: var(--scan-text);
+  background: var(--scan-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0;
+  box-sizing: border-box;
+}
+
+.scan-container.scan-dark {
+  --scan-bg: #101716;
+  --scan-surface: #17201f;
+  --scan-surface-soft: #1d2927;
+  --scan-text: #edf5f3;
+  --scan-muted: #a7b7b3;
+  --scan-subtle: #7f918d;
+  --scan-border: #2d3d39;
+  --scan-border-strong: #435651;
+  --scan-primary: #42c897;
+  --scan-primary-strong: #33b989;
+  --scan-primary-soft: #173a30;
+  --scan-danger: #ff7770;
+  --scan-danger-soft: #402321;
+  --scan-warning: #f0b45f;
+  --scan-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+}
+
+.bg-effects,
+.title-section {
+  display: none !important;
+}
+
+.scan-topbar {
+  position: relative;
+  z-index: 2;
+  width: min(1040px, 100%);
+  min-height: 64px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.scan-topbar .back-btn {
+  position: static;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--scan-border);
+  border-radius: 8px;
+  color: var(--scan-text);
+  background: var(--scan-surface);
+  box-shadow: none;
+}
+
+.scan-topbar .back-btn:active {
+  transform: scale(0.96);
+  background: var(--scan-surface-soft);
+}
+
+.back-icon {
+  color: inherit;
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.topbar-brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-image {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+}
+
+.brand-copy,
+.brand-title,
+.brand-subtitle {
+  display: block;
+  min-width: 0;
+}
+
+.brand-title {
+  color: var(--scan-text);
+  font-size: 16px;
+  line-height: 1.3;
+  font-weight: 760;
+}
+
+.brand-subtitle {
+  margin-top: 2px;
+  color: var(--scan-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.topbar-state {
+  min-height: 32px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--scan-border);
+  border-radius: 8px;
+  color: var(--scan-muted);
+  background: var(--scan-surface);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.state-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--scan-subtle);
+}
+
+.topbar-state.online { color: var(--scan-primary); }
+.topbar-state.online .state-dot { background: var(--scan-primary); }
+.topbar-state.pending { color: var(--scan-warning); }
+.topbar-state.pending .state-dot { background: var(--scan-warning); animation: scanPulse 1.3s ease-in-out infinite; }
+.topbar-state.offline { color: var(--scan-danger); }
+.topbar-state.offline .state-dot { background: var(--scan-danger); }
+
+.content-wrapper {
+  position: relative;
+  z-index: 1;
+  width: min(1040px, 100%);
+  min-height: 0;
+  margin: 18px auto 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.78fr) minmax(420px, 1.22fr);
+  grid-template-areas:
+    "overview status"
+    "tip tip";
+  align-items: stretch;
+  gap: 16px;
+}
+
+.connection-overview {
+  grid-area: overview;
+  min-width: 0;
+  padding: 36px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.device-visual {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.device-visual-image {
+  position: relative;
+  z-index: 2;
+  width: 106px;
+  height: 106px;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 20px rgba(18, 139, 102, 0.16));
+}
+
+.visual-ring {
+  position: absolute;
+  border: 1px solid color-mix(in srgb, var(--scan-primary) 34%, transparent);
+  border-radius: 50%;
+}
+
+.ring-one { inset: 16px; }
+.ring-two { inset: 34px; opacity: 0.7; }
+
+.device-visual.loading .ring-one { animation: ringRotate 2.2s linear infinite; border-style: dashed; }
+.device-visual.connected .ring-one { box-shadow: 0 0 0 12px color-mix(in srgb, var(--scan-primary) 8%, transparent); }
+.device-visual.error .visual-ring { border-color: color-mix(in srgb, var(--scan-danger) 38%, transparent); }
+
+.visual-status-mark {
+  position: absolute;
+  z-index: 4;
+  right: 20px;
+  bottom: 24px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid var(--scan-bg);
+  border-radius: 50%;
+  color: #ffffff;
+  background: var(--scan-primary);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.device-visual.loading .visual-status-mark { background: var(--scan-warning); font-size: 12px; }
+.device-visual.error .visual-status-mark { background: var(--scan-danger); }
+
+.overview-title {
+  margin-top: 18px;
+  color: var(--scan-text);
+  font-size: 22px;
+  line-height: 1.35;
+  font-weight: 780;
+}
+
+.overview-desc {
+  max-width: 280px;
+  margin-top: 8px;
+  color: var(--scan-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.connection-steps {
+  width: min(280px, 100%);
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto;
+  align-items: start;
+  gap: 8px;
+}
+
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--scan-subtle);
+  font-size: 10px;
+}
+
+.step-dot {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--scan-border-strong);
+  border-radius: 50%;
+  background: var(--scan-bg);
+}
+
+.step-item.active { color: var(--scan-primary); }
+.step-item.active .step-dot { border-color: var(--scan-primary); background: var(--scan-primary); }
+
+.step-line {
+  height: 2px;
+  margin-top: 4px;
+  background: var(--scan-border);
+}
+
+.step-line.active { background: var(--scan-primary); }
+
+.status-card {
+  grid-area: status;
+  width: auto;
+  min-width: 0;
+  min-height: 430px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--scan-border);
+  border-radius: 8px;
+  background: var(--scan-surface);
+  box-shadow: var(--scan-shadow);
+  backdrop-filter: none;
+  animation: panelIn 260ms ease both;
+}
+
+.status-card::before,
+.status-card::after {
+  display: none !important;
+  content: none !important;
+}
+
+.status-section {
+  width: 100%;
+  min-height: 430px;
+  max-width: none;
+  padding: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.section-kicker {
+  display: block;
+  color: var(--scan-warning);
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 760;
+}
+
+.section-kicker.success { color: var(--scan-primary); }
+.section-kicker.error { color: var(--scan-danger); }
+
+.status-title {
+  margin-top: 10px;
+  color: var(--scan-text);
+  font-size: 27px;
+  line-height: 1.3;
+  font-weight: 800;
+  text-align: left;
+  text-shadow: none;
+}
+
+.status-desc {
+  margin-top: 8px;
+  color: var(--scan-muted);
+  font-size: 14px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.device-info-card {
+  width: 100%;
+  max-width: none;
+  margin: 28px 0 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--scan-border);
+  border-left: 3px solid var(--scan-primary);
+  border-radius: 6px;
+  background: var(--scan-surface-soft);
+  box-shadow: none;
+  transform: none;
+}
+
+.device-info-card.error { border-left-color: var(--scan-danger); }
+
+.scan-container.scan-dark .device-info-card,
+.scan-container.scan-dark .device-info-card.success,
+.scan-container.scan-dark .device-info-card.error {
+  border-color: var(--scan-border);
+  background: var(--scan-surface-soft);
+}
+
+.scan-container.scan-dark .device-info-card.success {
+  border-left-color: var(--scan-primary);
+}
+
+.scan-container.scan-dark .device-info-card.error {
+  border-left-color: var(--scan-danger);
+}
+
+.device-info-row {
+  min-height: 58px;
+  padding: 11px 14px;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--scan-border);
+}
+
+.device-info-row:last-child { border-bottom: 0; }
+
+.device-label,
+.device-value {
+  display: block;
+  margin: 0;
+  text-align: left;
+}
+
+.device-label {
+  color: var(--scan-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.device-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--scan-text);
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 720;
+}
+
+.mono {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.action-group {
+  width: 100%;
+  max-width: none;
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.action-btn {
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--scan-border-strong);
+  border-radius: 7px;
+  color: var(--scan-text);
+  background: var(--scan-surface);
+  box-shadow: none;
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 760;
+}
+
+.action-btn::after { display: none; }
+.action-btn:active { transform: scale(0.985); opacity: 0.9; }
+.action-btn.primary { color: #ffffff; border-color: var(--scan-primary); background: var(--scan-primary); }
+.action-btn.primary:active { background: var(--scan-primary-strong); }
+.action-btn.danger { color: var(--scan-danger); border-color: color-mix(in srgb, var(--scan-danger) 42%, var(--scan-border)); background: var(--scan-danger-soft); }
+.action-btn.warning { color: #ffffff; border-color: var(--scan-warning); background: var(--scan-warning); }
+.action-btn.secondary { color: var(--scan-primary); border-color: var(--scan-primary); background: var(--scan-primary-soft); }
+
+.btn-icon { display: none; }
+.btn-text { color: inherit; font-size: inherit; font-weight: inherit; }
+
+.timeout-note {
+  width: 100%;
+  margin-top: 14px;
+  color: var(--scan-subtle);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.progress-bar {
+  width: 100%;
+  max-width: none;
+  height: 6px;
+  margin-top: 24px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--scan-border);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--scan-primary);
+  animation: progressMove 1.5s ease-in-out infinite;
+}
+
+.eco-tip {
+  grid-area: tip;
+  width: 100%;
+  max-width: none;
+  min-height: 46px;
+  margin: 0;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid var(--scan-border);
+  border-radius: 8px;
+  color: var(--scan-muted);
+  background: var(--scan-surface);
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+.eco-tip::before,
+.eco-tip::after { display: none !important; content: none !important; }
+
+.eco-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--scan-primary);
+}
+
+.tip-icon { display: none; }
+
+.tip-text {
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 600;
+  text-shadow: none;
+}
+
+@keyframes scanPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+@keyframes ringRotate {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes progressMove {
+  0% { width: 16%; transform: translateX(-100%); }
+  60%, 100% { width: 48%; transform: translateX(220%); }
+}
+
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 760px) {
+  .scan-container {
+    padding: max(env(safe-area-inset-top), 8px) 12px max(env(safe-area-inset-bottom), 18px);
+  }
+
+  .scan-topbar {
+    min-height: 56px;
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    gap: 9px;
+  }
+
+  .scan-topbar .back-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .brand-image { width: 32px; height: 32px; }
+  .brand-title { font-size: 14px; }
+  .brand-subtitle { display: none; }
+
+  .topbar-state {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
+
+  .content-wrapper {
+    margin-top: 12px;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "overview"
+      "status"
+      "tip";
+    gap: 12px;
+  }
+
+  .connection-overview {
+    padding: 18px 14px 12px;
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    grid-template-areas:
+      "visual title"
+      "visual desc"
+      "steps steps";
+    align-items: center;
+    gap: 2px 14px;
+    text-align: left;
+  }
+
+  .device-visual {
+    grid-area: visual;
+    width: 88px;
+    height: 88px;
+  }
+
+  .device-visual-image { width: 58px; height: 58px; }
+  .ring-one { inset: 6px; }
+  .ring-two { inset: 18px; }
+
+  .visual-status-mark {
+    right: 2px;
+    bottom: 5px;
+    width: 25px;
+    height: 25px;
+    border-width: 2px;
+    font-size: 13px;
+  }
+
+  .overview-title {
+    grid-area: title;
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .overview-desc {
+    grid-area: desc;
+    max-width: none;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .connection-steps {
+    grid-area: steps;
+    width: 100%;
+    margin-top: 16px;
+  }
+
+  .status-card,
+  .status-section {
+    min-height: 0;
+  }
+
+  .status-section {
+    padding: 24px 20px;
+  }
+
+  .status-title { font-size: 23px; }
+  .status-desc { font-size: 13px; }
+  .device-info-card { margin-top: 20px; }
+
+  .device-info-row {
+    min-height: 54px;
+    grid-template-columns: 90px minmax(0, 1fr);
+  }
+
+  .action-group { margin-top: 20px; }
+}
+
+@media (max-width: 420px) {
+  .topbar-state text { display: none; }
+  .topbar-state { width: 32px; padding: 0; justify-content: center; }
+
+  .connection-overview {
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 2px 12px;
+  }
+
+  .device-visual { width: 72px; height: 72px; }
+  .device-visual-image { width: 48px; height: 48px; }
+  .visual-status-mark { width: 22px; height: 22px; }
+  .overview-title { font-size: 17px; }
+
+  .status-section { padding: 22px 16px; }
+
+  .device-info-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .action-group { grid-template-columns: 1fr; }
+  .eco-tip { padding: 10px 12px; text-align: left; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .device-visual.loading .ring-one,
+  .topbar-state.pending .state-dot,
+  .progress-fill,
+  .status-card {
+    animation: none !important;
+  }
 }
 </style>
