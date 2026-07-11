@@ -49,10 +49,16 @@
                 <text class="ready-dot"></text>
                 <text>{{ robot.onlineText }}</text>
               </view>
-              <view class="robot-glow"></view>
-              <image class="robot-image" :src="robotImageUrl" mode="aspectFit"></image>
-              <view class="orbit orbit-one"></view>
-              <view class="orbit orbit-two"></view>
+              <image class="mobile-robot-image" :src="robotImageUrl" mode="aspectFit" @error="useFallbackRobotImage"></image>
+              <SortingWorkflowPlayer
+                class="hero-workflow-player"
+                :stage="workflowStage"
+                :autoplay="workflowAutoplay"
+                src="/static/sorting-robot/layers"
+                rig-src="/static/sorting-robot/rig.json"
+                timeline-src="/static/sorting-robot/timeline.json"
+                @error="handleWorkflowAssetError"
+              />
             </view>
           </view>
 
@@ -135,8 +141,10 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onHide, onLoad, onShow } from '@dcloudio/uni-app'
+import SortingWorkflowPlayer from '@/components/SortingWorkflowPlayer.vue'
 import { baseUrl } from '@/api/settings.js'
+import { mapRobotWorkflowStage } from '@/utils/sorting-workflow.js'
 import {
   fetchRobotControlSnapshot,
   fetchRobotTasks,
@@ -148,13 +156,20 @@ import {
 const isDarkTheme = ref(false)
 const syncState = ref('local')
 const actionState = ref('idle')
-const activeStep = ref(2)
+const activeStep = ref(0)
+const progressPct = ref(0)
 const routeDeviceId = ref('')
 const isMockMode = ref(false)
+const robotImageFailed = ref(false)
+const remoteDeviceState = ref('idle')
+const workflowPageVisible = ref(true)
 const taskId = ref('')
+const latestTaskStateAt = ref(0)
 let taskTimer = 0
 let remotePollTimer = 0
+const commandRefreshTimers = []
 let logId = 4
+let lastRemoteSignature = ''
 
 const robot = ref({
   id: 'robot-01',
@@ -190,7 +205,13 @@ const steps = [
   { key: 'return', label: '返回', icon: '↶' }
 ]
 
-const robotImageUrl = computed(() => `${baseUrl}/images/lejv.webp`)
+const robotImageUrl = computed(() => robotImageFailed.value
+  ? '/static/robot-control-robot.png'
+  : `${baseUrl}/images/lejv.webp`)
+
+function useFallbackRobotImage() {
+  robotImageFailed.value = true
+}
 
 const statusLabel = computed(() => {
   if (actionState.value === 'running') return '执行中'
@@ -202,9 +223,21 @@ const statusLabel = computed(() => {
 const syncLabel = computed(() => (syncState.value === 'cloud' ? '已同步' : '本地演示'))
 
 const progressLineWidth = computed(() => {
-  const total = Math.max(steps.length - 1, 1)
-  return `${Math.min(100, Math.max(0, (activeStep.value / total) * 100))}%`
+  if (workflowStage.value === 'idle') return '0%'
+  return `${Math.min(100, Math.max(0, progressPct.value))}%`
 })
+
+const workflowStage = computed(() => mapRobotWorkflowStage({
+  actionState: actionState.value,
+  deviceState: remoteDeviceState.value,
+  taskStage: currentTask.value.stage,
+  progress: progressPct.value,
+  hasTask: Boolean(currentTask.value.title)
+}))
+
+const workflowAutoplay = computed(() => (
+  workflowPageVisible.value && actionState.value === 'running' && workflowStage.value !== 'error'
+))
 
 const statusItems = computed(() => [
   { icon: '➤', label: '当前阶段', value: currentTask.value.stage, tone: 'green' },
@@ -224,6 +257,8 @@ function checkTheme() {
 }
 
 function stepState(index) {
+  if (workflowStage.value === 'idle') return 'pending'
+  if (workflowStage.value === 'completed') return 'done'
   if (index < activeStep.value) return 'done'
   if (index === activeStep.value) return 'active'
   return 'pending'
@@ -243,10 +278,29 @@ function pushLog(text) {
   feedbackLogs.value = feedbackLogs.value.slice(0, 4)
 }
 
+function handleWorkflowAssetError() {
+  if (!robotImageFailed.value) {
+    useFallbackRobotImage()
+    pushLog('机器人素材加载失败，流程示意已切换本地素材')
+  }
+}
+
 function setStep(index) {
   activeStep.value = Math.min(Math.max(index, 0), steps.length - 1)
+  progressPct.value = (activeStep.value / Math.max(steps.length - 1, 1)) * 100
   const stageMap = ['目标识别完成', '导航至抓取点', '机械臂抓取中', '投放至目标桶', '返回待命区']
   currentTask.value.stage = stageMap[activeStep.value] || currentTask.value.stage
+}
+
+function applyRemoteProgress(progress, phase) {
+  const normalized = Math.min(100, Math.max(0, Number(progress)))
+  if (!Number.isFinite(normalized)) return
+  progressPct.value = normalized
+  const thresholds = [0, 20, 45, 70, 90]
+  activeStep.value = thresholds.reduce((step, threshold, index) => (
+    normalized >= threshold ? index : step
+  ), 0)
+  if (phase) currentTask.value.stage = phase
 }
 
 function startTaskLoop() {
@@ -271,31 +325,41 @@ async function startOrResumeTask() {
   if (actionState.value === 'running') return
   const previousState = actionState.value
   actionState.value = 'running'
+  remoteDeviceState.value = 'running'
   robot.value.grasp = activeStep.value >= 2 ? '执行中' : '准备中'
   if (activeStep.value >= steps.length - 1 || previousState === 'stopped') {
     setStep(0)
   }
   pushLog(previousState === 'paused' ? '任务继续执行' : '任务已启动，进入闭环流程')
-  startTaskLoop()
-
-  sendTaskAction(previousState === 'paused' ? 'resume' : 'start')
+  if (isMockMode.value) startTaskLoop()
+  await sendTaskAction(previousState === 'paused' ? 'resume' : 'start')
 }
 
 async function pauseTask() {
   if (actionState.value !== 'running') return
   actionState.value = 'paused'
+  remoteDeviceState.value = 'paused'
   robot.value.grasp = '暂停中'
   clearInterval(taskTimer)
   pushLog('任务已暂停，保持当前安全位姿')
-  sendTaskAction('pause')
+  await sendTaskAction('pause')
 }
 
 async function emergencyStop() {
   actionState.value = 'stopped'
+  remoteDeviceState.value = 'emergency_stopped'
   robot.value.grasp = '安全停止'
   clearInterval(taskTimer)
   pushLog('紧急停止已触发，执行机构锁止')
-  sendTaskAction('emergency_stop')
+  await sendTaskAction('emergency_stop')
+}
+
+function scheduleCommandRefresh() {
+  if (isMockMode.value) return
+  ;[1200, 2600].forEach((delay) => {
+    const timer = setTimeout(loadRemoteState, delay)
+    commandRefreshTimers.push(timer)
+  })
 }
 
 async function sendTaskAction(action) {
@@ -307,21 +371,23 @@ async function sendTaskAction(action) {
     if (taskId.value) {
       await sendRobotTaskAction(taskId.value, action, {
         deviceId: robot.value.id,
-        progress: Math.round((activeStep.value / Math.max(steps.length - 1, 1)) * 100)
+        progress: Math.round(progressPct.value)
       })
       syncState.value = 'cloud'
+      scheduleCommandRefresh()
       return
     }
     await sendRobotDeviceCommand(robot.value.id, action, {
-      progress: Math.round((activeStep.value / Math.max(steps.length - 1, 1)) * 100),
+      progress: Math.round(progressPct.value),
       timestamp: new Date().toISOString()
     })
     syncState.value = 'cloud'
+    scheduleCommandRefresh()
   } catch (e) {
     try {
       await reportRobotExecution(robot.value.id, {
         status: action === 'emergency_stop' ? 'cancelled' : action === 'pause' ? 'paused' : 'running',
-        progress: Math.round((activeStep.value / Math.max(steps.length - 1, 1)) * 100),
+        progress: Math.round(progressPct.value),
         message: `robot-control:${action}`,
         timestamp: new Date().toISOString()
       })
@@ -361,10 +427,25 @@ function normalizeSnapshot(payload) {
     currentTask.value.stage = item.taskStatus
   }
   const remoteState = String(item.deviceState || '').toLowerCase()
+  remoteDeviceState.value = remoteState || remoteDeviceState.value
   if (remoteState === 'running') actionState.value = 'running'
   if (remoteState === 'paused') actionState.value = 'paused'
   if (['stopped', 'emergency_stopped', 'cancelled'].includes(remoteState)) actionState.value = 'stopped'
   if (['idle', 'completed', 'succeeded'].includes(remoteState)) actionState.value = 'idle'
+  const remoteProgress = item.progress
+  const remotePhase = item.currentPhase || item.taskStatus
+  const snapshotStateAt = Date.parse(
+    item.reportedAt || item.cachedAt || item.lastTelemetryAt || item.updatedAt || ''
+  ) || 0
+  const taskStateIsNewer = latestTaskStateAt.value > snapshotStateAt
+  if (!taskStateIsNewer) {
+    if (Number.isFinite(Number(remoteProgress))) {
+      applyRemoteProgress(remoteProgress, remotePhase)
+    } else if (remotePhase) {
+      currentTask.value.stage = remotePhase
+    }
+  }
+  if (remoteState !== 'running') clearInterval(taskTimer)
   syncState.value = 'cloud'
 }
 
@@ -372,8 +453,12 @@ function normalizeTasks(payload) {
   const data = payload && payload.data
   const items = data && Array.isArray(data.items) ? data.items : []
   const active = items.find((item) => ['pending', 'dispatched', 'running', 'paused'].includes(item.status))
-  if (!active) return
+  if (!active) {
+    latestTaskStateAt.value = 0
+    return
+  }
   taskId.value = active.id || ''
+  latestTaskStateAt.value = Date.parse(active.updatedAt || active.createdAt || '') || 0
   currentTask.value = {
     ...currentTask.value,
     title: active.taskNo || currentTask.value.title,
@@ -382,7 +467,10 @@ function normalizeTasks(payload) {
     bin: active.deviceId ? `设备 ${active.deviceId}` : currentTask.value.bin
   }
   if (Number.isFinite(Number(active.progress))) {
-    setStep(Math.round((Number(active.progress) / 100) * (steps.length - 1)))
+    applyRemoteProgress(
+      active.progress,
+      active.currentPhase || active.phase || active.status
+    )
   }
   syncState.value = 'cloud'
 }
@@ -394,10 +482,13 @@ async function loadRemoteState() {
     fetchRobotTasks({ deviceId, limit: 10 })
   ])
 
-  if (snapshot.status === 'fulfilled') normalizeSnapshot(snapshot.value)
   if (tasks.status === 'fulfilled') normalizeTasks(tasks.value)
+  // 设备遥测是机器人当前状态的最终事实来源，最后应用以覆盖可能滞后的任务记录。
+  if (snapshot.status === 'fulfilled') normalizeSnapshot(snapshot.value)
 
-  if (snapshot.status === 'fulfilled' || tasks.status === 'fulfilled') {
+  const signature = `${actionState.value}|${Math.round(progressPct.value)}|${currentTask.value.stage}`
+  if ((snapshot.status === 'fulfilled' || tasks.status === 'fulfilled') && signature !== lastRemoteSignature) {
+    lastRemoteSignature = signature
     pushLog('云端状态已同步到机器人控制台')
   }
 }
@@ -436,12 +527,18 @@ onLoad((options = {}) => {
 })
 
 onShow(() => {
+  workflowPageVisible.value = true
   checkTheme()
+})
+
+onHide(() => {
+  workflowPageVisible.value = false
 })
 
 onBeforeUnmount(() => {
   clearInterval(taskTimer)
   clearInterval(remotePollTimer)
+  commandRefreshTimers.forEach(clearTimeout)
 })
 </script>
 
@@ -451,9 +548,10 @@ onBeforeUnmount(() => {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(circle at 14% 8%, rgba(16, 185, 129, 0.16), transparent 28%),
-    radial-gradient(circle at 86% 26%, rgba(56, 189, 248, 0.16), transparent 30%),
-    linear-gradient(180deg, #f0fdf4 0%, #eefaf6 34%, #f7fbff 76%, #f7fafc 100%);
+    radial-gradient(ellipse 54% 30% at 88% 8%, rgba(16, 185, 129, 0.15), transparent 72%),
+    radial-gradient(ellipse 44% 28% at 7% 57%, rgba(56, 189, 248, 0.1), transparent 74%),
+    radial-gradient(ellipse 48% 24% at 78% 88%, rgba(245, 158, 11, 0.055), transparent 76%),
+    linear-gradient(180deg, #effcf7 0%, #f6fcfa 36%, #f5faff 74%, #f8fafc 100%);
   color: #16342c;
 }
 
@@ -476,10 +574,9 @@ onBeforeUnmount(() => {
 .ambient-grid {
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(16, 185, 129, 0.07) 1rpx, transparent 1rpx),
-    linear-gradient(90deg, rgba(14, 165, 233, 0.06) 1rpx, transparent 1rpx);
-  background-size: 44rpx 44rpx;
+  background-image: radial-gradient(rgba(16, 185, 129, 0.18) 1rpx, transparent 1.2rpx);
+  background-size: 42rpx 42rpx;
+  opacity: 0.36;
   mask-image: linear-gradient(180deg, rgba(0,0,0,0.55), transparent 65%);
   -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.55), transparent 65%);
 }
@@ -526,14 +623,12 @@ onBeforeUnmount(() => {
 .hero {
   position: relative;
   z-index: 2;
-  min-height: 244rpx;
-  padding: 0 28rpx 34rpx;
+  min-height: 324rpx;
+  padding: 0 28rpx 48rpx;
   background:
-    radial-gradient(circle at 22% 35%, rgba(255, 255, 255, 0.22), transparent 28%),
+    radial-gradient(circle at 22% 35%, rgba(255, 255, 255, 0.18), transparent 28%),
     linear-gradient(135deg, #10b981 0%, #059669 48%, #0f9f93 100%);
-  border-bottom-left-radius: 42rpx;
-  border-bottom-right-radius: 42rpx;
-  box-shadow: 0 18rpx 42rpx rgba(16, 185, 129, 0.22);
+  box-shadow: 0 14rpx 36rpx rgba(5, 150, 105, 0.18);
 }
 
 .dark-mode .hero {
@@ -640,7 +735,7 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 3;
   height: calc(100vh - 92rpx);
-  margin-top: -58rpx;
+  margin-top: -42rpx;
   padding-bottom: 34rpx;
   box-sizing: border-box;
 }
@@ -652,10 +747,10 @@ onBeforeUnmount(() => {
 .panel {
   position: relative;
   border-radius: 18rpx;
-  background: rgba(255, 255, 255, 0.88);
-  border: 1rpx solid rgba(255, 255, 255, 0.78);
-  box-shadow: 0 12rpx 32rpx rgba(15, 118, 110, 0.11);
-  backdrop-filter: blur(20rpx);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1rpx solid rgba(255, 255, 255, 0.86);
+  box-shadow: 0 10rpx 28rpx rgba(15, 118, 110, 0.09);
+  backdrop-filter: blur(16rpx);
   overflow: hidden;
 }
 
@@ -770,6 +865,23 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.hero-workflow-player {
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+.mobile-robot-image {
+  position: absolute;
+  right: -12rpx;
+  top: 8rpx;
+  z-index: 3;
+  width: 246rpx;
+  height: 322rpx;
+  filter: drop-shadow(0 22rpx 24rpx rgba(15, 23, 42, 0.2));
+  animation: robotFloat 3.6s ease-in-out infinite;
+}
+
 .ready-chip {
   position: absolute;
   top: 0;
@@ -820,7 +932,8 @@ onBeforeUnmount(() => {
 .robot-image {
   position: absolute;
   right: -12rpx;
-  bottom: 6rpx;
+  top: 8rpx;
+  bottom: auto;
   z-index: 3;
   width: 246rpx;
   height: 322rpx;
@@ -1202,6 +1315,378 @@ onBeforeUnmount(() => {
   color: #e2e8f0;
 }
 
+@media (min-width: 768px) {
+  .hero {
+    min-height: 280rpx;
+    padding-bottom: 38rpx;
+  }
+
+  .content-scroll {
+    margin-top: -82rpx;
+  }
+
+  .content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "robot robot"
+      "status progress"
+      "feedback feedback";
+    gap: 18rpx;
+    width: 100%;
+    max-width: 3360rpx;
+    margin: 0 auto;
+    padding-bottom: 56rpx;
+  }
+
+  .robot-card {
+    grid-area: robot;
+    padding: 34rpx 42rpx 30rpx;
+  }
+
+  .robot-main {
+    grid-template-columns: minmax(320rpx, .72fr) minmax(0, 1.28fr);
+    min-height: 480rpx;
+  }
+
+  .robot-visual {
+    min-height: 420rpx;
+  }
+
+  .hero-workflow-player {
+    display: block;
+  }
+
+  .mobile-robot-image {
+    display: none;
+  }
+
+  .robot-image {
+    right: -36rpx;
+    top: 18rpx;
+    bottom: auto;
+    width: 620rpx;
+    height: 620rpx;
+  }
+
+  .robot-glow {
+    width: 520rpx;
+    height: 520rpx;
+  }
+
+  .orbit-one {
+    width: 460rpx;
+    height: 184rpx;
+  }
+
+  .orbit-two {
+    width: 336rpx;
+    height: 132rpx;
+    right: 70rpx;
+  }
+
+  .status-panel,
+  .progress-panel,
+  .feedback-panel {
+    margin-top: 0;
+    padding: 28rpx 30rpx;
+  }
+
+  .status-panel { grid-area: status; }
+  .progress-panel { grid-area: progress; }
+  .feedback-panel { grid-area: feedback; }
+
+  .status-panel,
+  .progress-panel {
+    min-height: 310rpx;
+  }
+
+  .feedback-panel {
+    min-height: 320rpx;
+  }
+}
+
+@media (min-width: 1024px) {
+  .hero {
+    min-height: 190px;
+    padding: 0 48px 34px;
+  }
+
+  .safe-area {
+    min-height: 12px;
+  }
+
+  .hero-title-row {
+    min-height: 76px;
+    margin-top: 8px;
+  }
+
+  .back-btn {
+    left: 24px;
+    top: calc(env(safe-area-inset-top) + 18px);
+    width: 44px;
+    height: 44px;
+  }
+
+  .back-btn text {
+    font-size: 34px;
+  }
+
+  .title-wrap {
+    gap: 14px;
+  }
+
+  .title-icon-box {
+    width: 50px;
+    height: 50px;
+    border-radius: 14px;
+  }
+
+  .title-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .page-title {
+    font-size: min(24px, 48rpx);
+  }
+
+  .page-subtitle {
+    margin-top: 5px;
+    font-size: 14px;
+  }
+
+  .content-scroll {
+    height: calc(100vh - 92px);
+    margin-top: -68px;
+    padding-bottom: 32px;
+  }
+
+  .content {
+    max-width: 1560px;
+    gap: 18px;
+    padding: 0 28px 48px;
+  }
+
+  .panel {
+    border-radius: 18px;
+    box-shadow: 0 12px 30px rgba(15, 118, 110, 0.1);
+  }
+
+  .robot-card {
+    padding: 26px 34px 24px;
+  }
+
+  .robot-main {
+    grid-template-columns: minmax(270px, .7fr) minmax(0, 1.3fr);
+    min-height: 220px;
+  }
+
+  .robot-visual {
+    min-height: 220px;
+  }
+
+  .robot-copy {
+    padding-top: 10px;
+  }
+
+  .section-kicker {
+    font-size: 14px;
+  }
+
+  .robot-name {
+    margin-top: 8px;
+    font-size: 24px;
+  }
+
+  .robot-state-line,
+  .robot-task-line {
+    gap: 10px;
+    margin-top: 15px;
+    font-size: 15px;
+  }
+
+  .state-dot {
+    width: 12px;
+    height: 12px;
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.12);
+  }
+
+  .task-icon {
+    font-size: 19px;
+  }
+
+  .ready-chip {
+    top: 0;
+    right: 0;
+    gap: 6px;
+    padding: 9px 14px;
+    font-size: 14px;
+  }
+
+  .ready-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .robot-image {
+    right: -8px;
+    top: -18px;
+    width: 330px;
+    height: 330px;
+  }
+
+  .robot-glow {
+    right: 8px;
+    bottom: -14px;
+    width: 300px;
+    height: 300px;
+  }
+
+  .orbit-one {
+    width: 280px;
+    height: 116px;
+  }
+
+  .orbit-two {
+    right: 45px;
+    bottom: 28px;
+    width: 210px;
+    height: 84px;
+  }
+
+  .control-actions {
+    gap: 12px;
+    margin-top: 14px;
+  }
+
+  .primary-action,
+  .secondary-action,
+  .danger-action {
+    min-height: 40px;
+    padding: 0 20px;
+    gap: 8px;
+    font-size: 14px;
+  }
+
+  .danger-dot {
+    width: 20px;
+    height: 20px;
+    font-size: 13px;
+  }
+
+  .status-panel,
+  .progress-panel,
+  .feedback-panel {
+    padding: 24px 26px;
+  }
+
+  .status-panel,
+  .progress-panel {
+    min-height: 188px;
+  }
+
+  .feedback-panel {
+    min-height: 186px;
+  }
+
+  .panel-title {
+    gap: 9px;
+    font-size: 16px;
+  }
+
+  .panel-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .sync-chip,
+  .more-link {
+    font-size: 14px;
+  }
+
+  .status-grid {
+    gap: 16px 18px;
+    margin-top: 20px;
+  }
+
+  .status-item {
+    gap: 12px;
+  }
+
+  .status-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    font-size: 17px;
+  }
+
+  .status-texts {
+    gap: 7px;
+  }
+
+  .status-label {
+    font-size: 13px;
+  }
+
+  .status-value {
+    font-size: 14px;
+  }
+
+  .progress-track {
+    margin-top: 26px;
+    padding-bottom: 4px;
+  }
+
+  .track-line,
+  .track-fill {
+    top: 34px;
+    height: 4px;
+  }
+
+  .step-node {
+    gap: 7px;
+  }
+
+  .node-circle {
+    width: 54px;
+    height: 54px;
+    border-width: 3px;
+    font-size: 18px;
+  }
+
+  .node-label,
+  .node-mark {
+    font-size: 13px;
+  }
+
+  .node-mark {
+    height: 18px;
+  }
+
+  .feedback-list {
+    margin-top: 15px;
+  }
+
+  .feedback-item {
+    grid-template-columns: 12px 82px minmax(0, 1fr);
+    gap: 10px;
+    min-height: 32px;
+  }
+
+  .feedback-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .feedback-time,
+  .feedback-text {
+    font-size: 13px;
+  }
+}
+
 @media (max-width: 360px) {
   .content {
     padding-left: 20rpx;
@@ -1239,6 +1724,24 @@ onBeforeUnmount(() => {
   .danger-action {
     padding: 0 20rpx;
     font-size: 22rpx;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaf,
+  .robot-image,
+  .mobile-robot-image,
+  .robot-glow,
+  .state-dot.running,
+  .step-node.active .node-circle {
+    animation: none !important;
+  }
+
+  .track-fill,
+  .primary-action,
+  .secondary-action,
+  .danger-action {
+    transition: none !important;
   }
 }
 </style>
