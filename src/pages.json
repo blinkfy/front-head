@@ -179,6 +179,12 @@
 					}
 				},
 				{
+					"path": "digital-twin-replay",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
 					"path": "community-dashboard",
 					"style": {
 						"navigationStyle": "custom"

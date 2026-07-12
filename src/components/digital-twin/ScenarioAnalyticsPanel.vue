@@ -1,0 +1,130 @@
+<template>
+  <view class="analytics-panel panel">
+    <view class="analytics-head">
+      <view><text>场景算法解释</text><small>{{ scenarioLabel }}</small></view>
+      <view class="analytics-tags"><b>算法说明</b></view>
+    </view>
+    <view class="metric-grid">
+      <view><small>当前区域</small><b>{{ currentArea }}</b></view>
+      <view><small>人流数量</small><b>{{ visitorCount }}</b></view>
+      <view><small>垃圾增长率</small><b>{{ growthRate }}</b></view>
+      <view><small>当前填充率</small><b>{{ fillPct }}</b><em v-if="fillSource">{{ fillSource }}</em></view>
+      <view><small>预测填充率</small><b>{{ predictedFill }}</b></view>
+      <view><small>预计满载</small><b>{{ eta }}</b></view>
+    </view>
+
+    <view v-if="prediction" class="prediction-block">
+      <view class="prediction-title">
+        <text>填充率预测曲线</text>
+        <b :class="riskTone">{{ prediction.riskLevel || '—' }}</b>
+      </view>
+      <!-- #ifdef H5 -->
+      <svg class="prediction-chart" viewBox="0 0 260 76" preserveAspectRatio="none">
+        <line x1="8" y1="66" x2="252" y2="66" class="chart-axis" />
+        <line x1="8" y1="16" x2="252" y2="16" class="risk-line" />
+        <line :x1="splitX" y1="8" :x2="splitX" y2="69" class="split-line" />
+        <polyline v-if="historyPoints" :points="historyPoints" class="chart-line history" />
+        <polyline v-if="forecastPoints" :points="forecastPoints" class="chart-line forecast" />
+      </svg>
+      <!-- #endif -->
+      <view class="chart-legend"><text><i class="history"></i>历史区间</text><text><i class="forecast"></i>未来区间</text><small :data-source="prediction.source">{{ displaySourceLabel(prediction.source) }}</small></view>
+    </view>
+    <view v-else class="prediction-empty">当前事件之前没有预测载荷，不在前端补造数值。</view>
+
+    <view class="reason-block">
+      <small>{{ routeReason ? '调度 / 重规划原因' : '当前行为说明' }}</small>
+      <text>{{ routeReason || activityReason || '回放事件暂未提供说明' }}</text>
+      <view v-if="routeMetrics" class="route-metrics">
+        <b>距离 {{ routeMetrics.distance }}</b><b>代价 {{ routeMetrics.cost }}</b><b :data-source="state.route.algorithmSource">{{ displaySourceLabel(state.route.algorithmSource) }}</b>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+import { scenarioMetricText, zoneLabel } from '@/utils/park-scenario-visuals.js'
+import { displaySourceLabel } from '@/utils/source-display.js'
+
+const props = defineProps({
+  scenario: { type: String, default: 'baseline' },
+  state: { type: Object, default: () => ({}) },
+  currentEvent: { type: Object, default: () => ({}) }
+})
+
+const scenarioLabels = { baseline: '正常闭环', daily: '公园日常', peak: '高峰预测', blocked: '道路受阻' }
+const scenarioLabel = computed(() => scenarioLabels[props.scenario] || props.scenario)
+const prediction = computed(() => props.state.prediction || null)
+const currentArea = computed(() => {
+  const explicit = props.state.currentArea || props.currentEvent?.payload?.zoneId
+  if (explicit) return zoneLabel(explicit)
+  const busiest = Object.entries(props.state.zoneCounts || {}).sort((left, right) => Number(right[1]) - Number(left[1]))[0]
+  return zoneLabel(busiest?.[0])
+})
+const visitorCount = computed(() => {
+  const areaId = props.state.currentArea || props.currentEvent?.payload?.areaId
+  const areaCount = areaId ? props.state.zoneCounts?.[areaId] : null
+  const explicit = props.currentEvent?.payload?.areaVisitorCount ?? props.state.areaVisitorCount
+  const visitorSnapshotCount = props.state.visitors?.length ? props.state.visitors.length : null
+  const value = props.currentEvent?.payload?.crowdCount ?? explicit ?? areaCount ?? props.currentEvent?.payload?.visitorCount ?? visitorSnapshotCount
+  return scenarioMetricText(value, value == null ? '' : ' 人')
+})
+const growthRate = computed(() => scenarioMetricText(props.state.garbageGenerationRateItemsPerHour, ' 件/h'))
+const fillPct = computed(() => scenarioMetricText(props.state.capacity?.currentFillPct ?? prediction.value?.currentFillPct, '%'))
+const fillSource = computed(() => props.state.capacity?.currentFillPct == null ? '' : `${displaySourceLabel(props.state.capacity.source)} · ${props.state.capacity.sourceEventType}`)
+const predictedFill = computed(() => scenarioMetricText(prediction.value?.predictedFillPct, '%'))
+const eta = computed(() => scenarioMetricText(prediction.value?.etaMinutes, ' 分钟'))
+const riskTone = computed(() => String(prediction.value?.riskLevel || '').toLowerCase())
+const routeReason = computed(() => {
+  const reason = props.state.route?.reason || ''
+  return ({ TEMPORARY_CROWD_BLOCKS_RETURN_ROUTE: '临时人群聚集阻断原返航路线' })[reason] || reason
+})
+const activityReason = computed(() => {
+  if (props.currentEvent?.eventType === 'ACTIVE_DISPOSAL') return '游客主动投放，行为事件不直接修改设备业务状态。'
+  if (props.currentEvent?.eventType === 'LITTER_CREATED') return '散落垃圾由回放事件触发后续机器人任务。'
+  if (props.currentEvent?.eventType === 'CROWD_FLOW_UPDATED') {
+    const payload = props.currentEvent.payload || {}
+    const phase = ({ APPROACHING: '接近道路节点', GATHERING: '逐步聚集', THRESHOLD_REACHED: '达到阻塞阈值', DISPERSING: '人群散开', DISPERSED: '道路占用恢复' })[payload.crowdPhase] || payload.crowdPhase
+    return `${phase || '人群变化'}：${payload.crowdCount ?? '—'} / ${payload.crowdThreshold ?? '—'} 人，占用 ${payload.occupancyPct == null ? '—' : Math.round(payload.occupancyPct * 100)}% / 阈值 ${payload.occupancyThresholdPct == null ? '—' : Math.round(payload.occupancyThresholdPct * 100)}%（回放数据）。`
+  }
+  return props.state.activity?.reason || props.state.activity?.behavior || props.currentEvent?.payload?.reason || ''
+})
+const routeMetrics = computed(() => {
+  const route = props.state.route || {}
+  const hasDistance = route.originalDistanceM != null || route.newDistanceM != null
+  const hasCost = route.originalCost != null || route.newCost != null
+  if (!hasDistance && !hasCost) return null
+  return {
+    distance: hasDistance ? `${route.originalDistanceM ?? '—'}m → ${route.newDistanceM ?? '—'}m` : '—',
+    cost: hasCost ? `${route.originalCost ?? '—'} → ${route.newCost ?? '—'}` : '—'
+  }
+})
+
+const allSeries = computed(() => [...(prediction.value?.historical || []), ...(prediction.value?.forecast || [])])
+const splitX = computed(() => chartX(Math.max(0, (prediction.value?.historical?.length || 1) - 1)))
+const historyPoints = computed(() => pointsFor(prediction.value?.historical || [], 0))
+const forecastPoints = computed(() => {
+  const historical = prediction.value?.historical || []
+  const forecast = prediction.value?.forecast || []
+  const joined = historical.length && forecast.length ? [historical[historical.length - 1], ...forecast] : forecast
+  return pointsFor(joined, Math.max(0, historical.length - 1))
+})
+
+function chartX(index) {
+  const maxIndex = Math.max(1, allSeries.value.length - 1)
+  return 8 + index / maxIndex * 244
+}
+function chartY(value) { return 66 - Math.max(0, Math.min(100, Number(value) || 0)) / 100 * 56 }
+function pointsFor(series, offset) { return series.map((item, index) => `${chartX(index + offset)},${chartY(item.value)}`).join(' ') }
+</script>
+
+<style scoped>
+.analytics-panel { flex: 0 0 auto; padding: 10px 11px; overflow: hidden; }
+.analytics-head,.prediction-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }.analytics-head > view:first-child text,.analytics-head > view:first-child small { display: block; }.analytics-head text { color: #e7f8ff; font-size: 10px; font-weight: 750; }.analytics-head small { margin-top: 2px; color: #7fa8ba; font-size: 7px; }.analytics-tags { display: flex; gap: 3px; }.analytics-tags b { padding: 2px 4px; border: 1px solid rgba(245,182,72,.42); border-radius: 3px; color: #ffd57c; background: rgba(121,77,11,.28); font: 700 6px/1 ui-monospace,Consolas,monospace; }
+.metric-grid { margin-top: 8px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; }.metric-grid view { min-width: 0; padding: 5px 6px; border: 1px solid rgba(116,197,255,.14); border-radius: 5px; background: rgba(10,43,65,.56); }.metric-grid small,.metric-grid b,.metric-grid em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.metric-grid small { color: #719aad; font-size: 6px; }.metric-grid b { margin-top: 2px; color: #e3f7ff; font-size: 8px; }.metric-grid em { margin-top: 2px; color: #7eb4ca; font: 5px/1.1 ui-monospace,Consolas,monospace; font-style: normal; }
+.prediction-block { margin-top: 7px; padding: 7px; border: 1px solid rgba(116,197,255,.14); border-radius: 6px; background: rgba(3,25,40,.62); }.prediction-title text { color: #a8cedd; font-size: 8px; }.prediction-title b { padding: 2px 5px; border-radius: 4px; color: #bfe7f6; background: rgba(28,101,145,.5); font-size: 7px; }.prediction-title b.high,.prediction-title b.critical { color: #ffd5d5; background: rgba(175,47,56,.7); }.prediction-title b.medium { color: #ffe4a8; background: rgba(145,90,14,.68); }.prediction-title b.low { color: #aef4cf; background: rgba(16,112,71,.66); }
+.prediction-chart { width: 100%; height: 72px; margin-top: 3px; overflow: visible; }.chart-axis { stroke: rgba(154,207,233,.25); stroke-width: 1; }.risk-line { stroke: rgba(255,93,102,.35); stroke-width: 1; stroke-dasharray: 3 3; }.split-line { stroke: rgba(222,244,255,.24); stroke-width: 1; stroke-dasharray: 2 3; }.chart-line { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }.chart-line.history { stroke: #69a9d2; }.chart-line.forecast { stroke: #f5b648; stroke-dasharray: 5 4; filter: drop-shadow(0 0 3px rgba(245,182,72,.5)); }.chart-legend { display: flex; align-items: center; gap: 8px; color: #86adbf; font-size: 6px; }.chart-legend text { display: flex; align-items: center; gap: 3px; }.chart-legend i { width: 12px; border-top: 2px solid; }.chart-legend i.history { border-color: #69a9d2; }.chart-legend i.forecast { border-color: #f5b648; border-top-style: dashed; }.chart-legend small { margin-left: auto; color: #ffd57c; font: 6px/1 ui-monospace,Consolas,monospace; }
+.prediction-empty { margin-top: 7px; padding: 8px; border: 1px dashed rgba(116,197,255,.18); border-radius: 6px; color: #688fa1; font-size: 7px; line-height: 1.5; }.reason-block { margin-top: 7px; padding: 7px; border-left: 2px solid #24d9ff; border-radius: 0 5px 5px 0; background: rgba(15,65,90,.36); }.reason-block small,.reason-block text { display: block; }.reason-block small { color: #719bac; font-size: 6px; }.reason-block text { margin-top: 3px; color: #d8edf6; font-size: 7px; line-height: 1.45; }.route-metrics { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 3px; }.route-metrics b { padding: 2px 4px; border-radius: 3px; color: #9bdcf1; background: rgba(26,100,130,.5); font: 6px/1.2 ui-monospace,Consolas,monospace; }
+@media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }.prediction-chart { height: 90px; } }
+@media (max-width: 560px) { .metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+</style>

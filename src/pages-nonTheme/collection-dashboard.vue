@@ -31,6 +31,7 @@
           </view>
           <view v-if="monitor.active" class="btn ghost" @tap="openSortingCenterMonitor">分拣中心进度</view>
           <view class="btn ghost nav-link-btn" @tap="goToCommunity">🏙 社区治理大屏</view>
+          <view class="btn ghost nav-link-btn" @tap="goToDigitalTwinReplay">数字孪生回放</view>
           <view v-if="!monitor.active" class="btn blue" @tap="doRefresh">立即刷新</view>
           <view class="btn ghost" @tap="goBack">返回</view>
         </view>
@@ -378,44 +379,106 @@
       <view class="panel sorting-hero">
         <view class="sorting-head">
           <view>
-            <view class="scene-kicker">SORTING CENTER · 分拣清洗实时进度</view>
             <view class="telemetry-title">中山公园分拣中心</view>
-            <view class="telemetry-location">返航桶 {{ monitor.returnBinCode }} · 当前点位 {{ monitor.pointCode }}</view>
+            <view class="telemetry-location"><text class="live-dot"></text>分拣清洗实时进度 · 返航桶 {{ monitor.returnBinCode }} · 当前点位 {{ monitor.pointCode }}</view>
           </view>
           <view class="sorting-actions">
             <view class="btn ghost" @tap="backToDispatchMonitor">返回调度监测</view>
             <view class="btn blue" @tap="exitMonitor">退出监测</view>
           </view>
         </view>
-        <view class="sorting-summary">
-          <view><text>待分拣</text><b>{{ monitor.sortingSummary.waiting }}</b></view>
-          <view><text>清洗中</text><b>{{ monitor.sortingSummary.cleaning }}</b></view>
-          <view><text>已清洁待命</text><b>{{ monitor.sortingSummary.ready }}</b></view>
-          <view><text>异常滞留</text><b>{{ monitor.sortingSummary.blocked }}</b></view>
-        </view>
         <view class="sorting-body">
-          <view class="sorting-progress">
-            <view class="block-title">返航桶清洗状态 <text class="note">{{ monitor.returnBinCode }}</text></view>
-            <view class="monitor-timeline sorting-line">
-              <view v-for="item in monitor.sortingTimeline" :key="item.key" :class="['monitor-tl-step', item.state]">
-                <text class="monitor-tl-dot"></text><text>{{ item.label }}</text>
+          <view class="sorting-twin">
+            <view class="twin-toolbar">
+              <view>
+                <text class="twin-title">分拣中心数字孪生</text>
+                <text class="twin-sub">设备与作业分区实时映射</text>
+              </view>
+              <view class="twin-toolbar-status">
+                <view class="twin-state-tabs">
+                  <text :class="{ active: sortingVisualState.key === 'intake' }">入站</text>
+                  <text :class="{ active: sortingVisualState.key === 'washing' }">清洗</text>
+                  <text :class="{ active: sortingVisualState.key === 'inspection' }">质检</text>
+                </view>
+                <view class="twin-online"><text></text>{{ sortingVisualState.label }}</view>
               </view>
             </view>
-            <view class="sorting-card active">
-              <view class="task-top"><text>{{ monitor.returnBinCode }} 清洗进度</text><text class="task-chip">{{ monitor.sortingStatus }}</text></view>
-              <view class="task-route">分拣中心 · 倾倒称重 / 内壁清洗 / 消毒烘干 / 电量检测</view>
-              <view class="metric-track"><view class="metric-progress replace" :style="{ width: monitor.sortingProgress + '%' }"></view></view>
-              <view class="task-meta"><text>{{ monitor.sortingStageText }}</text><text>{{ monitor.sortingProgress.toFixed(0) }}%</text></view>
+            <view class="twin-canvas">
+              <image :class="['twin-image', { active: sortingVisualState.key === 'intake' }]" src="/static/sorting-center/facility-intake.png" mode="aspectFit"></image>
+              <image :class="['twin-image', { active: sortingVisualState.key === 'washing' }]" src="/static/sorting-center/facility-washing.png" mode="aspectFit"></image>
+              <image :class="['twin-image', { active: sortingVisualState.key === 'inspection' }]" src="/static/sorting-center/facility-inspection.png" mode="aspectFit"></image>
+              <view :class="['operation-layer', 'stage-' + sortingOperation.key]">
+                <view class="weigh-operation">
+                  <view class="weigh-deck"></view>
+                  <text>{{ sortingOperation.key === 'weigh' ? n(monitor.weight, 0).toFixed(1) + ' kg' : 'RFID 识别' }}</text>
+                </view>
+                <view class="wash-operation"><text></text><text></text><text></text></view>
+                <view class="dry-operation"><view></view><text>热风烘干</text></view>
+                <view class="check-operation"><view></view><text>电量 {{ n(monitor.battery, 0).toFixed(0) }}%</text></view>
+                <view class="pool-operation"><text>入库</text><view></view></view>
+                <view class="workpiece" :style="sortingWorkpieceStyle">
+                  <view class="workpiece-bin"><text></text><text></text></view>
+                  <b>{{ monitor.returnBinCode }}</b>
+                </view>
+              </view>
+              <view :class="['zone-tag', 'zone-weigh', { active: monitor.sortingStageText.includes('抵达') || monitor.sortingStageText.includes('称重') }]">
+                <text class="zone-pulse"></text><text>卸载称重区</text>
+              </view>
+              <view :class="['zone-tag', 'zone-wash', { active: monitor.sortingStageText.includes('清洗') || monitor.sortingStageText.includes('烘干') }]">
+                <text class="zone-pulse"></text><text>清洗消毒线</text>
+              </view>
+              <view :class="['zone-tag', 'zone-check', { active: monitor.sortingStageText.includes('电量') }]">
+                <text class="zone-pulse"></text><text>电检质检区</text>
+              </view>
+              <view :class="['zone-tag', 'zone-pool', { active: monitor.sortingStageText.includes('投放') }]">
+                <text class="zone-pulse"></text><text>备用池</text>
+              </view>
+              <view class="twin-flow">
+                <text>作业进度</text>
+                <view class="flow-line">
+                  <view class="flow-progress" :style="{ width: monitor.sortingProgress + '%' }"></view>
+                  <text class="flow-dot" :style="{ left: 'calc(' + monitor.sortingProgress + '% - 4px)' }"></text>
+                </view>
+                <b>{{ monitor.sortingStageText }} · {{ sortingOperation.progress.toFixed(0) }}%</b>
+              </view>
             </view>
           </view>
-          <view class="sorting-queue">
-            <view class="block-title">桶体队列 <text class="note">备用池同步</text></view>
-            <scroll-view class="list" scroll-y>
-              <view v-for="item in monitor.sortingQueue" :key="'sort-q-' + item.id" :class="['sorting-card', item.kind]">
-                <view class="task-top"><text>{{ item.title }}</text><text class="task-chip">{{ item.state }}</text></view>
-                <view class="task-route">{{ item.desc }}</view>
+
+          <view class="sorting-rail">
+            <view class="sorting-summary">
+              <view class="waiting"><text>待分拣</text><b>{{ monitor.sortingSummary.waiting }}</b></view>
+              <view class="cleaning"><text>清洗中</text><b>{{ monitor.sortingSummary.cleaning }}</b></view>
+              <view class="ready"><text>已清洁待命</text><b>{{ monitor.sortingSummary.ready }}</b></view>
+              <view class="blocked"><text>异常滞留</text><b>{{ monitor.sortingSummary.blocked }}</b></view>
+            </view>
+
+            <view class="sorting-progress">
+              <view class="block-title">返航桶清洗状态 <text class="note">{{ monitor.returnBinCode }}</text></view>
+              <view class="sorting-line">
+                <view v-for="(item, index) in monitor.sortingTimeline" :key="item.key" :class="['sorting-step', item.state]">
+                  <view class="sorting-step-node"><text>{{ index + 1 }}</text></view>
+                  <text class="sorting-step-label">{{ item.label }}</text>
+                </view>
               </view>
-            </scroll-view>
+              <view class="sorting-card active">
+                <view class="task-top"><text>{{ monitor.returnBinCode }} · {{ monitor.sortingStageText }}</text><text class="task-chip">{{ monitor.sortingStatus }}</text></view>
+                <view class="stage-detail">当前进度由分拣中心设备状态实时推演</view>
+                <view class="sorting-progress-row"><view class="metric-track"><view class="metric-progress replace" :style="{ width: monitor.sortingProgress + '%' }"></view></view><b>{{ monitor.sortingProgress.toFixed(0) }}%</b></view>
+              </view>
+            </view>
+
+            <view class="sorting-queue">
+              <view class="block-title">桶体队列 <text class="note">备用池同步</text></view>
+              <scroll-view class="list" scroll-y>
+                <view v-for="item in monitor.sortingQueue" :key="'sort-q-' + item.id" :class="['sorting-card', item.kind]">
+                  <view class="queue-copy">
+                    <view class="task-top"><text>{{ item.title }}</text><text class="task-chip">{{ item.state }}</text></view>
+                    <view class="task-route">{{ item.desc }}</view>
+                  </view>
+                  <view class="queue-arrow"></view>
+                </view>
+              </scroll-view>
+            </view>
           </view>
         </view>
       </view>
@@ -693,6 +756,40 @@ const monitor = reactive({
   sortingSummary: { waiting: 1, cleaning: 0, ready: 2, blocked: 0 }
 })
 const riskMonitorBins = computed(() => monitor.riskBins)
+const sortingVisualState = computed(() => {
+  const stage = String(monitor.sortingStageText || '')
+  if (stage.includes('清洗') || stage.includes('烘干')) {
+    return { key: 'washing', label: '清洗消毒运行' }
+  }
+  if (stage.includes('电量') || stage.includes('投放') || monitor.sortingProgress >= 82) {
+    return { key: 'inspection', label: '电检质检运行' }
+  }
+  return { key: 'intake', label: '入站称重运行' }
+})
+const SORTING_OPERATION_STEPS = [
+  { key: 'arrive', at: 0, nextAt: 1200, x: 18, y: 57 },
+  { key: 'weigh', at: 1200, nextAt: 3200, x: 24, y: 55 },
+  { key: 'wash', at: 3200, nextAt: 5600, x: 43, y: 52 },
+  { key: 'dry', at: 5600, nextAt: 7400, x: 57, y: 61 },
+  { key: 'battery', at: 7400, nextAt: 9000, x: 70, y: 60 },
+  { key: 'ready', at: 9000, nextAt: 9000, x: 82, y: 66 }
+]
+const sortingOperation = computed(() => {
+  const elapsed = clamp(monitor.sortingProgress / 100 * 9000, 0, 9000)
+  let current = SORTING_OPERATION_STEPS[0]
+  SORTING_OPERATION_STEPS.forEach(step => {
+    if (elapsed >= step.at) current = step
+  })
+  const duration = Math.max(1, current.nextAt - current.at)
+  return {
+    ...current,
+    progress: current.key === 'ready' ? 100 : clamp((elapsed - current.at) / duration * 100, 0, 100)
+  }
+})
+const sortingWorkpieceStyle = computed(() => ({
+  left: `${sortingOperation.value.x}%`,
+  top: `${sortingOperation.value.y}%`
+}))
 const faultCenter = reactive({
   open: false,
   loading: false,
@@ -738,14 +835,31 @@ function interpolatePoint(from, to, progress) {
 function pointAlongRoute(route, progress) {
   if (!Array.isArray(route) || route.length < 2) return null
   const p = clamp(progress, 0, 1)
-  const scaled = p * (route.length - 1)
-  const index = Math.min(route.length - 2, Math.floor(scaled))
-  const local = scaled - index
-  return interpolatePoint(
-    { latitude: route[index][0], longitude: route[index][1] },
-    { latitude: route[index + 1][0], longitude: route[index + 1][1] },
-    local
-  )
+  const segmentLengths = []
+  let totalLength = 0
+  for (let index = 0; index < route.length - 1; index += 1) {
+    const from = route[index]
+    const to = route[index + 1]
+    const avgLatRad = ((n(from[0], 0) + n(to[0], 0)) / 2) * Math.PI / 180
+    const latMeters = (n(to[0], 0) - n(from[0], 0)) * 111320
+    const lngMeters = (n(to[1], 0) - n(from[1], 0)) * 111320 * Math.cos(avgLatRad)
+    const length = Math.max(Math.hypot(latMeters, lngMeters), 0.001)
+    segmentLengths.push(length)
+    totalLength += length
+  }
+  let remaining = totalLength * p
+  for (let index = 0; index < segmentLengths.length; index += 1) {
+    const length = segmentLengths[index]
+    if (remaining <= length || index === segmentLengths.length - 1) {
+      return interpolatePoint(
+        { latitude: route[index][0], longitude: route[index][1] },
+        { latitude: route[index + 1][0], longitude: route[index + 1][1] },
+        clamp(remaining / length, 0, 1)
+      )
+    }
+    remaining -= length
+  }
+  return { latitude: route[route.length - 1][0], longitude: route[route.length - 1][1] }
 }
 
 // ─── KPI 历史 ──────────────────────────────────────────
@@ -1207,6 +1321,45 @@ function drawMap(force) {
     _state.shouldFitMap = false
   }
 }
+
+function updateH5DispatchLayers(elapsed) {
+  if (!_state.mapInstance || !window.TMap || !_state.monitorMarkers || !monitor.routeAvailable) return false
+  const TMap = window.TMap
+  const returnProgress = clamp((elapsed - 1000) / 17500, 0, 1)
+  const replaceProgress = clamp((elapsed - 2500) / 11000, 0, 1)
+  const returnPosition = pointAlongRoute(monitor.returnRoute, returnProgress)
+  const replacePosition = pointAlongRoute(monitor.replaceRoute, replaceProgress)
+  const geometries = [
+    { id: 'sorting-center', styleId: 'sorting', position: new TMap.LatLng(monitor.sortingCenter.latitude, monitor.sortingCenter.longitude) },
+    { id: 'standby-area', styleId: 'standby', position: new TMap.LatLng(monitor.standbyArea.latitude, monitor.standbyArea.longitude) }
+  ]
+  if (returnProgress < 1 && returnPosition) {
+    geometries.push({ id: 'returning-bin', styleId: 'returning', position: new TMap.LatLng(returnPosition.latitude, returnPosition.longitude) })
+  }
+  if (replacePosition) {
+    geometries.push({ id: 'replacement-bin', styleId: 'replacing', position: new TMap.LatLng(replacePosition.latitude, replacePosition.longitude) })
+  }
+
+  if (typeof _state.monitorMarkers.setGeometries === 'function') {
+    _state.monitorMarkers.setGeometries(geometries)
+  } else if (typeof _state.monitorMarkers.updateGeometries === 'function') {
+    _state.monitorMarkers.updateGeometries(geometries)
+  } else {
+    return false
+  }
+
+  const targetIndex = (_state.bins || []).findIndex(bin => String(bin.id) === String(monitor.binId))
+  if (targetIndex >= 0 && _state.binMarkers && typeof _state.binMarkers.updateGeometries === 'function') {
+    const bin = _state.bins[targetIndex]
+    _state.binMarkers.updateGeometries([{
+      id: `bin-${bin.id}-${targetIndex}`,
+      styleId: monitor.pointStateCls === 'available' ? 'green' : 'red',
+      position: new TMap.LatLng(n(bin.latitude, 0), n(bin.longitude, 0)),
+      properties: { i: targetIndex }
+    }])
+  }
+  return true
+}
 // #endif
 
 // ─── 交互：聚焦 bin / stop ────────────────────────────
@@ -1381,6 +1534,7 @@ async function doRefresh(options) {
 let monitorTimer = null
 let monitorStartedAt = 0
 let monitorLastMapDraw = 0
+let monitorAnimationFrame = null
 const MONITOR_TOTAL_MS = 19000
 const DISPATCH_STAGE_RANK = { '异常告警': 0, '返航中': 1, '待补位': 2, '可用': 3, '处置完成': 4 }
 const PARK_POINTS = {
@@ -1443,6 +1597,34 @@ function setFaultItems(items) {
 function clearMonitorTimer() {
   if (monitorTimer) clearInterval(monitorTimer)
   monitorTimer = null
+  // #ifdef H5
+  if (monitorAnimationFrame !== null && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(monitorAnimationFrame)
+  }
+  monitorAnimationFrame = null
+  // #endif
+}
+
+function startDispatchMapAnimation() {
+  // #ifdef H5
+  if (monitorAnimationFrame !== null || typeof requestAnimationFrame !== 'function') return
+  const animate = () => {
+    if (!monitor.active || monitor.scene !== 'dispatch' || !monitor.routeAvailable || monitor.completed) {
+      monitorAnimationFrame = null
+      return
+    }
+    const elapsed = Date.now() - monitorStartedAt
+    if (_state.mapReady && !updateH5DispatchLayers(elapsed)) {
+      drawMap(true)
+      if (!updateH5DispatchLayers(elapsed)) {
+        monitorAnimationFrame = null
+        return
+      }
+    }
+    monitorAnimationFrame = requestAnimationFrame(animate)
+  }
+  monitorAnimationFrame = requestAnimationFrame(animate)
+  // #endif
 }
 
 function monitorTime(offsetMs) {
@@ -1796,9 +1978,6 @@ function updateDispatchMonitor() {
 
   if (Date.now() - monitorLastMapDraw >= 250) {
     monitorLastMapDraw = Date.now()
-    // #ifdef H5
-    if (_state.mapReady) drawMap(true)
-    // #endif
     // #ifndef H5
     buildMpMapData()
     // #endif
@@ -1814,7 +1993,7 @@ function updateDispatchMonitor() {
     setStatus('调度处置完成：返航与补位任务已闭环', 'ok')
     if (monitor.scene !== 'sorting' || monitor.sortingProgress >= 100) clearMonitorTimer()
     // #ifdef H5
-    if (_state.mapReady) drawMap(true)
+    if (_state.mapReady) updateH5DispatchLayers(elapsed)
     // #endif
   }
 }
@@ -1913,6 +2092,10 @@ async function startDispatchMonitor() {
     setStatus('调度监测中：返航与补位任务协同执行', 'warn')
     monitorTimer = setInterval(updateDispatchMonitor, 100)
     updateDispatchMonitor()
+    // #ifdef H5
+    if (_state.mapReady) drawMap(true)
+    startDispatchMapAnimation()
+    // #endif
   } catch (error) {
     monitor.returnRoute = TENCENT_ROUTE_SNAPSHOT.returnRoute.polyline
     monitor.replaceRoute = TENCENT_ROUTE_SNAPSHOT.replacementRoute.polyline
@@ -1924,12 +2107,13 @@ async function startDispatchMonitor() {
       '路径服务连接恢复后将自动切换实时规划'
     ]
     monitorStartedAt = Date.now()
+    _state.shouldFitMap = true
     setStatus('调度监测中：当前使用腾讯步行路径快照', 'warn')
     monitorTimer = setInterval(updateDispatchMonitor, 100)
     updateDispatchMonitor()
-    _state.shouldFitMap = true
     // #ifdef H5
     if (_state.mapReady) drawMap(true)
+    startDispatchMapAnimation()
     // #endif
   }
 }
@@ -1970,6 +2154,7 @@ function backToDispatchMonitor() {
   setStatus('调度监测中：返航与补位任务协同执行', 'warn')
   // #ifdef H5
   if (_state.mapReady) drawMap(true)
+  startDispatchMapAnimation()
   // #endif
 }
 
@@ -2003,6 +2188,9 @@ function openNav(url) {
 }
 function goToCommunity() {
   jumpToAdminPage('communityDashboard', { from: 'collectionDashboard' })
+}
+function goToDigitalTwinReplay() {
+  jumpToAdminPage('digitalTwinReplay', { from: 'collectionDashboard' })
 }
 function goBack() {
   goBackFromAdminPage('collectionDashboard')
@@ -2273,7 +2461,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 /* ===== 风险预警遥测 ===== */
 .screen .telemetry-scene { flex: 1; min-height: 0; display: flex; gap: 10px; }
 .screen .telemetry-selector {
-  width: 300px; flex: 0 0 300px; min-height: 0; padding: 12px;
+  width: clamp(240px, 24vw, 300px); flex: 0 1 clamp(240px, 24vw, 300px); min-height: 0; padding: 12px;
   display: flex; flex-direction: column; gap: 10px;
 }
 .screen .risk-monitor-item {
@@ -2371,10 +2559,10 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 
 /* ===== 主体三列 ===== */
 .screen .main { flex: 1; min-height: 0; display: flex; gap: 10px; }
-.screen .col { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-.screen .col.left { width: 22%; min-width: 180px; }
-.screen .col.center { flex: 1; min-width: 300px; }
-.screen .col.right { width: 22%; min-width: 180px; }
+.screen .col { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+.screen .col.left { width: 22%; flex: 0 1 22%; min-width: 0; }
+.screen .col.center { flex: 1; min-width: 0; }
+.screen .col.right { width: 22%; flex: 0 1 22%; min-width: 0; }
 
 /* ===== block ===== */
 .screen .block {
@@ -2435,8 +2623,8 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 }
 
 /* ===== 预测柱状图 ===== */
-.screen .bars { display: flex; gap: 8px; align-items: flex-end; flex: 1; min-height: 100px; }
-.screen .bar { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1; }
+.screen .bars { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; align-items: end; flex: 1; min-height: 100px; min-width: 0; overflow: hidden; }
+.screen .bar { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
 .screen .bar-shell {
   width: 100%; max-width: 34px; height: 100px;
   border: 1px solid rgba(129,197,242,.26); border-radius: 8px;
@@ -2451,7 +2639,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 }
 .screen .bar-fill.alert { background: linear-gradient(180deg, #ff8f41, #ff5d66); }
 .screen .bar-val { font-size: 12px; }
-.screen .bar-name { font-size: 10px; color: #84acbf; max-width: 52px; overflow: hidden; text-align: center; }
+.screen .bar-name { font-size: 10px; color: #84acbf; max-width: 100%; overflow: hidden; text-align: center; white-space: nowrap; text-overflow: ellipsis; }
 
 /* ===== 点位状态表 ===== */
 .screen .slot-status-panel { flex: 1.05; }
@@ -2620,33 +2808,141 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 /* ===== 分拣中心进度 ===== */
 .screen .sorting-scene { flex: 1; min-height: 0; display: flex; }
 .screen .sorting-hero {
-  flex: 1; min-height: 0; padding: 18px 22px; display: flex; flex-direction: column; gap: 14px;
-  background:
-    radial-gradient(780px 420px at 24% 40%, rgba(36,217,255,.12), transparent 64%),
-    linear-gradient(150deg, rgba(7,28,45,.94), rgba(8,39,59,.92));
+  flex: 1; min-height: 0; padding: 15px 18px 18px; display: flex; flex-direction: column; gap: 13px;
+  border-color: rgba(80,173,225,.3);
+  background: linear-gradient(145deg, rgba(5,24,39,.98), rgba(6,32,50,.97));
+  box-shadow: inset 0 1px rgba(178,229,255,.04), 0 18px 46px rgba(0,8,18,.2);
 }
-.screen .sorting-head { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.screen .sorting-head { min-height: 48px; display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.screen .sorting-head .telemetry-title { font-size: 24px; letter-spacing: -.3px; }
+.screen .sorting-head .telemetry-location { margin-top: 5px; display: flex; align-items: center; gap: 7px; }
+.screen .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #2de6a6; box-shadow: 0 0 0 4px rgba(45,230,166,.1), 0 0 12px rgba(45,230,166,.7); }
 .screen .sorting-actions { display: flex; gap: 8px; align-items: center; }
-.screen .sorting-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.screen .sorting-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.48fr) minmax(460px, 1fr); gap: 13px; }
+
+.screen .sorting-twin {
+  min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid rgba(77,170,220,.3); border-radius: 15px; background: #061a2a;
+  box-shadow: inset 0 0 42px rgba(18,118,170,.07);
+}
+.screen .twin-toolbar { height: 48px; padding: 0 15px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(88,174,220,.2); background: rgba(8,31,48,.86); }
+.screen .twin-title, .screen .twin-sub { display: block; }
+.screen .twin-title { font-size: 13px; font-weight: 760; color: #e9f8ff; }
+.screen .twin-sub { margin-top: 3px; font-size: 9px; color: #7195a9; }
+.screen .twin-toolbar-status { display: flex; align-items: center; gap: 13px; }
+.screen .twin-state-tabs { display: flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid rgba(89,172,214,.2); border-radius: 7px; background: rgba(4,20,32,.68); }
+.screen .twin-state-tabs text { padding: 3px 7px; border-radius: 5px; color: #66899b; font-size: 8px; transition: color .35s, background .35s, box-shadow .35s; }
+.screen .twin-state-tabs text.active { color: #eaffff; background: rgba(40,204,235,.18); box-shadow: inset 0 0 0 1px rgba(53,221,255,.26); }
+.screen .twin-online { display: flex; align-items: center; gap: 6px; font-size: 9px; color: #66e9c0; }
+.screen .twin-online text { width: 6px; height: 6px; border-radius: 50%; background: #2de6a6; box-shadow: 0 0 9px rgba(45,230,166,.8); }
+.screen .twin-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; background: radial-gradient(circle at 50% 48%, rgba(18,93,130,.12), transparent 58%), #041522; }
+.screen .twin-image { position: absolute; inset: 2% 2% 5%; width: 96%; height: 93%; opacity: 0; transform: scale(1.018); filter: saturate(.9) brightness(.84); transition: opacity .8s ease, filter .8s ease; will-change: opacity, filter; }
+.screen .twin-image.active { opacity: 1; filter: saturate(1.05) brightness(1); }
+.screen .operation-layer { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
+.screen .workpiece { position: absolute; display: flex; align-items: center; gap: 6px; transform: translate(-50%, -50%); transition: left .8s cubic-bezier(.22,.8,.24,1), top .8s cubic-bezier(.22,.8,.24,1); }
+.screen .workpiece b { padding: 3px 6px; border: 1px solid rgba(100,229,255,.72); border-radius: 5px; color: #e8fbff; font-size: 8px; font-weight: 700; background: rgba(3,25,39,.9); box-shadow: 0 0 13px rgba(42,212,245,.24); }
+.screen .workpiece-bin { position: relative; width: 15px; height: 18px; border: 1px solid #92ecff; border-radius: 3px 3px 5px 5px; background: rgba(27,185,214,.55); box-shadow: 0 0 11px rgba(47,224,255,.58); }
+.screen .workpiece-bin::before { content: ''; position: absolute; left: 1px; right: 1px; top: -4px; height: 3px; border: 1px solid #92ecff; border-radius: 2px; }
+.screen .workpiece-bin text { position: absolute; bottom: -4px; width: 4px; height: 4px; border-radius: 50%; background: #b5f5ff; }
+.screen .workpiece-bin text:first-child { left: 1px; }
+.screen .workpiece-bin text:last-child { right: 1px; }
+.screen .weigh-operation, .screen .wash-operation, .screen .dry-operation, .screen .check-operation, .screen .pool-operation { position: absolute; opacity: 0; transition: opacity .25s; }
+.screen .weigh-operation { left: 14%; top: 65%; width: 19%; height: 7%; text-align: center; }
+.screen .weigh-deck { height: 3px; border-radius: 50%; background: #42dfff; box-shadow: 0 0 13px rgba(66,223,255,.8); }
+.screen .weigh-operation text { display: inline-block; margin-top: 5px; padding: 2px 5px; border-radius: 4px; color: #bff5ff; font-size: 8px; background: rgba(3,24,38,.86); }
+.screen .stage-arrive .weigh-operation, .screen .stage-weigh .weigh-operation { opacity: 1; }
+.screen .stage-weigh .weigh-deck { animation: weighDeck 1.2s ease-in-out infinite; }
+.screen .wash-operation { left: 37%; top: 35%; width: 12%; height: 27%; display: flex; justify-content: space-around; overflow: hidden; }
+.screen .wash-operation text { width: 2px; height: 32%; border-radius: 0 0 4px 4px; background: linear-gradient(#a9f7ff, rgba(62,218,255,.05)); box-shadow: 0 0 7px rgba(78,225,255,.8); transform-origin: top; }
+.screen .stage-wash .wash-operation { opacity: 1; }
+.screen .stage-wash .wash-operation text { animation: washJet .7s ease-in-out infinite alternate; }
+.screen .stage-wash .wash-operation text:nth-child(2) { animation-delay: -.22s; }
+.screen .stage-wash .wash-operation text:nth-child(3) { animation-delay: -.44s; }
+.screen .dry-operation { left: 50%; top: 48%; width: 14%; height: 17%; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.screen .dry-operation view { width: 23px; height: 23px; border: 2px dashed rgba(255,184,91,.9); border-radius: 50%; box-shadow: 0 0 12px rgba(255,155,61,.42); }
+.screen .dry-operation text { color: #ffd39b; font-size: 8px; }
+.screen .stage-dry .dry-operation { opacity: 1; }
+.screen .stage-dry .dry-operation view { animation: dryFan .75s linear infinite; }
+.screen .check-operation { left: 64%; top: 45%; width: 14%; height: 24%; overflow: hidden; border: 1px solid rgba(74,236,178,.36); border-radius: 5px; }
+.screen .check-operation view { position: absolute; left: 5%; right: 5%; top: 0; height: 2px; background: #55f0b7; box-shadow: 0 0 9px rgba(85,240,183,.9); }
+.screen .check-operation text { position: absolute; right: 4px; bottom: 3px; color: #aef7d7; font-size: 8px; }
+.screen .stage-battery .check-operation { opacity: 1; }
+.screen .stage-battery .check-operation view { animation: checkScan 1.5s ease-in-out infinite; }
+.screen .pool-operation { right: 9%; top: 58%; display: flex; align-items: center; gap: 5px; color: #9af4c8; font-size: 8px; }
+.screen .pool-operation view { width: 18px; height: 1px; background: #49e7a5; }
+.screen .pool-operation view::after { content: ''; display: block; width: 5px; height: 5px; margin-left: 12px; margin-top: -3px; border-top: 1px solid #49e7a5; border-right: 1px solid #49e7a5; transform: rotate(45deg); }
+.screen .stage-ready .pool-operation { opacity: 1; animation: poolRelease .8s ease-out both; }
+.screen .zone-tag { position: absolute; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid rgba(77,191,238,.34); border-radius: 7px; color: #9fc3d4; font-size: 9px; font-weight: 650; background: rgba(5,24,38,.84); box-shadow: 0 7px 18px rgba(0,10,20,.25); transition: border-color .25s, color .25s, box-shadow .25s, transform .25s; }
+.screen .zone-tag::after { content: ''; position: absolute; left: 18px; top: 100%; width: 1px; height: 30px; background: linear-gradient(rgba(60,214,255,.55), transparent); }
+.screen .zone-tag.active { color: #e8fbff; border-color: #35dfff; box-shadow: 0 0 20px rgba(29,202,242,.2); transform: translateY(-2px); }
+.screen .zone-pulse { width: 7px; height: 7px; border-radius: 50%; background: #5a7c8d; }
+.screen .zone-tag.active .zone-pulse { background: #35ddff; box-shadow: 0 0 0 5px rgba(53,221,255,.12), 0 0 12px rgba(53,221,255,.8); animation: zonePulse 1.8s ease-in-out infinite; }
+.screen .zone-weigh { left: 8%; top: 29%; }
+.screen .zone-wash { left: 35%; top: 32%; }
+.screen .zone-check { left: 64%; top: 38%; }
+.screen .zone-pool { right: 5%; top: 57%; }
+.screen .twin-flow { position: absolute; z-index: 3; left: 16px; right: 16px; bottom: 13px; height: 35px; padding: 0 11px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(77,174,218,.24); border-radius: 8px; background: rgba(4,21,34,.88); color: #759bad; font-size: 9px; }
+.screen .twin-flow b { color: #d5f6ff; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.screen .flow-line { position: relative; flex: 1; height: 2px; overflow: visible; border-radius: 2px; background: rgba(61,116,139,.35); }
+.screen .flow-progress { position: absolute; inset: 0 auto 0 0; max-width: 100%; border-radius: inherit; background: #35dfff; box-shadow: 0 0 8px rgba(53,223,255,.55); transition: width .25s linear; }
+.screen .flow-dot { position: absolute; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #53e9ff; box-shadow: 0 0 0 3px rgba(83,233,255,.13), 0 0 12px rgba(83,233,255,.9); transition: left .25s linear; }
+
+.screen .sorting-rail { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(225px, .94fr) minmax(210px, 1.06fr); gap: 10px; }
+.screen .sorting-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
 .screen .sorting-summary view {
-  padding: 12px; border-radius: 12px; border: 1px solid rgba(124,198,244,.22);
-  background: rgba(9,31,48,.78);
+  min-width: 0; padding: 10px 11px 9px; border-radius: 10px; border: 1px solid rgba(124,198,244,.2); background: rgba(8,29,45,.82);
 }
 .screen .sorting-summary text, .screen .sorting-summary b { display: block; }
-.screen .sorting-summary text { color: var(--muted); font-size: 11px; }
-.screen .sorting-summary b { font-size: 28px; margin-top: 5px; }
-.screen .sorting-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.2fr .8fr; gap: 12px; }
+.screen .sorting-summary text { color: var(--muted); font-size: 9px; white-space: nowrap; }
+.screen .sorting-summary b { font-size: 24px; line-height: 1; margin-top: 7px; }
+.screen .sorting-summary .cleaning b { color: #47ddff; }
+.screen .sorting-summary .ready { border-color: rgba(34,205,139,.28); }
+.screen .sorting-summary .ready b { color: #45dfa5; }
+.screen .sorting-summary .blocked b { color: #ff6b71; }
 .screen .sorting-progress, .screen .sorting-queue {
-  min-height: 0; padding: 14px; border-radius: 14px; border: 1px solid rgba(123,202,255,.2);
-  background: rgba(7,26,41,.72); display: flex; flex-direction: column; gap: 12px;
+  min-height: 0; padding: 13px; border-radius: 13px; border: 1px solid rgba(123,202,255,.2); background: rgba(6,24,38,.78); display: flex; flex-direction: column; gap: 11px;
 }
-.screen .sorting-line { min-height: 90px; }
+.screen .sorting-line { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; padding: 7px 1px 2px; }
+.screen .sorting-step { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; color: #668798; }
+.screen .sorting-step:not(:last-child)::after { content: ''; position: absolute; top: 13px; left: calc(50% + 13px); right: calc(-50% + 13px); height: 1px; background: #29495b; }
+.screen .sorting-step.done:not(:last-child)::after { background: #24c9e8; }
+.screen .sorting-step-node { position: relative; z-index: 2; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: 1px solid #35596c; border-radius: 50%; background: #0a2638; box-shadow: 0 0 0 4px #061826; }
+.screen .sorting-step-node text { font-size: 9px; font-weight: 750; }
+.screen .sorting-step.done .sorting-step-node { color: #052431; border-color: #35dfff; background: #35dfff; }
+.screen .sorting-step.running .sorting-step-node { color: #eafeff; border-color: #35dfff; box-shadow: 0 0 0 4px #061826, 0 0 17px rgba(53,223,255,.5); }
+.screen .sorting-step-label { max-width: 58px; text-align: center; font-size: 8px; line-height: 1.25; }
+.screen .sorting-step.done .sorting-step-label, .screen .sorting-step.running .sorting-step-label { color: #cceff8; }
 .screen .sorting-card {
-  padding: 12px; margin-bottom: 9px; border-radius: 12px;
-  border: 1px solid rgba(125,199,242,.22); background: rgba(8,27,43,.84);
+  padding: 11px 12px; margin-bottom: 8px; border-radius: 10px; border: 1px solid rgba(125,199,242,.22); background: rgba(8,27,43,.84);
 }
-.screen .sorting-card.active { border-color: rgba(36,217,255,.52); box-shadow: 0 0 18px rgba(36,217,255,.1); }
+.screen .sorting-progress .sorting-card { margin: 0; }
+.screen .sorting-card.active { border-color: rgba(36,217,255,.56); box-shadow: inset 3px 0 #27cde9, 0 0 18px rgba(36,217,255,.08); }
 .screen .sorting-card.ready { border-color: rgba(22,197,124,.42); }
+.screen .stage-detail { margin-top: 6px; color: #779cad; font-size: 9px; }
+.screen .sorting-progress-row { margin-top: 10px; display: flex; align-items: center; gap: 9px; }
+.screen .sorting-progress-row .metric-track { flex: 1; }
+.screen .sorting-progress-row b { width: 34px; text-align: right; color: #dff8ff; font-size: 10px; }
+.screen .sorting-queue .list { flex: 1; min-height: 0; }
+.screen .sorting-queue .sorting-card { display: flex; align-items: center; gap: 10px; }
+.screen .queue-copy { flex: 1; min-width: 0; }
+.screen .queue-arrow { width: 7px; height: 7px; border-top: 1px solid #7295a7; border-right: 1px solid #7295a7; transform: rotate(45deg); }
+
+@keyframes zonePulse { 0%,100% { opacity: .72; transform: scale(.92); } 50% { opacity: 1; transform: scale(1.08); } }
+@keyframes weighDeck { 0%,100% { transform: translateY(0); } 50% { transform: translateY(2px); } }
+@keyframes washJet { from { transform: scaleY(.72); opacity: .58; } to { transform: scaleY(1); opacity: 1; } }
+@keyframes dryFan { to { transform: rotate(360deg); } }
+@keyframes checkScan { 0%,100% { top: 2%; opacity: .45; } 50% { top: calc(100% - 3px); opacity: 1; } }
+@keyframes poolRelease { from { transform: translateX(-10px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+@media (max-width: 1180px) {
+  .screen .sorting-body { grid-template-columns: minmax(0, 1.15fr) minmax(430px, 1fr); }
+  .screen .zone-tag { padding: 5px 7px; font-size: 8px; }
+  .screen .sorting-step-label { font-size: 7px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen .zone-tag.active .zone-pulse, .screen .stage-weigh .weigh-deck, .screen .stage-wash .wash-operation text, .screen .stage-dry .dry-operation view, .screen .stage-battery .check-operation view, .screen .stage-ready .pool-operation { animation: none; }
+}
 
 /* ===== 故障处理抽屉 ===== */
 .screen .fault-mask {

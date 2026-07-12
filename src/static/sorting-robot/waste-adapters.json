@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "source": "digital-twin-park-v1/assets/02_waste",
+  "coordinateUnit": "robot_source_pixel",
+  "objects": {
+    "banana": {
+      "label": "香蕉皮",
+      "aliases": ["banana", "banana_peel", "low-poly_banana", "garbage_banana_01"],
+      "sprite": "/static/sorting-robot/objects/banana.png",
+      "sourceModel": "digital-twin-park-v1/assets/02_waste/glb/low-poly_banana.glb",
+      "sourceUsd": "digital-twin-park-v1/assets/02_waste/usd/low-poly_banana.usd",
+      "category": "kitchen",
+      "targetSlot": "kitchen",
+      "scale": 0.34,
+      "rotation": -12,
+      "handOffset": [-4, -7],
+      "dropOffset": [0, 8]
+    },
+    "cardboard_box": {
+      "label": "纸箱",
+      "aliases": ["cardboard", "cardboard_box", "paper", "garbage_cardboard_01"],
+      "sprite": "/static/sorting-robot/objects/cardboard_box.png",
+      "sourceModel": "digital-twin-park-v1/assets/02_waste/glb/cardboard_box.glb",
+      "sourceUsd": "digital-twin-park-v1/assets/02_waste/usd/cardboard_box.usd",
+      "category": "recyclable",
+      "targetSlot": "recyclable",
+      "scale": 0.27,
+      "rotation": 8,
+      "handOffset": [6, -13],
+      "dropOffset": [0, 4]
+    },
+    "battery": {
+      "label": "废电池",
+      "aliases": ["battery", "battery_low_poly", "garbage_battery_01"],
+      "sprite": "/static/sorting-robot/objects/battery.png",
+      "sourceModel": "digital-twin-park-v1/assets/02_waste/glb/battery_low_poly.glb",
+      "sourceUsd": "digital-twin-park-v1/assets/02_waste/usd/battery_low_poly.usd",
+      "category": "hazardous",
+      "targetSlot": "hazardous",
+      "scale": 0.32,
+      "rotation": -20,
+      "handOffset": [-2, -5],
+      "dropOffset": [0, 6]
+    },
+    "papercup": {
+      "label": "纸杯",
+      "aliases": ["papercup", "paper_cup", "simple-paper-cup", "garbage_paper_cup_01"],
+      "sprite": "/static/sorting-robot/objects/papercup.png",
+      "sourceModel": "digital-twin-park-v1/assets/02_waste/glb/simple-paper-cup.glb",
+      "sourceUsd": "digital-twin-park-v1/assets/02_waste/usd/simple-paper-cup.usd",
+      "category": "other",
+      "targetSlot": "other",
+      "scale": 0.26,
+      "rotation": -5,
+      "handOffset": [3, -11],
+      "dropOffset": [0, 6]
+    }
+  }
+}

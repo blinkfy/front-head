@@ -21,6 +21,10 @@ const ROUTES = {
     prettyPath: '/collection-planning',
     spaPath: '/pages-nonTheme/collection-planning'
   },
+  digitalTwinReplay: {
+    prettyPath: '/digital-twin-replay',
+    spaPath: '/pages-nonTheme/digital-twin-replay'
+  },
   communityDashboard: {
     prettyPath: '/community-dashboard',
     spaPath: '/pages-nonTheme/community-dashboard'

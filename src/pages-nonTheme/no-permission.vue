@@ -31,6 +31,8 @@ const DEFAULT_REASON = '该页面仅管理员可访问，请使用管理员账�
 const ROUTE_LABELS = {
   '/collection-planning': '垃圾清运规划',
   '/pages-nonTheme/collection-planning': '垃圾清运规划',
+  '/digital-twin-replay': '公园垃圾分类数字孪生回放',
+  '/pages-nonTheme/digital-twin-replay': '公园垃圾分类数字孪生回放',
   '/community-dashboard': '社区驾驶舱',
   '/pages-nonTheme/community-dashboard': '社区驾驶舱'
 }

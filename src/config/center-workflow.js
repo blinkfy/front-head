@@ -1,0 +1,150 @@
+const freezeList = list => Object.freeze(list.map(item => Object.freeze(item)))
+
+export const CENTER_WORKFLOW_STAGES = freezeList([
+  { key: 'ARRIVE', label: '设备到站', zone: 'ARRIVE', eventType: 'DEVICE_ARRIVED_AT_CENTER', visualKey: 'arrival' },
+  { key: 'DOCK', label: '泊位对接', zone: 'DOCK', eventType: 'DEVICE_ARRIVED_AT_CENTER', visualKey: 'waiting' },
+  { key: 'UNLOAD', label: '垃圾卸载', zone: 'UNLOAD', eventType: 'CENTER_UNLOADING', visualKey: 'unloading' },
+  { key: 'CLEAN', label: '桶体清洗', zone: 'CLEAN', eventType: 'CENTER_CLEANING', visualKey: 'cleaning' },
+  { key: 'CHARGE', label: '充电', zone: 'CHARGE', eventType: 'CENTER_CHARGING', visualKey: 'charging' },
+  { key: 'CHECK', label: '状态检测', zone: 'CHECK', eventType: 'DEVICE_RECOVERED', visualKey: 'status_check' },
+  { key: 'STANDBY', label: '恢复待命', zone: 'STANDBY', eventType: 'DEVICE_RECOVERED', visualKey: 'standby' }
+])
+
+export const CENTER_WORKFLOW_TIMINGS = Object.freeze({
+  ARRIVE: 1380,
+  DOCK: 1050,
+  UNLOAD: 1380,
+  CLEAN: 1380,
+  CHARGE: 1380,
+  RECOVERY: 1480,
+  CHECK_SPLIT: 0.56
+})
+
+export const CENTER_WORKFLOW_SCENE = Object.freeze({
+  aspectRatio: 4 / 3,
+  device: Object.freeze({
+    src: '/static/digital-twin-replay/sprites/smart-bin-v1.png',
+    widthPct: 10.8,
+    source: 'digital-twin-park-v1/assets/03_smart-bin/bin.png'
+  }),
+  masks: Object.freeze({
+    unload: Object.freeze({ left: 11, top: 29, width: 28, height: 43 }),
+    clean: Object.freeze({ left: 29, top: 29, width: 28, height: 42 }),
+    charge: Object.freeze({ left: 51, top: 40, width: 27, height: 28 }),
+    check: Object.freeze({ left: 66, top: 42, width: 22, height: 27 })
+  }),
+  paths: Object.freeze({
+    ARRIVE: freezeList([
+      { at: 0, x: -8, y: 75, scale: 0.72, rotate: 0 },
+      { at: 0.35, x: 2, y: 70, scale: 0.76, rotate: -1 },
+      { at: 1, x: 16.5, y: 61, scale: 0.82, rotate: -2 }
+    ]),
+    DOCK: freezeList([
+      { at: 0, x: 16.5, y: 61, scale: 0.82, rotate: -2 },
+      { at: 0.7, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 },
+      { at: 1, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 }
+    ]),
+    UNLOAD: freezeList([
+      { at: 0, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 },
+      { at: 0.24, x: 19.2, y: 57.4, scale: 0.84, rotate: -10 },
+      { at: 0.78, x: 19.2, y: 57.4, scale: 0.84, rotate: -10 },
+      { at: 1, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 }
+    ]),
+    CLEAN: freezeList([
+      { at: 0, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 },
+      { at: 0.34, x: 31, y: 55.8, scale: 0.82, rotate: 0 },
+      { at: 1, x: 38.5, y: 53.8, scale: 0.8, rotate: 1 }
+    ]),
+    CHARGE: freezeList([
+      { at: 0, x: 38.5, y: 53.8, scale: 0.8, rotate: 1 },
+      { at: 0.42, x: 50.5, y: 59, scale: 0.78, rotate: 1 },
+      { at: 1, x: 59.5, y: 62.2, scale: 0.76, rotate: 2 }
+    ]),
+    CHECK: freezeList([
+      { at: 0, x: 59.5, y: 62.2, scale: 0.76, rotate: 2 },
+      { at: 0.55, x: 68, y: 64.5, scale: 0.74, rotate: 2 },
+      { at: 1, x: 72.5, y: 66, scale: 0.73, rotate: 2 }
+    ]),
+    STANDBY: freezeList([
+      { at: 0, x: 72.5, y: 66, scale: 0.73, rotate: 2 },
+      { at: 0.62, x: 82, y: 71, scale: 0.69, rotate: 3 },
+      { at: 1, x: 91, y: 76, scale: 0.65, rotate: 3 }
+    ])
+  }),
+  unloadStream: Object.freeze({
+    start: Object.freeze({ x: 31, y: 70 }),
+    end: Object.freeze({ x: 58, y: 18 }),
+    particleCount: 7,
+    startAt: 0.24,
+    endAt: 0.82
+  }),
+  cleanDrops: freezeList([
+    { x: 22, delay: 0 }, { x: 37, delay: 0.08 }, { x: 51, delay: 0.16 },
+    { x: 65, delay: 0.04 }, { x: 78, delay: 0.13 }, { x: 89, delay: 0.21 }
+  ]),
+  energyDots: freezeList([
+    { at: 0.08 }, { at: 0.3 }, { at: 0.52 }, { at: 0.74 }
+  ])
+})
+
+const stageByKey = Object.freeze(Object.fromEntries(CENTER_WORKFLOW_STAGES.map(stage => [stage.key, stage])))
+
+export function centerWorkflowStage(key = 'ARRIVE') {
+  return stageByKey[key] || CENTER_WORKFLOW_STAGES[0]
+}
+
+export function resolveCenterWorkflowPhase({ eventType = '', progress = 0, eventHistory = [], override = null } = {}) {
+  if (override && stageByKey[override]) return override
+  if (eventType === 'DEVICE_ARRIVED_AT_CENTER') return 'ARRIVE'
+  if (eventType === 'CENTER_UNLOADING') return 'UNLOAD'
+  if (eventType === 'CENTER_CLEANING') return 'CLEAN'
+  if (eventType === 'CENTER_CHARGING') return 'CHARGE'
+  if (eventType === 'DEVICE_RECOVERED') return progress < CENTER_WORKFLOW_TIMINGS.CHECK_SPLIT ? 'CHECK' : 'STANDBY'
+
+  const types = eventHistory.map(event => event?.eventType)
+  const arrived = types.includes('DEVICE_ARRIVED_AT_CENTER')
+  const unloading = types.includes('CENTER_UNLOADING')
+  return arrived && !unloading ? 'DOCK' : 'ARRIVE'
+}
+
+export function centerWorkflowAnimationIdentity({ eventType = '', eventHistory = [], override = null } = {}) {
+  if (override && stageByKey[override]) return override
+  if (eventType === 'DEVICE_RECOVERED') return 'RECOVERY'
+  return resolveCenterWorkflowPhase({ eventType, eventHistory, progress: 0 })
+}
+
+export function centerWorkflowDuration(identity = 'ARRIVE') {
+  return CENTER_WORKFLOW_TIMINGS[identity] || CENTER_WORKFLOW_TIMINGS.ARRIVE
+}
+
+export function centerWorkflowEventType(stageKey = 'ARRIVE') {
+  return centerWorkflowStage(stageKey).eventType
+}
+
+const clamp = value => Math.max(0, Math.min(1, Number(value) || 0))
+const ease = value => 1 - Math.pow(1 - clamp(value), 3)
+
+export function centerWorkflowLocalProgress(stageKey, eventProgress) {
+  const progress = clamp(eventProgress)
+  if (stageKey === 'CHECK') return clamp(progress / CENTER_WORKFLOW_TIMINGS.CHECK_SPLIT)
+  if (stageKey === 'STANDBY') return clamp((progress - CENTER_WORKFLOW_TIMINGS.CHECK_SPLIT) / (1 - CENTER_WORKFLOW_TIMINGS.CHECK_SPLIT))
+  return progress
+}
+
+export function centerWorkflowDevicePose(stageKey, progress) {
+  const keyframes = CENTER_WORKFLOW_SCENE.paths[stageKey] || CENTER_WORKFLOW_SCENE.paths.ARRIVE
+  const amount = clamp(progress)
+  let left = keyframes[0]
+  let right = keyframes[keyframes.length - 1]
+  for (let index = 1; index < keyframes.length; index += 1) {
+    if (amount <= keyframes[index].at) {
+      left = keyframes[index - 1]
+      right = keyframes[index]
+      break
+    }
+  }
+  const span = Math.max(0.0001, right.at - left.at)
+  const ratio = ease((amount - left.at) / span)
+  const value = key => Number(left[key]) + (Number(right[key]) - Number(left[key])) * ratio
+  return Object.freeze({ x: value('x'), y: value('y'), scale: value('scale'), rotate: value('rotate') })
+}
