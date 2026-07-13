@@ -45,8 +45,8 @@
     <!-- #ifdef H5 -->
     <svg :class="['route-layer', { paused: !playing }]" viewBox="0 0 100 100" preserveAspectRatio="none">
       <defs>
-        <marker id="return-arrow" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.6" refY="1.5" orient="auto" viewBox="0 0 3 3"><path d="M0,0 L3,1.5 L0,3 Z" fill="#ff9a47" /></marker>
-        <marker id="replace-arrow" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.6" refY="1.5" orient="auto" viewBox="0 0 3 3"><path d="M0,0 L3,1.5 L0,3 Z" fill="#24d9ff" /></marker>
+        <marker id="return-arrow" markerUnits="strokeWidth" markerWidth="2.2" markerHeight="2.2" refX="1.9" refY="1.1" orient="auto" viewBox="0 0 2.2 2.2"><path d="M0,0 L2.2,1.1 L0,2.2 Z" fill="#bd866b" /></marker>
+        <marker id="replace-arrow" markerUnits="strokeWidth" markerWidth="2.2" markerHeight="2.2" refX="1.9" refY="1.1" orient="auto" viewBox="0 0 2.2 2.2"><path d="M0,0 L2.2,1.1 L0,2.2 Z" fill="#65a9b4" /></marker>
       </defs>
       <polyline :class="['route-path', 'route-bed', { visible: showDispatchRoutes, complete: arrivedAtCenter }]" :points="returnRoutePoints" />
       <polyline :class="['route-path', 'route-bed', { visible: showDispatchRoutes, complete: standbyTookOver }]" :points="replacementRoutePoints" />
@@ -67,9 +67,6 @@
       :runtime-state="runtimeState"
       @select="$emit('select', $event)"
     />
-
-    <view class="service-link food-link"></view>
-    <view class="service-link rest-link"></view>
 
     <view
       v-for="object in sceneObjects"
@@ -103,8 +100,7 @@
         <StableMapLabel :label-id="`${station.id}:status`" :text="station.label" :detail="station.id" :priority="centerPhase === station.phase ? 88 : 66" placement="below" :tone="centerPhase === station.phase ? 'cyan' : 'neutral'" :current="centerPhase === station.phase" />
       </view>
       <view v-for="object in sceneObjects" :key="`${object.id}:labels`" :class="['scene-label-anchor', object.kind]" :style="object.style">
-        <StableMapLabel v-if="showObjectIdentityLabel(object)" :label-id="`${object.id}:identity`" :text="labels[object.id] || object.label || object.id" :detail="object.id" :priority="labelPriority(object, 'identity')" placement="below" :selected="object.id === selectedId" :current="priorityEventIds.has(object.id)" />
-        <StableMapLabel v-if="showObjectStatusLabel(object)" :label-id="`${object.id}:status`" :text="object.badge" :priority="labelPriority(object, 'status')" placement="right" :tone="object.badgeTone || 'neutral'" :selected="object.id === selectedId" :current="priorityEventIds.has(object.id)" />
+        <StableMapLabel v-if="showObjectPrimaryLabel(object)" :label-id="`${object.id}:primary`" :text="objectPrimaryLabel(object)" :detail="object.id === selectedId ? object.id : ''" :priority="labelPriority(object)" placement="below" :tone="object.badgeTone || 'neutral'" :selected="object.id === selectedId" :current="priorityEventIds.has(object.id)" />
       </view>
     </view>
 
@@ -265,7 +261,7 @@ const dispatchProgress = ref(0)
 const canvasContainerRef = ref(null)
 const canvasRef = ref(null)
 const sceneSurfaceStyle = ref({ width: '100%', height: '100%' })
-const routeAnimationStyle = computed(() => ({ animationDuration: `${1.2 / Math.max(.25, Number(props.playbackRate) || 1)}s` }))
+const routeAnimationStyle = computed(() => ({ animationDuration: `${1.8 / Math.max(.25, Number(props.playbackRate) || 1)}s` }))
 let dispatchRafId = 0
 let dispatchLastTimestamp = 0
 let labelRafId = 0
@@ -441,23 +437,24 @@ function isObjectFocused(object) {
     || incidentAffectedIds.value.has(object.id)
 }
 
-function showObjectIdentityLabel(object) {
+function showObjectPrimaryLabel(object) {
   if (sceneDev.value.calibration) return true
-  if (isObjectFocused(object)) return true
-  return object.kind === 'robot' && ['ROBOT_TASK_REQUESTED', 'ROBOT_TASK_RESULT'].includes(props.currentEvent?.eventType)
+  if (object.kind === 'service' && object.id !== props.selectedId && !incidentAffectedIds.value.has(object.id)) return false
+  if (isObjectFocused(object) || object.moving) return true
+  return Boolean(object.badge) && ['red', 'amber'].includes(object.badgeTone)
 }
 
-function showObjectStatusLabel(object) {
-  if (!object.badge) return false
-  if (showObjectIdentityLabel(object) || object.moving) return true
-  return ['red', 'amber'].includes(object.badgeTone)
+function objectPrimaryLabel(object) {
+  const name = props.labels[object.id] || object.label || object.id
+  if (object.kind === 'waste') return object.short || name
+  return object.badge ? `${name} · ${object.badge}` : name
 }
 
-function labelPriority(object, role) {
+function labelPriority(object) {
   const selected = object.id === props.selectedId
   const current = priorityEventIds.value.has(object.id)
   const base = ({ robot: 74, bin: 72, service: 68, waste: 52, visitor: 28 })[object.kind] || 40
-  return (selected ? 100 : current ? 90 : base) - (role === 'status' ? 1 : 0)
+  return selected ? 100 : current ? 90 : base
 }
 
 function runLabelLayout() {
@@ -530,14 +527,13 @@ onBeforeUnmount(() => {
 .road-label { position: absolute; z-index: 9; top: 10%; left: 52%; color: #b6cbd4; font-size: 10px; letter-spacing: 1px; text-shadow: 0 1px 3px #00111d; }
 .facility-anchor { position:absolute; z-index:5; transform:translate(-50%,-50%); pointer-events:none; }.center-facility{left:24%;top:16%}.station-facility{top:20.5%}.station-facility.unload{left:20.5%}.station-facility.wash{left:23%}.station-facility.charge{left:25.5%}
 .center-bay-anchor { position:absolute; z-index:5; top:17.5%; width:14px; height:8px; transform:translate(-50%,-50%); cursor:pointer; }.center-bay-anchor.bay-1{left:21.2%}.center-bay-anchor.bay-2{left:24%}.center-bay-anchor>i{display:block;width:100%;height:100%;box-sizing:border-box;border:1px solid rgba(115,171,199,.7);border-radius:2px;background:rgba(19,54,72,.82)}.center-bay-anchor.occupied>i{border-color:#24d9ff;background:rgba(36,217,255,.32);box-shadow:0 0 10px rgba(36,217,255,.5)}.center-bay-anchor.selected>i{outline:1px solid #fff;outline-offset:2px}
-.route-layer { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%; pointer-events: none; }.route-layer.paused .route-path { animation-play-state: paused; }.route-path { fill: none; stroke-width: 3.8px; stroke-linecap: round; stroke-dasharray: 10px 10px; vector-effect:non-scaling-stroke; opacity: 0; transition: opacity .2s ease; animation: route-flow 1.2s linear infinite; filter:drop-shadow(1px 2px 1px rgba(0,14,24,.42)); }.route-path.visible { opacity: .9; }.route-path.complete { opacity: .36; animation: none; }.route-path.return { stroke: #ff9a47; }.route-path.replacement { stroke: #24d9ff; }.route-path.route-bed { stroke:rgba(0,14,24,.58);stroke-width:7px;stroke-dasharray:none;animation:none;filter:blur(.35px);opacity:0}.route-path.route-bed.visible{opacity:.48}.route-path.route-bed.complete{opacity:.25}
-@keyframes route-flow { to { stroke-dashoffset: -20; } }
-.service-link { position: absolute; z-index: 2; width: 36px; height: 36px; margin: -18px; border: 1px dashed rgba(95,224,255,.65); border-radius: 9px; background: rgba(36,217,255,.08); }.food-link { left: 67%; top: 48%; }.rest-link { left: 31.5%; top: 61.5%; }
+.route-layer { position:absolute; z-index:3; inset:0; width:100%; height:100%; pointer-events:none; }.route-layer.paused .route-path { animation-play-state:paused; }.route-path { fill:none; stroke-width:2.65px; stroke-linecap:round; stroke-dasharray:4px 10px; vector-effect:non-scaling-stroke; opacity:0; transition:opacity .3s ease; animation:route-flow 1.65s linear infinite; filter:drop-shadow(1px 1px .7px rgba(0,14,24,.34)); }.route-path.visible { opacity:.82; }.route-path.complete { opacity:.14; animation:none; }.route-path.return { stroke:#bd866b; }.route-path.replacement { stroke:#65a9b4; }.route-path.route-bed { stroke:rgba(3,19,29,.52);stroke-width:4.8px;stroke-dasharray:none;animation:none;filter:none;opacity:0}.route-path.route-bed.visible{opacity:.42}.route-path.route-bed.complete{opacity:.09}
+@keyframes route-flow { to { stroke-dashoffset: -28; } }
 .scene-object { position: absolute; z-index: 5; transform: translate(-50%,-50%); transition: left .7s cubic-bezier(.22,1,.36,1),top .7s cubic-bezier(.22,1,.36,1),opacity .25s ease; cursor: pointer; }.scene-object.moving { transition: none; }.scene-object::after { content: ''; position: absolute; inset: -7px; border: 1px solid transparent; border-radius: 10px; transition: all .18s ease; }.scene-object:hover::after { border-color:rgba(36,217,255,.5);box-shadow:0 0 12px rgba(36,217,255,.28)}.scene-object.faded { opacity: .34; }
-.scene-label-overlay { position:absolute;z-index:12;inset:0;pointer-events:none;overflow:visible }.scene-label-anchor{position:absolute;transform:translate(-50%,-50%);width:34px;height:43px}.scene-label-anchor.robot{height:48px}.scene-label-anchor.visitor{width:24px;height:41px}.scene-label-anchor.service{width:20px;height:20px}.scene-label-anchor.waste{width:21px;height:21px}.center-bay-label-anchor,.facility-label-anchor{position:absolute;transform:translate(-50%,-50%)}.center-bay-label-anchor{top:17.5%;width:14px;height:8px}.center-bay-label-anchor.bay-1{left:21.2%}.center-bay-label-anchor.bay-2{left:24%}.facility-label-anchor{top:20.5%;width:34px;height:31px}.facility-label-anchor.unload{left:20.5%}.facility-label-anchor.wash{left:23%}.facility-label-anchor.charge{left:25.5%}
+.scene-label-overlay { position:absolute;z-index:12;inset:0;pointer-events:none;overflow:visible }.scene-label-anchor{position:absolute;transform:translate(-50%,-50%);width:36px;height:46px}.scene-label-anchor.robot{width:42px;height:60px}.scene-label-anchor.visitor{width:24px;height:41px}.scene-label-anchor.service{width:20px;height:20px}.scene-label-anchor.waste{width:21px;height:21px}.center-bay-label-anchor,.facility-label-anchor{position:absolute;transform:translate(-50%,-50%)}.center-bay-label-anchor{top:17.5%;width:14px;height:8px}.center-bay-label-anchor.bay-1{left:21.2%}.center-bay-label-anchor.bay-2{left:24%}.facility-label-anchor{top:20.5%;width:34px;height:31px}.facility-label-anchor.unload{left:20.5%}.facility-label-anchor.wash{left:23%}.facility-label-anchor.charge{left:25.5%}
 .service-symbol { width: 31px; height: 31px; border: 2px dashed #69e4ff; border-radius: 8px; background: rgba(36,217,255,.12); }
 .waste-symbol { width: 21px; height: 21px; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; border-radius: 50%; color: #fff; font-size: 8px; font-weight: 800; box-shadow: 0 0 10px rgba(0,0,0,.5); }.waste-symbol.recyclable { background: #2c8fff; }.waste-symbol.kitchen { background: #16a66a; }.waste-symbol.hazardous { background: #e14b55; }.waste-symbol.other { background: #667788; }
 .event-overlay { position: absolute; z-index: 10; left: 12px; bottom: 12px; min-width: 230px; padding: 8px 10px; display: grid; grid-template-columns: 9px 1fr auto; align-items: center; gap: 8px; border: 1px solid rgba(116,197,255,.34); border-radius: 9px; background: rgba(2,23,38,.86); backdrop-filter: blur(6px); }.event-pulse { width: 8px; height: 8px; border-radius: 50%; background: #2c8fff; box-shadow: 0 0 10px currentColor; }.event-pulse.cyan { background: #24d9ff; }.event-pulse.green { background: #16c57c; }.event-pulse.amber { background: #f5b648; }.event-pulse.red { background: #ff5d66; }.event-overlay-label,.event-overlay-title { display: block; }.event-overlay-label { color: #789fb4; font-size: 8px; }.event-overlay-title { color: #e9f9ff; font-size: 11px; font-weight: 700; margin-top: 2px; }.source-tag { padding: 2px 5px; border-radius: 4px; color: #8ec8eb; border: 1px solid rgba(100,174,226,.34); background: rgba(22,91,143,.24); font: 700 8px/1.2 ui-monospace, Consolas, monospace; }.source-tag.isaac-realtime { color: #c1a7ff; }.source-tag.backend-api { color: #8af1be; }.source-tag.visual-aid { color: #ffd57c; }
-.hide-dynamic-objects .route-layer,.hide-dynamic-objects .service-link,.hide-dynamic-objects .scene-object,.hide-dynamic-objects .facility-anchor,.hide-dynamic-objects .center-bay-anchor,.hide-dynamic-objects .map-legend,.hide-dynamic-objects .north-mark,.hide-dynamic-objects .zone-label,.hide-dynamic-objects .road-label,.hide-dynamic-objects .event-overlay,.hide-dynamic-objects :deep(.scenario-layer),.hide-dynamic-objects :deep(.stable-map-label){display:none!important}
+.hide-dynamic-objects .route-layer,.hide-dynamic-objects .scene-object,.hide-dynamic-objects .facility-anchor,.hide-dynamic-objects .center-bay-anchor,.hide-dynamic-objects .map-legend,.hide-dynamic-objects .north-mark,.hide-dynamic-objects .zone-label,.hide-dynamic-objects .road-label,.hide-dynamic-objects .event-overlay,.hide-dynamic-objects :deep(.scenario-layer),.hide-dynamic-objects :deep(.stable-map-label){display:none!important}
 @media (max-width: 900px) { .road-label,.map-legend { display: none; }.zone-label small { display: none; }.event-overlay { min-width: 190px; } }
 </style>

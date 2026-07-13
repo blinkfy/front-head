@@ -24,12 +24,15 @@
             <image class="contact-avatar" :src="avatarFor(friend)" mode="aspectFill" />
             <view class="contact-copy">
               <text class="contact-name">{{ friend.note || friend.username }}</text>
-              <text class="contact-subtitle">{{ friend.bio || `ID: ${friend.id}` }}</text>
+              <view class="contact-meta">
+                <text class="relationship-tag" :class="relationshipClass(friend.relationship)">{{ relationshipLabel(friend.relationship) }}</text>
+                <text class="contact-username">用户名：{{ friend.username }}</text>
+              </view>
             </view>
             <text class="contact-chevron">›</text>
           </view>
         </view>
-        <view v-else class="empty-state"><text class="empty-icon">👥</text><text>还没有好友，去搜索添加吧</text></view>
+        <view v-else class="empty-state"><text class="empty-icon">👥</text><text>还没有联系人，去搜索添加吧</text></view>
       </template>
 
       <template v-else-if="activeTab === 'requests'">
@@ -89,15 +92,15 @@
         <view class="create-group-card">
           <text class="card-title">创建群聊</text>
           <input v-model="groupName" class="group-name-input" placeholder="填写群名称" maxlength="60" />
-          <text class="select-tip">选择好友加入群聊</text>
-          <view v-if="friends.length" class="member-picker">
-            <view v-for="friend in friends" :key="friend.id" class="picker-member" @click="toggleSelectedFriend(friend.id)">
+          <text class="select-tip">选择联系人加入群聊</text>
+          <view v-if="groupContactCandidates.length" class="member-picker">
+            <view v-for="friend in groupContactCandidates" :key="friend.id" class="picker-member" @click="toggleSelectedFriend(friend.id)">
               <image class="picker-avatar" :src="avatarFor(friend)" mode="aspectFill" />
               <text class="picker-name">{{ friend.note || friend.username }}</text>
               <view class="member-check" :class="{ selected: selectedFriendIds.includes(friend.id) }"><text v-if="selectedFriendIds.includes(friend.id)">✓</text></view>
             </view>
           </view>
-          <view v-else class="compact-empty">添加好友后即可邀请他们创建群聊</view>
+          <view v-else class="compact-empty">暂无可邀请的联系人</view>
           <button class="create-group-button" :loading="creatingGroup" @click="createNewGroup">创建群聊</button>
         </view>
 
@@ -129,7 +132,7 @@ export default {
       statusBarHeight: 20,
       activeTab: 'friends',
       tabs: [
-        { key: 'friends', label: '好友' },
+        { key: 'friends', label: '联系人' },
         { key: 'requests', label: '新朋友' },
         { key: 'find', label: '找人' },
         { key: 'groups', label: '群聊' }
@@ -145,12 +148,17 @@ export default {
       searchResults: [],
       hasSearched: false,
       groupName: '',
-      selectedFriendIds: []
+      selectedFriendIds: [],
+      aiEnabled: true,
+      accessDenied: false
     }
   },
   computed: {
     pendingRequestCount() {
       return this.incomingRequests.filter((item) => item.status === 'pending').length
+    },
+    groupContactCandidates() {
+      return this.friends
     }
   },
   onLoad() {
@@ -158,9 +166,40 @@ export default {
     this.statusBarHeight = systemInfo.statusBarHeight || 20
   },
   onShow() {
-    this.refreshAll()
+    this.ensureAiAvailable().then((enabled) => {
+      if (enabled) this.refreshAll()
+    })
   },
   methods: {
+    async ensureAiAvailable() {
+      try {
+        const response = await new Promise((resolve, reject) => {
+          uni.request({
+            url: `${baseUrl}/api/ai/settings`,
+            success: resolve,
+            fail: reject
+          })
+        })
+        const payload = response?.data
+        const settings = payload && payload.code === 0 ? payload.data : null
+        if (settings && settings.aiEnabled === false) {
+          this.aiEnabled = false
+          this.loading = false
+          if (!this.accessDenied) {
+            this.accessDenied = true
+            uni.navigateBack({
+              fail: () => uni.reLaunch({ url: '/pages-nonTheme/chatlist' })
+            })
+          }
+          return false
+        }
+      } catch (error) {
+        console.warn('[chat-contacts] check AI settings failed:', error)
+      }
+      this.aiEnabled = true
+      this.accessDenied = false
+      return true
+    },
     async refreshAll() {
       this.loading = true
       try {
@@ -171,6 +210,8 @@ export default {
           chatApi.getGroups()
         ])
         this.friends = friendsResult.data?.list || []
+        const contactIds = new Set(this.groupContactCandidates.map((item) => item.id))
+        this.selectedFriendIds = this.selectedFriendIds.filter((id) => contactIds.has(id))
         this.incomingRequests = incomingResult.data?.list || []
         this.outgoingRequests = outgoingResult.data?.list || []
         this.groups = groupsResult.data?.list || []
@@ -264,6 +305,12 @@ export default {
     requestStatusLabel(status) {
       return ({ pending: '等待验证', accepted: '已通过', rejected: '已拒绝', cancelled: '已取消' })[status] || '已处理'
     },
+    relationshipLabel(relationship) {
+      return ({ friend: '好友', customer_s: '客服', customer_c: '客户', stranger: '陌生人' })[relationship] || '联系人'
+    },
+    relationshipClass(relationship) {
+      return `relationship-${relationship || 'stranger'}`
+    },
     formatGroupMessage(message) {
       if (!message) return ''
       if (message.type === 'text') return String(message.content || '').slice(0, 24)
@@ -328,6 +375,13 @@ export default {
 .contact-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8rpx; }
 .contact-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 29rpx; font-weight: 600; color: #24313d; }
 .contact-subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 23rpx; color: #8996a2; }
+.contact-meta { min-width: 0; display: flex; align-items: center; gap: 10rpx; overflow: hidden; }
+.relationship-tag { flex-shrink: 0; padding: 2rpx 10rpx; border-radius: 6rpx; font-size: 21rpx; line-height: 30rpx; }
+.relationship-friend { background: #e6f7f0; color: #05835f; }
+.relationship-customer_s { background: #e8f2ff; color: #2877bb; }
+.relationship-customer_c { background: #fff2df; color: #b76a13; }
+.relationship-stranger { background: #f0f3f5; color: #73808a; }
+.contact-username { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 23rpx; color: #8996a2; }
 .contact-chevron { font-size: 38rpx; color: #aab5bc; }
 .request-actions { display: flex; gap: 12rpx; }
 .small-btn { margin: 0; min-width: 94rpx; height: 54rpx; padding: 0 16rpx; border-radius: 8rpx; font-size: 23rpx; line-height: 54rpx; }

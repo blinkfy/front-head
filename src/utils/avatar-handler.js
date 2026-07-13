@@ -185,6 +185,10 @@ export function getAvatarType(avatar) {
     return 'blob'
   }
 
+  if (avatar.startsWith('chat/groups/avatars/')) {
+    return 'download'
+  }
+
   return 'unknown'
 }
 
@@ -220,6 +224,9 @@ export function getAvatarUrl(avatar, baseUrl = '') {
     case 'blob':
       // Blob URL 直接返回
       return avatar
+
+    case 'download':
+      return `${baseUrl || ''}/files/download/${avatar.replace(/^[/\\]+/, '')}`
 
     default:
       return '/static/person.webp.png'

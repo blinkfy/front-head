@@ -327,11 +327,30 @@
 
                 <!-- 用户信息 -->
                 <view class="user-info-section">
-                    <image class="user-avatar-large" :src="otherAvatarUrl" mode="aspectFill" />
-                    <view class="user-details">
+                    <view class="group-avatar-editor" :class="{ editable: canManageGroup }" @click="editGroupAvatar">
+                        <image class="user-avatar-large" :src="otherAvatarUrl" mode="aspectFill" />
+                        <view v-if="canManageGroup" class="group-avatar-edit-mask"><text>编辑</text></view>
+                    </view>
+                    <view class="user-details" :class="{ editable: canManageGroup }" @click="editGroupName">
                         <text class="user-name-large">{{ chatTitle }}</text>
                         <text class="user-id-text">{{ isGroupChat ? `${groupInfo?.Members?.length || 0} 位成员` : `ID: ${otherUserId}` }}</text>
+                        <text v-if="canManageGroup" class="group-edit-hint">点击修改群名</text>
                     </view>
+                </view>
+
+                <view v-if="isGroupChat" class="group-members-section">
+                    <view class="group-members-heading">
+                        <text class="group-members-title">群成员</text>
+                        <text class="group-members-count">{{ groupInfo?.Members?.length || 0 }} 人</text>
+                    </view>
+                    <view v-if="groupInfo?.Members?.length" class="group-members-grid">
+                        <view v-for="member in groupInfo.Members" :key="member.userId" class="group-member">
+                            <image class="group-member-avatar" :src="getGroupMemberAvatar(member)" mode="aspectFill" />
+                            <text class="group-member-name">{{ getGroupMemberName(member) }}</text>
+                            <text v-if="getGroupMemberRole(member)" class="group-member-role">{{ getGroupMemberRole(member) }}</text>
+                        </view>
+                    </view>
+                    <text v-else class="group-members-loading">正在加载成员...</text>
                 </view>
 
                 <!-- 设置项列表 -->
@@ -531,6 +550,7 @@ export default {
             otherUsername: '', // 对方原始用户名
             otherUserId: '', // 对方用户ID
             loadingUserProfile: false,
+            hasSyncedUserProfile: false,
             mode: 'customer', // 聊天模式: 'customer' 普通模式, 'admin' 管理员模式
             isDarkTheme: false, // 主题状态
             statusBarHeight: 20, // 状态栏高度
@@ -711,11 +731,19 @@ export default {
                 this.otherAvatar !== 'null' &&
                 this.otherAvatar !== 'undefined' &&
                 !this.otherAvatar.includes('default-avatar')) {
+                if (this.isGroupChat && !this.otherAvatar.startsWith('data:') && !this.otherAvatar.startsWith('http')) {
+                    return `${baseUrl}/files/download/${this.otherAvatar.replace(/^[/\\]+/, '')}`
+                }
                 const avatarUrl = getAvatarUrl(this.otherAvatar, baseUrl)
                 return avatarUrl
             }
             // 生成基于聊天标题的头像
             return this.generateAvatarFromName(this.chatTitle, true)
+        },
+
+        canManageGroup() {
+            const role = this.groupInfo?.currentMember?.role
+            return this.isGroupChat && (role === 'owner' || role === 'admin')
         }
     },
 
@@ -964,16 +992,14 @@ export default {
         async loadUserInfo() {
             try {
                 const userInfo = this.normalizeStoredUserInfo(uni.getStorageSync('userInfo'))
+                const hasCachedAdminPermission = userInfo?.isAdmin === true || uni.getStorageSync('isAdmin') === true
+                this.mode = hasCachedAdminPermission ? 'admin' : 'customer'
                 if (userInfo) {
                     if (this.hasUsableAvatar(userInfo.avatar)) {
                         this.userAvatar = userInfo.avatar
                     }
-                    // 读取管理员标识
-                    if (userInfo.isAdmin) {
-                        this.mode = 'admin'
-                    }
                 }
-                if (!this.hasUsableAvatar(this.userAvatar)) {
+                if (!this.hasSyncedUserProfile) {
                     this.loadUserProfileForAvatar()
                 }
             } catch (e) {
@@ -990,18 +1016,26 @@ export default {
                     if (this.hasUsableAvatar(res.data.avatar)) {
                         this.userAvatar = res.data.avatar
                     }
+                    const isAdmin = res.data.isAdmin === true
+                    this.mode = isAdmin ? 'admin' : 'customer'
+                    if (isAdmin) {
+                        uni.setStorageSync('isAdmin', true)
+                    } else {
+                        uni.removeStorageSync('isAdmin')
+                    }
                     const cached = this.normalizeStoredUserInfo(uni.getStorageSync('userInfo'))
                     uni.setStorageSync('userInfo', {
                         ...cached,
                         ...res.data,
-                        id: cached.id || cached.userId,
-                        userId: cached.userId || cached.id
+                        id: res.data.id || cached.id || cached.userId,
+                        userId: res.data.id || cached.userId || cached.id
                     })
                 }
             } catch (e) {
                 console.warn('加载当前用户头像失败:', e?.message || e)
             } finally {
                 this.loadingUserProfile = false
+                this.hasSyncedUserProfile = true
             }
         },
 
@@ -1756,7 +1790,7 @@ export default {
                 content: '正在思考...',
                 isSelf: false,
                 isAi: true,
-                senderName: 'AI 环保助手',
+                senderName: 'AI 对话助手',
                 timestamp: Date.now(),
                 status: 'streaming'
             }
@@ -3349,6 +3383,78 @@ export default {
             } catch (e) {
                 console.error('加载群聊信息失败:', e)
             }
+        },
+
+        applyGroupInfo(group) {
+            if (!group) return
+            this.groupInfo = { ...(this.groupInfo || {}), ...group }
+            this.chatTitle = group.name || this.chatTitle
+            this.otherAvatar = group.avatar || ''
+        },
+
+        editGroupName() {
+            if (!this.canManageGroup) return
+            uni.showModal({
+                title: '修改群名称',
+                editable: true,
+                placeholderText: '请输入群名称',
+                success: async (result) => {
+                    if (!result.confirm) return
+                    const name = String(result.content || '').trim()
+                    if (!name) {
+                        uni.showToast({ title: '群名称不能为空', icon: 'none' })
+                        return
+                    }
+                    try {
+                        const res = await chatApi.updateGroup(this.groupId, { name })
+                        this.applyGroupInfo(res.data)
+                        uni.showToast({ title: '群名称已更新', icon: 'success' })
+                    } catch (error) {
+                        console.error('修改群名称失败:', error)
+                        uni.showToast({ title: '修改失败', icon: 'none' })
+                    }
+                }
+            })
+        },
+
+        editGroupAvatar() {
+            if (!this.canManageGroup) return
+            uni.chooseImage({
+                count: 1,
+                sizeType: ['compressed'],
+                sourceType: ['album', 'camera'],
+                success: async (result) => {
+                    const filePath = result.tempFilePaths?.[0]
+                    if (!filePath) return
+                    try {
+                        uni.showLoading({ title: '上传中' })
+                        const res = await chatApi.updateGroupAvatar(this.groupId, filePath)
+                        this.applyGroupInfo(res.data)
+                        uni.showToast({ title: '群头像已更新', icon: 'success' })
+                    } catch (error) {
+                        console.error('修改群头像失败:', error)
+                        uni.showToast({ title: '上传失败', icon: 'none' })
+                    } finally {
+                        uni.hideLoading()
+                    }
+                }
+            })
+        },
+
+        getGroupMemberName(member) {
+            return member?.alias || member?.User?.username || `成员 ${member?.userId || ''}`
+        },
+
+        getGroupMemberAvatar(member) {
+            const avatar = member?.User?.avatar || ''
+            if (avatar && typeof avatar === 'string' && !avatar.includes('default-avatar')) {
+                return getAvatarUrl(avatar, baseUrl)
+            }
+            return this.generateAvatarFromName(this.getGroupMemberName(member), true)
+        },
+
+        getGroupMemberRole(member) {
+            return ({ owner: '群主', admin: '管理员' })[member?.role] || ''
         },
 
         showGroupAnnouncement() {
@@ -5743,18 +5849,49 @@ page {
     padding: 40rpx;
     border-bottom: 1rpx solid #f0f0f0;
 
+.group-avatar-editor {
+    position: relative;
+    flex-shrink: 0;
+    width: 120rpx;
+    height: 120rpx;
+    margin-right: 30rpx;
+    overflow: hidden;
+    border-radius: 16rpx;
+
+    &.editable {
+        cursor: pointer;
+    }
+
     .user-avatar-large {
         width: 120rpx;
         height: 120rpx;
         border-radius: 16rpx;
-        margin-right: 30rpx;
     }
+
+    .group-avatar-edit-mask {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.42);
+        color: #fff;
+        font-size: 22rpx;
+    }
+}
 
     .user-details {
         flex: 1;
         display: flex;
         flex-direction: column;
         gap: 12rpx;
+
+        &.editable {
+            cursor: pointer;
+        }
 
         .user-name-large {
             font-size: 36rpx;
@@ -5766,7 +5903,80 @@ page {
             font-size: 26rpx;
             color: #999;
         }
+
+        .group-edit-hint {
+            font-size: 22rpx;
+            color: #0a9f75;
+        }
     }
+}
+
+.group-members-section {
+    padding: 24rpx 40rpx 30rpx;
+    border-bottom: 1rpx solid #f0f0f0;
+}
+
+.group-members-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20rpx;
+}
+
+.group-members-title {
+    font-size: 28rpx;
+    font-weight: 600;
+    color: #333;
+}
+
+.group-members-count,
+.group-members-loading {
+    font-size: 23rpx;
+    color: #999;
+}
+
+.group-members-grid {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.group-member {
+    width: 20%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 0 7rpx;
+    margin-bottom: 22rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6rpx;
+}
+
+.group-member-avatar {
+    width: 76rpx;
+    height: 76rpx;
+    border-radius: 16rpx;
+    background: #edf3f2;
+}
+
+.group-member-name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 21rpx;
+    line-height: 28rpx;
+    color: #49545d;
+    text-align: center;
+}
+
+.group-member-role {
+    padding: 0 7rpx;
+    border-radius: 6rpx;
+    background: #e5f7ef;
+    color: #07865f;
+    font-size: 18rpx;
+    line-height: 26rpx;
 }
 
 .settings-list {

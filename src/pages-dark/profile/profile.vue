@@ -581,7 +581,7 @@ const fetchUserInfo = async () => {
       // 后端会返回 isAdmin 字段，保存到本地以便全局读取
       // 严格安全检查：只有后端明确返回 isAdmin=true，才赋予管理员权限
       const isAdminFromServer = !!(response.data && response.data.isAdmin === true)
-      isAdmin.value = isAdminFromServer&&uni.getStorageSync('isAdmin')
+      isAdmin.value = isAdminFromServer
       try {
         if (isAdminFromServer) {
           uni.setStorageSync('isAdmin', true)

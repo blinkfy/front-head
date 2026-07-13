@@ -105,7 +105,7 @@
               <text class="tag-icon">{{ getCategoryIcon(resultCategory) }}</text>
               <text class="tag-text">{{ resultCategory }}</text>
             </view>
-            <view class="ai-helper-btn" v-if="aiEnabled" @click="goAiChatFromResult">AI对话</view>
+            <view class="ai-helper-btn" v-if="aiServiceEnabled && aiEnabled" @click="goAiChatFromResult">AI对话</view>
           </view>
 
           <view v-if="recognizedItems.length" class="recognized-items-box">
@@ -131,7 +131,7 @@
           </view>
 
           <!-- 变废为宝效果图 -->
-          <view v-if="aiEnabledUpcyclingImage && (upcyclingImageUrl || upcyclingTaskId)" class="upcycling-image-card">
+          <view v-if="aiServiceEnabled && aiEnabledUpcyclingImage && (upcyclingImageUrl || upcyclingTaskId)" class="upcycling-image-card">
             <view class="upcycling-image-header">
               <text class="upcycling-image-title">变废为宝效果图</text>
             </view>
@@ -342,7 +342,7 @@
     />
 
     <!-- 底部导航栏-->
-    <view class="floating-agent" @click="goAiAssistant">
+    <view v-if="aiServiceEnabled" class="floating-agent" @click="goAiAssistant">
       <text class="floating-agent-main">AI</text>
     </view>
 
@@ -392,6 +392,7 @@ const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
 const aiEnabled = ref(false)
+const aiServiceEnabled = ref(false)
 const isProcessing = ref(false)
 const processStatus = ref('处理中...')
 const showGuideModal = ref(false)
@@ -410,6 +411,19 @@ const displayBboxes = ref([])
 const recognizeBBoxSpace = ref('')
 let bboxRefreshTimer = 0
 const bboxLoadBoundImages = new WeakSet()
+
+async function refreshAiServiceState() {
+  try {
+    const response = await new Promise((resolve, reject) => {
+      uni.request({ url: `${baseUrl}/api/ai/settings`, success: resolve, fail: reject })
+    })
+    const payload = response?.data
+    aiServiceEnabled.value = !!(payload?.code === 0 && payload.data?.aiEnabled === true)
+  } catch (error) {
+    console.warn('[home] check AI settings failed:', error)
+    aiServiceEnabled.value = false
+  }
+}
 
 // 成就解锁弹窗相关
 const showAchievementModal = ref(false)
@@ -632,6 +646,7 @@ const compressionConfig = {
 }
 
 onMounted(() => {
+  refreshAiServiceState()
   let platform, uniPlatform
   try {
     const deviceInfo = uni.getDeviceInfo ? uni.getDeviceInfo() : uni.getSystemInfoSync()
@@ -738,6 +753,7 @@ onMounted(() => {
 })
 
 onShow(() => {
+  refreshAiServiceState()
   // 从语音扫描页面返回时自动处理已选图片
   const pendingImage = uni.getStorageSync('pending_recognize_image')
   if (pendingImage) {
@@ -978,7 +994,7 @@ function applyEnhancedRecognitionData(recognizeData) {
 }
 
 function goAiChatFromResult() {
-  if (!resultImage.value) return
+  if (!aiServiceEnabled.value || !resultImage.value) return
   // seed 已由 applyEnhancedRecognitionData → saveSeed 正确写入，
   // 只需清除"已消费"标记，确保 ai-chat 能重新加载本次识别结果
   // #ifndef H5
@@ -991,6 +1007,7 @@ function goAiChatFromResult() {
 }
 
 function goAiAssistant() {
+  if (!aiServiceEnabled.value) return
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 

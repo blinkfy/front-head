@@ -5,6 +5,7 @@
     :aria-label="`${visitorId} ${behaviorLabel}`"
   >
     <view class="visitor-ground-shadow" aria-hidden="true"></view>
+    <view class="visitor-contact-shadow" aria-hidden="true"></view>
     <view class="visitor-selection-ring" aria-hidden="true"></view>
     <!-- #ifdef H5 -->
     <svg class="person-svg" viewBox="0 0 32 54" role="img" aria-hidden="true">
@@ -68,7 +69,8 @@ const spriteStyle = computed(() => ({
 .visitor-sprite { position:relative; width:24px; height:41px; transform:scale(var(--visitor-depth-scale)); transform-origin:50% 100%; }
 .person-svg { position:relative; z-index:2; width:100%; height:100%; overflow:visible; transform-origin:50% 100%; transition:transform .18s ease; filter:drop-shadow(1px 3px 2px rgba(0,12,23,.4)); }
 .visitor-sprite.mirrored .person-svg { transform:scaleX(-1); }
-.visitor-ground-shadow { position:absolute; z-index:0; left:50%; bottom:-2px; width:20px; height:7px; transform:translate(-28%,4px) skewX(-18deg); clip-path:polygon(0 48%,14% 18%,45% 6%,100% 39%,84% 78%,48% 96%,8% 74%); border-radius:44% 28% 50% 32%; background:radial-gradient(ellipse at 35% 42%,rgba(0,12,20,.34),rgba(0,12,20,.17) 58%,transparent 80%); filter:blur(2px); pointer-events:none; }
+.visitor-ground-shadow { position:absolute; z-index:0; left:50%; bottom:-1px; width:17px; height:6px; transform:translate(-22%,4px) skewX(-18deg); clip-path:polygon(0 48%,14% 18%,45% 6%,100% 39%,84% 78%,48% 96%,8% 74%); border-radius:44% 28% 50% 32%; background:radial-gradient(ellipse at 32% 40%,rgba(0,12,20,.28),rgba(0,12,20,.11) 58%,transparent 82%); filter:blur(2.2px); pointer-events:none; }
+.visitor-contact-shadow { position:absolute; z-index:1; left:50%; bottom:-1px; width:9px; height:3px; transform:translateX(-50%); border-radius:50%; background:radial-gradient(ellipse,rgba(0,10,17,.43),rgba(0,10,17,.12) 68%,transparent 84%); filter:blur(.8px); pointer-events:none; }
 .visitor-selection-ring { position:absolute; z-index:1; left:50%; bottom:-4px; width:22px; height:7px; transform:translateX(-50%) skewX(-18deg); border:1px solid transparent; border-radius:50%; box-sizing:border-box; }
 .visitor-sprite.selected .visitor-selection-ring { border-color:#b7f6ff; box-shadow:0 0 0 1px rgba(36,217,255,.65),0 0 9px rgba(36,217,255,.5); }
 .head { fill: #ffd1ad; stroke: #12283a; stroke-width: 1.3; }

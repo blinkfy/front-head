@@ -383,7 +383,7 @@ const fetchUserInfo = async () => {
       points.value = response.data.points || 0
       if (response.data.username) username.value = response.data.username
       const isAdminFromServer = !!(response.data && response.data.isAdmin === true)
-      isAdmin.value = isAdminFromServer && uni.getStorageSync('isAdmin')
+      isAdmin.value = isAdminFromServer
       try {
         if (isAdminFromServer) uni.setStorageSync('isAdmin', true)
         else uni.removeStorageSync('isAdmin')

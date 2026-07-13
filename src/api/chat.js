@@ -468,6 +468,30 @@ export function updateGroup(groupId, data) {
   return request({ url: `/api/chat/groups/${groupId}`, method: 'PATCH', data, needAuth: true })
 }
 
+export function updateGroupAvatar(groupId, filePath, onProgress) {
+  const token = getToken()
+  return new Promise((resolve, reject) => {
+    const uploadTask = uni.uploadFile({
+      url: `${getBaseUrl()}/api/chat/groups/${groupId}/avatar${token ? `?token=${encodeURIComponent(token)}` : ''}`,
+      filePath,
+      name: 'file',
+      success: (res) => {
+        try {
+          const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+          if (res.statusCode === 200 && data?.code === 0) resolve(data)
+          else reject(new Error(data?.msg || '上传失败'))
+        } catch (error) {
+          reject(error)
+        }
+      },
+      fail: reject
+    })
+    if (onProgress && uploadTask.onProgressUpdate) {
+      uploadTask.onProgressUpdate((event) => onProgress(event.progress))
+    }
+  })
+}
+
 export function addGroupMembers(groupId, memberIds) {
   return request({
     url: `/api/chat/groups/${groupId}/members`,
@@ -594,6 +618,7 @@ export default {
   getGroups,
   getGroupDetail,
   updateGroup,
+  updateGroupAvatar,
   addGroupMembers,
   removeGroupMember,
   leaveGroup,

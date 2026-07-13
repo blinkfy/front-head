@@ -8,7 +8,7 @@
 				</view>
 				<view class="nav-title">用户消息</view>
 			<view class="nav-right">
-				<text class="add-icon" @click.stop="openContacts">＋</text>
+				<text v-if="aiEnabled" class="add-icon" @click.stop="openContacts">＋</text>
 				<text class="search-icon" @click="toggleSearch">🔍</text>
 				</view>
 			</view>
@@ -41,7 +41,7 @@
 
 			<!-- 用户列表 -->
 			<view class="user-item" :class="{ 'has-unread': user.unreadCount > 0 }" 
-				v-for="(user, index) in filteredUserList" :key="user.otherId" @click="openChat(user)"
+				v-for="(user, index) in filteredUserList" :key="getConversationKey(user)" @click="openChat(user)"
 				:style="{ animationDelay: index * 0.05 + 's' }">
 				<view class="avatar-wrap">
 					<image class="avatar" :src="getUserAvatar(user)" mode="aspectFill"></image>
@@ -61,9 +61,10 @@
 						<text class="last-message" :class="{ unread: user.unreadCount > 0 }">
 							{{ formatLastMessage(user.latestContent) }}
 						</text>
-						<view class="user-tags" v-if="user.top || user.username">
+						<view class="user-tags" v-if="user.top || user.username || isGroupConversation(user)">
 							<text class="tag pin-tag" v-if="user.top">置顶</text>
-							<text class="tag" v-if="user.username">{{ user.username }}</text>
+							<text class="tag group-tag" v-if="isGroupConversation(user)">群聊</text>
+							<text class="tag" v-else-if="user.username">{{ user.username }}</text>
 						</view>
 					</view>
 				</view>
@@ -118,6 +119,7 @@ export default {
 			hasMore: true,
 			isDarkTheme: false,
 			scrollTop: 0,
+			aiEnabled: true,
 			
 			// 本地缓存相关
 			cacheKey: '', // 存储 key = `chatlist_${userId}`
@@ -141,9 +143,10 @@ computed: {
 		},
 
 		filteredUserList() {
-			if (!this.searchKeyword) return this.userList
+			const list = this.deduplicateConversations(this.userList)
+			if (!this.searchKeyword) return list
 			const keyword = this.searchKeyword.toLowerCase()
-			return this.userList.filter(user => {
+			return list.filter(user => {
 				const name = (user.username || '').toLowerCase()
 				const note = (user.note || '').toLowerCase()
 				return name.includes(keyword) || note.includes(keyword)
@@ -187,6 +190,7 @@ computed: {
 
 	onShow() {
 		this.isPageActive = true
+		this.refreshAiVisibility()
 		
 		// 初始化加载/刷新
 		this.refreshList()
@@ -244,7 +248,7 @@ computed: {
 				if (cached && typeof cached === 'string') {
 					const cacheData = JSON.parse(cached)
 					if (cacheData && Array.isArray(cacheData.userList)) {
-						this.userList = cacheData.userList
+						this.userList = this.deduplicateConversations(cacheData.userList)
 						this.sortUserList()
 						this.lastRefreshTime = cacheData.timestamp || 0
 						console.log('从缓存加载用户列表，共', this.userList.length, '个用户')
@@ -261,6 +265,7 @@ computed: {
 		saveToCache() {
 			try {
 				if (!this.cacheKey) return
+				this.userList = this.deduplicateConversations(this.userList)
 				
 				const cacheData = {
 					userList: this.userList,
@@ -406,6 +411,47 @@ computed: {
 			if (topDiff !== 0) return topDiff
 			return this.getChatSortTime(b) - this.getChatSortTime(a)
 		},
+
+		getConversationKey(user) {
+			const isGroup = user?.conversationType === 'group' || user?.groupId || String(user?.otherId || '').startsWith('group:')
+			const rawId = isGroup
+				? (user?.groupId || String(user?.otherId || '').replace(/^group:/, ''))
+				: user?.otherId
+			return `${isGroup ? 'group' : 'direct'}:${String(rawId || '')}`
+		},
+
+		isGroupConversation(user) {
+			return user?.conversationType === 'group' || !!user?.groupId || String(user?.otherId || '').startsWith('group:')
+		},
+
+		normalizeConversation(user) {
+			if (!user) return null
+			const isGroup = user.conversationType === 'group' || user.groupId || String(user.otherId || '').startsWith('group:')
+			const rawId = isGroup
+				? (user.groupId || String(user.otherId || '').replace(/^group:/, ''))
+				: user.otherId
+			if (rawId === undefined || rawId === null || rawId === '') return null
+			return {
+				...user,
+				conversationType: isGroup ? 'group' : 'direct',
+				groupId: isGroup ? String(rawId) : user.groupId,
+				otherId: isGroup ? `group:${rawId}` : String(rawId)
+			}
+		},
+
+		deduplicateConversations(list = []) {
+			const conversations = new Map()
+			for (const item of Array.isArray(list) ? list : []) {
+				const normalized = this.normalizeConversation(item)
+				if (!normalized) continue
+				const key = this.getConversationKey(normalized)
+				const existing = conversations.get(key)
+				if (!existing || this.getChatSortTime(normalized) >= this.getChatSortTime(existing)) {
+					conversations.set(key, normalized)
+				}
+			}
+			return Array.from(conversations.values()).sort(this.compareChatUsers)
+		},
 		
 		/**
 		 * 停止定时刷新
@@ -461,10 +507,11 @@ computed: {
 		 * 处理：新增用户、更新用户信息、顺序调整
 		 */
 		mergeUserList(newList, page) {
+			newList = this.deduplicateConversations(newList)
 			if (page === 1) {
 				// 第一页：完全替换或合并
-				const newUserMap = new Map(newList.map(u => [u.otherId, u]))
-				const existingUserMap = new Map(this.userList.map(u => [u.otherId, u]))
+				const newUserMap = new Map(newList.map(u => [this.getConversationKey(u), u]))
+				const existingUserMap = new Map(this.deduplicateConversations(this.userList).map(u => [this.getConversationKey(u), u]))
 				
 				let updatedCount = 0
 				let addedCount = 0
@@ -518,29 +565,29 @@ computed: {
 				
 				// 先整理本次刷新页，最后统一按置顶和时间排序
 				const page1Users = Array.from(existingUserMap.values())
-					.filter(u => newUserMap.has(u.otherId))
+					.filter(u => newUserMap.has(this.getConversationKey(u)))
 					.sort(this.compareChatUsers)
 				
 				// 合并：排序后的第一页 + 现有的后续页面
-				const laterPages = this.userList.filter(u => !newUserMap.has(u.otherId))
-				this.userList = [...page1Users, ...laterPages]
+				const laterPages = this.userList.filter(u => !newUserMap.has(this.getConversationKey(u)))
+				this.userList = this.deduplicateConversations([...page1Users, ...laterPages])
 				
 				console.log(`第一页已合并: 更新 ${updatedCount} 个, 新增 ${addedCount} 个, 总共 ${this.userList.length} 个用户`)
 			} else {
 				// 后续页面：仅添加不存在的用户
-				const existingIds = new Set(this.userList.map(u => u.otherId))
-				const usersToAdd = newList.filter(u => !existingIds.has(u.otherId))
+				const existingIds = new Set(this.userList.map(u => this.getConversationKey(u)))
+				const usersToAdd = newList.filter(u => !existingIds.has(this.getConversationKey(u)))
 				
 				console.log(`第 ${page} 页处理: 收到 ${newList.length} 个用户, 已存在 ${newList.length - usersToAdd.length} 个, 新增 ${usersToAdd.length} 个`)
 				
 				if (usersToAdd.length > 0) {
-					this.userList = [...this.userList, ...usersToAdd]
+					this.userList = this.deduplicateConversations([...this.userList, ...usersToAdd])
 					console.log(`第 ${page} 页已添加, 现在共 ${this.userList.length} 个用户`)
 				} else {
 					console.log(`第 ${page} 页没有新用户, 保持 ${this.userList.length} 个用户不变`)
 				}
 			}
-			this.sortUserList()
+			this.userList = this.deduplicateConversations(this.userList)
 		},
 
 		// 验证管理员权限
@@ -814,6 +861,24 @@ computed: {
 			})
 		},
 
+		async refreshAiVisibility() {
+			try {
+				const response = await new Promise((resolve, reject) => {
+					uni.request({
+						url: `${baseUrl}/api/ai/settings`,
+						success: resolve,
+						fail: reject
+					})
+				})
+				const payload = response?.data
+				const settings = payload && payload.code === 0 ? payload.data : null
+				if (settings) this.aiEnabled = settings.aiEnabled !== false
+			} catch (error) {
+				console.warn('[chatlist] check AI settings failed:', error)
+			}
+			return this.aiEnabled
+		},
+
 		openContacts() {
 			uni.navigateTo({ url: '/pages-nonTheme/chat-contacts' })
 		},
@@ -858,7 +923,7 @@ computed: {
 			switch (msgType) {
 				case 'text':
 					// 文本消息，content 直接是字符串
-					const textContent = String(msgContent)
+					const textContent = String(msgContent).replace(/\s+/g, ' ').trim()
 					if (!textContent || textContent === '') {
 						return '暂无消息'
 					}
@@ -1103,10 +1168,16 @@ computed: {
 		// endif
 		display: flex;
 		align-items: center;
+		justify-content: center;
+		position: relative;
 		padding: 0 15px;
 	}
 
 	.nav-left {
+		position: absolute;
+		left: 15px;
+		top: 0;
+		height: 100%;
 		width: 40px;
 		display: flex;
 		align-items: center;
@@ -1125,7 +1196,9 @@ computed: {
 	}
 
 	.nav-title {
-		flex: 1;
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
 		text-align: center;
 		font-size: 17px;
 		font-weight: 600;
@@ -1135,6 +1208,10 @@ computed: {
 	}
 
 	.nav-right {
+		position: absolute;
+		right: 15px;
+		top: 0;
+		height: 100%;
 		width: 72px;
 		display: flex;
 		align-items: center;
@@ -1458,9 +1535,12 @@ computed: {
 			display: flex;
 			justify-content: space-between;
 			align-items: flex-end;
+			min-width: 0;
 
 			.last-message {
 				flex: 1;
+				display: block;
+				min-width: 0;
 				font-size: 14px;
 				color: var(--text-secondary);
 				overflow: hidden;
@@ -1497,12 +1577,18 @@ computed: {
 						color: white;
 					}
 
-					&.pin-tag {
-						color: #b45309;
-						background: rgba(245, 158, 11, 0.12);
-						border-color: rgba(245, 158, 11, 0.28);
-					}
+				&.pin-tag {
+					color: #b45309;
+					background: rgba(245, 158, 11, 0.12);
+					border-color: rgba(245, 158, 11, 0.28);
 				}
+
+				&.group-tag {
+					color: #0f766e;
+					background: rgba(13, 148, 136, 0.12);
+					border-color: rgba(13, 148, 136, 0.26);
+				}
+			}
 			}
 		}
 	}

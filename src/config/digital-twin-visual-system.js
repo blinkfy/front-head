@@ -67,15 +67,18 @@ export const DIGITAL_TWIN_VISUAL_SYSTEM = freeze({
       accelerationDistance: 0.10,
       cruiseDistance: 0.78,
       arrivalHold: 0.06,
-      turnBlendMs: 220,
-      maxVisualTurnDeg: 6
+      turnBlendMs: 260,
+      headingStepDeg: 45,
+      headingIndicatorOpacity: 0.72
     },
     shadow: {
       direction: 'bottom_right',
-      offsetX: 5,
-      offsetY: 5,
-      opacity: 0.34,
-      blur: 3,
+      offsetX: 4,
+      offsetY: 4,
+      opacity: 0.30,
+      blur: 3.4,
+      contactOpacity: 0.46,
+      contactBlur: 1.6,
       skewDeg: -18
     },
     layer: {
@@ -95,8 +98,8 @@ export const DIGITAL_TWIN_VISUAL_SYSTEM = freeze({
     standby: '#8ea5b5',
     processing: '#27c7d8',
     selected: '#b7f6ff',
-    routePrimary: '#24d9ff',
-    routeSecondary: '#ff9b52'
+    routePrimary: '#65a9b4',
+    routeSecondary: '#bd866b'
   },
   labels: {
     fontFamily: '"Source Han Sans SC", "Microsoft YaHei", sans-serif',
@@ -117,15 +120,19 @@ export const DIGITAL_TWIN_VISUAL_SYSTEM = freeze({
     paddingY: 4
   },
   route: {
-    width: 4,
-    activeWidth: 5,
-    outlineWidth: 2,
-    outlineColor: 'rgba(0, 14, 24, 0.72)',
-    dashLength: 12,
-    dashGap: 8,
-    flowSpeedPxPerSecond: 72,
-    flowCycleMs: 1200,
-    opacity: 0.92
+    width: 1.6,
+    activeWidth: 2.2,
+    outlineWidth: 3.2,
+    outlineColor: 'rgba(0, 14, 24, 0.38)',
+    dashLength: 1,
+    dashGap: 13,
+    flowSpeedPxPerSecond: 36,
+    flowCycleMs: 1800,
+    opacity: 0.62,
+    returnColor: '#bd866b',
+    replacementColor: '#65a9b4',
+    completedOpacity: 0.12,
+    inactiveOpacity: 0.18
   },
   panel: {
     background: 'rgba(7, 27, 43, 0.88)',

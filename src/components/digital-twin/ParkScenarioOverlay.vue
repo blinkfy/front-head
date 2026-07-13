@@ -4,10 +4,10 @@
     <svg class="scenario-route-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
       <polyline v-if="originalRoutePoints" :points="originalRoutePoints" class="scenario-route-ground" />
       <polyline v-if="newRoutePoints" :points="newRoutePoints" class="scenario-route-ground" />
-      <polyline v-for="robotRoute in activeRobotRoutes" :key="`${robotRoute.robotId}:ground`" :points="robotRoute.points" class="scenario-route-ground robot-ground" />
-      <polyline v-if="originalRoutePoints" :points="originalRoutePoints" :class="['scenario-route', 'original', { blocked: ['BLOCKED','REPLANNED','RESUMED','ARRIVED'].includes(route.status) }]" />
-      <polyline v-if="newRoutePoints" :points="newRoutePoints" class="scenario-route replanned" />
-      <polyline v-for="robotRoute in activeRobotRoutes" :key="robotRoute.robotId" :points="robotRoute.points" :class="['scenario-route', 'robot-task-route', robotRoute.variant]" />
+      <polyline v-for="robotRoute in activeRobotRoutes" :key="`${robotRoute.robotId}:ground`" :points="robotRoute.points" :class="['scenario-route-ground', 'robot-ground', { muted: !robotRoute.focused }]" />
+      <polyline v-if="originalRoutePoints" :points="originalRoutePoints" :class="['scenario-route', 'original', { blocked: ['BLOCKED','REPLANNED','RESUMED','ARRIVED'].includes(route.status), active: ['STARTED','BLOCKED'].includes(route.status) }]" />
+      <polyline v-if="newRoutePoints" :points="newRoutePoints" :class="['scenario-route', 'replanned', { active: ['REPLANNED','RESUMED'].includes(route.status) }]" />
+      <polyline v-for="robotRoute in activeRobotRoutes" :key="robotRoute.robotId" :points="robotRoute.points" :class="['scenario-route', 'robot-task-route', robotRoute.variant, { active: robotRoute.focused, muted: !robotRoute.focused }]" />
     </svg>
     <!-- #endif -->
 
@@ -80,11 +80,11 @@
     <view v-for="visitor in renderedVisitors.filter(showScenarioVisitorLabel)" :key="`${visitor.id}:label`" class="scenario-label-anchor visitor" :style="pointStyle(visitor.renderedPosition)">
       <StableMapLabel :label-id="`${visitor.id}:behavior`" :text="behaviorLabel(visitor.behavior)" :detail="visitor.id === selectedId ? visitor.id : ''" :priority="scenarioLabelPriority('visitor', visitor.id)" placement="above" :selected="visitor.id === selectedId" :current="currentEntityIds.has(visitor.id)" />
     </view>
-    <view v-for="cluster in visibleVisitorClusters" :key="`${cluster.id}:label`" class="scenario-label-anchor cluster" :style="pointStyle(cluster.position)">
+    <view v-for="cluster in visibleVisitorClusters.slice(0, 1)" :key="`${cluster.id}:label`" class="scenario-label-anchor cluster" :style="pointStyle(cluster.position)">
       <StableMapLabel :label-id="`${cluster.id}:aggregate`" :text="`聚集 × ${cluster.count}`" :priority="76" placement="above" tone="amber" aggregate />
     </view>
     <view v-for="garbage in visibleGarbage.filter(showScenarioGarbageLabel)" :key="`${garbage.id}:label`" class="scenario-label-anchor garbage" :style="pointStyle(garbage.renderedPosition || garbage.position)">
-      <StableMapLabel :label-id="`${garbage.id}:status`" :text="garbage.carried ? '已携带' : '散落垃圾'" :detail="garbage.id === selectedId ? garbage.id : ''" :priority="scenarioLabelPriority('garbage', garbage.id)" placement="below" tone="amber" :selected="garbage.id === selectedId" :current="currentEntityIds.has(garbage.id)" />
+      <StableMapLabel :label-id="`${garbage.id}:status`" :text="garbageShortLabel(garbage)" :detail="garbage.id === selectedId ? garbage.id : ''" :priority="scenarioLabelPriority('garbage', garbage.id)" placement="below" tone="amber" :selected="garbage.id === selectedId" :current="currentEntityIds.has(garbage.id)" />
     </view>
     <view v-if="disposalTrashPosition" class="scenario-label-anchor garbage" :style="pointStyle(disposalTrashPosition)">
       <StableMapLabel label-id="active_disposal_object:status" text="投放物" :priority="88" placement="below" tone="green" current />
@@ -110,6 +110,7 @@ import { normalizeMapPoint, zoneLabel } from '@/utils/park-scenario-visuals.js'
 import { primaryEventEntityIds } from '@/utils/park-replay.js'
 import { displaySourceLabel } from '@/utils/source-display.js'
 import { mapDepthScale, mapMotionProgress, mapPolylineHeading } from '@/config/digital-twin-visual-system.js'
+import { parkRoutePolyline } from '@/utils/park-road-network.js'
 
 const props = defineProps({
   scenario: { type: String, default: 'baseline' },
@@ -134,11 +135,23 @@ const currentEntityIds = computed(() => new Set(primaryEventEntityIds(props.curr
 const originalRoutePoints = computed(() => routePoints(props.state.route?.original))
 const newRoutePoints = computed(() => routePoints(props.state.route?.replanned))
 const runtimeRobots = computed(() => ({
-  robot_patrol_01: props.runtimeState?.robots?.robot_patrol_01 || (props.runtimeState?.robot?.id === 'robot_patrol_01' ? props.runtimeState.robot : { id: 'robot_patrol_01', status: 'PATROLLING', positionPct: [51, 64] }),
-  robot_patrol_02: props.runtimeState?.robots?.robot_patrol_02 || { id: 'robot_patrol_02', status: 'PATROLLING', positionPct: [43, 68] }
+  robot_patrol_01: props.runtimeState?.robots?.robot_patrol_01 || (props.runtimeState?.robot?.id === 'robot_patrol_01' ? props.runtimeState.robot : { id: 'robot_patrol_01', status: 'PATROLLING', positionPct: [48, 66.5] }),
+  robot_patrol_02: props.runtimeState?.robots?.robot_patrol_02 || { id: 'robot_patrol_02', status: 'PATROLLING', positionPct: [40, 61.5] }
 }))
 const runtimeActiveRobotTasks = computed(() => props.runtimeState?.operations?.activeRobotTasks || {})
 const focusedRobotId = computed(() => props.currentEvent?.payload?.selectedEntityId || props.currentEvent?.payload?.robotId || props.currentEvent?.payload?.request?.robotId || 'robot_patrol_01')
+const visualActiveRobotTasks = computed(() => {
+  const tasks = { ...runtimeActiveRobotTasks.value }
+  const fixedTask = props.state.robotTask
+  if (!Object.keys(tasks).length && fixedTask?.taskId && !fixedTask.completed) {
+    tasks[focusedRobotId.value] = {
+      taskId: fixedTask.taskId,
+      positionPct: fixedTask.garbagePosition,
+      request: { robotRoute: { approachWaypointsPct: fixedTask.robotRoute } }
+    }
+  }
+  return tasks
+})
 const visualTimingStyle = computed(() => ({ '--visual-duration': `${1.2 / Math.max(.25, Number(props.playbackRate) || 1)}s` }))
 const activeGarbageId = computed(() => props.state.robotTask?.garbageId || props.currentEvent?.payload?.request?.garbageId || '')
 const visibleGarbage = computed(() => (props.state.garbage || []).filter(item => item.status !== 'COLLECTED').map(item => {
@@ -215,19 +228,25 @@ const disposalTrashPosition = computed(() => {
 })
 
 const robotPosition = computed(() => {
-  const patrol = props.state.robotTask?.patrolPosition || { x: 51, y: 64 }
-  const litter = props.state.robotTask?.garbagePosition || { x: 68, y: 56 }
-  const bin = props.state.robotTask?.targetPosition || { x: 74, y: 52 }
+  const patrol = props.state.robotTask?.patrolPosition || { x: 48, y: 66.5 }
+  const litter = props.state.robotTask?.garbagePosition || { x: 48.1, y: 52 }
+  const bin = props.state.robotTask?.targetPosition || { x: 64, y: 48 }
+  const approachRoute = resolveRobotRoute(props.state.robotTask?.robotRoute, litter)
+  const transportRoute = resolveRobotRoute(props.state.robotTask?.transportRoute, bin, 'transport')
+  const returnRoute = resolveRobotRoute(props.state.robotTask?.returnRoute, patrol, 'return')
   if (props.currentEvent?.eventType === 'TASK_CREATED' && props.state.robotTask?.taskId) {
-    return pointAlongRoute(props.state.robotTask.robotRoute?.length ? props.state.robotTask.robotRoute : [patrol, litter], mapMotionProgress(moveProgress.value))
+    return pointAlongRoute(approachRoute, mapMotionProgress(moveProgress.value))
   }
   if (props.currentEvent?.eventType !== 'ROBOT_TASK_REQUESTED') return props.state.robotTask?.completed ? patrol : (props.state.robotTask?.requested ? litter : patrol)
   const stage = String(props.robotVisual?.stage || 'scan').toLowerCase()
   const progress = Math.max(0, Math.min(1, Number(props.robotVisual?.progress) || 0))
-  if (['scan', 'approach', 'grasp'].includes(stage)) return litter
-  if (stage === 'transport') return pointAlongRoute(props.state.robotTask?.transportRoute?.length ? props.state.robotTask.transportRoute : [litter, bin], mapMotionProgress(progress))
+  // Keep the map entity at the route-side pickup point. The close-range grasp is
+  // shown by the existing local workflow, rather than moving the patrol robot
+  // across lawn pixels to the litter marker.
+  if (['scan', 'approach', 'grasp'].includes(stage)) return approachRoute.at(-1) || litter
+  if (stage === 'transport') return pointAlongRoute(transportRoute, mapMotionProgress(progress))
   if (['place', 'release', 'bin_internal'].includes(stage) || props.robotVisual?.mode === 'bin') return bin
-  if (stage === 'return') return pointAlongRoute(props.state.robotTask?.returnRoute?.length ? props.state.robotTask.returnRoute : [bin, patrol], mapMotionProgress(progress))
+  if (stage === 'return') return pointAlongRoute(returnRoute, mapMotionProgress(progress))
   return litter
 })
 const robotBadge = computed(() => {
@@ -239,32 +258,41 @@ const robotBadge = computed(() => {
 const focusedRobotHeading = computed(() => {
   const stage = String(props.robotVisual?.stage || '').toLowerCase()
   const localProgress = mapMotionProgress(Math.max(0, Math.min(1, Number(props.robotVisual?.progress) || 0)))
-  if (props.currentEvent?.eventType === 'TASK_CREATED') return mapPolylineHeading(props.state.robotTask?.robotRoute, mapMotionProgress(moveProgress.value))
-  if (stage === 'transport') return mapPolylineHeading(props.state.robotTask?.transportRoute, localProgress)
-  if (stage === 'return') return mapPolylineHeading(props.state.robotTask?.returnRoute, localProgress)
-  if (['scan', 'approach', 'grasp'].includes(stage)) return mapPolylineHeading(props.state.robotTask?.robotRoute, 1)
+  const litter = props.state.robotTask?.garbagePosition || { x: 48.1, y: 52 }
+  const bin = props.state.robotTask?.targetPosition || { x: 64, y: 48 }
+  const patrol = props.state.robotTask?.patrolPosition || { x: 48, y: 66.5 }
+  const approachRoute = resolveRobotRoute(props.state.robotTask?.robotRoute, litter)
+  const transportRoute = resolveRobotRoute(props.state.robotTask?.transportRoute, bin, 'transport')
+  const returnRoute = resolveRobotRoute(props.state.robotTask?.returnRoute, patrol, 'return')
+  if (props.currentEvent?.eventType === 'TASK_CREATED') return mapPolylineHeading(approachRoute, mapMotionProgress(moveProgress.value))
+  if (stage === 'transport') return mapPolylineHeading(transportRoute, localProgress)
+  if (stage === 'return') return mapPolylineHeading(returnRoute, localProgress)
+  if (['scan', 'approach', 'grasp'].includes(stage)) return mapPolylineHeading(approachRoute, 1)
   return 0
 })
 const renderedRobots = computed(() => Object.values(runtimeRobots.value).sort((a, b) => String(a.id).localeCompare(String(b.id))).map(robot => {
-  const activeTask = runtimeActiveRobotTasks.value?.[robot.id]
-  const basePosition = normalizeMapPoint(robot.positionPct || (robot.id === 'robot_patrol_02' ? [43, 68] : [51, 64]))
+  const activeTask = visualActiveRobotTasks.value?.[robot.id]
+  const basePosition = normalizeMapPoint(robot.positionPct || (robot.id === 'robot_patrol_02' ? [40, 61.5] : [48, 66.5]))
   const taskPosition = normalizeMapPoint(activeTask?.positionPct || basePosition)
-  const renderedPosition = robot.id === focusedRobotId.value && activeTask ? robotPosition.value : (activeTask ? taskPosition : basePosition)
   const approachRoute = activeRobotTaskRoute(activeTask, basePosition, taskPosition)
+  const renderedPosition = robot.id === focusedRobotId.value && activeTask
+    ? robotPosition.value
+    : (activeTask ? approachRoute.at(-1) || basePosition : basePosition)
   const statusLabel = robot.status === 'FAULT'
     ? (activeTask ? '任务暂停' : '暂不可用')
-    : activeTask ? `执行 ${activeTask.taskId}` : ((props.runtimeState?.operations?.robotQueues?.[robot.id]?.length || 0) ? '任务排队' : '巡检中')
+    : activeTask ? '执行任务' : ((props.runtimeState?.operations?.robotQueues?.[robot.id]?.length || 0) ? '任务排队' : '巡检中')
   return {
     ...robot, renderedPosition, statusLabel,
     moving: Boolean(activeTask) && !['FAULT', 'OFFLINE'].includes(robot.status),
     headingDeg: robot.id === focusedRobotId.value && activeTask ? focusedRobotHeading.value : mapPolylineHeading(approachRoute, 1)
   }
 }))
-const activeRobotRoutes = computed(() => Object.entries(runtimeActiveRobotTasks.value).map(([robotId, task], index) => {
+const activeRobotRoutes = computed(() => Object.entries(visualActiveRobotTasks.value).map(([robotId, task], index) => {
   const robot = runtimeRobots.value?.[robotId]
-  const from = normalizeMapPoint(robot?.positionPct || (robotId === 'robot_patrol_02' ? [43, 68] : [51, 64]))
+  const from = normalizeMapPoint(robot?.positionPct || (robotId === 'robot_patrol_02' ? [40, 61.5] : [48, 66.5]))
   const to = normalizeMapPoint(task?.positionPct || from)
-  return { robotId, variant: index ? 'robot-two' : 'robot-one', points: routePoints(activeRobotTaskRoute(task, from, to)) }
+  const focused = robotId === props.selectedId || robotId === focusedRobotId.value || currentEntityIds.value.has(robotId)
+  return { robotId, variant: index ? 'robot-two' : 'robot-one', focused, points: routePoints(activeRobotTaskRoute(task, from, to)) }
 }).filter(item => item.points))
 const showFormalObstacle = computed(() => Boolean(props.state.route?.obstacle) && !['IDLE', 'STARTED'].includes(props.state.route?.status) && props.state.route?.obstacleVisible !== false)
 const routeVehiclePosition = computed(() => {
@@ -293,9 +321,21 @@ const routeVehicleBadge = computed(() => ({ STARTED: '原路线行驶', BLOCKED:
 function activeRobotTaskRoute(task, from, to) {
   const source = task?.request?.robotRoute || task?.robotRoute || {}
   const points = source.approachWaypointsPct || source.approach || []
-  return Array.isArray(points) && points.length
-    ? points.map(point => normalizeMapPoint(point))
-    : [from, to]
+  return resolveRobotRoute(points, to, 'approach', from)
+}
+function resolveRobotRoute(points, target, phase = 'approach', fallbackStart = null) {
+  if (Array.isArray(points) && points.length >= 2) return points.map(point => normalizeMapPoint(point))
+  const targetPoint = normalizeMapPoint(target)
+  const routeId = targetPoint.x <= 43 ? 'robot_left_litter_to_bin' : 'robot_right_litter_to_bin'
+  const canonical = parkRoutePolyline(routeId).map(point => normalizeMapPoint(point))
+  if (!canonical.length) return [fallbackStart || targetPoint, targetPoint]
+  const nearestIndex = canonical.reduce((best, point, index) => {
+    const distance = Math.hypot(point.x - targetPoint.x, point.y - targetPoint.y)
+    return distance < best.distance ? { index, distance } : best
+  }, { index: 0, distance: Infinity }).index
+  if (phase === 'transport') return canonical.slice(nearestIndex)
+  if (phase === 'return') return [...canonical].reverse()
+  return canonical.slice(0, Math.max(1, nearestIndex + 1))
 }
 function routePoints(route) {
   return (route || []).map(point => `${point.x},${point.y}`).join(' ')
@@ -379,12 +419,20 @@ function zoneName(zoneId) { return zoneLabel(zoneId) }
 function behaviorLabel(value) { return ({ WALKING: '行走', IDLE: '停留', EATING: '用餐', DISPOSING: '投放', LITTERING: '遗落', LEAVING: '离开', GATHERING: '聚集' })[value] || value || '活动中' }
 function isFocusedVisitor(visitor) { return visitor.id === props.selectedId || currentEntityIds.value.has(visitor.id) }
 function showScenarioVisitorLabel(visitor) { return isFocusedVisitor(visitor) }
-function showScenarioGarbageLabel(garbage) { return garbage.id === props.selectedId || currentEntityIds.value.has(garbage.id) || garbage.carried }
+function showScenarioGarbageLabel(garbage) { return garbage.id === props.selectedId || currentEntityIds.value.has(garbage.id) }
 function showScenarioRobotLabel(robot) {
   return robot.id === props.selectedId
     || currentEntityIds.value.has(robot.id)
     || ['FAULT', 'OFFLINE'].includes(robot.status)
-    || Boolean(runtimeActiveRobotTasks.value?.[robot.id])
+    || (robot.id === focusedRobotId.value && Boolean(visualActiveRobotTasks.value?.[robot.id]))
+}
+function garbageShortLabel(garbage) {
+  const key = String(garbage?.category || garbage?.garbageType || garbage?.type || garbage?.id || '').toLowerCase()
+  if (key.includes('banana') || key.includes('kitchen')) return '果皮'
+  if (key.includes('cardboard') || key.includes('recycl')) return '纸箱'
+  if (key.includes('battery') || key.includes('hazard')) return '电池'
+  if (key.includes('cup') || key.includes('other')) return '纸杯'
+  return '垃圾'
 }
 function scenarioLabelPriority(kind, id) {
   if (id === props.selectedId) return 100
@@ -437,13 +485,12 @@ onBeforeUnmount(stopMotion)
 <style scoped>
 .scenario-layer { position: absolute; z-index: 5; inset: 0; pointer-events: none; overflow: hidden; }
 .scenario-badges { position: absolute; z-index: 9; right: 42px; top: 12px; display: flex; gap: 4px; }.scenario-badges text { padding: 3px 6px; border: 1px solid rgba(245,182,72,.48); border-radius: 4px; color: #ffd57c; background: rgba(83,55,9,.75); font: 700 7px/1 ui-monospace,Consolas,monospace; }
-.scenario-route-layer { position: absolute; z-index:0; inset: 0; width: 100%; height: 100%; overflow: visible; }.scenario-route,.scenario-route-ground { fill:none;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke }.scenario-route-ground{stroke:rgba(0,14,24,.58);stroke-width:7;opacity:.48;filter:blur(.35px)}.scenario-route-ground.robot-ground{stroke-width:5;opacity:.4}.scenario-route.original { stroke: #ff9a47; stroke-width: 3.8; stroke-dasharray: 10 7; opacity: .78; filter:drop-shadow(1px 2px 1px rgba(0,14,24,.42)) }.scenario-route.original.blocked { opacity: .38; }.scenario-route.replanned { stroke: #24d9ff; stroke-width: 4; stroke-dasharray: 5 6; filter:drop-shadow(1px 2px 1px rgba(0,14,24,.5));animation:scenario-route-flow var(--visual-duration,1.1s) linear infinite; }
-.scenario-route.robot-task-route { stroke-width:3;stroke-dasharray:4 5;opacity:.82;filter:drop-shadow(1px 2px 1px rgba(0,14,24,.48));animation:scenario-route-flow var(--visual-duration,1.1s) linear infinite}.scenario-route.robot-task-route.robot-one{stroke:#24d9ff}.scenario-route.robot-task-route.robot-two{stroke:#a77bff}
+.scenario-route-layer { position:absolute; z-index:0; inset:0; width:100%; height:100%; overflow:visible; }.scenario-route,.scenario-route-ground { fill:none;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;transition:opacity .3s ease }.scenario-route-ground{stroke:rgba(3,22,31,.48);stroke-width:4.4;opacity:.34}.scenario-route-ground.robot-ground{stroke-width:3.1;opacity:.25}.scenario-route-ground.muted{opacity:.07}.scenario-route { stroke-width:2.55;stroke-dasharray:4 10;opacity:.18;filter:drop-shadow(1px 1px .6px rgba(0,14,24,.28))}.scenario-route.active{opacity:.78;animation:scenario-route-flow calc(var(--visual-duration,1.2s) * 1.35) linear infinite}.scenario-route.original{stroke:#bd866b}.scenario-route.original.blocked:not(.active){opacity:.12}.scenario-route.replanned{stroke:#65a9b4}.scenario-route.robot-task-route{stroke-width:2.05;stroke-dasharray:3 10}.scenario-route.robot-task-route.robot-one{stroke:#65a9b4}.scenario-route.robot-task-route.robot-two{stroke:#8c83af}.scenario-route.robot-task-route.muted{opacity:.08;animation:none}
 .scenario-layer.paused .scenario-route,
 .scenario-layer.paused .heat-zone,
 .scenario-layer.paused .active-disposal i,
 .scenario-layer.paused .generated-garbage.falling i { animation-play-state: paused; }
-@keyframes scenario-route-flow { to { stroke-dashoffset: -22; } }
+@keyframes scenario-route-flow { to { stroke-dashoffset:-28; } }
 .heat-zone { position: absolute; transform: translate(-50%,-50%) scale(var(--heat-scale)); border-radius: 50%; background: radial-gradient(circle,rgba(255,77,70,.86) 0,rgba(255,157,50,.48) 34%,rgba(255,210,55,.15) 60%,transparent 72%); animation: heat-breathe calc(var(--visual-duration,1.2s) * 1.5) ease-in-out infinite; }.heat-zone text { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); color: #fff6d9; font-size: 8px; font-weight: 800; text-shadow: 0 1px 4px #511; white-space: nowrap; }
 @keyframes heat-breathe { 50% { filter: saturate(1.25) brightness(1.12); } }
 .zone-count { position: absolute; z-index: 5; transform: translate(-50%,-50%); padding: 3px 6px; display: flex; gap: 5px; border: 1px solid rgba(126,216,255,.36); border-radius: 5px; color: #a8d8ec; background: rgba(3,27,43,.82); font-size: 7px; }.zone-count b { color: #f0fbff; }
@@ -454,7 +501,7 @@ onBeforeUnmount(stopMotion)
 .route-obstacle i { display: flex; width: 25px; height: 25px; margin: auto; align-items: center; justify-content: center; border: 2px solid #ffd2d2; border-radius: 5px; color: #fff; background: #df404a; box-shadow: 0 0 14px rgba(255,75,84,.72); font-style: normal; font-weight: 900; }
 .route-vehicle { position: absolute; z-index: 9; transform: translate(-50%,-50%); text-align: center; }
 .scenario-robot { position:absolute;z-index:9;transform:translate(-50%,-50%);text-align:center;pointer-events:auto;cursor:pointer }.scenario-robot.robot-2{filter:drop-shadow(0 0 5px rgba(167,123,255,.65))}
-.scenario-label-overlay{position:absolute;z-index:12;inset:0;overflow:visible;pointer-events:none}.scenario-label-anchor{position:absolute;transform:translate(-50%,-50%);width:1px;height:1px}.scenario-label-anchor.visitor{width:24px;height:41px;transform:translate(-50%,-76%)}.scenario-label-anchor.robot{width:34px;height:48px}.scenario-label-anchor.bin{width:34px;height:43px}.scenario-label-anchor.garbage{width:12px;height:12px}.scenario-label-anchor.obstacle{width:25px;height:25px}
-.route-key { position: absolute; z-index: 8; right: 12px; bottom: 67px; padding: 6px 8px; display: grid; gap: 4px; border: 1px solid rgba(116,197,255,.3); border-radius: 6px; color: #dff7ff; background: rgba(3,25,40,.82); font-size: 7px; }.route-key view { display: flex; align-items: center; gap: 6px; }.route-key i { width: 22px; border-top: 3px dashed; }.route-key i.original { border-color: #ff9a47; }.route-key i.replanned { border-color: #24d9ff; }.route-key small { color: #ffd57c; font: 6px/1 ui-monospace,Consolas,monospace; }
+.scenario-label-overlay{position:absolute;z-index:12;inset:0;overflow:visible;pointer-events:none}.scenario-label-anchor{position:absolute;transform:translate(-50%,-50%);width:1px;height:1px}.scenario-label-anchor.visitor{width:24px;height:41px;transform:translate(-50%,-76%)}.scenario-label-anchor.robot{width:42px;height:60px}.scenario-label-anchor.bin{width:36px;height:46px}.scenario-label-anchor.garbage{width:12px;height:12px}.scenario-label-anchor.obstacle{width:25px;height:25px}
+.route-key { position: absolute; z-index: 8; right: 12px; bottom: 67px; padding: 6px 8px; display: grid; gap: 4px; border: 1px solid rgba(116,197,255,.3); border-radius: 6px; color: #dff7ff; background: rgba(3,25,40,.82); font-size: 7px; }.route-key view { display: flex; align-items: center; gap: 6px; }.route-key i { width:22px; border-top:2px dotted; }.route-key i.original { border-color:#bd866b; }.route-key i.replanned { border-color:#65a9b4; }.route-key small { color: #ffd57c; font: 6px/1 ui-monospace,Consolas,monospace; }
 @media (max-width: 900px) { .scenario-badges { right: 34px; }.zone-count { padding: 2px 4px; }.zone-count text { display: none; }.route-key { bottom: 62px; } }
 </style>
