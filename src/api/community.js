@@ -70,11 +70,20 @@ export function getCommunityPostImages(postId) {
   });
 }
 
-export function createPost(communityId, content, images = [], tag = '心得') {
+export function createPost(communityId, content, images = [], tag = '心得', visibilityScope = 'community') {
   return request({
     url: '/api/community/post/create',
     method: 'POST',
-    data: { communityId, content, images, tag },
+    data: { communityId, content, images, tag, visibilityScope },
+    needAuth: true
+  });
+}
+
+export function updatePostVisibility(postId, visibilityScope = 'community') {
+  return request({
+    url: `/api/community/post/${postId}/visibility`,
+    method: 'PATCH',
+    data: { visibilityScope },
     needAuth: true
   });
 }

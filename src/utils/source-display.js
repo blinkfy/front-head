@@ -2,6 +2,7 @@ const SOURCE_LABELS = Object.freeze({
   SIM: '回放数据',
   ISAAC_REALTIME: '实时结果',
   BACKEND_API: '接口数据',
+  LIVE_SIMULATION: '实时仿真',
   VISUAL_AID: '视觉说明'
 })
 

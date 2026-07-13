@@ -543,12 +543,21 @@ onBeforeUnmount(() => {
   transition: all 0.3s ease;
 }
 .safe-area-top { height: env(safe-area-inset-top); min-height: 20px; }
-.nav-content { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; }
-.nav-left { flex: 0 0 auto; min-width: 40px; }
-.nav-right { flex: 0 1 auto; max-width: 50%; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.nav-content { position: relative; display: flex; align-items: center; justify-content: space-between; min-height: 56px; padding: 12px 20px; }
+.nav-left { position: relative; z-index: 2; flex: 0 0 auto; min-width: 40px; }
+.nav-right { position: relative; z-index: 2; flex: 0 1 auto; max-width: 50%; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .back-btn { font-size: 20px; color: var(--text-primary); padding: 8px; transition: 0.2s; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--border-subtle); }
 .back-btn:active { transform: scale(0.9); background: var(--border-medium); }
-.nav-title-wrap { flex: 1; text-align: center; }
+.nav-title-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  text-align: center;
+}
 .nav-title { font-family: var(--font-display); font-size: 17px; font-weight: 600; color: var(--text-primary); letter-spacing: 1px; }
 .stat-inline { font-size: 12px; font-weight: 500; color: var(--text-secondary); background: var(--border-subtle); padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
 .refresh-btn { font-size: 18px; color: var(--text-secondary); padding: 8px; transition: 0.3s; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--border-subtle); cursor: pointer; }

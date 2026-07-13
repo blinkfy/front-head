@@ -7,38 +7,53 @@ export const MAP_SPRITE_REGISTRY = Object.freeze({
     default: Object.freeze({
       src: '/static/digital-twin-replay/sprites/patrol-robot-v1.webp',
       status: 'formal',
-      source: 'back-end/images/lejv.webp'
+      source: 'back-end/images/lejv.webp',
+      view: 'left_front_35_45',
+      transparent: true,
+      groundAnchor: Object.freeze([0.5, 0.94])
     })
   }),
   bin: Object.freeze({
     default: Object.freeze({
       src: smartBinMapVisual.src,
       status: smartBinMapVisual.status,
-      source: smartBinMapVisual.source
+      source: smartBinMapVisual.source,
+      view: 'left_front_35_45',
+      transparent: true,
+      groundAnchor: Object.freeze([0.5, 0.96])
     })
   }),
   center: Object.freeze({
     default: Object.freeze({
       src: '/static/digital-twin-replay/sprites/center-ops-v1.png',
       status: 'formal',
-      source: 'E:/大学日志/2024.07/集训/网挑/答辩.pptx#ppt/media/image8.png'
+      source: 'E:/大学日志/2024.07/集训/网挑/答辩.pptx#ppt/media/image8.png',
+      view: 'left_front_35_45',
+      transparent: true,
+      groundAnchor: Object.freeze([0.5, 0.94])
     })
   }),
   station: Object.freeze({
     unload: Object.freeze({
       src: '/static/digital-twin-replay/sprites/station-unload-v1.png',
       status: 'temporary',
-      source: 'front-head/src/static/sorting-center/facility-intake.png'
+      source: 'front-head/src/static/sorting-center/facility-intake.png',
+      view: 'left_front_35_45',
+      transparent: true
     }),
     wash: Object.freeze({
       src: '/static/digital-twin-replay/sprites/station-wash-v1.png',
       status: 'temporary',
-      source: 'front-head/src/static/sorting-center/facility-washing.png'
+      source: 'front-head/src/static/sorting-center/facility-washing.png',
+      view: 'left_front_35_45',
+      transparent: true
     }),
     charge: Object.freeze({
       src: '/static/digital-twin-replay/sprites/station-charge-inspection-v1.png',
       status: 'temporary_inspection_reference',
-      source: 'front-head/src/static/sorting-center/facility-inspection.png'
+      source: 'front-head/src/static/sorting-center/facility-inspection.png',
+      view: 'left_front_35_45',
+      transparent: true
     }),
     default: Object.freeze({ src: '', status: 'missing', source: '' })
   })

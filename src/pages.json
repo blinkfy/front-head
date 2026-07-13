@@ -149,6 +149,12 @@
 					}
 				},
 				{
+					"path": "chat-contacts",
+					"style": {
+						"navigationStyle": "custom"
+					}
+				},
+				{
 					"path": "ai-chat",
 					"style": {
 						"navigationStyle": "custom"

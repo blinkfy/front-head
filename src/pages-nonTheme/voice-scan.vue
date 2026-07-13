@@ -26,99 +26,101 @@
       </view>
     </view>
 
-    <view class="content-wrapper">
-      <!-- 中央麦克风区域 -->
-      <view class="mic-section">
-        <view :class="['mic-ring', isListening ? 'listening' : '']"
-          @touchstart="startListening"
-          @touchend="stopListening"
-          @touchcancel="stopListening"
-        >
-          <view class="mic-inner">
-            <text class="mic-icon">🎤</text>
-          </view>
-        </view>
-        <view class="mic-status">
-          <text class="status-text">{{ statusText }}</text>
-        </view>
-      </view>
-
-      <!-- 语音波形可视化 -->
-      <view class="wave-section" v-if="isListening">
-        <view class="wave-bars">
-          <view v-for="i in 12" :key="i" :class="['wave-bar', `wave-${(i % 3) + 1}`]" :style="{ height: getWaveHeight(i) + 'px' }"></view>
-        </view>
-      </view>
-
-      <!-- 长按说话按钮 -->
-      <view class="press-section">
-        <view
-          :class="['press-btn', isListening ? 'active' : '']"
-          @touchstart="startListening"
-          @touchend="stopListening"
-          @touchcancel="stopListening"
-        >
-          <text class="press-text">{{ isListening ? '松开结束' : '长按说话' }}</text>
-        </view>
-        <text class="press-hint">或输入文字描述垃圾类型</text>
-      </view>
-
-      <!-- 文字输入区域（替代语音） -->
-      <view class="text-section">
-        <view class="text-input-card">
-          <textarea
-            v-model="textInput"
-            class="text-input"
-            placeholder="输入垃圾描述，如：废报纸、塑料瓶、旧电池..."
-            placeholder-class="input-placeholder"
-            auto-height
-          ></textarea>
-        </view>
-        <view class="text-submit-btn" @click="submitText">
-          <text>识别</text>
-        </view>
-      </view>
-
-      <!-- 最近识别记录 -->
-      <view class="history-section" v-if="historyRecords.length > 0">
-        <view class="section-title">最近识别记录</view>
-        <view class="history-list">
-          <view v-for="(record, index) in historyRecords" :key="index" class="history-item" @click="useRecord(record)">
-            <view class="history-content">
-              <text class="history-text">{{ record.text }}</text>
-              <text class="history-result">{{ record.result }}</text>
+    <scroll-view class="main-scroll" scroll-y>
+      <view class="content-wrapper">
+        <!-- 中央麦克风区域 -->
+        <view class="mic-section">
+          <view :class="['mic-ring', isListening ? 'listening' : '']"
+            @touchstart="startListening"
+            @touchend="stopListening"
+            @touchcancel="stopListening"
+          >
+            <view class="mic-inner">
+              <text class="mic-icon">🎤</text>
             </view>
-            <text class="history-time">{{ formatTime(record.time) }}</text>
+          </view>
+          <view class="mic-status">
+            <text class="status-text">{{ statusText }}</text>
           </view>
         </view>
-      </view>
 
-      <!-- 识别结果 -->
-      <view class="result-section" v-if="currentResult">
-        <view class="result-header">
-          <text class="result-title">识别结果</text>
+        <!-- 语音波形可视化 -->
+        <view class="wave-section" v-if="isListening">
+          <view class="wave-bars">
+            <view v-for="i in 12" :key="i" :class="['wave-bar', `wave-${(i % 3) + 1}`]" :style="{ height: getWaveHeight(i) + 'px' }"></view>
+          </view>
         </view>
-        <view class="result-card">
-          <view class="result-category">
-            <text class="category-icon">{{ currentResult.icon }}</text>
-            <text class="category-name">{{ currentResult.category }}</text>
+
+        <!-- 长按说话按钮 -->
+        <view class="press-section">
+          <view
+            :class="['press-btn', isListening ? 'active' : '']"
+            @touchstart="startListening"
+            @touchend="stopListening"
+            @touchcancel="stopListening"
+          >
+            <text class="press-text">{{ isListening ? '松开结束' : '长按说话' }}</text>
           </view>
-          <view class="result-detail">
-            <text class="result-text">{{ currentResult.description }}</text>
+          <text class="press-hint">或输入文字描述垃圾类型</text>
+        </view>
+
+        <!-- 文字输入区域（替代语音） -->
+        <view class="text-section">
+          <view class="text-input-card">
+            <textarea
+              v-model="textInput"
+              class="text-input"
+              placeholder="输入垃圾描述，如：废报纸、塑料瓶、旧电池..."
+              placeholder-class="input-placeholder"
+              auto-height
+            ></textarea>
           </view>
-          <view class="result-tags">
-            <view v-for="(tag, idx) in currentResult.tags" :key="idx" class="result-tag">
-              <text>{{ tag }}</text>
+          <view class="text-submit-btn" @click="submitText">
+            <text>识别</text>
+          </view>
+        </view>
+
+        <!-- 最近识别记录 -->
+        <view class="history-section" v-if="historyRecords.length > 0">
+          <view class="section-title">最近识别记录</view>
+          <view class="history-list">
+            <view v-for="(record, index) in historyRecords" :key="index" class="history-item" @click="useRecord(record)">
+              <view class="history-content">
+                <text class="history-text">{{ record.text }}</text>
+                <text class="history-result">{{ record.result }}</text>
+              </view>
+              <text class="history-time">{{ formatTime(record.time) }}</text>
             </view>
           </view>
         </view>
-      </view>
-    </view>
 
-    <!-- 底部提示 -->
-    <view class="bottom-hint">
-      <text>{{ isH5 ? 'H5 环境暂不支持录音，请使用文字输入' : '长按录音，松开后自动识别' }}</text>
-    </view>
+        <!-- 识别结果 -->
+        <view class="result-section" v-if="currentResult">
+          <view class="result-header">
+            <text class="result-title">识别结果</text>
+          </view>
+          <view class="result-card">
+            <view class="result-category">
+              <text class="category-icon">{{ currentResult.icon }}</text>
+              <text class="category-name">{{ currentResult.category }}</text>
+            </view>
+            <view class="result-detail">
+              <text class="result-text">{{ currentResult.description }}</text>
+            </view>
+            <view class="result-tags">
+              <view v-for="(tag, idx) in currentResult.tags" :key="idx" class="result-tag">
+                <text>{{ tag }}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 底部提示 -->
+        <view class="bottom-hint">
+          <text>{{ isH5 ? 'H5 环境暂不支持录音，请使用文字输入' : '长按录音，松开后自动识别' }}</text>
+        </view>
+      </view>
+    </scroll-view>
   </view>
 </template>
 
@@ -1034,8 +1036,8 @@ export default {
 .safe-area-top { height: env(safe-area-inset-top); min-height: 44rpx; }
 .nav-content {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 24rpx 32rpx;
-  height: 88rpx; box-sizing: content-box;
+  padding: 0 32rpx;
+  height: 136rpx; box-sizing: border-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
 .dark-mode .back-icon { color: #fff; }
@@ -1061,7 +1063,13 @@ export default {
 .action-icon-btn:active { transform: scale(0.92); }
 .dark-mode .action-icon-btn { background: rgba(255, 255, 255, 0.15); }
 
-.content-wrapper { position: relative; z-index: 10; padding: 40rpx 32rpx 160rpx; }
+.main-scroll {
+  position: relative;
+  z-index: 10;
+  height: calc(100vh - 180rpx);
+  height: calc(100vh - max(env(safe-area-inset-top), 44rpx) - 136rpx);
+}
+.content-wrapper { padding: 40rpx 32rpx calc(120rpx + env(safe-area-inset-bottom)); }
 
 .mic-section {
   display: flex; flex-direction: column; align-items: center;
@@ -1218,10 +1226,8 @@ export default {
 .dark-mode .result-tag text { color: #34d399; }
 
 .bottom-hint {
-  position: fixed;
-  bottom: 40rpx;
-  left: 0; right: 0;
   text-align: center;
+  padding: 8rpx 24rpx 0;
 }
 .bottom-hint text { color: #9ca3af; font-size: 22rpx; }
 .dark-mode .bottom-hint text { color: rgba(255, 255, 255, 0.5); }

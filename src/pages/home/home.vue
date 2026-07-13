@@ -233,7 +233,14 @@
 
           <view class="action-item featured lottery-card" @click="goLottery">
             <view class="action-icon-wrapper lottery">
-              <text class="action-icon">🎰</text>
+              <view class="lottery-icon-mark">
+                <view class="lottery-pointer"></view>
+                <view class="lottery-wheel">
+                  <view class="lottery-wheel-center"></view>
+                </view>
+                <view class="lottery-spark lottery-spark-one"></view>
+                <view class="lottery-spark lottery-spark-two"></view>
+              </view>
             </view>
             <view class="action-copy">
               <text class="action-name">积分抽奖</text>
@@ -2821,7 +2828,7 @@ function closeAchievementModal() {
 }
 
 .action-item.lottery-card {
-  background: linear-gradient(135deg, #f5f3ff 0%, #ffffff 48%, #ecfdf5 100%);
+  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 48%, #ecfdf5 100%);
 }
 
 .action-item.compact {
@@ -2957,7 +2964,94 @@ function closeAchievementModal() {
 }
 
 .action-icon-wrapper.lottery {
-  background: linear-gradient(135deg, #ede9fe 0%, #a78bfa 50%, #8b5cf6 100%);
+  background:
+    radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.9) 0%, transparent 34%),
+    linear-gradient(135deg, #fef3c7 0%, #34d399 54%, #059669 100%);
+  box-shadow:
+    0 10rpx 22rpx rgba(5, 150, 105, 0.18),
+    0 4rpx 10rpx rgba(245, 158, 11, 0.18),
+    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.7),
+    inset 0 -2rpx 4rpx rgba(4, 120, 87, 0.16);
+}
+
+.lottery-icon-mark {
+  position: relative;
+  width: 56rpx;
+  height: 56rpx;
+  z-index: 1;
+}
+
+.lottery-wheel {
+  position: absolute;
+  left: 7rpx;
+  top: 11rpx;
+  width: 42rpx;
+  height: 42rpx;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, #ffffff 0 16%, transparent 17%),
+    conic-gradient(
+      from -18deg,
+      #f97316 0deg 45deg,
+      #ffffff 45deg 90deg,
+      #10b981 90deg 135deg,
+      #ffffff 135deg 180deg,
+      #fbbf24 180deg 225deg,
+      #ffffff 225deg 270deg,
+      #14b8a6 270deg 315deg,
+      #ffffff 315deg 360deg
+    );
+  border: 3rpx solid rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 4rpx 10rpx rgba(4, 120, 87, 0.24),
+    inset 0 0 0 2rpx rgba(5, 150, 105, 0.12);
+}
+
+.lottery-wheel-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fef3c7 0%, #f59e0b 100%);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1rpx 4rpx rgba(120, 53, 15, 0.22);
+}
+
+.lottery-pointer {
+  position: absolute;
+  left: 21rpx;
+  top: 2rpx;
+  width: 0;
+  height: 0;
+  border-left: 7rpx solid transparent;
+  border-right: 7rpx solid transparent;
+  border-top: 18rpx solid #ffffff;
+  filter: drop-shadow(0 2rpx 3rpx rgba(120, 53, 15, 0.2));
+  z-index: 2;
+}
+
+.lottery-spark {
+  position: absolute;
+  width: 7rpx;
+  height: 7rpx;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 8rpx rgba(255, 255, 255, 0.9);
+}
+
+.lottery-spark-one {
+  right: 2rpx;
+  top: 8rpx;
+}
+
+.lottery-spark-two {
+  left: 3rpx;
+  bottom: 5rpx;
+  width: 5rpx;
+  height: 5rpx;
+  opacity: 0.9;
 }
 
 .action-icon-wrapper.community {

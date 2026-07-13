@@ -4,7 +4,7 @@ export const CENTER_WORKFLOW_STAGES = freezeList([
   { key: 'ARRIVE', label: '设备到站', zone: 'ARRIVE', eventType: 'DEVICE_ARRIVED_AT_CENTER', visualKey: 'arrival' },
   { key: 'DOCK', label: '泊位对接', zone: 'DOCK', eventType: 'DEVICE_ARRIVED_AT_CENTER', visualKey: 'waiting' },
   { key: 'UNLOAD', label: '垃圾卸载', zone: 'UNLOAD', eventType: 'CENTER_UNLOADING', visualKey: 'unloading' },
-  { key: 'CLEAN', label: '桶体清洗', zone: 'CLEAN', eventType: 'CENTER_CLEANING', visualKey: 'cleaning' },
+  { key: 'CLEAN', label: '桶体清洁', zone: 'CLEAN', eventType: 'CENTER_CLEANING', visualKey: 'cleaning' },
   { key: 'CHARGE', label: '充电', zone: 'CHARGE', eventType: 'CENTER_CHARGING', visualKey: 'charging' },
   { key: 'CHECK', label: '状态检测', zone: 'CHECK', eventType: 'DEVICE_RECOVERED', visualKey: 'status_check' },
   { key: 'STANDBY', label: '恢复待命', zone: 'STANDBY', eventType: 'DEVICE_RECOVERED', visualKey: 'standby' }
@@ -24,7 +24,7 @@ export const CENTER_WORKFLOW_SCENE = Object.freeze({
   aspectRatio: 4 / 3,
   device: Object.freeze({
     src: '/static/digital-twin-replay/sprites/smart-bin-v1.png',
-    widthPct: 10.8,
+    widthPct: 18,
     source: 'digital-twin-park-v1/assets/03_smart-bin/bin.png'
   }),
   masks: Object.freeze({
@@ -78,10 +78,6 @@ export const CENTER_WORKFLOW_SCENE = Object.freeze({
     startAt: 0.24,
     endAt: 0.82
   }),
-  cleanDrops: freezeList([
-    { x: 22, delay: 0 }, { x: 37, delay: 0.08 }, { x: 51, delay: 0.16 },
-    { x: 65, delay: 0.04 }, { x: 78, delay: 0.13 }, { x: 89, delay: 0.21 }
-  ]),
   energyDots: freezeList([
     { at: 0.08 }, { at: 0.3 }, { at: 0.52 }, { at: 0.74 }
   ])
@@ -96,9 +92,11 @@ export function centerWorkflowStage(key = 'ARRIVE') {
 export function resolveCenterWorkflowPhase({ eventType = '', progress = 0, eventHistory = [], override = null } = {}) {
   if (override && stageByKey[override]) return override
   if (eventType === 'DEVICE_ARRIVED_AT_CENTER') return 'ARRIVE'
+  if (eventType === 'CENTER_BAY_ASSIGNED') return 'DOCK'
   if (eventType === 'CENTER_UNLOADING') return 'UNLOAD'
   if (eventType === 'CENTER_CLEANING') return 'CLEAN'
   if (eventType === 'CENTER_CHARGING') return 'CHARGE'
+  if (eventType === 'CENTER_CHECKING') return 'CHECK'
   if (eventType === 'DEVICE_RECOVERED') return progress < CENTER_WORKFLOW_TIMINGS.CHECK_SPLIT ? 'CHECK' : 'STANDBY'
 
   const types = eventHistory.map(event => event?.eventType)

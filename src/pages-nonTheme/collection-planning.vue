@@ -2,17 +2,18 @@
   <view :class="['layout', isDark ? 'dark-theme' : '']">
 
     <!-- ===== 顶部 panel ===== -->
-    <view class="panel">
+    <view class="panel header-panel">
       <view class="top">
-        <view>
+        <view class="page-intro">
           <view class="title">垃圾清运规划</view>
           <view class="sub">结合地理位置、当前满载率与历史趋势，自动生成"先清哪几个、何时清、如何走"。</view>
         </view>
         <view class="btns">
-          <view class="btn" @tap="goBack">返回</view>
-          <view class="btn blue" @tap="doLoadBins">刷新桶位</view>
-          <view class="btn" @tap="doMockHistory">生成历史样本</view>
+          <AdminScreenHeader screen-key="collectionPlanning" :tone="isDark ? 'dark' : 'light'" @back="goBack">
+          <view class="btn secondary" @tap="doLoadBins">刷新桶位</view>
+          <view class="btn secondary" @tap="doMockHistory">生成历史样本</view>
           <view class="btn primary" @tap="doCreatePlan">一键规划路线</view>
+          </AdminScreenHeader>
         </view>
       </view>
       <view class="metrics">
@@ -30,8 +31,11 @@
       <view class="panel controls">
 
         <!-- 规划参数 -->
-        <view class="card">
-          <view class="card-title">规划参数</view>
+        <view class="card planning-card">
+          <view class="card-heading">
+            <view class="card-title">规划参数</view>
+            <view class="card-note">调度规则</view>
+          </view>
           <view class="form-grid">
             <view class="form-item">
               <text class="form-label">紧急阈值(%)</text>
@@ -79,8 +83,11 @@
         </view>
 
         <!-- 车辆起点 -->
-        <view class="card">
-          <view class="card-title">车辆起点</view>
+        <view class="card start-card">
+          <view class="card-heading">
+            <view class="card-title">车辆起点</view>
+            <view class="card-note">地图选点</view>
+          </view>
           <view class="form-grid">
             <view class="form-item">
               <text class="form-label">纬度</text>
@@ -95,7 +102,7 @@
                 @input="onStartLngInput($event)" />
             </view>
           </view>
-          <view class="btns" style="margin-top:8px;">
+          <view class="btns inline-actions">
             <view class="btn" @tap="useMapCenter">使用地图中心</view>
             <view class="btn" @tap="doSaveSnapshots">保存当前快照</view>
           </view>
@@ -103,8 +110,11 @@
         </view>
 
         <!-- 桶位列表 -->
-        <view class="card">
-          <view class="card-title">桶位调度列表</view>
+        <view class="card bins-card">
+          <view class="card-heading">
+            <view class="card-title">桶位调度列表</view>
+            <view class="card-note">已选 {{ selectedBinCount }} 个</view>
+          </view>
           <view class="legend">
             <text><text class="legend-dot" style="background:#1fb57d"></text>低负载</text>
             <text><text class="legend-dot" style="background:#e0a100"></text>临界</text>
@@ -126,10 +136,10 @@
                     style="transform:scale(0.7);margin-left:-8px;"
                     @change="onBinToggle(index, $event)"
                   />
-                  <text>{{ bin.name || 'Unnamed Bin' }}</text>
+                  <text>{{ bin.name || '未命名桶位' }}</text>
                 </view>
                 <text :class="['chip', bin.currentFill >= 90 ? 'urgent' : bin.currentFill >= 80 ? 'warning' : '']">
-                  {{ bin.currentFill >= 90 ? 'Urgent' : bin.currentFill >= 80 ? 'Warning' : 'Normal' }}
+                  {{ bin.currentFill >= 90 ? '紧急' : bin.currentFill >= 80 ? '高负载' : '正常' }}
                 </text>
               </view>
               <view class="bin-sub">
@@ -186,7 +196,13 @@
         <!-- #endif -->
 
         <view class="route">
-          <view class="route-summary">{{ routeSummary }}</view>
+          <view class="route-header">
+            <view>
+              <view class="route-title">最优路线</view>
+              <view class="route-summary">{{ routeSummary }}</view>
+            </view>
+            <view v-if="routeStops.length" class="route-count">{{ routeStops.length }} 个停靠点</view>
+          </view>
           <scroll-view class="route-list" scroll-y>
             <view v-if="!routeStops.length" class="empty">请先点击"一键规划路线"。</view>
             <view
@@ -220,7 +236,8 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { baseUrl } from '@/api/settings'
 import { mapConfig } from '@/api/map-config'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
-import { goBackFromAdminPage } from '@/utils/admin-page-nav'
+import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
+import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 
 // ─── 常量 ─────────────────────────────────────────────
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
@@ -314,6 +331,7 @@ const opts = reactive({
 const bins = ref([])            // { ...binData, selected: boolean }
 const routeStops = ref([])
 const routeSummary = ref('还未生成路线。')
+const selectedBinCount = computed(() => bins.value.filter((bin) => bin.selected !== false).length)
 
 const metricTotal = ref('0')
 const metricUrgent = ref('0')
@@ -428,7 +446,7 @@ function onBinRowTap(index) {
     _map.instance.setCenter(new window.TMap.LatLng(bin.latitude, bin.longitude))
     if (_map.instance.getZoom && _map.instance.getZoom() < 14 && _map.instance.setZoom) _map.instance.setZoom(14)
     showInfoWindow(bin.latitude, bin.longitude,
-      `<div style="font-size:12px;line-height:1.5"><b>${bin.name || 'Unnamed Bin'}</b><br/>满载率 ${Number(bin.currentFill || 0).toFixed(1)}%<br/>预计满载: ${bin.hoursToFull == null ? '--' : Number(bin.hoursToFull).toFixed(1) + 'h'}<br/>优先级 ${Number(bin.priorityScore || 0).toFixed(3)}</div>`)
+      `<div style="font-size:12px;line-height:1.5"><b>${bin.name || '未命名桶位'}</b><br/>满载率 ${Number(bin.currentFill || 0).toFixed(1)}%<br/>预计满载: ${bin.hoursToFull == null ? '--' : Number(bin.hoursToFull).toFixed(1) + 'h'}<br/>优先级 ${Number(bin.priorityScore || 0).toFixed(3)}</div>`)
   }
   // #endif
   // #ifndef H5
@@ -550,7 +568,7 @@ async function doCreatePlan() {
 
 async function doSaveSnapshots() {
   const targets = bins.value.filter(b => b.selected !== false)
-  if (!targets.length) { setStatus('Select at least one bin first.', 'err'); return }
+  if (!targets.length) { setStatus('请先选择至少一个桶位', 'err'); return }
   setStatus('正在保存满载率快照...')
   try {
     for (const bin of targets) {
@@ -683,7 +701,7 @@ function drawH5Map() {
   }
   const binGeos = binsArr.map((bin, i) => {
     const p = new TMap.LatLng(bin.latitude, bin.longitude); bounds.extend(p); hasBounds = true
-    return { id: 'bin-' + i, styleId: getBinStyleId(bin), title: bin.name || ('Bin-' + (i + 1)), position: p }
+    return { id: 'bin-' + i, styleId: getBinStyleId(bin), title: bin.name || ('桶位-' + (i + 1)), position: p }
   })
   if (binGeos.length) {
     _map.binMarkers = new TMap.MultiMarker({ id: 'planning-bins', map: _map.instance, styles: binStyles, geometries: binGeos })
@@ -691,7 +709,7 @@ function drawH5Map() {
       const id = evt?.geometry?.id || ''
       const i = Number(String(id).replace('bin-', ''))
       const bin = binsArr[i]; if (!bin) return
-      showInfoWindow(bin.latitude, bin.longitude, `<div style="font-size:12px;line-height:1.5"><b>${bin.name || 'Unnamed Bin'}</b><br/>Fill: ${Number(bin.currentFill || 0).toFixed(1)}%<br/>Hours to full: ${bin.hoursToFull == null ? '--' : Number(bin.hoursToFull).toFixed(1) + 'h'}<br/>Priority: ${Number(bin.priorityScore || 0).toFixed(3)}</div>`)
+      showInfoWindow(bin.latitude, bin.longitude, `<div style="font-size:12px;line-height:1.5"><b>${bin.name || '未命名桶位'}</b><br/>满载率：${Number(bin.currentFill || 0).toFixed(1)}%<br/>预计满载：${bin.hoursToFull == null ? '--' : Number(bin.hoursToFull).toFixed(1) + 'h'}<br/>优先级：${Number(bin.priorityScore || 0).toFixed(3)}</div>`)
     })
   }
 
@@ -744,6 +762,7 @@ async function initH5Map() {
 
 // ─── 生命周期 ──────────────────────────────────────────
 onMounted(async () => {
+  if (!await ensureAdminScreenAccess('collectionPlanning')) return
   isDark.value = getStorage('app_theme') === 'dark'
   // #ifdef H5
   const onStorage = () => { isDark.value = getStorage('app_theme') === 'dark' }
@@ -1461,5 +1480,428 @@ label,navigator,image,div,span { box-sizing: border-box; }
   .layout .metric-value { font-size: 14px; }
   .layout .map-wrap { min-height: 220px; }
   .layout .bin-list { max-height: 38vh; }
+}
+
+/* ─── Collection planning visual refresh ─────────────────────────────── */
+.layout {
+  --canvas: #f4f7fb;
+  --surface: #ffffff;
+  --surface-soft: #f8fbff;
+  --line: #dfe8f3;
+  --line-strong: #c8d8ea;
+  --text: #18324c;
+  --sub: #6b8198;
+  --accent: #1769e0;
+  --accent-soft: #eaf2ff;
+  --success: #139b68;
+  --shadow: 0 10px 28px rgba(34, 68, 111, 0.08);
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 18px;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+}
+
+.layout.dark-theme {
+  --canvas: #101a28;
+  --surface: #162333;
+  --surface-soft: #1b2b3e;
+  --line: #2e465f;
+  --line-strong: #3b5877;
+  --text: #e6f0fb;
+  --sub: #93aac1;
+  --accent: #5d9cff;
+  --accent-soft: #203d67;
+  --success: #49c995;
+  --shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.layout .panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.layout .header-panel {
+  position: relative;
+  z-index: 100;
+  overflow: visible;
+  padding: 16px 18px 12px;
+  margin-bottom: 14px;
+}
+
+.layout .top {
+  min-height: 44px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 0 0 14px;
+}
+
+.layout .page-intro { min-width: 0; }
+.layout .title {
+  color: var(--text);
+  font-size: clamp(20px, 1.35vw, 26px);
+  line-height: 1.25;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+.layout .sub {
+  max-width: 680px;
+  margin-top: 5px;
+  color: var(--sub);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.layout .btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.layout .btn {
+  display: inline-flex;
+  height: var(--admin-screen-control-height, 36px);
+  min-height: var(--admin-screen-control-height, 36px);
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--admin-screen-control-radius, 8px);
+  background: var(--surface);
+  color: #486179;
+  font-size: var(--admin-screen-control-font-size, 13px);
+  font-weight: var(--admin-screen-control-font-weight, 650);
+  line-height: 1;
+  transition: border-color .18s ease, background-color .18s ease, color .18s ease, transform .18s ease;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.layout .btn:hover { border-color: #9dbce5; background: var(--accent-soft); color: var(--accent); }
+.layout .btn:active { transform: translateY(1px); }
+.layout .btn.secondary {
+  border-color: #a7c4eb;
+  background: var(--surface);
+  color: var(--accent);
+}
+.layout .btn.secondary:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.layout .btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 5px 12px rgba(23, 105, 224, .18);
+}
+.layout .btn.primary:hover { border-color: #0f59c4; background: #0f59c4; color: #fff; }
+
+.layout .metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(104px, 1fr));
+  width: min(560px, 100%);
+  margin: 0;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.layout .metric {
+  position: relative;
+  min-width: 0;
+  padding: 9px 14px 10px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.layout .metric + .metric::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 1px;
+  background: var(--line);
+  content: '';
+}
+.layout .metric .k { color: var(--sub); font-size: 11px; line-height: 1.35; }
+.layout .metric .v { margin-top: 2px; color: var(--text); font-size: 18px; font-weight: 750; line-height: 1.2; }
+.layout .metric:nth-child(2) .v { color: #d54b48; }
+.layout .metric:nth-child(4) .v { color: var(--accent); }
+
+.layout .main {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  min-height: 0;
+}
+
+.layout .controls {
+  display: flex;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.layout .card {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px;
+  background: var(--surface);
+  box-shadow: none;
+}
+.layout .card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.layout .card-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 730;
+  letter-spacing: .01em;
+}
+.layout .card-note { color: var(--sub); font-size: 11px; white-space: nowrap; }
+.layout .form-grid { gap: 8px; }
+.layout .form-item { gap: 4px; color: var(--sub); }
+.layout .form-label { color: var(--sub); font-size: 11px; line-height: 1.3; }
+.layout .form-input,
+.layout .form-picker {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 30px;
+}
+.layout .form-input:focus,
+.layout .form-picker:focus { border-color: var(--accent); }
+.layout .inline-actions { justify-content: flex-start; margin-top: 10px; }
+.layout .inline-actions .btn { min-height: 30px; padding: 0 10px; font-size: 11px; }
+.layout .status { min-height: 16px; margin-top: 8px; font-size: 11px; line-height: 1.45; }
+.layout .status.ok { color: var(--success); }
+
+.layout .bins-card {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+.layout .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  padding: 0 0 8px;
+  color: var(--sub);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.layout .legend-dot { width: 7px; height: 7px; margin-right: 3px; }
+.layout .bin-list {
+  display: grid;
+  flex: 0 0 auto;
+  height: clamp(260px, 32vh, 340px);
+  min-height: 0;
+  max-height: none;
+  padding: 5px;
+  gap: 5px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  scrollbar-width: thin;
+  scrollbar-color: #98bce8 transparent;
+}
+.layout .bin-list::-webkit-scrollbar { width: 5px; }
+.layout .bin-list::-webkit-scrollbar-track { background: transparent; }
+.layout .bin-list::-webkit-scrollbar-thumb { background: #98bce8; border-radius: 8px; }
+.layout .bin-row {
+  padding: 8px;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--surface);
+  transition: border-color .18s ease, background-color .18s ease;
+}
+.layout .bin-row:hover { border-color: #b7cff0; background: #fbfdff; }
+.layout .bin-head { color: var(--text); font-size: 12px; font-weight: 720; }
+.layout .bin-sub { color: var(--sub); font-size: 10px; line-height: 1.45; }
+.layout .chip {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #7c91a5;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.layout .chip.urgent { background: #d84e4b; }
+.layout .chip.warning { background: #e69a20; }
+.layout .bin-range { grid-template-columns: 1fr 55px; gap: 6px; }
+.layout .fill-input {
+  width: 55px;
+  height: 25px;
+  line-height: 23px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: #496985;
+  font-size: 11px;
+}
+
+.layout .map-wrap {
+  display: grid;
+  grid-template-rows: minmax(300px, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  height: min(700px, calc(100vh - 230px));
+  padding: 10px;
+  gap: 10px;
+  overflow: hidden;
+}
+.layout .map-stage { min-width: 0; min-height: 0; overflow: hidden; border-radius: 11px; }
+#map,
+.layout .mp-map {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  overflow: hidden;
+}
+.layout .map-placeholder {
+  border: 1px dashed var(--line-strong);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+.layout .map-placeholder-title { color: var(--text); font-size: 14px; }
+.layout .map-placeholder-desc { color: var(--sub); font-size: 12px; }
+
+.layout .route {
+  display: flex;
+  min-height: 0;
+  max-height: 350px;
+  padding: 10px;
+  gap: 8px;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+}
+.layout .route-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.layout .route-title { color: var(--text); font-size: 13px; font-weight: 730; line-height: 1.35; }
+.layout .route-summary { margin-top: 2px; color: var(--sub); font-size: 11px; line-height: 1.45; }
+.layout .route-count { padding: 3px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.layout .route-list {
+  display: grid;
+  flex: none;
+  min-height: 0;
+  max-height: 285px;
+  gap: 5px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #98bce8 transparent;
+}
+.layout .route-list::-webkit-scrollbar { width: 5px; }
+.layout .route-list::-webkit-scrollbar-track { background: transparent; }
+.layout .route-list::-webkit-scrollbar-thumb { background: #98bce8; border-radius: 8px; }
+.layout .route-item {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  min-height: 42px;
+  padding: 7px 8px;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+}
+.layout .route-item > view:nth-child(2) { min-width: 0; }
+.layout .route-item > view:nth-child(3) { color: var(--sub) !important; font-size: 10px; }
+.layout .route-item > view:nth-child(2) > view:first-child { font-size: 12px; }
+.layout .route-item > view:nth-child(2) > view:last-child { color: var(--sub) !important; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layout .route-order {
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+}
+.layout .empty { color: var(--sub); font-size: 12px; padding: 20px 6px; }
+
+.layout.dark-theme .card,
+.layout.dark-theme .bin-row,
+.layout.dark-theme .route,
+.layout.dark-theme .route-item { background: var(--surface); border-color: var(--line); }
+.layout.dark-theme .bin-list,
+.layout.dark-theme .map-placeholder { background: var(--surface-soft); }
+.layout.dark-theme .form-input,
+.layout.dark-theme .form-picker { background: var(--surface-soft); color: var(--text); border-color: var(--line-strong); }
+.layout.dark-theme .btn { background: var(--surface); color: var(--sub); border-color: var(--line); }
+.layout.dark-theme .btn.secondary { border-color: rgba(93, 156, 255, .58); background: var(--surface); color: #b6d3ff; }
+.layout.dark-theme .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.layout.dark-theme .route-summary,
+.layout.dark-theme .route-item > view:nth-child(2) > view:last-child,
+.layout.dark-theme .route-item > view:nth-child(3) { color: var(--sub) !important; }
+
+@media (max-width: 1440px) and (min-width: 901px) {
+  .layout .top { gap: 14px; }
+  .layout .btns { flex-wrap: nowrap; gap: 8px; }
+  .layout .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
+@media (max-width: 1100px) {
+  .layout { padding: 12px; }
+  .layout .main { grid-template-columns: 300px minmax(0, 1fr); }
+  .layout .top { gap: 12px; }
+  .layout .btn { padding: 0 10px; }
+}
+
+@media (max-width: 900px) {
+  .layout .main { grid-template-columns: 1fr; min-height: auto; }
+  .layout .controls { min-height: auto; }
+  .layout .bins-card { min-height: 300px; }
+  .layout .map-wrap { height: auto; min-height: 720px; }
+}
+
+@media (max-width: 640px) {
+  .layout { padding: 10px; }
+  .layout .header-panel { padding: 14px; }
+  .layout .top { flex-direction: column; gap: 12px; }
+  .layout .btns { justify-content: flex-start; }
+  .layout .metrics { width: 100%; grid-template-columns: 1fr 1fr; }
+  .layout .metric:nth-child(3)::before { display: none; }
+  .layout .metric:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .layout .main { gap: 10px; }
+  .layout .controls { padding: 8px; }
+  .layout .form-grid { grid-template-columns: 1fr 1fr; }
+  .layout .map-wrap { min-height: 560px; grid-template-rows: minmax(280px, 1fr) auto; }
+}
+
+@media (max-width: 380px) {
+  .layout .form-grid { grid-template-columns: 1fr; }
+  .layout .btn { padding: 0 9px; }
+  .layout .map-wrap { min-height: 520px; }
 }
 </style>

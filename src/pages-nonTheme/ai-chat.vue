@@ -51,8 +51,10 @@
           </view>
           <view class="chat-header-main">
             <view class="chat-header-row">
+              <view class="chat-title-dot"></view>
               <view class="chat-title">{{ chatTitle }}</view>
             </view>
+            <view class="chat-header-subtitle">{{ chatSubtitle }}</view>
           </view>
         </view>
         <view class="header-actions">
@@ -65,6 +67,7 @@
         class="messages"
         scroll-y
         :scroll-top="messagesScrollTop"
+        @scroll="onMessagesScroll"
       >
         <view v-if="showIntroPanel" class="welcome-hero">
           <view class="welcome-icon">
@@ -162,6 +165,21 @@
             </view>
           </view>
         </view>
+
+        <view v-if="showInlineSuggestions" class="inline-suggestions">
+          <view class="inline-suggestions-title">可以继续问</view>
+          <view class="inline-suggestions-grid">
+            <view
+              v-for="item in quickActions"
+              :key="`inline_${item.label}`"
+              class="inline-suggestion-card"
+              @tap="applyQuickPrompt(item.prompt)"
+            >
+              <text class="inline-suggestion-label">{{ item.label }}</text>
+              <text class="inline-suggestion-hint">{{ item.hint }}</text>
+            </view>
+          </view>
+        </view>
       </scroll-view>
 
       <!-- 输入区 - DeepSeek风格 -->
@@ -227,18 +245,6 @@
           </view>
         </view>
 
-        <scroll-view class="composer-suggestions" scroll-x>
-          <view class="suggestions-track">
-            <view
-              v-for="item in quickActions"
-              :key="`composer_${item.label}`"
-              class="suggestion-pill"
-              @tap="applyQuickPrompt(item.prompt)"
-            >
-              {{ item.label }}
-            </view>
-          </view>
-        </scroll-view>
       </view>
     </view>
 
@@ -309,6 +315,8 @@ const isStreaming   = ref(false)
 const streamingText = ref('')
 const streamingReasoning = ref('')   // 流式推理内容
 const messagesScrollTop = ref(0)
+const shouldAutoFollowMessages = ref(true)
+const messagesViewportHeight = ref(0)
 const historyDrawerOpen = ref(false)
 const pickedImageDataUrl = ref('')
 const pickedImageName    = ref('')
@@ -352,6 +360,7 @@ const userMessageCount = computed(() =>
   messageList.value.filter(item => item && item.role === 'user').length
 )
 const showIntroPanel = computed(() => userMessageCount.value === 0 && !isStreaming.value)
+const showInlineSuggestions = computed(() => messageList.value.length > 0 && !isStreaming.value)
 const composerPlaceholder = computed(() =>
   pickedImageDataUrl.value
     ? '描述你想让我重点观察的内容，例如瓶盖材质、是否需要拆分投放...'
@@ -404,6 +413,8 @@ function handleMessageImageError(index) {
 let conversationMap = new Map()       // sessionId -> conversation object
 let abortCtrl = null
 let wsSocket = null                   // WebSocket 连接（小程序/App 流式）
+let messagesScrollSeed = 1000000
+const AUTO_SCROLL_BOTTOM_THRESHOLD = 96
 
 // ─── 工具函数 ─────────────────────────────────────────────
 function safeJsonParse(str) {
@@ -522,6 +533,45 @@ async function guardAiChatAccess() {
 }
 
 // ─── 会话管理 ─────────────────────────────────────────────
+function measureMessagesViewport() {
+  // #ifdef H5
+  try {
+    const el = document.querySelector('.messages')
+    if (el && el.clientHeight) messagesViewportHeight.value = el.clientHeight
+  } catch (_) {}
+  // #endif
+
+  try {
+    uni.createSelectorQuery()
+      .select('.messages')
+      .boundingClientRect((rect) => {
+        if (rect && rect.height) messagesViewportHeight.value = rect.height
+      })
+      .exec()
+  } catch (_) {}
+}
+function scrollMessagesToBottom(force = false) {
+  if (!force && !shouldAutoFollowMessages.value) return
+  if (force) shouldAutoFollowMessages.value = true
+  messagesScrollSeed += 1
+  messagesScrollTop.value = messagesScrollSeed
+}
+function scheduleMessagesAutoScroll() {
+  nextTick(() => scrollMessagesToBottom(false))
+}
+function onMessagesScroll(event) {
+  const detail = (event && event.detail) || {}
+  const scrollTop = Number(detail.scrollTop || 0)
+  const scrollHeight = Number(detail.scrollHeight || 0)
+  const viewportHeight = Number(detail.clientHeight || detail.height || messagesViewportHeight.value || 0)
+
+  if (!viewportHeight) measureMessagesViewport()
+  if (!scrollHeight || !viewportHeight) return
+
+  const distanceToBottom = scrollHeight - scrollTop - viewportHeight
+  shouldAutoFollowMessages.value = distanceToBottom <= AUTO_SCROLL_BOTTOM_THRESHOLD
+}
+
 function createConversation(sessionId) {
   return { id: sessionId, title: '新对话', summary: '智能摘要生成中', updatedAt: new Date().toISOString(), messages: [] }
 }
@@ -592,6 +642,11 @@ function setActiveSession(sessionId) {
   syncConversationList()
   renderActiveMessages()
   clearPickedImage()
+  shouldAutoFollowMessages.value = true
+  nextTick(() => {
+    measureMessagesViewport()
+    scrollMessagesToBottom(true)
+  })
 }
 function pushMessageToActive(role, content, imageBase64, createdAt, reasoning, localImagePath) {
   const conversation = ensureConversation(activeSessionId.value)
@@ -611,7 +666,7 @@ function pushMessageToActive(role, content, imageBase64, createdAt, reasoning, l
   syncConversationList()
   updateHeader()
   messageList.value = conversation.messages.slice()
-  nextTick(() => { messagesScrollTop.value = 999999 })
+  nextTick(() => scrollMessagesToBottom(role !== 'assistant'))
 }
 function ensureWelcomeMessageIfEmpty() {
   const conversation = ensureConversation(activeSessionId.value)
@@ -1013,16 +1068,18 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
         if (eventName === 'delta') {
           full = data.full || (full + (data.chunk || ''))
           streamingText.value = full
-          nextTick(() => { messagesScrollTop.value = 999999 })
+          scheduleMessagesAutoScroll()
         } else if (eventName === 'reasoning') {
           // 推理增量事件（后端每次推送 chunk，客户端拼接）
           reasoning = (reasoning || '') + (data.chunk || '')
           streamingReasoning.value = reasoning
+          scheduleMessagesAutoScroll()
         } else if (eventName === 'done') {
           full = data.content || full
           // done 事件中若包含 reasoning，优先取完整值
           if (data.reasoning) reasoning = data.reasoning
           streamingText.value = full
+          scheduleMessagesAutoScroll()
         } else if (eventName === 'error') {
           const code = Number(data && data.code)
           errorMessage = code === 401 ? '登录已失效，请重新登录后再试。' : String(data.message || '未知错误')
@@ -1148,11 +1205,12 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
         case 'reasoning':
           reasoning += (data.chunk || '')
           streamingReasoning.value = reasoning
+          scheduleMessagesAutoScroll()
           break
         case 'delta':
           full = data.full || (full + (data.chunk || ''))
           streamingText.value = full
-          nextTick(() => { messagesScrollTop.value = 999999 })
+          scheduleMessagesAutoScroll()
           break
         case 'usage':
           // token 用量，可忽略
@@ -1389,7 +1447,10 @@ onMounted(async () => {
   updateHeader()
   promptText.value = ''
   clearPickedImage()
-  nextTick(() => { messagesScrollTop.value = 999999 })
+  nextTick(() => {
+    measureMessagesViewport()
+    scrollMessagesToBottom(true)
+  })
 })
 
 onBeforeUnmount(() => {
@@ -3078,6 +3139,336 @@ page {
   .shell .message-row { flex-wrap: wrap; width: 100%; }
   .shell .message-content { flex: 1 1 auto !important; }
 }
+
+/* ─── AI 聊天页精修覆盖：统一桌面/手机视觉 ─── */
+.shell .chat-header {
+  min-height: 64px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.9);
+  box-shadow: 0 1px 0 rgba(17, 24, 39, 0.02);
+}
+.shell.dark-theme .chat-header {
+  background: rgba(26, 26, 26, 0.94);
+  border-bottom-color: rgba(63, 63, 70, 0.9);
+}
+.shell .chat-header-row {
+  gap: 8px;
+  min-width: 0;
+}
+.shell .chat-title-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #10b981, #4D6BFE);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+  flex-shrink: 0;
+}
+.shell .chat-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.35;
+}
+.shell .chat-header-subtitle {
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell .header-actions .btn.ghost {
+  border-radius: 10px;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+}
+.shell .messages {
+  padding: 22px 28px;
+}
+.shell .message-row {
+  max-width: 780px;
+  margin-bottom: 22px;
+}
+.shell .avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+}
+.shell .message-meta {
+  margin-bottom: 7px;
+}
+.shell .msg {
+  line-height: 1.75;
+}
+.shell .msg.assistant {
+  border-radius: 18px;
+  border-bottom-left-radius: 8px;
+  box-shadow: 0 6px 20px rgba(17, 24, 39, 0.04);
+}
+.shell .msg.user {
+  border-radius: 16px;
+  border-bottom-right-radius: 8px;
+  padding: 12px 16px;
+}
+.shell .composer {
+  background: linear-gradient(180deg, rgba(255,255,255,0.86), #fff 42%);
+  border-top-color: rgba(229, 231, 235, 0.78);
+  padding: 10px 24px calc(12px + env(safe-area-inset-bottom));
+  gap: 8px;
+}
+.shell.dark-theme .composer {
+  background: linear-gradient(180deg, rgba(26,26,26,0.86), #1A1A1A 42%);
+}
+.shell .composer-card {
+  max-width: 780px;
+  border-radius: 22px;
+  padding: 9px 12px 8px;
+  box-shadow: 0 10px 34px rgba(17, 24, 39, 0.08);
+}
+.shell .prompt-textarea {
+  min-height: 34px;
+  line-height: 1.55;
+  padding: 2px 6px 5px;
+}
+.shell .composer-toolbar {
+  padding-top: 6px;
+  margin-top: 2px;
+}
+.shell .deep-think-btn {
+  border-radius: 999px;
+  padding: 6px 11px;
+}
+.shell .btn-attach,
+.shell .btn-send {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+}
+.shell .composer-suggestions {
+  max-width: 780px;
+}
+.shell .suggestions-track {
+  gap: 10px;
+}
+.shell .suggestion-pill {
+  border-radius: 999px;
+  padding: 7px 13px;
+  background: rgba(247, 248, 250, 0.92);
+}
+.shell .inline-suggestions {
+  max-width: 780px;
+  margin: 0 auto 14px;
+  padding-left: 50px;
+}
+.shell .inline-suggestions-title {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.shell .inline-suggestions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.shell .inline-suggestion-card {
+  padding: 8px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+.shell .inline-suggestion-card:active {
+  transform: scale(0.98);
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+.shell .inline-suggestion-label {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+}
+.shell .inline-suggestion-hint {
+  display: none;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (min-width: 981px) {
+  .shell .messages {
+    padding-top: 24px;
+    padding-bottom: 18px;
+  }
+  .shell .composer {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
+
+@media (max-width: 720px) {
+  .shell .chat-header {
+    min-height: 72px;
+    display: flex;
+    padding: calc(var(--status-bar-height, 20px) + 16px) 14px 10px;
+    gap: 10px;
+  }
+  .shell .history-toggle {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.84);
+    box-shadow: 0 4px 14px rgba(17, 24, 39, 0.08);
+  }
+  .shell.dark-theme .history-toggle {
+    background: rgba(38, 38, 38, 0.88);
+  }
+  .shell .chat-title {
+    font-size: 15px;
+  }
+  .shell .chat-header-subtitle {
+    display: none;
+  }
+  .shell .header-actions .btn.ghost {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 12px;
+    font-size: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .shell .header-actions .btn.ghost::before {
+    content: "↩";
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .shell .messages {
+    padding: 14px 14px 12px;
+  }
+  .shell .message-row {
+    margin-bottom: 16px;
+    flex-wrap: nowrap;
+  }
+  .shell .avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 11px;
+    font-size: 11px;
+  }
+  .shell .assistant-avatar {
+    margin-right: 8px;
+  }
+  .shell .message-content {
+    width: calc(100% - 42px);
+  }
+  .shell .msg {
+    width: 100%;
+    max-width: 100% !important;
+    padding: 12px 13px;
+    border-radius: 16px;
+    font-size: 14px;
+  }
+  .shell .message-row.from-user .message-content {
+    width: auto;
+    max-width: 82%;
+  }
+  .shell .message-row.from-user .msg {
+    width: auto;
+    max-width: 100% !important;
+  }
+  .shell .composer {
+    padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  .shell .composer-card {
+    border-radius: 18px;
+    padding: 9px 11px 8px;
+    box-shadow: 0 8px 26px rgba(17, 24, 39, 0.1);
+  }
+  .shell .prompt-textarea {
+    min-height: 36px;
+    font-size: 14px;
+    padding: 2px 5px 6px;
+  }
+  .shell .composer-toolbar {
+    padding-top: 6px;
+  }
+  .shell .deep-think-btn {
+    max-width: none;
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  .shell .btn-attach,
+  .shell .btn-send {
+    width: 32px;
+    height: 32px;
+    border-radius: 11px;
+  }
+  .shell .composer-suggestions {
+    max-width: 100%;
+    order: -1;
+  }
+  .shell .inline-suggestions {
+    padding-left: 40px;
+    margin-bottom: 10px;
+  }
+  .shell .inline-suggestions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .shell .inline-suggestion-card {
+    padding: 9px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .shell .chat-header {
+    padding: calc(var(--status-bar-height, 20px) + 14px) 12px 9px;
+  }
+  .shell .chat-title-dot {
+    display: none;
+  }
+  .shell .composer-card {
+    border-radius: 17px;
+  }
+  .shell .suggestion-pill {
+    padding: 6px 11px;
+    font-size: 11px;
+  }
+  .shell .inline-suggestions {
+    padding-left: 0;
+  }
+  .shell .inline-suggestion-hint {
+    display: none;
+  }
+}
+
+/* #ifdef MP-WEIXIN */
+.shell .chat-header {
+  padding-top: calc(var(--status-bar-height, 20px) + 34px);
+}
+@media (max-width: 720px) {
+  .shell .chat-header {
+    min-height: 88px;
+    padding-top: calc(var(--status-bar-height, 20px) + 42px);
+  }
+}
+@media (max-width: 480px) {
+  .shell .chat-header {
+    padding-top: calc(var(--status-bar-height, 20px) + 40px);
+  }
+}
+/* #endif */
 
 /* ─── 深色主题覆盖 ─── */
 .shell.dark-theme .btn-attach { background: #333333; border-color: #3F3F46; }

@@ -3,7 +3,7 @@
     <view class="panel-head">
       <view>
         <view class="panel-title">事件时间线</view>
-        <view class="panel-sub">按 sequence 顺序播放 · 共 {{ events.length }} 条</view>
+        <view class="panel-sub">{{ liveWindow ? `实时窗口 · 仅保留最近 ${events.length} 条` : `按 sequence 顺序播放 · 共 ${events.length} 条` }}</view>
       </view>
       <view class="counter">{{ currentIndex + 1 }}/{{ events.length }}</view>
     </view>
@@ -11,7 +11,7 @@
       class="timeline-list"
       scroll-y
       :scroll-into-view="`park-event-${currentIndex}`"
-      :scroll-with-animation="true"
+      :scroll-with-animation="!liveWindow"
     >
       <view
         v-for="(event, index) in events"
@@ -20,7 +20,7 @@
         :class="['event-row', { active: index === currentIndex, passed: index < currentIndex }]"
         @tap="$emit('select', index)"
       >
-        <view class="event-sequence">{{ String(event.sequence).padStart(2, '0') }}</view>
+        <view class="event-sequence">{{ String(liveWindow ? index + 1 : event.sequence).padStart(2, '0') }}</view>
         <view :class="['event-dot', presentation(event).tone]"></view>
         <view class="event-copy">
           <view class="event-title">{{ presentation(event).title }}</view>
@@ -38,7 +38,8 @@ import { displaySourceLabel } from '@/utils/source-display.js'
 
 defineProps({
   events: { type: Array, default: () => [] },
-  currentIndex: { type: Number, default: 0 }
+  currentIndex: { type: Number, default: 0 },
+  liveWindow: { type: Boolean, default: false }
 })
 defineEmits(['select'])
 

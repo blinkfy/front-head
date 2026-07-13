@@ -63,7 +63,10 @@
             class="form-textarea"/>
           <view class="input-hint">{{ formData.bio?.length || 0 }}/100</view>
         </view>
+      </view>
 
+      <view class="form-section address-section">
+        <view class="form-section-title">编辑收货地址</view>
         <!-- 联系电话 -->
         <view class="form-group">
           <view class="form-label">
@@ -1142,6 +1145,17 @@ onMounted(() => {
 
 .edit-profile-container.dark-theme .form-section {
   background: rgba(30, 30, 50, 0.85);
+}
+
+.form-section-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 24rpx;
+}
+
+.edit-profile-container.dark-theme .form-section-title {
+  color: #e0e0e0;
 }
 
 .form-group {

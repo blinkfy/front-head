@@ -1,9 +1,11 @@
 <template>
   <view
-    :class="['visitor-sprite', normalizedBehavior.toLowerCase(), { paused: !playing, mirrored: direction < 0 }]"
+    :class="['visitor-sprite', normalizedBehavior.toLowerCase(), { paused: !playing, mirrored: direction < 0, selected }]"
     :style="spriteStyle"
     :aria-label="`${visitorId} ${behaviorLabel}`"
   >
+    <view class="visitor-ground-shadow" aria-hidden="true"></view>
+    <view class="visitor-selection-ring" aria-hidden="true"></view>
     <!-- #ifdef H5 -->
     <svg class="person-svg" viewBox="0 0 32 54" role="img" aria-hidden="true">
       <g class="person-root">
@@ -33,7 +35,9 @@ const props = defineProps({
   direction: { type: Number, default: 1 },
   playing: { type: Boolean, default: false },
   playbackRate: { type: Number, default: 1 },
-  progress: { type: Number, default: 0 }
+  progress: { type: Number, default: 0 },
+  selected: { type: Boolean, default: false },
+  depthScale: { type: Number, default: 1 }
 })
 
 const BEHAVIOR_ALIASES = Object.freeze({
@@ -53,6 +57,7 @@ const showFood = computed(() => normalizedBehavior.value === 'EATING')
 const showTrash = computed(() => ['DISPOSING', 'LITTERING'].includes(normalizedBehavior.value) && Number(props.progress) < .7)
 const spriteStyle = computed(() => ({
   '--motion-duration': `${.72 / Math.max(.25, Number(props.playbackRate) || 1)}s`,
+  '--visitor-depth-scale': String(Math.max(.96, Math.min(1.04, Number(props.depthScale) || 1))),
   '--action-progress': String(Math.max(0, Math.min(1, Number(props.progress) || 0))),
   '--dispose-arm-angle': `${-18 - Math.max(0, Math.min(1, Number(props.progress) || 0)) * 62}deg`,
   '--litter-arm-angle': `${8 + Math.max(0, Math.min(1, Number(props.progress) || 0)) * 34}deg`
@@ -60,9 +65,12 @@ const spriteStyle = computed(() => ({
 </script>
 
 <style scoped>
-.visitor-sprite { width: 24px; height: 41px; transform-origin: 50% 100%; filter: drop-shadow(0 2px 3px rgba(0,12,23,.55)); }
-.visitor-sprite.mirrored { transform: scaleX(-1); }
-.person-svg { width: 100%; height: 100%; overflow: visible; }
+.visitor-sprite { position:relative; width:24px; height:41px; transform:scale(var(--visitor-depth-scale)); transform-origin:50% 100%; }
+.person-svg { position:relative; z-index:2; width:100%; height:100%; overflow:visible; transform-origin:50% 100%; transition:transform .18s ease; filter:drop-shadow(1px 3px 2px rgba(0,12,23,.4)); }
+.visitor-sprite.mirrored .person-svg { transform:scaleX(-1); }
+.visitor-ground-shadow { position:absolute; z-index:0; left:50%; bottom:-2px; width:20px; height:7px; transform:translate(-28%,4px) skewX(-18deg); clip-path:polygon(0 48%,14% 18%,45% 6%,100% 39%,84% 78%,48% 96%,8% 74%); border-radius:44% 28% 50% 32%; background:radial-gradient(ellipse at 35% 42%,rgba(0,12,20,.34),rgba(0,12,20,.17) 58%,transparent 80%); filter:blur(2px); pointer-events:none; }
+.visitor-selection-ring { position:absolute; z-index:1; left:50%; bottom:-4px; width:22px; height:7px; transform:translateX(-50%) skewX(-18deg); border:1px solid transparent; border-radius:50%; box-sizing:border-box; }
+.visitor-sprite.selected .visitor-selection-ring { border-color:#b7f6ff; box-shadow:0 0 0 1px rgba(36,217,255,.65),0 0 9px rgba(36,217,255,.5); }
 .head { fill: #ffd1ad; stroke: #12283a; stroke-width: 1.3; }
 .body { fill: #6963dc; stroke: #dff8ff; stroke-width: 1.1; }
 .arm,.leg { transform-box: fill-box; transform-origin: top center; }

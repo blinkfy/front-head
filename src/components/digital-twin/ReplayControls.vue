@@ -80,5 +80,6 @@ function jump() {
 .event-slider { flex: 1; margin: 0; }.progress-count { min-width: 42px; color: #bcecff; font: 700 11px/1 ui-monospace, Consolas, monospace; }
 .jump-control { display: flex; align-items: center; gap: 5px; }.jump-input { width: 54px; height: 28px; padding: 0 7px; border: 1px solid rgba(126,196,239,.28); border-radius: 6px; color: #dff7ff; background: rgba(5,27,43,.8); font-size: 11px; }
 .jump-button { padding: 7px 10px; border-radius: 6px; color: #fff; background: #247ee5; font-size: 10px; }
-@media (max-width: 900px) { .controls { grid-template-columns: 1fr; }.progress-row { grid-column: 1; }.button-rail { overflow-x: auto; }.speed-control { min-width: 0; } }
+@media (max-width: 1180px) { .controls { grid-template-columns: 1fr; }.progress-row { grid-column: 1; }.button-rail { min-width: 0; }.control-button { flex: 1; min-width: 0; }.speed-control { min-width: 0; } }
+@media (max-width: 900px) { .button-rail { overflow-x: auto; }.control-button { flex: none; min-width: 72px; } }
 </style>

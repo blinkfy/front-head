@@ -7,47 +7,47 @@
       <view class="row">
         <view>
           <view class="title">智慧城市社区治理大屏</view>
-          <view class="sub">社区使用情况、分类质量与用户积极性监测</view>
-        </view>
-        <view class="actions meta-actions">
-          <view class="clock">{{ clockText }}</view>
-          <view :class="['status', statusCls]">{{ statusText }}</view>
-        </view>
-      </view>
-      <!-- 行2：工具栏 + 操作按钮 -->
-      <view class="row control-row">
-        <view class="toolbar">
-          <!-- 周期 picker -->
-          <view class="field">
-            <text>周期</text>
-            <picker mode="selector" :range="daysOptions" range-key="label"
-              :value="daysIndex" @change="onDaysChange">
-              <view class="picker-val">{{ daysOptions[daysIndex].label }}</view>
-            </picker>
-          </view>
-          <!-- 区 picker -->
-          <view class="field">
-            <text>区</text>
-            <picker mode="selector" :range="districtOptions" range-key="label"
-              :value="districtIndex" @change="onDistrictChange">
-              <view class="picker-val">{{ districtOptions[districtIndex] && districtOptions[districtIndex].label || '全部区' }}</view>
-            </picker>
-          </view>
-          <!-- 社区 picker -->
-          <view class="field">
-            <text>社区</text>
-            <picker mode="selector" :range="communityOptions" range-key="label"
-              :value="communityIndex" @change="onCommunityChange">
-              <view class="picker-val">{{ communityOptions[communityIndex] && communityOptions[communityIndex].label || '全部社区' }}</view>
-            </picker>
+          <view class="sub">
+            <text class="sub-copy">社区使用情况、分类质量与用户积极性监测</text>
+            <text :class="['compact-status', statusCls]">{{ compactStatusText }}</text>
           </view>
         </view>
-        <view class="actions main-actions">
-          <view class="btn ghost nav-link-btn" @tap="goCollection">🚛 清运大屏</view>
-          <view class="btn main" @tap="refreshDashboard">刷新表格</view>
-          <view class="btn ok" @tap="syncDaily">重算区间</view>
-          <view class="btn ghost" @tap="goBack">返回</view>
-        </view>
+        <AdminScreenHeader screen-key="communityDashboard" tone="dark" @back="goBack">
+          <view class="actions meta-actions">
+            <view class="clock">{{ clockText }}</view>
+            <view :class="['status', statusCls]">{{ statusText }}</view>
+          </view>
+          <view class="toolbar">
+            <!-- 周期 picker -->
+            <view class="field">
+              <text class="field-label" data-short="期">周期</text>
+              <picker mode="selector" :range="daysOptions" range-key="label"
+                :value="daysIndex" @change="onDaysChange">
+                <view class="picker-val">{{ daysOptions[daysIndex].label }}</view>
+              </picker>
+            </view>
+            <!-- 区 picker -->
+            <view class="field">
+              <text class="field-label" data-short="区">区</text>
+              <picker mode="selector" :range="districtOptions" range-key="label"
+                :value="districtIndex" @change="onDistrictChange">
+                <view class="picker-val">{{ districtOptions[districtIndex] && districtOptions[districtIndex].label || '全部区' }}</view>
+              </picker>
+            </view>
+            <!-- 社区 picker -->
+            <view class="field">
+              <text class="field-label" data-short="社">社区</text>
+              <picker mode="selector" :range="communityOptions" range-key="label"
+                :value="communityIndex" @change="onCommunityChange">
+                <view class="picker-val">{{ communityOptions[communityIndex] && communityOptions[communityIndex].label || '全部社区' }}</view>
+              </picker>
+            </view>
+          </view>
+          <view class="actions main-actions">
+            <view class="btn main" @tap="refreshDashboard">刷新数据</view>
+            <view class="btn secondary" @tap="syncDaily">重算区间</view>
+          </view>
+        </AdminScreenHeader>
       </view>
       <!-- KPI 卡片 -->
       <view class="cards">
@@ -255,7 +255,8 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'v
 import { baseUrl } from '@/api/settings'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
-import { goBackFromAdminPage, jumpToAdminPage } from '@/utils/admin-page-nav'
+import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
+import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 
 // ─── 工具函数 ──────────────────────────────────────────
 function getStorage(key) {
@@ -287,6 +288,13 @@ const ALERT_META = {
 const clockText = ref('--:--:--')
 const statusText = ref('准备就绪')
 const statusCls = ref('')
+const compactStatusText = computed(() => {
+  const text = String(statusText.value || '')
+  if (statusCls.value === 'err') return '加载失败'
+  if (statusCls.value === 'warn') return text.includes('重算') ? '重算中' : '加载中'
+  if (text.includes('准备')) return '已就绪'
+  return '已更新'
+})
 
 // KPI 卡片数据
 const kpi = reactive({
@@ -1031,10 +1039,6 @@ function renderCommunityList(breakdown) {
   })
 }
 
-// ─── 导航 ──────────────────────────────────────────────
-function goCollection() {
-  jumpToAdminPage('collectionDashboard', { from: 'communityDashboard' })
-}
 function goBack() {
   goBackFromAdminPage('communityDashboard')
 }
@@ -1100,6 +1104,7 @@ async function syncDaily() {
 let unbindThemeWatcher = null
 
 onMounted(async () => {
+  if (!await ensureAdminScreenAccess('communityDashboard')) return
   applyStoredTheme()
   unbindThemeWatcher = bindThemeStorageSync()
   isDark.value = getStorage('app_theme') !== 'light'
@@ -1206,6 +1211,7 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
   backdrop-filter: blur(6px);
   box-shadow: inset 0 1px 0 rgba(182, 241, 250, .08), 0 14px 28px rgba(0, 0, 0, .16);
 }
+.screen .panel.top { z-index: 100; overflow: visible; }
 .screen .panel::before {
   content: "";
   position: absolute;
@@ -1232,8 +1238,8 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
 /* ─── 标题 ─── */
 .screen .title {
   margin: 0;
-  font-size: clamp(24px, 2vw, 32px);
-  letter-spacing: 1.6px;
+  font-size: clamp(20px, 1.35vw, 26px);
+  letter-spacing: 1px;
   background: linear-gradient(180deg, #f2fdff, #b8efff 74%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -1241,25 +1247,18 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
   text-shadow: 0 6px 22px rgba(43, 201, 223, .18);
 }
 .screen .sub { font-size: 12px; color: var(--muted); letter-spacing: .2px; }
+.screen .compact-status { display: none; }
 
 /* ─── actions ─── */
 .screen .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .screen .meta-actions { justify-content: flex-end; }
 .screen .main-actions { justify-content: flex-end; flex-wrap: nowrap; flex: 0 0 auto; }
 .screen .main-actions .btn {
-  flex: 0 0 112px;
-  width: 112px;
-  min-width: 112px;
+  flex: 0 0 auto;
+  min-width: 104px;
   white-space: nowrap;
 }
-.screen .main-actions .btn.main {
-  display: block;
-  width: 112px;
-  min-width: 112px;
-  text-align: center;
-}
-.screen .nav-link-btn { display: inline-flex; align-items: center; gap: 6px; }
-
+.screen .main-actions .btn.main { display: inline-flex; text-align: center; }
 /* ─── 时钟 / 状态 ─── */
 .screen .clock {
   font-family: "Rajdhani", "DIN Alternate", sans-serif;
@@ -1301,16 +1300,17 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
 
 /* ─── btn ─── */
 .screen .btn {
-  border: 0; border-radius: 11px; padding: 8px 12px; cursor: pointer;
+  box-sizing: border-box; min-height: var(--admin-screen-control-height, 36px); height: var(--admin-screen-control-height, 36px);
+  border: 1px solid rgba(116, 216, 232, .36); border-radius: var(--admin-screen-control-radius, 8px); padding: 0 12px; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 12px; text-decoration: none;
+  color: #ccebf3; font-size: var(--admin-screen-control-font-size, 13px); font-weight: var(--admin-screen-control-font-weight, 650); text-decoration: none;
   transition: transform .18s ease, box-shadow .22s ease, filter .22s ease;
 }
 .screen .btn:hover  { transform: translateY(-1px); filter: saturate(1.06); }
 .screen .btn:active { transform: translateY(0); }
-.screen .btn.main  { background: linear-gradient(135deg, #1a9ab3, #37c9de); box-shadow: 0 6px 18px rgba(41, 184, 211, .28); }
-.screen .btn.ok    { background: linear-gradient(135deg, #169f74, #23d29c); box-shadow: 0 6px 18px rgba(35, 210, 156, .24); }
-.screen .btn.ghost { background: rgba(255, 255, 255, .12); border: 1px solid rgba(116, 216, 232, .3); }
+.screen .btn.main  { border-color: rgba(85, 177, 255, .92); background: linear-gradient(135deg, #2479e8, #42abff); color: #fff; box-shadow: 0 5px 14px rgba(44,143,255,.28); }
+.screen .btn.secondary { background: rgba(5, 43, 54, .52); border-color: rgba(116, 216, 232, .42); color: #ccebf3; }
+.screen .btn.ghost { background: rgba(255, 255, 255, .08); border: 1px solid rgba(116, 216, 232, .3); }
 
 /* ─── KPI 卡片 ─── */
 .screen .cards {
@@ -1522,6 +1522,24 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
   .screen .clock  { min-width: 170px; }
   .screen .status { min-width: 190px; }
   .screen .main-actions .btn { min-width: 112px; }
+}
+@media (max-width: 1440px) and (min-width: 901px) {
+  .screen .row { flex-wrap: nowrap; }
+  .screen .sub { display: flex; align-items: center; gap: 5px; }
+  .screen .sub-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .screen .compact-status { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; color: #a7c9d8; font-size: 10px; white-space: nowrap; }
+  .screen .compact-status::before { width: 5px; height: 5px; border-radius: 50%; background: #79a6b9; content: ''; }
+  .screen .compact-status.ok { color: #9df5d8; }.screen .compact-status.ok::before { background: #20d89c; }
+  .screen .compact-status.warn { color: #ffe8b6; }.screen .compact-status.warn::before { background: #ffbf57; }
+  .screen .compact-status.err { color: #ffd2d6; }.screen .compact-status.err::before { background: #ff6b77; }
+  .screen .status { display: none; }
+  .screen .clock { min-width: 120px; padding: 5px 8px; font-size: 18px; }
+  .screen .toolbar { gap: 6px; flex-wrap: nowrap; }
+  .screen .field { gap: 0; padding: 5px 7px; }
+  .screen .field-label { display: inline-flex; align-items: center; justify-content: center; width: 12px; color: #8eb9c8; font-size: 0; }
+  .screen .field-label::after { color: inherit; font-size: 10px; content: attr(data-short); }
+  .screen .picker-val { min-width: 72px; font-size: 11px; }
+  .screen .main-actions .btn { min-width: 92px; padding: 0 9px; }
 }
 @media (max-width: 1260px) {
   .screen { width: 100%; height: auto; min-height: 100%; padding: 10px; overflow-y: auto; }

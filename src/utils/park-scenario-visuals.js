@@ -1,17 +1,19 @@
+import { parkRoutePolyline } from '@/utils/park-road-network.js'
+
 const ZONE_POINTS = Object.freeze({
-  zone_entrance_01: { x: 49, y: 82 },
-  zone_walkway_01: { x: 49, y: 67 },
-  zone_rest_01: { x: 29, y: 58 },
-  zone_food_rest_01: { x: 72, y: 49 },
-  zone_activity_01: { x: 55, y: 36 },
-  park_entrance: { x: 49, y: 84 },
-  visitor_walkway: { x: 49, y: 67 },
-  rest_area: { x: 29, y: 56 },
-  food_rest_area: { x: 74, y: 50 },
-  service_food_01: { x: 74, y: 52 },
-  service_rest_01: { x: 27, y: 59 },
-  standby_area: { x: 20, y: 31 },
-  center_ops_01: { x: 24, y: 14 }
+  zone_entrance_01: { x: 48.1, y: 87.5 },
+  zone_walkway_01: { x: 48, y: 66.5 },
+  zone_rest_01: { x: 31.5, y: 61.5 },
+  zone_food_rest_01: { x: 64, y: 48 },
+  zone_activity_01: { x: 48.1, y: 36 },
+  park_entrance: { x: 48.1, y: 92.5 },
+  visitor_walkway: { x: 48, y: 66.5 },
+  rest_area: { x: 31.5, y: 61.5 },
+  food_rest_area: { x: 64, y: 48 },
+  service_food_01: { x: 64, y: 48 },
+  service_rest_01: { x: 31.5, y: 61.5 },
+  standby_area: { x: 27.8, y: 20.5 },
+  center_ops_01: { x: 24, y: 16 }
 })
 
 const ZONE_LABELS = Object.freeze({
@@ -92,8 +94,23 @@ function normalizeRoutePoints(value) {
 
 function routeFromPayload(payload, key) {
   const route = firstDefined(payload[key], payload.route?.[key], key === 'originalRoute' ? payload.route : null)
+  const nodeIds = asArray(firstDefined(
+    Array.isArray(route) ? null : route?.nodeIds,
+    key === 'newRoute' ? payload.newNodeIds : payload.originalNodeIds
+  ))
+  if (nodeIds.includes('route_center')) {
+    const startsAtFood = nodeIds[0] === 'route_food'
+    const startsAtRest = nodeIds[0] === 'route_rest'
+    const usesCenterLoop = nodeIds.includes('route_bypass_south') || nodeIds.includes('route_bypass_west')
+    const routePrefix = startsAtFood
+      ? 'device_food_to_center'
+      : startsAtRest ? 'device_rest_to_center' : 'device_east_junction_to_center'
+    const routeId = `${routePrefix}_${usesCenterLoop ? 'center_loop' : 'direct'}`
+    const canonical = parkRoutePolyline(routeId)
+    if (canonical.length) return normalizeRoutePoints(canonical)
+  }
   if (Array.isArray(route)) return normalizeRoutePoints(route)
-  return normalizeRoutePoints(route?.points || route?.waypoints || route?.path)
+  return normalizeRoutePoints(route?.polyline || route?.points || route?.waypoints || route?.path)
 }
 
 function normalizeRobotRoute(payload) {
@@ -164,6 +181,18 @@ export function deriveScenarioVisualState(events, currentIndex) {
   const taskGarbage = {}
   asArray(events).slice(0, Math.max(0, currentIndex) + 1).forEach((event, eventIndex) => {
     const payload = event.payload || {}
+    if (event.eventType === 'VISITOR_ENTERED' && payload.visitorId) {
+      state.visitors[payload.visitorId] = {
+        id: payload.visitorId, visitorId: payload.visitorId, zoneId: payload.zoneId,
+        behavior: 'ENTER', direction: 1,
+        position: normalizeMapPoint(payload.positionPct || payload.positionM || payload.zoneId, payload.zoneId)
+      }
+    }
+    if (event.eventType === 'VISITOR_REMOVED') {
+      const removedIds = Array.isArray(payload.visitorIds) ? payload.visitorIds : (payload.visitorId ? [payload.visitorId] : [])
+      removedIds.forEach(visitorId => delete state.visitors[visitorId])
+    }
+    if (event.eventType === 'LITTER_REMOVED' && payload.garbageId) delete state.garbage[payload.garbageId]
     const visitorRows = normalizeVisitors(payload)
     if (eventIndex === currentIndex && ['VISITOR_ACTIVITY_UPDATED', 'PEDESTRIAN_FLOW_UPDATED', 'CROWD_FLOW_UPDATED'].includes(event.eventType)) {
       const explicitMoves = activeMovesFromEvent(event)
@@ -291,6 +320,7 @@ export function deriveScenarioVisualState(events, currentIndex) {
       if (!state.route.resumed.length) state.route.resumed = routeFromPayload({ originalRoute: payload.route }, 'originalRoute')
       if (!state.route.resumed.length) state.route.resumed = state.route.replanned
       state.route.status = 'RESUMED'
+      state.route.obstacleVisible = false
     }
     if (event.eventType === 'DEVICE_ARRIVED_AT_CENTER') state.route.status = 'ARRIVED'
   })

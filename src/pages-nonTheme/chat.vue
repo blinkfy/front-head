@@ -14,7 +14,7 @@
                 <text class="back-icon">‹</text>
             </view>
             <view class="header-center">
-                <text class="chat-title">{{ chatTitle }}</text>
+                <text class="chat-title">{{ chatTitle }}{{ isGroupChat ? ' · 群聊' : '' }}</text>
             </view>
             <view class="header-right" @click="showMoreOptions">
                 <text class="more-icon">⋯</text>
@@ -50,11 +50,12 @@
                 <!-- 消息内容 -->
                 <view v-else :id="`message-${msg.id}`" class="message-content" :class="{ 'message-highlighted': highlightMessageId === msg.id }">
                     <!-- 对方头像 -->
-                    <image v-if="!msg.isSelf" class="avatar" :src="otherAvatarUrl"
+                    <image v-if="!msg.isSelf" class="avatar" :src="getMessageAvatar(msg)"
                         mode="aspectFill" />
 
                     <!-- 消息气泡 -->
                     <view class="bubble-wrapper">
+                        <text v-if="!msg.isSelf && (isGroupChat || msg.isAi)" class="group-sender-name">{{ getMessageSenderName(msg) }}</text>
                         <!-- 管理员模式下,显示撤回标识 -->
                         <view v-if="mode === 'admin' && msg.isWithdraw" class="withdraw-badge">
                             <text class="withdraw-text">已撤回</text>
@@ -141,7 +142,10 @@
                                 </view>
                                 <view class="file-info">
                                     <text class="file-name">{{ msg.fileName }}</text>
-                                    <text class="file-size" v-if="!mediaLoadErrors[msg.id]?.type">{{ formatFileSize(msg.fileSize) }}</text>
+                                    <view class="file-meta" v-if="!mediaLoadErrors[msg.id]?.type">
+                                        <text class="file-size">{{ formatFileSize(msg.fileSize) }}</text>
+                                        <text v-if="isFilePreviewable(msg)" class="file-preview-hint">在线预览</text>
+                                    </view>
                                     <text class="file-error-text" v-else>下载失败，点击重试</text>
                                     <!-- 上传进度 -->
                                     <view v-if="msg.status === 'sending' && uploadProgress[msg.id] !== undefined" class="upload-progress-inline">
@@ -326,12 +330,43 @@
                     <image class="user-avatar-large" :src="otherAvatarUrl" mode="aspectFill" />
                     <view class="user-details">
                         <text class="user-name-large">{{ chatTitle }}</text>
-                        <text class="user-id-text">ID: {{ otherUserId }}</text>
+                        <text class="user-id-text">{{ isGroupChat ? `${groupInfo?.Members?.length || 0} 位成员` : `ID: ${otherUserId}` }}</text>
                     </view>
                 </view>
 
                 <!-- 设置项列表 -->
                 <view class="settings-list">
+                    <template v-if="isGroupChat">
+                        <view class="setting-item" @click="showGroupAnnouncement">
+                            <view class="setting-left">
+                                <text class="setting-icon">📢</text>
+                                <text class="setting-label">群公告</text>
+                            </view>
+                            <text class="arrow-icon">›</text>
+                        </view>
+                        <view class="setting-item">
+                            <view class="setting-left">
+                                <text class="setting-icon">📌</text>
+                                <text class="setting-label">置顶聊天</text>
+                            </view>
+                            <switch :checked="contactSettings.top" @change="toggleTop" color="#07c160" />
+                        </view>
+                        <view class="setting-item" @click="inviteGroupMembers">
+                            <view class="setting-left">
+                                <text class="setting-icon">➕</text>
+                                <text class="setting-label">邀请成员</text>
+                            </view>
+                            <text class="arrow-icon">›</text>
+                        </view>
+                        <view class="setting-item danger" @click="confirmLeaveGroup">
+                            <view class="setting-left">
+                                <text class="setting-icon">🚪</text>
+                                <text class="setting-label danger-text">退出群聊</text>
+                            </view>
+                            <text class="arrow-icon">›</text>
+                        </view>
+                    </template>
+                    <template v-else>
                     <!-- 备注名 -->
                     <view class="setting-item" @click="startEditNote">
                         <view class="setting-left">
@@ -391,6 +426,7 @@
                         </view>
                         <text class="arrow-icon">›</text>
                     </view>
+                    </template>
                 </view>
             </view>
         </view>
@@ -462,6 +498,7 @@
 
 <script>
 import * as chatApi from '@/api/chat.js'
+import { getUserProfile } from '@/api/user.js'
 import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
@@ -481,10 +518,19 @@ export default {
     data() {
         return {
             chatId: '', // 聊天会话ID
+            conversationType: 'direct',
+            groupId: '',
+            groupInfo: null,
+            isMentionStreaming: false,
+            aiStreamingMessageId: '',
+            mentionAbortController: null,
+            mentionSocket: null,
             chatTitle: '聊天',
             userAvatar: '',
             otherAvatar: '', // 对方头像
+            otherUsername: '', // 对方原始用户名
             otherUserId: '', // 对方用户ID
+            loadingUserProfile: false,
             mode: 'customer', // 聊天模式: 'customer' 普通模式, 'admin' 管理员模式
             isDarkTheme: false, // 主题状态
             statusBarHeight: 20, // 状态栏高度
@@ -596,6 +642,10 @@ export default {
     },
 
     computed: {
+        isGroupChat() {
+            return this.conversationType === 'group' && !!this.groupId
+        },
+
         // 处理撤回消息的显示
         visibleMessages() {
             return this.messages.map(msg => {
@@ -628,8 +678,7 @@ export default {
 
         // 存储 key
         storageKey() {
-            const userInfo = uni.getStorageSync('userInfo')
-            const userId = userInfo?.id || userInfo?.userId || 'unknown'
+            const userId = this.getCurrentUserId() || 'unknown'
             return CHAT_STORAGE_PREFIX + userId + '_' + this.chatId
         },
 
@@ -684,19 +733,25 @@ export default {
         this.initAudioPlayer()
         this.loadUserInfo() // 会读取userInfo.isAdmin并设置mode
 
-        if (options.chatId) {
+        if (options.conversationType === 'group' || options.groupId) {
+            this.conversationType = 'group'
+            this.groupId = options.groupId || String(options.chatId || '').replace(/^group:/, '')
+            this.chatId = `group:${this.groupId}`
+        } else if (options.chatId) {
             this.chatId = options.chatId
         }
 
         if (options.title) {
-            this.chatTitle = decodeURIComponent(options.title)
+            const decodedTitle = decodeURIComponent(options.title)
+            this.chatTitle = decodedTitle
+            this.otherUsername = decodedTitle
         }
 
         if (options.avatar) {
             this.otherAvatar = decodeURIComponent(options.avatar)
         }
 
-        if (options.userId) {
+        if (options.userId && this.conversationType !== 'group') {
             this.otherUserId = options.userId
         }
 
@@ -710,7 +765,9 @@ export default {
         this.loadLocalFileCache()
         
         // 加载联系人设置
-        if (this.otherUserId) {
+        if (this.isGroupChat) {
+            this.loadGroupDetail()
+        } else if (this.otherUserId) {
             this.loadContactSettings()
         }
         
@@ -728,6 +785,9 @@ export default {
     onShow() {
         // 每次显示页面时重新加载用户信息（确保头像更新）
         this.loadUserInfo()
+
+        // 进入聊天即同步已读状态，避免返回消息列表时读取到旧缓存
+        this.markCurrentChatRead()
         
         // 每次显示页面时从服务器刷新消息
         this.loadMessagesFromServer()
@@ -752,6 +812,10 @@ export default {
     onUnload() {
         // 停止消息轮询
         this.stopMessagePolling()
+        if (this.mentionAbortController) this.mentionAbortController.abort()
+        if (this.mentionSocket) {
+            try { this.mentionSocket.close() } catch (_) {}
+        }
         
         // 清理资源
         if (this.recorderManager) {
@@ -881,11 +945,27 @@ export default {
             })
         },
 
-        loadUserInfo() { 
+        normalizeStoredUserInfo(userInfo) {
+            return userInfo?.data || userInfo?.user || userInfo || {}
+        },
+
+        hasUsableAvatar(avatar) {
+            return Boolean(
+                avatar &&
+                typeof avatar === 'string' &&
+                avatar.trim() !== '' &&
+                avatar !== 'null' &&
+                avatar !== 'undefined' &&
+                !avatar.includes('default-avatar') &&
+                !avatar.includes('/images/person.webp.png')
+            )
+        },
+
+        async loadUserInfo() {
             try {
-                const userInfo = uni.getStorageSync('userInfo')
+                const userInfo = this.normalizeStoredUserInfo(uni.getStorageSync('userInfo'))
                 if (userInfo) {
-                    if (userInfo.avatar) {
+                    if (this.hasUsableAvatar(userInfo.avatar)) {
                         this.userAvatar = userInfo.avatar
                     }
                     // 读取管理员标识
@@ -893,8 +973,35 @@ export default {
                         this.mode = 'admin'
                     }
                 }
+                if (!this.hasUsableAvatar(this.userAvatar)) {
+                    this.loadUserProfileForAvatar()
+                }
             } catch (e) {
                 console.error('获取用户信息失败', e)
+            }
+        },
+
+        async loadUserProfileForAvatar() {
+            if (this.loadingUserProfile) return
+            this.loadingUserProfile = true
+            try {
+                const res = await getUserProfile()
+                if (res && res.code === 0 && res.data) {
+                    if (this.hasUsableAvatar(res.data.avatar)) {
+                        this.userAvatar = res.data.avatar
+                    }
+                    const cached = this.normalizeStoredUserInfo(uni.getStorageSync('userInfo'))
+                    uni.setStorageSync('userInfo', {
+                        ...cached,
+                        ...res.data,
+                        id: cached.id || cached.userId,
+                        userId: cached.userId || cached.id
+                    })
+                }
+            } catch (e) {
+                console.warn('加载当前用户头像失败:', e?.message || e)
+            } finally {
+                this.loadingUserProfile = false
             }
         },
 
@@ -1132,12 +1239,17 @@ export default {
                 this.messagePollingTimer = null
             }
         },
+
+        getConversationHistory(params = {}) {
+            return this.isGroupChat
+                ? chatApi.getGroupHistory(this.groupId, params)
+                : chatApi.getChatHistory({ chatId: this.chatId, ...params })
+        },
         
         async pollMessages() {
             try {
                 // 静默获取最新消息（不显示加载提示）
-                const res = await chatApi.getChatHistory({
-                    chatId: this.chatId,
+                const res = await this.getConversationHistory({
                     page: 1,
                     pageSize: this.pageSize
                 })
@@ -1185,8 +1297,7 @@ export default {
         // ==================== 从服务器加载消息 ====================
         async loadMessagesFromServer() {
             try {
-                const res = await chatApi.getChatHistory({
-                    chatId: this.chatId,
+                const res = await this.getConversationHistory({
                     page: 1,
                     pageSize: this.pageSize
                 })
@@ -1237,7 +1348,9 @@ export default {
         // 格式化服务器返回的消息
         formatServerMessage(serverMsg) {
             const currentUserId = this.getCurrentUserId()
-            const isSelf = String(serverMsg.senderId) === String(currentUserId)
+            const isSelf = !serverMsg.isAi && (currentUserId
+                ? String(serverMsg.senderId) === String(currentUserId)
+                : String(serverMsg.receiverId) === String(this.otherUserId))
             
             let content = serverMsg.content || serverMsg.url
             let parsedContent = null
@@ -1276,6 +1389,9 @@ export default {
                 type: serverMsg.type || 'text',
                 content: content,
                 isSelf: isSelf,
+                isAi: !!serverMsg.isAi,
+                senderName: serverMsg.isAi ? 'AI 环保助手' : (serverMsg.Sender?.username || serverMsg.sender?.username || ''),
+                senderAvatar: serverMsg.isAi ? '' : (serverMsg.Sender?.avatar || serverMsg.sender?.avatar || ''),
                 timestamp: new Date(serverMsg.sendTime || serverMsg.createTime || serverMsg.timestamp).getTime() || Date.now(),
                 status: 'sent',
                 duration: serverMsg.duration || parsedContent?.duration,
@@ -1301,12 +1417,126 @@ export default {
             return message
         },
 
+        decodeTokenPayload(token) {
+            try {
+                const payload = String(token || '').split('.')[1]
+                if (!payload) return null
+                const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+                const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+                let json = ''
+                // #ifdef H5
+                json = decodeURIComponent(escape(window.atob(padded)))
+                // #endif
+                // #ifndef H5
+                const decoder = typeof atob === 'function' ? atob : null
+                if (decoder) json = decodeURIComponent(escape(decoder(padded)))
+                // #endif
+                return json ? JSON.parse(json) : null
+            } catch (e) {
+                return null
+            }
+        },
+
+        getServerMessageId(data) {
+            return data?.id || data?.messageId || data?._id || ''
+        },
+
+        markCurrentChatRead() {
+            if (this.isGroupChat) {
+                this.markChatListCacheRead(`group:${this.groupId}`)
+                return
+            }
+            const targetId = this.otherUserId || this.chatId
+            if (!targetId) return
+            this.markChatListCacheRead(targetId)
+            chatApi.markAsRead(targetId).catch(e => {
+                console.warn('标记聊天已读失败:', e?.message || e)
+            })
+        },
+
+        markChatListCacheRead(targetId) {
+            try {
+                const currentUserId = this.getCurrentUserId()
+                if (!currentUserId || !targetId) return
+                const cacheKey = `chatlist_${currentUserId}`
+                const cached = uni.getStorageSync(cacheKey)
+                if (!cached || typeof cached !== 'string') return
+                const cacheData = JSON.parse(cached)
+                if (!cacheData || !Array.isArray(cacheData.userList)) return
+
+                let changed = false
+                cacheData.userList = cacheData.userList.map(user => {
+                    if (String(user.otherId) !== String(targetId)) return user
+                    changed = true
+                    return {
+                        ...user,
+                        unreadCount: 0,
+                        latestContent: user.latestContent
+                            ? { ...user.latestContent, isRead: true }
+                            : user.latestContent
+                    }
+                })
+                if (changed) {
+                    cacheData.timestamp = Date.now()
+                    uni.setStorageSync(cacheKey, JSON.stringify(cacheData))
+                }
+            } catch (e) {
+                console.warn('同步聊天列表已读缓存失败:', e?.message || e)
+            }
+        },
+
+        syncChatListTopCache(targetId, top) {
+            try {
+                const currentUserId = this.getCurrentUserId()
+                if (!currentUserId || !targetId) return
+                const cacheKey = `chatlist_${currentUserId}`
+                const cached = uni.getStorageSync(cacheKey)
+                if (!cached || typeof cached !== 'string') return
+                const cacheData = JSON.parse(cached)
+                if (!cacheData || !Array.isArray(cacheData.userList)) return
+
+                let changed = false
+                cacheData.userList = cacheData.userList.map(user => {
+                    if (String(user.otherId) !== String(targetId)) return user
+                    changed = true
+                    return {
+                        ...user,
+                        top: Boolean(top)
+                    }
+                }).sort((a, b) => {
+                    const topDiff = Number(Boolean(b?.top)) - Number(Boolean(a?.top))
+                    if (topDiff !== 0) return topDiff
+                    const timeA = new Date(a?.latestContent?.sendTime || a?.lastMessageTime || 0).getTime() || 0
+                    const timeB = new Date(b?.latestContent?.sendTime || b?.lastMessageTime || 0).getTime() || 0
+                    return timeB - timeA
+                })
+
+                if (changed) {
+                    cacheData.timestamp = Date.now()
+                    uni.setStorageSync(cacheKey, JSON.stringify(cacheData))
+                }
+            } catch (e) {
+                console.warn('同步聊天置顶缓存失败:', e?.message || e)
+            }
+        },
+
         // 获取当前用户ID
         getCurrentUserId() {
             try {
                 const userInfo = uni.getStorageSync('userInfo')
-                const userId = userInfo?.id || userInfo?.userId || ''
-                return userId
+                const userId =
+                    userInfo?.id ||
+                    userInfo?.userId ||
+                    userInfo?.user?.id ||
+                    userInfo?.user?.userId ||
+                    userInfo?.data?.id ||
+                    userInfo?.data?.userId ||
+                    ''
+                if (userId !== '' && userId !== null && userId !== undefined) {
+                    return userId
+                }
+                const tokenPayload = this.decodeTokenPayload(uni.getStorageSync('token'))
+                return tokenPayload?.userId || tokenPayload?.id || ''
             } catch (e) {
                 console.error('获取用户ID失败:', e)
                 return ''
@@ -1434,8 +1664,7 @@ export default {
 
             try {
                 this.currentPage++
-                const res = await chatApi.getChatHistory({
-                    chatId: this.chatId,
+                const res = await this.getConversationHistory({
                     page: this.currentPage,
                     pageSize: this.pageSize
                 })
@@ -1484,15 +1713,17 @@ export default {
 
             // 发送到服务器
             try {
-                const res = await chatApi.sendTextMessage({
-                    chatId: this.chatId,
-                    targetUserId: this.otherUserId,
-                    content: text,
-                    refId: this.refMessageId  // 传送 refId 到后端
-                })
+                const res = this.isGroupChat
+                    ? await chatApi.sendGroupTextMessage(this.groupId, text, this.refMessageId)
+                    : await chatApi.sendTextMessage({
+                        chatId: this.chatId,
+                        targetUserId: this.otherUserId,
+                        content: text,
+                        refId: this.refMessageId
+                    })
 
                 // 更新消息ID和状态
-                const newId = res.data?.messageId
+                const newId = this.getServerMessageId(res.data)
                 if (newId) {
                     this.updateMessageStatus(msg.id, 'sent', newId)
                 } else {
@@ -1501,9 +1732,172 @@ export default {
                 
                 // 清除引用
                 this.clearRefMessage()
+                if (this.shouldInvokeAi(text)) {
+                    this.requestMentionAi(text)
+                }
             } catch (e) {
                 console.error('发送文本消息失败', e)
                 this.updateMessageStatus(msg.id, 'failed')
+            }
+        },
+
+        shouldInvokeAi(text) {
+            return /@AI\b/i.test(String(text || ''))
+        },
+
+        requestMentionAi(mentionText) {
+            if (this.isMentionStreaming) {
+                uni.showToast({ title: 'AI 正在回复上一条消息', icon: 'none' })
+                return
+            }
+            const aiMessage = {
+                id: `ai_stream_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                type: 'text',
+                content: '正在思考...',
+                isSelf: false,
+                isAi: true,
+                senderName: 'AI 环保助手',
+                timestamp: Date.now(),
+                status: 'streaming'
+            }
+            this.isMentionStreaming = true
+            this.aiStreamingMessageId = aiMessage.id
+            this.addMessage(aiMessage)
+
+            // #ifdef H5
+            this.streamMentionAiH5(mentionText, aiMessage.id)
+            // #endif
+            // #ifndef H5
+            this.streamMentionAiSocket(mentionText, aiMessage.id)
+            // #endif
+        },
+
+        updateStreamingAiMessage(messageId, content, options = {}) {
+            const message = this.messages.find((item) => item.id === messageId)
+            if (!message) return
+            if (content !== undefined) message.content = content || '正在思考...'
+            if (options.status) message.status = options.status
+            if (options.newId) message.id = options.newId
+            this.saveMessagesToStorage()
+            this.$nextTick(() => this.scrollToBottom())
+        },
+
+        finishMentionAi(messageId, content, newId) {
+            this.updateStreamingAiMessage(messageId, content, { status: 'sent', newId })
+            this.isMentionStreaming = false
+            this.aiStreamingMessageId = ''
+            this.mentionAbortController = null
+            if (this.mentionSocket) {
+                try { this.mentionSocket.close() } catch (_) {}
+                this.mentionSocket = null
+            }
+        },
+
+        failMentionAi(messageId, message) {
+            this.updateStreamingAiMessage(messageId, message || 'AI 回复失败，请稍后重试。', { status: 'failed' })
+            this.isMentionStreaming = false
+            this.aiStreamingMessageId = ''
+            this.mentionAbortController = null
+            this.mentionSocket = null
+        },
+
+        async streamMentionAiH5(mentionText, messageId) {
+            try {
+                this.mentionAbortController = new AbortController()
+                const token = uni.getStorageSync('token') || ''
+                const response = await fetch(`${baseUrl}/api/chat/ai/mention/stream`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: token } : {})
+                    },
+                    body: JSON.stringify({
+                        conversationType: this.isGroupChat ? 'group' : 'direct',
+                        targetUserId: this.otherUserId,
+                        groupId: this.groupId,
+                        mentionText
+                    }),
+                    signal: this.mentionAbortController.signal
+                })
+                if (!response.ok || !response.body) throw new Error(`请求失败 (${response.status})`)
+
+                const reader = response.body.getReader()
+                const decoder = new TextDecoder('utf-8')
+                let buffer = ''
+                while (true) {
+                    const { value, done } = await reader.read()
+                    if (done) break
+                    buffer += decoder.decode(value, { stream: true })
+                    const events = buffer.split('\n\n')
+                    buffer = events.pop() || ''
+                    for (const eventBlock of events) {
+                        let eventName = 'message'
+                        let data = null
+                        for (const line of eventBlock.split('\n')) {
+                            if (line.startsWith('event:')) eventName = line.slice(6).trim()
+                            if (line.startsWith('data:')) {
+                                try { data = JSON.parse(line.slice(5).trim()) } catch (_) {}
+                            }
+                        }
+                        if (!data) continue
+                        if (eventName === 'delta') this.updateStreamingAiMessage(messageId, data.full || data.chunk)
+                        else if (eventName === 'done') this.finishMentionAi(messageId, data.content, data.messageId)
+                        else if (eventName === 'error') this.failMentionAi(messageId, data.message)
+                    }
+                }
+                reader.releaseLock()
+                if (this.isMentionStreaming && this.aiStreamingMessageId === messageId) {
+                    this.failMentionAi(messageId, 'AI 回复已中断，请重试。')
+                }
+            } catch (error) {
+                if (error?.name === 'AbortError') return
+                console.error('AI 流式回复失败:', error)
+                this.failMentionAi(messageId, error?.message || 'AI 回复失败，请稍后重试。')
+            }
+        },
+
+        streamMentionAiSocket(mentionText, messageId) {
+            const token = uni.getStorageSync('token') || ''
+            if (!token) {
+                this.failMentionAi(messageId, '登录已失效，请重新登录。')
+                return
+            }
+            const socketUrl = `${baseUrl.replace(/^http/, 'ws')}/ws/ai/chat?token=${encodeURIComponent(token)}`
+            let settled = false
+            const fail = (message) => {
+                if (settled) return
+                settled = true
+                this.failMentionAi(messageId, message)
+            }
+            try {
+                const socket = uni.connectSocket({ url: socketUrl })
+                this.mentionSocket = socket
+                socket.onOpen(() => {
+                    socket.send({
+                        data: JSON.stringify({
+                            type: 'mention',
+                            conversationType: this.isGroupChat ? 'group' : 'direct',
+                            targetUserId: this.otherUserId,
+                            groupId: this.groupId,
+                            mentionText
+                        })
+                    })
+                })
+                socket.onMessage((event) => {
+                    let data
+                    try { data = JSON.parse(event.data) } catch (_) { return }
+                    if (data.type === 'delta') this.updateStreamingAiMessage(messageId, data.full || data.chunk)
+                    else if (data.type === 'done') {
+                        settled = true
+                        this.finishMentionAi(messageId, data.content, data.messageId)
+                    } else if (data.type === 'error') fail(data.message || 'AI 回复失败，请稍后重试。')
+                })
+                socket.onError(() => fail('AI 连接失败，请稍后重试。'))
+                socket.onClose(() => {
+                    if (!settled && this.isMentionStreaming) fail('AI 连接已关闭，请重试。')
+                })
+            } catch (error) {
+                fail(error?.message || 'AI 连接失败，请稍后重试。')
             }
         },
 
@@ -1513,15 +1907,17 @@ export default {
 
             // 上传到服务器
             try {
-                const res = await chatApi.sendVoiceMessage(
-                    this.chatId,
-                    this.otherUserId,
-                    filePath,
-                    duration
-                )
+                const res = this.isGroupChat
+                    ? await chatApi.sendGroupVoiceMessage(this.groupId, filePath, duration, this.refMessageId)
+                    : await chatApi.sendVoiceMessage(
+                        this.chatId,
+                        this.otherUserId,
+                        filePath,
+                        duration
+                    )
 
                 if (res.data) {
-                    const newId = res.data.messageId
+                    const newId = this.getServerMessageId(res.data)
                     if (res.data.url) {
                         const targetMsg = this.messages.find(m => m.id === msg.id)
                         if (targetMsg) targetMsg.content = res.data.url
@@ -1548,14 +1944,16 @@ export default {
 
             // 上传到服务器
             try {
-                const res = await chatApi.sendImageMessage(
-                    this.chatId,
-                    this.otherUserId,
-                    filePath
-                )
+                const res = this.isGroupChat
+                    ? await chatApi.sendGroupImageMessage(this.groupId, filePath, this.refMessageId)
+                    : await chatApi.sendImageMessage(
+                        this.chatId,
+                        this.otherUserId,
+                        filePath
+                    )
                 
                 if (res.data) {
-                    const newId = res.data.id || res.data.messageId
+                    const newId = this.getServerMessageId(res.data)
                     // 注意: 不更新content,保留本地blob URL用于显示
                     // 服务器URL会在formatServerMessage中处理(用于对方接收时显示)
                     this.updateMessageStatus(msg.id, 'sent', newId)
@@ -1590,20 +1988,22 @@ export default {
 
             // 上传到服务器
             try {
-                const res = await chatApi.sendVideoMessage(
-                    this.chatId,
-                    this.otherUserId,
-                    filePath,
-                    thumbnail,
-                    duration,
-                    (progress) => {
-                        // 更新上传进度 (Vue 3 直接赋值即可)
-                        this.uploadProgress[msg.id] = progress
-                    }
-                )
+                const onProgress = (progress) => {
+                    this.uploadProgress[msg.id] = progress
+                }
+                const res = this.isGroupChat
+                    ? await chatApi.sendGroupVideoMessage(this.groupId, filePath, thumbnail, duration, this.refMessageId, onProgress)
+                    : await chatApi.sendVideoMessage(
+                        this.chatId,
+                        this.otherUserId,
+                        filePath,
+                        thumbnail,
+                        duration,
+                        onProgress
+                    )
 
                 if (res.data) {
-                    const newId = res.data.messageId
+                    const newId = this.getServerMessageId(res.data)
                     // 注意: 不更新content和thumbnail,保留本地blob URL用于显示
                     this.updateMessageStatus(msg.id, 'sent', newId)
                     
@@ -1642,20 +2042,22 @@ export default {
 
             // 上传到服务器
             try {
-                const res = await chatApi.sendFileMessage(
-                    this.chatId,
-                    this.otherUserId,
-                    filePath,
-                    fileName,
-                    fileSize,
-                    (progress) => {
-                        // 更新上传进度 (Vue 3 直接赋值即可)
-                        this.uploadProgress[msg.id] = progress
-                    }
-                )
+                const onProgress = (progress) => {
+                    this.uploadProgress[msg.id] = progress
+                }
+                const res = this.isGroupChat
+                    ? await chatApi.sendGroupFileMessage(this.groupId, filePath, fileName, fileSize, this.refMessageId, onProgress)
+                    : await chatApi.sendFileMessage(
+                        this.chatId,
+                        this.otherUserId,
+                        filePath,
+                        fileName,
+                        fileSize,
+                        onProgress
+                    )
 
                 if (res.data) {
-                    const newId = res.data.messageId
+                    const newId = this.getServerMessageId(res.data)
                     // 注意: 不更新content,保留本地文件信息
                     this.updateMessageStatus(msg.id, 'sent', newId)
                     
@@ -1739,7 +2141,7 @@ export default {
             
             // 发送系统通知 
             // 获取发送者名称
-            const senderName = this.otherNote || this.otherUsername || '用户'
+            const senderName = this.contactSettings.note || this.otherUsername || this.chatTitle || '用户'
             
             // 调用全局通知系统
             triggerMessageNotification({
@@ -1777,59 +2179,56 @@ export default {
                 let res
                 switch (msg.type) {
                     case 'text':
-                        res = await chatApi.sendTextMessage({
-                            chatId: this.chatId,
-                            targetUserId: this.otherUserId,
-                            content: msg.content
-                        })
+                        res = this.isGroupChat
+                            ? await chatApi.sendGroupTextMessage(this.groupId, msg.content, msg.refId)
+                            : await chatApi.sendTextMessage({
+                                chatId: this.chatId,
+                                targetUserId: this.otherUserId,
+                                content: msg.content
+                            })
                         break
                     case 'image':
-                        res = await chatApi.sendImageMessage(
-                            this.chatId,
-                            this.otherUserId,
-                            msg.content
-                        )
+                        res = this.isGroupChat
+                            ? await chatApi.sendGroupImageMessage(this.groupId, msg.content, msg.refId)
+                            : await chatApi.sendImageMessage(this.chatId, this.otherUserId, msg.content)
                         break
                     case 'voice':
-                        res = await chatApi.sendVoiceMessage(
-                            this.chatId,
-                            this.otherUserId,
-                            msg.content,
-                            msg.duration
-                        )
+                        res = this.isGroupChat
+                            ? await chatApi.sendGroupVoiceMessage(this.groupId, msg.content, msg.duration, msg.refId)
+                            : await chatApi.sendVoiceMessage(this.chatId, this.otherUserId, msg.content, msg.duration)
                         break
                     case 'video':
-                        res = await chatApi.sendVideoMessage(
-                            this.chatId,
-                            this.otherUserId,
-                            msg.content,// video file path
-                            msg.thumbnail,// thumbnail path
-                            msg.duration// duration in seconds
-                        )
+                        res = this.isGroupChat
+                            ? await chatApi.sendGroupVideoMessage(this.groupId, msg.content, msg.thumbnail, msg.duration, msg.refId)
+                            : await chatApi.sendVideoMessage(this.chatId, this.otherUserId, msg.content, msg.thumbnail, msg.duration)
                         break
                     case 'file':
-                        res = await chatApi.sendFileMessage(
-                            this.chatId,
-                            this.otherUserId,
-                            msg.content,
-                            msg.fileName,
-                            msg.fileSize
-                        )
+                        res = this.isGroupChat
+                            ? await chatApi.sendGroupFileMessage(this.groupId, msg.content, msg.fileName, msg.fileSize, msg.refId)
+                            : await chatApi.sendFileMessage(this.chatId, this.otherUserId, msg.content, msg.fileName, msg.fileSize)
                         break
                     case 'location':
-                        res = await chatApi.sendLocationMessage(
-                            this.chatId,
-                            this.otherUserId,
-                            msg.locationName,
-                            msg.locationAddress,
-                            msg.latitude,
-                            msg.longitude
-                        )
+                        res = this.isGroupChat
+                            ? await chatApi.sendGroupLocationMessage(this.groupId, {
+                                locationName: msg.locationName,
+                                locationAddress: msg.locationAddress,
+                                latitude: msg.latitude,
+                                longitude: msg.longitude,
+                                refId: msg.refId
+                            })
+                            : await chatApi.sendLocationMessage(
+                                this.chatId,
+                                this.otherUserId,
+                                msg.locationName,
+                                msg.locationAddress,
+                                msg.latitude,
+                                msg.longitude
+                            )
                         break
                 }
 
                 if (res && res.data) {
-                    const newId = res.data.messageId
+                    const newId = this.getServerMessageId(res.data)
                     if (res.data.url) msg.content = res.data.url
                     this.updateMessageStatus(originalId, 'sent', newId)
                 } else {
@@ -2041,16 +2440,24 @@ export default {
 
         async sendLocationMessage(msg) {
             try {
-                const res = await chatApi.sendLocationMessage(
-                    this.chatId,
-                    this.otherUserId,
-                    msg.locationName,
-                    msg.locationAddress,
-                    msg.latitude,
-                    msg.longitude
-                )
+                const res = this.isGroupChat
+                    ? await chatApi.sendGroupLocationMessage(this.groupId, {
+                        locationName: msg.locationName,
+                        locationAddress: msg.locationAddress,
+                        latitude: msg.latitude,
+                        longitude: msg.longitude,
+                        refId: this.refMessageId
+                    })
+                    : await chatApi.sendLocationMessage(
+                        this.chatId,
+                        this.otherUserId,
+                        msg.locationName,
+                        msg.locationAddress,
+                        msg.latitude,
+                        msg.longitude
+                    )
 
-                const newId = res.data?.messageId
+                const newId = this.getServerMessageId(res.data)
                 if (newId) {
                     this.updateMessageStatus(msg.id, 'sent', newId)
                 } else {
@@ -2440,11 +2847,20 @@ export default {
         },
 
         // ==================== 文件操作 ====================
-        async openFile(msg) {
+        async openFile(msg, preferOnlinePreview = true) {
             // 如果已经标记失败，点击重试
             if (this.mediaLoadErrors[msg.id]?.type === 'file') {
                 this.retryLoadMedia(msg, 'file')
                 return
+            }
+
+            // 在线文件直接复用文件管理器的预览能力；本地临时文件仍沿用原有系统打开流程。
+            if (preferOnlinePreview && this.isFilePreviewable(msg)) {
+                const previewUrl = this.getOnlineFilePreviewUrl(msg.content)
+                if (previewUrl) {
+                    this.openOnlineFilePreview(previewUrl, msg.fileName)
+                    return
+                }
             }
             
             const url = msg.content
@@ -2577,6 +2993,47 @@ export default {
             document.body.removeChild(a)
         },
 
+        getFileExtension(fileName = '') {
+            const normalized = String(fileName || '').split('?')[0].trim().toLowerCase()
+            const dotIndex = normalized.lastIndexOf('.')
+            return dotIndex > -1 ? normalized.slice(dotIndex + 1) : ''
+        },
+
+        isFilePreviewable(msg) {
+            if (!msg || !msg.content) return false
+            const previewableExtensions = new Set([
+                'pdf', 'txt', 'md', 'json', 'csv', 'log',
+                'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+                'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg',
+                'mp3', 'wav', 'm4a', 'aac', 'mp4', 'mov', 'webm',
+                'zip'
+            ])
+            return previewableExtensions.has(this.getFileExtension(msg.fileName || msg.content))
+        },
+
+        getOnlineFilePreviewUrl(fileUrl) {
+            const url = String(fileUrl || '').trim()
+            if (!url || url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('file://')) {
+                return ''
+            }
+            const downloadPath = '/files/download/'
+            return url.includes(downloadPath)
+                ? url.replace(downloadPath, '/files/preview/')
+                : ''
+        },
+
+        openOnlineFilePreview(previewUrl, fileName) {
+            // #ifdef H5
+            window.open(previewUrl, '_blank', 'noopener,noreferrer')
+            // #endif
+
+            // #ifndef H5
+            uni.navigateTo({
+                url: `/pages-nonTheme/webview?url=${encodeURIComponent(previewUrl)}&title=${encodeURIComponent(fileName || '文件预览')}`
+            })
+            // #endif
+        },
+
         // 检查 blob URL 是否有效(仅在 H5 环境)
         async checkBlobUrlValid(blobUrl) {
             if (!blobUrl.startsWith('blob:')) {
@@ -2676,6 +3133,7 @@ export default {
 
         showMoreOptions() {
             this.showSettingsModal = true
+            if (this.isGroupChat) this.loadGroupDetail()
         },
 
         closeSettingsModal() {
@@ -2785,12 +3243,17 @@ export default {
             const top = e.detail.value
 
             try {
-                await chatApi.updateContactTop({
-                    userId: this.otherUserId,
-                    top: top
-                })
+                if (this.isGroupChat) {
+                    await chatApi.updateGroupTop(this.groupId, top)
+                } else {
+                    await chatApi.updateContactTop({
+                        userId: this.otherUserId,
+                        top: top
+                    })
+                }
 
                 this.contactSettings.top = top
+                this.syncChatListTopCache(this.isGroupChat ? `group:${this.groupId}` : this.otherUserId, top)
                 uni.showToast({ 
                     title: top ? '已置顶' : '已取消置顶', 
                     icon: 'success' 
@@ -2850,6 +3313,7 @@ export default {
 
         // 加载联系人设置
         async loadContactSettings() {
+            if (this.isGroupChat) return
             try {
                 const res = await chatApi.getContactSettings({
                     userId: this.otherUserId
@@ -2871,6 +3335,71 @@ export default {
             } catch (e) {
                 console.error('加载联系人设置失败:', e)
             }
+        },
+
+        async loadGroupDetail() {
+            if (!this.isGroupChat) return
+            try {
+                const res = await chatApi.getGroupDetail(this.groupId)
+                if (!res?.data) return
+                this.groupInfo = res.data
+                this.chatTitle = res.data.name || this.chatTitle
+                this.otherAvatar = res.data.avatar || ''
+                this.contactSettings.top = !!res.data.currentMember?.top
+            } catch (e) {
+                console.error('加载群聊信息失败:', e)
+            }
+        },
+
+        showGroupAnnouncement() {
+            uni.showModal({
+                title: '群公告',
+                content: this.groupInfo?.announcement || '群主暂未发布公告',
+                showCancel: false
+            })
+        },
+
+        async inviteGroupMembers() {
+            try {
+                const res = await chatApi.getFriends()
+                const existingIds = new Set((this.groupInfo?.Members || []).map((member) => String(member.userId)))
+                const candidates = (res.data?.list || []).filter((friend) => !existingIds.has(String(friend.id)))
+                if (!candidates.length) {
+                    uni.showToast({ title: '暂无可邀请的好友', icon: 'none' })
+                    return
+                }
+                uni.showActionSheet({
+                    itemList: candidates.map((friend) => friend.note || friend.username),
+                    success: async (result) => {
+                        const selected = candidates[result.tapIndex]
+                        if (!selected) return
+                        await chatApi.addGroupMembers(this.groupId, [selected.id])
+                        await this.loadGroupDetail()
+                        uni.showToast({ title: '已邀请成员', icon: 'success' })
+                    }
+                })
+            } catch (e) {
+                console.error('邀请群成员失败:', e)
+                uni.showToast({ title: '邀请失败', icon: 'none' })
+            }
+        },
+
+        confirmLeaveGroup() {
+            uni.showModal({
+                title: '退出群聊',
+                content: '退出后将不再接收该群消息，确定继续吗？',
+                confirmColor: '#ef4444',
+                success: async (result) => {
+                    if (!result.confirm) return
+                    try {
+                        await chatApi.leaveGroup(this.groupId)
+                        uni.showToast({ title: '已退出群聊', icon: 'success' })
+                        setTimeout(() => uni.navigateBack(), 500)
+                    } catch (e) {
+                        console.error('退出群聊失败:', e)
+                    }
+                }
+            })
         },
 
         // 旧的 showMoreOptions 改名为 showMoreOptions_old,用于向后兼容
@@ -3271,10 +3800,10 @@ export default {
         onMessageLongPressV2(msg) {
             const actions = [
                 { key: 'copy', label: '复制' },
-                { key: 'delete', label: '删除' },
                 { key: 'quote', label: '引用' }
             ]
-            if (msg.type === 'voice' && msg.status === 'sent') {
+            if (!this.isGroupChat) actions.splice(1, 0, { key: 'delete', label: '删除' })
+            if (!this.isGroupChat && msg.type === 'voice' && msg.status === 'sent') {
                 actions.push({ key: 'transcribe', label: msg.voiceText ? '重新转文字' : '转文字' })
             }
             if (msg.isSelf && msg.status === 'sent') {
@@ -3315,7 +3844,8 @@ export default {
                         await this.transcribeVoiceMessage(msg)
                     } else if (action === 'recall') {
                         try {
-                            await chatApi.recallMessage(msg.id)
+                            if (this.isGroupChat) await chatApi.recallGroupMessage(this.groupId, msg.id)
+                            else await chatApi.recallMessage(msg.id)
                             const index = this.messages.findIndex(m => m.id === msg.id)
                             if (index > -1) {
                                 this.messages.splice(index, 1)
@@ -3615,7 +4145,7 @@ export default {
         getRefMessageSenderName(refId) {
             const refMsg = this.messages.find(m => m.id === refId)
             if (!refMsg) return '用户'
-            return refMsg.isSelf ? '你' : (this.otherNote || this.otherUsername || '对方')
+            return refMsg.isSelf ? '你' : (this.contactSettings.note || this.otherUsername || this.chatTitle || '对方')
         },
 
         // 获取被引用消息的类型，用于样式判断
@@ -3744,6 +4274,21 @@ export default {
         // 已改为 computed 属性 otherAvatarUrl，此方法已废弃（保留为向后兼容）
         getOtherAvatar() {
             return this.otherAvatarUrl
+        },
+
+        getMessageAvatar(msg) {
+            if (msg?.isAi) {
+                return this.generateAvatarFromName('AI 环保助手', true)
+            }
+            if (msg?.senderAvatar && typeof msg.senderAvatar === 'string') {
+                return getAvatarUrl(msg.senderAvatar, baseUrl)
+            }
+            return this.otherAvatarUrl
+        },
+
+        getMessageSenderName(msg) {
+            if (msg?.isAi) return 'AI 环保助手'
+            return msg?.senderName || this.chatTitle || '群成员'
         },
 
         // ==================== 已移至 computed 的方法（用于向后兼容） ====================
@@ -4144,6 +4689,13 @@ page {
     position: relative; // 为撤回标识定位
 }
 
+.group-sender-name {
+    margin: 0 0 6rpx 4rpx;
+    color: #8a94a6;
+    font-size: 22rpx;
+    line-height: 1.2;
+}
+
 .message-self .bubble-wrapper {
     align-items: flex-end;
 }
@@ -4524,6 +5076,21 @@ page {
     .file-size {
         font-size: 22rpx;
         color: #999;
+    }
+
+    .file-meta {
+        display: flex;
+        align-items: center;
+        gap: 10rpx;
+    }
+
+    .file-preview-hint {
+        padding: 2rpx 8rpx;
+        border-radius: 6rpx;
+        background: rgba(59, 130, 246, 0.1);
+        color: #2563eb;
+        font-size: 20rpx;
+        line-height: 1.4;
     }
     
     .file-error-text {

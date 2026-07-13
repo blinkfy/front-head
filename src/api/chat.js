@@ -404,6 +404,166 @@ export function deleteContact(params) {
   })
 }
 
+// Friend request APIs
+export function searchChatUsers(keyword) {
+  return request({
+    url: `/api/chat/users/search?keyword=${encodeURIComponent(keyword || '')}`,
+    method: 'GET',
+    needAuth: true
+  })
+}
+
+export function getFriends() {
+  return request({ url: '/api/chat/friends', method: 'GET', needAuth: true })
+}
+
+export function sendFriendRequest(userId, message = '') {
+  return request({
+    url: '/api/chat/friend-requests',
+    method: 'POST',
+    data: { userId, message },
+    needAuth: true
+  })
+}
+
+export function getFriendRequests(direction = 'incoming') {
+  return request({
+    url: `/api/chat/friend-requests?direction=${encodeURIComponent(direction)}`,
+    method: 'GET',
+    needAuth: true
+  })
+}
+
+export function respondToFriendRequest(requestId, action) {
+  return request({
+    url: `/api/chat/friend-requests/${requestId}/respond`,
+    method: 'POST',
+    data: { action },
+    needAuth: true
+  })
+}
+
+export function deleteFriend(userId) {
+  return request({
+    url: `/api/chat/friends/${userId}`,
+    method: 'DELETE',
+    needAuth: true
+  })
+}
+
+// Group chat APIs
+export function createGroup(data) {
+  return request({ url: '/api/chat/groups', method: 'POST', data, needAuth: true })
+}
+
+export function getGroups() {
+  return request({ url: '/api/chat/groups', method: 'GET', needAuth: true })
+}
+
+export function getGroupDetail(groupId) {
+  return request({ url: `/api/chat/groups/${groupId}`, method: 'GET', needAuth: true })
+}
+
+export function updateGroup(groupId, data) {
+  return request({ url: `/api/chat/groups/${groupId}`, method: 'PATCH', data, needAuth: true })
+}
+
+export function addGroupMembers(groupId, memberIds) {
+  return request({
+    url: `/api/chat/groups/${groupId}/members`,
+    method: 'POST',
+    data: { memberIds },
+    needAuth: true
+  })
+}
+
+export function removeGroupMember(groupId, userId) {
+  return request({ url: `/api/chat/groups/${groupId}/members/${userId}`, method: 'DELETE', needAuth: true })
+}
+
+export function leaveGroup(groupId) {
+  return request({ url: `/api/chat/groups/${groupId}/leave`, method: 'POST', needAuth: true })
+}
+
+export function updateGroupTop(groupId, top) {
+  return request({ url: `/api/chat/groups/${groupId}/top`, method: 'PUT', data: { top }, needAuth: true })
+}
+
+export function getGroupHistory(groupId, params = {}) {
+  const query = Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&')
+  return request({
+    url: `/api/chat/groups/${groupId}/history${query ? `?${query}` : ''}`,
+    method: 'GET',
+    needAuth: true
+  })
+}
+
+export function sendGroupTextMessage(groupId, content, refId = null) {
+  return request({
+    url: `/api/chat/groups/${groupId}/messages/text`,
+    method: 'POST',
+    data: { content, refId },
+    needAuth: true
+  })
+}
+
+export function recallGroupMessage(groupId, messageId) {
+  return request({
+    url: `/api/chat/groups/${groupId}/messages/${messageId}/recall`,
+    method: 'POST',
+    needAuth: true
+  })
+}
+
+function uploadGroupMessage(groupId, type, filePath, formData = {}, onProgress) {
+  const token = getToken()
+  return new Promise((resolve, reject) => {
+    const uploadTask = uni.uploadFile({
+      url: `${getBaseUrl()}/api/chat/groups/${groupId}/messages/${type}${token ? `?token=${encodeURIComponent(token)}` : ''}`,
+      filePath,
+      name: 'file',
+      formData,
+      success: (res) => {
+        try {
+          const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+          if (res.statusCode === 200 && data?.code === 0) resolve(data)
+          else reject(new Error(data?.msg || '上传失败'))
+        } catch (error) {
+          reject(error)
+        }
+      },
+      fail: reject
+    })
+    if (onProgress && uploadTask.onProgressUpdate) {
+      uploadTask.onProgressUpdate((event) => onProgress(event.progress))
+    }
+  })
+}
+
+export const sendGroupImageMessage = (groupId, filePath, refId = null) =>
+  uploadGroupMessage(groupId, 'image', filePath, { refId })
+
+export const sendGroupVoiceMessage = (groupId, filePath, duration, refId = null) =>
+  uploadGroupMessage(groupId, 'voice', filePath, { duration, refId })
+
+export const sendGroupVideoMessage = (groupId, filePath, thumbnail, duration, refId = null, onProgress) =>
+  uploadGroupMessage(groupId, 'video', filePath, { thumbnail, duration, refId }, onProgress)
+
+export const sendGroupFileMessage = (groupId, filePath, fileName, fileSize, refId = null, onProgress) =>
+  uploadGroupMessage(groupId, 'file', filePath, { fileName, fileSize, refId }, onProgress)
+
+export function sendGroupLocationMessage(groupId, data) {
+  return request({
+    url: `/api/chat/groups/${groupId}/messages/location`,
+    method: 'POST',
+    data,
+    needAuth: true
+  })
+}
+
 export default {
   sendTextMessage,
   sendImageMessage,
@@ -423,5 +583,27 @@ export default {
   updateContactRelationship,
   updateContactMute,
   updateContactTop,
-  deleteContact
+  deleteContact,
+  searchChatUsers,
+  getFriends,
+  sendFriendRequest,
+  getFriendRequests,
+  respondToFriendRequest,
+  deleteFriend,
+  createGroup,
+  getGroups,
+  getGroupDetail,
+  updateGroup,
+  addGroupMembers,
+  removeGroupMember,
+  leaveGroup,
+  updateGroupTop,
+  getGroupHistory,
+  recallGroupMessage,
+  sendGroupTextMessage,
+  sendGroupImageMessage,
+  sendGroupVoiceMessage,
+  sendGroupVideoMessage,
+  sendGroupFileMessage,
+  sendGroupLocationMessage
 }

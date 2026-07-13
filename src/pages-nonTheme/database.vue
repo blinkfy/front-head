@@ -976,9 +976,14 @@ const tableCatalog = [
     { name: 'PostLike', label: '帖子点赞表', icon: '👍' },
     { name: 'Prize', label: '奖品表', icon: '🎁' },
     { name: 'LotteryConfig', label: '抽奖配置表', icon: '🎯' },
-    { name: 'LotteryRecord', label: '抽奖记录表', icon: '🎟️' }
+    { name: 'LotteryRecord', label: '抽奖记录表', icon: '🎟️' },
+    { name: 'ServicePoint', label: '服务点表', icon: '📍' },
+    { name: 'OperationTask', label: '运营任务表', icon: '🧾' },
+    { name: 'SortingCenterEvent', label: '分拣中心事件表', icon: '🏭' },
+    { name: 'DeviceDepositEvent', label: '设备投递事件表', icon: '📥' }
 ]
 const tables = ref(tableCatalog.map(table => ({ ...table, count: 0 })))
+const hiddenRuntimeTables = new Set(['Device'])
 
 // 当前表数据
 const tableData = ref([])
@@ -1070,6 +1075,82 @@ function formatGenericFieldLabel(key) {
         .replace(/\s+/g, ' ')
         .trim()
         .replace(/^./, ch => ch.toUpperCase())
+}
+
+function normalizeStatsTableName(name) {
+    return name === 'Device' ? 'Bin' : String(name || '').trim()
+}
+
+function mergeTablesFromStats(statsTables = []) {
+    const statsByName = new Map()
+    const normalizedStatsTables = Array.isArray(statsTables) ? statsTables : []
+
+    normalizedStatsTables.forEach(rawTable => {
+        const rawName = String(rawTable?.name || '').trim()
+        const normalizedName = normalizeStatsTableName(rawName)
+        if (!normalizedName || hiddenRuntimeTables.has(normalizedName)) return
+        if (hiddenRuntimeTables.has(rawName) && statsByName.has(normalizedName)) return
+        const previous = statsByName.get(normalizedName) || {}
+        statsByName.set(normalizedName, {
+            ...previous,
+            ...rawTable,
+            name: normalizedName,
+            count: Number(rawTable?.count || 0)
+        })
+    })
+
+    const mergedTables = tableCatalog.map(meta => {
+        const stats = statsByName.get(meta.name)
+        statsByName.delete(meta.name)
+        return {
+            ...meta,
+            count: stats ? Number(stats.count || 0) : 0,
+            editable: stats?.editable
+        }
+    })
+
+    statsByName.forEach((stats, name) => {
+        if (hiddenRuntimeTables.has(name)) return
+        mergedTables.push({
+            name,
+            label: stats.label || `${formatGenericFieldLabel(name)}表`,
+            icon: '🗂️',
+            count: Number(stats.count || 0),
+            editable: stats.editable
+        })
+    })
+
+    tables.value = mergedTables
+    if (!mergedTables.some(table => table.name === currentTable.value)) {
+        currentTable.value = mergedTables[0]?.name || ''
+    }
+}
+
+async function hydrateMissingTableCounts(statsTables = []) {
+    const normalizedStatsNames = new Set(
+        (Array.isArray(statsTables) ? statsTables : [])
+            .map(table => normalizeStatsTableName(table?.name))
+            .filter(Boolean)
+    )
+    const missingTables = tables.value.filter(table =>
+        !normalizedStatsNames.has(table.name) &&
+        !hiddenRuntimeTables.has(table.name) &&
+        !isSpecialTable(table.name)
+    )
+
+    await Promise.all(missingTables.map(async table => {
+        try {
+            const response = await getGenericTableList(table.name, { page: 1, pageSize: 1 })
+            if (response && response.code === 0) {
+                table.count = Number(response.data?.total || 0)
+                if (Array.isArray(response.data?.schema) && response.data.schema.length) {
+                    tableSchemas.value[table.name] = response.data.schema
+                }
+            }
+        } catch (error) {
+            console.warn(`加载 ${table.name} 初始条数失败:`, error)
+        }
+    }))
 }
 
 function getGenericSchema(tableName = currentTable.value) {
@@ -2063,13 +2144,14 @@ async function loadStats() {
         const response = await getDatabaseStats()
         if (response && response.code === 0) {
             const stats = response.data
-            const countMap = new Map((stats.tables || []).map(table => [table.name, table.count || 0]))
             if (stats.schemas && typeof stats.schemas === 'object') {
-                tableSchemas.value = stats.schemas
+                tableSchemas.value = {
+                    ...stats.schemas,
+                    Bin: stats.schemas.Bin || stats.schemas.Device || tableSchemas.value.Bin
+                }
             }
-            tables.value.forEach(table => {
-                table.count = countMap.has(table.name) ? countMap.get(table.name) : (table.count || 0)
-            })
+            mergeTablesFromStats(stats.tables || [])
+            await hydrateMissingTableCounts(stats.tables || [])
             adminUser.value = true
         }
     } catch (error) {

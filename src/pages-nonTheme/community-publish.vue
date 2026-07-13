@@ -64,6 +64,21 @@
         </view>
       </view>
 
+      <view class="section" v-if="isAdmin">
+        <view class="section-title">可见范围</view>
+        <view class="scope-card">
+          <view
+            v-for="scope in visibilityOptions"
+            :key="scope.value"
+            :class="['scope-option', visibilityScope === scope.value ? 'active' : '']"
+            @click="visibilityScope = scope.value"
+          >
+            <text class="scope-title">{{ scope.label }}</text>
+            <text class="scope-desc">{{ scope.desc }}</text>
+          </view>
+        </view>
+      </view>
+
       <!-- 图片上传区域 -->
       <view class="section">
         <view class="section-title">添加图片（选填，最多9张）</view>
@@ -109,6 +124,7 @@
 
 <script>
 import { createPost } from '@/api/community.js';
+import { userinfo } from '@/api/user.js';
 import { compressImageToBase64 } from '@/utils/avatar-handler.js';
 import { baseUrl } from '@/api/settings';
 
@@ -134,12 +150,19 @@ export default {
       uploadedImages: [],
       submitting: false,
       tagOptions: ['心得', '技巧', '活动', '求助', '晒单'],
+      visibilityScope: 'community',
+      visibilityOptions: [
+        { value: 'community', label: '本社区可见', desc: '只展示在当前社区' },
+        { value: 'all', label: '全社区可见', desc: '展示到所有社区列表' }
+      ],
       isDark: false,
-      isWeixin: true
+      isWeixin: true,
+      isAdmin: false
     };
   },
   onLoad(options) {
     this.checkTheme();
+    this.checkAdmin();
     // #ifdef MP-WEIXIN
     this.isWeixin = true;
     this.checkAvailability();
@@ -171,6 +194,7 @@ export default {
   },
   onShow() {
     this.checkTheme();
+    this.checkAdmin();
   },
   methods: {
     checkTheme() {
@@ -186,6 +210,21 @@ export default {
         }
       } catch (err) {
         console.warn('[community-publish] check Availability failed:', err)
+      }
+    },
+    async checkAdmin() {
+      const cached = !!uni.getStorageSync('isAdmin');
+      if (cached) {
+        this.isAdmin = true;
+        return;
+      }
+      try {
+        const res = await userinfo('false');
+        this.isAdmin = !!(res && res.code === 0 && res.data && res.data.isAdmin);
+        if (this.isAdmin) uni.setStorageSync('isAdmin', true);
+      } catch (e) {
+        this.isAdmin = false;
+        this.visibilityScope = 'community';
       }
     },
     getQueryValue(key) {
@@ -234,7 +273,13 @@ export default {
       this.submitting = true;
       try {
         const images = await this.getPersistentImages();
-        await createPost(this.communityId, this.content.trim(), images, this.selectedTag);
+        await createPost(
+          this.communityId,
+          this.content.trim(),
+          images,
+          this.selectedTag,
+          this.isAdmin ? this.visibilityScope : 'community'
+        );
         uni.showToast({ title: '发布成功!', icon: 'success' });
         setTimeout(() => {
           uni.navigateBack();
@@ -393,6 +438,45 @@ export default {
 .word-count { text-align: right; margin-top: 12rpx; }
 .word-count text { color: #9ca3af; font-size: 22rpx; }
 .dark-mode .word-count text { color: rgba(255, 255, 255, 0.5); }
+
+.scope-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+}
+.scope-option {
+  background: #fff;
+  border: 2rpx solid rgba(16, 185, 129, 0.12);
+  border-radius: 20rpx;
+  padding: 24rpx;
+  transition: all 0.2s;
+}
+.dark-mode .scope-option {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.scope-option.active {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: #10b981;
+  box-shadow: 0 4rpx 12rpx rgba(16, 185, 129, 0.16);
+}
+.scope-title {
+  display: block;
+  color: #1f2937;
+  font-size: 26rpx;
+  font-weight: 800;
+  margin-bottom: 8rpx;
+}
+.dark-mode .scope-title { color: #fff; }
+.scope-option.active .scope-title { color: #10b981; }
+.dark-mode .scope-option.active .scope-title { color: #34d399; }
+.scope-desc {
+  display: block;
+  color: #6b7280;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+.dark-mode .scope-desc { color: rgba(255, 255, 255, 0.65); }
 
 .upload-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16rpx; }
 .upload-item { position: relative; aspect-ratio: 1; }

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1672" height="941" viewBox="0 0 1672 941">
+  <path id="edge_food_spur_outer" d="M 1070.08 451.68 Q 986.48 461.09 886.16 489.32" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_food_spur_east" d="M 886.16 489.32 C 819.28 526.96 802.56 574.01 802.56 625.76" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_rest_spur_inner" d="M 526.68 578.72 L 668.8 578.72" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_rest_spur_west" d="M 668.8 578.72 C 735.68 583.42 785.84 611.65 802.56 625.76" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_shared_central_north" d="M 802.56 625.76 C 807.58 508.14 799.22 414.04 804.23 338.76" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_shared_north_connector" d="M 804.23 338.76 C 822.62 254.07 825.97 188.2 825.97 136.44" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_north_mid_east" d="M 825.97 136.44 Q 1053.36 129.86 1270.72 136.44" fill="none" stroke="#49d9ff" stroke-width="12.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_north_to_east_upper" d="M 1270.72 136.44 Q 1471.36 137.39 1672 145.85" fill="none" stroke="#49d9ff" stroke-width="12.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_east_mid_block" d="M 825.97 136.44 Q 668.8 128.92 526.68 136.44" fill="none" stroke="#49d9ff" stroke-width="12.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_direct_gate" d="M 526.68 136.44 Q 530.02 169.38 514.98 197.61" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_north_center_west" d="M 825.97 136.44 C 568.48 124.21 401.28 122.33 292.6 127.03" fill="none" stroke="#49d9ff" stroke-width="12.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_west_upper" d="M 292.6 127.03 Q 270.86 169.38 287.58 211.72" fill="none" stroke="#49d9ff" stroke-width="9.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_west_lower" d="M 287.58 211.72 Q 334.4 235.25 418 239.96" fill="none" stroke="#49d9ff" stroke-width="9.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_west_to_center" d="M 418 239.96 Q 484.88 235.25 514.98 197.61" fill="none" stroke="#49d9ff" stroke-width="9.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_gate_waiting" d="M 514.98 197.61 L 459.8 211.72" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_wait_bay01" d="M 459.8 211.72 L 354.46 164.68" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_wait_bay02" d="M 459.8 211.72 L 401.28 164.68" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_bay01_unload" d="M 354.46 164.68 L 342.76 192.91" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_bay02_unload" d="M 401.28 164.68 L 342.76 192.91" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_unload_clean" d="M 342.76 192.91 L 384.56 192.91" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_clean_charge" d="M 384.56 192.91 L 426.36 192.91" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_charge_standby01" d="M 426.36 192.91 L 464.82 192.91" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_standby01_standby02" d="M 464.82 192.91 L 494.91 192.91" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_standby02_exit" d="M 494.91 192.91 L 514.98 174.09" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_center_internal_exit" d="M 514.98 174.09 L 526.68 136.44" fill="none" stroke="#49d9ff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_entrance_gate" d="M 804.23 870.42 L 804.23 823.38" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_gate_south" d="M 804.23 823.38 L 804.23 715.16" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_south_central" d="M 804.23 715.16 L 802.56 625.76" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_central_north" d="M 802.56 625.76 Q 797.54 555.19 804.23 489.32" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_north_junction" d="M 804.23 489.32 L 804.23 338.76" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_north_road" d="M 804.23 338.76 C 822.62 254.07 825.97 188.2 825.97 136.44" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_left_branch" d="M 802.56 625.76 Q 735.68 583.42 668.8 578.72" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_left_rest" d="M 668.8 578.72 Q 585.2 569.3 526.68 578.72" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_right_branch" d="M 804.23 489.32 L 886.16 489.32" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_food_entry" d="M 886.16 489.32 Q 969.76 461.09 1061.72 451.68" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_food_platform" d="M 1061.72 451.68 L 1136.96 451.68" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_center_branch" d="M 804.23 338.76 Q 735.68 301.12 652.08 272.89" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_walk_center_entry" d="M 652.08 272.89 Q 585.2 235.25 526.68 211.72" fill="none" stroke="#b8ed76" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_start_central" d="M 802.56 625.76 L 804.23 545.78" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_central_left_junction" d="M 804.23 545.78 Q 735.68 564.6 668.8 578.72" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_left_litter" d="M 668.8 578.72 L 601.92 578.72" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_left_dock" d="M 601.92 578.72 L 526.68 578.72" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_mid_litter" d="M 804.23 545.78 L 804.23 489.32" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_battery_litter" d="M 804.23 545.78 L 852.72 536.37" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_battery_junction" d="M 852.72 536.37 L 886.16 489.32" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_central_right" d="M 804.23 489.32 L 886.16 489.32" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_right_litter" d="M 886.16 489.32 L 953.04 475.2" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_right_entry" d="M 953.04 475.2 L 1019.92 461.09" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_robot_right_dock" d="M 1019.92 461.09 L 1070.08 451.68" fill="none" stroke="#ffb35c" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+</svg>

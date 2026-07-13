@@ -42,8 +42,32 @@
             <text class="content-text">{{ post.content }}</text>
           </view>
 
-          <view class="post-images" v-if="post.images && post.images.length > 0">
-            <image v-for="(img, idx) in post.images" :key="idx" class="post-image" :src="img" mode="aspectFill" @tap.stop="previewImage(post.images, idx)" :data-idx="idx" :data-src="img"></image>
+          <view class="image-loading-card" v-if="loadingImages">
+            <view class="image-loading-spinner"></view>
+            <text>图片加载中...</text>
+          </view>
+
+          <view class="post-images" v-else-if="post.images && post.images.length > 0">
+            <view
+              v-for="(row, rowIndex) in imageRows"
+              :key="`row-${rowIndex}`"
+              class="post-image-row"
+              :class="row.className"
+            >
+              <image
+                v-for="item in row.items"
+                :key="item.index"
+                class="post-image"
+                :class="getImageCardClass(item.index)"
+                :style="getImageCardStyle(item.index, row.className)"
+                :src="item.src"
+                mode="aspectFill"
+                @load="onPostImageLoad(item.index, $event)"
+                @tap.stop="previewImage(post.images, item.index)"
+                :data-idx="item.index"
+                :data-src="item.src"
+              ></image>
+            </view>
           </view>
 
           <view class="post-actions">
@@ -114,6 +138,28 @@
         </view>
       </view>
     </view>
+
+    <view v-if="imagePreviewVisible" class="custom-preview" @click.self="closeImagePreview">
+      <view class="preview-topbar">
+        <text class="preview-count">{{ previewIndex + 1 }}/{{ previewImages.length }}</text>
+        <text class="preview-close" @click="closeImagePreview">×</text>
+      </view>
+      <scroll-view class="preview-scroll" scroll-y>
+        <view class="preview-image-wrap">
+          <image
+            class="preview-image"
+            :class="getPreviewImageClass(previewIndex)"
+            :src="previewImages[previewIndex]"
+            mode="widthFix"
+            @click.stop
+          ></image>
+        </view>
+      </scroll-view>
+      <view class="preview-nav" v-if="previewImages.length > 1">
+        <view class="preview-nav-btn" :class="{ disabled: previewIndex <= 0 }" @click.stop="showPrevImage">上一张</view>
+        <view class="preview-nav-btn" :class="{ disabled: previewIndex >= previewImages.length - 1 }" @click.stop="showNextImage">下一张</view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -153,16 +199,58 @@ export default {
       },
       comments: [],
       loadingComments: false,
+      loadingImages: false,
       commentText: '',
       replyTo: null,
       isDark: false,
       isAdmin: false,
-      isWeixin: false
+      isWeixin: false,
+      imagePreviewVisible: false,
+      previewImages: [],
+      previewIndex: 0,
+      postImageMeta: {}
     };
   },
   computed: {
     postTag() {
       return this.post.tag || '帖子详情';
+    },
+    imageRows() {
+      const images = Array.isArray(this.post.images) ? this.post.images : [];
+      const rows = [];
+      let index = 0;
+      while (index < images.length) {
+        const kind = this.getImageKind(index, images.length);
+        const nextKind = this.getImageKind(index + 1, images.length);
+        if (kind === 'tall' && nextKind === 'tall') {
+          rows.push({
+            className: 'pair-row',
+            items: [
+              { src: images[index], index },
+              { src: images[index + 1], index: index + 1 }
+            ]
+          });
+          index += 2;
+          continue;
+        }
+        if (kind === 'normal' && nextKind === 'normal') {
+          rows.push({
+            className: 'pair-row',
+            items: [
+              { src: images[index], index },
+              { src: images[index + 1], index: index + 1 }
+            ]
+          });
+          index += 2;
+          continue;
+        }
+        rows.push({
+          className: kind === 'wide' ? 'wide-row' : kind === 'tall' ? 'tall-row' : 'single-row',
+          items: [{ src: images[index], index }]
+        });
+        index += 1;
+      }
+      return rows;
     }
   },
   onLoad(options) {
@@ -265,17 +353,63 @@ export default {
       if (cachedImages && cachedImages.length) {
         this.post.images = cachedImages;
         this.post.imageCount = Math.max(this.post.imageCount || 0, cachedImages.length);
+        this.postImageMeta = {};
         return;
       }
+      this.loadingImages = true;
       try {
         const res = await getCommunityPostImages(this.postId);
         const data = this.extractData(res) || {};
         this.post.images = normalizeCommunityImages(data.images || [], baseUrl);
+        this.postImageMeta = {};
         if (this.post.images.length) setCachedCommunityImage('post', this.postId, this.post.images);
         this.post.imageCount = Math.max(this.post.imageCount || 0, this.post.images.length);
       } catch (e) {
         // 图片加载失败不影响帖子内容展示
+      } finally {
+        this.loadingImages = false;
       }
+    },
+    onPostImageLoad(index, event) {
+      const detail = event && event.detail ? event.detail : {};
+      const width = Number(detail.width || 0);
+      const height = Number(detail.height || 0);
+      if (!width || !height) return;
+      this.postImageMeta = {
+        ...this.postImageMeta,
+        [index]: { width, height, ratio: width / height }
+      };
+    },
+    getImageKind(index, total) {
+      if (index < 0 || index >= total) return '';
+      const ratio = this.postImageMeta[index] && this.postImageMeta[index].ratio;
+      if (ratio) {
+        if (ratio < 0.78) return 'tall';
+        if (ratio > 1.28) return 'wide';
+        return 'normal';
+      }
+      if (total === 3) return index < 2 ? 'tall' : 'wide';
+      return 'normal';
+    },
+    getImageCardClass(index) {
+      return `image-${this.getImageKind(index, (this.post.images || []).length) || 'normal'}`;
+    },
+    getImageCardStyle(index, rowClassName) {
+      const meta = this.postImageMeta[index];
+      const ratio = meta && meta.ratio ? Number(meta.ratio) : 0;
+      let height = 360;
+      if (rowClassName === 'pair-row') {
+        height = ratio && ratio > 1.15 ? 260 : 420;
+      } else if (rowClassName === 'wide-row') {
+        height = ratio ? Math.round(640 / ratio) : 280;
+        height = Math.max(220, Math.min(360, height));
+      } else if (rowClassName === 'tall-row') {
+        height = 520;
+      } else if (ratio) {
+        height = Math.round(640 / ratio);
+        height = Math.max(280, Math.min(460, height));
+      }
+      return { height: `${height}rpx` };
     },
     async toggleLike() {
       try {
@@ -310,49 +444,30 @@ export default {
       }
     },
     async previewImage(images, index) {
-      console.log('previewImage called with:', images, index);
       let urls = normalizeCommunityImages(images, baseUrl);
-      console.log('normalized urls:', urls);
       if (!urls.length) {
         uni.showToast({ title: '暂无可预览图片', icon: 'none' });
         return;
       }
-      
-      // Fix for App: base64 images cannot be previewed directly via uni.previewImage on some platforms
-      // We convert them to temporary local files
-      const finalUrls = [];
-      for (let i = 0; i < urls.length; i++) {
-        const url = urls[i];
-        if (url.startsWith('data:image/')) {
-          try {
-            const filePath = await this.saveBase64ToTemp(url, `temp_preview_${i}`);
-            finalUrls.push(filePath);
-          } catch (e) {
-            console.error('Failed to convert base64 to temp file:', e);
-            finalUrls.push(url);
-          }
-        } else {
-          finalUrls.push(url);
-        }
-      }
 
-      const currentIndex = Math.min(Math.max(Number(index) || 0, 0), finalUrls.length - 1);
-      const current = finalUrls[currentIndex];
-      console.log('calling uni.previewImage with:', { urls: finalUrls, current });
-      
-      uni.previewImage({ 
-        urls: finalUrls, 
-        current: current,
-        longPressActions: {
-          itemList: ['发送给朋友', '保存图片', '收藏'],
-          success: function(data) {
-            console.log('选中了第' + (data.tapIndex + 1) + '个按钮,第' + (data.index + 1) + '张图片');
-          },
-          fail: function(err) {
-            console.log(err.errMsg);
-          }
-        }
-      });
+      this.previewImages = urls;
+      this.previewIndex = Math.min(Math.max(Number(index) || 0, 0), urls.length - 1);
+      this.imagePreviewVisible = true;
+    },
+    closeImagePreview() {
+      this.imagePreviewVisible = false;
+    },
+    showPrevImage() {
+      if (this.previewIndex > 0) this.previewIndex -= 1;
+    },
+    showNextImage() {
+      if (this.previewIndex < this.previewImages.length - 1) this.previewIndex += 1;
+    },
+    getPreviewImageClass(index) {
+      const ratio = this.postImageMeta[index] && this.postImageMeta[index].ratio;
+      if (ratio && ratio > 1.28) return 'preview-wide';
+      if (ratio && ratio < 0.78) return 'preview-tall';
+      return 'preview-normal';
     },
     saveBase64ToTemp(base64Data, name) {
       return new Promise((resolve, reject) => {
@@ -534,7 +649,14 @@ export default {
 
 /* ===== 主内容区 ===== */
 .main-scroll { position: relative; z-index: 10; height: calc(100vh - env(safe-area-inset-top) - 88rpx); }
-.content-wrapper { padding: 32rpx; padding-bottom: 140rpx; }
+.content-wrapper {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32rpx;
+  padding-bottom: 140rpx;
+  box-sizing: border-box;
+}
 
 /* ===== 帖子卡片 ===== */
 .post-card {
@@ -590,8 +712,162 @@ export default {
 .post-content { margin-bottom: 24rpx; }
 .content-text { color: #374151; font-size: 28rpx; line-height: 1.8; }
 .dark-mode .content-text { color: rgba(255, 255, 255, 0.9); }
-.post-images { display: flex; flex-wrap: wrap; gap: 12rpx; margin-bottom: 24rpx; }
-.post-image { width: 200rpx; height: 200rpx; border-radius: 12rpx; }
+.image-loading-card {
+  height: 160rpx;
+  border-radius: 16rpx;
+  margin-bottom: 24rpx;
+  background: rgba(16, 185, 129, 0.06);
+  border: 1rpx dashed rgba(16, 185, 129, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14rpx;
+}
+.image-loading-card text {
+  color: #6b7280;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+.dark-mode .image-loading-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.dark-mode .image-loading-card text { color: rgba(255, 255, 255, 0.72); }
+.image-loading-spinner {
+  width: 32rpx;
+  height: 32rpx;
+  border-radius: 50%;
+  border: 4rpx solid rgba(16, 185, 129, 0.18);
+  border-top-color: #10b981;
+  animation: spin 1s linear infinite;
+}
+.post-images {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+  margin-bottom: 24rpx;
+}
+.post-image-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14rpx;
+}
+.post-image-row.pair-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.post-image-row.wide-row,
+.post-image-row.tall-row,
+.post-image-row.single-row {
+  grid-template-columns: 1fr;
+}
+.post-image {
+  width: 100%;
+  border-radius: 14rpx;
+  background: rgba(0, 0, 0, 0.04);
+  display: block;
+}
+.post-image.image-wide {
+  border-radius: 16rpx;
+}
+.post-image.image-tall {
+  background: rgba(16, 185, 129, 0.05);
+}
+.dark-mode .post-image {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.custom-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(4, 8, 7, 0.97);
+  display: flex;
+  flex-direction: column;
+}
+.preview-topbar {
+  height: calc(96rpx + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 28rpx 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #fff;
+  flex-shrink: 0;
+}
+.preview-count {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.78);
+}
+.preview-close {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 52rpx;
+  line-height: 1;
+  color: #fff;
+}
+.preview-scroll {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+.preview-image-wrap {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 48rpx 28rpx 120rpx;
+  box-sizing: border-box;
+}
+.preview-image {
+  display: block;
+  width: 92vw;
+  max-width: 720px;
+}
+.preview-image.preview-tall {
+  width: 96vw;
+  max-width: none;
+}
+.preview-image.preview-wide {
+  width: 92vw;
+  max-width: 960px;
+}
+
+@media (min-width: 768px) {
+  .preview-image.preview-tall {
+    width: min(72vw, 560px);
+    max-width: 560px;
+  }
+}
+.preview-nav {
+  display: flex;
+  gap: 20rpx;
+  width: calc(100% - 64rpx);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.preview-nav-btn {
+  flex: 1;
+  height: 72rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 26rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preview-nav-btn.disabled {
+  opacity: 0.36;
+}
 
 .post-actions {
   display: flex; gap: 40rpx;

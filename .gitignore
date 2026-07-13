@@ -17,3 +17,4 @@ __pycache__
 *.sln
 *.sw?
 config.js
+.playright

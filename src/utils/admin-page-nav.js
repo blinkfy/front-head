@@ -1,6 +1,53 @@
 import { resolveH5StandalonePath } from '@/utils/h5-route'
+import { userinfo } from '@/api/user'
+import { redirectToNoPermission } from '@/utils/access-guard.js'
 
-const REFERRER_KEY = 'admin_page_referrers_v1'
+export const ADMIN_SCREEN_REGISTRY = Object.freeze({
+  collectionPlanning: {
+    id: 'collectionPlanning',
+    title: '垃圾清运规划',
+    shortTitle: '清运规划',
+    icon: '⌁',
+    navOrder: 10,
+    access: 'admin',
+    fallback: 'profile',
+    prettyPath: '/collection-planning',
+    spaPath: '/pages-nonTheme/collection-planning'
+  },
+  collectionDashboard: {
+    id: 'collectionDashboard',
+    title: '垃圾清运可视化大屏',
+    shortTitle: '清运大屏',
+    icon: '◫',
+    navOrder: 20,
+    access: 'admin',
+    fallback: 'profile',
+    prettyPath: '/collection-dashboard',
+    spaPath: '/pages-nonTheme/collection-dashboard'
+  },
+  communityDashboard: {
+    id: 'communityDashboard',
+    title: '智慧城市社区治理大屏',
+    shortTitle: '社区治理',
+    icon: '◈',
+    navOrder: 30,
+    access: 'admin',
+    fallback: 'profile',
+    prettyPath: '/community-dashboard',
+    spaPath: '/pages-nonTheme/community-dashboard'
+  },
+  digitalTwinReplay: {
+    id: 'digitalTwinReplay',
+    title: '公园垃圾分类数字孪生回放',
+    shortTitle: '数字孪生',
+    icon: '◎',
+    navOrder: 40,
+    access: 'admin',
+    fallback: 'collectionDashboard',
+    prettyPath: '/digital-twin-replay',
+    spaPath: '/pages-nonTheme/digital-twin-replay'
+  }
+})
 
 const ROUTES = {
   home: {
@@ -13,22 +60,7 @@ const ROUTES = {
     lightSpaPath: '/pages/profile/profile',
     darkSpaPath: '/pages-dark/profile/profile'
   },
-  collectionDashboard: {
-    prettyPath: '/collection-dashboard',
-    spaPath: '/pages-nonTheme/collection-dashboard'
-  },
-  collectionPlanning: {
-    prettyPath: '/collection-planning',
-    spaPath: '/pages-nonTheme/collection-planning'
-  },
-  digitalTwinReplay: {
-    prettyPath: '/digital-twin-replay',
-    spaPath: '/pages-nonTheme/digital-twin-replay'
-  },
-  communityDashboard: {
-    prettyPath: '/community-dashboard',
-    spaPath: '/pages-nonTheme/community-dashboard'
-  }
+  ...ADMIN_SCREEN_REGISTRY
 }
 
 function isH5Runtime() {
@@ -46,25 +78,124 @@ function getThemeMode() {
   }
 }
 
-function getStorageValue(key) {
+function readStoredValue(key) {
   try {
-    if (isH5Runtime() && typeof localStorage !== 'undefined') {
-      return localStorage.getItem(key) || ''
-    }
-    return uni.getStorageSync(key) || ''
+    return isH5Runtime() && typeof localStorage !== 'undefined'
+      ? localStorage.getItem(key)
+      : uni.getStorageSync(key)
   } catch (_) {
-    return ''
+    return null
   }
 }
 
-function setStorageValue(key, value) {
+function decodeTokenPayload(token) {
+  try {
+    const encoded = String(token || '').split('.')[1]
+    if (!encoded || typeof atob !== 'function') return null
+    const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4)
+    return JSON.parse(atob(padded))
+  } catch (_) {
+    return null
+  }
+}
+
+function readAdminFlag() {
+  const raw = readStoredValue('isAdmin')
+  if (raw === true || raw === 1 || raw === '1' || raw === 'true') return true
+
+  const cachedUser = readStoredValue('userInfo')
+  try {
+    const userInfo = typeof cachedUser === 'string' ? JSON.parse(cachedUser) : cachedUser
+    if (userInfo?.isAdmin === true) return true
+  } catch (_) {
+    // Ignore malformed cached profile data and continue with the signed token hint.
+  }
+
+  // This is only a UI hint. The server still verifies the JWT and enforces
+  // requireAdmin for every protected endpoint.
+  const tokenPayload = decodeTokenPayload(readStoredValue('token'))
+  return tokenPayload?.userId === 'adminID' || tokenPayload?.id === 'adminID' || tokenPayload?.isAdmin === true
+}
+
+function hasSessionToken() {
+  if (readStoredValue('token')) return true
+  if (!isH5Runtime() || typeof window === 'undefined') return false
+
+  try {
+    const search = new URLSearchParams(window.location.search || '')
+    const hashQuery = String(window.location.hash || '').split('?')[1] || ''
+    return Boolean(search.get('token') || new URLSearchParams(hashQuery).get('token'))
+  } catch (_) {
+    return false
+  }
+}
+
+function writeVerifiedAdminFlag(isAdmin, userData) {
   try {
     if (isH5Runtime() && typeof localStorage !== 'undefined') {
-      localStorage.setItem(key, value)
+      if (isAdmin) localStorage.setItem('isAdmin', 'true')
+      else localStorage.removeItem('isAdmin')
+      if (userData) localStorage.setItem('userInfo', JSON.stringify(userData))
       return
     }
-    uni.setStorageSync(key, value)
-  } catch (_) {}
+    if (isAdmin) uni.setStorageSync('isAdmin', true)
+    else uni.removeStorageSync('isAdmin')
+    if (userData) uni.setStorageSync('userInfo', userData)
+  } catch (_) {
+    // The protected API remains the authoritative permission boundary.
+  }
+}
+
+export function getAdminScreen(screenKey) {
+  return ADMIN_SCREEN_REGISTRY[screenKey] || null
+}
+
+export function getAdminScreenList(options = {}) {
+  const { onlyAccessible = false } = options
+  return Object.values(ADMIN_SCREEN_REGISTRY)
+    .filter((screen) => !onlyAccessible || canAccessAdminScreen(screen.id))
+    .sort((a, b) => a.navOrder - b.navOrder)
+}
+
+export function getAdminScreenByPath(path) {
+  const normalized = String(path || '').split('?')[0].trim()
+  return Object.values(ADMIN_SCREEN_REGISTRY).find((screen) => (
+    screen.prettyPath === normalized || screen.spaPath === normalized
+  )) || null
+}
+
+export function canAccessAdminScreen(screenKey) {
+  const screen = getAdminScreen(screenKey)
+  return Boolean(screen) && (screen.access !== 'admin' || readAdminFlag())
+}
+
+export async function ensureAdminScreenAccess(screenKey) {
+  const screen = getAdminScreen(screenKey)
+  if (!screen || screen.access !== 'admin') return true
+
+  const redirectDenied = (reason) => {
+    redirectToNoPermission({ from: screen.spaPath, reason })
+    return false
+  }
+
+  if (!hasSessionToken()) return redirectDenied('请先登录管理员账号后再访问该大屏。')
+
+  try {
+    const response = await userinfo('false')
+    const userData = response?.data || null
+    if (userData?.isAdmin === true) {
+      writeVerifiedAdminFlag(true, userData)
+      return true
+    }
+    writeVerifiedAdminFlag(false, userData)
+    return redirectDenied('当前账号没有该大屏的访问权限。')
+  } catch (_) {
+    // Keep an already verified session usable during a transient profile request
+    // failure; every page data endpoint still enforces server-side admin access.
+    if (readAdminFlag()) return true
+    return redirectDenied('管理员权限验证失败，请重新登录后重试。')
+  }
 }
 
 function resolveRouteConfig(routeKey) {
@@ -106,37 +237,38 @@ function buildSpaUrl(spaPath, query = {}) {
   return queryString ? `${normalized}?${queryString}` : normalized
 }
 
-function readReferrerMap() {
-  const raw = getStorageValue(REFERRER_KEY)
-  if (!raw) return {}
+function normalizeReturnTo(routeKey) {
+  const value = String(routeKey || '').trim()
+  return ROUTES[value] ? value : ''
+}
+
+function parseQueryString(rawQuery) {
+  const query = String(rawQuery || '').replace(/^\?/, '')
+  if (!query) return {}
+  return query.split('&').reduce((params, part) => {
+    if (!part) return params
+    const [rawKey, ...rawValue] = part.split('=')
+    const key = decodeURIComponent(String(rawKey || '').replace(/\+/g, ' '))
+    const value = decodeURIComponent(rawValue.join('=').replace(/\+/g, ' '))
+    if (key) params[key] = value
+    return params
+  }, {})
+}
+
+function readCurrentRouteQuery() {
+  if (isH5Runtime() && typeof window !== 'undefined') {
+    const search = window.location?.search || ''
+    const hashQuery = String(window.location?.hash || '').split('?')[1] || ''
+    return { ...parseQueryString(hashQuery), ...parseQueryString(search) }
+  }
+
   try {
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
+    const current = pages[pages.length - 1]
+    return current?.options || {}
   } catch (_) {
     return {}
   }
-}
-
-function writeReferrerMap(value) {
-  setStorageValue(REFERRER_KEY, JSON.stringify(value || {}))
-}
-
-function saveRouteReferrer(targetKey, fromKey) {
-  if (!targetKey || !fromKey || targetKey === fromKey) return
-  const next = readReferrerMap()
-  next[targetKey] = fromKey
-  writeReferrerMap(next)
-}
-
-function consumeRouteReferrer(routeKey) {
-  if (!routeKey) return ''
-  const next = readReferrerMap()
-  const referrer = String(next[routeKey] || '').trim()
-  if (referrer) {
-    delete next[routeKey]
-    writeReferrerMap(next)
-  }
-  return referrer
 }
 
 function callNavigation(method, url) {
@@ -171,30 +303,44 @@ function fallbackToBrowserRoute(route, query = {}, method = 'navigate') {
 }
 
 export async function jumpToAdminPage(routeKey, options = {}) {
-  const { from = '', mode = 'navigate', query = {} } = options
+  const { from = '', returnTo = '', mode = 'navigate', query = {} } = options
   const route = resolveRouteConfig(routeKey)
-  if (from) saveRouteReferrer(routeKey, from)
 
   const finalQuery = { ...query }
-  if (from && !finalQuery.from) finalQuery.from = from
+  const safeReturnTo = normalizeReturnTo(returnTo || from)
+  if (safeReturnTo && !finalQuery.returnTo) finalQuery.returnTo = safeReturnTo
 
   try {
     await callNavigation(mode, buildSpaUrl(route.spaPath, finalQuery))
   } catch (_) {
     await fallbackToBrowserRoute(route, finalQuery, mode)
   }
+  return true
+}
+
+export function navigateAdminScreen(routeKey, options = {}) {
+  return jumpToAdminPage(routeKey, options)
 }
 
 export function goBackFromAdminPage(currentRouteKey, options = {}) {
-  const { fallback = 'home' } = options
+  const currentScreen = getAdminScreen(currentRouteKey)
+  const { fallback = currentScreen?.fallback || 'home' } = options
   const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
   if (pages.length > 1) {
-    consumeRouteReferrer(currentRouteKey)
     uni.navigateBack()
     return
   }
 
-  const routeKey = consumeRouteReferrer(currentRouteKey) || fallback
+  const query = readCurrentRouteQuery()
+  const returnTo = normalizeReturnTo(query.returnTo || query.from)
+  if (returnTo) {
+    jumpToAdminPage(returnTo, {
+      mode: returnTo === 'home' ? 'relaunch' : 'redirect'
+    })
+    return
+  }
+
+  const routeKey = normalizeReturnTo(fallback) || 'home'
   jumpToAdminPage(routeKey, {
     mode: routeKey === 'home' ? 'relaunch' : 'redirect'
   })

@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 2,
+  "scene": {
+    "width": 1672,
+    "height": 941,
+    "aspectRatio": "1672:941",
+    "coordinateSystem": "park_normalized_percent",
+    "origin": "top_left",
+    "renderMode": "contain",
+    "distanceUnit": "normalized_scene_unit"
+  },
+  "sourceNetwork": "park-road-network.json",
+  "graphProfiles": {
+    "pedestrian": {
+      "allowedEntities": [
+        "visitor"
+      ],
+      "laneTypes": [
+        "pedestrian_path"
+      ]
+    },
+    "robot": {
+      "allowedEntities": [
+        "robot"
+      ],
+      "laneTypes": [
+        "robot_path"
+      ]
+    },
+    "service_device": {
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "laneTypes": [
+        "service_road",
+        "center_internal_lane",
+        "parking_spur"
+      ]
+    }
+  },
+  "routes": [
+    {
+      "id": "device_food_to_center_direct",
+      "networkType": "service_device",
+      "startNodeId": "route_food",
+      "goalNodeId": "route_center",
+      "edgeIds": [
+        "edge_food_spur_outer",
+        "edge_food_spur_east",
+        "edge_shared_central_north",
+        "edge_shared_north_connector",
+        "edge_east_mid_block",
+        "edge_center_direct_gate"
+      ]
+    },
+    {
+      "id": "device_food_to_center_center_loop",
+      "networkType": "service_device",
+      "startNodeId": "route_food",
+      "goalNodeId": "route_center",
+      "edgeIds": [
+        "edge_food_spur_outer",
+        "edge_food_spur_east",
+        "edge_shared_central_north",
+        "edge_shared_north_connector",
+        "edge_north_center_west",
+        "edge_west_upper",
+        "edge_west_lower",
+        "edge_west_to_center"
+      ]
+    },
+    {
+      "id": "device_rest_to_center_direct",
+      "networkType": "service_device",
+      "startNodeId": "route_rest",
+      "goalNodeId": "route_center",
+      "edgeIds": [
+        "edge_rest_spur_inner",
+        "edge_rest_spur_west",
+        "edge_shared_central_north",
+        "edge_shared_north_connector",
+        "edge_east_mid_block",
+        "edge_center_direct_gate"
+      ]
+    },
+    {
+      "id": "device_rest_to_center_center_loop",
+      "networkType": "service_device",
+      "startNodeId": "route_rest",
+      "goalNodeId": "route_center",
+      "edgeIds": [
+        "edge_rest_spur_inner",
+        "edge_rest_spur_west",
+        "edge_shared_central_north",
+        "edge_shared_north_connector",
+        "edge_north_center_west",
+        "edge_west_upper",
+        "edge_west_lower",
+        "edge_west_to_center"
+      ]
+    },
+    {
+      "id": "device_east_junction_to_center_direct",
+      "networkType": "service_device",
+      "startNodeId": "route_east_junction",
+      "goalNodeId": "route_center",
+      "edgeIds": [
+        "edge_food_spur_east",
+        "edge_shared_central_north",
+        "edge_shared_north_connector",
+        "edge_east_mid_block",
+        "edge_center_direct_gate"
+      ]
+    },
+    {
+      "id": "device_east_junction_to_center_center_loop",
+      "networkType": "service_device",
+      "startNodeId": "route_east_junction",
+      "goalNodeId": "route_center",
+      "edgeIds": [
+        "edge_food_spur_east",
+        "edge_shared_central_north",
+        "edge_shared_north_connector",
+        "edge_north_center_west",
+        "edge_west_upper",
+        "edge_west_lower",
+        "edge_west_to_center"
+      ]
+    },
+    {
+      "id": "device_standby_to_food_shared",
+      "networkType": "service_device",
+      "startNodeId": "center_standby_01",
+      "goalNodeId": "route_food",
+      "edgeIds": [
+        "edge_center_charge_standby01",
+        "edge_center_clean_charge",
+        "edge_center_unload_clean",
+        "edge_center_bay02_unload",
+        "edge_center_wait_bay02",
+        "edge_center_gate_waiting",
+        "edge_center_direct_gate",
+        "edge_east_mid_block",
+        "edge_shared_north_connector",
+        "edge_shared_central_north",
+        "edge_food_spur_east",
+        "edge_food_spur_outer"
+      ]
+    },
+    {
+      "id": "visitor_entrance_to_left_rest",
+      "networkType": "pedestrian",
+      "startNodeId": "walk_entrance",
+      "goalNodeId": "walk_left_rest",
+      "edgeIds": [
+        "edge_walk_entrance_gate",
+        "edge_walk_gate_south",
+        "edge_walk_south_central",
+        "edge_walk_left_branch",
+        "edge_walk_left_rest"
+      ]
+    },
+    {
+      "id": "visitor_entrance_to_food",
+      "networkType": "pedestrian",
+      "startNodeId": "walk_entrance",
+      "goalNodeId": "walk_food_platform",
+      "edgeIds": [
+        "edge_walk_entrance_gate",
+        "edge_walk_gate_south",
+        "edge_walk_south_central",
+        "edge_walk_central_north",
+        "edge_walk_right_branch",
+        "edge_walk_food_entry",
+        "edge_walk_food_platform"
+      ]
+    },
+    {
+      "id": "robot_left_litter_to_bin",
+      "networkType": "robot",
+      "startNodeId": "robot_patrol_start",
+      "goalNodeId": "robot_left_dock",
+      "edgeIds": [
+        "edge_robot_start_central",
+        "edge_robot_central_left_junction",
+        "edge_robot_left_litter",
+        "edge_robot_left_dock"
+      ]
+    },
+    {
+      "id": "robot_right_litter_to_bin",
+      "networkType": "robot",
+      "startNodeId": "robot_patrol_start",
+      "goalNodeId": "robot_right_dock",
+      "edgeIds": [
+        "edge_robot_start_central",
+        "edge_robot_mid_litter",
+        "edge_robot_central_right",
+        "edge_robot_right_litter",
+        "edge_robot_right_entry",
+        "edge_robot_right_dock"
+      ]
+    }
+  ],
+  "blockScenarios": {
+    "centerDirectGate": {
+      "blockedNodeIds": [
+        "route_blocked_mid"
+      ],
+      "blockedEdgeIds": [
+        "edge_east_mid_block"
+      ],
+      "expectedRouteId": "device_food_to_center_center_loop"
+    }
+  }
+}

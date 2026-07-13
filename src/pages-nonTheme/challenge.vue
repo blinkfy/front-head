@@ -692,15 +692,15 @@ export default {
 .dark-mode .navbar { color: #fff; }
 .safe-area-top {
   height: env(safe-area-inset-top);
-  min-height: 88rpx;
+  min-height: 44rpx;
 }
 .nav-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24rpx 32rpx;
-  height: 88rpx;
-  box-sizing: content-box;
+  padding: 0 32rpx;
+  height: 136rpx;
+  box-sizing: border-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; }
 .nav-title-wrap {
@@ -741,7 +741,12 @@ export default {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ===== 主内容区 ===== */
-.main-scroll { position: relative; z-index: 10; height: calc(100vh - env(safe-area-inset-top) - 88rpx); }
+.main-scroll {
+  position: relative;
+  z-index: 10;
+  height: calc(100vh - 180rpx);
+  height: calc(100vh - max(env(safe-area-inset-top), 44rpx) - 136rpx);
+}
 .content-wrapper { padding: 32rpx; padding-bottom: 120rpx; }
 
 /* ===== 进度卡片（对齐 about info-card） ===== */

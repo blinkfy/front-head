@@ -1,0 +1,1363 @@
+{
+  "schemaVersion": 2,
+  "scene": {
+    "width": 1672,
+    "height": 941,
+    "aspectRatio": "1672:941",
+    "coordinateSystem": "park_normalized_percent",
+    "origin": "top_left",
+    "renderMode": "contain",
+    "distanceUnit": "normalized_scene_unit"
+  },
+  "source": "digital-twin-park-v1/scripts/build-park-road-network.js",
+  "nodes": [
+    {
+      "id": "route_food",
+      "x": 64,
+      "y": 48,
+      "networkType": "service_device",
+      "zoneId": "zone_food_rest_01",
+      "enabled": true
+    },
+    {
+      "id": "route_east_junction",
+      "x": 53,
+      "y": 52,
+      "networkType": "service_device",
+      "zoneId": "zone_right_walk",
+      "enabled": true
+    },
+    {
+      "id": "route_east_lower",
+      "x": 48,
+      "y": 66.5,
+      "networkType": "service_device",
+      "zoneId": "zone_central_walk",
+      "enabled": true
+    },
+    {
+      "id": "route_rest_spur",
+      "x": 40,
+      "y": 61.5,
+      "networkType": "service_device",
+      "zoneId": "zone_rest_01",
+      "enabled": true
+    },
+    {
+      "id": "route_rest",
+      "x": 31.5,
+      "y": 61.5,
+      "networkType": "service_device",
+      "zoneId": "zone_rest_01",
+      "enabled": true
+    },
+    {
+      "id": "route_central_mid",
+      "x": 48.1,
+      "y": 36,
+      "networkType": "service_device",
+      "zoneId": "zone_central_walk",
+      "enabled": true
+    },
+    {
+      "id": "route_north_junction",
+      "x": 49.4,
+      "y": 14.5,
+      "networkType": "service_device",
+      "zoneId": "zone_north_road",
+      "enabled": true
+    },
+    {
+      "id": "route_blocked_mid",
+      "x": 31.5,
+      "y": 14.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_entry",
+      "enabled": true
+    },
+    {
+      "id": "route_center",
+      "x": 30.8,
+      "y": 21,
+      "networkType": "service_device",
+      "zoneId": "zone_center_entry",
+      "enabled": true
+    },
+    {
+      "id": "route_center_west",
+      "x": 17.5,
+      "y": 13.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_loop",
+      "enabled": true
+    },
+    {
+      "id": "route_bypass_west",
+      "x": 17.2,
+      "y": 22.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_loop",
+      "enabled": true
+    },
+    {
+      "id": "route_bypass_south",
+      "x": 25,
+      "y": 25.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_loop",
+      "enabled": true
+    },
+    {
+      "id": "route_north_east",
+      "x": 76,
+      "y": 14.5,
+      "networkType": "service_device",
+      "zoneId": "zone_north_road",
+      "enabled": true
+    },
+    {
+      "id": "route_east_upper",
+      "x": 100,
+      "y": 15.5,
+      "networkType": "service_device",
+      "zoneId": "zone_north_road",
+      "enabled": true
+    },
+    {
+      "id": "center_waiting",
+      "x": 27.5,
+      "y": 22.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_waiting",
+      "enabled": true
+    },
+    {
+      "id": "center_bay_01",
+      "x": 21.2,
+      "y": 17.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_bay_01",
+      "enabled": true
+    },
+    {
+      "id": "center_bay_02",
+      "x": 24,
+      "y": 17.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_bay_02",
+      "enabled": true
+    },
+    {
+      "id": "center_unload",
+      "x": 20.5,
+      "y": 20.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_unload",
+      "enabled": true
+    },
+    {
+      "id": "center_clean",
+      "x": 23,
+      "y": 20.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_clean",
+      "enabled": true
+    },
+    {
+      "id": "center_charge",
+      "x": 25.5,
+      "y": 20.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_charge",
+      "enabled": true
+    },
+    {
+      "id": "center_standby_01",
+      "x": 27.8,
+      "y": 20.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_standby",
+      "enabled": true
+    },
+    {
+      "id": "center_standby_02",
+      "x": 29.6,
+      "y": 20.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_standby",
+      "enabled": true
+    },
+    {
+      "id": "center_internal_exit",
+      "x": 30.8,
+      "y": 18.5,
+      "networkType": "service_device",
+      "zoneId": "zone_center_exit",
+      "enabled": true
+    },
+    {
+      "id": "walk_entrance",
+      "x": 48.1,
+      "y": 92.5,
+      "networkType": "pedestrian",
+      "zoneId": "zone_entrance_01",
+      "enabled": true
+    },
+    {
+      "id": "walk_gate",
+      "x": 48.1,
+      "y": 87.5,
+      "networkType": "pedestrian",
+      "zoneId": "zone_entrance_01",
+      "enabled": true
+    },
+    {
+      "id": "walk_south",
+      "x": 48.1,
+      "y": 76,
+      "networkType": "pedestrian",
+      "zoneId": "zone_south_walk",
+      "enabled": true
+    },
+    {
+      "id": "walk_central",
+      "x": 48,
+      "y": 66.5,
+      "networkType": "pedestrian",
+      "zoneId": "zone_central_walk",
+      "enabled": true
+    },
+    {
+      "id": "walk_central_north",
+      "x": 48.1,
+      "y": 52,
+      "networkType": "pedestrian",
+      "zoneId": "zone_central_walk",
+      "enabled": true
+    },
+    {
+      "id": "walk_north_junction",
+      "x": 48.1,
+      "y": 36,
+      "networkType": "pedestrian",
+      "zoneId": "zone_north_garden",
+      "enabled": true
+    },
+    {
+      "id": "walk_north_road",
+      "x": 49.4,
+      "y": 14.5,
+      "networkType": "pedestrian",
+      "zoneId": "zone_north_road",
+      "enabled": true
+    },
+    {
+      "id": "walk_left_junction",
+      "x": 40,
+      "y": 61.5,
+      "networkType": "pedestrian",
+      "zoneId": "zone_left_walk",
+      "enabled": true
+    },
+    {
+      "id": "walk_left_rest",
+      "x": 31.5,
+      "y": 61.5,
+      "networkType": "pedestrian",
+      "zoneId": "zone_rest_01",
+      "enabled": true
+    },
+    {
+      "id": "walk_right_junction",
+      "x": 53,
+      "y": 52,
+      "networkType": "pedestrian",
+      "zoneId": "zone_right_walk",
+      "enabled": true
+    },
+    {
+      "id": "walk_food_entry",
+      "x": 63.5,
+      "y": 48,
+      "networkType": "pedestrian",
+      "zoneId": "zone_food_rest_01",
+      "enabled": true
+    },
+    {
+      "id": "walk_food_platform",
+      "x": 68,
+      "y": 48,
+      "networkType": "pedestrian",
+      "zoneId": "zone_food_rest_01",
+      "enabled": true
+    },
+    {
+      "id": "walk_center_branch",
+      "x": 39,
+      "y": 29,
+      "networkType": "pedestrian",
+      "zoneId": "zone_center_access",
+      "enabled": true
+    },
+    {
+      "id": "walk_center_entry",
+      "x": 31.5,
+      "y": 22.5,
+      "networkType": "pedestrian",
+      "zoneId": "zone_center_entry",
+      "enabled": true
+    },
+    {
+      "id": "robot_patrol_start",
+      "x": 48,
+      "y": 66.5,
+      "networkType": "robot",
+      "zoneId": "zone_robot_patrol",
+      "enabled": true
+    },
+    {
+      "id": "robot_central",
+      "x": 48.1,
+      "y": 58,
+      "networkType": "robot",
+      "zoneId": "zone_robot_patrol",
+      "enabled": true
+    },
+    {
+      "id": "robot_left_junction",
+      "x": 40,
+      "y": 61.5,
+      "networkType": "robot",
+      "zoneId": "zone_left_walk",
+      "enabled": true
+    },
+    {
+      "id": "robot_left_litter",
+      "x": 36,
+      "y": 61.5,
+      "networkType": "robot",
+      "zoneId": "zone_left_litter",
+      "enabled": true
+    },
+    {
+      "id": "robot_left_dock",
+      "x": 31.5,
+      "y": 61.5,
+      "networkType": "robot",
+      "zoneId": "zone_rest_01",
+      "enabled": true
+    },
+    {
+      "id": "robot_mid_litter",
+      "x": 48.1,
+      "y": 52,
+      "networkType": "robot",
+      "zoneId": "zone_central_litter",
+      "enabled": true
+    },
+    {
+      "id": "robot_battery_litter",
+      "x": 51,
+      "y": 57,
+      "networkType": "robot",
+      "zoneId": "zone_right_litter",
+      "enabled": true
+    },
+    {
+      "id": "robot_right_junction",
+      "x": 53,
+      "y": 52,
+      "networkType": "robot",
+      "zoneId": "zone_right_walk",
+      "enabled": true
+    },
+    {
+      "id": "robot_right_litter",
+      "x": 57,
+      "y": 50.5,
+      "networkType": "robot",
+      "zoneId": "zone_right_litter",
+      "enabled": true
+    },
+    {
+      "id": "robot_right_entry",
+      "x": 61,
+      "y": 49,
+      "networkType": "robot",
+      "zoneId": "zone_food_rest_01",
+      "enabled": true
+    },
+    {
+      "id": "robot_right_dock",
+      "x": 64,
+      "y": 48,
+      "networkType": "robot",
+      "zoneId": "zone_food_rest_01",
+      "enabled": true
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_food_spur_outer",
+      "from": "route_food",
+      "to": "route_east_junction",
+      "laneType": "parking_spur",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          59,
+          49
+        ]
+      ],
+      "distance": 11.74,
+      "baseCost": 11.74,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_food_spur_east",
+      "from": "route_east_junction",
+      "to": "route_east_lower",
+      "laneType": "parking_spur",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          49,
+          56
+        ],
+        [
+          48,
+          61
+        ]
+      ],
+      "distance": 15.78,
+      "baseCost": 15.78,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_rest_spur_inner",
+      "from": "route_rest",
+      "to": "route_rest_spur",
+      "laneType": "parking_spur",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.2,
+      "controlPoints": [],
+      "distance": 8.5,
+      "baseCost": 8.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_rest_spur_west",
+      "from": "route_rest_spur",
+      "to": "route_east_lower",
+      "laneType": "parking_spur",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          44,
+          62
+        ],
+        [
+          47,
+          65
+        ]
+      ],
+      "distance": 9.69,
+      "baseCost": 9.69,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_shared_central_north",
+      "from": "route_east_lower",
+      "to": "route_central_mid",
+      "laneType": "parking_spur",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          48.3,
+          54
+        ],
+        [
+          47.8,
+          44
+        ]
+      ],
+      "distance": 30.5,
+      "baseCost": 30.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_shared_north_connector",
+      "from": "route_central_mid",
+      "to": "route_north_junction",
+      "laneType": "parking_spur",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          49.2,
+          27
+        ],
+        [
+          49.4,
+          20
+        ]
+      ],
+      "distance": 21.55,
+      "baseCost": 21.55,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_north_mid_east",
+      "from": "route_north_junction",
+      "to": "route_north_east",
+      "laneType": "service_road",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 3.2,
+      "controlPoints": [
+        [
+          63,
+          13.8
+        ]
+      ],
+      "distance": 26.61,
+      "baseCost": 26.61,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_north_to_east_upper",
+      "from": "route_north_east",
+      "to": "route_east_upper",
+      "laneType": "service_road",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 3.2,
+      "controlPoints": [
+        [
+          88,
+          14.6
+        ]
+      ],
+      "distance": 24.03,
+      "baseCost": 24.03,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_east_mid_block",
+      "from": "route_north_junction",
+      "to": "route_blocked_mid",
+      "laneType": "service_road",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 3.2,
+      "controlPoints": [
+        [
+          40,
+          13.7
+        ]
+      ],
+      "distance": 17.92,
+      "baseCost": 17.92,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_direct_gate",
+      "from": "route_blocked_mid",
+      "to": "route_center",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          31.7,
+          18
+        ]
+      ],
+      "distance": 6.57,
+      "baseCost": 6.57,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_north_center_west",
+      "from": "route_north_junction",
+      "to": "route_center_west",
+      "laneType": "service_road",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 3.2,
+      "controlPoints": [
+        [
+          34,
+          13.2
+        ],
+        [
+          24,
+          13
+        ]
+      ],
+      "distance": 31.94,
+      "baseCost": 31.94,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_west_upper",
+      "from": "route_center_west",
+      "to": "route_bypass_west",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.4,
+      "controlPoints": [
+        [
+          16.2,
+          18
+        ]
+      ],
+      "distance": 9.1,
+      "baseCost": 9.1,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_west_lower",
+      "from": "route_bypass_west",
+      "to": "route_bypass_south",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.4,
+      "controlPoints": [
+        [
+          20,
+          25
+        ]
+      ],
+      "distance": 8.5,
+      "baseCost": 8.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_west_to_center",
+      "from": "route_bypass_south",
+      "to": "route_center",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.4,
+      "controlPoints": [
+        [
+          29,
+          25
+        ]
+      ],
+      "distance": 7.71,
+      "baseCost": 7.71,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_gate_waiting",
+      "from": "route_center",
+      "to": "center_waiting",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 3.62,
+      "baseCost": 3.62,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_wait_bay01",
+      "from": "center_waiting",
+      "to": "center_bay_01",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 8.04,
+      "baseCost": 8.04,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_wait_bay02",
+      "from": "center_waiting",
+      "to": "center_bay_02",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 6.1,
+      "baseCost": 6.1,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_bay01_unload",
+      "from": "center_bay_01",
+      "to": "center_unload",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 3.08,
+      "baseCost": 3.08,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_bay02_unload",
+      "from": "center_bay_02",
+      "to": "center_unload",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 4.61,
+      "baseCost": 4.61,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_unload_clean",
+      "from": "center_unload",
+      "to": "center_clean",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 2.5,
+      "baseCost": 2.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_clean_charge",
+      "from": "center_clean",
+      "to": "center_charge",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 2.5,
+      "baseCost": 2.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_charge_standby01",
+      "from": "center_charge",
+      "to": "center_standby_01",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 2.3,
+      "baseCost": 2.3,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_standby01_standby02",
+      "from": "center_standby_01",
+      "to": "center_standby_02",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 1.8,
+      "baseCost": 1.8,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_standby02_exit",
+      "from": "center_standby_02",
+      "to": "center_internal_exit",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 2.33,
+      "baseCost": 2.33,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_center_internal_exit",
+      "from": "center_internal_exit",
+      "to": "route_blocked_mid",
+      "laneType": "center_internal_lane",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 1.8,
+      "controlPoints": [],
+      "distance": 4.06,
+      "baseCost": 4.06,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_entrance_gate",
+      "from": "walk_entrance",
+      "to": "walk_gate",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [],
+      "distance": 5,
+      "baseCost": 5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_gate_south",
+      "from": "walk_gate",
+      "to": "walk_south",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [],
+      "distance": 11.5,
+      "baseCost": 11.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_south_central",
+      "from": "walk_south",
+      "to": "walk_central",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [],
+      "distance": 9.5,
+      "baseCost": 9.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_central_north",
+      "from": "walk_central",
+      "to": "walk_central_north",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          47.7,
+          59
+        ]
+      ],
+      "distance": 14.51,
+      "baseCost": 14.51,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_north_junction",
+      "from": "walk_central_north",
+      "to": "walk_north_junction",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [],
+      "distance": 16,
+      "baseCost": 16,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_north_road",
+      "from": "walk_north_junction",
+      "to": "walk_north_road",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          49.2,
+          27
+        ],
+        [
+          49.4,
+          20
+        ]
+      ],
+      "distance": 21.55,
+      "baseCost": 21.55,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_left_branch",
+      "from": "walk_central",
+      "to": "walk_left_junction",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          44,
+          62
+        ]
+      ],
+      "distance": 9.64,
+      "baseCost": 9.64,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_left_rest",
+      "from": "walk_left_junction",
+      "to": "walk_left_rest",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          35,
+          60.5
+        ]
+      ],
+      "distance": 8.58,
+      "baseCost": 8.58,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_right_branch",
+      "from": "walk_central_north",
+      "to": "walk_right_junction",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [],
+      "distance": 4.9,
+      "baseCost": 4.9,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_food_entry",
+      "from": "walk_right_junction",
+      "to": "walk_food_entry",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          58,
+          49
+        ]
+      ],
+      "distance": 11.3,
+      "baseCost": 11.3,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_food_platform",
+      "from": "walk_food_entry",
+      "to": "walk_food_platform",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [],
+      "distance": 4.5,
+      "baseCost": 4.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_center_branch",
+      "from": "walk_north_junction",
+      "to": "walk_center_branch",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          44,
+          32
+        ]
+      ],
+      "distance": 11.51,
+      "baseCost": 11.51,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_walk_center_entry",
+      "from": "walk_center_branch",
+      "to": "walk_center_entry",
+      "laneType": "pedestrian_path",
+      "allowedEntities": [
+        "visitor"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          35,
+          25
+        ]
+      ],
+      "distance": 9.94,
+      "baseCost": 9.94,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_start_central",
+      "from": "robot_patrol_start",
+      "to": "robot_central",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 8.5,
+      "baseCost": 8.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_central_left_junction",
+      "from": "robot_central",
+      "to": "robot_left_junction",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [
+        [
+          44,
+          60
+        ]
+      ],
+      "distance": 8.83,
+      "baseCost": 8.83,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_left_litter",
+      "from": "robot_left_junction",
+      "to": "robot_left_litter",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 4,
+      "baseCost": 4,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_left_dock",
+      "from": "robot_left_litter",
+      "to": "robot_left_dock",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 4.5,
+      "baseCost": 4.5,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_mid_litter",
+      "from": "robot_central",
+      "to": "robot_mid_litter",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 6,
+      "baseCost": 6,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_battery_litter",
+      "from": "robot_central",
+      "to": "robot_battery_litter",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 3.07,
+      "baseCost": 3.07,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_battery_junction",
+      "from": "robot_battery_litter",
+      "to": "robot_right_junction",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 5.39,
+      "baseCost": 5.39,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_central_right",
+      "from": "robot_mid_litter",
+      "to": "robot_right_junction",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 4.9,
+      "baseCost": 4.9,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_right_litter",
+      "from": "robot_right_junction",
+      "to": "robot_right_litter",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 4.27,
+      "baseCost": 4.27,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_right_entry",
+      "from": "robot_right_litter",
+      "to": "robot_right_entry",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 4.27,
+      "baseCost": 4.27,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_robot_right_dock",
+      "from": "robot_right_entry",
+      "to": "robot_right_dock",
+      "laneType": "robot_path",
+      "allowedEntities": [
+        "robot"
+      ],
+      "width": 1.4,
+      "controlPoints": [],
+      "distance": 3.16,
+      "baseCost": 3.16,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    }
+  ]
+}

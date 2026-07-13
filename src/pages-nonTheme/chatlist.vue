@@ -7,8 +7,9 @@
 					<text class="back-icon">‹</text>
 				</view>
 				<view class="nav-title">用户消息</view>
-				<view class="nav-right">
-					<text class="search-icon" @click="toggleSearch">🔍</text>
+			<view class="nav-right">
+				<text class="add-icon" @click.stop="openContacts">＋</text>
+				<text class="search-icon" @click="toggleSearch">🔍</text>
 				</view>
 			</view>
 		</view>
@@ -60,8 +61,9 @@
 						<text class="last-message" :class="{ unread: user.unreadCount > 0 }">
 							{{ formatLastMessage(user.latestContent) }}
 						</text>
-						<view class="user-tags" v-if="user.username">
-							<text class="tag">{{ user.username }}</text>
+						<view class="user-tags" v-if="user.top || user.username">
+							<text class="tag pin-tag" v-if="user.top">置顶</text>
+							<text class="tag" v-if="user.username">{{ user.username }}</text>
 						</view>
 					</view>
 				</view>
@@ -223,8 +225,7 @@ computed: {
 		 */
 		initCacheKey() {
 			try {
-				const userInfo = uni.getStorageSync('userInfo')
-				const userId = userInfo?.id || userInfo?.userId || 'unknown'
+				const userId = this.getCurrentUserId() || 'unknown'
 				this.cacheKey = `chatlist_${userId}`
 			} catch (e) {
 				console.error('初始化缓存 key 失败:', e)
@@ -244,6 +245,7 @@ computed: {
 					const cacheData = JSON.parse(cached)
 					if (cacheData && Array.isArray(cacheData.userList)) {
 						this.userList = cacheData.userList
+						this.sortUserList()
 						this.lastRefreshTime = cacheData.timestamp || 0
 						console.log('从缓存加载用户列表，共', this.userList.length, '个用户')
 					}
@@ -389,14 +391,20 @@ computed: {
 		},
 
 		/**
-		 * 统一排序用户列表 (按时间倒序)
+		 * 统一排序用户列表（置顶优先，其次按时间倒序）
 		 */
 		sortUserList() {
-			this.userList.sort((a, b) => {
-				const timeA = new Date(a.latestContent?.sendTime || a.lastMessageTime || 0).getTime()
-				const timeB = new Date(b.latestContent?.sendTime || b.lastMessageTime || 0).getTime()
-				return timeB - timeA
-			})
+			this.userList.sort(this.compareChatUsers)
+		},
+
+		getChatSortTime(user) {
+			return new Date(user?.latestContent?.sendTime || user?.lastMessageTime || 0).getTime() || 0
+		},
+
+		compareChatUsers(a, b) {
+			const topDiff = Number(Boolean(b?.top)) - Number(Boolean(a?.top))
+			if (topDiff !== 0) return topDiff
+			return this.getChatSortTime(b) - this.getChatSortTime(a)
 		},
 		
 		/**
@@ -498,7 +506,8 @@ computed: {
 							unreadCount: newUser.unreadCount,
 							avatar: newUser.avatar,
 							username: newUser.username,
-							note: newUser.note
+							note: newUser.note,
+							top: newUser.top
 						})
 					} else {
 						addedCount++
@@ -507,15 +516,10 @@ computed: {
 					}
 				}
 				
-				// 重新排序（按最新消息时间倒序）
-				// 注意：只排序第一页的用户，保留后续页面的顺序
+				// 先整理本次刷新页，最后统一按置顶和时间排序
 				const page1Users = Array.from(existingUserMap.values())
 					.filter(u => newUserMap.has(u.otherId))
-					.sort((a, b) => {
-						const timeA = a.latestContent?.sendTime || 0
-						const timeB = b.latestContent?.sendTime || 0
-						return new Date(timeB).getTime() - new Date(timeA).getTime()
-					})
+					.sort(this.compareChatUsers)
 				
 				// 合并：排序后的第一页 + 现有的后续页面
 				const laterPages = this.userList.filter(u => !newUserMap.has(u.otherId))
@@ -536,6 +540,7 @@ computed: {
 					console.log(`第 ${page} 页没有新用户, 保持 ${this.userList.length} 个用户不变`)
 				}
 			}
+			this.sortUserList()
 		},
 
 		// 验证管理员权限
@@ -692,11 +697,41 @@ computed: {
 			}
 		},
 
+		decodeTokenPayload(token) {
+			try {
+				const payload = String(token || '').split('.')[1]
+				if (!payload) return null
+				const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+				const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+				let json = ''
+				// #ifdef H5
+				json = decodeURIComponent(escape(window.atob(padded)))
+				// #endif
+				// #ifndef H5
+				const decoder = typeof atob === 'function' ? atob : null
+				if (decoder) json = decodeURIComponent(escape(decoder(padded)))
+				// #endif
+				return json ? JSON.parse(json) : null
+			} catch (e) {
+				return null
+			}
+		},
+
 		// 获取当前用户ID
 		getCurrentUserId() {
 			try {
 				const userInfo = uni.getStorageSync('userInfo')
-				return userInfo?.id || userInfo?.userId || ''
+				const userId =
+					userInfo?.id ||
+					userInfo?.userId ||
+					userInfo?.user?.id ||
+					userInfo?.user?.userId ||
+					userInfo?.data?.id ||
+					userInfo?.data?.userId ||
+					''
+				if (userId !== '' && userId !== null && userId !== undefined) return userId
+				const tokenPayload = this.decodeTokenPayload(uni.getStorageSync('token'))
+				return tokenPayload?.userId || tokenPayload?.id || ''
 			} catch (e) {
 				console.error('获取用户ID失败:', e)
 				return ''
@@ -744,17 +779,43 @@ computed: {
 			await this.loadUserList()
 		},
 
+		markLocalChatRead(otherId) {
+			if (!otherId) return
+			let changed = false
+			this.userList = this.userList.map(user => {
+				if (String(user.otherId) !== String(otherId)) return user
+				changed = true
+				return {
+					...user,
+					unreadCount: 0,
+					latestContent: user.latestContent
+						? { ...user.latestContent, isRead: true }
+						: user.latestContent
+				}
+			})
+			if (changed) this.saveToCache()
+		},
+
 		// 打开聊天
 		openChat(user) {
-			// 标记已读
-			if (user.unreadCount > 0) {
-				chatApi.markAsRead(user.otherId)
-				user.unreadCount = 0
+			this.markLocalChatRead(user.otherId)
+			if (user.conversationType === 'group' && user.groupId) {
+				uni.navigateTo({
+					url: `/pages-nonTheme/chat?conversationType=group&groupId=${encodeURIComponent(user.groupId)}&chatId=${encodeURIComponent(user.otherId)}&title=${encodeURIComponent(user.username)}&avatar=${encodeURIComponent(user.avatar || '')}`
+				})
+				return
 			}
+			chatApi.markAsRead(user.otherId).catch(e => {
+				console.warn('标记消息已读失败:', e?.message || e)
+			})
 
 			uni.navigateTo({
 				url: `/pages-nonTheme/chat?chatId=${user.otherId}&title=${encodeURIComponent(user.username)}&userId=${user.otherId}&avatar=${encodeURIComponent(user.avatar || '')}`
 			})
+		},
+
+		openContacts() {
+			uni.navigateTo({ url: '/pages-nonTheme/chat-contacts' })
 		},
 
 		// 格式化时间
@@ -1074,8 +1135,10 @@ computed: {
 	}
 
 	.nav-right {
-		width: 40px;
+		width: 72px;
 		display: flex;
+		align-items: center;
+		gap: 12px;
 		justify-content: flex-end;
 		transition: transform 0.2s ease;
 
@@ -1089,6 +1152,13 @@ computed: {
 			color: var(--nav-text);
 			transition: all 0.2s ease;
 			filter: drop-shadow(0 1px 1px rgba(0,0,0,0.1));
+		}
+
+		.add-icon {
+			font-size: 26px;
+			line-height: 1;
+			color: var(--nav-text);
+			font-weight: 400;
 		}
 	}
 }
@@ -1425,6 +1495,12 @@ computed: {
 					&:hover {
 						background: var(--accent-color);
 						color: white;
+					}
+
+					&.pin-tag {
+						color: #b45309;
+						background: rgba(245, 158, 11, 0.12);
+						border-color: rgba(245, 158, 11, 0.28);
 					}
 				}
 			}

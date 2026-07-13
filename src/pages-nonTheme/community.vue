@@ -120,6 +120,14 @@
               <view class="post-tag" :class="getTagClass(post.tag)">
                 <text>{{ post.tag }}</text>
               </view>
+              <view
+                v-if="isAdmin"
+                class="post-scope-chip"
+                :class="{ global: post.visibilityScope === 'all' }"
+                @click.stop="changePostVisibility(post)"
+              >
+                {{ getVisibilityLabel(post.visibilityScope) }}
+              </view>
               <view v-if="isAdmin" class="post-admin-delete" @click.stop="confirmDeletePost(post)">删除</view>
             </view>
 
@@ -193,7 +201,7 @@
 </template>
 
 <script>
-import { getCommunityList, getCommunityTree, getMyCommunity, getCommunityCover, joinCommunity, getCommunityPosts, getCommunityPostImages, getCommunityRanking, togglePostLike, deleteCommunityPost } from '@/api/community.js';
+import { getCommunityList, getCommunityTree, getMyCommunity, getCommunityCover, joinCommunity, getCommunityPosts, getCommunityPostImages, getCommunityRanking, togglePostLike, deleteCommunityPost, updatePostVisibility } from '@/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
@@ -430,6 +438,31 @@ export default {
             uni.showToast({ title: '已删除', icon: 'success' });
           } catch (e) {
             uni.showToast({ title: e.message || '删除失败', icon: 'none' });
+          }
+        }
+      });
+    },
+    getVisibilityLabel(scope) {
+      return scope === 'all' ? '全社区' : '本社区';
+    },
+    changePostVisibility(post) {
+      if (!this.isAdmin || !post) return;
+      const options = ['本社区可见', '全社区可见'];
+      uni.showActionSheet({
+        itemList: options,
+        success: async (res) => {
+          const nextScope = res.tapIndex === 1 ? 'all' : 'community';
+          if (post.visibilityScope === nextScope) return;
+          try {
+            const payload = await updatePostVisibility(post.id, nextScope);
+            const data = this.extractData(payload) || {};
+            post.visibilityScope = data.visibilityScope || nextScope;
+            if (nextScope === 'community' && this.myCommunity && Number(post.communityId) !== Number(this.myCommunity.id)) {
+              this.posts = this.posts.filter((item) => item.id !== post.id);
+            }
+            uni.showToast({ title: '已更新范围', icon: 'success' });
+          } catch (e) {
+            uni.showToast({ title: e.message || '更新失败', icon: 'none' });
           }
         }
       });
@@ -689,8 +722,8 @@ export default {
 .safe-area-top { height: env(safe-area-inset-top); min-height: 44rpx; }
 .nav-content {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 24rpx 32rpx;
-  height: 88rpx; box-sizing: content-box;
+  padding: 0 32rpx;
+  height: 136rpx; box-sizing: border-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
 .dark-mode .back-icon { color: #fff; }
@@ -726,7 +759,12 @@ export default {
 .dark-mode .action-icon-btn { background: rgba(255, 255, 255, 0.15); }
 
 /* ===== 主内容区 ===== */
-.main-scroll { position: relative; z-index: 10; height: calc(100vh - env(safe-area-inset-top) - 88rpx); }
+.main-scroll {
+  position: relative;
+  z-index: 10;
+  height: calc(100vh - 180rpx);
+  height: calc(100vh - max(env(safe-area-inset-top), 44rpx) - 136rpx);
+}
 .content-wrapper { padding: 32rpx; padding-bottom: 160rpx; }
 
 /* ===== 我的社区卡片 ===== */
@@ -920,8 +958,16 @@ export default {
 .dark-mode .post-card { background: rgba(255, 255, 255, 0.1); border: 1rpx solid rgba(255, 255, 255, 0.1); }
 .post-header { display: flex; align-items: center; margin-bottom: 20rpx; }
 .post-avatar { width: 64rpx; height: 64rpx; border-radius: 50%; margin-right: 16rpx; border: 2rpx solid rgba(16, 185, 129, 0.2); }
-.post-meta { flex: 1; }
-.post-author { display: block; color: #1f2937; font-size: 26rpx; font-weight: 700; }
+.post-meta { flex: 1; min-width: 0; }
+.post-author {
+  display: block;
+  color: #1f2937;
+  font-size: 26rpx;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dark-mode .post-author { color: #fff; }
 .post-time { display: block; color: #9ca3af; font-size: 20rpx; margin-top: 4rpx; }
 .dark-mode .post-time { color: rgba(255, 255, 255, 0.5); }
@@ -943,6 +989,33 @@ export default {
 .dark-mode .post-tag.tag-help { background: rgba(239, 68, 68, 0.2); color: #f87171; }
 .post-tag.tag-share { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
 .dark-mode .post-tag.tag-share { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+
+.post-scope-chip {
+  margin-left: 10rpx;
+  padding: 6rpx 14rpx;
+  border-radius: 20rpx;
+  font-size: 20rpx;
+  font-weight: 700;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1rpx solid rgba(16, 185, 129, 0.18);
+  flex-shrink: 0;
+}
+.post-scope-chip.global {
+  color: #2563eb;
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.22);
+}
+.dark-mode .post-scope-chip {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.24);
+}
+.dark-mode .post-scope-chip.global {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.3);
+}
 
 .post-admin-delete {
   margin-left: 12rpx;

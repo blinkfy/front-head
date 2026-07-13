@@ -16,7 +16,7 @@
       </div>
 
       <div class="actions">
-        <button type="button" class="action ghost" @click="goBack">返回上一页</button>
+        <button type="button" class="action ghost" @click="goBack">返回个人中心</button>
         <button type="button" class="action primary" @click="goHome">返回首页</button>
       </div>
     </main>
@@ -26,16 +26,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
+import { getAdminScreenByPath, jumpToAdminPage } from '@/utils/admin-page-nav.js'
 
 const DEFAULT_REASON = '该页面仅管理员可访问，请使用管理员账号登录。'
-const ROUTE_LABELS = {
-  '/collection-planning': '垃圾清运规划',
-  '/pages-nonTheme/collection-planning': '垃圾清运规划',
-  '/digital-twin-replay': '公园垃圾分类数字孪生回放',
-  '/pages-nonTheme/digital-twin-replay': '公园垃圾分类数字孪生回放',
-  '/community-dashboard': '社区驾驶舱',
-  '/pages-nonTheme/community-dashboard': '社区驾驶舱'
-}
 
 const sourcePath = ref('')
 const reason = ref(DEFAULT_REASON)
@@ -43,7 +36,7 @@ let unbindThemeWatcher = null
 
 const pageLabel = computed(() => {
   const path = String(sourcePath.value || '').trim()
-  return ROUTE_LABELS[path] || path || '当前页面'
+  return getAdminScreenByPath(path)?.title || path || '当前页面'
 })
 
 const reasonText = computed(() => {
@@ -56,18 +49,35 @@ function goHome() {
 }
 
 function goBack() {
-  if (window.history.length > 1) {
-    window.history.back()
-    return
+  // The denied page replaces the protected route. Returning to a verified
+  // safe page avoids a browser-history loop back into the same 403 page.
+  jumpToAdminPage('profile', { mode: 'relaunch' })
+}
+
+function decodeQueryValue(value) {
+  let decoded = String(value || '').replace(/\+/g, ' ')
+  // uni-app's H5 adapter may encode a navigation query once more while it
+  // moves it into the hash. Decode at most twice to support both forms.
+  for (let index = 0; index < 2; index += 1) {
+    try {
+      const next = decodeURIComponent(decoded)
+      if (next === decoded) break
+      decoded = next
+    } catch (_) {
+      break
+    }
   }
-  goHome()
+  return decoded
 }
 
 onMounted(() => {
   applyStoredTheme()
   unbindThemeWatcher = bindThemeStorageSync()
 
-  const query = String(window.location.search || '').replace(/^\?/, '')
+  const hash = String(window.location.hash || '')
+  const hashQueryIndex = hash.indexOf('?')
+  const hashQuery = hashQueryIndex >= 0 ? hash.slice(hashQueryIndex + 1) : ''
+  const query = String(window.location.search || hashQuery).replace(/^\?/, '')
   const params = {}
 
   if (query) {
@@ -76,8 +86,8 @@ onMounted(() => {
       const index = pair.indexOf('=')
       const rawKey = index >= 0 ? pair.slice(0, index) : pair
       const rawValue = index >= 0 ? pair.slice(index + 1) : ''
-      const key = decodeURIComponent(rawKey.replace(/\+/g, ' '))
-      const value = decodeURIComponent(rawValue.replace(/\+/g, ' '))
+      const key = decodeQueryValue(rawKey)
+      const value = decodeQueryValue(rawValue)
       params[key] = value
     })
   }

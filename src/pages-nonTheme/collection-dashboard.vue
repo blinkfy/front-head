@@ -6,35 +6,45 @@
       <view class="row">
         <view>
           <view class="title">垃圾清运可视化大屏</view>
-          <view class="sub">Tencent Map + 清运路径实时调度</view>
+          <view class="sub">
+            <text class="sub-copy">Tencent Map + 清运路径实时调度</text>
+            <text :class="['compact-status', statusCls]">{{ compactStatusText }}</text>
+          </view>
         </view>
-        <view class="actions">
-          <view class="clock">{{ clockText }}</view>
-          <view :class="['status', statusCls]">{{ statusText }}</view>
-          <view class="strategy">
+        <AdminScreenHeader
+          screen-key="collectionDashboard"
+          tone="dark"
+          @back="goBack"
+        >
+          <view class="actions">
+            <view class="clock">{{ clockText }}</view>
+            <view :class="['status', statusCls]">{{ statusText }}</view>
+            <view class="strategy">
+              <view
+                v-for="s in strategyOptions"
+                :key="s.value"
+                :class="['strategy-btn', routeStrategy === s.value ? 'active' : '']"
+                @tap="onStrategyTap(s.value)"
+              >{{ s.label }}</view>
+            </view>
             <view
-              v-for="s in strategyOptions"
-              :key="s.value"
-              :class="['strategy-btn', routeStrategy === s.value ? 'active' : '']"
-              @tap="onStrategyTap(s.value)"
-            >{{ s.label }}</view>
+              :class="['btn', 'blue', monitor.active ? 'is-disabled' : '']"
+              :aria-disabled="String(monitor.active)"
+              @tap="handleRefreshTap"
+            >立即刷新</view>
+            <view :class="['btn', 'monitor-chip', monitor.scene === 'telemetry' ? 'active' : '']" @tap="toggleRiskMonitor">
+              <text class="feature-icon">!</text><text>{{ monitor.active && monitor.scene === 'telemetry' ? '退出预警' : '风险预警' }}</text>
+            </view>
+            <view :class="['btn', 'monitor-chip', monitor.scene === 'dispatch' ? 'active' : '']" @tap="toggleDispatchMonitor">
+              <text class="feature-icon">↗</text><text>{{ monitor.active && monitor.scene === 'dispatch' ? '退出监测' : '调度监测' }}</text>
+            </view>
+            <view class="btn fault-btn" @tap="openFaultCenter">
+              <text class="feature-icon">!</text><text>故障处理</text>
+              <text :class="['fault-badge', faultCenter.summary.open ? '' : 'is-placeholder']">{{ faultCenter.summary.open || 0 }}</text>
+            </view>
+            <view class="btn ghost" @tap="openSortingCenterMonitor">分拣中心进度</view>
           </view>
-          <view :class="['btn', 'feature-btn', monitor.scene === 'telemetry' ? 'active' : '']" @tap="startRiskMonitor">
-            <text class="feature-icon">!</text><text>风险预警</text>
-          </view>
-          <view :class="['btn', 'feature-btn', monitor.scene === 'dispatch' ? 'active' : '']" @tap="startDispatchMonitor">
-            <text class="feature-icon">↗</text><text>调度监测</text>
-          </view>
-          <view class="btn fault-btn" @tap="openFaultCenter">
-            <text class="feature-icon">!</text><text>故障处理</text>
-            <text :class="['fault-badge', faultCenter.summary.open ? '' : 'is-placeholder']">{{ faultCenter.summary.open || 0 }}</text>
-          </view>
-          <view v-if="monitor.active" class="btn ghost" @tap="openSortingCenterMonitor">分拣中心进度</view>
-          <view class="btn ghost nav-link-btn" @tap="goToCommunity">🏙 社区治理大屏</view>
-          <view class="btn ghost nav-link-btn" @tap="goToDigitalTwinReplay">数字孪生回放</view>
-          <view v-if="!monitor.active" class="btn blue" @tap="doRefresh">立即刷新</view>
-          <view class="btn ghost" @tap="goBack">返回</view>
-        </view>
+        </AdminScreenHeader>
       </view>
 
       <!-- 指标卡片 -->
@@ -101,7 +111,7 @@
         </scroll-view>
       </view>
       <view class="panel telemetry-hero">
-        <view class="scene-kicker">RISK WARNING · 智能桶实时遥测</view>
+        <view class="scene-kicker">风险预警 · 智能桶实时遥测</view>
         <view class="telemetry-head">
           <view>
             <view class="telemetry-title">{{ monitor.binName }}</view>
@@ -220,7 +230,7 @@
             <view v-for="row in pointStatusRows" :key="'slot-' + row.id" :class="['slot-row', row.stateCls]">
               <view class="slot-row-top">
                 <text class="slot-code">{{ row.pointCode }}</text>
-                <text class="slot-state">{{ row.slotState }}</text>
+                <text class="slot-state">{{ row.slotStateLabel }}</text>
               </view>
               <view class="slot-row-sub"><text>{{ row.pointName }}</text><text>桶体 {{ row.hasBin ? row.binCode : '--' }}</text></view>
               <view class="slot-row-sub"><text>{{ row.taskLabel }}</text><text :class="['slot-presence', row.hasBin ? 'has' : 'empty-slot']">是否有桶：{{ row.hasBin ? '有桶' : '无桶' }}</text></view>
@@ -285,7 +295,7 @@
               @tap="focusStop(stop.order)"
             >
               <text class="stop-o">#{{ stop.order }}</text>
-              <text class="stop-n">{{ stop.name }}</text>
+              <text class="stop-n">{{ displayTaskType(stop.name) }}</text>
               <text class="stop-t">ETA {{ fmtTime(stop.eta) }}</text>
             </view>
           </scroll-view>
@@ -337,7 +347,7 @@
           <view class="block-title">{{ monitor.scene === 'sorting' ? '桶体队列' : '处置事件' }} <text class="note">实时同步</text></view>
           <scroll-view class="list" scroll-y>
             <view v-if="monitor.scene === 'sorting'" v-for="event in monitor.sortingQueue" :key="event.id" class="monitor-event">
-              <text class="event-time">{{ event.state }}</text>
+              <text class="event-time">{{ displayOperationalState(event.state) }}</text>
               <view><text class="event-title">{{ event.title }}</text><text class="event-desc">{{ event.desc }}</text></view>
             </view>
             <view v-if="monitor.scene !== 'sorting'" v-for="event in monitor.events" :key="event.id" class="monitor-event">
@@ -357,7 +367,7 @@
               @tap="focusStop(stop.order)"
             >
               <view class="dispatch-top">
-                <text>#{{ stop.order }} {{ stop.name }}</text>
+                <text>#{{ stop.order }} {{ displayTaskType(stop.name) }}</text>
                 <text>{{ fmtTime(stop.eta) }}</text>
               </view>
               <view class="dispatch-sub">
@@ -396,9 +406,9 @@
               </view>
               <view class="twin-toolbar-status">
                 <view class="twin-state-tabs">
-                  <text :class="{ active: sortingVisualState.key === 'intake' }">入站</text>
-                  <text :class="{ active: sortingVisualState.key === 'washing' }">清洗</text>
-                  <text :class="{ active: sortingVisualState.key === 'inspection' }">质检</text>
+                  <text :class="{ active: sortingVisualState.key === 'intake' }" @tap="jumpToSortingVisualStage('intake')">入站</text>
+                  <text :class="{ active: sortingVisualState.key === 'washing' }" @tap="jumpToSortingVisualStage('washing')">清洗</text>
+                  <text :class="{ active: sortingVisualState.key === 'inspection' }" @tap="jumpToSortingVisualStage('inspection')">质检</text>
                 </view>
                 <view class="twin-online"><text></text>{{ sortingVisualState.label }}</view>
               </view>
@@ -407,13 +417,42 @@
               <image :class="['twin-image', { active: sortingVisualState.key === 'intake' }]" src="/static/sorting-center/facility-intake.png" mode="aspectFit"></image>
               <image :class="['twin-image', { active: sortingVisualState.key === 'washing' }]" src="/static/sorting-center/facility-washing.png" mode="aspectFit"></image>
               <image :class="['twin-image', { active: sortingVisualState.key === 'inspection' }]" src="/static/sorting-center/facility-inspection.png" mode="aspectFit"></image>
-              <view :class="['operation-layer', 'stage-' + sortingOperation.key]">
+              <view v-if="monitor.active" :class="['sorting-stage-video-layer', { active: sortingStageVideoActive }]">
+                <image class="sorting-stage-video-backdrop" :src="CENTER_WORKFLOW_MASTER_VIDEO.poster" mode="aspectFill"></image>
+                <video
+                  ref="sortingMasterVideoRef"
+                  class="sorting-stage-video active"
+                  :src="CENTER_WORKFLOW_MASTER_VIDEO.file"
+                  :poster="CENTER_WORKFLOW_MASTER_VIDEO.poster"
+                  :muted="true"
+                  :controls="false"
+                  :loop="false"
+                  :playback-rate="CENTER_WORKFLOW_MASTER_VIDEO.playbackRate"
+                  :show-center-play-btn="false"
+                  :show-play-btn="false"
+                  :show-fullscreen-btn="false"
+                  :enable-progress-gesture="false"
+                  object-fit="contain"
+                  preload="auto"
+                  playsinline
+                  webkit-playsinline
+                  @loadedmetadata="handleSortingMasterVideoReady"
+                  @canplay="handleSortingMasterVideoReady"
+                  @ended="handleSortingMasterVideoEnded"
+                  @error="handleSortingMasterVideoError"
+                ></video>
+                <view class="sorting-video-tone"></view>
+                <view class="sorting-video-info top-left"><small>{{ monitor.sortingStageText }}</small><b>{{ monitor.returnBinCode }}</b><text>当前设备</text></view>
+                <view class="sorting-video-info bottom-right"><small>设备状态</small><b>{{ sortingDeviceStatus }}</b><text>阶段进度 {{ sortingOperation.progress.toFixed(0) }}%</text></view>
+              </view>
+              <view v-show="!sortingStageVideoActive" :class="['operation-layer', 'stage-' + sortingOperation.key]">
                 <view class="weigh-operation">
                   <view class="weigh-deck"></view>
                   <text>{{ sortingOperation.key === 'weigh' ? n(monitor.weight, 0).toFixed(1) + ' kg' : 'RFID 识别' }}</text>
                 </view>
                 <view class="wash-operation"><text></text><text></text><text></text></view>
                 <view class="dry-operation"><view></view><text>热风烘干</text></view>
+                <view class="charge-operation"><view></view><text>补能充电</text></view>
                 <view class="check-operation"><view></view><text>电量 {{ n(monitor.battery, 0).toFixed(0) }}%</text></view>
                 <view class="pool-operation"><text>入库</text><view></view></view>
                 <view class="workpiece" :style="sortingWorkpieceStyle">
@@ -421,16 +460,16 @@
                   <b>{{ monitor.returnBinCode }}</b>
                 </view>
               </view>
-              <view :class="['zone-tag', 'zone-weigh', { active: monitor.sortingStageText.includes('抵达') || monitor.sortingStageText.includes('称重') }]">
+              <view v-show="!sortingStageVideoActive" :class="['zone-tag', 'zone-weigh', { active: monitor.sortingStageText.includes('抵达') || monitor.sortingStageText.includes('称重') }]">
                 <text class="zone-pulse"></text><text>卸载称重区</text>
               </view>
-              <view :class="['zone-tag', 'zone-wash', { active: monitor.sortingStageText.includes('清洗') || monitor.sortingStageText.includes('烘干') }]">
+              <view v-show="!sortingStageVideoActive" :class="['zone-tag', 'zone-wash', { active: monitor.sortingStageText.includes('清洗') || monitor.sortingStageText.includes('烘干') }]">
                 <text class="zone-pulse"></text><text>清洗消毒线</text>
               </view>
-              <view :class="['zone-tag', 'zone-check', { active: monitor.sortingStageText.includes('电量') }]">
+              <view v-show="!sortingStageVideoActive" :class="['zone-tag', 'zone-check', { active: monitor.sortingStageText.includes('充电') || monitor.sortingStageText.includes('检测') }]">
                 <text class="zone-pulse"></text><text>电检质检区</text>
               </view>
-              <view :class="['zone-tag', 'zone-pool', { active: monitor.sortingStageText.includes('投放') }]">
+              <view v-show="!sortingStageVideoActive" :class="['zone-tag', 'zone-pool', { active: monitor.sortingStageText.includes('投放') }]">
                 <text class="zone-pulse"></text><text>备用池</text>
               </view>
               <view class="twin-flow">
@@ -455,7 +494,7 @@
             <view class="sorting-progress">
               <view class="block-title">返航桶清洗状态 <text class="note">{{ monitor.returnBinCode }}</text></view>
               <view class="sorting-line">
-                <view v-for="(item, index) in monitor.sortingTimeline" :key="item.key" :class="['sorting-step', item.state]">
+                <view v-for="(item, index) in monitor.sortingTimeline" :key="item.key" :class="['sorting-step', item.state, 'clickable']" @tap="jumpToSortingStage(item)">
                   <view class="sorting-step-node"><text>{{ index + 1 }}</text></view>
                   <text class="sorting-step-label">{{ item.label }}</text>
                 </view>
@@ -472,7 +511,7 @@
               <scroll-view class="list" scroll-y>
                 <view v-for="item in monitor.sortingQueue" :key="'sort-q-' + item.id" :class="['sorting-card', item.kind]">
                   <view class="queue-copy">
-                    <view class="task-top"><text>{{ item.title }}</text><text class="task-chip">{{ item.state }}</text></view>
+                    <view class="task-top"><text>{{ item.title }}</text><text class="task-chip">{{ displayOperationalState(item.state) }}</text></view>
                     <view class="task-route">{{ item.desc }}</view>
                   </view>
                   <view class="queue-arrow"></view>
@@ -526,12 +565,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { baseUrl } from '@/api/settings'
 import { mapConfig } from '@/api/map-config'
+import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/config/center-workflow-video.js'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
-import { goBackFromAdminPage, jumpToAdminPage } from '@/utils/admin-page-nav'
+import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
+import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 
 // ─── 常量 ─────────────────────────────────────────────
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
@@ -674,6 +715,13 @@ function seededRatio(seed) {
 const clockText = ref('--:--:--')
 const statusText = ref('准备就绪')
 const statusCls = ref('')
+const compactStatusText = computed(() => {
+  const text = String(statusText.value || '')
+  if (statusCls.value === 'err') return '刷新失败'
+  if (statusCls.value === 'warn') return text.includes('监测') ? '监测中' : '处理中'
+  if (text.includes('准备')) return '已就绪'
+  return '已刷新'
+})
 const isLightTheme = ref(false)
 
 const strategyOptions = [
@@ -761,21 +809,24 @@ const sortingVisualState = computed(() => {
   if (stage.includes('清洗') || stage.includes('烘干')) {
     return { key: 'washing', label: '清洗消毒运行' }
   }
-  if (stage.includes('电量') || stage.includes('投放') || monitor.sortingProgress >= 82) {
+  if (stage.includes('充电') || stage.includes('电量') || stage.includes('检测') || stage.includes('投放') || monitor.sortingProgress >= 70) {
     return { key: 'inspection', label: '电检质检运行' }
   }
   return { key: 'intake', label: '入站称重运行' }
 })
+const SORTING_WORKFLOW_TOTAL_MS = Math.round(CENTER_WORKFLOW_MASTER_VIDEO.durationSeconds * 1000)
+const masterCueMs = key => Math.round((CENTER_WORKFLOW_MASTER_VIDEO.cuePoints[key]?.startSeconds || 0) * 1000)
 const SORTING_OPERATION_STEPS = [
-  { key: 'arrive', at: 0, nextAt: 1200, x: 18, y: 57 },
-  { key: 'weigh', at: 1200, nextAt: 3200, x: 24, y: 55 },
-  { key: 'wash', at: 3200, nextAt: 5600, x: 43, y: 52 },
-  { key: 'dry', at: 5600, nextAt: 7400, x: 57, y: 61 },
-  { key: 'battery', at: 7400, nextAt: 9000, x: 70, y: 60 },
-  { key: 'ready', at: 9000, nextAt: 9000, x: 82, y: 66 }
+  { key: 'arrive', label: '抵达分拣中心', at: masterCueMs('arrive'), nextAt: masterCueMs('weigh'), x: 18, y: 57 },
+  { key: 'weigh', label: '倾倒称重', at: masterCueMs('weigh'), nextAt: masterCueMs('wash'), x: 24, y: 55 },
+  { key: 'wash', label: '内壁清洗', at: masterCueMs('wash'), nextAt: masterCueMs('dry'), x: 43, y: 52 },
+  { key: 'dry', label: '消毒烘干', at: masterCueMs('dry'), nextAt: masterCueMs('battery'), x: 56, y: 61 },
+  { key: 'battery', label: '状态检测', at: masterCueMs('battery'), nextAt: masterCueMs('charge'), x: 68, y: 60 },
+  { key: 'charge', label: '补能充电', at: masterCueMs('charge'), nextAt: masterCueMs('ready'), x: 76, y: 63 },
+  { key: 'ready', label: '可再次投放', at: masterCueMs('ready'), nextAt: SORTING_WORKFLOW_TOTAL_MS, x: 82, y: 66 }
 ]
 const sortingOperation = computed(() => {
-  const elapsed = clamp(monitor.sortingProgress / 100 * 9000, 0, 9000)
+  const elapsed = clamp(monitor.sortingProgress / 100 * SORTING_WORKFLOW_TOTAL_MS, 0, SORTING_WORKFLOW_TOTAL_MS)
   let current = SORTING_OPERATION_STEPS[0]
   SORTING_OPERATION_STEPS.forEach(step => {
     if (elapsed >= step.at) current = step
@@ -790,6 +841,115 @@ const sortingWorkpieceStyle = computed(() => ({
   left: `${sortingOperation.value.x}%`,
   top: `${sortingOperation.value.y}%`
 }))
+const sortingMasterVideoRef = ref(null)
+const sortingMasterVideoReady = ref(false)
+const sortingMasterVideoFailed = ref(false)
+const sortingManualPlaybackActive = ref(false)
+const sortingMasterTimelineSeconds = computed(() => clamp(
+  monitor.sortingProgress / 100 * CENTER_WORKFLOW_MASTER_VIDEO.durationSeconds,
+  0,
+  CENTER_WORKFLOW_MASTER_VIDEO.durationSeconds
+))
+const sortingWorkflowStarted = computed(() => Boolean(
+  monitor.sortingProgress > 0 || sortingManualPlaybackActive.value
+))
+const sortingStageVideoActive = computed(() => Boolean(
+  monitor.active && monitor.scene === 'sorting' && sortingWorkflowStarted.value && sortingMasterVideoReady.value && !sortingMasterVideoFailed.value
+))
+const sortingDeviceStatus = computed(() => ({
+  weigh: '卸料称重中', wash: '清洗消毒中', charge: '补能连接中', battery: '状态检测中'
+}[sortingOperation.value.key] || monitor.sortingStatus))
+
+function sortingMasterVideoElement() {
+  const target = sortingMasterVideoRef.value
+  if (!target) return null
+  if (typeof target.play === 'function') return target
+  const root = target.$el || target
+  if (typeof root?.play === 'function') return root
+  return root?.querySelector?.('video') || null
+}
+
+function pauseSortingMasterVideo(resetTime = false) {
+  const media = sortingMasterVideoElement()
+  if (!media) return
+  try { media.pause?.() } catch (_) {}
+  if (resetTime) {
+    try { media.currentTime = 0 } catch (_) {}
+  }
+}
+
+function seekSortingMasterVideo(seconds) {
+  const media = sortingMasterVideoElement()
+  if (!media) return
+  const target = clamp(seconds, 0, Math.max(0, CENTER_WORKFLOW_MASTER_VIDEO.durationSeconds - 0.04))
+  try {
+    if (typeof media.fastSeek === 'function') media.fastSeek(target)
+    else media.currentTime = target
+  } catch (_) {}
+}
+
+async function playSortingMasterVideo() {
+  if (!sortingStageVideoActive.value) return
+  await nextTick()
+  const media = sortingMasterVideoElement()
+  if (!media) return
+  try { media.playbackRate = CENTER_WORKFLOW_MASTER_VIDEO.playbackRate } catch (_) {}
+  try {
+    const promise = media.play?.()
+    if (promise?.catch) promise.catch(() => {})
+  } catch (_) {}
+}
+
+function syncSortingMasterVideo(forceSeek = false) {
+  if (!monitor.active || monitor.scene !== 'sorting' || !sortingMasterVideoReady.value || sortingMasterVideoFailed.value) return
+  if (!sortingWorkflowStarted.value) {
+    pauseSortingMasterVideo(true)
+    return
+  }
+  const desiredTime = sortingMasterTimelineSeconds.value
+  // 自动推进期间不再触碰 currentTime，主视频由浏览器连续解码播放。
+  // 仅进入分拣页或用户手动点击阶段时才定位到对应时间点。
+  if (forceSeek) seekSortingMasterVideo(desiredTime)
+  playSortingMasterVideo()
+}
+
+function handleSortingMasterVideoReady() {
+  const firstReady = !sortingMasterVideoReady.value
+  sortingMasterVideoReady.value = true
+  sortingMasterVideoFailed.value = false
+  // `canplay` 在缓冲恢复时也可能再次触发；只处理首次就绪，避免干预连续播放。
+  if (firstReady) syncSortingMasterVideo(true)
+}
+
+function handleSortingMasterVideoEnded() {
+  // 母带尾部本身就是待命画面，结束后保留最后一帧。
+  pauseSortingMasterVideo()
+}
+
+function handleSortingMasterVideoError() {
+  sortingMasterVideoFailed.value = true
+  pauseSortingMasterVideo()
+}
+
+watch(sortingWorkflowStarted, started => {
+  if (started) {
+    nextTick(() => syncSortingMasterVideo(true))
+    return
+  }
+  pauseSortingMasterVideo(true)
+}, { flush: 'post' })
+
+watch(() => [monitor.active, monitor.scene], ([active, scene]) => {
+  if (active && scene === 'sorting') {
+    nextTick(() => syncSortingMasterVideo(true))
+    return
+  }
+  pauseSortingMasterVideo(true)
+  if (!active) {
+    sortingMasterVideoReady.value = false
+    sortingMasterVideoFailed.value = false
+  }
+}, { flush: 'post' })
 const faultCenter = reactive({
   open: false,
   loading: false,
@@ -997,10 +1157,58 @@ function renderBrief() {
 }
 
 function slotStateClass(state) {
-  if (state === '满载告警' || state === '返航中') return 'danger'
-  if (state === '待补位' || state === '空位') return 'waiting'
-  if (state === '补位完成' || state === '可用') return 'available'
+  const value = String(state || '').toLowerCase()
+  if (['满载告警', '返航中', 'abnormal', 'maintenance', 'returning'].includes(value)) return 'danger'
+  if (['待补位', '空位', 'pending_replacement', 'vacant', 'replacement'].includes(value)) return 'waiting'
+  if (['补位完成', '可用', 'available', 'ready'].includes(value)) return 'available'
   return ''
+}
+
+function displaySlotState(state) {
+  const value = String(state || '').trim().toLowerCase()
+  const labels = {
+    available: '可用',
+    vacant: '空位',
+    pending_replacement: '待补位',
+    replacement: '补位中',
+    returning: '返航中',
+    abnormal: '异常',
+    maintenance: '维护中',
+    ready: '可用'
+  }
+  return labels[value] || String(state || '状态未知')
+}
+
+function displayTaskType(type) {
+  const typeLabels = {
+    return: '返航任务',
+    replacement: '补位任务',
+    dispatch: '调度任务',
+    monitoring: '监测中'
+  }
+  return typeLabels[String(type || '').toLowerCase()] || String(type || '任务')
+}
+
+function displayOperationalState(status) {
+  const statusLabels = {
+    pending: '待处理',
+    dispatched: '已派发',
+    running: '执行中',
+    processing: '处理中',
+    completed: '已完成',
+    done: '已完成',
+    active: '处理中',
+    ready: '已就绪',
+    waiting: '待处理',
+    available: '可用'
+  }
+  return statusLabels[String(status || '').toLowerCase()] || String(status || '状态未知')
+}
+
+function displayTaskLabel(type, status) {
+  const taskText = displayTaskType(type)
+  const statusText = status ? displayOperationalState(status) : ''
+  return [taskText, statusText].filter(Boolean).join(' · ') || '监测中'
 }
 
 function buildPointStatusRows() {
@@ -1019,12 +1227,9 @@ function buildPointStatusRows() {
         binCode: bin ? (bin.binCode || bin.name) : '--',
         hasBin: Boolean(point.currentDeviceId),
         slotState,
-        taskLabel: activeTask ? `${activeTask.type}/${activeTask.status}` : 'monitoring',
-        stateCls: ['abnormal', 'maintenance'].includes(slotState)
-          ? 'danger'
-          : slotState === 'pending_replacement' || slotState === 'vacant'
-            ? 'waiting'
-            : 'available'
+        slotStateLabel: displaySlotState(slotState),
+        taskLabel: activeTask ? displayTaskLabel(activeTask.type, activeTask.status) : '监测中',
+        stateCls: slotStateClass(slotState) || 'available'
       }
     })
   }
@@ -1037,8 +1242,11 @@ function buildPointStatusRows() {
       pointName: row.pointName,
       binCode: row.binCode,
       hasBin: row.hasBin,
-      slotState,
-      taskLabel: row.taskLabel || 'monitoring',
+        slotState,
+        slotStateLabel: displaySlotState(slotState),
+        taskLabel: row.taskType || row.taskStatus
+          ? displayTaskLabel(row.taskType, row.taskStatus)
+          : displayTaskLabel(row.taskLabel),
       stateCls: slotStateClass(slotState)
     }
   })
@@ -1372,7 +1580,7 @@ function focusBin(binId, forceMap) {
   // #ifdef H5
   if (_state.mapReady && _state.mapInstance) {
     _state.mapInstance.setCenter(new window.TMap.LatLng(bin.latitude, bin.longitude))
-    showInfoWindow(bin.latitude, bin.longitude, `<div style="min-width:190px;padding:2px 4px"><div style="font-size:13px;font-weight:700;color:#17324a">${bin.pointCode || bin.name} · ${bin.pointName || ''}</div><div style="margin-top:4px;font-size:12px;color:#365066">桶体 ${bin.hasBin === false ? '无桶' : (bin.binCode || '--')} · ${bin.slotState || '可用'}</div><div style="margin-top:2px;font-size:12px;color:#60778b">满载率 ${n(bin.currentFill, 0).toFixed(1)}% · 预测 ${n(bin.predictedFillInHorizon, 0).toFixed(1)}%</div></div>`)
+    showInfoWindow(bin.latitude, bin.longitude, `<div style="min-width:190px;padding:2px 4px"><div style="font-size:13px;font-weight:700;color:#17324a">${bin.pointCode || bin.name} · ${bin.pointName || ''}</div><div style="margin-top:4px;font-size:12px;color:#365066">桶体 ${bin.hasBin === false ? '无桶' : (bin.binCode || '--')} · ${displaySlotState(bin.slotState || '可用')}</div><div style="margin-top:2px;font-size:12px;color:#60778b">满载率 ${n(bin.currentFill, 0).toFixed(1)}% · 预测 ${n(bin.predictedFillInHorizon, 0).toFixed(1)}%</div></div>`)
   }
   drawMap(!!forceMap)
   // #endif
@@ -1535,6 +1743,9 @@ let monitorTimer = null
 let monitorStartedAt = 0
 let monitorLastMapDraw = 0
 let monitorAnimationFrame = null
+let monitorRequestRevision = 0
+let sortingManualAnchorAt = 0
+let sortingManualOffsetMs = 0
 const MONITOR_TOTAL_MS = 19000
 const DISPATCH_STAGE_RANK = { '异常告警': 0, '返航中': 1, '待补位': 2, '可用': 3, '处置完成': 4 }
 const PARK_POINTS = {
@@ -1855,18 +2066,12 @@ function updateMonitorTasks(elapsed) {
 
 function updateSortingCenterState(elapsed) {
   const sortingStart = 18500
-  const cleaningElapsed = Math.max(0, elapsed - sortingStart)
-  monitor.sortingProgress = clamp(cleaningElapsed / 9000 * 100, 0, 100)
-  const steps = [
-    { key: 'arrive', label: '抵达分拣中心', at: 0 },
-    { key: 'weigh', label: '倾倒称重', at: 1200 },
-    { key: 'wash', label: '内壁清洗', at: 3200 },
-    { key: 'dry', label: '消毒烘干', at: 5600 },
-    { key: 'battery', label: '电量检测', at: 7400 },
-    { key: 'ready', label: '可再次投放', at: 9000 }
-  ]
-  monitor.sortingTimeline = steps.map((step, index) => {
-    const next = steps[index + 1]
+  const cleaningElapsed = sortingManualAnchorAt
+    ? Math.max(0, sortingManualOffsetMs + Date.now() - sortingManualAnchorAt)
+    : Math.max(0, elapsed - sortingStart)
+  monitor.sortingProgress = clamp(cleaningElapsed / SORTING_WORKFLOW_TOTAL_MS * 100, 0, 100)
+  monitor.sortingTimeline = SORTING_OPERATION_STEPS.map((step, index) => {
+    const next = SORTING_OPERATION_STEPS[index + 1]
     const state = cleaningElapsed >= step.at
       ? (!next || cleaningElapsed >= next.at ? 'done' : 'running')
       : 'pending'
@@ -1875,7 +2080,7 @@ function updateSortingCenterState(elapsed) {
   const running = monitor.sortingTimeline.find(step => step.state === 'running')
   const done = monitor.sortingTimeline.filter(step => step.state === 'done').slice(-1)[0]
   monitor.sortingStageText = running?.label || done?.label || '等待返航桶抵达分拣中心'
-  monitor.sortingStatus = monitor.sortingProgress >= 100 ? '已清洁待命' : monitor.sortingProgress > 0 ? '清洗中' : '待接收'
+  monitor.sortingStatus = monitor.sortingProgress >= 100 ? '已清洁待命' : monitor.sortingProgress > 0 ? '处理中' : '待接收'
   monitor.sortingSummary = {
     waiting: monitor.sortingProgress > 0 ? 0 : 1,
     cleaning: monitor.sortingProgress > 0 && monitor.sortingProgress < 100 ? 1 : 0,
@@ -1905,6 +2110,27 @@ function updateSortingCenterState(elapsed) {
       desc: '备用池可调度，满足下一次补位任务'
     }
   ]
+}
+
+function jumpToSortingStage(step) {
+  if (!monitor.active || monitor.scene !== 'sorting' || !step) return
+  sortingManualOffsetMs = step.at
+  sortingManualAnchorAt = Date.now()
+  sortingManualPlaybackActive.value = true
+  updateSortingCenterState(0)
+  ensureSortingProgressTimer()
+  nextTick(() => syncSortingMasterVideo(true))
+  setStatus(`分拣中心已切换至：${step.label}`, 'ok')
+}
+
+function jumpToSortingVisualStage(visualKey) {
+  const stageKey = {
+    intake: 'arrive',
+    washing: 'wash',
+    inspection: 'battery'
+  }[visualKey]
+  const stage = SORTING_OPERATION_STEPS.find(item => item.key === stageKey)
+  if (stage) jumpToSortingStage(stage)
 }
 
 function setDispatchStage(nextStage) {
@@ -2019,7 +2245,25 @@ function startRiskMonitor() {
   updateRiskMonitor()
 }
 
+function handleRefreshTap() {
+  if (monitor.active) {
+    setStatus('监测进行中，已暂停刷新清运数据', 'warn')
+    uni.showToast({ title: '监测进行中，已暂停刷新', icon: 'none' })
+    return
+  }
+  doRefresh()
+}
+
+function toggleRiskMonitor() {
+  if (monitor.active && monitor.scene === 'telemetry') {
+    exitMonitor()
+    return
+  }
+  startRiskMonitor()
+}
+
 async function startDispatchMonitor() {
+  const requestRevision = ++monitorRequestRevision
   clearMonitorTimer()
   ensureMonitorBackup()
   restoreMonitorBase()
@@ -2028,6 +2272,9 @@ async function startDispatchMonitor() {
   monitor.active = true
   monitor.completed = false
   monitor.scene = 'dispatch'
+  sortingManualAnchorAt = 0
+  sortingManualOffsetMs = 0
+  sortingManualPlaybackActive.value = false
   monitor.binId = dispatchTarget.id
   monitor.pointCode = dispatchTarget.pointCode || dispatchTarget.name
   monitor.pointName = dispatchTarget.pointName || dispatchTarget.name
@@ -2097,6 +2344,7 @@ async function startDispatchMonitor() {
     startDispatchMapAnimation()
     // #endif
   } catch (error) {
+    if (requestRevision !== monitorRequestRevision || !monitor.active || monitor.scene !== 'dispatch') return
     monitor.returnRoute = TENCENT_ROUTE_SNAPSHOT.returnRoute.polyline
     monitor.replaceRoute = TENCENT_ROUTE_SNAPSHOT.replacementRoute.polyline
     monitor.routeAvailable = true
@@ -2119,10 +2367,14 @@ async function startDispatchMonitor() {
 }
 
 function exitMonitor() {
+  monitorRequestRevision += 1
   clearMonitorTimer()
   monitor.active = false
   monitor.completed = false
   monitor.scene = ''
+  sortingManualAnchorAt = 0
+  sortingManualOffsetMs = 0
+  sortingManualPlaybackActive.value = false
   if (_state.monitorBackup) {
     _state.bins = JSON.parse(JSON.stringify(_state.monitorBackup.bins))
     _state.plan = JSON.parse(JSON.stringify(_state.monitorBackup.plan))
@@ -2134,18 +2386,34 @@ function exitMonitor() {
   setStatus('已返回实时清运总览', 'ok')
 }
 
-function openSortingCenterMonitor() {
+function toggleDispatchMonitor() {
+  if (monitor.active && monitor.scene === 'dispatch') {
+    exitMonitor()
+    return
+  }
+  startDispatchMonitor()
+}
+
+async function openSortingCenterMonitor() {
+  // The sorting view needs a return/replacement task context. Create it when
+  // users open the progress view directly, rather than hiding the entry.
+  if (!monitor.active || monitor.scene === 'telemetry') {
+    await startDispatchMonitor()
+  }
   if (!monitor.active) return
   monitor.previousScene = monitor.scene || 'dispatch'
   monitor.scene = 'sorting'
   updateSortingCenterState(Date.now() - monitorStartedAt)
-  if (!monitorTimer && monitor.sortingProgress < 100) {
-    monitorTimer = setInterval(() => {
-      updateSortingCenterState(Date.now() - monitorStartedAt)
-      if (monitor.sortingProgress >= 100) clearMonitorTimer()
-    }, 250)
-  }
+  ensureSortingProgressTimer()
   setStatus('分拣中心进度：返航桶清洗与备用池状态同步中', 'warn')
+}
+
+function ensureSortingProgressTimer() {
+  if (monitorTimer || monitor.sortingProgress >= 100) return
+  monitorTimer = setInterval(() => {
+    updateSortingCenterState(Date.now() - monitorStartedAt)
+    if (monitor.sortingProgress >= 100) clearMonitorTimer()
+  }, 80)
 }
 
 function backToDispatchMonitor() {
@@ -2185,12 +2453,6 @@ function openNav(url) {
   // #ifndef H5
   uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(url)}` })
   // #endif
-}
-function goToCommunity() {
-  jumpToAdminPage('communityDashboard', { from: 'collectionDashboard' })
-}
-function goToDigitalTwinReplay() {
-  jumpToAdminPage('digitalTwinReplay', { from: 'collectionDashboard' })
 }
 function goBack() {
   goBackFromAdminPage('collectionDashboard')
@@ -2257,6 +2519,7 @@ async function initH5Map() {
 
 // ─── 生命周期 ──────────────────────────────────────────
 onMounted(async () => {
+  if (!await ensureAdminScreenAccess('collectionDashboard')) return
   const mode = applyStoredTheme()
   isLightTheme.value = mode === 'light'
   unbindThemeWatcher = bindThemeStorageSync()
@@ -2299,6 +2562,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   clearMonitorTimer()
+  pauseSortingMasterVideo(true)
   if (clockTimer) clearInterval(clockTimer)
   if (refreshTimer) clearInterval(refreshTimer)
   if (faultRefreshTimer) clearInterval(faultRefreshTimer)
@@ -2364,12 +2628,41 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 }
 
 /* ===== 顶部 ===== */
-.screen .top { padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+.screen .top { position: relative; z-index: 100; overflow: visible; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
 .screen .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: nowrap; }
-.screen .title { font-size: 26px; font-weight: 700; letter-spacing: 2px; text-shadow: 0 0 18px rgba(36,217,255,.4); }
+.screen .title { font-size: clamp(20px, 1.35vw, 26px); font-weight: 700; letter-spacing: 1px; text-shadow: 0 0 18px rgba(36,217,255,.4); }
 .screen .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.screen .compact-status { display: none; }
 .screen .actions { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; min-width: 0; }
 .screen .actions > * { flex-shrink: 0; }
+
+@media (max-width: 1600px) {
+  .screen .title { white-space: nowrap; }
+
+  .screen .sub {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 1440px) {
+  .screen .row > view:first-child {
+    flex: 0 0 210px;
+    min-width: 0;
+  }
+
+  .screen .sub { display: flex; align-items: center; gap: 5px; overflow: visible; }
+  .screen .sub-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .screen .compact-status { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; color: #a7c9d8; font-size: 10px; white-space: nowrap; }
+  .screen .compact-status::before { width: 5px; height: 5px; border-radius: 50%; background: #79a6b9; content: ''; }
+  .screen .compact-status.ok { color: #9cf8cf; }.screen .compact-status.ok::before { background: #28cd89; }
+  .screen .compact-status.warn { color: #ffe6a7; }.screen .compact-status.warn::before { background: #f5b548; }
+  .screen .compact-status.err { color: #ffd0d2; }.screen .compact-status.err::before { background: #ff6971; }
+  .screen .status { display: none; }
+  .screen .clock { min-width: 120px; padding: 5px 8px; font-size: 18px; }
+  .screen .strategy-btn { padding: 5px 6px; font-size: 11px; }
+  .screen .btn { padding: 7px 8px; font-size: 11px; }
+}
 .screen .clock {
   font-size: 20px; min-width: 150px; text-align: center;
   padding: 6px 10px; border: 1px solid rgba(132,212,255,.4);
@@ -2402,32 +2695,25 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 
 /* ===== 按钮 ===== */
 .screen .btn {
-  border-radius: 10px; padding: 8px 12px; color: #fff;
-  font-size: 12px; display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; min-height: var(--admin-screen-control-height, 36px); height: var(--admin-screen-control-height, 36px);
+  border-radius: var(--admin-screen-control-radius, 8px); padding: 0 12px; color: #d9eff9;
+  font-size: var(--admin-screen-control-font-size, 13px); font-weight: var(--admin-screen-control-font-weight, 650); display: inline-flex; align-items: center; justify-content: center;
   flex-wrap: nowrap; white-space: nowrap;
 }
-.screen .btn.blue { background: linear-gradient(135deg, #2378e7, #42abff); }
-.screen .btn.ghost { background: rgba(255,255,255,.12); border: 1px solid rgba(151,217,255,.3); }
-.screen .btn.feature-btn {
-  border: 1px solid rgba(83,245,211,.48);
-  background: linear-gradient(135deg, rgba(18,151,131,.9), rgba(39,111,232,.92));
-  box-shadow: 0 0 18px rgba(36,217,255,.18);
-  gap: 6px;
-}
-.screen .btn.feature-btn.active {
-  border-color: rgba(255,202,88,.8);
-  box-shadow: 0 0 20px rgba(255,182,72,.28);
-}
+.screen .btn.blue { border: 1px solid rgba(91, 178, 255, .9); background: linear-gradient(135deg, #2479e8, #42abff); color: #fff; box-shadow: 0 5px 14px rgba(44,143,255,.28); }
+.screen .btn.blue.is-disabled { cursor: not-allowed; opacity: .52; filter: saturate(.55); box-shadow: none; }
+.screen .btn.ghost { border: 1px solid rgba(151,217,255,.38); background: rgba(8,39,58,.42); }
+.screen .btn.monitor-chip { min-height: 32px; height: 32px; padding: 0 10px; border: 1px solid rgba(93, 203, 231, .42); border-radius: 999px; background: rgba(18, 77, 96, .55); color: #bfeaf7; box-shadow: none; gap: 6px; }
+.screen .btn.monitor-chip.active { border-color: rgba(77, 185, 255, .9); background: rgba(33, 110, 184, .52); color: #fff; box-shadow: inset 0 0 0 1px rgba(108, 210, 255, .12); }
 .screen .feature-icon {
   width: 17px; height: 17px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,.16); font-size: 11px; font-weight: 700;
 }
-.screen .nav-link-btn { gap: 6px; }
 .screen .fault-btn {
   position: relative; gap: 6px;
   border: 1px solid rgba(255,126,105,.55);
-  background: linear-gradient(135deg, rgba(135,45,48,.92), rgba(196,82,53,.88));
+  background: rgba(116, 46, 52, .52);
 }
 .screen .fault-badge {
   min-width: 17px; height: 17px; padding: 0 4px; border-radius: 99px;
@@ -2831,13 +3117,30 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .twin-sub { margin-top: 3px; font-size: 9px; color: #7195a9; }
 .screen .twin-toolbar-status { display: flex; align-items: center; gap: 13px; }
 .screen .twin-state-tabs { display: flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid rgba(89,172,214,.2); border-radius: 7px; background: rgba(4,20,32,.68); }
-.screen .twin-state-tabs text { padding: 3px 7px; border-radius: 5px; color: #66899b; font-size: 8px; transition: color .35s, background .35s, box-shadow .35s; }
+.screen .twin-state-tabs text { padding: 3px 7px; border-radius: 5px; color: #66899b; font-size: 8px; cursor: pointer; transition: color .2s, background .2s, box-shadow .2s, transform .2s; }
+.screen .twin-state-tabs text:hover { color: #c9f8ff; background: rgba(40,204,235,.1); }
+.screen .twin-state-tabs text:active { transform: scale(.94); }
 .screen .twin-state-tabs text.active { color: #eaffff; background: rgba(40,204,235,.18); box-shadow: inset 0 0 0 1px rgba(53,221,255,.26); }
 .screen .twin-online { display: flex; align-items: center; gap: 6px; font-size: 9px; color: #66e9c0; }
 .screen .twin-online text { width: 6px; height: 6px; border-radius: 50%; background: #2de6a6; box-shadow: 0 0 9px rgba(45,230,166,.8); }
 .screen .twin-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; background: radial-gradient(circle at 50% 48%, rgba(18,93,130,.12), transparent 58%), #041522; }
 .screen .twin-image { position: absolute; inset: 2% 2% 5%; width: 96%; height: 93%; opacity: 0; transform: scale(1.018); filter: saturate(.9) brightness(.84); transition: opacity .8s ease, filter .8s ease; will-change: opacity, filter; }
 .screen .twin-image.active { opacity: 1; filter: saturate(1.05) brightness(1); }
+.screen .sorting-stage-video-layer { position: absolute; z-index: 4; inset: 0; overflow: hidden; opacity: 0; transition: opacity .5s cubic-bezier(.22,.8,.24,1); pointer-events: none; will-change: opacity; }
+.screen .sorting-stage-video-layer.active { opacity: 1; }
+.screen .sorting-stage-video-backdrop { position: absolute; inset: -7%; width: 114%; height: 114%; opacity: .7; filter: blur(22px) saturate(.9) brightness(.38); transform: scale(1.04); }
+.screen .sorting-stage-video { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; opacity: 0; background: transparent; object-fit: contain; transition: opacity .22s ease-in-out; will-change: opacity; }
+.screen .sorting-stage-video.active { opacity: 1; }
+.screen .sorting-stage-video video { object-fit: contain !important; }
+.screen .sorting-video-tone { position: absolute; z-index: 2; inset: 0; background: linear-gradient(90deg, rgba(2,17,29,.48), transparent 18%, transparent 82%, rgba(2,16,27,.48)), linear-gradient(0deg, rgba(2,16,27,.58), transparent 27%, rgba(3,20,32,.14)); box-shadow: inset 0 0 48px rgba(0,10,18,.5); }
+.screen .sorting-video-info { position: absolute; z-index: 3; width: 34%; min-width: 180px; padding: 9px 11px; box-sizing: border-box; border: 1px solid rgba(83,219,255,.58); border-radius: 9px; color: #eafaff; background: linear-gradient(135deg, rgba(4,31,47,.98), rgba(5,51,66,.96)); box-shadow: 0 8px 22px rgba(0,8,15,.42), inset 3px 0 #37d8f4; backdrop-filter: blur(8px); }
+.screen .sorting-video-info.top-left { left: 6%; top: 5%; }
+.screen .sorting-video-info.bottom-right { right: 6%; bottom: 8%; border-color: rgba(84,231,177,.52); box-shadow: 0 8px 22px rgba(0,8,15,.42), inset 3px 0 #4ee5aa; }
+.screen .sorting-video-info small, .screen .sorting-video-info b, .screen .sorting-video-info text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.screen .sorting-video-info small { color: #69dff7; font-size: 8px; }
+.screen .sorting-video-info b { margin-top: 4px; color: #fff; font-size: 12px; }
+.screen .sorting-video-info text { margin-top: 4px; color: #9fc6d5; font-size: 8px; }
+.screen .sorting-video-info.bottom-right small { color: #71eab9; }
 .screen .operation-layer { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
 .screen .workpiece { position: absolute; display: flex; align-items: center; gap: 6px; transform: translate(-50%, -50%); transition: left .8s cubic-bezier(.22,.8,.24,1), top .8s cubic-bezier(.22,.8,.24,1); }
 .screen .workpiece b { padding: 3px 6px; border: 1px solid rgba(100,229,255,.72); border-radius: 5px; color: #e8fbff; font-size: 8px; font-weight: 700; background: rgba(3,25,39,.9); box-shadow: 0 0 13px rgba(42,212,245,.24); }
@@ -2846,7 +3149,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .workpiece-bin text { position: absolute; bottom: -4px; width: 4px; height: 4px; border-radius: 50%; background: #b5f5ff; }
 .screen .workpiece-bin text:first-child { left: 1px; }
 .screen .workpiece-bin text:last-child { right: 1px; }
-.screen .weigh-operation, .screen .wash-operation, .screen .dry-operation, .screen .check-operation, .screen .pool-operation { position: absolute; opacity: 0; transition: opacity .25s; }
+.screen .weigh-operation, .screen .wash-operation, .screen .dry-operation, .screen .charge-operation, .screen .check-operation, .screen .pool-operation { position: absolute; opacity: 0; transition: opacity .25s; }
 .screen .weigh-operation { left: 14%; top: 65%; width: 19%; height: 7%; text-align: center; }
 .screen .weigh-deck { height: 3px; border-radius: 50%; background: #42dfff; box-shadow: 0 0 13px rgba(66,223,255,.8); }
 .screen .weigh-operation text { display: inline-block; margin-top: 5px; padding: 2px 5px; border-radius: 4px; color: #bff5ff; font-size: 8px; background: rgba(3,24,38,.86); }
@@ -2863,6 +3166,11 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .dry-operation text { color: #ffd39b; font-size: 8px; }
 .screen .stage-dry .dry-operation { opacity: 1; }
 .screen .stage-dry .dry-operation view { animation: dryFan .75s linear infinite; }
+.screen .charge-operation { left: 61%; top: 49%; width: 16%; height: 16%; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.screen .charge-operation view { width: 31px; height: 15px; border: 2px solid rgba(85,240,183,.82); border-radius: 4px; box-shadow: inset 0 0 0 4px rgba(85,240,183,.16), 0 0 12px rgba(85,240,183,.36); }
+.screen .charge-operation text { color: #aef7d7; font-size: 8px; }
+.screen .stage-charge .charge-operation { opacity: 1; }
+.screen .stage-charge .charge-operation view { animation: chargePulse 1.1s ease-in-out infinite alternate; }
 .screen .check-operation { left: 64%; top: 45%; width: 14%; height: 24%; overflow: hidden; border: 1px solid rgba(74,236,178,.36); border-radius: 5px; }
 .screen .check-operation view { position: absolute; left: 5%; right: 5%; top: 0; height: 2px; background: #55f0b7; box-shadow: 0 0 9px rgba(85,240,183,.9); }
 .screen .check-operation text { position: absolute; right: 4px; bottom: 3px; color: #aef7d7; font-size: 8px; }
@@ -2881,7 +3189,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .zone-wash { left: 35%; top: 32%; }
 .screen .zone-check { left: 64%; top: 38%; }
 .screen .zone-pool { right: 5%; top: 57%; }
-.screen .twin-flow { position: absolute; z-index: 3; left: 16px; right: 16px; bottom: 13px; height: 35px; padding: 0 11px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(77,174,218,.24); border-radius: 8px; background: rgba(4,21,34,.88); color: #759bad; font-size: 9px; }
+.screen .twin-flow { position: absolute; z-index: 8; left: 16px; right: 16px; bottom: 13px; height: 35px; padding: 0 11px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(77,174,218,.24); border-radius: 8px; background: rgba(4,21,34,.92); color: #759bad; font-size: 9px; }
 .screen .twin-flow b { color: #d5f6ff; font-size: 10px; font-weight: 650; white-space: nowrap; }
 .screen .flow-line { position: relative; flex: 1; height: 2px; overflow: visible; border-radius: 2px; background: rgba(61,116,139,.35); }
 .screen .flow-progress { position: absolute; inset: 0 auto 0 0; max-width: 100%; border-radius: inherit; background: #35dfff; box-shadow: 0 0 8px rgba(53,223,255,.55); transition: width .25s linear; }
@@ -2902,8 +3210,11 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .sorting-progress, .screen .sorting-queue {
   min-height: 0; padding: 13px; border-radius: 13px; border: 1px solid rgba(123,202,255,.2); background: rgba(6,24,38,.78); display: flex; flex-direction: column; gap: 11px;
 }
-.screen .sorting-line { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; padding: 7px 1px 2px; }
+.screen .sorting-line { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; padding: 7px 1px 2px; }
 .screen .sorting-step { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; color: #668798; }
+.screen .sorting-step.clickable { cursor: pointer; }
+.screen .sorting-step.clickable:hover .sorting-step-node { border-color: #62e7ff; box-shadow: 0 0 0 4px #061826, 0 0 15px rgba(79,221,255,.32); }
+.screen .sorting-step.clickable:active { transform: translateY(1px); }
 .screen .sorting-step:not(:last-child)::after { content: ''; position: absolute; top: 13px; left: calc(50% + 13px); right: calc(-50% + 13px); height: 1px; background: #29495b; }
 .screen .sorting-step.done:not(:last-child)::after { background: #24c9e8; }
 .screen .sorting-step-node { position: relative; z-index: 2; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: 1px solid #35596c; border-radius: 50%; background: #0a2638; box-shadow: 0 0 0 4px #061826; }
@@ -2931,6 +3242,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 @keyframes weighDeck { 0%,100% { transform: translateY(0); } 50% { transform: translateY(2px); } }
 @keyframes washJet { from { transform: scaleY(.72); opacity: .58; } to { transform: scaleY(1); opacity: 1; } }
 @keyframes dryFan { to { transform: rotate(360deg); } }
+@keyframes chargePulse { from { filter: brightness(.72); transform: scale(.96); } to { filter: brightness(1.18); transform: scale(1.03); } }
 @keyframes checkScan { 0%,100% { top: 2%; opacity: .45; } 50% { top: calc(100% - 3px); opacity: 1; } }
 @keyframes poolRelease { from { transform: translateX(-10px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
@@ -2941,7 +3253,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .screen .zone-tag.active .zone-pulse, .screen .stage-weigh .weigh-deck, .screen .stage-wash .wash-operation text, .screen .stage-dry .dry-operation view, .screen .stage-battery .check-operation view, .screen .stage-ready .pool-operation { animation: none; }
+  .screen .zone-tag.active .zone-pulse, .screen .stage-weigh .weigh-deck, .screen .stage-wash .wash-operation text, .screen .stage-dry .dry-operation view, .screen .stage-charge .charge-operation view, .screen .stage-battery .check-operation view, .screen .stage-ready .pool-operation { animation: none; }
 }
 
 /* ===== 故障处理抽屉 ===== */
@@ -2993,6 +3305,11 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .fault-action.manual { background: rgba(123,74,180,.4); border-color: rgba(188,125,246,.4); }
 .screen .fault-action.resolve { background: rgba(25,139,95,.4); border-color: rgba(47,209,143,.4); }
 
+@media (max-width: 900px) and (min-width: 769px) {
+  .screen .row { flex-wrap: wrap; align-items: flex-start; }
+  .screen .row > view:first-child { flex: 1 0 100%; }
+}
+
 /* ===== 手机端适配（≤768px） ===== */
 @media (max-width: 768px) {
   .screen {
@@ -3004,6 +3321,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   }
   .screen .top { padding: 8px 10px; }
   .screen .row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .screen .row > view:first-child { flex: none; width: 100%; }
   .screen .title { font-size: 18px; letter-spacing: 0.5px; }
   .screen .actions { width: 100%; gap: 6px; flex-wrap: wrap; }
   .screen .clock { font-size: 14px; min-width: unset; flex: 1; padding: 5px 8px; }

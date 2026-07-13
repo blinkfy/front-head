@@ -54,7 +54,9 @@ export function redirectToNoPermission(options = {}) {
   if (reason) params.reason = reason
   const qs = buildQueryString(params)
   const url = qs ? '/pages-nonTheme/no-permission?' + qs : '/pages-nonTheme/no-permission'
-  uni.navigateTo({ url })
+  // Replace the denied route so the no-permission page cannot navigate back
+  // into the same protected page and create a 403 loop.
+  uni.redirectTo({ url })
 }
 
 export function redirectIfAccessDenied(payload, response, options = {}) {
@@ -70,6 +72,11 @@ export function redirectIfAccessDenied(payload, response, options = {}) {
 function getCurrentPath() {
   // H5 environment
   if (typeof window !== 'undefined' && window.location && window.location.pathname) {
+    const hash = String(window.location.hash || '')
+    if (hash.startsWith('#/')) {
+      const hashPath = hash.slice(1).split('?')[0]
+      if (hashPath) return hashPath
+    }
     return window.location.pathname
   }
 

@@ -1,13 +1,13 @@
 <template>
   <view class="analytics-panel panel">
     <view class="analytics-head">
-      <view><text>场景算法解释</text><small>{{ scenarioLabel }}</small></view>
+      <view><text>{{ panelTitle }}</text><small>{{ panelSubtitle }}</small></view>
       <view class="analytics-tags"><b>算法说明</b></view>
     </view>
     <view class="metric-grid">
-      <view><small>当前区域</small><b>{{ currentArea }}</b></view>
-      <view><small>人流数量</small><b>{{ visitorCount }}</b></view>
-      <view><small>垃圾增长率</small><b>{{ growthRate }}</b></view>
+      <view><small>{{ primaryMetricLabel }}</small><b>{{ primaryMetricValue }}</b></view>
+      <view><small>{{ secondaryMetricLabel }}</small><b>{{ secondaryMetricValue }}</b></view>
+      <view><small>{{ riskTrace ? '容量增长率' : '垃圾增长率' }}</small><b>{{ growthRate }}</b></view>
       <view><small>当前填充率</small><b>{{ fillPct }}</b><em v-if="fillSource">{{ fillSource }}</em></view>
       <view><small>预测填充率</small><b>{{ predictedFill }}</b></view>
       <view><small>预计满载</small><b>{{ eta }}</b></view>
@@ -16,7 +16,7 @@
     <view v-if="prediction" class="prediction-block">
       <view class="prediction-title">
         <text>填充率预测曲线</text>
-        <b :class="riskTone">{{ prediction.riskLevel || '—' }}</b>
+        <b :class="riskTone">{{ riskLabel }}</b>
       </view>
       <!-- #ifdef H5 -->
       <svg class="prediction-chart" viewBox="0 0 260 76" preserveAspectRatio="none">
@@ -54,7 +54,29 @@ const props = defineProps({
 
 const scenarioLabels = { baseline: '正常闭环', daily: '公园日常', peak: '高峰预测', blocked: '道路受阻' }
 const scenarioLabel = computed(() => scenarioLabels[props.scenario] || props.scenario)
-const prediction = computed(() => props.state.prediction || null)
+const trace = computed(() => {
+  const value = props.currentEvent?.payload?.decisionTrace
+  return Array.isArray(value) ? value[0] || null : value || null
+})
+const riskTrace = computed(() => ['FILL_RISK_ASSESSMENT', 'RETURN_TASK_PRIORITY'].includes(trace.value?.decisionType))
+const riskResult = computed(() => trace.value?.predictionResult || props.currentEvent?.payload?.predictionResult || null)
+const prediction = computed(() => {
+  if (!riskTrace.value || !riskResult.value) return props.state.prediction || null
+  return {
+    historical: (riskResult.value.inputWindow || []).map((item) => ({ value: item.fillLevel, timestamp: item.timestamp })),
+    forecast: riskResult.value.forecastSeries || [],
+    currentFillPct: riskResult.value.currentFillPct,
+    predictedFillPct: riskResult.value.predictedFillPct,
+    etaMinutes: riskResult.value.hoursToFull == null ? null : Math.round(riskResult.value.hoursToFull * 60),
+    riskLevel: riskResult.value.riskLevel,
+    source: props.currentEvent?.source
+  }
+})
+const panelTitle = computed(() => riskTrace.value ? '容量风险解释' : '场景算法解释')
+const panelSubtitle = computed(() => riskTrace.value
+  ? (props.currentEvent?.payload?.deviceId || trace.value?.selectedEntityId || '当前智能桶') : scenarioLabel.value)
+const riskSelectedCandidate = computed(() => (trace.value?.candidates || [])
+  .find((candidate) => candidate.entityId === trace.value?.selectedEntityId) || null)
 const currentArea = computed(() => {
   const explicit = props.state.currentArea || props.currentEvent?.payload?.zoneId
   if (explicit) return zoneLabel(explicit)
@@ -69,17 +91,29 @@ const visitorCount = computed(() => {
   const value = props.currentEvent?.payload?.crowdCount ?? explicit ?? areaCount ?? props.currentEvent?.payload?.visitorCount ?? visitorSnapshotCount
   return scenarioMetricText(value, value == null ? '' : ' 人')
 })
-const growthRate = computed(() => scenarioMetricText(props.state.garbageGenerationRateItemsPerHour, ' 件/h'))
-const fillPct = computed(() => scenarioMetricText(props.state.capacity?.currentFillPct ?? prediction.value?.currentFillPct, '%'))
+const servicePointLabels = Object.freeze({ service_food_01: '餐饮休息区', service_rest_01: '步道休息区' })
+const primaryMetricLabel = computed(() => riskTrace.value ? '关联服务点' : '当前区域')
+const primaryMetricValue = computed(() => riskTrace.value
+  ? (servicePointLabels[riskSelectedCandidate.value?.servicePointId] || riskSelectedCandidate.value?.servicePointId || '—') : currentArea.value)
+const secondaryMetricLabel = computed(() => riskTrace.value ? '点位等级' : '人流数量')
+const secondaryMetricValue = computed(() => riskTrace.value
+  ? (riskSelectedCandidate.value?.servicePointPriority ?? '—') : visitorCount.value)
+const growthRate = computed(() => riskTrace.value
+  ? scenarioMetricText(riskResult.value?.growthRatePctPerHour, '%/h')
+  : scenarioMetricText(props.state.garbageGenerationRateItemsPerHour, ' 件/h'))
+const fillPct = computed(() => scenarioMetricText(riskResult.value?.currentFillPct ?? props.state.capacity?.currentFillPct ?? prediction.value?.currentFillPct, '%'))
 const fillSource = computed(() => props.state.capacity?.currentFillPct == null ? '' : `${displaySourceLabel(props.state.capacity.source)} · ${props.state.capacity.sourceEventType}`)
 const predictedFill = computed(() => scenarioMetricText(prediction.value?.predictedFillPct, '%'))
 const eta = computed(() => scenarioMetricText(prediction.value?.etaMinutes, ' 分钟'))
 const riskTone = computed(() => String(prediction.value?.riskLevel || '').toLowerCase())
+const riskLabel = computed(() => ({ URGENT: '需要处置', NORMAL: '正常关注', HIGH: '高风险', MEDIUM: '中风险', LOW: '低风险' })[prediction.value?.riskLevel]
+  || prediction.value?.riskLevel || '—')
 const routeReason = computed(() => {
   const reason = props.state.route?.reason || ''
   return ({ TEMPORARY_CROWD_BLOCKS_RETURN_ROUTE: '临时人群聚集阻断原返航路线' })[reason] || reason
 })
 const activityReason = computed(() => {
+  if (riskTrace.value) return trace.value?.selectedReason || '容量变化已完成风险评估。'
   if (props.currentEvent?.eventType === 'ACTIVE_DISPOSAL') return '游客主动投放，行为事件不直接修改设备业务状态。'
   if (props.currentEvent?.eventType === 'LITTER_CREATED') return '散落垃圾由回放事件触发后续机器人任务。'
   if (props.currentEvent?.eventType === 'CROWD_FLOW_UPDATED') {

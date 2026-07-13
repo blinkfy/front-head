@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 3,
+  "coordinateSystem": {
+    "name": "park_normalized_percent",
+    "origin": "top_left",
+    "xRange": [0, 100],
+    "yRange": [0, 100],
+    "logicalWidth": 1672,
+    "logicalHeight": 941,
+    "mapping": "pixelX=xPct/100*1672; pixelY=yPct/100*941",
+    "renderMode": "contain",
+    "crop": false
+  },
+  "background": {
+    "width": 1672,
+    "height": 941,
+    "formalPath": "/static/digital-twin-replay/park-overview-user-layout-v1.png",
+    "formalSha256": "f82fb175fdd8c358ef6a58f6faae1576d4a45cc307988005e6bb44a25bd5abf0",
+    "formalStatus": "active_user_provided",
+    "roadSkeletonPath": "/static/digital-twin-replay/park-road-overlay.svg"
+  },
+  "previousCandidates": [
+    {
+      "id": "PARK-BG-CANDIDATE-V4",
+      "path": "/static/digital-twin-replay/park-background/candidates/park-overview-road-network-orthographic-2_5d-candidate-v4.png",
+      "status": "superseded_candidate_archive",
+      "usage": "not_for_display"
+    },
+    {
+      "id": "PARK-BG-CANDIDATE-V3",
+      "path": "/static/digital-twin-replay/park-background/candidates/park-overview-orthographic-2_5d-daylight-candidate-v3.png",
+      "status": "candidate_alignment_review",
+      "usage": "material_lighting_vegetation_reference_only"
+    }
+  ],
+  "anchors": {
+    "parkEntrance": { "positionPct": [48.1, 87.5], "pixel": [804, 823], "source": "visible_south_gate" },
+    "centerEntry": { "positionPct": [31.5, 22.5], "pixel": [527, 212], "source": "visible_center_access" },
+    "serviceFood": { "positionPct": [64, 48], "pixel": [1070, 452], "source": "road_network_node:route_food" },
+    "serviceRest": { "positionPct": [31.5, 61.5], "pixel": [527, 579], "source": "road_network_node:route_rest" },
+    "standbyArea": { "positionPct": [27.8, 20.5], "pixel": [465, 193], "source": "road_network_node:center_standby_01" },
+    "centerFacility": { "positionPct": [24, 16], "pixel": [401, 151], "source": "visible_operations_center" },
+    "centerBay01": { "positionPct": [21.2, 17.5], "pixel": [354, 165], "source": "road_network_node:center_bay_01" },
+    "centerBay02": { "positionPct": [24, 17.5], "pixel": [401, 165], "source": "road_network_node:center_bay_02" }
+  },
+  "objectCoordinateReferences": {
+    "robotPatrol01": [48, 66.5],
+    "robotPatrol02": [40, 61.5],
+    "serviceFood01": [64, 48],
+    "serviceRest01": [31.5, 61.5],
+    "standbyBin01": [27.8, 20.5],
+    "standbyBin02": [29.6, 20.5],
+    "centerUnloadStation": [20.5, 20.5],
+    "centerCleanStation": [23, 20.5],
+    "centerChargeStation": [25.5, 20.5]
+  },
+  "candidateEvaluation": {
+    "sameNativeSize": true,
+    "isCanvasAspectMatched": true,
+    "renderMode": "contain",
+    "horizontalCrop": false,
+    "anchorTopology": "user_background_visible_roads",
+    "anchorChecks": {
+      "parkEntrance": { "expectedPct": [48.1, 87.5], "observedPct": [48.1, 87.5], "errorPct": 0, "result": "pass" },
+      "centerEntry": { "expectedPct": [31.5, 22.5], "observedPct": [31.5, 22.5], "errorPct": 0, "result": "pass" },
+      "serviceFood": { "expectedPct": [64, 48], "observedPct": [64, 48], "errorPct": 0, "result": "pass" },
+      "serviceRest": { "expectedPct": [31.5, 61.5], "observedPct": [31.5, 61.5], "errorPct": 0, "result": "pass" },
+      "standbyArea": { "expectedPct": [27.8, 20.5], "observedPct": [27.8, 20.5], "errorPct": 0, "result": "pass" }
+    },
+    "routeAlignment": "abstracted_from_visible_paving_and_center_lane",
+    "camera": "fixed_oblique_aerial_user_source",
+    "formalRegistration": true,
+    "reason": "采用用户提供的公园图作为正式底图，并以图中可见铺装和中心车道重新校准路网。"
+  }
+}

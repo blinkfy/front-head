@@ -929,8 +929,8 @@ export default {
 .safe-area-top { height: env(safe-area-inset-top); min-height: 44rpx; }
 .nav-content {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 24rpx 32rpx;
-  height: 88rpx; box-sizing: content-box;
+  padding: 0 32rpx;
+  height: 136rpx; box-sizing: border-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
 .dark-mode .back-icon { color: #fff; }
@@ -957,8 +957,13 @@ export default {
 .dark-mode .action-icon-btn { background: rgba(255, 255, 255, 0.15); }
 
 /* ===== 主内容区 ===== */
-.main-scroll { position: relative; z-index: 10; height: calc(100vh - env(safe-area-inset-top) - 88rpx); }
-.content-wrapper { padding: 32rpx; padding-bottom: 40rpx; }
+.main-scroll {
+  position: relative;
+  z-index: 10;
+  height: calc(100vh - 180rpx);
+  height: calc(100vh - max(env(safe-area-inset-top), 44rpx) - 136rpx);
+}
+.content-wrapper { padding: 32rpx; padding-bottom: calc(120rpx + env(safe-area-inset-bottom)); }
 
 /* ===== 区块通用样式 ===== */
 .section { margin-bottom: 32rpx; }
