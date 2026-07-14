@@ -209,7 +209,7 @@ export const SMART_BIN_CUTAWAY_RASTER_V3 = freeze({
       sourceSize: { width: 1254, height: 1254 },
       sourceBbox: [0, 0, 1254, 1254],
       order: 11,
-      reviewStatus: 'passed_downward_fold_kinematics'
+      reviewStatus: 'passed_downward_fold_kinematics_no_dynamic_mechanism'
     },
     carriageLift: {
       src: `${RASTER_V3_BASE}carriage-lift-v3.png`,

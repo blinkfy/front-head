@@ -239,7 +239,7 @@ async function loadWasteAdapter() {
     return
   }
   try {
-    const response = await fetch(props.wasteConfigSrc)
+    const response = await fetch(props.wasteConfigSrc, { cache: 'no-store' })
     if (!response.ok) throw new Error(`Waste adapter HTTP ${response.status}`)
     const config = await response.json()
     const adapter = resolveWasteAdapter(config)
@@ -377,6 +377,40 @@ function drawTaskObjectHeld(ctx, rotations, robotLeft, robotTop, robotScale) {
   ctx.restore()
 }
 
+const LEFT_ELBOW_SOCKET_RECT = [180, 263, 73, 39]
+const LEFT_ELBOW_CAP_RECT = [180, 289, 73, 59]
+const LEFT_JOINT_SOCKET_RECT = [168, 261, 82, 47]
+const LEFT_JOINT_CAP_RECT = [168, 289, 82, 59]
+
+function drawLeftElbowBridge(ctx, rotations, robotLeft, robotTop, robotScale) {
+  ctx.save()
+  ctx.translate(robotLeft, robotTop)
+  ctx.scale(robotScale, robotScale)
+  applyRotations(ctx, rotations)
+  ctx.translate(217, 318)
+  ctx.rotate(-.45)
+  const shellGradient = ctx.createLinearGradient(-30, -17, 28, 16)
+  shellGradient.addColorStop(0, 'rgba(246,248,248,.94)')
+  shellGradient.addColorStop(.42, 'rgba(203,208,209,.95)')
+  shellGradient.addColorStop(.72, 'rgba(132,139,142,.92)')
+  shellGradient.addColorStop(1, 'rgba(73,80,84,.86)')
+  ctx.fillStyle = shellGradient
+  ctx.beginPath()
+  ctx.ellipse(0, 0, 30, 19, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  const rimGradient = ctx.createLinearGradient(-24, -13, 22, 13)
+  rimGradient.addColorStop(0, 'rgba(255,255,255,.42)')
+  rimGradient.addColorStop(.48, 'rgba(255,255,255,.12)')
+  rimGradient.addColorStop(1, 'rgba(20,26,30,.3)')
+  ctx.strokeStyle = rimGradient
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.ellipse(0, 0, 28, 17, 0, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.restore()
+}
+
 function drawRobot(ctx, pose, width, height, groundY) {
   const robotHeight = height * .72
   const robotScale = robotHeight / rig.sourceSize.height
@@ -399,14 +433,17 @@ function drawRobot(ctx, pose, width, height, groundY) {
   drawLayer(ctx, 'rightLowerArmHand', [waist, rightShoulder, rightElbow], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'leftUpperArm', [waist, leftShoulder], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'leftLowerEmptyHand', leftLower, robotLeft, robotTop, robotScale)
+  drawLeftElbowBridge(ctx, leftLower, robotLeft, robotTop, robotScale)
   if (pose.holdBottle) {
     if (props.dynamicObject) drawTaskObjectHeld(ctx, leftLower, robotLeft, robotTop, robotScale)
     else drawLayer(ctx, 'bottle', leftLower, robotLeft, robotTop, robotScale)
   }
   drawLayer(ctx, 'rightShoulderCover', [waist], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'leftShoulderCover', [waist], robotLeft, robotTop, robotScale)
-  drawLayer(ctx, 'leftElbowCover', leftLower, robotLeft, robotTop, robotScale)
-  drawLayer(ctx, 'leftJointCleanup', leftLower, robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'leftElbowCover', [waist, leftShoulder], robotLeft, robotTop, robotScale, LEFT_ELBOW_SOCKET_RECT)
+  drawLayer(ctx, 'leftJointCleanup', [waist, leftShoulder], robotLeft, robotTop, robotScale, LEFT_JOINT_SOCKET_RECT)
+  drawLayer(ctx, 'leftElbowCover', leftLower, robotLeft, robotTop, robotScale, LEFT_ELBOW_CAP_RECT)
+  drawLayer(ctx, 'leftJointCleanup', leftLower, robotLeft, robotTop, robotScale, LEFT_JOINT_CAP_RECT)
   drawLayer(ctx, 'sockets', [waist], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'bodyRightCover', [waist], robotLeft, robotTop, robotScale)
   return { robotScale, robotX, robotTop }
@@ -564,12 +601,15 @@ function drawRobotActor(ctx, pose, geometry, drawObject) {
   drawLayer(ctx, 'rightLowerArmHand', [waist, rightShoulder, rightElbow], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'leftUpperArm', [waist, leftShoulder], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'leftLowerEmptyHand', leftLower, robotLeft, robotTop, robotScale)
+  drawLeftElbowBridge(ctx, leftLower, robotLeft, robotTop, robotScale)
   if (props.dynamicObject) drawObject?.()
   else if (pose.holdBottle) drawLayer(ctx, 'bottle', leftLower, robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'rightShoulderCover', [waist], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'leftShoulderCover', [waist], robotLeft, robotTop, robotScale)
-  drawLayer(ctx, 'leftElbowCover', leftLower, robotLeft, robotTop, robotScale)
-  drawLayer(ctx, 'leftJointCleanup', leftLower, robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'leftElbowCover', [waist, leftShoulder], robotLeft, robotTop, robotScale, LEFT_ELBOW_SOCKET_RECT)
+  drawLayer(ctx, 'leftJointCleanup', [waist, leftShoulder], robotLeft, robotTop, robotScale, LEFT_JOINT_SOCKET_RECT)
+  drawLayer(ctx, 'leftElbowCover', leftLower, robotLeft, robotTop, robotScale, LEFT_ELBOW_CAP_RECT)
+  drawLayer(ctx, 'leftJointCleanup', leftLower, robotLeft, robotTop, robotScale, LEFT_JOINT_CAP_RECT)
   drawLayer(ctx, 'sockets', [waist], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'bodyRightCover', [waist], robotLeft, robotTop, robotScale)
 }
@@ -620,22 +660,122 @@ function drawTaskObjectActor(ctx, state) {
   ctx.restore()
 }
 
-function drawGroundShadow(ctx, x, y, width, height, opacity) {
+const LOCAL_GROUND_SHADOW_PROFILES = {
+  robot: {
+    baseOpacity: .22,
+    widthScale: 1.66,
+    minHeightRatio: .32,
+    heightScale: 1.05,
+    offsetRatioX: .38,
+    offsetRatioY: -.02,
+    rotation: 24,
+    skew: -10,
+    blur: 6.2,
+    mainStops: [.84, .54, .24, .07],
+    secondaryStops: [.3, .1],
+    contactWidthRatio: .24,
+    contactHeightRatio: .04,
+    contactOffsetRatioX: .07,
+    contactBlur: 1.7,
+    contactStops: [.18, .06]
+  },
+  bin: {
+    baseOpacity: .2,
+    widthScale: 1.08,
+    minHeightRatio: .2,
+    heightScale: .95,
+    offsetRatioX: .22,
+    offsetRatioY: -.03,
+    rotation: 21,
+    skew: -8,
+    blur: 4.2,
+    mainStops: [.54, .31, .12, .04],
+    secondaryStops: [.2, .07],
+    contactWidthRatio: .3,
+    contactHeightRatio: .04,
+    contactOffsetRatioX: .055,
+    contactBlur: 1.5,
+    contactStops: [.2, .06]
+  },
+  waste: {
+    baseOpacity: .18,
+    widthScale: .86,
+    minHeightRatio: .24,
+    heightScale: .95,
+    offsetRatioX: .16,
+    offsetRatioY: -.04,
+    rotation: 22,
+    skew: -8,
+    blur: 3.4,
+    mainStops: [.36, .19, .07, .025],
+    secondaryStops: [.11, .04],
+    contactWidthRatio: .28,
+    contactHeightRatio: .07,
+    contactOffsetRatioX: .04,
+    contactBlur: 1.1,
+    contactStops: [.16, .045]
+  }
+}
+
+function drawGroundShadow(ctx, x, y, width, height, opacity, profileKey = 'robot') {
+  if (!opacity || opacity <= 0) return
   const localShadow = LOCAL_VISUAL.shadow
+  const profile = LOCAL_GROUND_SHADOW_PROFILES[profileKey] || LOCAL_GROUND_SHADOW_PROFILES.robot
+  const alphaScale = Math.max(0, Math.min(1, opacity / Math.max(.001, profile.baseOpacity)))
+  const shadowWidth = Math.max(1, width * profile.widthScale)
+  const shadowHeight = Math.max(1, height * profile.heightScale, width * profile.minHeightRatio)
+  const alpha = value => Math.max(0, Math.min(1, value * alphaScale))
+  const rotate = profile.rotation * Math.PI / 180
+  const skew = Math.tan(profile.skew * Math.PI / 180)
   ctx.save()
-  ctx.translate(x + localShadow.offsetX, y + localShadow.offsetY)
-  ctx.scale(Math.max(1, width / 2), Math.max(1, height / 2))
-  const gradient = ctx.createRadialGradient(-.18, -.18, .08, 0, 0, 1)
-  gradient.addColorStop(0, `rgba(0,17,29,${Math.min(.34, opacity * 1.2)})`)
-  gradient.addColorStop(.48, `rgba(0,17,29,${opacity})`)
-  gradient.addColorStop(1, 'rgba(0,17,29,0)')
-  ctx.fillStyle = gradient
-  ctx.beginPath(); ctx.ellipse(0, 0, 1, 1, -.22, 0, Math.PI * 2); ctx.fill()
+  ctx.translate(
+    x + localShadow.offsetX + width * profile.offsetRatioX,
+    y + localShadow.offsetY + height * profile.offsetRatioY
+  )
+  ctx.rotate(rotate)
+  ctx.transform(1, 0, skew, 1, 0, 0)
+  ctx.scale(shadowWidth / 2, shadowHeight / 2)
+  ctx.filter = `blur(${profile.blur}px)`
+  const mainGradient = ctx.createRadialGradient(-.56, -.12, .06, 0, 0, 1)
+  mainGradient.addColorStop(0, `rgba(0,12,20,${alpha(profile.mainStops[0])})`)
+  mainGradient.addColorStop(.3, `rgba(0,12,20,${alpha(profile.mainStops[1])})`)
+  mainGradient.addColorStop(.53, `rgba(0,12,20,${alpha(profile.mainStops[2])})`)
+  mainGradient.addColorStop(.68, `rgba(0,12,20,${alpha(profile.mainStops[3])})`)
+  mainGradient.addColorStop(.84, 'rgba(0,12,20,0)')
+  mainGradient.addColorStop(1, 'rgba(0,12,20,0)')
+  ctx.fillStyle = mainGradient
+  ctx.beginPath()
+  ctx.ellipse(0, 0, 1, 1, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  const secondaryGradient = ctx.createRadialGradient(.16, .08, .02, .16, .08, .78)
+  secondaryGradient.addColorStop(0, `rgba(0,12,20,${alpha(profile.secondaryStops[0])})`)
+  secondaryGradient.addColorStop(.38, `rgba(0,12,20,${alpha(profile.secondaryStops[1])})`)
+  secondaryGradient.addColorStop(.7, 'rgba(0,12,20,0)')
+  secondaryGradient.addColorStop(1, 'rgba(0,12,20,0)')
+  ctx.fillStyle = secondaryGradient
+  ctx.beginPath()
+  ctx.ellipse(0, 0, 1, 1, 0, 0, Math.PI * 2)
+  ctx.fill()
   ctx.restore()
+
   ctx.save()
-  ctx.globalAlpha = Math.min(localShadow.contactOpacity, opacity * 1.85)
-  ctx.fillStyle = localShadow.color
-  ctx.beginPath(); ctx.ellipse(x + 1, y + 1, Math.max(5, width * .17), Math.max(2, height * .12), 0, 0, Math.PI * 2); ctx.fill()
+  ctx.translate(x + width * profile.contactOffsetRatioX, y)
+  ctx.transform(1, 0, skew, 1, 0, 0)
+  ctx.scale(
+    Math.max(1, width * profile.contactWidthRatio / 2),
+    Math.max(1, width * profile.contactHeightRatio / 2)
+  )
+  ctx.filter = `blur(${profile.contactBlur}px)`
+  const contactGradient = ctx.createRadialGradient(0, 0, .03, 0, 0, 1)
+  contactGradient.addColorStop(0, `rgba(0,10,17,${alpha(profile.contactStops[0]) * Math.min(1, localShadow.contactOpacity / .44)})`)
+  contactGradient.addColorStop(.62, `rgba(0,10,17,${alpha(profile.contactStops[1])})`)
+  contactGradient.addColorStop(.82, 'rgba(0,10,17,0)')
+  contactGradient.addColorStop(1, 'rgba(0,10,17,0)')
+  ctx.fillStyle = contactGradient
+  ctx.beginPath()
+  ctx.ellipse(0, 0, 1, 1, 0, 0, Math.PI * 2)
+  ctx.fill()
   ctx.restore()
 }
 
@@ -928,8 +1068,8 @@ function drawScene(time = 0) {
   const objectState = resolveTaskObjectState(currentStage.value, rawProgress, shot, geometry, binGeometry)
   const showBinAlpha = shot.showBin ? 1 : 0
 
-  drawGroundShadow(ctx, robotPosition[0], robotPosition[1], geometry.visibleWidth * .9, 30, LOCAL_VISUAL.shadow.robotOpacity)
-  if (showBinAlpha > 0) drawGroundShadow(ctx, binPosition[0], binPosition[1], binGeometry.visibleWidth * .88, 26, LOCAL_VISUAL.shadow.binOpacity * showBinAlpha)
+  drawGroundShadow(ctx, robotPosition[0], robotPosition[1], geometry.visibleWidth * .9, 30, LOCAL_VISUAL.shadow.robotOpacity, 'robot')
+  if (showBinAlpha > 0) drawGroundShadow(ctx, binPosition[0], binPosition[1], binGeometry.visibleWidth * .88, 26, LOCAL_VISUAL.shadow.binOpacity * showBinAlpha, 'bin')
   if (objectState?.alpha > 0) {
     drawGroundShadow(
       ctx,
@@ -937,7 +1077,8 @@ function drawScene(time = 0) {
       objectState.shadowY,
       Math.max(24, objectState.bounds.width * objectState.shadowScale),
       Math.max(9, objectState.bounds.height * .16 * objectState.shadowScale),
-      objectState.shadowOpacity * objectState.alpha
+      objectState.shadowOpacity * objectState.alpha,
+      'waste'
     )
   }
 
@@ -1000,8 +1141,8 @@ async function loadAssets() {
   errorLogged = false
   try {
     const [rigResponse, timelineResponse, smartBinImage, sceneAssetEntries] = await Promise.all([
-      fetch(props.rigSrc),
-      fetch(props.timelineSrc),
+      fetch(props.rigSrc, { cache: 'no-store' }),
+      fetch(props.timelineSrc, { cache: 'no-store' }),
       loadImage(props.binVisualSrc || SMART_BIN_PLACE_VISUAL.src),
       Promise.all(ROBOT_TASK_ASSET_SRCS.map(async src => [src, await loadImage(src)]))
     ])
