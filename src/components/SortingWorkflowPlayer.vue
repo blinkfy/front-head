@@ -1,6 +1,6 @@
 <template>
   <view class="sorting-workflow-player">
-    <view ref="viewportRef" class="workflow-viewport">
+    <view ref="viewportRef" :class="['workflow-viewport', { 'transparent-environment': transparentEnvironment }]">
       <canvas
         ref="canvasRef"
         class="workflow-canvas"
@@ -10,7 +10,7 @@
         aria-label="自主垃圾分类投放分层关节动画"
       ></canvas>
       <view v-if="loadFailed" class="workflow-error">机器人分层资源暂时无法加载</view>
-      <view v-else-if="dynamicObject && visualPlaceholder" class="workflow-placeholder">视觉占位</view>
+      <view v-else-if="dynamicObject && visualPlaceholder" class="workflow-placeholder">对象素材未加载</view>
     </view>
 
     <view v-if="showStatus || showControls" class="workflow-footer">
@@ -29,9 +29,22 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { normalizeSortingWorkflowStage, sortingWorkflowStageLabel } from '@/utils/sorting-workflow.js'
 import { resolveSmartBinVisual } from '@/config/smart-bin-visual-registry.js'
+import DIGITAL_TWIN_VISUAL_SYSTEM from '@/config/digital-twin-visual-system.js'
+import {
+  ROBOT_TASK_SCENE_SIZE,
+  resolveRobotTaskScene,
+  robotTaskSceneAssets
+} from '@/config/robot-task-scene-registry.js'
+import {
+  resolveRobotTaskCamera,
+  resolveRobotTaskShot,
+  shotValue
+} from '@/config/robot-task-shot-config.js'
 
 const FRAME_COUNT = 48
 const SMART_BIN_PLACE_VISUAL = resolveSmartBinVisual('sortingPlace')
+const ROBOT_TASK_ASSET_SRCS = robotTaskSceneAssets()
+const LOCAL_VISUAL = DIGITAL_TWIN_VISUAL_SYSTEM.robotTaskLocal
 const STAGE_ORDER = ['scan', 'approach', 'grasp', 'transport', 'place', 'release', 'return']
 const STAGE_LABELS = ['扫描', '接近', '抓取', '运输', '投放', '释放', '返回']
 const SIX_STAGE_ORDER = ['scan', 'approach', 'grasp', 'transport', 'place', 'return']
@@ -46,6 +59,15 @@ const STAGE_RANGES = Object.freeze({
   idle: [47, 47], scan: [0, 5], approach: [6, 12], grasp: [13, 19],
   transport: [20, 30], place: [31, 38], release: [39, 42], return: [43, 47],
   completed: [47, 47], error: [0, 0]
+})
+const PREVIOUS_RENDER_STAGE = Object.freeze({
+  scan: 'idle',
+  approach: 'scan',
+  grasp: 'approach',
+  transport: 'grasp',
+  place: 'transport',
+  release: 'place',
+  return: 'release'
 })
 
 const props = defineProps({
@@ -67,6 +89,7 @@ const props = defineProps({
   targetBinId: { type: String, default: '' },
   wasteConfigSrc: { type: String, default: '/static/sorting-robot/waste-adapters.json' },
   binVisualSrc: { type: String, default: '' },
+  transparentEnvironment: { type: Boolean, default: false },
   showControls: { type: Boolean, default: false },
   showStatus: { type: Boolean, default: false }
 })
@@ -98,6 +121,9 @@ let errorLogged = false
 let loadRevision = 0
 let stageCompletionEmitted = false
 let wasteLoadRevision = 0
+let wasteOpaqueBounds = null
+let robotOpaqueBounds = null
+let smartBinOpaqueBounds = null
 
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value))
 const lerp = (start, end, amount) => start + (end - start) * amount
@@ -162,11 +188,52 @@ function adapterOffset(key) {
   return Array.isArray(value) && value.length >= 2 ? [Number(value[0]) || 0, Number(value[1]) || 0] : [0, 0]
 }
 
+function measureOpaqueBounds(image) {
+  if (!image || typeof document === 'undefined') return null
+  try {
+    const probe = document.createElement('canvas')
+    probe.width = image.width
+    probe.height = image.height
+    const probeContext = probe.getContext('2d', { willReadFrequently: true })
+    probeContext.drawImage(image, 0, 0)
+    const pixels = probeContext.getImageData(0, 0, image.width, image.height).data
+    let minX = image.width
+    let minY = image.height
+    let maxX = 0
+    let maxY = 0
+    for (let y = 0; y < image.height; y += 2) {
+      for (let x = 0; x < image.width; x += 2) {
+        if (pixels[(y * image.width + x) * 4 + 3] < 20) continue
+        minX = Math.min(minX, x)
+        minY = Math.min(minY, y)
+        maxX = Math.max(maxX, x)
+        maxY = Math.max(maxY, y)
+      }
+    }
+    if (minX > maxX || minY > maxY) return null
+    return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY }
+  } catch (_) {
+    return null
+  }
+}
+
+function mergeOpaqueBounds(boundsList, sourceSize) {
+  const valid = boundsList.filter(Boolean)
+  if (!valid.length) return null
+  return {
+    minX: Math.max(0, Math.min(...valid.map(item => item.minX))),
+    minY: Math.max(0, Math.min(...valid.map(item => item.minY))),
+    maxX: Math.min(sourceSize.width, Math.max(...valid.map(item => item.maxX))),
+    maxY: Math.min(sourceSize.height, Math.max(...valid.map(item => item.maxY)))
+  }
+}
+
 async function loadWasteAdapter() {
   const revision = ++wasteLoadRevision
   if (!props.dynamicObject) {
     wasteConfig = null
     wasteAdapter = null
+    wasteOpaqueBounds = null
     visualPlaceholder.value = false
     delete images.taskObject
     return
@@ -180,7 +247,10 @@ async function loadWasteAdapter() {
     if (revision !== wasteLoadRevision) return
     wasteConfig = config
     wasteAdapter = adapter
-    if (image) images.taskObject = image
+    if (image) {
+      images.taskObject = image
+      wasteOpaqueBounds = measureOpaqueBounds(image)
+    }
     else delete images.taskObject
     visualPlaceholder.value = !adapter || !image
     emit('visualchange', {
@@ -195,6 +265,7 @@ async function loadWasteAdapter() {
     if (revision !== wasteLoadRevision) return
     wasteConfig = null
     wasteAdapter = null
+    wasteOpaqueBounds = null
     delete images.taskObject
     visualPlaceholder.value = true
     emit('visualchange', { key: '', label: '视觉占位', category: '', targetSlot: targetSlotKey(), placeholder: true, error })
@@ -205,7 +276,13 @@ async function loadWasteAdapter() {
 function getPose() {
   const spec = timeline?.stages?.[currentStage.value] || timeline?.stages?.idle
   if (!spec) return null
-  const pose = mixPose(spec.from, spec.to, stageProgress)
+  let pose = mixPose(spec.from, spec.to, stageProgress)
+  const previous = timeline?.stages?.[PREVIOUS_RENDER_STAGE[currentStage.value]]
+  const shot = resolveRobotTaskShot(currentStage.value)
+  const blendWindow = Math.min(.34, (Number(shot?.transitionDuration) || 0) / Math.max(1, Number(spec.durationMs) || 1000))
+  if (previous?.to && blendWindow > 0 && stageProgress < blendWindow) {
+    pose = mixPose(previous.to, pose, smoothstep(stageProgress / blendWindow))
+  }
   if (Number.isFinite(spec.holdBottleAt)) pose.holdBottle = stageProgress >= spec.holdBottleAt
   if (Number.isFinite(spec.holdBottleUntil)) pose.holdBottle = stageProgress < spec.holdBottleUntil
   return pose
@@ -328,7 +405,7 @@ function drawRobot(ctx, pose, width, height, groundY) {
   }
   drawLayer(ctx, 'rightShoulderCover', [waist], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'leftShoulderCover', [waist], robotLeft, robotTop, robotScale)
-  drawLayer(ctx, 'leftElbowCover', [waist, leftShoulder], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'leftElbowCover', leftLower, robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'leftJointCleanup', leftLower, robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'sockets', [waist], robotLeft, robotTop, robotScale)
   drawLayer(ctx, 'bodyRightCover', [waist], robotLeft, robotTop, robotScale)
@@ -425,6 +502,395 @@ function drawSmartBin(ctx, binX, groundY, binWidth, binHeight) {
   return { x: inletX, y: inletY + renderHeight * .035 }
 }
 
+function rotatePointAround(point, pivot, degrees) {
+  const radians = degrees * Math.PI / 180
+  const cos = Math.cos(radians)
+  const sin = Math.sin(radians)
+  const dx = point[0] - pivot[0]
+  const dy = point[1] - pivot[1]
+  return [pivot[0] + dx * cos - dy * sin, pivot[1] + dx * sin + dy * cos]
+}
+
+function layerPointToWorld(point, rotations, robotLeft, robotTop, robotScale) {
+  let transformed = [...point]
+  for (let index = rotations.length - 1; index >= 0; index -= 1) {
+    transformed = rotatePointAround(transformed, rotations[index].pivot, rotations[index].degrees)
+  }
+  return [robotLeft + transformed[0] * robotScale, robotTop + transformed[1] * robotScale]
+}
+
+function resolveRobotGeometry(pose, robotPosition, robotHeight) {
+  const robotScale = robotHeight / rig.sourceSize.height
+  const visibleBounds = robotOpaqueBounds || { minX: 0, minY: 0, maxX: rig.sourceSize.width, maxY: rig.sourceSize.height }
+  const visibleCenterX = (visibleBounds.minX + visibleBounds.maxX) / 2
+  const visibleBottomY = Math.min(rig.sourceSize.height, visibleBounds.maxY)
+  const robotLeft = robotPosition[0] - visibleCenterX * robotScale
+  const robotTop = robotPosition[1] - visibleBottomY * robotScale
+  const waist = rotation('waist', pose.waist)
+  const rightShoulder = rotation('rightShoulder', pose.rightShoulder)
+  const rightElbow = rotation('rightElbow', pose.rightElbow)
+  const leftShoulder = rotation('leftShoulder', pose.leftShoulder)
+  const leftElbow = rotation('leftElbow', pose.leftElbow)
+  const head = rotation('head', pose.head)
+  const leftLower = [waist, leftShoulder, leftElbow]
+  const [anchorX, anchorY] = rig.anchors?.bottleCenter || [59.5, 360.5]
+  const [offsetX, offsetY] = adapterOffset('handOffset')
+  const handPoint = layerPointToWorld([anchorX + offsetX, anchorY + offsetY], leftLower, robotLeft, robotTop, robotScale)
+  return {
+    robotScale,
+    robotLeft,
+    robotTop,
+    robotHeight,
+    visibleWidth: Math.max(1, (visibleBounds.maxX - visibleBounds.minX) * robotScale),
+    visibleHeight: Math.max(1, (visibleBottomY - visibleBounds.minY) * robotScale),
+    robotPosition,
+    handPoint,
+    waist,
+    rightShoulder,
+    rightElbow,
+    leftShoulder,
+    leftElbow,
+    head,
+    leftLower
+  }
+}
+
+function drawRobotActor(ctx, pose, geometry, drawObject) {
+  const { robotLeft, robotTop, robotScale, waist, rightShoulder, rightElbow, leftShoulder, leftLower, head } = geometry
+  drawLayer(ctx, 'base', [], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'rightUpperArm', [waist, rightShoulder], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'torso', [waist], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'head', [waist, head], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'rightLowerArmHand', [waist, rightShoulder, rightElbow], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'leftUpperArm', [waist, leftShoulder], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'leftLowerEmptyHand', leftLower, robotLeft, robotTop, robotScale)
+  if (props.dynamicObject) drawObject?.()
+  else if (pose.holdBottle) drawLayer(ctx, 'bottle', leftLower, robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'rightShoulderCover', [waist], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'leftShoulderCover', [waist], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'leftElbowCover', leftLower, robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'leftJointCleanup', leftLower, robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'sockets', [waist], robotLeft, robotTop, robotScale)
+  drawLayer(ctx, 'bodyRightCover', [waist], robotLeft, robotTop, robotScale)
+}
+
+function taskObjectScale() {
+  return adapterNumber('sceneScale', adapterNumber('scale', .26) * .72)
+}
+
+function taskObjectBoundsAt(x, y, scale = taskObjectScale(), rotationDegrees = 0) {
+  const image = images.taskObject
+  const bounds = wasteOpaqueBounds || (image ? { minX: 0, minY: 0, maxX: image.width, maxY: image.height, width: image.width, height: image.height } : null)
+  if (!image || !bounds) return { x, y, scale, rotationDegrees, left: -30, top: -30, width: 60, height: 60 }
+  return {
+    x,
+    y,
+    scale,
+    rotationDegrees,
+    left: (bounds.minX - image.width / 2) * scale,
+    top: (bounds.minY - image.height / 2) * scale,
+    width: Math.max(18, bounds.width * scale),
+    height: Math.max(18, bounds.height * scale)
+  }
+}
+
+function taskObjectGroundAtCenter(center, scale = taskObjectScale()) {
+  const image = images.taskObject
+  const bounds = wasteOpaqueBounds || (image ? { maxY: image.height } : null)
+  if (!image || !bounds) return [...center]
+  return [
+    center[0],
+    center[1] + (bounds.maxY - image.height / 2) * scale
+  ]
+}
+
+function drawTaskObjectActor(ctx, state) {
+  if (!state || state.alpha <= 0) return
+  if (!props.dynamicObject) {
+    drawBottleImage(ctx, state.x, state.y, .3, state.rotationDegrees * Math.PI / 180, state.alpha)
+    return
+  }
+  if (!images.taskObject || visualPlaceholder.value) return
+  ctx.save()
+  ctx.globalAlpha = state.alpha
+  ctx.translate(state.x, state.y)
+  ctx.rotate(state.rotationDegrees * Math.PI / 180)
+  ctx.scale(state.scale, state.scale)
+  ctx.drawImage(images.taskObject, -images.taskObject.width / 2, -images.taskObject.height / 2)
+  ctx.restore()
+}
+
+function drawGroundShadow(ctx, x, y, width, height, opacity) {
+  const localShadow = LOCAL_VISUAL.shadow
+  ctx.save()
+  ctx.translate(x + localShadow.offsetX, y + localShadow.offsetY)
+  ctx.scale(Math.max(1, width / 2), Math.max(1, height / 2))
+  const gradient = ctx.createRadialGradient(-.18, -.18, .08, 0, 0, 1)
+  gradient.addColorStop(0, `rgba(0,17,29,${Math.min(.34, opacity * 1.2)})`)
+  gradient.addColorStop(.48, `rgba(0,17,29,${opacity})`)
+  gradient.addColorStop(1, 'rgba(0,17,29,0)')
+  ctx.fillStyle = gradient
+  ctx.beginPath(); ctx.ellipse(0, 0, 1, 1, -.22, 0, Math.PI * 2); ctx.fill()
+  ctx.restore()
+  ctx.save()
+  ctx.globalAlpha = Math.min(localShadow.contactOpacity, opacity * 1.85)
+  ctx.fillStyle = localShadow.color
+  ctx.beginPath(); ctx.ellipse(x + 1, y + 1, Math.max(5, width * .17), Math.max(2, height * .12), 0, 0, Math.PI * 2); ctx.fill()
+  ctx.restore()
+}
+
+function smartBinGeometry(binPosition, binHeight) {
+  const image = images.smartBin
+  const aspect = image?.width && image?.height ? image.width / image.height : .8
+  const width = binHeight * aspect
+  const visibleBounds = smartBinOpaqueBounds || { minX: 0, minY: 0, maxX: image?.width || 1, maxY: image?.height || 1 }
+  const visibleCenterX = (visibleBounds.minX + visibleBounds.maxX) / 2
+  const visibleBottomRatio = visibleBounds.maxY / Math.max(1, image?.height || 1)
+  const left = binPosition[0] - visibleCenterX / Math.max(1, image?.width || 1) * width
+  const top = binPosition[1] - visibleBottomRatio * binHeight
+  return {
+    x: binPosition[0],
+    groundY: binPosition[1],
+    width,
+    height: binHeight,
+    left,
+    top,
+    visibleWidth: (visibleBounds.maxX - visibleBounds.minX) / Math.max(1, image?.width || 1) * width,
+    visibleHeight: (visibleBounds.maxY - visibleBounds.minY) / Math.max(1, image?.height || 1) * binHeight,
+    inletX: left + width * SMART_BIN_PLACE_VISUAL.geometry.inletX,
+    inletY: top + binHeight * SMART_BIN_PLACE_VISUAL.geometry.inletY
+  }
+}
+
+function drawSmartBinActor(ctx, geometry, alpha = 1) {
+  if (alpha <= 0) return
+  const selectedKey = targetSlotKey()
+  const selectedSlot = BIN_SLOTS.find(slot => slot.key === selectedKey) || BIN_SLOTS[BIN_SLOTS.length - 1]
+  const active = ['place', 'release'].includes(currentStage.value)
+  ctx.save()
+  ctx.globalAlpha = alpha
+  if (images.smartBin) ctx.drawImage(images.smartBin, geometry.left, geometry.top, geometry.width, geometry.height)
+  ctx.shadowBlur = 0
+  ctx.fillStyle = active ? selectedSlot.color : LOCAL_VISUAL.statusLight.normal
+  ctx.beginPath()
+  ctx.arc(geometry.left + geometry.width * .18, geometry.top + geometry.height * .085, LOCAL_VISUAL.statusLight.radius, 0, Math.PI * 2)
+  ctx.fill()
+  if (active) {
+    ctx.strokeStyle = selectedSlot.color
+    ctx.globalAlpha = alpha * .72
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.ellipse(geometry.inletX, geometry.inletY, geometry.width * .095, geometry.height * .027, 0, 0, Math.PI * 2); ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function sceneAsset(src) {
+  return images.sceneAssets?.[src] || null
+}
+
+function sceneDetailOpacity(scene, cameraScale) {
+  const blend = scene?.detailEnvironment?.blend
+  if (!blend) return 0
+  const progress = smoothstep(clamp((cameraScale - blend.startScale) / Math.max(.001, blend.endScale - blend.startScale)))
+  return progress * clamp(blend.maxOpacity)
+}
+
+function drawEnvironmentScene(ctx, scene, alpha = 1, cameraScale = 1, forceBackground = false) {
+  const background = sceneAsset(scene?.backgroundEnvironment?.src)
+  const detail = sceneAsset(scene?.detailEnvironment?.src)
+  if (!scene || alpha <= 0 || (!background && !detail)) return
+  const crop = scene.crop
+  ctx.save()
+  // The enclosing park canvas owns the persistent full scene background when
+  // transparentEnvironment is enabled. This canvas only adds the local detail
+  // crop and re-paints the foreground masks from that same background.
+  if (background && (forceBackground || !props.transparentEnvironment)) {
+    ctx.globalAlpha = alpha
+    ctx.drawImage(
+      background,
+      0, 0, background.width, background.height,
+      0, 0, ROBOT_TASK_SCENE_SIZE.width, ROBOT_TASK_SCENE_SIZE.height
+    )
+  }
+  const detailOpacity = sceneDetailOpacity(scene, cameraScale)
+  if (detail && detailOpacity > 0) {
+    ctx.globalAlpha = alpha * detailOpacity
+    ctx.drawImage(detail, 0, 0, detail.width, detail.height, crop.x, crop.y, crop.width, crop.height)
+  }
+  ctx.restore()
+}
+
+function drawGroundLayer(ctx, scene, alpha = 1) {
+  if (!scene || alpha <= 0) return
+  ctx.save()
+  ctx.globalAlpha = alpha
+  if (scene.serviceBerth) {
+    const berth = scene.serviceBerth
+    ctx.fillStyle = berth.fill
+    ctx.strokeStyle = berth.stroke
+    ctx.lineWidth = 2
+    ctx.setLineDash([10, 14])
+    roundedRect(ctx, berth.x - berth.width / 2, berth.y - berth.height / 2, berth.width, berth.height, 22)
+    ctx.fill(); ctx.stroke()
+    ctx.setLineDash([])
+  }
+  ctx.restore()
+}
+
+function drawForegroundOcclusion(ctx, scene, alpha = 1, cameraScale = 1) {
+  if (!scene || alpha <= 0) return
+  scene.foregroundOcclusion.forEach(mask => {
+    ctx.save()
+    ctx.beginPath(); ctx.ellipse(mask.x, mask.y, mask.radiusX, mask.radiusY, 0, 0, Math.PI * 2); ctx.clip()
+    drawEnvironmentScene(ctx, scene, alpha, cameraScale, true)
+    ctx.restore()
+  })
+}
+
+function sceneLayersForShot(shot, progress) {
+  const transition = shot.sceneTransition
+  if (!transition) return [{ scene: resolveRobotTaskScene(shot.scene), alpha: 1 }]
+  const blend = smoothstep(clamp((progress - transition.start) / Math.max(.001, transition.end - transition.start)))
+  return [
+    { scene: resolveRobotTaskScene(transition.from), alpha: 1 - blend },
+    { scene: resolveRobotTaskScene(transition.to), alpha: blend }
+  ]
+}
+
+function quadraticPoint(from, control, to, progress) {
+  const inverse = 1 - progress
+  return [
+    inverse * inverse * from[0] + 2 * inverse * progress * control[0] + progress * progress * to[0],
+    inverse * inverse * from[1] + 2 * inverse * progress * control[1] + progress * progress * to[1]
+  ]
+}
+
+function resolveTaskObjectState(stage, progress, shot, geometry, binGeometry) {
+  if (!props.dynamicObject) return null
+  const groundCenter = shot.wastePosition || [804, 489]
+  const baseScale = taskObjectScale()
+  const ground = taskObjectGroundAtCenter(groundCenter, baseScale)
+  const groundRotation = adapterNumber('sceneRotation', adapterNumber('rotation', 0))
+  const graspRotation = adapterNumber('graspRotation', groundRotation)
+  const releaseRotation = adapterNumber('releaseRotation', graspRotation)
+  let point = [...groundCenter]
+  let rotationDegrees = groundRotation
+  let alpha = 1
+  let lifted = false
+
+  if (stage === 'grasp') {
+    const [start, end] = shot.graspWindow || [.22, .72]
+    const grasp = smoothstep(clamp((progress - start) / Math.max(.001, end - start)))
+    const control = [(groundCenter[0] + geometry.handPoint[0]) / 2, Math.min(groundCenter[1], geometry.handPoint[1]) - 42]
+    point = quadraticPoint(groundCenter, control, geometry.handPoint, grasp)
+    rotationDegrees = lerp(groundRotation, graspRotation, grasp)
+    lifted = grasp > .05
+  } else if (['transport', 'place'].includes(stage)) {
+    point = [...geometry.handPoint]
+    const sway = stage === 'transport' ? Math.sin(progress * Math.PI * 2) * adapterNumber('transportSway', 0) : 0
+    rotationDegrees = graspRotation + sway
+    lifted = true
+  } else if (stage === 'release') {
+    const [start, end] = shot.releaseWindow || [.18, .88]
+    const release = smoothstep(clamp((progress - start) / Math.max(.001, end - start)))
+    const [dropOffsetX, dropOffsetY] = adapterOffset('dropOffset')
+    const target = [binGeometry.inletX + dropOffsetX, binGeometry.inletY + binGeometry.height * .12 + dropOffsetY]
+    const control = [(geometry.handPoint[0] + target[0]) / 2, Math.min(geometry.handPoint[1], binGeometry.inletY) - 34]
+    point = quadraticPoint(geometry.handPoint, control, target, release)
+    rotationDegrees = lerp(graspRotation, releaseRotation, release)
+    alpha = release <= .84 ? 1 : 1 - smoothstep((release - .84) / .16)
+    lifted = true
+  } else if (['return', 'idle', 'completed'].includes(stage)) {
+    alpha = 0
+  }
+
+  const bounds = taskObjectBoundsAt(point[0], point[1], baseScale, rotationDegrees)
+  const shadowGroundY = lifted ? geometry.robotPosition[1] : ground[1]
+  const liftDistance = Math.max(0, shadowGroundY - point[1])
+  return {
+    x: point[0],
+    y: point[1],
+    scale: baseScale,
+    rotationDegrees,
+    alpha,
+    bounds,
+    shadowX: point[0],
+    shadowY: shadowGroundY,
+    shadowScale: (1 - clamp(liftDistance / 520) * .42) * adapterNumber('groundShadowScale', 1),
+    shadowOpacity: lifted ? LOCAL_VISUAL.shadow.wasteOpacity * .58 : LOCAL_VISUAL.shadow.wasteOpacity
+  }
+}
+
+function drawRecognitionEffect(ctx, state, progress) {
+  if (!state || state.alpha <= 0 || !images.taskObject) return
+  const visual = LOCAL_VISUAL.recognition
+  const padding = 9
+  const left = state.bounds.left - padding
+  const top = state.bounds.top - padding
+  const width = state.bounds.width + padding * 2
+  const height = state.bounds.height + padding * 2
+  const corner = Math.min(visual.cornerLength, width * .28, height * .28)
+  ctx.save()
+  ctx.translate(state.x, state.y)
+  ctx.rotate(state.rotationDegrees * Math.PI / 180)
+  ctx.strokeStyle = visual.color
+  ctx.lineWidth = visual.lineWidth
+  ctx.lineCap = 'round'
+  const corners = [
+    [left, top, 1, 1], [left + width, top, -1, 1],
+    [left, top + height, 1, -1], [left + width, top + height, -1, -1]
+  ]
+  corners.forEach(([x, y, dx, dy]) => {
+    ctx.beginPath(); ctx.moveTo(x + dx * corner, y); ctx.lineTo(x, y); ctx.lineTo(x, y + dy * corner); ctx.stroke()
+  })
+  ctx.globalAlpha = visual.scanOpacity
+  ctx.beginPath()
+  const scanY = top + height * (.16 + .68 * (0.5 - 0.5 * Math.cos(progress * Math.PI * 2)))
+  ctx.moveTo(left + 5, scanY); ctx.lineTo(left + width - 5, scanY); ctx.stroke()
+  ctx.restore()
+}
+
+function drawStageLabelLayer(ctx, width, height, label, sceneLabel) {
+  const left = 16
+  const top = height - 46
+  ctx.save()
+  ctx.fillStyle = 'rgba(3,24,38,.82)'
+  ctx.strokeStyle = 'rgba(126,196,239,.34)'
+  ctx.lineWidth = 1
+  roundedRect(ctx, left, top, Math.min(238, width * .42), 30, 7)
+  ctx.fill(); ctx.stroke()
+  ctx.fillStyle = '#e8f8ff'
+  ctx.font = '700 12px "Microsoft YaHei", sans-serif'
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+  ctx.fillText(label, left + 11, top + 15)
+  ctx.fillStyle = '#88adbf'
+  ctx.font = '500 10px "Microsoft YaHei", sans-serif'
+  ctx.textAlign = 'right'
+  ctx.fillText(sceneLabel, left + Math.min(226, width * .42 - 12), top + 15)
+  ctx.restore()
+}
+
+function shotTravelDistance(shot) {
+  const position = shot?.robotPosition || {}
+  const points = [position.from, ...(position.via || []), position.to].filter(Array.isArray)
+  return points.slice(1).reduce((total, point, index) => total + Math.hypot(
+    Number(point[0]) - Number(points[index][0]),
+    Number(point[1]) - Number(points[index][1])
+  ), 0)
+}
+
+function visualStageDuration(stage, timelineDuration) {
+  const motion = LOCAL_VISUAL.motion || {}
+  if (!(motion.cappedStages || []).includes(stage)) return Math.max(1, timelineDuration || 1000)
+  const distance = shotTravelDistance(resolveRobotTaskShot(stage))
+  const speed = Math.max(1, Number(motion.maxTravelUnitsPerSecond) || 1)
+  return Math.max(
+    Math.max(1, timelineDuration || 1000),
+    Number(motion.minTravelDurationMs) || 0,
+    Math.ceil(distance / speed * 1000)
+  )
+}
+
 function drawScene(time = 0) {
   if (!canvas || !context || !assetsReady || !rig || !timeline) return
   const ratio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1))
@@ -436,69 +902,54 @@ function drawScene(time = 0) {
   ctx.clearRect(0, 0, width, height)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
-
-  const background = ctx.createLinearGradient(0, 0, width, height)
-  background.addColorStop(0, '#f8fffd')
-  background.addColorStop(.58, '#f2fbf8')
-  background.addColorStop(1, '#eaf8f5')
-  ctx.fillStyle = background
-  ctx.fillRect(0, 0, width, height)
-  drawStageRail(ctx, width, height)
+  if (!props.transparentEnvironment) {
+    ctx.fillStyle = LOCAL_VISUAL.sceneFrame.background
+    ctx.fillRect(0, 0, width, height)
+  }
 
   const pose = getPose()
   if (!pose) return
-  const groundY = height * .9
-  const sourceX = width * .1
-  const binX = width * .66
-  const binHeight = height * .38
-  const binWidth = binHeight * .8
+  const rawProgress = clamp(stageProgress)
+  const camera = resolveRobotTaskCamera(currentStage.value, rawProgress)
+  const { shot, easedProgress, robotPosition, wastePosition, binPosition, cameraScale, focus } = camera
+  const baseScale = Math.min(width / ROBOT_TASK_SCENE_SIZE.width, height / ROBOT_TASK_SCENE_SIZE.height)
+  const sceneLayers = sceneLayersForShot(shot, rawProgress)
 
   ctx.save()
-  ctx.strokeStyle = 'rgba(16,185,129,.2)'
-  ctx.lineWidth = 2
-  ctx.setLineDash([7, 10])
-  ctx.beginPath(); ctx.moveTo(sourceX, groundY); ctx.lineTo(binX, groundY); ctx.stroke()
+  ctx.translate(width / 2, height / 2)
+  ctx.scale(baseScale * cameraScale, baseScale * cameraScale)
+  ctx.translate(-focus[0], -focus[1])
+
+  sceneLayers.forEach(layer => drawEnvironmentScene(ctx, layer.scene, layer.alpha, cameraScale))
+  sceneLayers.forEach(layer => drawGroundLayer(ctx, layer.scene, layer.alpha))
+
+  const geometry = resolveRobotGeometry(pose, robotPosition, shotValue(shot.robotHeight, easedProgress))
+  const binGeometry = smartBinGeometry(binPosition, shotValue(shot.binHeight, easedProgress))
+  const objectState = resolveTaskObjectState(currentStage.value, rawProgress, shot, geometry, binGeometry)
+  const showBinAlpha = shot.showBin ? 1 : 0
+
+  drawGroundShadow(ctx, robotPosition[0], robotPosition[1], geometry.visibleWidth * .9, 30, LOCAL_VISUAL.shadow.robotOpacity)
+  if (showBinAlpha > 0) drawGroundShadow(ctx, binPosition[0], binPosition[1], binGeometry.visibleWidth * .88, 26, LOCAL_VISUAL.shadow.binOpacity * showBinAlpha)
+  if (objectState?.alpha > 0) {
+    drawGroundShadow(
+      ctx,
+      objectState.shadowX,
+      objectState.shadowY,
+      Math.max(24, objectState.bounds.width * objectState.shadowScale),
+      Math.max(9, objectState.bounds.height * .16 * objectState.shadowScale),
+      objectState.shadowOpacity * objectState.alpha
+    )
+  }
+
+  drawSmartBinActor(ctx, binGeometry, showBinAlpha)
+  drawRobotActor(ctx, pose, geometry, () => drawTaskObjectActor(ctx, objectState))
+  if (!props.dynamicObject && pose.showTarget && !pose.holdBottle) {
+    drawBottleImage(ctx, wastePosition[0], wastePosition[1], .3, -.16)
+  }
+
+  sceneLayers.forEach(layer => drawForegroundOcclusion(ctx, layer.scene, layer.alpha, cameraScale))
+  if (currentStage.value === 'scan') drawRecognitionEffect(ctx, objectState, rawProgress)
   ctx.restore()
-
-  const targetSlot = drawSmartBin(ctx, binX, groundY, binWidth, binHeight)
-
-  const robot = drawRobot(ctx, pose, width, height, groundY)
-  const bottleScale = Math.max(.16, robot.robotScale * .65)
-  const targetY = height * (500 / 900)
-  if (pose.showTarget && !pose.holdBottle) {
-    if (props.dynamicObject) drawTaskObjectScreen(ctx, sourceX, targetY, robot.robotScale)
-    else drawBottleImage(ctx, sourceX, targetY, bottleScale, -.16)
-    const boxWidth = Math.max(44, 150 * robot.robotScale * adapterNumber('scale', .26))
-    const boxHeight = Math.max(58, 180 * robot.robotScale * adapterNumber('scale', .26))
-    ctx.strokeStyle = '#f59e0b'
-    ctx.lineWidth = 2
-    ctx.strokeRect(sourceX - boxWidth / 2, targetY - boxHeight / 2, boxWidth, boxHeight)
-  }
-  const releaseStart = Number(timeline?.stages?.release?.holdBottleUntil) || 0
-  const releaseDrop = releaseStart < 1 ? clamp((pose.bottleDrop - releaseStart) / (1 - releaseStart)) : 0
-  if (releaseDrop > 0) {
-    const drop = smoothstep(releaseDrop)
-    if (props.dynamicObject) {
-      const [dropOffsetX, dropOffsetY] = adapterOffset('dropOffset')
-      drawTaskObjectScreen(
-        ctx,
-        lerp(robot.robotX - width * .1, targetSlot.x + dropOffsetX * robot.robotScale, drop),
-        lerp(height * (470 / 900), targetSlot.y + dropOffsetY * robot.robotScale, drop),
-        robot.robotScale,
-        .35 + drop * .9,
-        1 - drop * .72
-      )
-    } else {
-      drawBottleImage(
-        ctx,
-        lerp(binX - width * .06, binX, drop),
-        lerp(height * (470 / 900), height * (640 / 900), drop),
-        bottleScale,
-        .35 + drop * .9,
-        1 - drop * .35
-      )
-    }
-  }
 
   const phaseText = currentStage.value === 'idle'
     ? '等待任务'
@@ -507,18 +958,8 @@ function drawScene(time = 0) {
       : props.sixStageMode && currentStage.value === 'release'
         ? sortingWorkflowStageLabel('place')
         : stageLabel.value
-  const chipX = width * .035
-  const chipY = height * .2
-  const chipWidth = Math.min(160, width * .27)
-  const chipHeight = Math.max(34, height * .11)
-  ctx.fillStyle = currentStage.value === 'error' ? 'rgba(254,226,226,.94)' : 'rgba(255,255,255,.94)'
-  ctx.strokeStyle = currentStage.value === 'error' ? 'rgba(220,38,38,.28)' : 'rgba(5,150,105,.2)'
-  roundedRect(ctx, chipX, chipY, chipWidth, chipHeight, 11)
-  ctx.fill(); ctx.stroke()
-  ctx.fillStyle = currentStage.value === 'error' ? '#dc2626' : '#059669'
-  ctx.font = `800 ${Math.max(12, height * .044)}px system-ui, sans-serif`
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
-  ctx.fillText(phaseText, chipX + Math.max(10, width * .02), chipY + chipHeight / 2)
+  const activeScene = sceneLayers.reduce((best, item) => item.alpha > best.alpha ? item : best, sceneLayers[0]).scene
+  if (!props.transparentEnvironment) drawStageLabelLayer(ctx, width, height, phaseText, activeScene.label)
 }
 
 function resizeCanvas() {
@@ -558,7 +999,12 @@ async function loadAssets() {
   assetsReady = false
   errorLogged = false
   try {
-    const [rigResponse, timelineResponse, smartBinImage] = await Promise.all([fetch(props.rigSrc), fetch(props.timelineSrc), loadImage(props.binVisualSrc || SMART_BIN_PLACE_VISUAL.src)])
+    const [rigResponse, timelineResponse, smartBinImage, sceneAssetEntries] = await Promise.all([
+      fetch(props.rigSrc),
+      fetch(props.timelineSrc),
+      loadImage(props.binVisualSrc || SMART_BIN_PLACE_VISUAL.src),
+      Promise.all(ROBOT_TASK_ASSET_SRCS.map(async src => [src, await loadImage(src)]))
+    ])
     if (!rigResponse.ok) throw new Error(`Rig HTTP ${rigResponse.status}`)
     if (!timelineResponse.ok) throw new Error(`Timeline HTTP ${timelineResponse.status}`)
     const nextRig = await rigResponse.json()
@@ -569,6 +1015,12 @@ async function loadAssets() {
     timeline = nextTimeline
     images = Object.fromEntries(entries)
     images.smartBin = smartBinImage
+    images.sceneAssets = Object.fromEntries(sceneAssetEntries)
+    robotOpaqueBounds = mergeOpaqueBounds(
+      entries.filter(([key]) => key !== 'bottle').map(([, image]) => measureOpaqueBounds(image)),
+      nextRig.sourceSize
+    )
+    smartBinOpaqueBounds = measureOpaqueBounds(smartBinImage)
     assetsReady = true
     await loadWasteAdapter()
     if (revision !== loadRevision) return
@@ -584,7 +1036,7 @@ async function loadAssets() {
 function tick(timestamp) {
   if (!playing.value) return
   const spec = timeline?.stages?.[currentStage.value]
-  const duration = Math.max(1, spec?.durationMs || 1000)
+  const duration = visualStageDuration(currentStage.value, spec?.durationMs)
   const playbackRate = Math.max(.1, Number(props.playbackRate) || 1)
   if (!stageStartedAt) stageStartedAt = timestamp - stageProgress * duration / playbackRate
   if (!Number.isFinite(props.progress)) {
@@ -662,6 +1114,9 @@ function destroy() {
   timeline = null
   wasteConfig = null
   wasteAdapter = null
+  wasteOpaqueBounds = null
+  robotOpaqueBounds = null
+  smartBinOpaqueBounds = null
   visualPlaceholder.value = false
   assetsReady = false
 }
@@ -721,13 +1176,14 @@ defineExpose({ play, pause, resume, seek, setStage, renderNow, loadWasteAdapter,
 .sorting-workflow-player,
 .workflow-viewport,
 .workflow-canvas { display: block; width: 100%; height: 100%; }
-.workflow-viewport { position: relative; min-height: 260rpx; overflow: hidden; border-radius: 16rpx; background: #f2fbf8; }
+.workflow-viewport { position: relative; min-height: 260rpx; overflow: hidden; border-radius: 16rpx; background: #071b2a; }
+.workflow-viewport.transparent-environment { background: transparent; }
 .workflow-error { position: absolute; right: 18rpx; bottom: 16rpx; padding: 8rpx 14rpx; border-radius: 999rpx; color: #b91c1c; background: rgba(254,226,226,.94); font-size: 20rpx; }
-.workflow-placeholder { position: absolute; right: 18rpx; top: 16rpx; padding: 7rpx 13rpx; border: 1px solid rgba(245,158,11,.45); border-radius: 999rpx; color: #92400e; background: rgba(255,247,224,.94); font-size: 20rpx; font-weight: 800; }
+.workflow-placeholder { position: absolute; right: 18rpx; top: 16rpx; padding: 7rpx 13rpx; border: 1px solid rgba(245,182,72,.4); border-radius: 6rpx; color: #f5c36d; background: rgba(47,35,18,.84); font-size: 20rpx; font-weight: 700; }
 .workflow-footer { display: flex; align-items: center; gap: 16rpx; margin-top: 12rpx; }
-.workflow-stage { color: #059669; font-size: 22rpx; font-weight: 800; }
+.workflow-stage { color: #9fd5eb; font-size: 22rpx; font-weight: 800; }
 .workflow-controls { flex: 1; display: flex; align-items: center; gap: 12rpx; }
-.workflow-button { margin: 0; color: #fff; background: #059669; }
+.workflow-button { margin: 0; color: #fff; background: #167db1; }
 .workflow-slider { flex: 1; }
 @media (min-width: 1024px) {
   .workflow-viewport { min-height: 210px; border-radius: 14px; }

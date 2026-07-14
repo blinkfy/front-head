@@ -63,10 +63,22 @@ export const DIGITAL_TWIN_VISUAL_SYSTEM = freeze({
     motion: {
       accelerationEnd: 0.16,
       cruiseEnd: 0.78,
-      decelerationEnd: 0.94,
+      decelerationEnd: 1,
       accelerationDistance: 0.10,
       cruiseDistance: 0.78,
-      arrivalHold: 0.06,
+      arrivalHold: 0.015,
+      // Visual motion limits only. Event timestamps and task completion remain
+      // authored by the replay/runtime; longer routes are never rendered faster
+      // than these limits at 1× playback.
+      maxRobotTravelPctPerSecond: 7.2,
+      maxBinTravelPctPerSecond: 8.8,
+      minRobotTravelMs: 2400,
+      minBinTravelMs: 4800,
+      dispatchTravelMs: 7600,
+      dispatchHandoff: {
+        replacementArrivalEnd: 0.58,
+        returnDepartureStart: 0.42
+      },
       turnBlendMs: 260,
       headingStepDeg: 45,
       headingIndicatorOpacity: 0.72
@@ -165,6 +177,65 @@ export const DIGITAL_TWIN_VISUAL_SYSTEM = freeze({
       labels: 150,
       controls: 160
     }
+  },
+  robotTaskLocal: {
+    worldSize: { width: 1600, height: 900 },
+    sceneFrame: {
+      background: '#071b2a',
+      border: 'rgba(116, 197, 255, 0.24)',
+      radius: 10,
+      innerShadow: 'inset 0 0 28px rgba(2, 16, 26, 0.18)'
+    },
+    shadow: {
+      direction: 'bottom_right',
+      offsetX: 2,
+      offsetY: 2,
+      color: '#00111d',
+      robotOpacity: 0.22,
+      binOpacity: 0.2,
+      wasteOpacity: 0.18,
+      contactOpacity: 0.44
+    },
+    recognition: {
+      color: '#55d8ed',
+      lineWidth: 2,
+      cornerLength: 16,
+      scanOpacity: 0.34
+    },
+    statusLight: {
+      normal: '#61bda7',
+      active: '#61bdc9',
+      radius: 5
+    },
+    transition: {
+      environmentMs: 720,
+      cameraEasing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+    },
+    motion: {
+      maxTravelUnitsPerSecond: 120,
+      minTravelDurationMs: 1800,
+      cappedStages: Object.freeze(['approach', 'transport', 'return'])
+    }
+  },
+  smartBinInternal: {
+    sceneBackground: '#071b2a',
+    sceneRoot: { width: 1200, height: 620 },
+    deviceHeightRatio: 0.852,
+    fixedCadOpacity: 0.26,
+    metal: {
+      highlight: '#e2e8e8',
+      midtone: '#7d8b90',
+      graphite: '#2b393f'
+    },
+    shadow: {
+      color: '#020d12',
+      contactOpacity: 0.28,
+      liftedOpacity: 0.11,
+      contactBlur: 2.2,
+      liftedBlur: 7
+    },
+    pathAid: { maxOpacity: 0.18, fadeProgress: 0.28 },
+    transition: { easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
   }
 })
 

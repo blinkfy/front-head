@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="38" height="76" viewBox="0 0 38 76">
+  <defs><linearGradient id="jaw" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f0f4f4"/><stop offset=".48" stop-color="#78868b"/><stop offset="1" stop-color="#323f44"/></linearGradient></defs>
+  <path d="M30 5H18L7 20 10 51 20 70 31 67 23 47 22 25Z" fill="url(#jaw)" stroke="#25343a" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M14 53L28 51 33 66 21 71Z" fill="#3f4e53"/>
+</svg>

@@ -1,5 +1,5 @@
 <template>
-  <view class="smart-bin-workflow">
+  <view class="smart-bin-workflow" :data-phase="phaseKey" :data-running="playingState ? 'true' : 'false'" :data-visual-version="activeVisualVersion">
     <view ref="viewportRef" class="bin-workflow-viewport">
       <canvas
         ref="canvasRef"
@@ -9,24 +9,29 @@
         type="2d"
         aria-label="智能垃圾桶内部连续处理动画"
       ></canvas>
-      <view class="workflow-note">连续处理 · 完成后机构自动复位</view>
     </view>
   </view>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { SMART_BIN_PHASES, SMART_BIN_TOTAL_DURATION } from '@/config/smart-bin-workflow.js'
 import {
-  SMART_BIN_PHASES,
-  SMART_BIN_TOTAL_DURATION,
-  SMART_BIN_WORKFLOW_CONFIG
-} from '@/config/smart-bin-workflow.js'
+  SMART_BIN_INTERNAL_GEOMETRY,
+  SMART_BIN_CUTAWAY_RASTER_V3,
+  SMART_BIN_INTERNAL_DEVICE,
+  SMART_BIN_INTERNAL_LEGACY_VISUALS,
+  SMART_BIN_INTERNAL_LAYER_REGISTRY,
+  SMART_BIN_INTERNAL_SCENE,
+  smartBinCutawayRasterV3Sources,
+  smartBinInternalAssetSources
+} from '@/config/smart-bin-internal-layer-registry.js'
+import { resolveSmartBinInternalShot } from '@/config/smart-bin-internal-shot-config.js'
 
-const LOGICAL_WIDTH = SMART_BIN_WORKFLOW_CONFIG.logicalSize.width
-const LOGICAL_HEIGHT = SMART_BIN_WORKFLOW_CONFIG.logicalSize.height
 const PHASES = SMART_BIN_PHASES
 const TOTAL_DURATION = SMART_BIN_TOTAL_DURATION
-const SLOTS = SMART_BIN_WORKFLOW_CONFIG.slots
+const SCENE = SMART_BIN_INTERNAL_SCENE
+const GEOMETRY = SMART_BIN_INTERNAL_GEOMETRY
 
 const props = defineProps({
   active: { type: Boolean, default: false },
@@ -39,45 +44,51 @@ const props = defineProps({
   fillEventSequence: { type: Number, default: 0 },
   resetKey: { type: [String, Number], default: '' },
   wasteConfigSrc: { type: String, default: '/static/sorting-robot/waste-adapters.json' },
-  structureVisualSrc: { type: String, default: '' }
+  structureVisualSrc: { type: String, default: '' },
+  visualVersion: { type: String, default: 'cutaway-raster-v3' },
+  debugCalibration: { type: Boolean, default: false }
 })
-const emit = defineEmits(['complete', 'progress', 'visualchange', 'error'])
 
+const emit = defineEmits(['complete', 'progress', 'visualchange', 'error'])
 const viewportRef = ref(null)
 const canvasRef = ref(null)
-const progress = ref(0)
 const phaseKey = ref(PHASES[0].key)
-const phaseLabel = ref(PHASES[0].label)
+const playingState = ref(false)
+const activeVisualVersion = ref('cutaway-raster-v3')
 
 let canvas = null
 let context = null
 let objectImage = null
 let adapter = null
-let componentImages = {}
+let layerImages = {}
+let legacyImages = {}
+let rasterImages = {}
 let ready = false
 let playing = false
 let completed = false
+let disposed = false
 let elapsedMs = 0
 let lastTimestamp = 0
 let rafId = 0
 let resizeObserver = null
 let loadRevision = 0
+let pixelRatio = 1
+let cssWidth = 0
+let cssHeight = 0
+
+const SLOT_META = Object.freeze({
+  recyclable: Object.freeze({ label: '可回收物', color: '#4f8fca' }),
+  kitchen: Object.freeze({ label: '厨余垃圾', color: '#5c9c7d' }),
+  hazardous: Object.freeze({ label: '有害垃圾', color: '#bd6870' }),
+  other: Object.freeze({ label: '其他垃圾', color: '#7d8b95' })
+})
 
 const normalizeKey = value => String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
-const targetFill = computed(() => Math.max(0, Math.min(100, Number(props.fillTargetPct) || 0)))
+const targetFill = computed(() => clamp(Number(props.fillTargetPct) || 0, 0, 100))
 
-function clamp(value, min = 0, max = 1) { return Math.max(min, Math.min(max, value)) }
+function clamp(value, min = 0, max = 1) { return Math.max(min, Math.min(max, Number(value) || 0)) }
 function lerp(start, end, amount) { return start + (end - start) * clamp(amount) }
-function ease(amount) { const t = clamp(amount); return t * t * (3 - 2 * t) }
-
-function roundedRect(ctx, x, y, width, height, radius) {
-  const r = Math.min(radius, width / 2, height / 2)
-  ctx.beginPath(); ctx.moveTo(x + r, y)
-  ctx.arcTo(x + width, y, x + width, y + height, r)
-  ctx.arcTo(x + width, y + height, x, y + height, r)
-  ctx.arcTo(x, y + height, x, y, r)
-  ctx.arcTo(x, y, x + width, y, r); ctx.closePath()
-}
+function smoothstep(amount) { const t = clamp(amount); return t * t * (3 - 2 * t) }
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -98,13 +109,13 @@ function resolveAdapter(config) {
   }, null)
 }
 
-function targetSlot() {
-  if (adapter?.targetSlot) return SLOTS.find(slot => slot.key === adapter.targetSlot) || SLOTS[3]
+function targetSlotKey() {
+  if (adapter?.targetSlot && SLOT_META[adapter.targetSlot]) return adapter.targetSlot
   const target = normalizeKey(props.targetBinId)
-  return SLOTS.find(slot => target.includes(slot.key)) || SLOTS[3]
+  return Object.keys(SLOT_META).find(key => target.includes(key)) || 'other'
 }
 
-async function loadObject() {
+async function loadAssets() {
   const revision = ++loadRevision
   ready = false
   try {
@@ -112,37 +123,72 @@ async function loadObject() {
     if (!response.ok) throw new Error(`Waste adapter HTTP ${response.status}`)
     const config = await response.json()
     const nextAdapter = resolveAdapter(config)
-    const visualSources = {
-      ...SMART_BIN_WORKFLOW_CONFIG.visuals,
-      structure: props.structureVisualSrc || SMART_BIN_WORKFLOW_CONFIG.visuals.structure
-    }
-    const visualEntries = Object.entries(visualSources)
-    const [nextObject, ...visualResults] = await Promise.all([
-      nextAdapter?.sprite ? loadImage(nextAdapter.sprite) : Promise.resolve(null),
-      ...visualEntries.map(([, src]) => loadImage(src).catch(error => ({ loadError: error })))
+    const sources = smartBinInternalAssetSources(props.structureVisualSrc)
+    const entries = Object.entries(sources)
+    const legacyEntries = Object.entries(SMART_BIN_INTERNAL_LEGACY_VISUALS)
+    const rasterEntries = Object.entries(smartBinCutawayRasterV3Sources())
+    const results = await Promise.all([
+      nextAdapter?.sprite ? loadImage(nextAdapter.sprite).catch(error => ({ loadError: error })) : Promise.resolve(null),
+      ...entries.map(([, src]) => loadImage(src).catch(error => ({ loadError: error }))),
+      ...legacyEntries.map(([, src]) => loadImage(src).catch(error => ({ loadError: error }))),
+      ...rasterEntries.map(([, src]) => loadImage(src).catch(error => ({ loadError: error })))
     ])
-    if (revision !== loadRevision) return
+    if (disposed || revision !== loadRevision) return
+    const nextObject = results[0]
+    const layerResults = results.slice(1, 1 + entries.length)
+    const legacyStart = 1 + entries.length
+    const rasterStart = legacyStart + legacyEntries.length
+    const legacyResults = results.slice(legacyStart, rasterStart)
+    const rasterResults = results.slice(rasterStart)
     adapter = nextAdapter
-    objectImage = nextObject
-    componentImages = visualEntries.reduce((images, [key], index) => {
-      const result = visualResults[index]
-      if (result && !result.loadError) images[key] = result
-      return images
+    objectImage = nextObject && !nextObject.loadError ? nextObject : null
+    layerImages = entries.reduce((result, [key], index) => {
+      const image = layerResults[index]
+      if (image && !image.loadError) result[key] = image
+      return result
     }, {})
-    const failed = visualResults.filter(result => result?.loadError)
-    if (failed.length) emit('error', { message: '桶内活动部件素材部分加载失败，已使用绘制回退', errors: failed.map(item => item.loadError) })
-    emit('visualchange', { key: adapter?.key || '', label: adapter?.label || '', placeholder: !adapter || !nextObject })
+    legacyImages = legacyEntries.reduce((result, [key], index) => {
+      const image = legacyResults[index]
+      if (image && !image.loadError) result[key] = image
+      return result
+    }, {})
+    rasterImages = rasterEntries.reduce((result, [key], index) => {
+      const image = rasterResults[index]
+      if (image && !image.loadError) result[key] = image
+      return result
+    }, {})
+    const requiredV4 = ['fixedCadStructure', 'xyRails', 'movingCarriage', 'liftColumn', 'leftJaw', 'rightJaw', 'guideHopperRear', 'targetBins', 'guideHopperFrontLip', 'binFrontPanels', 'frontFrameOcclusion']
+    const v4Ready = requiredV4.every(key => layerImages[key])
+    const rasterReady = ['fixedMother', 'panelsOpenMother', 'carriageLift', 'leftJaw', 'rightJaw'].every(key => rasterImages[key])
+    const posterReady = !!rasterImages.assembledPoster
+    const requested = normalizeKey(props.visualVersion)
+    if (props.debugCalibration && requested === 'v4' && v4Ready) activeVisualVersion.value = 'v4'
+    else if (props.debugCalibration && requested === 'legacy-v1' && Object.keys(legacyImages).length === legacyEntries.length) activeVisualVersion.value = 'legacy-v1'
+    else if (rasterReady) activeVisualVersion.value = 'cutaway-raster-v3'
+    else if (posterReady) activeVisualVersion.value = 'cutaway-raster-v3-static'
+    else activeVisualVersion.value = 'unavailable'
+    const errors = results.filter(result => result?.loadError).map(result => result.loadError)
+    if (errors.length) emit('error', { message: '桶内剖视素材部分加载失败', errors })
+    if (!rasterReady && posterReady) emit('error', { message: '桶内实体活动图层不完整，已切换完整静态实体画面' })
+    emit('visualchange', { key: adapter?.key || '', label: adapter?.label || '', placeholder: !adapter || !objectImage, visualVersion: activeVisualVersion.value })
   } catch (error) {
-    if (revision !== loadRevision) return
+    if (disposed || revision !== loadRevision) return
     adapter = null
     objectImage = null
-    componentImages = {}
+    layerImages = {}
+    legacyImages = {}
+    rasterImages = {}
     emit('visualchange', { key: '', label: '', placeholder: true })
-    emit('error', { message: '桶内动画素材加载失败', error })
+    emit('error', { message: '桶内剖视素材加载失败', error })
   }
+  if (disposed || revision !== loadRevision) return
   ready = true
-  draw()
+  if (props.active) draw(true)
   if (props.active && props.running) play()
+}
+
+function phaseStart(index) {
+  return PHASES.slice(0, Math.max(0, index)).reduce((sum, phase) => sum + phase.durationMs, 0)
 }
 
 function phaseAt(valueMs) {
@@ -156,6 +202,13 @@ function phaseAt(valueMs) {
   return { ...PHASES[PHASES.length - 1], index: PHASES.length - 1, localProgress: 1 }
 }
 
+function polygonPoint(ctx, points) {
+  if (!points?.length) return
+  ctx.beginPath()
+  points.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y))
+  ctx.closePath()
+}
+
 function cubicPoint(points, amount) {
   const [start, controlA, controlB, end] = points
   const t = clamp(amount); const inverse = 1 - t
@@ -165,296 +218,684 @@ function cubicPoint(points, amount) {
   }
 }
 
-function intakePoint(amount) {
-  const [start, through, end] = SMART_BIN_WORKFLOW_CONFIG.paths.intake
-  const t = ease(amount)
-  const inverse = 1 - t
-  return {
-    x: inverse * inverse * start.x + 2 * inverse * t * through.x + t * t * end.x,
-    y: inverse * inverse * start.y + 2 * inverse * t * through.y + t * t * end.y
+function gripperPoint(state) {
+  return { x: state.carriage.x, y: state.carriage.y + 58 + state.liftExtension }
+}
+
+function dropPath(slotKey, start) {
+  const entry = GEOMETRY.bins.slots[slotKey].entry
+  const angle = GEOMETRY.hopper.slotAngles[slotKey] * Math.PI / 180
+  const hopperExit = {
+    x: GEOMETRY.hopper.center.x + Math.sin(angle) * 82,
+    y: GEOMETRY.hopper.center.y + 74
   }
+  return [
+    start,
+    { x: start.x, y: 286 },
+    hopperExit,
+    { x: entry.x, y: 572 }
+  ]
 }
 
 function motionState(phase) {
-  const slot = targetSlot()
-  const gantry = SMART_BIN_WORKFLOW_CONFIG.mechanisms.gantry
-  const receivePoint = SMART_BIN_WORKFLOW_CONFIG.mechanisms.receive.point
-  const targetAngle = SMART_BIN_WORKFLOW_CONFIG.mechanisms.hopper.slotAngles[slot.key] || 0
+  const slotKey = targetSlotKey()
+  const targetX = GEOMETRY.gantry.transferX[slotKey]
+  const targetAngle = GEOMETRY.hopper.slotAngles[slotKey]
+  const home = GEOMETRY.gantry.home
   const state = {
-    carriage: { ...gantry.home },
+    carriage: { ...home },
+    liftExtension: 0,
     jawClosed: 0,
     hopperAngle: 0,
-    object: { ...receivePoint, alpha: 0, rotationProgress: 0 },
-    detectPulse: 0,
+    object: { ...GEOMETRY.receive.point, visible: false, rotation: Number(adapter?.receiveRotation) || 0 },
+    detectProgress: 0,
     localFillPct: 0,
-    slotPulse: 0,
-    dropProgress: 0
+    slotEmphasis: 0,
+    panelOpen: 0,
+    dropProgress: 0,
+    routeOpacity: 0,
+    objectHeight: 0
   }
 
   if (phase.key === 'intake') {
-    state.object = { ...intakePoint(phase.localProgress), alpha: 1, rotationProgress: phase.localProgress * .28 }
+    const t = phase.localProgress
+    const fall = t < .84 ? (t / .84) ** 2 * .94 : .94 + smoothstep((t - .84) / .16) * .06
+    state.object = {
+      x: lerp(GEOMETRY.inlet.center.x, GEOMETRY.receive.point.x, fall),
+      y: lerp(GEOMETRY.inlet.center.y - 34, GEOMETRY.receive.point.y, fall),
+      visible: true,
+      rotation: lerp(Number(adapter?.rotation) || 0, Number(adapter?.receiveRotation) || 0, fall)
+    }
+    state.routeOpacity = clamp(1 - t / .28) * .18
   } else if (phase.key === 'detect') {
-    state.object = { ...receivePoint, alpha: 1, rotationProgress: .28 }
-    state.detectPulse = Math.sin(phase.localProgress * Math.PI * 4) * .5 + .5
+    state.object = { ...GEOMETRY.receive.point, visible: true, rotation: Number(adapter?.receiveRotation) || 0 }
+    state.detectProgress = phase.localProgress
   } else if (phase.key === 'receive') {
-    const descend = ease(clamp(phase.localProgress / .42))
-    const close = ease(clamp((phase.localProgress - .32) / .34))
-    const lift = ease(clamp((phase.localProgress - .7) / .3))
-    state.carriage.y = lerp(gantry.home.y, gantry.receive.y, descend * (1 - lift))
+    const t = phase.localProgress
+    const align = smoothstep(t / .22)
+    const descend = smoothstep((t - .18) / .34)
+    const close = smoothstep((t - .38) / .28)
+    const lift = smoothstep((t - .82) / .18)
+    state.carriage.x = lerp(home.x, GEOMETRY.receive.point.x, align)
+    state.liftExtension = lerp(0, 26, descend * (1 - lift))
     state.jawClosed = close
-    const held = phase.localProgress >= .58
-    state.object = held
-      ? { x: state.carriage.x, y: state.carriage.y + 90, alpha: 1, rotationProgress: .3 }
-      : { ...receivePoint, alpha: 1, rotationProgress: .28 }
+    const anchor = gripperPoint(state)
+    const attach = smoothstep((t - .46) / .2)
+    state.object = {
+      x: lerp(GEOMETRY.receive.point.x, anchor.x, attach),
+      y: lerp(GEOMETRY.receive.point.y, anchor.y, attach),
+      visible: true,
+      rotation: lerp(Number(adapter?.receiveRotation) || 0, 0, attach)
+    }
+    state.objectHeight = lift
   } else if (phase.key === 'transfer') {
-    const move = ease(phase.localProgress)
-    state.carriage = { x: lerp(gantry.home.x, slot.transferX, move), y: gantry.liftY }
+    const t = phase.localProgress
+    const move = smoothstep((t - .08) / .84)
+    state.carriage.x = lerp(home.x, targetX, move)
+    state.liftExtension = 0
     state.jawClosed = 1
-    state.object = { x: state.carriage.x, y: state.carriage.y + 90, alpha: 1, rotationProgress: .3 + move * .14 }
+    const anchor = gripperPoint(state)
+    const sway = Math.sin(move * Math.PI) * (Number(adapter?.transferSway) || 0)
+    state.object = { x: anchor.x, y: anchor.y + sway * .18, visible: true, rotation: sway }
+    state.objectHeight = 1
+    state.panelOpen = smoothstep((t - .25) / .57)
+    state.routeOpacity = clamp(1 - t / .25) * .14
   } else if (phase.key === 'align') {
-    state.carriage = { x: slot.transferX, y: gantry.liftY }
+    const turn = smoothstep(phase.localProgress / .78)
+    state.carriage.x = targetX
     state.jawClosed = 1
-    state.hopperAngle = lerp(0, targetAngle, ease(phase.localProgress))
-    state.object = { x: slot.transferX, y: gantry.liftY + 90, alpha: 1, rotationProgress: .44 }
+    state.hopperAngle = lerp(0, targetAngle, turn)
+    const anchor = gripperPoint(state)
+    state.object = { ...anchor, visible: true, rotation: 0 }
+    state.slotEmphasis = smoothstep(phase.localProgress / .6)
+    state.objectHeight = 1
+    state.panelOpen = 1
   } else if (phase.key === 'drop') {
-    const drop = ease(phase.localProgress)
-    const point = cubicPoint(SMART_BIN_WORKFLOW_CONFIG.paths.drop[slot.key], drop)
-    state.carriage = { x: slot.transferX, y: gantry.liftY }
-    state.jawClosed = 1 - ease(clamp(phase.localProgress / .2))
+    const release = smoothstep(phase.localProgress / .16)
+    const fall = phase.localProgress <= .16 ? 0 : ((phase.localProgress - .16) / .84) ** 2
+    state.carriage.x = targetX
+    state.jawClosed = 1 - release
     state.hopperAngle = targetAngle
-    state.dropProgress = drop
-    state.object = { ...point, alpha: 1 - ease(clamp((drop - .82) / .18)), rotationProgress: .44 + drop * .8 }
-    state.slotPulse = clamp((drop - .55) / .45)
+    const start = gripperPoint(state)
+    const point = cubicPoint(dropPath(slotKey, start), fall)
+    state.object = {
+      ...point,
+      visible: true,
+      rotation: lerp(0, Number(adapter?.dropRotation) || 0, fall)
+    }
+    state.dropProgress = fall
+    state.slotEmphasis = 1
+    state.objectHeight = 1 - fall
+    state.panelOpen = 1
   } else if (phase.key === 'fill_update') {
-    state.carriage = { x: slot.transferX, y: gantry.liftY }
+    state.carriage.x = targetX
     state.hopperAngle = targetAngle
-    state.localFillPct = targetFill.value * ease(phase.localProgress)
-    state.slotPulse = 1
+    state.localFillPct = targetFill.value * smoothstep(phase.localProgress)
+    state.slotEmphasis = 1
+    state.panelOpen = 1
   } else if (phase.key === 'reset') {
-    const reset = ease(phase.localProgress)
-    state.carriage = { x: lerp(slot.transferX, gantry.home.x, reset), y: gantry.liftY }
-    state.hopperAngle = lerp(targetAngle, 0, reset)
+    const t = phase.localProgress
+    const hopperReset = smoothstep(t / .58)
+    const carriageReset = smoothstep((t - .18) / .74)
+    state.carriage.x = lerp(targetX, home.x, carriageReset)
+    state.hopperAngle = lerp(targetAngle, 0, hopperReset)
     state.localFillPct = targetFill.value
-    state.slotPulse = 1 - reset
+    state.slotEmphasis = 1 - smoothstep(t)
+    state.liftExtension = 0
+    state.panelOpen = 1 - smoothstep(t / .6)
   }
   return state
 }
 
-function drawImageCentered(ctx, image, x, y, width, height, rotationDeg = 0, alpha = 1) {
-  if (!image) return false
-  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(rotationDeg * Math.PI / 180)
-  ctx.drawImage(image, -width / 2, -height / 2, width, height); ctx.restore()
-  return true
-}
-
-function drawStructure(ctx) {
-  const image = componentImages.structure
-  if (!image) return
-  ctx.save(); ctx.globalAlpha = .23; ctx.globalCompositeOperation = 'multiply'
-  ctx.drawImage(image, 240, 74, 420, 414); ctx.restore()
-}
-
-function drawGantryRail(ctx) {
-  const gradient = ctx.createLinearGradient(250, 0, 650, 0)
-  gradient.addColorStop(0, '#789096'); gradient.addColorStop(.45, '#eef4f4'); gradient.addColorStop(1, '#526b72')
-  ctx.strokeStyle = gradient; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(250, 114); ctx.lineTo(650, 114); ctx.stroke()
-  ctx.strokeStyle = '#314b53'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(255, 123); ctx.lineTo(645, 123); ctx.stroke()
-}
-
-function drawGantry(ctx, state) {
-  const gantry = SMART_BIN_WORKFLOW_CONFIG.mechanisms.gantry
-  if (!drawImageCentered(ctx, componentImages.carriage, state.carriage.x, state.carriage.y, gantry.carriageSize.width, gantry.carriageSize.height)) {
-    ctx.fillStyle = '#873d91'; roundedRect(ctx, state.carriage.x - 34, state.carriage.y - 20, 68, 42, 7); ctx.fill()
+function drawRegisteredLayer(ctx, key, options = {}) {
+  const image = layerImages[key]
+  const layer = SMART_BIN_INTERNAL_LAYER_REGISTRY[key]
+  if (!image || !layer) return
+  ctx.save()
+  ctx.globalAlpha = options.opacity ?? layer.opacity ?? 1
+  if (options.filter) ctx.filter = options.filter
+  if (options.shadow) {
+    const shadow = layer.shadow || {}
+    ctx.shadowColor = `rgba(0, 10, 16, ${shadow.opacity || .2})`
+    ctx.shadowBlur = shadow.blur || 4
+    ctx.shadowOffsetX = shadow.offsetX || 0
+    ctx.shadowOffsetY = shadow.offsetY || 0
   }
-  const jawAngle = lerp(gantry.jawOpenDeg, gantry.jawClosedDeg, state.jawClosed)
-  const jawTop = state.carriage.y + 23
-  const drawJaw = (image, side) => {
-    if (!image) return
-    ctx.save(); ctx.translate(state.carriage.x + side * 5, jawTop); ctx.rotate(side * jawAngle * Math.PI / 180)
-    if (side < 0) ctx.drawImage(image, -image.width + 8, 0)
-    else ctx.drawImage(image, -8, 0)
-    ctx.restore()
-  }
-  drawJaw(componentImages.leftJaw, -1)
-  drawJaw(componentImages.rightJaw, 1)
-}
-
-function drawHopper(ctx, state) {
-  const hopper = SMART_BIN_WORKFLOW_CONFIG.mechanisms.hopper
-  if (!drawImageCentered(ctx, componentImages.hopper, hopper.center.x, hopper.center.y, hopper.size.width, hopper.size.height, state.hopperAngle)) {
-    ctx.save(); ctx.translate(hopper.center.x, hopper.center.y); ctx.rotate(state.hopperAngle * Math.PI / 180)
-    ctx.fillStyle = '#c7d3d5'; ctx.strokeStyle = '#4f6870'; ctx.lineWidth = 3
-    ctx.beginPath(); ctx.moveTo(-130, -62); ctx.lineTo(130, -62); ctx.lineTo(72, 62); ctx.lineTo(-72, 62); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore()
-  }
-}
-
-function drawDetect(ctx, state, slot) {
-  if (!state.detectPulse) return
-  const point = SMART_BIN_WORKFLOW_CONFIG.mechanisms.receive.point
-  const radius = SMART_BIN_WORKFLOW_CONFIG.mechanisms.receive.detectRadius + state.detectPulse * 9
-  ctx.save(); ctx.strokeStyle = slot.color; ctx.globalAlpha = .35 + state.detectPulse * .45; ctx.lineWidth = 3
-  ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.stroke()
-  ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.arc(point.x, point.y, radius + 10, 0, Math.PI * 2); ctx.stroke(); ctx.restore()
-}
-
-function drawSlotsBack(ctx, activeSlot, state) {
-  SLOTS.forEach(slot => {
-    const selected = slot.key === activeSlot.key
-    const left = slot.centerX - 72
-    ctx.fillStyle = selected ? `${slot.color}1f` : 'rgba(241,247,247,.76)'
-    ctx.strokeStyle = selected ? `${slot.color}99` : '#a9bdc1'; ctx.lineWidth = selected ? 3 : 2
-    roundedRect(ctx, left, 334, 144, 138, 12); ctx.fill(); ctx.stroke()
-    if (selected && state.localFillPct > 0) {
-      const fillHeight = 103 * state.localFillPct / 100
-      const fillGradient = ctx.createLinearGradient(0, 452 - fillHeight, 0, 452)
-      fillGradient.addColorStop(0, `${slot.color}4d`); fillGradient.addColorStop(1, `${slot.color}a8`)
-      ctx.fillStyle = fillGradient; ctx.fillRect(left + 8, 452 - fillHeight, 128, fillHeight)
-    }
-    if (selected && state.slotPulse > 0) {
-      ctx.save(); ctx.globalAlpha = .16 + state.slotPulse * .24; ctx.shadowColor = slot.color; ctx.shadowBlur = 24
-      ctx.strokeStyle = slot.color; ctx.lineWidth = 5; roundedRect(ctx, left - 3, 331, 150, 144, 14); ctx.stroke(); ctx.restore()
-    }
-  })
-}
-
-function drawSlotFronts(ctx, activeSlot, state) {
-  SLOTS.forEach(slot => {
-    const selected = slot.key === activeSlot.key
-    const left = slot.centerX - 72
-    ctx.fillStyle = selected ? `${slot.color}e8` : 'rgba(50,68,75,.92)'
-    roundedRect(ctx, left + 7, 340, 130, 16, 6); ctx.fill()
-    const frontGradient = ctx.createLinearGradient(0, 385, 0, 467)
-    frontGradient.addColorStop(0, 'rgba(50,67,73,.62)'); frontGradient.addColorStop(1, 'rgba(23,39,45,.96)')
-    ctx.fillStyle = frontGradient; roundedRect(ctx, left + 8, 389, 128, 76, 8); ctx.fill()
-    ctx.fillStyle = '#edf6f6'; ctx.font = '800 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText(slot.label, slot.centerX, 425)
-    ctx.fillStyle = selected ? '#ffffff' : '#9ab0b5'; ctx.font = '800 12px ui-monospace,Consolas,monospace'
-    ctx.fillText(selected ? `${Math.round(state.localFillPct)}%` : '—', slot.centerX, 448)
-  })
-}
-
-function drawHopperOcclusion(ctx, state) {
-  if (!(state.dropProgress > .18 && state.dropProgress < .58)) return
-  const hopper = SMART_BIN_WORKFLOW_CONFIG.mechanisms.hopper
-  ctx.save(); ctx.translate(hopper.center.x, hopper.center.y); ctx.rotate(state.hopperAngle * Math.PI / 180)
-  const gradient = ctx.createLinearGradient(0, 0, 0, 56)
-  gradient.addColorStop(0, 'rgba(174,189,193,.08)'); gradient.addColorStop(.35, 'rgba(117,139,145,.9)'); gradient.addColorStop(1, 'rgba(66,88,95,.98)')
-  ctx.fillStyle = gradient; ctx.beginPath(); ctx.moveTo(-106, 5); ctx.lineTo(106, 5); ctx.lineTo(66, 59); ctx.lineTo(-66, 59); ctx.closePath(); ctx.fill(); ctx.restore()
-}
-
-function drawObject(ctx, state) {
-  const position = state.object
-  if (!position || position.alpha <= 0) return
-  const wasteVisual = SMART_BIN_WORKFLOW_CONFIG.wasteVisuals[adapter?.key] || {}
-  const scale = (Number(adapter?.scale) || .26) * .52 * (Number(wasteVisual.scaleMultiplier) || 1)
-  const rotation = ((Number(adapter?.rotation) || 0) + (Number(wasteVisual.rotationOffset) || 0) + position.rotationProgress * 58) * Math.PI / 180
-  ctx.save(); ctx.globalAlpha = position.alpha; ctx.translate(position.x, position.y); ctx.rotate(rotation)
-  if (objectImage) {
-    ctx.scale(scale, scale); ctx.drawImage(objectImage, -objectImage.width / 2, -objectImage.height / 2)
+  if (layer.drawBox) {
+    const box = layer.drawBox
+    ctx.drawImage(image, box.x, box.y, box.width, box.height)
   } else {
-    ctx.setLineDash([6, 5]); ctx.strokeStyle = '#f5a623'; ctx.fillStyle = 'rgba(255,247,224,.95)'; ctx.lineWidth = 2
-    roundedRect(ctx, -34, -25, 68, 50, 10); ctx.fill(); ctx.stroke(); ctx.setLineDash([])
-    ctx.fillStyle = '#a65b00'; ctx.font = '800 13px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('视觉占位', 0, 0)
+    const anchor = layer.anchor || { x: image.width / 2, y: image.height / 2 }
+    ctx.translate(options.x || 0, options.y || 0)
+    ctx.rotate((options.rotation || 0) * Math.PI / 180)
+    const scaleX = options.scaleX ?? 1
+    const scaleY = options.scaleY ?? 1
+    ctx.scale(scaleX, scaleY)
+    ctx.drawImage(image, -anchor.x, -anchor.y, layer.nativeSize.width, layer.nativeSize.height)
   }
   ctx.restore()
 }
 
-function draw() {
-  if (!canvas || !context || !ready) return
-  const ctx = context
-  ctx.setTransform(canvas.width / LOGICAL_WIDTH, 0, 0, canvas.height / LOGICAL_HEIGHT, 0, 0)
-  ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
-  const background = ctx.createLinearGradient(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
-  background.addColorStop(0, '#effaf7'); background.addColorStop(1, '#dceceb')
-  ctx.fillStyle = background; ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+function drawSceneBackground(ctx) {
+  const gradient = ctx.createRadialGradient(SCENE.width * .5, SCENE.height * .42, 50, SCENE.width * .5, SCENE.height * .5, SCENE.width * .62)
+  gradient.addColorStop(0, '#17303b')
+  gradient.addColorStop(.55, '#0b202c')
+  gradient.addColorStop(1, '#061722')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, SCENE.width, SCENE.height)
+  ctx.strokeStyle = 'rgba(118, 160, 176, .055)'
+  ctx.lineWidth = 1
+  for (let x = 0; x < SCENE.width; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, SCENE.height); ctx.stroke() }
+  for (let y = 0; y < SCENE.height; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(SCENE.width, y); ctx.stroke() }
+}
 
-  const phase = phaseAt(elapsedMs)
-  const state = motionState(phase)
-  const slot = targetSlot()
-  phaseKey.value = phase.key; phaseLabel.value = phase.label
+function drawRouteAid(ctx, state, slotKey) {
+  if (state.routeOpacity <= 0) return
+  const from = state.object.visible ? state.object : GEOMETRY.receive.point
+  const toX = GEOMETRY.gantry.transferX[slotKey]
+  ctx.save()
+  ctx.globalAlpha = state.routeOpacity
+  ctx.strokeStyle = SLOT_META[slotKey].color
+  ctx.lineWidth = 1.4
+  ctx.setLineDash([3, 9])
+  ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.quadraticCurveTo(294, 190, toX, 210); ctx.stroke()
+  ctx.restore()
+}
 
-  ctx.fillStyle = '#123d49'; ctx.font = '800 23px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
-  ctx.fillText('智能垃圾桶内部连续处理', 28, 36)
-  ctx.fillStyle = '#5b7880'; ctx.font = '600 13px system-ui'; ctx.fillText(`当前阶段：${phase.label} / ${phase.key.toUpperCase()}`, 30, 59)
-  ctx.textAlign = 'right'; ctx.fillStyle = slot.color; ctx.font = '800 14px system-ui'; ctx.fillText(`目标仓：${slot.label}`, 872, 37)
-  ctx.fillStyle = '#617b83'; ctx.font = '600 12px system-ui'
-  ctx.fillText(`局部仓位 ${Math.round(state.localFillPct)}% · 事件 #${props.fillEventSequence || '—'} 到达后同步全局容量`, 872, 59)
+function drawCarriageAndGripper(ctx, state) {
+  const grip = gripperPoint(state)
+  drawRegisteredLayer(ctx, 'movingCarriage', { x: state.carriage.x, y: state.carriage.y })
 
-  ctx.fillStyle = 'rgba(255,255,255,.34)'; ctx.strokeStyle = '#6f939a'; ctx.lineWidth = 3
-  roundedRect(ctx, 70, 72, 760, 418, 18); ctx.fill(); ctx.stroke()
-
-  drawStructure(ctx)
-  drawGantryRail(ctx)
-  drawSlotsBack(ctx, slot, state)
-  drawHopper(ctx, state)
-  drawDetect(ctx, state, slot)
-  drawObject(ctx, state)
-  drawHopperOcclusion(ctx, state)
-  drawGantry(ctx, state)
-  drawSlotFronts(ctx, slot, state)
-  if (componentImages.foreground) ctx.drawImage(componentImages.foreground, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
-
-  const completedPhases = phase.index + phase.localProgress
-  const phaseTrackWidth = 760 / PHASES.length
-  PHASES.forEach((item, index) => {
-    const left = 70 + index * phaseTrackWidth
-    ctx.fillStyle = index < completedPhases ? slot.color : 'rgba(78,111,120,.18)'
-    roundedRect(ctx, left + 3, 480, phaseTrackWidth - 6, 5, 3); ctx.fill()
+  const columnTop = state.carriage.y + 24
+  const columnHeight = Math.max(48, grip.y - columnTop + 12)
+  drawRegisteredLayer(ctx, 'liftColumn', {
+    x: state.carriage.x,
+    y: columnTop,
+    scaleY: columnHeight / SMART_BIN_INTERNAL_LAYER_REGISTRY.liftColumn.nativeSize.height
   })
 
-  progress.value = clamp(elapsedMs / TOTAL_DURATION)
-  emit('progress', {
-    phase: phase.key,
-    phaseLabel: phase.label,
-    progress: progress.value,
-    previewFillPct: Math.round(state.localFillPct),
-    mechanismState: {
-      carriageX: Math.round(state.carriage.x),
-      jawClosed: Number(state.jawClosed.toFixed(2)),
-      hopperAngle: Number(state.hopperAngle.toFixed(1))
-    }
+  const jawAngle = lerp(GEOMETRY.gantry.jawOpenDeg, GEOMETRY.gantry.jawClosedDeg, state.jawClosed)
+  drawRegisteredLayer(ctx, 'leftJaw', { x: grip.x - 4, y: grip.y - 4, rotation: -jawAngle })
+  drawRegisteredLayer(ctx, 'rightJaw', { x: grip.x + 4, y: grip.y - 4, rotation: jawAngle })
+}
+
+function drawCarriageShadow(ctx, state) {
+  ctx.save()
+  ctx.filter = 'blur(4px)'
+  ctx.globalAlpha = .2
+  ctx.fillStyle = '#020d12'
+  ctx.beginPath()
+  ctx.ellipse(state.carriage.x + 6, state.carriage.y + 39, 53, 12, .04, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawObjectShadow(ctx, state) {
+  if (!state.object.visible || !objectImage) return
+  const height = clamp(state.objectHeight)
+  const adapterScale = Number(adapter?.internalShadowScale) || 1
+  ctx.save()
+  ctx.filter = `blur(${lerp(2.2, 7, height)}px)`
+  ctx.globalAlpha = lerp(.28, .11, height)
+  ctx.fillStyle = '#020d12'
+  ctx.beginPath()
+  ctx.ellipse(state.object.x + lerp(2, 7, height), Math.min(507, state.object.y + lerp(12, 34, height)), 22 * adapterScale * lerp(1, .72, height), 7 * adapterScale * lerp(1, .62, height), -.12, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawWasteObject(ctx, state) {
+  if (!state.object.visible || !objectImage || !adapter) return
+  const scale = Number(adapter.internalScale) || .13
+  const baseWidth = objectImage.naturalWidth || objectImage.width
+  const baseHeight = objectImage.naturalHeight || objectImage.height
+  ctx.save()
+  ctx.translate(state.object.x + (Number(adapter.dropOffset?.[0]) || 0) * state.dropProgress, state.object.y + (Number(adapter.dropOffset?.[1]) || 0) * state.dropProgress)
+  ctx.rotate((Number(state.object.rotation) || 0) * Math.PI / 180)
+  ctx.scale(scale, scale)
+  ctx.drawImage(objectImage, -baseWidth / 2, -baseHeight / 2)
+  ctx.restore()
+}
+
+function drawHopper(ctx, state, layerKey, opacity = 1) {
+  drawRegisteredLayer(ctx, layerKey, {
+    x: GEOMETRY.hopper.center.x,
+    y: GEOMETRY.hopper.center.y,
+    rotation: state.hopperAngle,
+    opacity,
+    shadow: layerKey === 'guideHopperRear'
   })
 }
 
+function drawBinFill(ctx, slotKey, state) {
+  const slot = GEOMETRY.bins.slots[slotKey]
+  const color = SLOT_META[slotKey].color
+  const fillHeight = GEOMETRY.bins.fillMaxHeight * state.localFillPct / 100
+  if (fillHeight <= 0) return
+  ctx.save()
+  polygonPoint(ctx, slot.clip)
+  ctx.clip()
+  const top = GEOMETRY.bins.fillBottomY - fillHeight
+  const gradient = ctx.createLinearGradient(0, top, 0, GEOMETRY.bins.fillBottomY)
+  gradient.addColorStop(0, `${color}4d`)
+  gradient.addColorStop(1, `${color}9e`)
+  ctx.fillStyle = gradient
+  ctx.fillRect(slot.centerX - 85, top, 170, fillHeight)
+  ctx.restore()
+}
+
+function drawTargetEmphasis(ctx, slotKey, amount) {
+  if (amount <= 0) return
+  const slot = GEOMETRY.bins.slots[slotKey]
+  ctx.save()
+  ctx.globalAlpha = .22 + amount * .36
+  ctx.strokeStyle = SLOT_META[slotKey].color
+  ctx.lineWidth = 3
+  ctx.shadowColor = SLOT_META[slotKey].color
+  ctx.shadowBlur = 10 * amount
+  polygonPoint(ctx, slot.clip.slice(0, 3))
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawDetection(ctx, state, slotKey) {
+  if (!state.detectProgress) return
+  const point = GEOMETRY.receive.point
+  const box = GEOMETRY.receive.detectBox
+  const pulse = Math.sin(state.detectProgress * Math.PI) ** 2
+  const left = point.x - box.width / 2
+  const top = point.y - box.height / 2
+  const color = SLOT_META[slotKey].color
+  ctx.save()
+  ctx.strokeStyle = color
+  ctx.globalAlpha = .56
+  ctx.lineWidth = 2
+  const corner = 12
+  ;[[left, top, 1, 1], [left + box.width, top, -1, 1], [left, top + box.height, 1, -1], [left + box.width, top + box.height, -1, -1]].forEach(([x, y, sx, sy]) => {
+    ctx.beginPath(); ctx.moveTo(x + sx * corner, y); ctx.lineTo(x, y); ctx.lineTo(x, y + sy * corner); ctx.stroke()
+  })
+  ctx.globalAlpha = .18 + pulse * .18
+  ctx.fillStyle = color
+  ctx.fillRect(left + 4, top + 5 + (box.height - 10) * state.detectProgress, box.width - 8, 1.5)
+  ctx.restore()
+}
+
+function drawInletOcclusion(ctx) {
+  ctx.save()
+  polygonPoint(ctx, GEOMETRY.inlet.frontOcclusion)
+  const gradient = ctx.createLinearGradient(246, 61, 342, 84)
+  gradient.addColorStop(0, '#8a989c')
+  gradient.addColorStop(.45, '#dce3e4')
+  gradient.addColorStop(1, '#3b494e')
+  ctx.fillStyle = gradient
+  ctx.fill()
+  ctx.strokeStyle = '#28363b'
+  ctx.lineWidth = 2.4
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawCalibration(ctx) {
+  if (!props.debugCalibration) return
+  ctx.save()
+  ctx.strokeStyle = 'rgba(255, 190, 78, .72)'
+  ctx.fillStyle = 'rgba(255, 210, 125, .9)'
+  ctx.lineWidth = 1
+  ctx.strokeRect(0, 0, 591, 702)
+  ;[['INLET', GEOMETRY.inlet.center], ['RECEIVE', GEOMETRY.receive.point], ['HOPPER', GEOMETRY.hopper.center]].forEach(([label, point]) => {
+    ctx.beginPath(); ctx.arc(point.x, point.y, 5, 0, Math.PI * 2); ctx.stroke()
+    ctx.font = '12px ui-monospace,Consolas,monospace'; ctx.fillText(label, point.x + 8, point.y - 8)
+  })
+  ctx.restore()
+}
+
+function roundedRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2)
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + width, y, x + width, y + height, r)
+  ctx.arcTo(x + width, y + height, x, y + height, r); ctx.arcTo(x, y + height, x, y, r)
+  ctx.arcTo(x, y, x + width, y, r); ctx.closePath()
+}
+
+function drawLegacyFrame(ctx, state, slotKey) {
+  const fit = Math.min(cssWidth / 900, cssHeight / 520)
+  ctx.save(); ctx.translate(cssWidth / 2, cssHeight / 2); ctx.scale(fit, fit); ctx.translate(-450, -260)
+  const background = ctx.createLinearGradient(0, 0, 900, 520)
+  background.addColorStop(0, '#effaf7'); background.addColorStop(1, '#dceceb')
+  ctx.fillStyle = background; ctx.fillRect(0, 0, 900, 520)
+  ctx.fillStyle = 'rgba(255,255,255,.34)'; ctx.strokeStyle = '#6f939a'; ctx.lineWidth = 3
+  roundedRect(ctx, 70, 72, 760, 418, 18); ctx.fill(); ctx.stroke()
+  if (legacyImages.structure) { ctx.save(); ctx.globalAlpha = .23; ctx.drawImage(legacyImages.structure, 240, 74, 420, 414); ctx.restore() }
+  ctx.strokeStyle = '#73888e'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(250, 114); ctx.lineTo(650, 114); ctx.stroke()
+  const nativeToLegacy = point => ({ x: 70 + point.x / 591 * 760, y: 72 + point.y / 702 * 418 })
+  Object.entries(GEOMETRY.bins.slots).forEach(([key, slot]) => {
+    const center = nativeToLegacy({ x: slot.centerX, y: 0 }).x
+    ctx.fillStyle = key === slotKey ? `${SLOT_META[key].color}2b` : 'rgba(241,247,247,.76)'
+    ctx.strokeStyle = key === slotKey ? SLOT_META[key].color : '#a9bdc1'; ctx.lineWidth = key === slotKey ? 3 : 2
+    roundedRect(ctx, center - 66, 334, 132, 132, 10); ctx.fill(); ctx.stroke()
+  })
+  const hopperPoint = nativeToLegacy(GEOMETRY.hopper.center)
+  if (legacyImages.hopper) {
+    ctx.save(); ctx.translate(hopperPoint.x, hopperPoint.y); ctx.rotate(state.hopperAngle * Math.PI / 180)
+    ctx.drawImage(legacyImages.hopper, -141, -72, 282, 145); ctx.restore()
+  }
+  const carriagePoint = nativeToLegacy(state.carriage)
+  if (legacyImages.carriage) ctx.drawImage(legacyImages.carriage, carriagePoint.x - 63, carriagePoint.y - 25, 126, 82)
+  const gripPoint = nativeToLegacy(gripperPoint(state))
+  if (legacyImages.leftJaw) ctx.drawImage(legacyImages.leftJaw, gripPoint.x - 30, gripPoint.y - 8, 34, 72)
+  if (legacyImages.rightJaw) ctx.drawImage(legacyImages.rightJaw, gripPoint.x - 4, gripPoint.y - 8, 34, 72)
+  if (state.object.visible && objectImage && adapter) {
+    const objectPoint = nativeToLegacy(state.object)
+    const scale = (Number(adapter.scale) || .26) * .52
+    ctx.save(); ctx.translate(objectPoint.x, objectPoint.y); ctx.rotate((Number(state.object.rotation) || 0) * Math.PI / 180)
+    ctx.scale(scale, scale); ctx.drawImage(objectImage, -objectImage.width / 2, -objectImage.height / 2); ctx.restore()
+  }
+  if (legacyImages.foreground) ctx.drawImage(legacyImages.foreground, 0, 0, 900, 520)
+  ctx.restore()
+}
+
+function rasterMechanismState(state, slotKey) {
+  const config = SMART_BIN_CUTAWAY_RASTER_V3
+  const oldHomeX = GEOMETRY.gantry.home.x
+  const oldTargetX = GEOMETRY.gantry.transferX[slotKey]
+  const denominator = oldTargetX - oldHomeX
+  const travel = Math.abs(denominator) < .001 ? 0 : clamp((state.carriage.x - oldHomeX) / denominator)
+  const carriageX = lerp(config.mechanism.home.x, config.mechanism.transferX[slotKey], travel)
+  const carriageY = config.mechanism.home.y + state.liftExtension * config.mechanism.liftScale
+  const deltaX = carriageX - config.mechanism.home.x
+  const deltaY = carriageY - config.mechanism.home.y
+  return {
+    carriageX,
+    carriageY,
+    deltaX,
+    deltaY,
+    grip: {
+      x: config.mechanism.gripAnchor.x + deltaX,
+      y: config.mechanism.gripAnchor.y + deltaY
+    }
+  }
+}
+
+function rasterWasteState(phase, state, slotKey, mechanism) {
+  const config = SMART_BIN_CUTAWAY_RASTER_V3
+  const receive = config.mechanism.receive
+  const slot = config.slots[slotKey]
+  const baseRotation = Number(adapter?.receiveRotation) || 0
+  if (phase.key === 'intake') {
+    const t = phase.localProgress
+    const fall = t < .84 ? (t / .84) ** 2 * .94 : .94 + smoothstep((t - .84) / .16) * .06
+    return { x: lerp(config.mechanism.inlet.x, receive.x, fall), y: lerp(config.mechanism.inlet.y, receive.y, fall), rotation: lerp(Number(adapter?.rotation) || 0, baseRotation, fall), visible: true, clipY: null, fall: 0 }
+  }
+  if (phase.key === 'detect') return { ...receive, rotation: baseRotation, visible: true, clipY: null, fall: 0 }
+  if (phase.key === 'receive') {
+    const attach = smoothstep((phase.localProgress - .46) / .2)
+    return { x: lerp(receive.x, mechanism.grip.x, attach), y: lerp(receive.y, mechanism.grip.y, attach), rotation: lerp(baseRotation, 0, attach), visible: true, clipY: null, fall: 0 }
+  }
+  if (phase.key === 'transfer') {
+    const sway = Math.sin(phase.localProgress * Math.PI) * (Number(adapter?.transferSway) || 0)
+    return { x: mechanism.grip.x, y: mechanism.grip.y + sway * .2, rotation: sway, visible: true, clipY: null, fall: 0 }
+  }
+  if (phase.key === 'align') return { ...mechanism.grip, rotation: 0, visible: true, clipY: null, fall: 0 }
+  if (phase.key === 'drop') {
+    const fall = phase.localProgress <= .16 ? 0 : ((phase.localProgress - .16) / .84) ** 2
+    const point = cubicPoint([
+      mechanism.grip,
+      { x: mechanism.grip.x, y: 320 },
+      { x: slot.center.x, y: slot.center.y - 34 },
+      { x: slot.center.x, y: slot.hideY + 28 }
+    ], fall)
+    return { ...point, rotation: lerp(0, Number(adapter?.dropRotation) || 0, fall), visible: true, clipY: slot.hideY, fall }
+  }
+  return { ...receive, rotation: 0, visible: false, clipY: null, fall: 0 }
+}
+
+function drawRasterImage(ctx, image, alpha = 1) {
+  if (!image) return
+  const box = SMART_BIN_CUTAWAY_RASTER_V3.motherDrawBox
+  ctx.save(); ctx.globalAlpha = alpha
+  ctx.drawImage(image, box.x, box.y, box.width, box.height)
+  ctx.restore()
+}
+
+function drawRasterMother(ctx, state) {
+  drawRasterImage(ctx, rasterImages.fixedMother)
+  const openAmount = clamp(state?.panelOpen)
+  if (openAmount > 0) drawRasterImage(ctx, rasterImages.panelsOpenMother, openAmount)
+}
+
+function drawRasterPiece(ctx, key, deltaX = 0, deltaY = 0, extraX = 0) {
+  const image = rasterImages[key]
+  const layer = SMART_BIN_CUTAWAY_RASTER_V3.layers[key]
+  if (!image || !layer) return
+  const scale = SMART_BIN_CUTAWAY_RASTER_V3.sourceToSceneScale
+  const [left, top, right, bottom] = layer.sourceBbox
+  const box = SMART_BIN_CUTAWAY_RASTER_V3.motherDrawBox
+  ctx.drawImage(image, box.x + left * scale + deltaX + extraX, box.y + top * scale + deltaY, (right - left) * scale, (bottom - top) * scale)
+}
+
+function drawRasterTargetEffect(ctx, state, slotKey) {
+  const slot = SMART_BIN_CUTAWAY_RASTER_V3.slots[slotKey]
+  if (!slot || (state.slotEmphasis <= 0 && state.localFillPct <= 0)) return
+  ctx.save()
+  const fillRatio = targetFill.value > 0 ? clamp(state.localFillPct / targetFill.value) : 0
+  ctx.globalAlpha = .12 + state.slotEmphasis * .2
+  ctx.strokeStyle = slot.color
+  ctx.fillStyle = slot.color
+  ctx.lineWidth = 2
+  ctx.beginPath(); ctx.ellipse(slot.center.x, slot.center.y, slot.radius.x, slot.radius.y, -.04, 0, Math.PI * 2)
+  if (fillRatio > 0) { ctx.globalAlpha = .08 + fillRatio * .12; ctx.fill() }
+  ctx.globalAlpha = .18 + state.slotEmphasis * .24; ctx.stroke()
+  ctx.restore()
+}
+
+function drawRasterWaste(ctx, waste) {
+  if (!waste.visible || !objectImage || !adapter) return
+  ctx.save()
+  if (Number.isFinite(waste.clipY)) {
+    ctx.beginPath(); ctx.rect(0, 0, SCENE.width, waste.clipY); ctx.clip()
+  }
+  const scale = Number(adapter.internalScale) || .13
+  ctx.translate(waste.x, waste.y)
+  ctx.rotate((Number(waste.rotation) || 0) * Math.PI / 180)
+  ctx.scale(scale, scale)
+  ctx.drawImage(objectImage, -objectImage.width / 2, -objectImage.height / 2)
+  ctx.restore()
+}
+
+function drawRasterEffects(ctx, phase, waste, slotKey) {
+  if (phase.key !== 'detect') return
+  const pulse = Math.sin(phase.localProgress * Math.PI) ** 2
+  ctx.save()
+  ctx.strokeStyle = SMART_BIN_CUTAWAY_RASTER_V3.slots[slotKey].color
+  ctx.globalAlpha = .42
+  ctx.lineWidth = 1.5
+  const size = 26
+  ctx.strokeRect(waste.x - size, waste.y - size, size * 2, size * 2)
+  ctx.globalAlpha = .12 + pulse * .14
+  ctx.fillStyle = SMART_BIN_CUTAWAY_RASTER_V3.slots[slotKey].color
+  ctx.fillRect(waste.x - size + 3, waste.y - size + 6 + (size * 2 - 12) * phase.localProgress, size * 2 - 6, 1.5)
+  ctx.restore()
+}
+
+function drawRasterRealOcclusion(ctx, phase, state, waste, slotKey) {
+  // 开板母版只作为固定结构交叉过渡；DROP 由 rasterWasteState 的目标仓 hideY 裁剪形成真实前后关系。
+  // 禁止在此重绘整幅母版，否则会错误覆盖活动夹爪和仍位于仓口上方的垃圾。
+  if (!SMART_BIN_CUTAWAY_RASTER_V3.panelOcclusion.enabled) return
+}
+
+function drawRasterV3Frame(ctx, phase, state, slotKey, staticFallback = false) {
+  if (staticFallback) { drawRasterImage(ctx, rasterImages.assembledPoster); return }
+  drawRasterMother(ctx, state)
+  const mechanism = rasterMechanismState(state, slotKey)
+  const waste = rasterWasteState(phase, state, slotKey, mechanism)
+  drawRasterTargetEffect(ctx, state, slotKey)
+  drawRasterPiece(ctx, 'carriageLift', mechanism.deltaX, mechanism.deltaY)
+  drawRasterPiece(ctx, 'leftJaw', mechanism.deltaX, mechanism.deltaY, (SMART_BIN_CUTAWAY_RASTER_V3.layers.leftJaw.closeDeltaX || 0) * state.jawClosed)
+  drawRasterPiece(ctx, 'rightJaw', mechanism.deltaX, mechanism.deltaY, (SMART_BIN_CUTAWAY_RASTER_V3.layers.rightJaw.closeDeltaX || 0) * state.jawClosed)
+  drawRasterWaste(ctx, waste)
+  drawRasterEffects(ctx, phase, waste, slotKey)
+  drawRasterRealOcclusion(ctx, phase, state, waste, slotKey)
+}
+
+function drawFrame(emitState = false) {
+  if (!canvas || !context || !ready || disposed || !cssWidth || !cssHeight) return
+  const phase = phaseAt(elapsedMs)
+  const state = motionState(phase)
+  const slotKey = targetSlotKey()
+  const shot = resolveSmartBinInternalShot(phase.key, phase.localProgress)
+  phaseKey.value = phase.key
+
+  const ctx = context
+  ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+  ctx.clearRect(0, 0, cssWidth, cssHeight)
+  ctx.fillStyle = '#061722'; ctx.fillRect(0, 0, cssWidth, cssHeight)
+
+  if (activeVisualVersion.value === 'cutaway-raster-v3' || activeVisualVersion.value === 'cutaway-raster-v3-static') {
+    const staticFallback = activeVisualVersion.value === 'cutaway-raster-v3-static'
+    const fit = Math.min(cssWidth / SCENE.width, cssHeight / SCENE.height)
+    const cameraScale = staticFallback ? 1 : shot.cameraScale
+    const focus = staticFallback ? [600, 310] : shot.focus
+    ctx.save()
+    ctx.translate(cssWidth / 2, cssHeight / 2)
+    ctx.scale(fit * cameraScale, fit * cameraScale)
+    ctx.translate(-focus[0], -focus[1])
+    drawSceneBackground(ctx)
+    drawRasterV3Frame(ctx, phase, state, slotKey, staticFallback)
+    ctx.restore()
+  } else if (activeVisualVersion.value === 'legacy-v1') {
+    drawLegacyFrame(ctx, state, slotKey)
+  } else if (activeVisualVersion.value === 'v4') {
+    const fit = Math.min(cssWidth / SCENE.width, cssHeight / SCENE.height)
+    ctx.save()
+    ctx.translate(cssWidth / 2, cssHeight / 2)
+    ctx.scale(fit * shot.cameraScale, fit * shot.cameraScale)
+    ctx.translate(-shot.focus[0], -shot.focus[1])
+    drawSceneBackground(ctx)
+
+    ctx.save()
+    ctx.translate(SMART_BIN_INTERNAL_DEVICE.x, SMART_BIN_INTERNAL_DEVICE.y)
+    ctx.scale(SMART_BIN_INTERNAL_DEVICE.scale, SMART_BIN_INTERNAL_DEVICE.scale)
+    drawRegisteredLayer(ctx, 'rearFrame')
+    drawRegisteredLayer(ctx, 'fixedCadStructure', { opacity: .26, filter: 'grayscale(.9) saturate(.24) brightness(.7) contrast(.78)' })
+    drawRegisteredLayer(ctx, 'xyRails')
+    drawCarriageShadow(ctx, state)
+    drawObjectShadow(ctx, state)
+    drawCarriageAndGripper(ctx, state)
+    drawWasteObject(ctx, state)
+    drawHopper(ctx, state, 'guideHopperRear', .72)
+    drawRegisteredLayer(ctx, 'targetBins')
+    drawBinFill(ctx, slotKey, state)
+    drawHopper(ctx, state, 'guideHopperFrontLip')
+    drawTargetEmphasis(ctx, slotKey, state.slotEmphasis)
+    drawRegisteredLayer(ctx, 'binFrontPanels')
+    drawInletOcclusion(ctx)
+    drawRegisteredLayer(ctx, 'frontFrameOcclusion')
+    drawRouteAid(ctx, state, slotKey)
+    drawDetection(ctx, state, slotKey)
+    drawCalibration(ctx)
+    ctx.restore()
+    ctx.restore()
+  }
+
+  if (emitState && props.active && !disposed) {
+    emit('progress', {
+      phase: phase.key,
+      phaseLabel: phase.label,
+      phaseIndex: phase.index,
+      localProgress: phase.localProgress,
+      visualVersion: activeVisualVersion.value,
+      progress: clamp(elapsedMs / TOTAL_DURATION),
+      previewFillPct: Math.round(state.localFillPct),
+      mechanismState: {
+        carriageX: Math.round(state.carriage.x),
+        liftExtension: Number(state.liftExtension.toFixed(1)),
+        jawClosed: Number(state.jawClosed.toFixed(2)),
+        hopperAngle: Number(state.hopperAngle.toFixed(1)),
+        panelOpen: Number(state.panelOpen.toFixed(2))
+      }
+    })
+  }
+}
+
+function draw(emitState = false) { drawFrame(emitState) }
+
 function tick(timestamp) {
-  if (!playing) return
+  if (!playing || disposed || !props.active) return
   if (!lastTimestamp) lastTimestamp = timestamp
   const delta = Math.min(100, timestamp - lastTimestamp)
   lastTimestamp = timestamp
   elapsedMs = Math.min(TOTAL_DURATION, elapsedMs + delta * Math.max(.1, Number(props.playbackRate) || 1))
-  draw()
+  draw(true)
   if (elapsedMs >= TOTAL_DURATION) {
-    playing = false; completed = true; rafId = 0
-    emit('complete', { source: 'VISUAL_AID', workflow: 'SIMULATED_BIN_WORKFLOW', targetSlot: targetSlot().key })
+    playing = false
+    playingState.value = false
+    completed = true
+    rafId = 0
+    emit('complete', { source: 'VISUAL_AID', workflow: 'SIMULATED_BIN_WORKFLOW', targetSlot: targetSlotKey() })
     return
   }
   rafId = requestAnimationFrame(tick)
 }
 
 function play() {
-  if (!ready || !props.active || playing || completed || typeof requestAnimationFrame !== 'function') return
-  playing = true; lastTimestamp = 0; rafId = requestAnimationFrame(tick)
+  if (!ready || !props.active || playing || completed || disposed || typeof requestAnimationFrame !== 'function') return
+  playing = true
+  playingState.value = true
+  lastTimestamp = 0
+  rafId = requestAnimationFrame(tick)
 }
-function pause() { playing = false; if (rafId) cancelAnimationFrame(rafId); rafId = 0; lastTimestamp = 0 }
+
+function pause() {
+  playing = false
+  playingState.value = false
+  if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId)
+  rafId = 0
+  lastTimestamp = 0
+}
+
 function reset() {
-  pause(); elapsedMs = 0; completed = false; progress.value = 0
-  phaseKey.value = PHASES[0].key; phaseLabel.value = PHASES[0].label; draw()
+  pause()
+  elapsedMs = 0
+  completed = false
+  phaseKey.value = PHASES[0].key
+  if (ready && props.active) draw(true)
   if (props.active && props.running) play()
 }
 
+function setPhase(nextPhaseKey, localProgress = 0) {
+  const index = PHASES.findIndex(phase => phase.key === normalizeKey(nextPhaseKey))
+  if (index < 0) return false
+  pause()
+  const phase = PHASES[index]
+  elapsedMs = Math.min(TOTAL_DURATION, phaseStart(index) + phase.durationMs * clamp(localProgress))
+  completed = elapsedMs >= TOTAL_DURATION
+  phaseKey.value = phase.key
+  if (ready && props.active) draw(true)
+  if (props.active && props.running && !completed) play()
+  return true
+}
+
 function resizeCanvas() {
-  if (!canvas || !context) return
+  if (!canvas || !context || disposed) return
   const viewport = viewportRef.value?.$el || viewportRef.value
   const rect = viewport?.getBoundingClientRect?.() || canvas.getBoundingClientRect()
   if (!rect.width || !rect.height) return
-  if (canvas.style) { canvas.style.width = `${Math.round(rect.width)}px`; canvas.style.height = `${Math.round(rect.height)}px` }
-  const ratio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1))
-  canvas.width = Math.round(rect.width * ratio); canvas.height = Math.round(rect.height * ratio); draw()
+  cssWidth = Math.round(rect.width)
+  cssHeight = Math.round(rect.height)
+  pixelRatio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1))
+  if (canvas.style) { canvas.style.width = `${cssWidth}px`; canvas.style.height = `${cssHeight}px` }
+  canvas.width = Math.round(cssWidth * pixelRatio)
+  canvas.height = Math.round(cssHeight * pixelRatio)
+  if (ready && props.active) draw(true)
 }
 
 watch(() => props.running, value => value ? play() : pause(), { flush: 'sync' })
-watch(() => props.active, value => value ? reset() : pause(), { flush: 'post' })
+watch(() => props.active, value => {
+  if (value) reset()
+  else pause()
+}, { flush: 'post' })
 watch(() => props.resetKey, reset, { flush: 'post' })
-watch(() => [props.objectId, props.objectClass, props.targetBinId, props.wasteConfigSrc, props.structureVisualSrc], loadObject)
+watch(() => [props.objectId, props.objectClass, props.targetBinId, props.wasteConfigSrc, props.structureVisualSrc, props.visualVersion], loadAssets)
+watch(() => props.debugCalibration, () => { if (ready && props.active) draw(true) })
 
 onMounted(async () => {
   await nextTick()
@@ -462,20 +903,34 @@ onMounted(async () => {
   if (canvas?.style) { canvas.style.display = 'block'; canvas.style.width = '100%'; canvas.style.height = '100%' }
   if (canvas?.getContext) context = canvas.getContext('2d', { alpha: true })
   if (context && typeof ResizeObserver === 'function') {
-    resizeObserver = new ResizeObserver(resizeCanvas); resizeObserver.observe(viewportRef.value?.$el || viewportRef.value)
+    resizeObserver = new ResizeObserver(resizeCanvas)
+    resizeObserver.observe(viewportRef.value?.$el || viewportRef.value)
   }
-  await loadObject(); resizeCanvas()
-})
-onBeforeUnmount(() => {
-  pause(); resizeObserver?.disconnect(); resizeObserver = null; objectImage = null; componentImages = {}; adapter = null
-  ready = false; canvas = null; context = null
+  resizeCanvas()
+  await loadAssets()
 })
 
-defineExpose({ play, pause, reset })
+onBeforeUnmount(() => {
+  disposed = true
+  loadRevision += 1
+  pause()
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  objectImage = null
+  layerImages = {}
+  legacyImages = {}
+  rasterImages = {}
+  adapter = null
+  ready = false
+  canvas = null
+  context = null
+})
+
+defineExpose({ play, pause, reset, setPhase })
 </script>
 
 <style scoped>
-.smart-bin-workflow,.bin-workflow-viewport,.bin-workflow-canvas { display: block; width: 100%; height: 100%; }
-.bin-workflow-viewport { position: relative; min-height: 210px; overflow: hidden; border-radius: 10px; background: #eaf6f4; }
-.workflow-note { position: absolute; right: 12px; bottom: 9px; padding: 4px 8px; border: 1px solid rgba(25,149,112,.35); border-radius: 999px; color: #176c58; background: rgba(235,251,246,.9); font-size: 8px; font-weight: 700; pointer-events: none; }
+.smart-bin-workflow,.bin-workflow-viewport,.bin-workflow-canvas { display:block; width:100%; height:100%; }
+.bin-workflow-viewport { position:relative; min-height:210px; overflow:hidden; border-radius:10px; background:#071b2a; box-shadow:inset 0 0 36px rgba(0,9,15,.42); }
+.bin-workflow-canvas { pointer-events:none; }
 </style>

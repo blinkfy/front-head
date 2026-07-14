@@ -168,9 +168,9 @@ const incidentStageLabel = computed(() => ({
 .tasks-section { min-height: 0; overflow-y: auto; }.task-row { padding: 7px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid rgba(116,197,255,.09); }.task-row view { min-width: 0; }.task-row text,.task-row small { display: block; }.task-row text { color: #dceef6; font-size: 9px; }.task-row small { color: #6791a6; font: 7px/1.3 ui-monospace, Consolas, monospace; margin-top: 2px; }.task-row b { color: #79edb5; font-size: 8px; }.empty-state,.empty-inline { color: #6f93a6; font-size: 10px; text-align: center; padding: 24px 10px; }.empty-inline { padding: 10px; }
 .incident-section { background: linear-gradient(90deg,rgba(245,182,72,.07),transparent); }.incident-section .section-title text { color: #ffc76c; }
 .coordination-section { background:linear-gradient(90deg,rgba(36,217,255,.045),transparent) }
-.panel-title { font-size: 15px; }.panel-sub { font-size: 11px; }.entity-type { font-size: 10px; }
-.entity-name { font-size: 14px; }.entity-id { font-size: 11px; }
-.section-title { font-size: 12px; }.data-row { min-height: 27px; font-size: 11px; }.data-row.multiline b { font-size: 10px; }
-.metric-head { font-size: 10px; }.task-row text { font-size: 10px; }.task-row small { font-size: 8px; }.task-row b { font-size: 9px; }
-.empty-state,.empty-inline { font-size: 11px; }
+.panel-title { font-size: 16px; }.panel-sub { font-size: 12px; }.entity-type { font-size: 11px; }
+.entity-name { font-size: 15px; }.entity-id { font-size: 12px; }
+.section-title { font-size: 13px; }.data-row { min-height: 28px; font-size: 12px; }.data-row.multiline b { font-size: 11px; }
+.metric-head { font-size: 11px; }.task-row text { font-size: 11px; }.task-row small { font-size: 9px; }.task-row b { font-size: 10px; }
+.empty-state,.empty-inline { font-size: 12px; }
 </style>

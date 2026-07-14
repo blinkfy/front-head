@@ -214,6 +214,8 @@ import {
 import { deriveScenarioVisualState } from '@/utils/park-scenario-visuals.js'
 import { displaySourceLabel } from '@/utils/source-display.js'
 import { displayTwinStatus } from '@/utils/digital-twin-status.js'
+import { DIGITAL_TWIN_VISUAL_SYSTEM } from '@/config/digital-twin-visual-system.js'
+import { parkRoutePolyline } from '@/utils/park-road-network.js'
 
 const pageModeOptions = [
   { label: '回放模式', value: 'replay' },
@@ -265,6 +267,8 @@ let liveEventFlushTimer = 0
 let pendingLiveEvents = []
 let replayLoadRevision = 0
 let closeLiveStream = null
+let robotHandoffRafId = 0
+let robotHandoffLastTimestamp = 0
 
 const events = computed(() => bundle.value?.replay?.events || [])
 const currentEvent = computed(() => events.value[currentIndex.value] || null)
@@ -384,12 +388,98 @@ function clearPlaybackTimer() {
   playbackTimer = 0
 }
 
+function clearRobotHandoffAnimation() {
+  if (robotHandoffRafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(robotHandoffRafId)
+  robotHandoffRafId = 0
+  robotHandoffLastTimestamp = 0
+}
+
+function robotHandoffRouteId(request = {}) {
+  return request?.servicePointId === 'service_rest_01'
+    ? 'robot_left_litter_to_bin'
+    : 'robot_right_litter_to_bin'
+}
+
+function visualRouteLength(routeId) {
+  const points = parkRoutePolyline(routeId)
+  return points.slice(1).reduce((total, point, index) => total + Math.hypot(
+    Number(point.x) - Number(points[index].x),
+    Number(point.y) - Number(points[index].y)
+  ), 0)
+}
+
+function robotHandoffDuration(routeId) {
+  const motion = DIGITAL_TWIN_VISUAL_SYSTEM.mapEntity.motion
+  const speedLimit = Math.max(.1, Number(motion.maxRobotTravelPctPerSecond) || .1)
+  return Math.max(Number(motion.minRobotTravelMs) || 0, Math.ceil(visualRouteLength(routeId) / speedLimit * 1000))
+}
+
+function binRouteTravelDuration(routeId) {
+  const motion = DIGITAL_TWIN_VISUAL_SYSTEM.mapEntity.motion
+  const speedLimit = Math.max(.1, Number(motion.maxBinTravelPctPerSecond) || .1)
+  return Math.max(Number(motion.minBinTravelMs) || 0, Math.ceil(visualRouteLength(routeId) / speedLimit * 1000))
+}
+
+function dispatchTravelDuration() {
+  const motion = DIGITAL_TWIN_VISUAL_SYSTEM.mapEntity.motion
+  return Math.max(
+    Number(motion.dispatchTravelMs) || 0,
+    binRouteTravelDuration('device_food_to_center_direct'),
+    binRouteTravelDuration('device_standby_to_food_shared')
+  )
+}
+
+function dispatchPlaybackDuration() {
+  const travel = dispatchTravelDuration()
+  const arrivalHold = Math.max(0, Number(DIGITAL_TWIN_VISUAL_SYSTEM.mapEntity.motion.arrivalHold) || 0)
+  // Keep a short, explicit at-center hold so a timer frame can never reveal a
+  // center stage before the road animation has reached its endpoint.
+  return travel + Math.max(180, Math.ceil(travel * arrivalHold))
+}
+
+function replayEventDurationMs(event = currentEvent.value) {
+  const type = event?.eventType
+  if (type === 'RETURN_AND_REPLACEMENT_DISPATCHED') return dispatchPlaybackDuration()
+  const inReturnCenterHandoff = eventHistory.value.some(item => item.eventType === 'RETURN_AND_REPLACEMENT_DISPATCHED')
+    && !eventHistory.value.some(item => item.eventType === 'CENTER_UNLOADING')
+  if (!inReturnCenterHandoff) return 1500
+  if (type === 'DEVICE_ARRIVED_AT_CENTER') return 1050
+  if (['TASK_SUCCEEDED', 'STANDBY_TOOK_OVER_SERVICE_POINT'].includes(type)) return 420
+  return 1500
+}
+
+function resumeRobotHandoffAnimation() {
+  const handoff = robotVisualState.value
+  if (!playing.value || !handoff?.handoff || Number(handoff.progress) >= 1 || robotHandoffRafId || typeof requestAnimationFrame !== 'function') return
+  const taskId = handoff.taskId
+  const duration = Math.max(1, Number(handoff.durationMs) || robotHandoffDuration(handoff.routeId))
+  robotHandoffLastTimestamp = 0
+  const tick = timestamp => {
+    if (!playing.value || !robotVisualState.value?.handoff || robotVisualState.value?.taskId !== taskId) {
+      clearRobotHandoffAnimation()
+      return
+    }
+    if (!robotHandoffLastTimestamp) robotHandoffLastTimestamp = timestamp
+    const delta = Math.min(100, timestamp - robotHandoffLastTimestamp)
+    robotHandoffLastTimestamp = timestamp
+    const progress = Math.min(1, Number(robotVisualState.value.progress || 0) + delta * Math.max(.25, Number(speed.value) || 1) / duration)
+    robotVisualState.value = { ...robotVisualState.value, progress }
+    if (progress >= 1) {
+      clearRobotHandoffAnimation()
+      return
+    }
+    robotHandoffRafId = requestAnimationFrame(tick)
+  }
+  robotHandoffRafId = requestAnimationFrame(tick)
+}
+
 function schedulePlayback({ restart = false } = {}) {
   if (pageMode.value === 'live') return
   if (playbackTimer && !restart) return
   if (restart) clearPlaybackTimer()
   if (!playing.value || !events.value.length) return
   if (robotTaskWindowActive.value && !robotVisualFailed.value) return
+  const currentEventDuration = replayEventDurationMs()
   playbackTimer = setTimeout(() => {
     playbackTimer = 0
     if (currentIndex.value >= events.value.length - 1) {
@@ -398,7 +488,7 @@ function schedulePlayback({ restart = false } = {}) {
     }
     currentIndex.value += 1
     schedulePlayback()
-  }, Math.round(1500 / speed.value))
+  }, Math.round(currentEventDuration / speed.value))
 }
 
 function play() {
@@ -430,7 +520,8 @@ function reset() {
     handleLiveCommand({ type: 'RESET', payload: {} })
     return
   }
-  pause(); centerVisualStageOverride.value = null; visualRevision.value += 1; currentIndex.value = 0; selectedId.value = 'robot_patrol_01'
+  pause(); clearRobotHandoffAnimation(); robotVisualState.value = { stage: '', mode: 'map', progress: 0, carrying: false, completed: false }
+  centerVisualStageOverride.value = null; visualRevision.value += 1; currentIndex.value = 0; selectedId.value = 'robot_patrol_01'
 }
 function previous() { pause(); seek(currentIndex.value - 1) }
 function next() { pause(); seek(currentIndex.value + 1) }
@@ -442,6 +533,8 @@ function setSpeed(value) {
 function seek(value, { preserveCenterOverride = false } = {}) {
   const max = Math.max(0, events.value.length - 1)
   if (!preserveCenterOverride) centerVisualStageOverride.value = null
+  clearRobotHandoffAnimation()
+  if (robotVisualState.value?.handoff) robotVisualState.value = { stage: '', mode: 'map', progress: 0, carrying: false, completed: false }
   visualRevision.value += 1
   currentIndex.value = Math.max(0, Math.min(max, Number(value) || 0))
   if (playing.value) schedulePlayback({ restart: true })
@@ -484,7 +577,18 @@ function seekCenterStage(payload = {}) {
 }
 
 function handleRobotTaskVisualComplete() {
-  robotVisualState.value = { stage: 'return', mode: 'map', progress: 1, carrying: false, completed: true }
+  // The local return shot only restores the close-up framing. Continue the
+  // verified map-road return after that shot, so the overview never jumps from
+  // the bin-side pose directly to the patrol point.
+  clearRobotHandoffAnimation()
+  const routeId = robotHandoffRouteId(robotTaskRequest.value)
+  robotVisualState.value = {
+    stage: 'return', mode: 'map', progress: 0, carrying: false, completed: true,
+    active: true, handoff: true, taskId: robotTaskRequest.value?.taskId || '',
+    robotId: robotTaskRequest.value?.robotId || '', routeId,
+    durationMs: robotHandoffDuration(routeId)
+  }
+  resumeRobotHandoffAnimation()
   if (!playing.value || !robotTaskWindowActive.value) return
   if (pageMode.value === 'live') {
     liveRobotFocusEvent.value = null
@@ -496,6 +600,12 @@ function handleRobotTaskVisualComplete() {
 }
 
 function handleRobotVisualState(payload) {
+  // The player emits one final completed state after `complete`. That update
+  // is scheduled after the completion handler and would overwrite the map
+  // handoff pose, briefly exposing the robot's pre-task position on exit.
+  if (robotVisualState.value?.handoff && payload?.completed &&
+    payload?.taskId === robotVisualState.value?.taskId) return
+  if (!payload?.handoff) clearRobotHandoffAnimation()
   robotVisualState.value = payload || { stage: '', mode: 'map', progress: 0, carrying: false, completed: false }
 }
 
@@ -589,6 +699,7 @@ function activateNextLiveRobotVisual() {
   liveRobotFocusEvent.value = queue.splice(index, 1)[0] || null
   liveRobotVisualQueue.value = queue
   robotVisualFailed.value = false
+  clearRobotHandoffAnimation()
   robotVisualState.value = { stage: '', mode: 'map', progress: 0, carrying: false, completed: false }
 }
 
@@ -720,10 +831,12 @@ async function submitLiveCommand(type, payload = {}) {
     applyLiveSnapshot(snapshot, { follow: type !== 'PAUSE' })
     if (type === 'RESET') {
       clearPlaybackTimer()
+      clearRobotHandoffAnimation()
       playing.value = false
       currentIndex.value = 0
       selectedId.value = 'robot_patrol_01'
       centerVisualStageOverride.value = null
+      robotVisualState.value = { stage: '', mode: 'map', progress: 0, carrying: false, completed: false }
       visualRevision.value += 1
     } else if (type === 'PAUSE') {
       playing.value = false
@@ -850,11 +963,16 @@ watch(currentEvent, event => {
     selectedCenterBayId.value = event.payload.assignedBayId
   }
   robotVisualFailed.value = false
-  if (pageMode.value !== 'live' && event?.eventType !== 'ROBOT_TASK_REQUESTED') {
+  if (pageMode.value !== 'live' && event?.eventType !== 'ROBOT_TASK_REQUESTED' && !robotVisualState.value?.handoff) {
     robotVisualState.value = { stage: '', mode: 'map', progress: 0, carrying: false, completed: false }
   }
   const ids = eventEntityIds(event)
   if (ids.length) selectedId.value = ids[0]
+})
+
+watch(playing, active => {
+  if (active) resumeRobotHandoffAnimation()
+  else clearRobotHandoffAnimation()
 })
 
 watch(centerFocusEvent, event => {
@@ -867,7 +985,7 @@ onMounted(async () => {
   if (!await ensureAdminScreenAccess('digitalTwinReplay')) return
   loadReplay('sim')
 })
-onBeforeUnmount(() => { clearPlaybackTimer(); clearLiveEventBuffer(); closeLiveStream?.() })
+onBeforeUnmount(() => { clearPlaybackTimer(); clearRobotHandoffAnimation(); clearLiveEventBuffer(); closeLiveStream?.() })
 </script>
 
 <style scoped>
@@ -881,13 +999,13 @@ page { background: #071726; }
 }
 .panel { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); backdrop-filter: blur(6px); box-sizing: border-box; }
 .header { position: relative; z-index: 100; overflow: visible; min-height: 62px; padding: 9px 12px; display: flex; align-items: center; gap: 12px; }
-.header-copy { min-width: 300px; }.title { font-size: clamp(20px, 1.35vw, 26px); font-weight: 750; letter-spacing: 1px; text-shadow: 0 0 18px rgba(36,217,255,.36); }.subtitle { color: var(--muted); font-size: 10px; margin-top: 4px; }
+.header-copy { min-width: 300px; }.title { font-size: clamp(20px, 1.35vw, 26px); font-weight: 750; letter-spacing: 1px; text-shadow: 0 0 18px rgba(36,217,255,.36); }.subtitle { color: var(--muted); font-size: 11px; margin-top: 4px; }
 .twin-screen-header { margin-left: auto; }
 .twin-header-business { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.source-legend { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }.source-badge { padding: 3px 6px; border: 1px solid rgba(80,164,217,.46); border-radius: 5px; color: #91cef2; background: rgba(23,91,144,.25); font: 700 9px/1.2 ui-monospace, Consolas, monospace; }.source-badge.isaac-realtime { color: #c6b0ff; border-color: rgba(147,105,255,.52); background: rgba(88,53,143,.3); }.source-badge.backend-api { color: #8aefb8; border-color: rgba(48,205,123,.48); background: rgba(28,122,74,.28); }.source-badge.visual-aid { color: #ffd274; border-color: rgba(245,182,72,.5); background: rgba(132,87,16,.28); }
-.mode-select { min-width: 132px; padding: 6px 9px; border: 1px solid rgba(126,196,239,.28); border-radius: var(--admin-screen-control-radius, 8px); background: rgba(8,35,54,.68); }.mode-select text,.mode-select b { display: block; }.mode-select text { color: #749aae; font-size: 9px; }.mode-select b { color: #dff7ff; font-size: 11px; margin-top: 2px; }.filename { max-width: 180px; padding: 7px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid rgba(126,196,239,.2); border-radius: var(--admin-screen-control-radius, 8px); color: #8eb8ca; background: rgba(8,35,54,.54); font: 10px/1 ui-monospace, Consolas, monospace; }.header-button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-height: var(--admin-screen-control-height, 36px); height: var(--admin-screen-control-height, 36px); padding: 0 12px; border: 1px solid rgba(126,196,239,.42); border-radius: var(--admin-screen-control-radius, 8px); color: #c4deea; background: rgba(8,35,54,.42); font-size: var(--admin-screen-control-font-size, 13px); font-weight: var(--admin-screen-control-font-weight, 650); white-space: nowrap; }.header-button.primary { color: #fff; border-color: rgba(85,177,255,.92); background: linear-gradient(135deg,#2479e8,#42abff); box-shadow: 0 5px 14px rgba(44,143,255,.28); }
-.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(230px,17%) minmax(660px,1fr) minmax(320px,20%); gap: 8px; }.left-column,.center-column,.right-column { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }.timeline { flex: 1; }.current-event { flex: 0 0 158px; padding: 11px 12px; overflow: hidden; }.section-heading { display: flex; justify-content: space-between; align-items: center; color: #8bc9e7; font-size: 11px; font-weight: 700; letter-spacing: .5px; }.section-heading > text:last-child { color: #62d8ff; font: 700 10px/1 ui-monospace, Consolas, monospace; }.current-title { color: #f0fbff; font-size: 15px; font-weight: 700; margin-top: 10px; }.current-desc { color: #83a7b9; font-size: 10px; margin: 4px 0 8px; }.event-meta { min-height: 20px; display: flex; justify-content: space-between; gap: 10px; color: #7499ab; font-size: 9px; }.event-meta b { max-width: 72%; color: #cfe9f5; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.event-meta b.sim { color: #91cef2; }.event-meta b.isaac-realtime { color: #c6b0ff; }.event-meta b.backend-api { color: #8aefb8; }.event-meta b.visual-aid { color: #ffd274; }
-.park-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }.park-map { flex: 1; }.entity-inspector { flex: 1; }.state-panel { flex: 0 0 132px; padding: 11px 12px; }.state-row { min-height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #86aebf; font-size: 10px; }.state-row b { color: #dceef6; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.state-row b.success { color: #79edb5; }.state-row b.warning { color: #ffc76c; }
+.source-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }.source-badge { padding: 4px 7px; border: 1px solid rgba(80,164,217,.46); border-radius: 5px; color: #91cef2; background: rgba(23,91,144,.25); font: 700 11px/1.2 ui-monospace, Consolas, monospace; }.source-badge.isaac-realtime { color: #c6b0ff; border-color: rgba(147,105,255,.52); background: rgba(88,53,143,.3); }.source-badge.backend-api { color: #8aefb8; border-color: rgba(48,205,123,.48); background: rgba(28,122,74,.28); }.source-badge.visual-aid { color: #ffd274; border-color: rgba(245,182,72,.5); background: rgba(132,87,16,.28); }
+.mode-select { min-width: 132px; padding: 6px 9px; border: 1px solid rgba(126,196,239,.28); border-radius: var(--admin-screen-control-radius, 8px); background: rgba(8,35,54,.68); }.mode-select text,.mode-select b { display: block; }.mode-select text { color: #749aae; font-size: 10px; }.mode-select b { color: #dff7ff; font-size: 12px; margin-top: 2px; }.filename { max-width: 180px; padding: 7px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid rgba(126,196,239,.2); border-radius: var(--admin-screen-control-radius, 8px); color: #8eb8ca; background: rgba(8,35,54,.54); font: 11px/1 ui-monospace, Consolas, monospace; }.header-button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-height: var(--admin-screen-control-height, 36px); height: var(--admin-screen-control-height, 36px); padding: 0 12px; border: 1px solid rgba(126,196,239,.42); border-radius: var(--admin-screen-control-radius, 8px); color: #c4deea; background: rgba(8,35,54,.42); font-size: var(--admin-screen-control-font-size, 13px); font-weight: var(--admin-screen-control-font-weight, 650); white-space: nowrap; }.header-button.primary { color: #fff; border-color: rgba(85,177,255,.92); background: linear-gradient(135deg,#2479e8,#42abff); box-shadow: 0 5px 14px rgba(44,143,255,.28); }
+.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(230px,17%) minmax(660px,1fr) minmax(320px,20%); gap: 8px; }.left-column,.center-column,.right-column { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }.timeline { flex: 1; }.current-event { flex: 0 0 158px; padding: 11px 12px; overflow: hidden; }.section-heading { display: flex; justify-content: space-between; align-items: center; color: #8bc9e7; font-size: 12px; font-weight: 700; letter-spacing: .5px; }.section-heading > text:last-child { color: #62d8ff; font: 700 11px/1 ui-monospace, Consolas, monospace; }.current-title { color: #f0fbff; font-size: 16px; font-weight: 700; margin-top: 10px; }.current-desc { color: #83a7b9; font-size: 11px; margin: 4px 0 8px; }.event-meta { min-height: 20px; display: flex; justify-content: space-between; gap: 10px; color: #7499ab; font-size: 10px; }.event-meta b { max-width: 72%; color: #cfe9f5; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.event-meta b.sim { color: #91cef2; }.event-meta b.isaac-realtime { color: #c6b0ff; }.event-meta b.backend-api { color: #8aefb8; }.event-meta b.visual-aid { color: #ffd274; }
+.park-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }.park-map { flex: 1; }.entity-inspector { flex: 1; }.state-panel { flex: 0 0 132px; padding: 11px 12px; }.state-row { min-height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #86aebf; font-size: 11px; }.state-row b { color: #dceef6; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.state-row b.success { color: #79edb5; }.state-row b.warning { color: #ffc76c; }
 .right-column { overflow-y: auto; padding-right: 2px; scrollbar-width: thin; scrollbar-color: rgba(77,167,215,.45) transparent; }.right-column .entity-inspector { flex: 0 0 330px; }.right-column.live .entity-inspector { flex-basis: 360px; }.decision-explanation { flex: 0 0 auto; }
 .visual-aid-note { flex: 0 0 66px; padding: 10px 12px; }.visual-aid-note text,.visual-aid-note small { display: block; }.visual-aid-note text { color: #dceff7; font-size: 11px; font-weight: 700; }.visual-aid-note small { margin-top: 5px; color: #7fa5b7; font-size: 9px; line-height: 1.5; }
 .loading,.error { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #8fb7ca; }.loading-ring { width: 30px; height: 30px; border: 3px solid rgba(36,217,255,.18); border-top-color: #24d9ff; border-radius: 50%; animation: spin .8s linear infinite; }.error-title { color: #ffd0d2; font-size: 18px; font-weight: 700; }.error-message { color: #a8c2cf; font-size: 11px; }.error .header-button { flex: none; }

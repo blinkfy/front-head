@@ -2,10 +2,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1672" height="941" viewBox="0 0 1672 941">
   <path id="edge_food_spur_outer" d="M 1070.08 451.68 Q 986.48 461.09 886.16 489.32" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
   <path id="edge_food_spur_east" d="M 886.16 489.32 C 819.28 526.96 802.56 574.01 802.56 625.76" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_food_spur_north_turn" d="M 886.16 489.32 Q 856.9 492.61 826.8 495.91" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_food_spur_north" d="M 826.8 495.91 C 823.46 446.03 795.04 376.4 785.84 338.76" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
   <path id="edge_rest_spur_inner" d="M 526.68 578.72 L 668.8 578.72" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
   <path id="edge_rest_spur_west" d="M 668.8 578.72 C 735.68 583.42 785.84 611.65 802.56 625.76" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
-  <path id="edge_shared_central_north" d="M 802.56 625.76 C 807.58 508.14 799.22 414.04 804.23 338.76" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
-  <path id="edge_shared_north_connector" d="M 804.23 338.76 C 822.62 254.07 825.97 188.2 825.97 136.44" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_shared_central_north" d="M 802.56 625.76 C 807.58 508.14 799.22 414.04 785.84 338.76" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
+  <path id="edge_shared_north_connector" d="M 785.84 338.76 C 830.98 254.07 842.69 188.2 825.97 136.44" fill="none" stroke="#49d9ff" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
   <path id="edge_north_mid_east" d="M 825.97 136.44 Q 1053.36 129.86 1270.72 136.44" fill="none" stroke="#49d9ff" stroke-width="12.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
   <path id="edge_north_to_east_upper" d="M 1270.72 136.44 Q 1471.36 137.39 1672 145.85" fill="none" stroke="#49d9ff" stroke-width="12.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
   <path id="edge_east_mid_block" d="M 825.97 136.44 Q 668.8 128.92 526.68 136.44" fill="none" stroke="#49d9ff" stroke-width="12.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>

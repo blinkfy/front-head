@@ -235,7 +235,11 @@ export function deriveScenarioVisualState(events, currentIndex) {
       state.garbage[payload.garbageId] = {
         id: payload.garbageId, visitorId: payload.visitorId, status: 'SCATTERED', source: event.source,
         position: normalizeMapPoint(payload.positionPct || payload.positionM || payload.position || payload.zoneId, payload.zoneId || 'zone_walkway_01'),
-        actionTimeline: asArray(payload.actionTimeline)
+        actionTimeline: asArray(payload.actionTimeline),
+        // 仅保留事件已有的垃圾身份字段，供地图选择与局部流程相同的正式素材。
+        garbageType: payload.garbageType || payload.templateGarbageId || payload.garbageId,
+        templateGarbageId: payload.templateGarbageId || '',
+        category: payload.garbageCategory || payload.category || ''
       }
       state.activity = { type: 'litter', source: event.source, ...payload }
     }

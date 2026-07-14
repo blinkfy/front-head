@@ -11,12 +11,13 @@ export const CENTER_WORKFLOW_STAGES = freezeList([
 ])
 
 export const CENTER_WORKFLOW_TIMINGS = Object.freeze({
-  ARRIVE: 1380,
-  DOCK: 1050,
-  UNLOAD: 1380,
-  CLEAN: 1380,
-  CHARGE: 1380,
-  RECOVERY: 1480,
+  // 仅控制局部窗口的视觉演进；不改变回放事件、中心阶段顺序或最终设备状态。
+  ARRIVE: 2350,
+  DOCK: 1850,
+  UNLOAD: 2420,
+  CLEAN: 2420,
+  CHARGE: 2420,
+  RECOVERY: 2580,
   CHECK_SPLIT: 0.56
 })
 
@@ -41,7 +42,7 @@ export const CENTER_WORKFLOW_SCENE = Object.freeze({
     ]),
     DOCK: freezeList([
       { at: 0, x: 16.5, y: 61, scale: 0.82, rotate: -2 },
-      { at: 0.7, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 },
+      { at: 0.92, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 },
       { at: 1, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 }
     ]),
     UNLOAD: freezeList([

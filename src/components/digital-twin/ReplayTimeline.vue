@@ -50,9 +50,9 @@ const sourceClass = value => String(value || '').toLowerCase().replace(/_/g, '-'
 <style scoped>
 .timeline-panel { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .panel-head { padding: 13px 14px 11px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(116,197,255,.18); }
-.panel-title { color: #e8f8ff; font-size: 14px; font-weight: 700; letter-spacing: .5px; }
-.panel-sub { color: #789fb4; font-size: 10px; margin-top: 3px; }
-.counter { color: #7ee8ff; font-size: 12px; font-weight: 700; }
+.panel-title { color: #e8f8ff; font-size: 15px; font-weight: 700; letter-spacing: .5px; }
+.panel-sub { color: #789fb4; font-size: 11px; margin-top: 3px; }
+.counter { color: #7ee8ff; font-size: 13px; font-weight: 700; }
 .timeline-list { flex: 1; min-height: 0; }
 .event-row { min-height: 58px; padding: 8px 10px; box-sizing: border-box; display: grid; grid-template-columns: 28px 8px minmax(0,1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid rgba(116,197,255,.1); transition: background .18s ease, border-color .18s ease; }
 .event-row:hover { background: rgba(39,126,195,.12); }
@@ -62,9 +62,9 @@ const sourceClass = value => String(value || '').toLowerCase().replace(/_/g, '-'
 .event-dot { width: 7px; height: 7px; border-radius: 50%; background: #2c8fff; box-shadow: 0 0 8px currentColor; }
 .event-dot.cyan { background: #24d9ff; }.event-dot.green { background: #16c57c; }.event-dot.amber { background: #f5b648; }.event-dot.red { background: #ff5d66; }
 .event-copy { min-width: 0; }
-.event-title { color: #dff5ff; font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.event-desc { color: #779bae; font-size: 10px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.source-tag { padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(100,174,226,.34); color: #8ec8eb; background: rgba(22,91,144,.24); font: 700 9px/1.2 ui-monospace, Consolas, monospace; }
+.event-title { color: #dff5ff; font-size: 13px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-desc { color: #779bae; font-size: 11px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.source-tag { padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(100,174,226,.34); color: #8ec8eb; background: rgba(22,91,144,.24); font: 700 10px/1.2 ui-monospace, Consolas, monospace; }
 .source-tag.isaac-realtime { color: #c1a7ff; border-color: rgba(154,113,255,.45); background: rgba(95,54,151,.28); }
 .source-tag.backend-api { color: #8af1be; border-color: rgba(50,202,124,.42); background: rgba(31,123,78,.28); }
 .source-tag.visual-aid { color: #ffd57c; border-color: rgba(245,182,72,.44); background: rgba(132,87,16,.28); }

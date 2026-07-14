@@ -2,12 +2,13 @@
   <view ref="canvasContainerRef" class="park-canvas panel">
   <view
     ref="canvasRef"
-    :style="sceneSurfaceStyle"
+    :style="[sceneSurfaceStyle, taskCameraStyle]"
     :class="['park-scene-surface', {
       'calibration-mode': sceneDev.calibration,
       'compare-backgrounds': sceneDev.compare,
       'candidate-preview': sceneDev.candidate,
-      'hide-dynamic-objects': sceneDev.hideDynamics
+      'hide-dynamic-objects': sceneDev.hideDynamics,
+      'task-camera-active': taskCameraActive
     }]"
   >
     <view class="environment-back"></view>
@@ -71,7 +72,7 @@
     <view
       v-for="object in sceneObjects"
       :key="object.id"
-      :class="['scene-object', object.kind, { selected: object.id === selectedId, affected: affectedIds.includes(object.id) || incidentAffectedIds.has(object.id), faded: object.faded, moving: object.moving }]"
+      :class="['scene-object', object.kind, { selected: object.id === selectedId, affected: affectedIds.includes(object.id) || incidentAffectedIds.has(object.id), faded: object.faded, moving: object.moving, handoff: object.handoff }]"
       :data-entity-id="object.id"
       :style="object.style"
       @tap.stop="$emit('select', object.id)"
@@ -79,7 +80,7 @@
       <MapEntitySprite v-if="object.kind === 'robot' || object.kind === 'bin'" :kind="object.kind" :variant="object.variant || 'active'" :selected="object.id === selectedId" :affected="priorityEventIds.has(object.id) || incidentAffectedIds.has(object.id)" :moving="object.moving" :depth-scale="object.depthScale" :heading-deg="object.headingDeg" />
       <VisitorBehaviorSprite v-else-if="object.kind === 'visitor'" behavior="IDLE" :selected="object.id === selectedId" :depth-scale="object.depthScale" :playing="playing" :playback-rate="playbackRate" />
       <view v-else-if="object.kind === 'service'" class="service-symbol"></view>
-      <view v-else-if="object.kind === 'waste'" :class="['waste-symbol', object.category]">{{ object.short }}</view>
+      <MapWasteSprite v-else-if="object.kind === 'waste'" :waste="object" :category="object.category" :selected="object.id === selectedId" :affected="priorityEventIds.has(object.id)" :depth-scale="object.depthScale" />
     </view>
 
     <view v-if="sceneDev.showOcclusion" class="foreground-occlusion-layer" aria-hidden="true">
@@ -167,6 +168,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ParkScenarioOverlay from './ParkScenarioOverlay.vue'
 import MapEntitySprite from './MapEntitySprite.vue'
+import MapWasteSprite from './MapWasteSprite.vue'
+import { mapWasteDisplayName } from '@/config/map-sprite-registry.js'
 import StableMapLabel from './StableMapLabel.vue'
 import VisitorBehaviorSprite from './VisitorBehaviorSprite.vue'
 import { centerPhaseFromEvent, eventEntityIds, eventPresentation, primaryEventEntityIds } from '@/utils/park-replay.js'
@@ -175,10 +178,10 @@ import { displaySourceLabel } from '@/utils/source-display.js'
 import PARK_SCENE_LAYERS, { PARK_SCENE_ASSETS, readParkSceneDevFlags } from '@/config/park-scene-layers.js'
 import PARK_SCENE_OCCLUSIONS, { parkOcclusionStyle } from '@/config/park-scene-occlusion.js'
 import PARK_SCENE_ALIGNMENT from '@/config/park-scene-alignment.json'
-import { mapDepthScale, mapMotionProgress } from '@/config/digital-twin-visual-system.js'
+import { DIGITAL_TWIN_VISUAL_SYSTEM, mapDepthScale, mapMotionProgress } from '@/config/digital-twin-visual-system.js'
 import {
   PARK_ROAD_NETWORK, PARK_ROUTE_GRAPH, parkEdgesForRoute, parkRoadEdgePath,
-  parkRoutePoint, parkRouteSvgPoints, sampleParkRoadEdge
+  parkRoutePoint, parkRoutePolyline, parkRouteSvgPoints, sampleParkRoadEdge
 } from '@/utils/park-road-network.js'
 
 const props = defineProps({
@@ -207,6 +210,11 @@ const hasEvent = eventType => eventTypes.value.includes(eventType)
 const dispatchStarted = computed(() => hasEvent('RETURN_AND_REPLACEMENT_DISPATCHED'))
 const arrivedAtCenter = computed(() => hasEvent('DEVICE_ARRIVED_AT_CENTER'))
 const standbyTookOver = computed(() => hasEvent('STANDBY_TOOK_OVER_SERVICE_POINT'))
+const dispatchEventSequence = computed(() => {
+  const event = [...props.eventHistory].reverse().find(item => item.eventType === 'RETURN_AND_REPLACEMENT_DISPATCHED')
+  return Number(event?.sequence) || 0
+})
+const dispatchTransitActive = computed(() => dispatchStarted.value && !arrivedAtCenter.value)
 const replacementDispatched = computed(() => dispatchStarted.value || hasEvent('REPLACEMENT_DISPATCHED'))
 const recovered = computed(() => hasEvent('DEVICE_RECOVERED'))
 const blockedRouteVehicleActive = computed(() => props.scenario === 'blocked' && ['STARTED', 'BLOCKED', 'REPLANNED', 'RESUMED'].includes(props.scenarioState?.route?.status))
@@ -241,6 +249,15 @@ const calibrationEdgeLabels = calibrationEdges.map(edge => {
 const calibrationObjects = Object.entries(PARK_SCENE_ALIGNMENT.objectCoordinateReferences).map(([id, positionPct]) => ({ id, positionPct }))
 const returnRoutePoints = parkRouteSvgPoints('device_food_to_center_direct')
 const replacementRoutePoints = parkRouteSvgPoints('device_standby_to_food_shared')
+const routeLength = points => points.slice(1).reduce((total, point, index) => total + Math.hypot(
+  Number(point.x) - Number(points[index].x),
+  Number(point.y) - Number(points[index].y)
+), 0)
+const visualBinTravelDuration = routeId => {
+  const motion = DIGITAL_TWIN_VISUAL_SYSTEM.mapEntity.motion
+  const speed = Math.max(.1, Number(motion.maxBinTravelPctPerSecond) || .1)
+  return Math.max(Number(motion.minBinTravelMs) || 0, Math.ceil(routeLength(parkRoutePolyline(routeId)) / speed * 1000))
+}
 const centerBayRows = computed(() => {
   const bays = props.runtimeState?.operations?.centerBays || props.runtimeState?.sortingCenter?.bays || {}
   return ['bay_01', 'bay_02'].map((id, index) => {
@@ -261,7 +278,29 @@ const dispatchProgress = ref(0)
 const canvasContainerRef = ref(null)
 const canvasRef = ref(null)
 const sceneSurfaceStyle = ref({ width: '100%', height: '100%' })
+const taskCameraActive = computed(() => Boolean(
+  props.robotVisual?.active && props.robotVisual?.mode === 'robot' && props.robotVisual?.camera
+))
+const taskCameraStyle = computed(() => {
+  if (!taskCameraActive.value) return { transform: 'none' }
+  const camera = props.robotVisual.camera
+  const scale = Math.max(1, Number(camera.scale) || 1)
+  const focusX = Math.max(0, Math.min(100, Number(camera.focusX) / PARK_ROAD_NETWORK.scene.width * 100))
+  const focusY = Math.max(0, Math.min(100, Number(camera.focusY) / PARK_ROAD_NETWORK.scene.height * 100))
+  return {
+    transformOrigin: '0 0',
+    transform: `translate(50%, 50%) scale(${scale}) translate(-${focusX}%, -${focusY}%)`
+  }
+})
 const routeAnimationStyle = computed(() => ({ animationDuration: `${1.8 / Math.max(.25, Number(props.playbackRate) || 1)}s` }))
+const dispatchTravelMs = Math.max(
+  DIGITAL_TWIN_VISUAL_SYSTEM.mapEntity.motion.dispatchTravelMs,
+  visualBinTravelDuration('device_food_to_center_direct'),
+  visualBinTravelDuration('device_standby_to_food_shared')
+)
+const dispatchHandoff = DIGITAL_TWIN_VISUAL_SYSTEM.mapEntity.motion.dispatchHandoff
+const replacementDispatchProgress = computed(() => mapMotionProgress(dispatchPhaseProgress(0, dispatchHandoff.replacementArrivalEnd)))
+const returnDispatchProgress = computed(() => mapMotionProgress(dispatchPhaseProgress(dispatchHandoff.returnDepartureStart, 1)))
 let dispatchRafId = 0
 let dispatchLastTimestamp = 0
 let labelRafId = 0
@@ -303,6 +342,11 @@ function stageLabel(stage) {
   return ({ DOCK: '对接', UNLOAD: '卸料', CLEAN: '清洁', CHARGE: '充电', CHECK: '检测', STANDBY: '待命' })[stage] || stage || '处理中'
 }
 
+function dispatchPhaseProgress(start, end) {
+  const duration = Math.max(.001, Number(end) - Number(start))
+  return Math.max(0, Math.min(1, (dispatchProgress.value - Number(start)) / duration))
+}
+
 function routePose(route, amount) {
   const routeId = route === 'return' ? 'device_food_to_center_direct' : 'device_standby_to_food_shared'
   const progress = Math.max(0, Math.min(1, Number(amount) || 0))
@@ -322,16 +366,16 @@ function pauseDispatchAnimation() {
 }
 
 function tickDispatch(timestamp) {
-  if (!props.playing || props.currentEvent?.eventType !== 'RETURN_AND_REPLACEMENT_DISPATCHED') return pauseDispatchAnimation()
+  if (!props.playing || !dispatchTransitActive.value) return pauseDispatchAnimation()
   if (!dispatchLastTimestamp) dispatchLastTimestamp = timestamp
   const delta = Math.min(100, timestamp - dispatchLastTimestamp); dispatchLastTimestamp = timestamp
-  dispatchProgress.value = Math.min(1, dispatchProgress.value + delta * Math.max(.25, Number(props.playbackRate) || 1) / 1500)
+  dispatchProgress.value = Math.min(1, dispatchProgress.value + delta * Math.max(.25, Number(props.playbackRate) || 1) / dispatchTravelMs)
   if (dispatchProgress.value >= 1) return pauseDispatchAnimation()
   dispatchRafId = requestAnimationFrame(tickDispatch)
 }
 
 function startDispatchAnimation() {
-  if (!props.playing || props.currentEvent?.eventType !== 'RETURN_AND_REPLACEMENT_DISPATCHED' || dispatchProgress.value >= 1 || dispatchRafId) return
+  if (!props.playing || !dispatchTransitActive.value || dispatchProgress.value >= 1 || dispatchRafId) return
   dispatchLastTimestamp = 0; dispatchRafId = requestAnimationFrame(tickDispatch)
 }
 
@@ -348,18 +392,44 @@ const robotPosition = computed(() => {
   return pos(48, 66.5)
 })
 
+// The local player restores its own camera after bin processing, but that shot
+// ends beside the bin. Continue from the matching endpoint of the same robot
+// road on the overview, rather than jumping straight to the patrol position.
+const robotHandoffPose = computed(() => {
+  if (!props.robotVisual?.handoff || props.robotVisual?.robotId !== 'robot_patrol_01') return null
+  const routeId = props.robotVisual?.routeId || 'robot_right_litter_to_bin'
+  const progress = Math.max(0, Math.min(1, Number(props.robotVisual?.progress) || 0))
+  const routeProgress = 1 - progress
+  const point = parkRoutePoint(routeId, routeProgress)
+  const nextPoint = parkRoutePoint(routeId, Math.max(0, routeProgress - .012))
+  const headingDeg = Math.abs(nextPoint.x - point.x) + Math.abs(nextPoint.y - point.y) > .001
+    ? Math.atan2(nextPoint.y - point.y, nextPoint.x - point.x) * 180 / Math.PI
+    : 0
+  return staticPose(point.x, point.y, headingDeg)
+})
+const robotDisplayPose = computed(() => {
+  if (robotHandoffPose.value) return robotHandoffPose.value
+  const style = robotPosition.value
+  return {
+    style,
+    depthScale: mapDepthScale(Number.parseFloat(style.top) || 50),
+    headingDeg: 0
+  }
+})
+
 const fullBinPose = computed(() => {
   if (!dispatchStarted.value) return staticPose(...FOOD_SERVICE_POINT)
   if (props.scenario === 'blocked' && props.currentEvent?.eventType === 'RETURN_AND_REPLACEMENT_DISPATCHED') return staticPose(...FOOD_SERVICE_POINT)
-  if (props.currentEvent?.eventType === 'RETURN_AND_REPLACEMENT_DISPATCHED') return routePose('return', mapMotionProgress(dispatchProgress.value) * .68)
-  if (!arrivedAtCenter.value) return routePose('return', .84)
+  if (dispatchTransitActive.value) return routePose('return', returnDispatchProgress.value)
+  if (!arrivedAtCenter.value) return routePose('return', 1)
   return routePose('return', 1)
 })
 
 const standbyBinPose = computed(() => {
   if (!replacementDispatched.value) return staticPose(27.8, 20.5)
-  if (props.currentEvent?.eventType === 'RETURN_AND_REPLACEMENT_DISPATCHED') return routePose('replacement', mapMotionProgress(dispatchProgress.value) * .72)
-  if (!standbyTookOver.value) return routePose('replacement', .88)
+  if (standbyTookOver.value) return routePose('replacement', 1)
+  if (dispatchTransitActive.value) return routePose('replacement', replacementDispatchProgress.value)
+  if (!standbyTookOver.value) return routePose('replacement', 1)
   return routePose('replacement', 1)
 })
 
@@ -370,7 +440,9 @@ const foodBinBadge = computed(() => {
   if (type === 'BIN_FILL_UPDATED') return `${Number(props.currentEvent?.payload?.fillPct) || 0}%`
   if (type === 'FULL_RISK_TRIGGERED') return '满载风险'
   if (type === 'RETURN_AND_REPLACEMENT_DISPATCHED' && props.scenario === 'blocked') return '返航任务已下发'
-  if (type === 'RETURN_AND_REPLACEMENT_DISPATCHED') return `返航中 ${Math.round(mapMotionProgress(dispatchProgress.value) * 68)}%`
+  if (dispatchTransitActive.value) return returnDispatchProgress.value > 0
+    ? `返航中 ${Math.round(returnDispatchProgress.value * 100)}%`
+    : '等待补位桶靠近'
   if (dispatchStarted.value && !arrivedAtCenter.value) return '接近中心'
   if (arrivedAtCenter.value && !recovered.value) return centerPhase.value === '—' ? '中心内' : centerPhase.value
   if (recovered.value) return '已恢复'
@@ -414,13 +486,13 @@ function withMapEntityVisual(object) {
 }
 
 const sceneObjects = computed(() => [
-  ...(props.scenario !== 'daily' ? [{ id: 'robot_patrol_01', kind: 'robot', variant: 'active', style: robotPosition.value, badge: ['TASK_CREATED', 'ROBOT_TASK_REQUESTED', 'ROBOT_TASK_RESULT', 'TASK_SUCCEEDED'].includes(props.currentEvent?.eventType) ? presentation.value.title : '巡检中', badgeTone: 'cyan' }] : []),
+  ...(props.scenario !== 'daily' ? [{ id: 'robot_patrol_01', kind: 'robot', variant: 'active', style: robotDisplayPose.value.style, depthScale: robotDisplayPose.value.depthScale, headingDeg: robotDisplayPose.value.headingDeg, handoff: Boolean(robotHandoffPose.value), moving: Boolean(robotHandoffPose.value && Number(props.robotVisual?.progress) < 1), badge: ['TASK_CREATED', 'ROBOT_TASK_REQUESTED', 'ROBOT_TASK_RESULT', 'TASK_SUCCEEDED'].includes(props.currentEvent?.eventType) ? presentation.value.title : '巡检中', badgeTone: 'cyan' }] : []),
   ...(props.scenario === 'baseline' ? [{ id: 'visitor_01', kind: 'visitor', style: pos(48.1, 76), badge: props.currentEvent?.eventType === 'LITTER_CREATED' ? '产生垃圾' : '', badgeTone: 'amber' }] : []),
   { id: 'service_food_01', kind: 'service', style: pos(...FOOD_SERVICE_POINT), badge: serviceBadge('service_food_01')?.text || (dispatchStarted.value && !standbyTookOver.value ? '待补位' : '服务中'), badgeTone: serviceBadge('service_food_01')?.tone || (dispatchStarted.value && !standbyTookOver.value ? 'amber' : 'green') },
   { id: 'service_rest_01', kind: 'service', style: pos(31.5, 61.5), badge: serviceBadge('service_rest_01')?.text || '服务中', badgeTone: serviceBadge('service_rest_01')?.tone || 'green' },
-  ...(!blockedRouteVehicleActive.value ? [{ id: 'device_smart_bin_food_01', kind: 'bin', variant: dispatchStarted.value ? 'returning' : 'active', style: fullBinPose.value.style, depthScale: fullBinPose.value.depthScale, headingDeg: fullBinPose.value.headingDeg, badge: foodBinBadge.value, badgeTone: statusTone(props.runtimeState?.devices?.device_smart_bin_food_01?.status, hasEvent('FULL_RISK_TRIGGERED') && !recovered.value ? 'amber' : 'green'), moving: props.currentEvent?.eventType === 'RETURN_AND_REPLACEMENT_DISPATCHED' && props.scenario !== 'blocked' }] : []),
+  ...(!blockedRouteVehicleActive.value ? [{ id: 'device_smart_bin_food_01', kind: 'bin', variant: dispatchStarted.value ? 'returning' : 'active', style: fullBinPose.value.style, depthScale: fullBinPose.value.depthScale, headingDeg: fullBinPose.value.headingDeg, badge: foodBinBadge.value, badgeTone: statusTone(props.runtimeState?.devices?.device_smart_bin_food_01?.status, hasEvent('FULL_RISK_TRIGGERED') && !recovered.value ? 'amber' : 'green'), moving: dispatchTransitActive.value && returnDispatchProgress.value > 0 && props.scenario !== 'blocked' }] : []),
   { id: 'device_smart_bin_rest_01', kind: 'bin', variant: 'active', style: pos(31.5, 61.5), badge: deviceStatusBadge('device_smart_bin_rest_01') || `${Number(props.runtimeState?.devices?.device_smart_bin_rest_01?.fillPct ?? 30)}%`, badgeTone: statusTone(props.runtimeState?.devices?.device_smart_bin_rest_01?.status) },
-  { id: 'device_smart_bin_standby_01', kind: 'bin', variant: standbyTookOver.value ? 'active' : 'standby', style: standbyBinPose.value.style, depthScale: standbyBinPose.value.depthScale, headingDeg: standbyBinPose.value.headingDeg, badge: deviceStatusBadge('device_smart_bin_standby_01') || (props.currentEvent?.eventType === 'RETURN_AND_REPLACEMENT_DISPATCHED' ? `补位中 ${Math.round(mapMotionProgress(dispatchProgress.value) * 72)}%` : replacementDispatched.value && !standbyTookOver.value ? '接近服务点' : standbyTookOver.value ? '已接管' : '备用'), badgeTone: statusTone(props.runtimeState?.devices?.device_smart_bin_standby_01?.status, replacementDispatched.value ? 'cyan' : 'blue'), moving: props.currentEvent?.eventType === 'RETURN_AND_REPLACEMENT_DISPATCHED' },
+  { id: 'device_smart_bin_standby_01', kind: 'bin', variant: standbyTookOver.value ? 'active' : 'standby', style: standbyBinPose.value.style, depthScale: standbyBinPose.value.depthScale, headingDeg: standbyBinPose.value.headingDeg, badge: deviceStatusBadge('device_smart_bin_standby_01') || (dispatchTransitActive.value && !standbyTookOver.value ? `补位中 ${Math.round(replacementDispatchProgress.value * 100)}%` : replacementDispatched.value && !standbyTookOver.value ? '接近服务点' : standbyTookOver.value ? '已接管' : '备用'), badgeTone: statusTone(props.runtimeState?.devices?.device_smart_bin_standby_01?.status, replacementDispatched.value ? 'cyan' : 'blue'), moving: dispatchTransitActive.value && !standbyTookOver.value && replacementDispatchProgress.value < 1 },
   { id: 'device_smart_bin_standby_02', label: '备用智能桶 02', kind: 'bin', variant: props.runtimeState?.devices?.device_smart_bin_standby_02?.role === 'ACTIVE' ? 'active' : 'standby', style: pos(...(props.runtimeState?.devices?.device_smart_bin_standby_02?.positionPct || [29.6, 20.5])), badge: deviceStatusBadge('device_smart_bin_standby_02') || (props.runtimeState?.devices?.device_smart_bin_standby_02?.reservedForPointId ? '已预留' : '备用'), badgeTone: statusTone(props.runtimeState?.devices?.device_smart_bin_standby_02?.status, props.runtimeState?.devices?.device_smart_bin_standby_02?.reservedForPointId ? 'cyan' : 'blue') },
   ...(props.scenario === 'baseline' ? [
     { id: 'garbage_cardboard_01', kind: 'waste', category: 'recyclable', short: '纸', style: pos(36, 61.5) },
@@ -446,7 +518,7 @@ function showObjectPrimaryLabel(object) {
 
 function objectPrimaryLabel(object) {
   const name = props.labels[object.id] || object.label || object.id
-  if (object.kind === 'waste') return object.short || name
+  if (object.kind === 'waste') return mapWasteDisplayName(object)
   return object.badge ? `${name} · ${object.badge}` : name
 }
 
@@ -478,7 +550,11 @@ function stopLabelLayout() {
   labelResizeObserver?.disconnect(); labelResizeObserver = null
 }
 
-watch(() => [props.currentEvent?.sequence, props.visualResetKey], resetDispatchAnimation, { flush: 'post' })
+watch(() => [dispatchEventSequence.value, props.visualResetKey], resetDispatchAnimation, { flush: 'post' })
+watch(dispatchTransitActive, active => {
+  if (active) startDispatchAnimation()
+  else pauseDispatchAnimation()
+}, { flush: 'post' })
 watch(() => props.playing, value => value ? startDispatchAnimation() : pauseDispatchAnimation(), { flush: 'sync' })
 watch(() => [props.currentEvent?.sequence, props.visualResetKey, props.selectedId, props.scenario, props.playbackRate], scheduleLabelLayout, { flush: 'post' })
 onMounted(() => {
@@ -506,7 +582,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .park-canvas { position: relative; min-height: 0; overflow: hidden; display:flex; align-items:center; justify-content:center; background: #061522; }
-.park-scene-surface { position:relative; flex:0 0 auto; overflow:hidden; aspect-ratio:1672/941; background:#061522; isolation:isolate; }
+.park-scene-surface { position:relative; flex:0 0 auto; overflow:hidden; aspect-ratio:1672/941; background:#061522; isolation:isolate; will-change:transform; }
 .environment-back,.park-background,.park-road-overlay,.ground-detail-layer,.atmosphere-layer,.candidate-background-comparison,.foreground-occlusion-layer,.scene-calibration-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .environment-back { z-index: 0; background: radial-gradient(ellipse at 48% 42%, #0a2634 0%, #061522 72%, #020b12 100%); }
 .park-background { z-index: 1; object-fit: contain; }
@@ -529,10 +605,10 @@ onBeforeUnmount(() => {
 .center-bay-anchor { position:absolute; z-index:5; top:17.5%; width:14px; height:8px; transform:translate(-50%,-50%); cursor:pointer; }.center-bay-anchor.bay-1{left:21.2%}.center-bay-anchor.bay-2{left:24%}.center-bay-anchor>i{display:block;width:100%;height:100%;box-sizing:border-box;border:1px solid rgba(115,171,199,.7);border-radius:2px;background:rgba(19,54,72,.82)}.center-bay-anchor.occupied>i{border-color:#24d9ff;background:rgba(36,217,255,.32);box-shadow:0 0 10px rgba(36,217,255,.5)}.center-bay-anchor.selected>i{outline:1px solid #fff;outline-offset:2px}
 .route-layer { position:absolute; z-index:3; inset:0; width:100%; height:100%; pointer-events:none; }.route-layer.paused .route-path { animation-play-state:paused; }.route-path { fill:none; stroke-width:2.65px; stroke-linecap:round; stroke-dasharray:4px 10px; vector-effect:non-scaling-stroke; opacity:0; transition:opacity .3s ease; animation:route-flow 1.65s linear infinite; filter:drop-shadow(1px 1px .7px rgba(0,14,24,.34)); }.route-path.visible { opacity:.82; }.route-path.complete { opacity:.14; animation:none; }.route-path.return { stroke:#bd866b; }.route-path.replacement { stroke:#65a9b4; }.route-path.route-bed { stroke:rgba(3,19,29,.52);stroke-width:4.8px;stroke-dasharray:none;animation:none;filter:none;opacity:0}.route-path.route-bed.visible{opacity:.42}.route-path.route-bed.complete{opacity:.09}
 @keyframes route-flow { to { stroke-dashoffset: -28; } }
-.scene-object { position: absolute; z-index: 5; transform: translate(-50%,-50%); transition: left .7s cubic-bezier(.22,1,.36,1),top .7s cubic-bezier(.22,1,.36,1),opacity .25s ease; cursor: pointer; }.scene-object.moving { transition: none; }.scene-object::after { content: ''; position: absolute; inset: -7px; border: 1px solid transparent; border-radius: 10px; transition: all .18s ease; }.scene-object:hover::after { border-color:rgba(36,217,255,.5);box-shadow:0 0 12px rgba(36,217,255,.28)}.scene-object.faded { opacity: .34; }
-.scene-label-overlay { position:absolute;z-index:12;inset:0;pointer-events:none;overflow:visible }.scene-label-anchor{position:absolute;transform:translate(-50%,-50%);width:36px;height:46px}.scene-label-anchor.robot{width:42px;height:60px}.scene-label-anchor.visitor{width:24px;height:41px}.scene-label-anchor.service{width:20px;height:20px}.scene-label-anchor.waste{width:21px;height:21px}.center-bay-label-anchor,.facility-label-anchor{position:absolute;transform:translate(-50%,-50%)}.center-bay-label-anchor{top:17.5%;width:14px;height:8px}.center-bay-label-anchor.bay-1{left:21.2%}.center-bay-label-anchor.bay-2{left:24%}.facility-label-anchor{top:20.5%;width:34px;height:31px}.facility-label-anchor.unload{left:20.5%}.facility-label-anchor.wash{left:23%}.facility-label-anchor.charge{left:25.5%}
+.scene-object { position: absolute; z-index: 5; transform: translate(-50%,-50%); transition: left .7s cubic-bezier(.22,1,.36,1),top .7s cubic-bezier(.22,1,.36,1),opacity .25s ease; cursor: pointer; }.scene-object.robot,.scene-object.bin{transform:translate(-50%,-82%)}.scene-object.moving,.scene-object.handoff { transition: none; }.scene-object::after { content: ''; position: absolute; inset: -7px; border: 1px solid transparent; border-radius: 10px; transition: all .18s ease; }.scene-object:hover::after { border-color:rgba(36,217,255,.5);box-shadow:0 0 12px rgba(36,217,255,.28)}.scene-object.faded { opacity: .34; }
+.task-camera-active .scene-object[data-entity-id="robot_patrol_01"],.task-camera-active .scene-object[data-entity-id="garbage_banana_01"],.task-camera-active .scene-object[data-entity-id="garbage_cardboard_01"],.task-camera-active .scene-object[data-entity-id="garbage_battery_01"],.task-camera-active .scene-object[data-entity-id="garbage_paper_cup_01"],.task-camera-active .scene-object[data-entity-id="device_smart_bin_food_01"],.task-camera-active .scene-object[data-entity-id="service_food_01"]{opacity:0;pointer-events:none}.task-camera-active .scene-label-anchor.robot,.task-camera-active .scene-label-anchor.waste,.task-camera-active .scene-label-anchor.bin,.task-camera-active :deep(.scenario-robot),.task-camera-active :deep(.generated-garbage),.task-camera-active :deep(.scenario-label-anchor.robot),.task-camera-active :deep(.scenario-label-anchor.garbage){opacity:0!important;pointer-events:none!important}
+.scene-label-overlay { position:absolute;z-index:12;inset:0;pointer-events:none;overflow:visible }.scene-label-anchor{position:absolute;transform:translate(-50%,-50%);width:36px;height:46px}.scene-label-anchor.robot{width:42px;height:60px;transform:translate(-50%,-82%)}.scene-label-anchor.bin{transform:translate(-50%,-82%)}.scene-label-anchor.visitor{width:24px;height:41px}.scene-label-anchor.service{width:20px;height:20px}.scene-label-anchor.waste{width:32px;height:27px}.center-bay-label-anchor,.facility-label-anchor{position:absolute;transform:translate(-50%,-50%)}.center-bay-label-anchor{top:17.5%;width:14px;height:8px}.center-bay-label-anchor.bay-1{left:21.2%}.center-bay-label-anchor.bay-2{left:24%}.facility-label-anchor{top:20.5%;width:34px;height:31px}.facility-label-anchor.unload{left:20.5%}.facility-label-anchor.wash{left:23%}.facility-label-anchor.charge{left:25.5%}
 .service-symbol { width: 31px; height: 31px; border: 2px dashed #69e4ff; border-radius: 8px; background: rgba(36,217,255,.12); }
-.waste-symbol { width: 21px; height: 21px; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; border-radius: 50%; color: #fff; font-size: 8px; font-weight: 800; box-shadow: 0 0 10px rgba(0,0,0,.5); }.waste-symbol.recyclable { background: #2c8fff; }.waste-symbol.kitchen { background: #16a66a; }.waste-symbol.hazardous { background: #e14b55; }.waste-symbol.other { background: #667788; }
 .event-overlay { position: absolute; z-index: 10; left: 12px; bottom: 12px; min-width: 230px; padding: 8px 10px; display: grid; grid-template-columns: 9px 1fr auto; align-items: center; gap: 8px; border: 1px solid rgba(116,197,255,.34); border-radius: 9px; background: rgba(2,23,38,.86); backdrop-filter: blur(6px); }.event-pulse { width: 8px; height: 8px; border-radius: 50%; background: #2c8fff; box-shadow: 0 0 10px currentColor; }.event-pulse.cyan { background: #24d9ff; }.event-pulse.green { background: #16c57c; }.event-pulse.amber { background: #f5b648; }.event-pulse.red { background: #ff5d66; }.event-overlay-label,.event-overlay-title { display: block; }.event-overlay-label { color: #789fb4; font-size: 8px; }.event-overlay-title { color: #e9f9ff; font-size: 11px; font-weight: 700; margin-top: 2px; }.source-tag { padding: 2px 5px; border-radius: 4px; color: #8ec8eb; border: 1px solid rgba(100,174,226,.34); background: rgba(22,91,143,.24); font: 700 8px/1.2 ui-monospace, Consolas, monospace; }.source-tag.isaac-realtime { color: #c1a7ff; }.source-tag.backend-api { color: #8af1be; }.source-tag.visual-aid { color: #ffd57c; }
 .hide-dynamic-objects .route-layer,.hide-dynamic-objects .scene-object,.hide-dynamic-objects .facility-anchor,.hide-dynamic-objects .center-bay-anchor,.hide-dynamic-objects .map-legend,.hide-dynamic-objects .north-mark,.hide-dynamic-objects .zone-label,.hide-dynamic-objects .road-label,.hide-dynamic-objects .event-overlay,.hide-dynamic-objects :deep(.scenario-layer),.hide-dynamic-objects :deep(.stable-map-label){display:none!important}
 @media (max-width: 900px) { .road-label,.map-legend { display: none; }.zone-label small { display: none; }.event-overlay { min-width: 190px; } }

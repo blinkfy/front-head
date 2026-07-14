@@ -83,6 +83,53 @@ export const MAP_SPRITE_REGISTRY = Object.freeze({
   })
 })
 
+// 地图垃圾物体沿用机器人/桶内流程已使用的正式透明渲染图；
+// 不从类别颜色反推物体，优先依据回放/实时事件传入的 garbageId。
+export const MAP_WASTE_SPRITES = Object.freeze({
+  banana: Object.freeze({
+    key: 'banana', aliases: Object.freeze(['banana', 'banana_peel', 'low-poly_banana', 'garbage_banana_01']), label: '香蕉皮', category: 'kitchen', categoryLabel: '厨余垃圾', targetSlot: 'kitchen',
+    src: '/static/sorting-robot/objects/banana.png', sourceModel: 'digital-twin-park-v1/assets/02_waste/glb/low-poly_banana.glb', sourceUsd: 'digital-twin-park-v1/assets/02_waste/usd/low-poly_banana.usd',
+    status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([32, 22]), rotation: -12, groundShadowScale: 1.05
+  }),
+  cardboard_box: Object.freeze({
+    key: 'cardboard_box', aliases: Object.freeze(['cardboard', 'cardboard_box', 'paper', 'garbage_cardboard_01']), label: '纸箱', category: 'recyclable', categoryLabel: '可回收物', targetSlot: 'recyclable',
+    src: '/static/sorting-robot/objects/cardboard_box.png', sourceModel: 'digital-twin-park-v1/assets/02_waste/glb/cardboard_box.glb', sourceUsd: 'digital-twin-park-v1/assets/02_waste/usd/cardboard_box.usd',
+    status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([29, 25]), rotation: 6, groundShadowScale: 1
+  }),
+  battery: Object.freeze({
+    key: 'battery', aliases: Object.freeze(['battery', 'battery_low_poly', 'garbage_battery_01']), label: '废电池', category: 'hazardous', categoryLabel: '有害垃圾', targetSlot: 'hazardous',
+    src: '/static/sorting-robot/objects/battery.png', sourceModel: 'digital-twin-park-v1/assets/02_waste/glb/battery_low_poly.glb', sourceUsd: 'digital-twin-park-v1/assets/02_waste/usd/battery_low_poly.usd',
+    status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([28, 18]), rotation: -18, groundShadowScale: .74
+  }),
+  papercup: Object.freeze({
+    key: 'papercup', aliases: Object.freeze(['papercup', 'paper_cup', 'simple-paper-cup', 'garbage_paper_cup_01']), label: '纸杯', category: 'other', categoryLabel: '其他垃圾', targetSlot: 'other',
+    src: '/static/sorting-robot/objects/papercup.png', sourceModel: 'digital-twin-park-v1/assets/02_waste/glb/simple-paper-cup.glb', sourceUsd: 'digital-twin-park-v1/assets/02_waste/usd/simple-paper-cup.usd',
+    status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([21, 27]), rotation: -8, groundShadowScale: .82
+  })
+})
+
+const MAP_WASTE_CATEGORY_FALLBACK = Object.freeze({ kitchen: 'banana', recyclable: 'cardboard_box', hazardous: 'battery', other: 'papercup' })
+
+function wasteIdentityValues(value = {}) {
+  if (typeof value === 'string') return [value]
+  return [value.garbageType, value.templateGarbageId, value.garbageId, value.type, value.id, value.category, value.garbageCategory].filter(Boolean)
+}
+
+export function resolveMapWasteSprite(value = {}) {
+  const identities = wasteIdentityValues(value).map(item => String(item).toLowerCase())
+  const matched = Object.values(MAP_WASTE_SPRITES)
+    .map(sprite => ({ sprite, score: Math.max(0, ...identities.flatMap(identity => sprite.aliases.filter(alias => identity.includes(alias)).map(alias => alias.length)))}))
+    .sort((left, right) => right.score - left.score)[0]
+  if (matched?.score) return matched.sprite
+  const category = String(value?.garbageCategory || value?.category || '').toLowerCase()
+  return MAP_WASTE_SPRITES[MAP_WASTE_CATEGORY_FALLBACK[category]] || MAP_WASTE_SPRITES.papercup
+}
+
+export function mapWasteDisplayName(value = {}) {
+  const sprite = resolveMapWasteSprite(value)
+  return `${sprite.label}（${sprite.categoryLabel}）`
+}
+
 export const CENTER_WORKFLOW_SPRITES = Object.freeze({
   arrival: Object.freeze({ src: '/static/sorting-center/facility-digital-twin.png', status: 'temporary', source: 'front-head/src/static/sorting-center/facility-digital-twin.png' }),
   waiting: Object.freeze({ src: '/static/sorting-center/facility-digital-twin.png', status: 'temporary', source: 'front-head/src/static/sorting-center/facility-digital-twin.png' }),

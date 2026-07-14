@@ -52,8 +52,16 @@
       "enabled": true
     },
     {
+      "id": "route_food_north_turn",
+      "x": 49.45,
+      "y": 52.7,
+      "networkType": "service_device",
+      "zoneId": "zone_central_walk",
+      "enabled": true
+    },
+    {
       "id": "route_central_mid",
-      "x": 48.1,
+      "x": 47,
       "y": 36,
       "networkType": "service_device",
       "zoneId": "zone_central_walk",
@@ -446,6 +454,54 @@
       "enabled": true
     },
     {
+      "id": "edge_food_spur_north_turn",
+      "from": "route_east_junction",
+      "to": "route_food_north_turn",
+      "laneType": "parking_spur",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          51.25,
+          52.35
+        ]
+      ],
+      "distance": 3.62,
+      "baseCost": 3.62,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
+      "id": "edge_food_spur_north",
+      "from": "route_food_north_turn",
+      "to": "route_central_mid",
+      "laneType": "parking_spur",
+      "allowedEntities": [
+        "smart_bin_mobile"
+      ],
+      "width": 2.2,
+      "controlPoints": [
+        [
+          49.25,
+          47.4
+        ],
+        [
+          47.55,
+          40
+        ]
+      ],
+      "distance": 16.89,
+      "baseCost": 16.89,
+      "speedFactor": 1,
+      "bidirectional": true,
+      "blocked": false,
+      "enabled": true
+    },
+    {
       "id": "edge_rest_spur_inner",
       "from": "route_rest",
       "to": "route_rest_spur",
@@ -507,8 +563,8 @@
           44
         ]
       ],
-      "distance": 30.5,
-      "baseCost": 30.5,
+      "distance": 30.54,
+      "baseCost": 30.54,
       "speedFactor": 1,
       "bidirectional": true,
       "blocked": false,
@@ -525,16 +581,16 @@
       "width": 2.2,
       "controlPoints": [
         [
-          49.2,
+          49.7,
           27
         ],
         [
-          49.4,
+          50.4,
           20
         ]
       ],
-      "distance": 21.55,
-      "baseCost": 21.55,
+      "distance": 21.83,
+      "baseCost": 21.83,
       "speedFactor": 1,
       "bidirectional": true,
       "blocked": false,
