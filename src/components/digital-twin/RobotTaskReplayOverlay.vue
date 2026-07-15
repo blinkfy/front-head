@@ -40,6 +40,7 @@
         :object-id="request?.garbageId"
         :object-class="request?.expectedClassName"
         :target-bin-id="request?.targetBinId"
+        :task-spatial-context="taskSpatialContext"
         :transparent-environment="true"
         :show-status="false"
         @ready="handlePlayerReady"
@@ -129,7 +130,7 @@ const props = defineProps({
   fillTargetPct: { type: Number, default: 0 },
   fillEventSequence: { type: Number, default: 0 },
   resetKey: { type: [String, Number], default: '' },
-  binVisualVersion: { type: String, default: 'cutaway-raster-v3' },
+  binVisualVersion: { type: String, default: 'cutaway-raster-v8' },
   binDebugCalibration: { type: Boolean, default: false },
   debug: { type: Boolean, default: false }
 })
@@ -160,6 +161,14 @@ const activeDisplayStage = computed(() => viewMode.value === 'bin'
 const taskId = computed(() => props.request?.taskId || '')
 const garbageText = computed(() => props.garbageLabel || props.request?.expectedClassName || props.request?.garbageId || '未登记')
 const targetBinText = computed(() => props.targetBinLabel || props.request?.targetBinId || '未登记')
+const taskSpatialContext = computed(() => ({
+  garbagePositionPct: props.request?.garbagePositionPct,
+  targetBinPositionPct: props.request?.targetBinPositionPct,
+  patrolPositionPct: props.request?.patrolPositionPct,
+  servicePointId: props.request?.servicePointId,
+  robotRoute: props.request?.robotRoute,
+  globalTaskRoutes: props.request?.globalTaskRoutes
+}))
 const identityDetail = computed(() => {
   if (viewMode.value === 'bin') {
     const target = Number(props.fillTargetPct) || 0
@@ -175,7 +184,7 @@ const overallProgress = computed(() => {
   if (renderStage.value === 'release') withinLogicalStage = .65 + stageProgress.value * .35
   return Math.min(100, (logicalStageIndex.value + withinLogicalStage) / LOGICAL_STAGES.length * 100)
 })
-const taskCamera = computed(() => resolveRobotTaskCamera(renderStage.value, stageProgress.value))
+const taskCamera = computed(() => resolveRobotTaskCamera(renderStage.value, stageProgress.value, taskSpatialContext.value))
 
 function resetSequence() {
   renderStepIndex.value = 0
@@ -277,7 +286,7 @@ watch(() => props.active, active => {
   }
 }, { flush: 'post' })
 watch(
-  [renderStage, stageProgress, viewMode, () => binProgressState.value.progress, completed, playerReady, () => props.active],
+  [renderStage, stageProgress, viewMode, taskSpatialContext, () => binProgressState.value.progress, completed, playerReady, () => props.active],
   () => {
     const stage = viewMode.value === 'bin' ? 'bin_internal' : renderStage.value
     const carrying = viewMode.value === 'robot' && ['transport', 'place', 'release'].includes(stage)
@@ -292,6 +301,10 @@ watch(
       completed: completed.value,
       taskId: taskId.value,
       robotId: props.request?.robotId || '',
+      garbageId: props.request?.garbageId || '',
+      targetBinId: props.request?.targetBinId || '',
+      servicePointId: props.request?.servicePointId || '',
+      targetBinPositionPct: props.request?.targetBinPositionPct || null,
       camera: camera ? {
         scale: camera.cameraScale,
         focusX: camera.focus[0],

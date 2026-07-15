@@ -45,7 +45,7 @@ const props = defineProps({
   resetKey: { type: [String, Number], default: '' },
   wasteConfigSrc: { type: String, default: '/static/sorting-robot/waste-adapters.json' },
   structureVisualSrc: { type: String, default: '' },
-  visualVersion: { type: String, default: 'cutaway-raster-v3' },
+  visualVersion: { type: String, default: 'cutaway-raster-v8' },
   debugCalibration: { type: Boolean, default: false }
 })
 
@@ -54,7 +54,7 @@ const viewportRef = ref(null)
 const canvasRef = ref(null)
 const phaseKey = ref(PHASES[0].key)
 const playingState = ref(false)
-const activeVisualVersion = ref('cutaway-raster-v3')
+const activeVisualVersion = ref('cutaway-raster-v8')
 
 let canvas = null
 let context = null
@@ -159,13 +159,18 @@ async function loadAssets() {
     }, {})
     const requiredV4 = ['fixedCadStructure', 'xyRails', 'movingCarriage', 'liftColumn', 'leftJaw', 'rightJaw', 'guideHopperRear', 'targetBins', 'guideHopperFrontLip', 'binFrontPanels', 'frontFrameOcclusion']
     const v4Ready = requiredV4.every(key => layerImages[key])
-    const rasterReady = ['fixedMother', 'panelsOpenMother', 'carriageLift', 'leftJaw', 'rightJaw'].every(key => rasterImages[key])
+    const rasterReady = [
+      ...SMART_BIN_CUTAWAY_RASTER_V3.panelAnimation.frameKeys,
+      'carriageLift',
+      'leftJaw',
+      'rightJaw'
+    ].every(key => rasterImages[key])
     const posterReady = !!rasterImages.assembledPoster
     const requested = normalizeKey(props.visualVersion)
     if (props.debugCalibration && requested === 'v4' && v4Ready) activeVisualVersion.value = 'v4'
     else if (props.debugCalibration && requested === 'legacy-v1' && Object.keys(legacyImages).length === legacyEntries.length) activeVisualVersion.value = 'legacy-v1'
-    else if (rasterReady) activeVisualVersion.value = 'cutaway-raster-v3'
-    else if (posterReady) activeVisualVersion.value = 'cutaway-raster-v3-static'
+    else if (rasterReady) activeVisualVersion.value = 'cutaway-raster-v8'
+    else if (posterReady) activeVisualVersion.value = 'cutaway-raster-v8-static'
     else activeVisualVersion.value = 'unavailable'
     const errors = results.filter(result => result?.loadError).map(result => result.loadError)
     if (errors.length) emit('error', { message: '桶内剖视素材部分加载失败', errors })
@@ -620,6 +625,11 @@ function rasterWasteState(phase, state, slotKey, mechanism) {
   const receive = config.mechanism.receive
   const slot = config.slots[slotKey]
   const baseRotation = Number(adapter?.receiveRotation) || 0
+  const gripOffset = config.mechanism.wasteGripOffset || { x: 0, y: 0 }
+  const heldGrip = {
+    x: mechanism.grip.x + gripOffset.x,
+    y: mechanism.grip.y + gripOffset.y
+  }
   if (phase.key === 'intake') {
     const t = phase.localProgress
     const fall = t < .84 ? (t / .84) ** 2 * .94 : .94 + smoothstep((t - .84) / .16) * .06
@@ -628,18 +638,18 @@ function rasterWasteState(phase, state, slotKey, mechanism) {
   if (phase.key === 'detect') return { ...receive, rotation: baseRotation, visible: true, clipY: null, fall: 0 }
   if (phase.key === 'receive') {
     const attach = smoothstep((phase.localProgress - .46) / .2)
-    return { x: lerp(receive.x, mechanism.grip.x, attach), y: lerp(receive.y, mechanism.grip.y, attach), rotation: lerp(baseRotation, 0, attach), visible: true, clipY: null, fall: 0 }
+    return { x: lerp(receive.x, heldGrip.x, attach), y: lerp(receive.y, heldGrip.y, attach), rotation: lerp(baseRotation, 0, attach), visible: true, clipY: null, fall: 0 }
   }
   if (phase.key === 'transfer') {
     const sway = Math.sin(phase.localProgress * Math.PI) * (Number(adapter?.transferSway) || 0)
-    return { x: mechanism.grip.x, y: mechanism.grip.y + sway * .2, rotation: sway, visible: true, clipY: null, fall: 0 }
+    return { x: heldGrip.x, y: heldGrip.y + sway * .2, rotation: sway, visible: true, clipY: null, fall: 0 }
   }
-  if (phase.key === 'align') return { ...mechanism.grip, rotation: 0, visible: true, clipY: null, fall: 0 }
+  if (phase.key === 'align') return { ...heldGrip, rotation: 0, visible: true, clipY: null, fall: 0 }
   if (phase.key === 'drop') {
     const fall = phase.localProgress <= .16 ? 0 : ((phase.localProgress - .16) / .84) ** 2
     const point = cubicPoint([
-      mechanism.grip,
-      { x: mechanism.grip.x, y: 320 },
+      heldGrip,
+      { x: heldGrip.x, y: 320 },
       { x: slot.center.x, y: slot.center.y - 34 },
       { x: slot.center.x, y: slot.hideY + 28 }
     ], fall)
@@ -657,9 +667,17 @@ function drawRasterImage(ctx, image, alpha = 1) {
 }
 
 function drawRasterMother(ctx, state) {
-  drawRasterImage(ctx, rasterImages.fixedMother)
   const openAmount = clamp(state?.panelOpen)
-  if (openAmount > 0) drawRasterImage(ctx, rasterImages.panelsOpenMother, openAmount)
+  const frameKeys = SMART_BIN_CUTAWAY_RASTER_V3.panelAnimation.frameKeys
+  const framePosition = openAmount * (frameKeys.length - 1)
+  const lowerIndex = Math.floor(framePosition)
+  const upperIndex = Math.min(frameKeys.length - 1, lowerIndex + 1)
+  const blend = framePosition - lowerIndex
+  // Each keyframe is an opaque full-scene raster. Keep the lower frame fully
+  // opaque, then fade the next frame over it; fading both frames exposes the
+  // dark canvas at every midpoint and makes the opening sequence flash.
+  drawRasterImage(ctx, rasterImages[frameKeys[lowerIndex]])
+  if (upperIndex !== lowerIndex && blend > 0) drawRasterImage(ctx, rasterImages[frameKeys[upperIndex]], blend)
 }
 
 function drawRasterPiece(ctx, key, deltaX = 0, deltaY = 0, extraX = 0) {
@@ -669,7 +687,11 @@ function drawRasterPiece(ctx, key, deltaX = 0, deltaY = 0, extraX = 0) {
   const scale = SMART_BIN_CUTAWAY_RASTER_V3.sourceToSceneScale
   const [left, top, right, bottom] = layer.sourceBbox
   const box = SMART_BIN_CUTAWAY_RASTER_V3.motherDrawBox
+  ctx.save()
+  if (key === 'carriageLift') ctx.filter = 'saturate(.22) brightness(1.02) contrast(1.06)'
+  if (key === 'leftJaw' || key === 'rightJaw') ctx.filter = 'brightness(1.06) contrast(1.12) drop-shadow(0px 1px 1.4px rgba(0, 8, 12, .52))'
   ctx.drawImage(image, box.x + left * scale + deltaX + extraX, box.y + top * scale + deltaY, (right - left) * scale, (bottom - top) * scale)
+  ctx.restore()
 }
 
 function drawRasterTargetEffect(ctx, state, slotKey) {
@@ -717,9 +739,25 @@ function drawRasterEffects(ctx, phase, waste, slotKey) {
 }
 
 function drawRasterRealOcclusion(ctx, phase, state, waste, slotKey) {
-  // 开板母版只作为固定结构交叉过渡；DROP 由 rasterWasteState 的目标仓 hideY 裁剪形成真实前后关系。
-  // 禁止在此重绘整幅母版，否则会错误覆盖活动夹爪和仍位于仓口上方的垃圾。
-  if (!SMART_BIN_CUTAWAY_RASTER_V3.panelOcclusion.enabled) return
+  const occlusion = SMART_BIN_CUTAWAY_RASTER_V3.panelOcclusion
+  const image = rasterImages.panelsOpenMother
+  if (!occlusion.enabled || phase.key !== 'drop' || state.panelOpen < .92 || !image) return
+  const scale = SMART_BIN_CUTAWAY_RASTER_V3.sourceToSceneScale
+  const box = SMART_BIN_CUTAWAY_RASTER_V3.motherDrawBox
+  occlusion.frontPanelPolygons.forEach(polygon => {
+    ctx.save()
+    ctx.beginPath()
+    polygon.forEach(([sourceX, sourceY], index) => {
+      const sceneX = box.x + sourceX * scale
+      const sceneY = box.y + sourceY * scale
+      if (index === 0) ctx.moveTo(sceneX, sceneY)
+      else ctx.lineTo(sceneX, sceneY)
+    })
+    ctx.closePath()
+    ctx.clip()
+    drawRasterImage(ctx, image)
+    ctx.restore()
+  })
 }
 
 function drawRasterV3Frame(ctx, phase, state, slotKey, staticFallback = false) {
@@ -730,8 +768,8 @@ function drawRasterV3Frame(ctx, phase, state, slotKey, staticFallback = false) {
   drawRasterTargetEffect(ctx, state, slotKey)
   drawRasterPiece(ctx, 'carriageLift', mechanism.deltaX, mechanism.deltaY)
   drawRasterPiece(ctx, 'leftJaw', mechanism.deltaX, mechanism.deltaY, (SMART_BIN_CUTAWAY_RASTER_V3.layers.leftJaw.closeDeltaX || 0) * state.jawClosed)
-  drawRasterPiece(ctx, 'rightJaw', mechanism.deltaX, mechanism.deltaY, (SMART_BIN_CUTAWAY_RASTER_V3.layers.rightJaw.closeDeltaX || 0) * state.jawClosed)
   drawRasterWaste(ctx, waste)
+  drawRasterPiece(ctx, 'rightJaw', mechanism.deltaX, mechanism.deltaY, (SMART_BIN_CUTAWAY_RASTER_V3.layers.rightJaw.closeDeltaX || 0) * state.jawClosed)
   drawRasterEffects(ctx, phase, waste, slotKey)
   drawRasterRealOcclusion(ctx, phase, state, waste, slotKey)
 }
@@ -749,8 +787,8 @@ function drawFrame(emitState = false) {
   ctx.clearRect(0, 0, cssWidth, cssHeight)
   ctx.fillStyle = '#061722'; ctx.fillRect(0, 0, cssWidth, cssHeight)
 
-  if (activeVisualVersion.value === 'cutaway-raster-v3' || activeVisualVersion.value === 'cutaway-raster-v3-static') {
-    const staticFallback = activeVisualVersion.value === 'cutaway-raster-v3-static'
+  if (activeVisualVersion.value === 'cutaway-raster-v8' || activeVisualVersion.value === 'cutaway-raster-v8-static') {
+    const staticFallback = activeVisualVersion.value === 'cutaway-raster-v8-static'
     const fit = Math.min(cssWidth / SCENE.width, cssHeight / SCENE.height)
     const cameraScale = staticFallback ? 1 : shot.cameraScale
     const focus = staticFallback ? [600, 310] : shot.focus

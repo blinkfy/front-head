@@ -85,6 +85,10 @@ export function connectParkSimulationStream(handlers = {}) {
   const onClose = (event) => {
     if (Number(event?.code) === 1008) {
       reportAuthorizationFailure(event)
+    } else if (Number(event?.code) === 1011) {
+      const error = new Error(event?.reason || '实时事件流鉴权服务暂时不可用')
+      error.response = { status: 500 }
+      handlers.onError?.(error)
     }
     handlers.onClose?.(event)
   }

@@ -69,6 +69,15 @@ const PREVIOUS_RENDER_STAGE = Object.freeze({
   release: 'place',
   return: 'release'
 })
+const PICKUP_BEND_END_PROGRESS = .78
+const PICKUP_ATTACH_PROGRESS = .72
+const PICKUP_RECOVER_PROGRESS = .28
+const PICKUP_BEND_POSE = Object.freeze({
+  waist: -24,
+  head: 6,
+  leftShoulder: 16,
+  leftElbow: 14
+})
 
 const props = defineProps({
   stage: { type: String, default: 'idle' },
@@ -87,6 +96,7 @@ const props = defineProps({
   objectId: { type: String, default: '' },
   objectClass: { type: String, default: '' },
   targetBinId: { type: String, default: '' },
+  taskSpatialContext: { type: Object, default: () => ({}) },
   wasteConfigSrc: { type: String, default: '/static/sorting-robot/waste-adapters.json' },
   binVisualSrc: { type: String, default: '' },
   transparentEnvironment: { type: Boolean, default: false },
@@ -113,6 +123,8 @@ let wasteAdapter = null
 let images = {}
 let assetsReady = false
 let resizeObserver = null
+let densityMediaQuery = null
+let canvasPixelRatio = 1
 let animationFrameId = 0
 let stageStartedAt = 0
 let stageProgress = 0
@@ -278,14 +290,29 @@ function getPose() {
   if (!spec) return null
   let pose = mixPose(spec.from, spec.to, stageProgress)
   const previous = timeline?.stages?.[PREVIOUS_RENDER_STAGE[currentStage.value]]
-  const shot = resolveRobotTaskShot(currentStage.value)
+  const shot = resolveRobotTaskShot(currentStage.value, props.taskSpatialContext)
   const blendWindow = Math.min(.34, (Number(shot?.transitionDuration) || 0) / Math.max(1, Number(spec.durationMs) || 1000))
   if (previous?.to && blendWindow > 0 && stageProgress < blendWindow) {
     pose = mixPose(previous.to, pose, smoothstep(stageProgress / blendWindow))
   }
   if (Number.isFinite(spec.holdBottleAt)) pose.holdBottle = stageProgress >= spec.holdBottleAt
   if (Number.isFinite(spec.holdBottleUntil)) pose.holdBottle = stageProgress < spec.holdBottleUntil
+  pose = applyPickupBendVisualPose(pose)
   return pose
+}
+
+function applyPickupBendVisualPose(pose) {
+  if (!['grasp', 'transport'].includes(currentStage.value)) return pose
+  const bend = currentStage.value === 'grasp'
+    ? smoothstep(clamp(stageProgress / PICKUP_BEND_END_PROGRESS))
+    : 1 - smoothstep(clamp(stageProgress / PICKUP_RECOVER_PROGRESS))
+  if (bend <= 0) return pose
+  const adjusted = { ...pose }
+  Object.entries(PICKUP_BEND_POSE).forEach(([key, target]) => {
+    adjusted[key] = lerp(Number(pose[key]) || 0, target, bend)
+  })
+  if (currentStage.value === 'grasp' && stageProgress < PICKUP_ATTACH_PROGRESS) adjusted.holdBottle = false
+  return adjusted
 }
 
 function rotation(pivotName, degrees) {
@@ -831,6 +858,12 @@ function sceneAsset(src) {
 function sceneDetailOpacity(scene, cameraScale) {
   const blend = scene?.detailEnvironment?.blend
   if (!blend) return 0
+  if (currentStage.value === 'return' && blend.returnFade) {
+    const start = clamp(Number(blend.returnFade.start) || 0)
+    const end = Math.max(start + .001, clamp(Number(blend.returnFade.end) || 1))
+    const fade = 1 - smoothstep(clamp((stageProgress - start) / (end - start)))
+    return clamp(blend.maxOpacity) * fade
+  }
   const progress = smoothstep(clamp((cameraScale - blend.startScale) / Math.max(.001, blend.endScale - blend.startScale)))
   return progress * clamp(blend.maxOpacity)
 }
@@ -919,12 +952,14 @@ function resolveTaskObjectState(stage, progress, shot, geometry, binGeometry) {
   let lifted = false
 
   if (stage === 'grasp') {
-    const [start, end] = shot.graspWindow || [.22, .72]
-    const grasp = smoothstep(clamp((progress - start) / Math.max(.001, end - start)))
-    const control = [(groundCenter[0] + geometry.handPoint[0]) / 2, Math.min(groundCenter[1], geometry.handPoint[1]) - 42]
-    point = quadraticPoint(groundCenter, control, geometry.handPoint, grasp)
-    rotationDegrees = lerp(groundRotation, graspRotation, grasp)
-    lifted = grasp > .05
+    const [start, end] = shot.pickupWindow || shot.graspWindow || [.62, .78]
+    const pickup = smoothstep(clamp((progress - start) / Math.max(.001, end - start)))
+    point = [
+      lerp(groundCenter[0], geometry.handPoint[0], pickup),
+      lerp(groundCenter[1], geometry.handPoint[1], pickup)
+    ]
+    rotationDegrees = lerp(groundRotation, graspRotation, pickup)
+    lifted = pickup > .55
   } else if (['transport', 'place'].includes(stage)) {
     point = [...geometry.handPoint]
     const sway = stage === 'transport' ? Math.sin(progress * Math.PI * 2) * adapterNumber('transportSway', 0) : 0
@@ -1020,12 +1055,16 @@ function shotTravelDistance(shot) {
 }
 
 function visualStageDuration(stage, timelineDuration) {
+  const shot = resolveRobotTaskShot(stage, props.taskSpatialContext)
+  const baseDuration = Math.max(1, timelineDuration || 1000)
+  const shotMinimum = Number(shot?.minDurationMs) || 0
   const motion = LOCAL_VISUAL.motion || {}
-  if (!(motion.cappedStages || []).includes(stage)) return Math.max(1, timelineDuration || 1000)
-  const distance = shotTravelDistance(resolveRobotTaskShot(stage))
+  if (!(motion.cappedStages || []).includes(stage)) return Math.max(baseDuration, shotMinimum)
+  const distance = shotTravelDistance(shot)
   const speed = Math.max(1, Number(motion.maxTravelUnitsPerSecond) || 1)
   return Math.max(
-    Math.max(1, timelineDuration || 1000),
+    baseDuration,
+    shotMinimum,
     Number(motion.minTravelDurationMs) || 0,
     Math.ceil(distance / speed * 1000)
   )
@@ -1033,7 +1072,10 @@ function visualStageDuration(stage, timelineDuration) {
 
 function drawScene(time = 0) {
   if (!canvas || !context || !assetsReady || !rig || !timeline) return
-  const ratio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1))
+  // The backing-store dimensions and drawing transform must use the same DPR.
+  // Reading window.devicePixelRatio here caused a mixed old/new ratio for one
+  // or more frames after a window moved between monitors.
+  const ratio = canvasPixelRatio
   const width = canvas.width / ratio
   const height = canvas.height / ratio
   if (!width || !height) return
@@ -1050,7 +1092,7 @@ function drawScene(time = 0) {
   const pose = getPose()
   if (!pose) return
   const rawProgress = clamp(stageProgress)
-  const camera = resolveRobotTaskCamera(currentStage.value, rawProgress)
+  const camera = resolveRobotTaskCamera(currentStage.value, rawProgress, props.taskSpatialContext)
   const { shot, easedProgress, robotPosition, wastePosition, binPosition, cameraScale, focus } = camera
   const baseScale = Math.min(width / ROBOT_TASK_SCENE_SIZE.width, height / ROBOT_TASK_SCENE_SIZE.height)
   const sceneLayers = sceneLayersForShot(shot, rawProgress)
@@ -1113,6 +1155,7 @@ function resizeCanvas() {
     canvas.style.height = `${Math.round(rect.height)}px`
   }
   const ratio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1))
+  canvasPixelRatio = ratio
   const width = Math.round(rect.width * ratio)
   const height = Math.round(rect.height * ratio)
   if (canvas.width !== width || canvas.height !== height) {
@@ -1120,6 +1163,33 @@ function resizeCanvas() {
     canvas.height = height
   }
   drawScene(performance.now())
+}
+
+function unbindDensityWatcher() {
+  if (!densityMediaQuery) return
+  if (typeof densityMediaQuery.removeEventListener === 'function') densityMediaQuery.removeEventListener('change', handleDensityChange)
+  else densityMediaQuery.removeListener?.(handleDensityChange)
+  densityMediaQuery = null
+}
+
+function bindDensityWatcher() {
+  unbindDensityWatcher()
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+  const density = Math.max(.1, Number(window.devicePixelRatio) || 1)
+  densityMediaQuery = window.matchMedia(`(resolution: ${density}dppx)`)
+  if (typeof densityMediaQuery.addEventListener === 'function') densityMediaQuery.addEventListener('change', handleDensityChange)
+  else densityMediaQuery.addListener?.(handleDensityChange)
+}
+
+function handleDensityChange() {
+  // Re-register against the new density because a MediaQueryList only tracks
+  // the density value used when it was created.
+  bindDensityWatcher()
+  resizeCanvas()
+}
+
+function handleWindowResize() {
+  resizeCanvas()
 }
 
 function reportLoadError(error) {
@@ -1191,8 +1261,10 @@ function tick(timestamp) {
   }
   const [start, end] = STAGE_RANGES[currentStage.value]
   frame.value = Math.round(lerp(start, end, stageProgress))
-  drawScene(timestamp)
   emit('framechange', { frame: frame.value, stage: currentStage.value, progress: stageProgress })
+  // The park camera consumes framechange. Wait for Vue to commit that CSS
+  // transform, then draw the transparent local layer with the same progress.
+  nextTick(() => drawScene(timestamp))
   if (props.completeOnStageEnd && stageProgress >= 1 && !stageCompletionEmitted) {
     stageCompletionEmitted = true
     pause()
@@ -1223,8 +1295,8 @@ function seek(value) {
   const [start, end] = STAGE_RANGES[currentStage.value]
   stageProgress = end === start ? 0 : clamp((next - start) / (end - start))
   stageCompletionEmitted = false
-  drawScene(performance.now())
   emit('framechange', { frame: next, stage: currentStage.value, progress: stageProgress })
+  nextTick(() => drawScene(performance.now()))
 }
 
 function setStage(value, progress) {
@@ -1239,8 +1311,8 @@ function setStage(value, progress) {
   stageProgress = nextProgress
   stageCompletionEmitted = false
   frame.value = STAGE_RANGES[next][0]
-  drawScene(performance.now())
   emit('stagechange', { stage: next, progress: stageProgress })
+  nextTick(() => drawScene(performance.now()))
   if (props.autoplay || props.running === true) play()
 }
 
@@ -1250,6 +1322,8 @@ function destroy() {
   pause()
   resizeObserver?.disconnect()
   resizeObserver = null
+  unbindDensityWatcher()
+  if (typeof window !== 'undefined') window.removeEventListener('resize', handleWindowResize)
   images = {}
   rig = null
   timeline = null
@@ -1295,6 +1369,10 @@ onMounted(async () => {
   if (context && typeof ResizeObserver === 'function') {
     resizeObserver = new ResizeObserver(resizeCanvas)
     resizeObserver.observe(viewportRef.value?.$el || viewportRef.value)
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleWindowResize)
+    bindDensityWatcher()
   }
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', handleVisibilityChange)
   resizeCanvas()

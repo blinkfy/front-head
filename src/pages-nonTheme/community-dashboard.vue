@@ -1,5 +1,5 @@
 <template>
-  <view class="screen">
+  <view :class="['screen', isDark ? 'dark-theme' : 'light-theme', { 'admin-light-theme': !isDark }]">
 
     <!-- ===== 顶部 panel ===== -->
     <view class="panel top">
@@ -12,7 +12,7 @@
             <text :class="['compact-status', statusCls]">{{ compactStatusText }}</text>
           </view>
         </view>
-        <AdminScreenHeader screen-key="communityDashboard" tone="dark" @back="goBack">
+        <AdminScreenHeader screen-key="communityDashboard" :tone="isDark ? 'dark' : 'light'" @back="goBack">
           <view class="actions meta-actions">
             <view class="clock">{{ clockText }}</view>
             <view :class="['status', statusCls]">{{ statusText }}</view>
@@ -154,7 +154,7 @@
             <view class="legend">
               <text><view class="dot events"></view>分类次数</text>
               <text><view class="dot active"></view>活跃用户</text>
-              <text><view class="dot" style="background:#ffbf57"></view>风险指数</text>
+              <text><view class="dot" style="background:var(--chart-warning)"></view>风险指数</text>
             </view>
             <!-- #ifdef H5 -->
             <svg id="trendSvg" viewBox="0 0 860 300" preserveAspectRatio="none"
@@ -204,7 +204,7 @@
       </view>
 
       <!-- 右侧栏 -->
-      <view class="col side">
+      <view :class="['col', 'side', { 'has-empty-alerts': !alertItems.length }]">
         <!-- 社区分类详情 -->
         <view class="panel block">
           <view class="block-title">社区分类详情 <text class="note">Top 12 社区</text></view>
@@ -228,7 +228,7 @@
           </scroll-view>
         </view>
         <!-- 风险预警 -->
-        <view class="panel block">
+        <view :class="['panel', 'block', { 'is-empty-state': !alertItems.length }]">
           <view class="block-title">
             风险预警 <text class="note">{{ alertSummary }}</text>
           </view>
@@ -252,11 +252,13 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { baseUrl } from '@/api/settings'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
+import '@/styles/admin-light-theme.css'
 
 // ─── 工具函数 ──────────────────────────────────────────
 function getStorage(key) {
@@ -270,7 +272,10 @@ function getStorage(key) {
 }
 
 // ─── 主题 ──────────────────────────────────────────────
-const isDark = ref(getStorage('app_theme') !== 'light')
+const isDark = ref(getStorage('app_theme') === 'dark')
+function syncThemeMode() {
+  isDark.value = applyStoredTheme() === 'dark'
+}
 
 // ─── 定时器管理 ────────────────────────────────────────
 const timers = new Set()
@@ -578,9 +583,9 @@ function renderCategoryDonut(breakdown) {
     return node
   })
   donutSvgHtml.value = [
-    `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="rgba(116,216,232,.16)" stroke-width="${stroke}"></circle>`,
+    `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="var(--chart-grid)" stroke-width="${stroke}"></circle>`,
     ...circles,
-    `<circle cx="${cx}" cy="${cy}" r="${radius - stroke / 2 - 3}" fill="rgba(5,31,40,.76)"></circle>`,
+    `<circle cx="${cx}" cy="${cy}" r="${radius - stroke / 2 - 3}" fill="var(--chart-surface)"></circle>`,
     `<text x="${cx}" y="${cy - 6}" text-anchor="middle" fill="currentColor" font-size="24" font-family="Rajdhani, DIN Alternate, sans-serif">${fmtNumber(total)}</text>`,
     `<text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="var(--muted)" font-size="11">总分类次数</text>`
   ].join('')
@@ -646,7 +651,7 @@ function renderTrend(trend) {
   const grid = []
   for (let i = 0; i <= 4; i++) {
     const y = pad.top + (plotH * i) / 4
-    grid.push(`<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="rgba(116,216,232,.16)" stroke-width="1" />`)
+    grid.push(`<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="var(--chart-grid)" stroke-width="1" />`)
   }
   const thresholdTop    = pad.top + plotH - 0.55 * plotH
   const thresholdBottom = pad.top + plotH - 0.35 * plotH
@@ -659,19 +664,19 @@ function renderTrend(trend) {
   const step = Math.max(1, Math.floor(daily.length / 6))
   for (let i = 0; i < daily.length; i += step) {
     const x = pad.left + (plotW * i) / size
-    labels.push(`<text x="${x}" y="${height - 8}" fill="#84b8c2" font-size="10" text-anchor="middle">${esc(String(daily[i].date).slice(5))}</text>`)
+    labels.push(`<text x="${x}" y="${height - 8}" fill="var(--chart-label)" font-size="10" text-anchor="middle">${esc(String(daily[i].date).slice(5))}</text>`)
   }
   trendSvgHtml.value = [
     ...grid,
-    `<rect x="${pad.left}" y="${thresholdTop}" width="${plotW}" height="${thresholdBottom - thresholdTop}" fill="rgba(255,191,87,.10)" />`,
-    `<path d="${activeArea}" fill="rgba(36,211,146,.18)"></path>`,
-    `<polyline class="events-line" points="${polyline(eventPoints)}" fill="none" stroke="#2bc6de" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />`,
-    `<polyline class="active-line" points="${polyline(activePoints)}" fill="none" stroke="#24d392" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />`,
-    `<polyline points="${polyline(riskPoints)}" fill="none" stroke="#ffbf57" stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round" stroke-linejoin="round" />`,
-    ...eventPoints.map(p => `<circle class="events-dot" cx="${p.x}" cy="${p.y}" r="2.3" fill="#2bc6de" />`),
-    ...activePoints.map(p => `<circle class="active-dot" cx="${p.x}" cy="${p.y}" r="2.3" fill="#24d392" />`),
-    ...riskPoints.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.2" fill="#ffbf57" />`),
-    `<text x="${width - pad.right}" y="${thresholdTop - 4}" fill="#ffdeab" font-size="10" text-anchor="end">风险阈值带</text>`,
+    `<rect x="${pad.left}" y="${thresholdTop}" width="${plotW}" height="${thresholdBottom - thresholdTop}" fill="var(--chart-risk-band)" />`,
+    `<path d="${activeArea}" fill="var(--chart-secondary-area)"></path>`,
+    `<polyline class="events-line" points="${polyline(eventPoints)}" fill="none" stroke="var(--chart-primary)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />`,
+    `<polyline class="active-line" points="${polyline(activePoints)}" fill="none" stroke="var(--chart-secondary)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />`,
+    `<polyline points="${polyline(riskPoints)}" fill="none" stroke="var(--chart-warning)" stroke-width="1.5" stroke-dasharray="5 4" stroke-linecap="round" stroke-linejoin="round" />`,
+    ...eventPoints.map(p => `<circle class="events-dot" cx="${p.x}" cy="${p.y}" r="2.3" fill="var(--chart-primary)" />`),
+    ...activePoints.map(p => `<circle class="active-dot" cx="${p.x}" cy="${p.y}" r="2.3" fill="var(--chart-secondary)" />`),
+    ...riskPoints.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2" fill="var(--chart-warning)" />`),
+    `<text x="${width - pad.right}" y="${thresholdTop - 4}" fill="var(--chart-risk-label)" font-size="10" text-anchor="end">风险阈值带</text>`,
     ...labels
   ].join('')
   // #endif
@@ -944,7 +949,7 @@ function renderDistrictRadar(overview) {
       const a = start + idx * angleStep
       return `${cx + Math.cos(a) * r},${cy + Math.sin(a) * r}`
     }).join(' ')
-    bgPolygons.push(`<polygon points="${points}" fill="none" stroke="rgba(116,216,232,.18)" stroke-width="1"></polygon>`)
+    bgPolygons.push(`<polygon points="${points}" fill="none" stroke="var(--chart-grid)" stroke-width="1"></polygon>`)
   }
   const axes = metrics.map((item, idx) => {
     const a = start + idx * angleStep
@@ -952,7 +957,7 @@ function renderDistrictRadar(overview) {
     const lx = cx + Math.cos(a) * (radius + 18), ly = cy + Math.sin(a) * (radius + 18)
     const anchor = lx >= cx ? 'start' : 'end'
     return [
-      `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="rgba(116,216,232,.24)" stroke-width="1"></line>`,
+      `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--chart-grid)" stroke-width="1"></line>`,
       `<text x="${lx}" y="${ly}" fill="var(--muted)" font-size="11" text-anchor="${anchor}" dominant-baseline="middle">${esc(item.name)}</text>`
     ].join('')
   }).join('')
@@ -964,11 +969,11 @@ function renderDistrictRadar(overview) {
   const avgScore = metrics.reduce((sum, item) => sum + item.score, 0) / metrics.length
   radarSvgHtml.value = [
     ...bgPolygons, axes,
-    `<polygon points="${dataPoints}" fill="rgba(47,111,237,.22)" stroke="#5ea2ff" stroke-width="2"></polygon>`,
+    `<polygon points="${dataPoints}" fill="var(--chart-radar-area)" stroke="var(--chart-radar)" stroke-width="2.2"></polygon>`,
     ...metrics.map((item, idx) => {
       const a = start + idx * angleStep
       const r = radius * (clamp(item.score, 0, 100) / 100)
-      return `<circle cx="${cx + Math.cos(a) * r}" cy="${cy + Math.sin(a) * r}" r="3" fill="#8fc0ff"></circle>`
+      return `<circle cx="${cx + Math.cos(a) * r}" cy="${cy + Math.sin(a) * r}" r="3" fill="var(--chart-radar)"></circle>`
     }),
     `<text x="${cx}" y="${cy - 2}" text-anchor="middle" fill="currentColor" font-size="24" font-family="Rajdhani, DIN Alternate, sans-serif">${avgScore.toFixed(0)}</text>`,
     `<text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="var(--muted)" font-size="11">治理综合评分</text>`
@@ -1102,12 +1107,12 @@ async function syncDaily() {
 
 // ─── 生命周期 ──────────────────────────────────────────
 let unbindThemeWatcher = null
+let storageHandler = null
 
 onMounted(async () => {
   if (!await ensureAdminScreenAccess('communityDashboard')) return
-  applyStoredTheme()
+  syncThemeMode()
   unbindThemeWatcher = bindThemeStorageSync()
-  isDark.value = getStorage('app_theme') !== 'light'
 
   // #ifndef H5
   // 获取屏幕宽度用于趋势图 canvas 尺寸（扣除 panel padding 各约10px）
@@ -1120,10 +1125,10 @@ onMounted(async () => {
   // #endif
 
   // #ifdef H5
-  const onStorage = (event) => {
-    if (!event || event.key === 'app_theme') isDark.value = getStorage('app_theme') !== 'light'
+  storageHandler = (event) => {
+    if (!event || event.key === 'app_theme') syncThemeMode()
   }
-  window.addEventListener('storage', onStorage)
+  window.addEventListener('storage', storageHandler)
   // #endif
 
   renderClock()
@@ -1138,12 +1143,18 @@ onMounted(async () => {
   }
 })
 
+onShow(() => {
+  syncThemeMode()
+})
+
 onBeforeUnmount(() => {
   clearAllTimers()
   if (typeof unbindThemeWatcher === 'function') unbindThemeWatcher()
   // #ifdef H5
-  // storage listener 由闭包持有，onMounted 中 removeEventListener 需要同一引用，
-  // 实际上 bindThemeStorageSync 内部已处理，此处略
+  if (storageHandler) {
+    window.removeEventListener('storage', storageHandler)
+    storageHandler = null
+  }
   // #endif
 })
 </script>
@@ -1175,6 +1186,47 @@ page {
   --tone-huangdao: #2ed89a;
   --tone-other: #ffc86a;
   --glow-cyan: rgba(64, 212, 232, .28);
+  --chart-grid: rgba(116, 216, 232, .16);
+  --chart-surface: rgba(5, 31, 40, .76);
+  --chart-label: #84b8c2;
+  --chart-risk-label: #ffdeab;
+  --chart-primary: #2bc6de;
+  --chart-secondary: #24d392;
+  --chart-secondary-area: rgba(36, 211, 146, .18);
+  --chart-warning: #ffbf57;
+  --chart-risk-band: rgba(255, 191, 87, .1);
+  --chart-radar: #5ea2ff;
+  --chart-radar-area: rgba(47, 111, 237, .22);
+}
+
+.screen.light-theme {
+  --bg: #f5f9fa;
+  --bg2: #eaf3f4;
+  --panel: rgba(255, 255, 255, .94);
+  --panel-strong: rgba(255, 255, 255, .98);
+  --line: rgba(72, 137, 151, .25);
+  --text: #173b48;
+  --muted: #617f88;
+  --main: #138da5;
+  --accent: #0d9d72;
+  --warn: #d68a16;
+  --danger: #d14c59;
+  --ink: #ffffff;
+  --tone-shinan: #2f81d7;
+  --tone-huangdao: #159d70;
+  --tone-other: #d99527;
+  --glow-cyan: rgba(24, 143, 165, .14);
+  --chart-grid: rgba(74, 128, 140, .2);
+  --chart-surface: rgba(248, 252, 252, .96);
+  --chart-label: #5f7d85;
+  --chart-risk-label: #9b650b;
+  --chart-primary: #2b7de9;
+  --chart-secondary: #18a77c;
+  --chart-secondary-area: rgba(24, 167, 124, .1);
+  --chart-warning: #e99a2d;
+  --chart-risk-band: rgba(228, 88, 96, .1);
+  --chart-radar: #2b7de9;
+  --chart-radar-area: rgba(43, 125, 233, .12);
 }
 
 /* #ifdef H5 */
@@ -1501,6 +1553,105 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
 /* ─── empty ─── */
 .screen .empty { display: flex; align-items: center; justify-content: center; height: 100%; font-size: 12px; color: #8ab8c2; border: 1px dashed rgba(116, 216, 232, .25); border-radius: 10px; }
 
+/* ─── 亮色主题 ─── */
+.screen.light-theme {
+  background:
+    radial-gradient(1000px 600px at 110% -20%, rgba(13, 157, 114, .09), transparent 62%),
+    radial-gradient(900px 520px at -15% 22%, rgba(41, 153, 181, .1), transparent 57%),
+    linear-gradient(162deg, var(--bg), var(--bg2));
+}
+.screen.light-theme .panel {
+  background: linear-gradient(180deg, rgba(240, 249, 250, .5), transparent 24%), var(--panel);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 10px 24px rgba(35, 77, 86, .08);
+}
+.screen.light-theme .panel::before { border-color: rgba(84, 151, 163, .08); }
+.screen.light-theme .top { background: linear-gradient(180deg, rgba(236, 248, 249, .9), rgba(250, 253, 253, .55)); }
+.screen.light-theme .title {
+  background: none;
+  color: #173b48;
+  -webkit-text-fill-color: #173b48;
+  text-shadow: none;
+}
+.screen.light-theme .clock,
+.screen.light-theme .field { border-color: #bfd5da; background: #f7fbfc; box-shadow: none; }
+.screen.light-theme .status { color: #456873; border-color: #c2d7dc; background: #f2f8f9; }
+.screen.light-theme .status.ok { color: #087a58; border-color: #9bd4be; background: #eaf7f1; }
+.screen.light-theme .status.warn { color: #966109; border-color: #e4c88e; background: #fff8e8; }
+.screen.light-theme .status.err { color: #ad3c48; border-color: #e7b2b8; background: #fff0f1; }
+.screen.light-theme .btn.secondary,
+.screen.light-theme .btn.ghost { color: #315e6d; border-color: #b7d0d7; background: #f5fafb; }
+.screen.light-theme .card {
+  border-color: #cbdee2;
+  background: linear-gradient(180deg, #fff, #f5fafa);
+}
+.screen.light-theme .card.major {
+  border-color: #95cfd7;
+  background: linear-gradient(180deg, #f4fbfc, #eaf6f7);
+  box-shadow: 0 0 0 1px rgba(47, 158, 175, .08), 0 8px 20px rgba(35, 77, 86, .08);
+}
+.screen.light-theme .card .k,
+.screen.light-theme .card .m,
+.screen.light-theme .note,
+.screen.light-theme .item .sub,
+.screen.light-theme .district .meta,
+.screen.light-theme .legend { color: var(--muted); }
+.screen.light-theme .card.major .v { color: #15566a; }
+.screen.light-theme .block { background: linear-gradient(180deg, rgba(235, 247, 248, .55), rgba(255,255,255,.08)); }
+.screen.light-theme .item,
+.screen.light-theme .district,
+.screen.light-theme .chart-wrap,
+.screen.light-theme .radar-wrap {
+  border-color: #cbdde1;
+  background: rgba(249, 252, 252, .94);
+}
+.screen.light-theme .rank-badge { color: #315f6d; background: #e4eff1; }
+.screen.light-theme .item .score { color: #0c7890; }
+.screen.light-theme .score-track { background: #dce9eb; }
+.screen.light-theme,
+.screen.light-theme .list,
+.screen.light-theme .trend-fallback,
+.screen.light-theme .district-grid,
+.screen.light-theme .alerts {
+  scrollbar-width: thin;
+  scrollbar-color: #58a8b7 #e3edef;
+}
+.screen.light-theme::-webkit-scrollbar,
+.screen.light-theme .list::-webkit-scrollbar,
+.screen.light-theme .trend-fallback::-webkit-scrollbar,
+.screen.light-theme .district-grid::-webkit-scrollbar,
+.screen.light-theme .alerts::-webkit-scrollbar { width: 6px; height: 6px; }
+.screen.light-theme::-webkit-scrollbar-track,
+.screen.light-theme .list::-webkit-scrollbar-track,
+.screen.light-theme .trend-fallback::-webkit-scrollbar-track,
+.screen.light-theme .district-grid::-webkit-scrollbar-track,
+.screen.light-theme .alerts::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #e3edef;
+}
+.screen.light-theme::-webkit-scrollbar-thumb,
+.screen.light-theme .list::-webkit-scrollbar-thumb,
+.screen.light-theme .trend-fallback::-webkit-scrollbar-thumb,
+.screen.light-theme .district-grid::-webkit-scrollbar-thumb,
+.screen.light-theme .alerts::-webkit-scrollbar-thumb {
+  border: 1px solid #d6e6e9;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #77bec8, #4595aa);
+}
+.screen.light-theme::-webkit-scrollbar-button,
+.screen.light-theme .list::-webkit-scrollbar-button,
+.screen.light-theme .trend-fallback::-webkit-scrollbar-button,
+.screen.light-theme .district-grid::-webkit-scrollbar-button,
+.screen.light-theme .alerts::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.screen.light-theme .alert { color: var(--text); border-color: #c7dadd; background: #f8fbfc; }
+.screen.light-theme .alert .d { color: #637e86; }
+.screen.light-theme .alert.p1 { color: #9f3541; border-color: #e5abb2; background: #fff1f2; }
+.screen.light-theme .alert.p1 .alert-chip { color: #ac3441; border-color: #e3a3ab; background: #ffe2e5; }
+.screen.light-theme .alert.p2 { color: #8d5b08; border-color: #e3c486; background: #fff8e7; }
+.screen.light-theme .alert.p2 .alert-chip { color: #936008; border-color: #dfbf7b; background: #ffefc8; }
+.screen.light-theme .alert.p3 { color: #326579; border-color: #b7d2db; background: #eef7f9; }
+.screen.light-theme .alert.p3 .alert-chip { color: #29627a; border-color: #a9ccd7; background: #dceff3; }
+.screen.light-theme .empty { color: #708a91; border-color: #c7dadd; }
+
 /* ─── reveal 动画 ─── */
 .screen .reveal { opacity: 0; transform: translateY(12px); }
 .screen .reveal.is-show { animation: communityRiseIn .56s ease forwards; animation-delay: var(--delay, 0ms); }
@@ -1561,5 +1712,360 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
   .screen .main-actions .btn { min-width: 0; flex: 1 1 32%; }
   .screen .toolbar { width: 100%; }
   .screen .field   { flex: 1 1 30%; }
+}
+
+/* 中等桌面宽度下将顶部工具栏压缩为一行，避免标题与控制项上下分离。 */
+@media (min-width: 1261px) and (max-width: 1720px) {
+  .screen .row {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .screen .row > :first-child {
+    flex: 0 1 350px;
+    min-width: 0;
+  }
+  .screen :deep(.admin-screen-header) {
+    --admin-screen-control-height: 34px;
+    --admin-screen-control-font-size: 12px;
+    flex: 1 1 0;
+    gap: 6px;
+  }
+  .screen :deep(.admin-screen-header__business-actions),
+  .screen :deep(.admin-screen-header__navigation-actions) {
+    gap: 6px;
+  }
+  .screen .actions,
+  .screen .meta-actions,
+  .screen .toolbar {
+    flex-wrap: nowrap;
+    gap: 5px;
+  }
+  .screen .clock {
+    min-width: 148px;
+    padding: 5px 9px;
+    font-size: 20px;
+  }
+  .screen .status {
+    min-width: 144px;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+  .screen .field {
+    gap: 5px;
+    padding: 5px 7px;
+  }
+  .screen .picker-val {
+    min-width: 64px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .screen .main-actions .btn {
+    min-width: 94px;
+    padding: 0 10px;
+  }
+  .screen :deep(.admin-screen-switcher__trigger) {
+    min-width: 106px;
+    gap: 5px;
+    padding: 0 10px;
+  }
+  .screen :deep(.admin-screen-header__back) {
+    min-width: 64px;
+    gap: 4px;
+    padding: 0 9px;
+  }
+}
+
+/* ─── 浅色运营大屏视觉与桌面网格 ─── */
+.screen.light-theme.admin-light-theme {
+  --bg: var(--admin-light-bg);
+  --bg2: var(--admin-light-bg);
+  --panel: var(--admin-light-surface);
+  --panel-strong: var(--admin-light-surface);
+  --line: var(--admin-light-border);
+  --text: var(--admin-light-text);
+  --muted: var(--admin-light-text-secondary);
+  --main: var(--admin-light-primary);
+  --accent: var(--admin-light-success);
+  --warn: var(--admin-light-warning);
+  --danger: var(--admin-light-danger);
+  --tone-shinan: var(--admin-light-primary);
+  --tone-huangdao: var(--admin-light-info);
+  --tone-other: var(--admin-light-warning);
+  --chart-grid: var(--admin-light-chart-grid);
+  --chart-label: var(--admin-light-chart-label);
+  --chart-primary: var(--admin-light-chart-primary);
+  --chart-secondary: var(--admin-light-chart-secondary);
+  --chart-secondary-area: rgba(61, 130, 228, .1);
+  --chart-radar: var(--admin-light-info);
+  --chart-radar-area: rgba(61, 130, 228, .12);
+  --chart-risk-label: #a56712;
+  width: 100%;
+  padding: 10px;
+  gap: 9px;
+  background: var(--admin-light-bg);
+}
+.screen.light-theme.admin-light-theme .panel {
+  border: 1px solid var(--admin-light-border);
+  border-radius: var(--admin-light-radius-panel);
+  background: var(--admin-light-surface);
+  box-shadow: var(--admin-light-shadow);
+  backdrop-filter: none;
+}
+.screen.light-theme.admin-light-theme .panel::before,
+.screen.light-theme.admin-light-theme .card::after { display: none; }
+.screen.light-theme.admin-light-theme .top {
+  padding: 8px 10px;
+  gap: 7px;
+  background: var(--admin-light-surface);
+}
+.screen.light-theme.admin-light-theme .row { gap: 12px; }
+.screen.light-theme.admin-light-theme .title {
+  color: var(--admin-light-text);
+  font-size: clamp(20px, 1.25vw, 24px);
+  font-weight: 740;
+  letter-spacing: 0;
+}
+.screen.light-theme.admin-light-theme .sub { color: var(--admin-light-text-secondary); }
+.screen.light-theme.admin-light-theme :deep(.admin-screen-header) {
+  --admin-screen-control-height: 32px;
+  --admin-screen-control-font-size: 12px;
+  gap: 6px;
+}
+.screen.light-theme.admin-light-theme :deep(.admin-screen-header__business-actions),
+.screen.light-theme.admin-light-theme :deep(.admin-screen-header__navigation-actions) { gap: 6px; }
+.screen.light-theme.admin-light-theme .actions,
+.screen.light-theme.admin-light-theme .toolbar { gap: 6px; }
+.screen.light-theme.admin-light-theme .clock {
+  min-width: 132px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 4px 9px;
+  border-color: var(--admin-light-border-strong);
+  border-radius: var(--admin-light-radius-control);
+  background: var(--admin-light-surface-soft);
+  color: var(--admin-light-text);
+  font-size: 18px;
+  line-height: 22px;
+}
+.screen.light-theme.admin-light-theme .status,
+.screen.light-theme.admin-light-theme .field {
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border-color: var(--admin-light-border-strong);
+  border-radius: var(--admin-light-radius-control);
+  background: var(--admin-light-surface);
+}
+.screen.light-theme.admin-light-theme .status { min-width: 154px; color: var(--admin-light-text-secondary); }
+.screen.light-theme.admin-light-theme .status.ok { color: #117b5d; border-color: #a7d9c8; background: var(--admin-light-success-soft); animation: none; }
+.screen.light-theme.admin-light-theme .status.warn { color: #9b6314; border-color: #ebcb9b; background: var(--admin-light-warning-soft); }
+.screen.light-theme.admin-light-theme .status.err { color: #aa3f47; border-color: #edb9bd; background: var(--admin-light-danger-soft); }
+.screen.light-theme.admin-light-theme .field:hover { border-color: #9ebcda; box-shadow: none; }
+.screen.light-theme.admin-light-theme .btn {
+  border-radius: var(--admin-light-radius-control);
+  box-shadow: none;
+  transform: none;
+}
+.screen.light-theme.admin-light-theme .btn.main {
+  border-color: var(--admin-light-primary);
+  background: var(--admin-light-primary);
+  box-shadow: 0 3px 8px rgba(24, 167, 124, .2);
+}
+.screen.light-theme.admin-light-theme .btn.secondary,
+.screen.light-theme.admin-light-theme .btn.ghost {
+  color: var(--admin-light-text-secondary);
+  border-color: var(--admin-light-border-strong);
+  background: var(--admin-light-surface);
+}
+.screen.light-theme.admin-light-theme .btn:hover { transform: none; filter: none; }
+.screen.light-theme.admin-light-theme .cards {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+.screen.light-theme.admin-light-theme .card,
+.screen.light-theme.admin-light-theme .card.major {
+  min-height: 64px;
+  padding: 7px 10px;
+  border: 1px solid var(--admin-light-border);
+  border-radius: 10px;
+  background: var(--admin-light-surface-soft);
+  box-shadow: none;
+}
+.screen.light-theme.admin-light-theme .card.major { border-left: 3px solid var(--admin-light-primary); }
+.screen.light-theme.admin-light-theme .card:hover { transform: none; border-color: var(--admin-light-border-strong); box-shadow: none; }
+.screen.light-theme.admin-light-theme .card .k,
+.screen.light-theme.admin-light-theme .card .m { color: var(--admin-light-text-secondary); }
+.screen.light-theme.admin-light-theme .card .v,
+.screen.light-theme.admin-light-theme .card.major .v {
+  margin-top: 3px;
+  color: var(--admin-light-text);
+  font-size: clamp(22px, 1.45vw, 28px);
+}
+.screen.light-theme.admin-light-theme .card .m { margin-top: 3px; }
+.screen.light-theme.admin-light-theme > .main {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 2.1fr) minmax(0, .9fr);
+  grid-template-rows: minmax(310px, 1.08fr) minmax(250px, .92fr);
+  gap: 9px;
+  min-width: 0;
+}
+.screen.light-theme.admin-light-theme > .main > .col { display: contents; }
+.screen.light-theme.admin-light-theme > .main > .col:nth-child(1) > .block:nth-child(1) { grid-column: 1; grid-row: 1; }
+.screen.light-theme.admin-light-theme > .main > .col:nth-child(1) > .block:nth-child(2) { grid-column: 1; grid-row: 2; }
+.screen.light-theme.admin-light-theme > .main > .col:nth-child(2) > .block:nth-child(1) { grid-column: 2; grid-row: 1; }
+.screen.light-theme.admin-light-theme > .main > .col:nth-child(2) > .block:nth-child(2) { grid-column: 2; grid-row: 2; }
+.screen.light-theme.admin-light-theme > .main > .col:nth-child(3) {
+  display: grid;
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  grid-template-rows: minmax(0, 1fr) minmax(220px, .85fr);
+  gap: 9px;
+  min-width: 0;
+}
+.screen.light-theme.admin-light-theme > .main > .col:nth-child(3).has-empty-alerts {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.screen.light-theme.admin-light-theme > .main > .col:nth-child(3) > .block {
+  grid-column: auto;
+  grid-row: auto;
+}
+.screen.light-theme.admin-light-theme > .main > .col > .block { min-width: 0; }
+.screen.light-theme.admin-light-theme .main-actions .btn.main {
+  display: inline-flex;
+  grid-template-columns: none;
+}
+.screen.light-theme.admin-light-theme .block {
+  padding: 9px 10px;
+  gap: 7px;
+  background: var(--admin-light-surface);
+}
+.screen.light-theme.admin-light-theme .block-title {
+  min-height: 22px;
+  padding: 0 0 7px 10px;
+  color: var(--admin-light-text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.screen.light-theme.admin-light-theme .block-title::before {
+  top: 2px;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--admin-light-primary);
+  box-shadow: none;
+}
+.screen.light-theme.admin-light-theme .block-title::after {
+  left: 0;
+  background: var(--admin-light-border);
+}
+.screen.light-theme.admin-light-theme .note { color: var(--admin-light-text-muted); }
+.screen.light-theme.admin-light-theme .item,
+.screen.light-theme.admin-light-theme .district,
+.screen.light-theme.admin-light-theme .chart-wrap,
+.screen.light-theme.admin-light-theme .radar-wrap {
+  border-color: var(--admin-light-border);
+  background: var(--admin-light-surface-soft);
+  box-shadow: none;
+}
+.screen.light-theme.admin-light-theme .item,
+.screen.light-theme.admin-light-theme .district { padding: 7px 8px; gap: 4px; }
+.screen.light-theme.admin-light-theme .item:hover,
+.screen.light-theme.admin-light-theme .district:hover { transform: none; border-color: var(--admin-light-border-strong); box-shadow: none; }
+.screen.light-theme.admin-light-theme .item .sub,
+.screen.light-theme.admin-light-theme .district .meta,
+.screen.light-theme.admin-light-theme .legend { color: var(--admin-light-text-secondary); }
+.screen.light-theme.admin-light-theme .item .score { color: var(--admin-light-primary); }
+.screen.light-theme.admin-light-theme .score-track { background: var(--admin-light-chart-grid); }
+.screen.light-theme.admin-light-theme .score-fill {
+  background: linear-gradient(90deg, var(--admin-light-primary), #62cfa7);
+  box-shadow: none;
+}
+.screen.light-theme.admin-light-theme .dot.events { background: var(--admin-light-chart-primary); }
+.screen.light-theme.admin-light-theme .dot.active { background: var(--admin-light-chart-secondary); }
+.screen.light-theme.admin-light-theme .chart-wrap,
+.screen.light-theme.admin-light-theme .radar-wrap { padding: 8px; }
+.screen.light-theme.admin-light-theme .legend { top: 7px; right: 8px; }
+.screen.light-theme.admin-light-theme .dual-chart { grid-template-columns: minmax(240px, .9fr) minmax(260px, 1.1fr); gap: 8px; }
+.screen.light-theme.admin-light-theme .donut-wrap { grid-template-columns: minmax(150px, .9fr) minmax(110px, .7fr); gap: 6px; }
+.screen.light-theme.admin-light-theme .donut-svg { height: clamp(160px, 18vh, 205px); }
+.screen.light-theme.admin-light-theme .alert {
+  padding: 7px 8px;
+  border-color: var(--admin-light-border);
+  border-left: 3px solid var(--admin-light-text-muted);
+  background: var(--admin-light-surface-soft);
+  box-shadow: none;
+}
+.screen.light-theme.admin-light-theme .alert:hover { transform: none; box-shadow: none; }
+.screen.light-theme.admin-light-theme .alert.p1 { color: #a64047; border-color: #efc5c8; border-left-color: var(--admin-light-danger); background: var(--admin-light-danger-soft); }
+.screen.light-theme.admin-light-theme .alert.p2 { color: #986017; border-color: #f0d7b2; border-left-color: var(--admin-light-warning); background: var(--admin-light-warning-soft); }
+.screen.light-theme.admin-light-theme .alert.p3 { color: #37647d; border-color: #cadce8; border-left-color: #6d9fbe; background: #f1f6f9; }
+.screen.light-theme.admin-light-theme .empty {
+  height: auto;
+  min-height: 64px;
+  padding: 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--admin-light-text-secondary);
+  background: var(--admin-light-surface-soft);
+}
+.screen.light-theme.admin-light-theme .alerts .empty {
+  min-height: 82px;
+  align-self: start;
+  flex-direction: column;
+  gap: 6px;
+}
+.screen.light-theme.admin-light-theme .alerts .empty::before {
+  content: '✓';
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--admin-light-success);
+  background: var(--admin-light-success-soft);
+  font-weight: 800;
+}
+.screen.light-theme.admin-light-theme > .main > .col:nth-child(3) > .block.is-empty-state {
+  align-self: start;
+  grid-template-rows: auto auto;
+}
+.screen.light-theme.admin-light-theme > .main > .col:nth-child(3) > .block.is-empty-state .alerts {
+  height: auto;
+  min-height: 0;
+}
+.screen.light-theme.admin-light-theme,
+.screen.light-theme.admin-light-theme .list,
+.screen.light-theme.admin-light-theme .trend-fallback,
+.screen.light-theme.admin-light-theme .district-grid,
+.screen.light-theme.admin-light-theme .alerts {
+  scrollbar-color: var(--admin-light-scroll-thumb) var(--admin-light-scroll-track);
+}
+.screen.light-theme.admin-light-theme::-webkit-scrollbar-track,
+.screen.light-theme.admin-light-theme .list::-webkit-scrollbar-track,
+.screen.light-theme.admin-light-theme .trend-fallback::-webkit-scrollbar-track,
+.screen.light-theme.admin-light-theme .district-grid::-webkit-scrollbar-track,
+.screen.light-theme.admin-light-theme .alerts::-webkit-scrollbar-track { background: var(--admin-light-scroll-track); }
+.screen.light-theme.admin-light-theme::-webkit-scrollbar-thumb,
+.screen.light-theme.admin-light-theme .list::-webkit-scrollbar-thumb,
+.screen.light-theme.admin-light-theme .trend-fallback::-webkit-scrollbar-thumb,
+.screen.light-theme.admin-light-theme .district-grid::-webkit-scrollbar-thumb,
+.screen.light-theme.admin-light-theme .alerts::-webkit-scrollbar-thumb {
+  border-color: var(--admin-light-scroll-track);
+  background: var(--admin-light-scroll-thumb);
+}
+
+@media (max-width: 1260px) {
+  .screen.light-theme.admin-light-theme { height: auto; min-height: 100vh; overflow-y: auto; }
+  .screen.light-theme.admin-light-theme .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .screen.light-theme.admin-light-theme > .main { display: grid; grid-template-columns: 1fr; grid-template-rows: auto; }
+  .screen.light-theme.admin-light-theme > .main > .col { display: grid; grid-template-rows: auto !important; gap: 9px; }
+  .screen.light-theme.admin-light-theme > .main > .col:nth-child(3) { grid-column: auto; grid-row: auto; }
+  .screen.light-theme.admin-light-theme > .main > .col > .block { grid-column: auto !important; grid-row: auto !important; min-height: 300px; }
+}
+
+@media (max-width: 760px) {
+  .screen.light-theme.admin-light-theme .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .screen.light-theme.admin-light-theme > .main > .col > .block { min-height: 260px; }
 }
 </style>

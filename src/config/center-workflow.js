@@ -1,49 +1,64 @@
+import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/config/center-workflow-video.js'
+
 const freezeList = list => Object.freeze(list.map(item => Object.freeze(item)))
+
+const cueDurationMs = (startKey, endKey = startKey) => Math.round(
+  (CENTER_WORKFLOW_MASTER_VIDEO.cuePoints[endKey].endSeconds
+    - CENTER_WORKFLOW_MASTER_VIDEO.cuePoints[startKey].startSeconds) * 1000
+)
+const checkMs = cueDurationMs('battery')
+const chargeMs = cueDurationMs('charge')
+const standbyMs = cueDurationMs('ready')
+const checkChargeMs = checkMs + chargeMs
 
 export const CENTER_WORKFLOW_STAGES = freezeList([
   { key: 'ARRIVE', label: '设备到站', zone: 'ARRIVE', eventType: 'DEVICE_ARRIVED_AT_CENTER', visualKey: 'arrival' },
   { key: 'DOCK', label: '泊位对接', zone: 'DOCK', eventType: 'DEVICE_ARRIVED_AT_CENTER', visualKey: 'waiting' },
   { key: 'UNLOAD', label: '垃圾卸载', zone: 'UNLOAD', eventType: 'CENTER_UNLOADING', visualKey: 'unloading' },
   { key: 'CLEAN', label: '桶体清洁', zone: 'CLEAN', eventType: 'CENTER_CLEANING', visualKey: 'cleaning' },
+  { key: 'CHECK', label: '状态检测', zone: 'CHECK', eventType: 'CENTER_CHARGING', visualKey: 'status_check' },
   { key: 'CHARGE', label: '充电', zone: 'CHARGE', eventType: 'CENTER_CHARGING', visualKey: 'charging' },
-  { key: 'CHECK', label: '状态检测', zone: 'CHECK', eventType: 'DEVICE_RECOVERED', visualKey: 'status_check' },
   { key: 'STANDBY', label: '恢复待命', zone: 'STANDBY', eventType: 'DEVICE_RECOVERED', visualKey: 'standby' }
 ])
 
 export const CENTER_WORKFLOW_TIMINGS = Object.freeze({
-  // 仅控制局部窗口的视觉演进；不改变回放事件、中心阶段顺序或最终设备状态。
-  ARRIVE: 2350,
+  // 与清运大屏母带提示点保持同速；仅控制局部窗口视觉驻留，不改变业务事件和阶段顺序。
+  ARRIVE: cueDurationMs('arrive'),
   DOCK: 1850,
-  UNLOAD: 2420,
-  CLEAN: 2420,
-  CHARGE: 2420,
-  RECOVERY: 2580,
-  CHECK_SPLIT: 0.56
+  UNLOAD: cueDurationMs('weigh'),
+  CLEAN: cueDurationMs('wash', 'dry'),
+  CHECK: checkMs,
+  CHARGE: chargeMs,
+  STANDBY: standbyMs,
+  CHECK_CHARGE: checkChargeMs,
+  CHECK_CHARGE_SPLIT: checkMs / checkChargeMs
 })
 
 export const CENTER_WORKFLOW_SCENE = Object.freeze({
   aspectRatio: 4 / 3,
   device: Object.freeze({
-    src: '/static/digital-twin-replay/sprites/smart-bin-v1.png',
+    src: '/static/digital-twin-replay/sprites/smart-bin-v2.png',
     widthPct: 18,
-    source: 'digital-twin-park-v1/assets/03_smart-bin/bin.png'
+    source: 'digital-twin-park-v1/assets/03_smart-bin/bin2.png',
+    dockFadeEnd: 0.58
   }),
   masks: Object.freeze({
     unload: Object.freeze({ left: 11, top: 29, width: 28, height: 43 }),
     clean: Object.freeze({ left: 29, top: 29, width: 28, height: 42 }),
-    charge: Object.freeze({ left: 51, top: 40, width: 27, height: 28 }),
-    check: Object.freeze({ left: 66, top: 42, width: 22, height: 27 })
+    check: Object.freeze({ left: 51, top: 40, width: 27, height: 28 }),
+    charge: Object.freeze({ left: 66, top: 42, width: 22, height: 27 })
   }),
   paths: Object.freeze({
     ARRIVE: freezeList([
-      { at: 0, x: -8, y: 75, scale: 0.72, rotate: 0 },
-      { at: 0.35, x: 2, y: 70, scale: 0.76, rotate: -1 },
-      { at: 1, x: 16.5, y: 61, scale: 0.82, rotate: -2 }
+      { at: 0, x: 58, y: 108, scale: 0.68, rotate: 2 },
+      { at: 0.2, x: 50, y: 90, scale: 0.74, rotate: 1 },
+      { at: 0.5, x: 33, y: 71, scale: 0.86, rotate: 1 },
+      { at: 0.78, x: 20, y: 55, scale: 0.99, rotate: 0 },
+      { at: 1, x: 15.8, y: 48, scale: 1.05, rotate: 0 }
     ]),
     DOCK: freezeList([
-      { at: 0, x: 16.5, y: 61, scale: 0.82, rotate: -2 },
-      { at: 0.92, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 },
-      { at: 1, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 }
+      { at: 0, x: 15.8, y: 48, scale: 1.05, rotate: 0 },
+      { at: 1, x: 15.8, y: 48, scale: 1.05, rotate: 0 }
     ]),
     UNLOAD: freezeList([
       { at: 0, x: 19.2, y: 58.4, scale: 0.84, rotate: -2 },
@@ -56,12 +71,12 @@ export const CENTER_WORKFLOW_SCENE = Object.freeze({
       { at: 0.34, x: 31, y: 55.8, scale: 0.82, rotate: 0 },
       { at: 1, x: 38.5, y: 53.8, scale: 0.8, rotate: 1 }
     ]),
-    CHARGE: freezeList([
+    CHECK: freezeList([
       { at: 0, x: 38.5, y: 53.8, scale: 0.8, rotate: 1 },
       { at: 0.42, x: 50.5, y: 59, scale: 0.78, rotate: 1 },
       { at: 1, x: 59.5, y: 62.2, scale: 0.76, rotate: 2 }
     ]),
-    CHECK: freezeList([
+    CHARGE: freezeList([
       { at: 0, x: 59.5, y: 62.2, scale: 0.76, rotate: 2 },
       { at: 0.55, x: 68, y: 64.5, scale: 0.74, rotate: 2 },
       { at: 1, x: 72.5, y: 66, scale: 0.73, rotate: 2 }
@@ -96,9 +111,11 @@ export function resolveCenterWorkflowPhase({ eventType = '', progress = 0, event
   if (eventType === 'CENTER_BAY_ASSIGNED') return 'DOCK'
   if (eventType === 'CENTER_UNLOADING') return 'UNLOAD'
   if (eventType === 'CENTER_CLEANING') return 'CLEAN'
-  if (eventType === 'CENTER_CHARGING') return 'CHARGE'
+  if (eventType === 'CENTER_CHARGING') {
+    return progress < CENTER_WORKFLOW_TIMINGS.CHECK_CHARGE_SPLIT ? 'CHECK' : 'CHARGE'
+  }
   if (eventType === 'CENTER_CHECKING') return 'CHECK'
-  if (eventType === 'DEVICE_RECOVERED') return progress < CENTER_WORKFLOW_TIMINGS.CHECK_SPLIT ? 'CHECK' : 'STANDBY'
+  if (eventType === 'DEVICE_RECOVERED') return 'STANDBY'
 
   const types = eventHistory.map(event => event?.eventType)
   const arrived = types.includes('DEVICE_ARRIVED_AT_CENTER')
@@ -108,7 +125,7 @@ export function resolveCenterWorkflowPhase({ eventType = '', progress = 0, event
 
 export function centerWorkflowAnimationIdentity({ eventType = '', eventHistory = [], override = null } = {}) {
   if (override && stageByKey[override]) return override
-  if (eventType === 'DEVICE_RECOVERED') return 'RECOVERY'
+  if (eventType === 'CENTER_CHARGING') return 'CHECK_CHARGE'
   return resolveCenterWorkflowPhase({ eventType, eventHistory, progress: 0 })
 }
 
@@ -123,10 +140,14 @@ export function centerWorkflowEventType(stageKey = 'ARRIVE') {
 const clamp = value => Math.max(0, Math.min(1, Number(value) || 0))
 const ease = value => 1 - Math.pow(1 - clamp(value), 3)
 
-export function centerWorkflowLocalProgress(stageKey, eventProgress) {
+export function centerWorkflowLocalProgress(stageKey, eventProgress, identity = '') {
   const progress = clamp(eventProgress)
-  if (stageKey === 'CHECK') return clamp(progress / CENTER_WORKFLOW_TIMINGS.CHECK_SPLIT)
-  if (stageKey === 'STANDBY') return clamp((progress - CENTER_WORKFLOW_TIMINGS.CHECK_SPLIT) / (1 - CENTER_WORKFLOW_TIMINGS.CHECK_SPLIT))
+  if (identity === 'CHECK_CHARGE' && stageKey === 'CHECK') {
+    return clamp(progress / CENTER_WORKFLOW_TIMINGS.CHECK_CHARGE_SPLIT)
+  }
+  if (identity === 'CHECK_CHARGE' && stageKey === 'CHARGE') {
+    return clamp((progress - CENTER_WORKFLOW_TIMINGS.CHECK_CHARGE_SPLIT) / (1 - CENTER_WORKFLOW_TIMINGS.CHECK_CHARGE_SPLIT))
+  }
   return progress
 }
 

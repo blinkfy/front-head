@@ -28,19 +28,18 @@ export const ROBOT_TASK_SCENE_REGISTRY = freeze({
       view: 'exact_crop_detail_overlay',
       method: 'conservative_super_resolution_with_original_geometry_reference',
       status: 'reviewed_detail_overlay',
-      // Start the reviewed detail layer before the close-up reaches its final
-      // scale, so it is already established when the transport scene changes.
-      blend: { startScale: 1.65, endScale: 2.85, maxOpacity: 0.72 }
+      // Preserve the close-up asset, then finish its fade before handing the
+      // responsive overview back to the map renderer.
+      blend: { startScale: 1.65, endScale: 2.85, maxOpacity: 0.72, returnFade: { start: 0.68, end: 0.94 } }
     },
     ground: {
       material: 'park_stone_walkway_and_grass_edge',
       horizonShade: 'rgba(3, 18, 25, 0.06)',
       contactTone: 'rgba(2, 19, 24, 0.18)'
     },
-    foregroundOcclusion: [
-      { x: 435, y: 611, radiusX: 77, radiusY: 47, feather: 20 },
-      { x: 1101, y: 555, radiusX: 54, radiusY: 72, feather: 20 }
-    ],
+    // This task area is an open walking surface. The old elliptical masks were
+    // repainted after the actors and therefore cut through robots and bins.
+    foregroundOcclusion: [],
     serviceBerth: null,
     review: {
       source: PARK_BACKGROUND.source,
@@ -62,27 +61,19 @@ export const ROBOT_TASK_SCENE_REGISTRY = freeze({
       view: 'exact_crop_detail_overlay',
       method: 'conservative_super_resolution_with_original_geometry_reference',
       status: 'reviewed_detail_overlay',
-      // Keep the formal background underneath and introduce this local detail
-      // early; the detail is an overlay, never a replacement background.
-      blend: { startScale: 1.65, endScale: 2.85, maxOpacity: 0.68 }
+      blend: { startScale: 1.65, endScale: 2.85, maxOpacity: 0.68, returnFade: { start: 0.68, end: 0.94 } }
     },
     ground: {
       material: 'dining_deck_edge_and_service_paving',
       horizonShade: 'rgba(3, 18, 25, 0.08)',
       contactTone: 'rgba(2, 19, 24, 0.20)'
     },
-    foregroundOcclusion: [
-      { x: 1239, y: 614, radiusX: 185, radiusY: 32, feather: 22 },
-      { x: 1572, y: 513, radiusX: 56, radiusY: 97, feather: 22 }
-    ],
-    serviceBerth: {
-      x: 1212,
-      y: 562,
-      width: 113,
-      height: 53,
-      stroke: 'rgba(137, 205, 214, 0.32)',
-      fill: 'rgba(39, 104, 108, 0.06)'
-    },
+    // The service deck is an open work surface. Do not repaint any elliptical
+    // background masks above the robot or smart bin in this local scene.
+    foregroundOcclusion: [],
+    // The formal deck already defines the service position. A second rounded
+    // berth outline becomes a large oval-like arc under close camera scales.
+    serviceBerth: null,
     review: {
       source: PARK_BACKGROUND.source,
       use: 'TRANSPORT_arrival_PLACE_RETURN',

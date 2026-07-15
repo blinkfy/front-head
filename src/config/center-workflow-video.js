@@ -6,9 +6,15 @@ export const CENTER_WORKFLOW_MASTER_VIDEO = Object.freeze({
   approved: true,
   file: `${VIDEO_ROOT}/center-workflow-master-v5.mp4`,
   poster: `${VIDEO_ROOT}/center-workflow-master-v5-poster.jpg`,
+  width: 1280,
+  height: 720,
   durationSeconds: 18.33,
   playbackRate: 1,
   transitionMode: 'camera-push-pull',
+  overlayAnchors: Object.freeze({
+    topLeft: Object.freeze({ leftPct: 0.5, topPct: 0.5, widthPct: 34 }),
+    bottomRight: Object.freeze({ rightPct: 0.5, bottomPct: 0.5, widthPct: 34 })
+  }),
   cuePoints: Object.freeze({
     arrive: Object.freeze({ startSeconds: 0, endSeconds: 1.3 }),
     weigh: Object.freeze({ startSeconds: 1.3, endSeconds: 4.68 }),

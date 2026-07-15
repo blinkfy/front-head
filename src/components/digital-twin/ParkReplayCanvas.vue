@@ -1,5 +1,5 @@
 <template>
-  <view ref="canvasContainerRef" class="park-canvas panel">
+  <view ref="canvasContainerRef" class="park-canvas">
   <view
     ref="canvasRef"
     :style="[sceneSurfaceStyle, taskCameraStyle]"
@@ -49,10 +49,10 @@
         <marker id="return-arrow" markerUnits="strokeWidth" markerWidth="2.2" markerHeight="2.2" refX="1.9" refY="1.1" orient="auto" viewBox="0 0 2.2 2.2"><path d="M0,0 L2.2,1.1 L0,2.2 Z" fill="#bd866b" /></marker>
         <marker id="replace-arrow" markerUnits="strokeWidth" markerWidth="2.2" markerHeight="2.2" refX="1.9" refY="1.1" orient="auto" viewBox="0 0 2.2 2.2"><path d="M0,0 L2.2,1.1 L0,2.2 Z" fill="#65a9b4" /></marker>
       </defs>
-      <polyline :class="['route-path', 'route-bed', { visible: showDispatchRoutes, complete: arrivedAtCenter }]" :points="returnRoutePoints" />
-      <polyline :class="['route-path', 'route-bed', { visible: showDispatchRoutes, complete: standbyTookOver }]" :points="replacementRoutePoints" />
-      <polyline :style="routeAnimationStyle" :class="['route-path', 'return', { visible: showDispatchRoutes, complete: arrivedAtCenter }]" :points="returnRoutePoints" marker-end="url(#return-arrow)" />
-      <polyline :style="routeAnimationStyle" :class="['route-path', 'replacement', { visible: showDispatchRoutes, complete: standbyTookOver }]" :points="replacementRoutePoints" marker-end="url(#replace-arrow)" />
+      <polyline :class="['route-path', 'route-bed', { visible: showReturnDispatchRoute, complete: arrivedAtCenter }]" :points="returnRoutePoints" />
+      <polyline :class="['route-path', 'route-bed', { visible: showReplacementDispatchRoute, complete: standbyTookOver }]" :points="replacementRoutePoints" />
+      <polyline :style="routeAnimationStyle" :class="['route-path', 'return', { visible: showReturnDispatchRoute, complete: arrivedAtCenter }]" :points="returnRoutePoints" marker-end="url(#return-arrow)" />
+      <polyline :style="routeAnimationStyle" :class="['route-path', 'replacement', { visible: showReplacementDispatchRoute, complete: standbyTookOver }]" :points="replacementRoutePoints" marker-end="url(#replace-arrow)" />
     </svg>
     <!-- #endif -->
 
@@ -72,13 +72,13 @@
     <view
       v-for="object in sceneObjects"
       :key="object.id"
-      :class="['scene-object', object.kind, { selected: object.id === selectedId, affected: affectedIds.includes(object.id) || incidentAffectedIds.has(object.id), faded: object.faded, moving: object.moving, handoff: object.handoff }]"
+      :class="['scene-object', object.kind, { selected: object.id === selectedId, affected: affectedIds.includes(object.id) || incidentAffectedIds.has(object.id), faded: object.faded, moving: object.moving, handoff: object.handoff, 'task-bin-behind-robot': objectBehindTaskRobot(object), 'local-task-replaced': objectReplacedByLocalTask(object) }]"
       :data-entity-id="object.id"
       :style="object.style"
       @tap.stop="$emit('select', object.id)"
     >
       <MapEntitySprite v-if="object.kind === 'robot' || object.kind === 'bin'" :kind="object.kind" :variant="object.variant || 'active'" :selected="object.id === selectedId" :affected="priorityEventIds.has(object.id) || incidentAffectedIds.has(object.id)" :moving="object.moving" :depth-scale="object.depthScale" :heading-deg="object.headingDeg" />
-      <VisitorBehaviorSprite v-else-if="object.kind === 'visitor'" behavior="IDLE" :selected="object.id === selectedId" :depth-scale="object.depthScale" :playing="playing" :playback-rate="playbackRate" />
+      <VisitorBehaviorSprite v-else-if="object.kind === 'visitor'" :visitor-id="object.id" behavior="IDLE" :selected="object.id === selectedId" :depth-scale="object.depthScale" :playing="visitorAnimationPlaying" :playback-rate="playbackRate" />
       <view v-else-if="object.kind === 'service'" class="service-symbol"></view>
       <MapWasteSprite v-else-if="object.kind === 'waste'" :waste="object" :category="object.category" :selected="object.id === selectedId" :affected="priorityEventIds.has(object.id)" :depth-scale="object.depthScale" />
     </view>
@@ -181,7 +181,7 @@ import PARK_SCENE_ALIGNMENT from '@/config/park-scene-alignment.json'
 import { DIGITAL_TWIN_VISUAL_SYSTEM, mapDepthScale, mapMotionProgress } from '@/config/digital-twin-visual-system.js'
 import {
   PARK_ROAD_NETWORK, PARK_ROUTE_GRAPH, parkEdgesForRoute, parkRoadEdgePath,
-  parkRoutePoint, parkRoutePolyline, parkRouteSvgPoints, sampleParkRoadEdge
+  parkPolylinePoint, parkRoutePoint, parkRoutePolyline, parkRouteSvgPoints, sampleParkRoadEdge
 } from '@/utils/park-road-network.js'
 
 const props = defineProps({
@@ -217,8 +217,9 @@ const dispatchEventSequence = computed(() => {
 const dispatchTransitActive = computed(() => dispatchStarted.value && !arrivedAtCenter.value)
 const replacementDispatched = computed(() => dispatchStarted.value || hasEvent('REPLACEMENT_DISPATCHED'))
 const recovered = computed(() => hasEvent('DEVICE_RECOVERED'))
-const blockedRouteVehicleActive = computed(() => props.scenario === 'blocked' && ['STARTED', 'BLOCKED', 'REPLANNED', 'RESUMED'].includes(props.scenarioState?.route?.status))
-const showDispatchRoutes = computed(() => props.scenario !== 'blocked' && dispatchStarted.value)
+const blockedRouteVehicleActive = computed(() => props.scenario === 'blocked' && ['STARTED', 'BLOCKED', 'REPLANNED', 'RESUMED', 'ARRIVED'].includes(props.scenarioState?.route?.status))
+const showReturnDispatchRoute = computed(() => props.scenario !== 'blocked' && dispatchStarted.value)
+const showReplacementDispatchRoute = computed(() => dispatchStarted.value)
 const activeIncidents = computed(() => props.runtimeState?.incidents?.active || [])
 const incidentAffectedIds = computed(() => new Set(activeIncidents.value.flatMap(incident => incident.affectedEntityIds || [])))
 const centerQueueCount = computed(() => props.runtimeState?.operations?.centerQueue?.length || 0)
@@ -281,6 +282,7 @@ const sceneSurfaceStyle = ref({ width: '100%', height: '100%' })
 const taskCameraActive = computed(() => Boolean(
   props.robotVisual?.active && props.robotVisual?.mode === 'robot' && props.robotVisual?.camera
 ))
+const visitorAnimationPlaying = computed(() => props.playing && !(props.robotVisual?.active && props.robotVisual?.mode === 'robot'))
 const taskCameraStyle = computed(() => {
   if (!taskCameraActive.value) return { transform: 'none' }
   const camera = props.robotVisual.camera
@@ -292,6 +294,21 @@ const taskCameraStyle = computed(() => {
     transform: `translate(50%, 50%) scale(${scale}) translate(-${focusX}%, -${focusY}%)`
   }
 })
+const localTaskServicePointId = computed(() => {
+  const explicit = String(
+    props.robotVisual?.servicePointId
+    || props.currentEvent?.payload?.request?.servicePointId
+    || props.currentEvent?.payload?.servicePointId
+    || ''
+  )
+  if (explicit) return explicit
+  const target = props.robotVisual?.targetBinPositionPct || props.scenarioState?.robotTask?.targetPosition
+  const targetX = Array.isArray(target) ? Number(target[0]) : Number(target?.x)
+  return Number.isFinite(targetX) && targetX >= 55 ? 'service_food_01' : 'service_rest_01'
+})
+const localTaskBinId = computed(() => localTaskServicePointId.value === 'service_food_01'
+  ? 'device_smart_bin_food_01'
+  : 'device_smart_bin_rest_01')
 const routeAnimationStyle = computed(() => ({ animationDuration: `${1.8 / Math.max(.25, Number(props.playbackRate) || 1)}s` }))
 const dispatchTravelMs = Math.max(
   DIGITAL_TWIN_VISUAL_SYSTEM.mapEntity.motion.dispatchTravelMs,
@@ -315,11 +332,25 @@ const centerStations = Object.freeze([
 // The service dock must remain identical to the route graph endpoint.
 // The food/rest zone caption is visually offset independently.
 const FOOD_SERVICE_POINT = Object.freeze([64, 48])
+const DAILY_FOOD_SERVICE_POINT = Object.freeze([74, 52])
+const activeFoodServicePoint = computed(() => props.scenario === 'daily' ? DAILY_FOOD_SERVICE_POINT : FOOD_SERVICE_POINT)
 const visibleCenterStations = computed(() => centerStations.filter(station =>
   centerPhase.value === station.phase || props.selectedId === station.id
 ))
 
 function pos(left, top) { return { left: `${left}%`, top: `${top}%` } }
+function objectBehindTaskRobot(object) {
+  if (props.scenario !== 'daily' || object?.kind !== 'bin' || object.id !== localTaskBinId.value) return false
+  return ['TASK_CREATED', 'ROBOT_TASK_REQUESTED'].includes(props.currentEvent?.eventType)
+}
+function objectReplacedByLocalTask(object) {
+  if (!taskCameraActive.value || !object) return false
+  if (object.kind === 'robot') return object.id === props.robotVisual?.robotId
+  if (object.kind === 'waste') return object.id === props.robotVisual?.garbageId
+  if (object.kind === 'service') return object.id === localTaskServicePointId.value
+  if (object.kind !== 'bin') return false
+  return object.id === localTaskBinId.value
+}
 function staticPose(left, top, headingDeg = 0) {
   return { style: pos(left, top), depthScale: mapDepthScale(top), headingDeg }
 }
@@ -332,9 +363,11 @@ function isCalibrationBlockedEdge(edgeId) {
 function fitSceneSurface() {
   const root = canvasContainerRef.value?.$el || canvasContainerRef.value
   const bounds = root?.getBoundingClientRect?.()
-  if (!bounds?.width || !bounds?.height) return
+  const containerWidth = Number(root?.clientWidth) || Number(bounds?.width) || 0
+  const containerHeight = Number(root?.clientHeight) || Number(bounds?.height) || 0
+  if (!containerWidth || !containerHeight) return
   const targetRatio = PARK_ROAD_NETWORK.scene.width / PARK_ROAD_NETWORK.scene.height
-  const width = bounds.width / bounds.height > targetRatio ? bounds.height * targetRatio : bounds.width
+  const width = containerWidth / containerHeight > targetRatio ? containerHeight * targetRatio : containerWidth
   const height = width / targetRatio
   sceneSurfaceStyle.value = { width: `${Math.round(width * 100) / 100}px`, height: `${Math.round(height * 100) / 100}px` }
 }
@@ -399,9 +432,14 @@ const robotHandoffPose = computed(() => {
   if (!props.robotVisual?.handoff || props.robotVisual?.robotId !== 'robot_patrol_01') return null
   const routeId = props.robotVisual?.routeId || 'robot_right_litter_to_bin'
   const progress = Math.max(0, Math.min(1, Number(props.robotVisual?.progress) || 0))
-  const routeProgress = 1 - progress
-  const point = parkRoutePoint(routeId, routeProgress)
-  const nextPoint = parkRoutePoint(routeId, Math.max(0, routeProgress - .012))
+  const route = parkRoutePolyline(routeId).slice().reverse()
+  const rawStart = props.robotVisual?.startPositionPct
+  if (Array.isArray(rawStart) && rawStart.length >= 2 && route.length) {
+    const start = { x: Number(rawStart[0]), y: Number(rawStart[1]) }
+    if (Number.isFinite(start.x) && Number.isFinite(start.y) && Math.hypot(start.x - route[0].x, start.y - route[0].y) > .05) route.unshift(start)
+  }
+  const point = parkPolylinePoint(route, progress)
+  const nextPoint = parkPolylinePoint(route, Math.min(1, progress + .012))
   const headingDeg = Math.abs(nextPoint.x - point.x) + Math.abs(nextPoint.y - point.y) > .001
     ? Math.atan2(nextPoint.y - point.y, nextPoint.x - point.x) * 180 / Math.PI
     : 0
@@ -418,7 +456,7 @@ const robotDisplayPose = computed(() => {
 })
 
 const fullBinPose = computed(() => {
-  if (!dispatchStarted.value) return staticPose(...FOOD_SERVICE_POINT)
+  if (!dispatchStarted.value) return staticPose(...activeFoodServicePoint.value)
   if (props.scenario === 'blocked' && props.currentEvent?.eventType === 'RETURN_AND_REPLACEMENT_DISPATCHED') return staticPose(...FOOD_SERVICE_POINT)
   if (dispatchTransitActive.value) return routePose('return', returnDispatchProgress.value)
   if (!arrivedAtCenter.value) return routePose('return', 1)
@@ -488,7 +526,7 @@ function withMapEntityVisual(object) {
 const sceneObjects = computed(() => [
   ...(props.scenario !== 'daily' ? [{ id: 'robot_patrol_01', kind: 'robot', variant: 'active', style: robotDisplayPose.value.style, depthScale: robotDisplayPose.value.depthScale, headingDeg: robotDisplayPose.value.headingDeg, handoff: Boolean(robotHandoffPose.value), moving: Boolean(robotHandoffPose.value && Number(props.robotVisual?.progress) < 1), badge: ['TASK_CREATED', 'ROBOT_TASK_REQUESTED', 'ROBOT_TASK_RESULT', 'TASK_SUCCEEDED'].includes(props.currentEvent?.eventType) ? presentation.value.title : '巡检中', badgeTone: 'cyan' }] : []),
   ...(props.scenario === 'baseline' ? [{ id: 'visitor_01', kind: 'visitor', style: pos(48.1, 76), badge: props.currentEvent?.eventType === 'LITTER_CREATED' ? '产生垃圾' : '', badgeTone: 'amber' }] : []),
-  { id: 'service_food_01', kind: 'service', style: pos(...FOOD_SERVICE_POINT), badge: serviceBadge('service_food_01')?.text || (dispatchStarted.value && !standbyTookOver.value ? '待补位' : '服务中'), badgeTone: serviceBadge('service_food_01')?.tone || (dispatchStarted.value && !standbyTookOver.value ? 'amber' : 'green') },
+  { id: 'service_food_01', kind: 'service', style: pos(...activeFoodServicePoint.value), badge: serviceBadge('service_food_01')?.text || (dispatchStarted.value && !standbyTookOver.value ? '待补位' : '服务中'), badgeTone: serviceBadge('service_food_01')?.tone || (dispatchStarted.value && !standbyTookOver.value ? 'amber' : 'green') },
   { id: 'service_rest_01', kind: 'service', style: pos(31.5, 61.5), badge: serviceBadge('service_rest_01')?.text || '服务中', badgeTone: serviceBadge('service_rest_01')?.tone || 'green' },
   ...(!blockedRouteVehicleActive.value ? [{ id: 'device_smart_bin_food_01', kind: 'bin', variant: dispatchStarted.value ? 'returning' : 'active', style: fullBinPose.value.style, depthScale: fullBinPose.value.depthScale, headingDeg: fullBinPose.value.headingDeg, badge: foodBinBadge.value, badgeTone: statusTone(props.runtimeState?.devices?.device_smart_bin_food_01?.status, hasEvent('FULL_RISK_TRIGGERED') && !recovered.value ? 'amber' : 'green'), moving: dispatchTransitActive.value && returnDispatchProgress.value > 0 && props.scenario !== 'blocked' }] : []),
   { id: 'device_smart_bin_rest_01', kind: 'bin', variant: 'active', style: pos(31.5, 61.5), badge: deviceStatusBadge('device_smart_bin_rest_01') || `${Number(props.runtimeState?.devices?.device_smart_bin_rest_01?.fillPct ?? 30)}%`, badgeTone: statusTone(props.runtimeState?.devices?.device_smart_bin_rest_01?.status) },
@@ -581,16 +619,16 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.park-canvas { position: relative; min-height: 0; overflow: hidden; display:flex; align-items:center; justify-content:center; background: #061522; }
+.park-canvas { position: relative; width:100%; height:100%; min-height:0; overflow:hidden; display:flex; align-items:center; justify-content:center; box-sizing:border-box; border:0; border-radius:inherit; background:#061522; }
 .park-scene-surface { position:relative; flex:0 0 auto; overflow:hidden; aspect-ratio:1672/941; background:#061522; isolation:isolate; will-change:transform; }
 .environment-back,.park-background,.park-road-overlay,.ground-detail-layer,.atmosphere-layer,.candidate-background-comparison,.foreground-occlusion-layer,.scene-calibration-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .environment-back { z-index: 0; background: radial-gradient(ellipse at 48% 42%, #0a2634 0%, #061522 72%, #020b12 100%); }
 .park-background { z-index: 1; object-fit: contain; }
 .park-road-overlay { z-index:2; object-fit:fill; opacity:.42; }
 .ground-detail-layer { z-index: 2; overflow: hidden; }.ground-detail { position: absolute; pointer-events: none; }
-.atmosphere-layer { z-index: 4; background: linear-gradient(135deg,rgba(214,240,255,.08),rgba(117,166,189,.018) 35%,rgba(0,17,29,.12)),radial-gradient(ellipse at 50% 42%,rgba(55,118,134,.025),rgba(0,14,26,.18) 94%); box-shadow: inset 0 0 72px rgba(0,14,26,.38); }
+.atmosphere-layer { z-index: 4; background: linear-gradient(135deg,rgba(214,240,255,.08),rgba(117,166,189,.018) 35%,rgba(0,17,29,.12)),radial-gradient(ellipse at 50% 42%,rgba(55,118,134,.025),rgba(0,14,26,.18) 94%); box-shadow: inset 0 0 72px rgba(0,14,26,.38); transition:opacity .3s ease; }
 .candidate-background-comparison { z-index: 5; object-fit: fill; opacity: .48; mix-blend-mode: normal; }
-.foreground-occlusion-layer { z-index: 6; overflow: hidden; }.occlusion-region { position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:cover;transform:translateZ(0)}.occlusion-region.building_roof,.occlusion-region.platform_front_edge{filter:drop-shadow(7px 10px 10px rgba(0,17,29,.2))}
+.foreground-occlusion-layer { z-index: 6; overflow: hidden; transition:opacity .3s ease; }.occlusion-region { position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:cover;transform:translateZ(0)}.occlusion-region.building_roof{filter:drop-shadow(7px 10px 10px rgba(0,17,29,.2))}
 .scene-calibration-layer { z-index: 14; overflow: hidden; }.calibration-road-layer{position:absolute;inset:0;width:100%;height:100%}.calibration-road{fill:none;stroke:#6de9ff;stroke-width:.32;stroke-dasharray:1 1;vector-effect:non-scaling-stroke}.calibration-road.pedestrian{stroke:#d9ff8f}.calibration-road.business_route_reference{stroke:#ffb866}.calibration-anchor,.calibration-object-point{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-anchor i{display:block;width:8px;height:8px;margin:-4px;border:2px solid #fff;border-radius:50%;background:#ff5d66;box-shadow:0 0 10px #ff5d66}.calibration-anchor text{position:absolute;left:8px;top:-12px;padding:2px 4px;border-radius:3px;color:#fff;background:rgba(78,12,20,.86);font:700 7px/1.2 ui-monospace,Consolas,monospace}.calibration-object-point{width:4px;height:4px;border:1px solid #24d9ff;background:#061522}.calibration-object-point text{position:absolute;left:5px;top:3px;color:#8ff2ff;font:6px/1.2 ui-monospace,Consolas,monospace}.calibration-caption{position:absolute;right:12px;top:12px;padding:5px 8px;border:1px solid rgba(255,184,102,.7);border-radius:5px;color:#fff2d8;background:rgba(70,41,9,.86);font:700 8px/1.2 ui-monospace,Consolas,monospace}
 .calibration-road.robot{stroke:#ffbf69}.calibration-road.service_device{stroke:#63e6ff}.calibration-road.blocked{stroke:#ff4f63;stroke-width:.8;stroke-dasharray:2 .5}.candidate-route path{fill:none;stroke-width:.75;stroke-dasharray:2 1;vector-effect:non-scaling-stroke}.candidate-route.east-north path{stroke:#ff9a47}.candidate-route.south-west path{stroke:#b784ff}.calibration-node,.calibration-edge-label,.calibration-anchor-error{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-node i{display:block;width:5px;height:5px;margin:-2.5px;border:1px solid #fff;border-radius:50%;background:#63e6ff}.calibration-node.pedestrian i{background:#b8eb72}.calibration-node.robot i{background:#ffbf69}.calibration-node text{position:absolute;left:4px;top:2px;color:#e8fbff;font:5px/1.1 ui-monospace,Consolas,monospace;text-shadow:0 1px 2px #00111d}.calibration-edge-label{opacity:.75}.calibration-edge-label text{display:block;padding:1px 2px;color:#bfefff;background:rgba(0,21,32,.76);font:4px/1 ui-monospace,Consolas,monospace}.calibration-edge-label.pedestrian text{color:#dfffab}.calibration-edge-label.robot text{color:#ffd49a}.calibration-edge-label.blocked text{color:#fff;background:#a4192a}.calibration-anchor-error{margin-top:9px;color:#ffd8dc;font:5px/1 ui-monospace,Consolas,monospace}.calibration-caption{max-width:52%;white-space:normal}
 .north-mark { position: absolute; z-index: 10; right: 14px; top: 12px; display: flex; flex-direction: column; align-items: center; color: #dff7ff; font-size: 10px; text-shadow: 0 1px 4px #00111d; }
@@ -605,8 +643,23 @@ onBeforeUnmount(() => {
 .center-bay-anchor { position:absolute; z-index:5; top:17.5%; width:14px; height:8px; transform:translate(-50%,-50%); cursor:pointer; }.center-bay-anchor.bay-1{left:21.2%}.center-bay-anchor.bay-2{left:24%}.center-bay-anchor>i{display:block;width:100%;height:100%;box-sizing:border-box;border:1px solid rgba(115,171,199,.7);border-radius:2px;background:rgba(19,54,72,.82)}.center-bay-anchor.occupied>i{border-color:#24d9ff;background:rgba(36,217,255,.32);box-shadow:0 0 10px rgba(36,217,255,.5)}.center-bay-anchor.selected>i{outline:1px solid #fff;outline-offset:2px}
 .route-layer { position:absolute; z-index:3; inset:0; width:100%; height:100%; pointer-events:none; }.route-layer.paused .route-path { animation-play-state:paused; }.route-path { fill:none; stroke-width:2.65px; stroke-linecap:round; stroke-dasharray:4px 10px; vector-effect:non-scaling-stroke; opacity:0; transition:opacity .3s ease; animation:route-flow 1.65s linear infinite; filter:drop-shadow(1px 1px .7px rgba(0,14,24,.34)); }.route-path.visible { opacity:.82; }.route-path.complete { opacity:.14; animation:none; }.route-path.return { stroke:#bd866b; }.route-path.replacement { stroke:#65a9b4; }.route-path.route-bed { stroke:rgba(3,19,29,.52);stroke-width:4.8px;stroke-dasharray:none;animation:none;filter:none;opacity:0}.route-path.route-bed.visible{opacity:.42}.route-path.route-bed.complete{opacity:.09}
 @keyframes route-flow { to { stroke-dashoffset: -28; } }
-.scene-object { position: absolute; z-index: 5; transform: translate(-50%,-50%); transition: left .7s cubic-bezier(.22,1,.36,1),top .7s cubic-bezier(.22,1,.36,1),opacity .25s ease; cursor: pointer; }.scene-object.robot,.scene-object.bin{transform:translate(-50%,-82%)}.scene-object.moving,.scene-object.handoff { transition: none; }.scene-object::after { content: ''; position: absolute; inset: -7px; border: 1px solid transparent; border-radius: 10px; transition: all .18s ease; }.scene-object:hover::after { border-color:rgba(36,217,255,.5);box-shadow:0 0 12px rgba(36,217,255,.28)}.scene-object.faded { opacity: .34; }
-.task-camera-active .scene-object[data-entity-id="robot_patrol_01"],.task-camera-active .scene-object[data-entity-id="garbage_banana_01"],.task-camera-active .scene-object[data-entity-id="garbage_cardboard_01"],.task-camera-active .scene-object[data-entity-id="garbage_battery_01"],.task-camera-active .scene-object[data-entity-id="garbage_paper_cup_01"],.task-camera-active .scene-object[data-entity-id="device_smart_bin_food_01"],.task-camera-active .scene-object[data-entity-id="service_food_01"]{opacity:0;pointer-events:none}.task-camera-active .scene-label-anchor.robot,.task-camera-active .scene-label-anchor.waste,.task-camera-active .scene-label-anchor.bin,.task-camera-active :deep(.scenario-robot),.task-camera-active :deep(.generated-garbage),.task-camera-active :deep(.scenario-label-anchor.robot),.task-camera-active :deep(.scenario-label-anchor.garbage){opacity:0!important;pointer-events:none!important}
+.scene-object { position: absolute; z-index: 5; transform: translate(-50%,-50%); transition: left .7s cubic-bezier(.22,1,.36,1),top .7s cubic-bezier(.22,1,.36,1),opacity .25s ease; cursor: pointer; }.scene-object.robot,.scene-object.bin{transform:translate(-50%,-82%)}.scene-object.bin.task-bin-behind-robot{z-index:4}.scene-object.moving,.scene-object.handoff { transition: none; }.scene-object::after { content: ''; position: absolute; inset: -7px; border: 1px solid transparent; border-radius: 10px; transition: all .18s ease; }.scene-object:hover::after { border-color:rgba(36,217,255,.5);box-shadow:0 0 12px rgba(36,217,255,.28)}.scene-object.faded { opacity: .34; }
+.scene-label-overlay,:deep(.scenario-layer),:deep(.scenario-label-overlay){transition:opacity .28s ease}
+.task-camera-active .route-layer,
+.task-camera-active .facility-anchor,
+.task-camera-active .center-bay-anchor,
+.task-camera-active .scene-object.local-task-replaced,
+.task-camera-active .scene-label-overlay,
+.task-camera-active .event-overlay,
+.task-camera-active .zone-label,
+.task-camera-active .road-label,
+.task-camera-active .map-legend,
+.task-camera-active .north-mark,
+.task-camera-active :deep(.scenario-route-layer),
+.task-camera-active :deep(.heat-zone),
+.task-camera-active :deep(.zone-count),
+.task-camera-active :deep(.route-key),
+.task-camera-active :deep(.scenario-label-overlay){opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:none!important}
 .scene-label-overlay { position:absolute;z-index:12;inset:0;pointer-events:none;overflow:visible }.scene-label-anchor{position:absolute;transform:translate(-50%,-50%);width:36px;height:46px}.scene-label-anchor.robot{width:42px;height:60px;transform:translate(-50%,-82%)}.scene-label-anchor.bin{transform:translate(-50%,-82%)}.scene-label-anchor.visitor{width:24px;height:41px}.scene-label-anchor.service{width:20px;height:20px}.scene-label-anchor.waste{width:32px;height:27px}.center-bay-label-anchor,.facility-label-anchor{position:absolute;transform:translate(-50%,-50%)}.center-bay-label-anchor{top:17.5%;width:14px;height:8px}.center-bay-label-anchor.bay-1{left:21.2%}.center-bay-label-anchor.bay-2{left:24%}.facility-label-anchor{top:20.5%;width:34px;height:31px}.facility-label-anchor.unload{left:20.5%}.facility-label-anchor.wash{left:23%}.facility-label-anchor.charge{left:25.5%}
 .service-symbol { width: 31px; height: 31px; border: 2px dashed #69e4ff; border-radius: 8px; background: rgba(36,217,255,.12); }
 .event-overlay { position: absolute; z-index: 10; left: 12px; bottom: 12px; min-width: 230px; padding: 8px 10px; display: grid; grid-template-columns: 9px 1fr auto; align-items: center; gap: 8px; border: 1px solid rgba(116,197,255,.34); border-radius: 9px; background: rgba(2,23,38,.86); backdrop-filter: blur(6px); }.event-pulse { width: 8px; height: 8px; border-radius: 50%; background: #2c8fff; box-shadow: 0 0 10px currentColor; }.event-pulse.cyan { background: #24d9ff; }.event-pulse.green { background: #16c57c; }.event-pulse.amber { background: #f5b648; }.event-pulse.red { background: #ff5d66; }.event-overlay-label,.event-overlay-title { display: block; }.event-overlay-label { color: #789fb4; font-size: 8px; }.event-overlay-title { color: #e9f9ff; font-size: 11px; font-weight: 700; margin-top: 2px; }.source-tag { padding: 2px 5px; border-radius: 4px; color: #8ec8eb; border: 1px solid rgba(100,174,226,.34); background: rgba(22,91,143,.24); font: 700 8px/1.2 ui-monospace, Consolas, monospace; }.source-tag.isaac-realtime { color: #c1a7ff; }.source-tag.backend-api { color: #8af1be; }.source-tag.visual-aid { color: #ffd57c; }

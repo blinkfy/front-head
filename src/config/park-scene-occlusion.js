@@ -35,24 +35,9 @@ export const PARK_SCENE_OCCLUSIONS = freeze([
     clipPath: 'polygon(53% 90%,58% 85%,69% 83%,80% 85%,90% 82%,100% 84%,100% 100%,52% 100%)'
   },
   {
-    id: 'interior-north-left-canopy',
-    type: 'tree_canopy',
-    clipPath: 'polygon(34.5% 16.3%,39.5% 14.5%,44.2% 17.6%,45.2% 23.6%,41.4% 27.2%,35.2% 25.5%,32.6% 20.5%)'
-  },
-  {
     id: 'interior-north-right-canopy',
     type: 'tree_canopy',
     clipPath: 'polygon(54.8% 16%,61.8% 15.2%,67.3% 20.2%,68% 27.4%,63.1% 31.8%,56.7% 30.4%,52.8% 24.6%)'
-  },
-  {
-    id: 'operations-center-front-eave',
-    type: 'building_roof',
-    clipPath: 'polygon(19.2% 14.7%,30.1% 14.7%,30.1% 18.5%,19.2% 18.5%)'
-  },
-  {
-    id: 'rest-platform-front-edge',
-    type: 'platform_front_edge',
-    clipPath: 'polygon(67.5% 50.5%,69.5% 54.2%,77.8% 54.2%,79.2% 51.8%,79.2% 60.5%,67.5% 60.5%)'
   }
 ])
 

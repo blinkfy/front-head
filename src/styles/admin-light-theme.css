@@ -1,0 +1,33 @@
+.admin-light-theme {
+  --admin-light-bg: #f2f7f4;
+  --admin-light-surface: #ffffff;
+  --admin-light-surface-soft: #f7fbf8;
+  --admin-light-border: #d8e7df;
+  --admin-light-border-strong: #c4d9ce;
+  --admin-light-text: #17352a;
+  --admin-light-text-secondary: #617a70;
+  --admin-light-text-muted: #8da198;
+  --admin-light-primary: #18a77c;
+  --admin-light-primary-hover: #118b67;
+  --admin-light-primary-soft: #e8f7f0;
+  --admin-light-info: #3d82e4;
+  --admin-light-info-soft: #edf4ff;
+  --admin-light-success: #20b784;
+  --admin-light-success-soft: #e9f8f2;
+  --admin-light-warning: #e99a2d;
+  --admin-light-warning-soft: #fff5e7;
+  --admin-light-danger: #e45860;
+  --admin-light-danger-soft: #fff0f1;
+  --admin-light-radius-panel: 12px;
+  --admin-light-radius-control: 8px;
+  --admin-light-shadow: 0 4px 14px rgba(42, 83, 65, 0.07);
+  --admin-light-shadow-map: 0 6px 18px rgba(42, 83, 65, 0.1);
+  --admin-light-chart-grid: #e4eee8;
+  --admin-light-chart-label: #6f877c;
+  --admin-light-chart-primary: #1eae7d;
+  --admin-light-chart-secondary: #3d82e4;
+  --admin-light-chart-warning: #e99a2d;
+  --admin-light-chart-risk: rgba(228, 88, 96, 0.1);
+  --admin-light-scroll-track: #e7f0eb;
+  --admin-light-scroll-thumb: #82b39f;
+}

@@ -178,38 +178,94 @@ export const SMART_BIN_INTERNAL_LEGACY_VISUALS = freeze({
 })
 
 const RASTER_V3_BASE = '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v3/'
+const RASTER_V8_BASE = '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/'
 
 export const SMART_BIN_CUTAWAY_RASTER_V3 = freeze({
-  version: 'cutaway-raster-v3',
+  version: 'cutaway-raster-v8-fixed-structure-separated',
   sourceSize: { width: 1254, height: 1254 },
   sceneRoot: { width: 1200, height: 620 },
   motherDrawBox: { x: 308, y: 18, width: 584, height: 584 },
   sourceToSceneScale: 584 / 1254,
   panelOcclusion: {
     enabled: true,
-    status: 'passed_downward_fold_mother',
-    requiredKinematics: 'four_panels_fold_down_around_outer_hinges',
-    rejectedCandidateRegistered: false
+    status: 'passed_true_four_panel_downward_hinge_with_fixed_structure_separated',
+    requiredKinematics: 'four_fixed_outer_axes_with_shared_inner_corners_recessed_center_tray_and_rigid_steel_column',
+    surroundingPanelCount: 4,
+    centerTrayPresent: true,
+    centerOpeningPresent: true,
+    rejectedCandidateRegistered: false,
+    frontPanelPolygons: [
+      [[250, 602], [377, 702], [676, 791], [714, 741]],
+      [[965, 509], [714, 741], [676, 791], [838, 642]]
+    ]
+  },
+  panelAnimation: {
+    frameKeys: ['fixedMother', 'panelFrame01', 'panelFrame02', 'panelFrame03', 'panelFrame04', 'panelFrame05', 'panelFrame06', 'panelFrame07', 'panelsOpenMother'],
+    interpolation: 'adjacent_frame_crossfade',
+    motionSource: 'deterministic_fixed_hinge_shared_corner_projection_with_fixed_structure_separated',
+    generatedMotionInference: false
   },
   layers: {
     fixedMother: {
-      src: `${RASTER_V3_BASE}fixed-cutaway-back-v3.png`,
+      src: `${RASTER_V8_BASE}fixed-four-panels-user-corrected.png`,
       sourceSize: { width: 1254, height: 1254 },
       sourceBbox: [0, 0, 1254, 1254],
       order: 10
     },
     assembledPoster: {
-      src: `${RASTER_V3_BASE}assembled-poster-v3.png`,
+      src: `${RASTER_V8_BASE}fixed-four-panels-user-corrected.png`,
       sourceSize: { width: 1254, height: 1254 },
       sourceBbox: [0, 0, 1254, 1254],
       order: 10
     },
     panelsOpenMother: {
-      src: `${RASTER_V3_BASE}fixed-cutaway-panels-down-v3.png`,
+      src: `${RASTER_V8_BASE}panel-fold-fixed-structure-08.webp`,
       sourceSize: { width: 1254, height: 1254 },
       sourceBbox: [0, 0, 1254, 1254],
       order: 11,
-      reviewStatus: 'passed_downward_fold_kinematics_no_dynamic_mechanism'
+      reviewStatus: 'passed_four_fixed_hinges_true_open_shared_edges_rigid_column'
+    },
+    panelFrame01: {
+      src: `${RASTER_V8_BASE}panel-fold-fixed-structure-01.webp`,
+      sourceSize: { width: 1254, height: 1254 },
+      sourceBbox: [0, 0, 1254, 1254],
+      order: 11
+    },
+    panelFrame02: {
+      src: `${RASTER_V8_BASE}panel-fold-fixed-structure-02.webp`,
+      sourceSize: { width: 1254, height: 1254 },
+      sourceBbox: [0, 0, 1254, 1254],
+      order: 11
+    },
+    panelFrame03: {
+      src: `${RASTER_V8_BASE}panel-fold-fixed-structure-03.webp`,
+      sourceSize: { width: 1254, height: 1254 },
+      sourceBbox: [0, 0, 1254, 1254],
+      order: 11
+    },
+    panelFrame04: {
+      src: `${RASTER_V8_BASE}panel-fold-fixed-structure-04.webp`,
+      sourceSize: { width: 1254, height: 1254 },
+      sourceBbox: [0, 0, 1254, 1254],
+      order: 11
+    },
+    panelFrame05: {
+      src: `${RASTER_V8_BASE}panel-fold-fixed-structure-05.webp`,
+      sourceSize: { width: 1254, height: 1254 },
+      sourceBbox: [0, 0, 1254, 1254],
+      order: 11
+    },
+    panelFrame06: {
+      src: `${RASTER_V8_BASE}panel-fold-fixed-structure-06.webp`,
+      sourceSize: { width: 1254, height: 1254 },
+      sourceBbox: [0, 0, 1254, 1254],
+      order: 11
+    },
+    panelFrame07: {
+      src: `${RASTER_V8_BASE}panel-fold-fixed-structure-07.webp`,
+      sourceSize: { width: 1254, height: 1254 },
+      sourceBbox: [0, 0, 1254, 1254],
+      order: 11
     },
     carriageLift: {
       src: `${RASTER_V3_BASE}carriage-lift-v3.png`,
@@ -235,18 +291,19 @@ export const SMART_BIN_CUTAWAY_RASTER_V3 = freeze({
   mechanism: {
     home: { x: 593, y: 192 },
     gripAnchor: { x: 578, y: 291 },
+    wasteGripOffset: { x: 0, y: -8 },
     inlet: { x: 585, y: 137 },
     receive: { x: 578, y: 294 },
     transferX: { recyclable: 540, kitchen: 632, hazardous: 558, other: 704 },
     liftScale: 1.05
   },
   slots: {
-    recyclable: { label: '可回收物', color: '#4f8fca', position: 'front_left', center: { x: 518, y: 388 }, hideY: 405, radius: { x: 54, y: 20 } },
-    kitchen: { label: '厨余垃圾', color: '#5c9c7d', position: 'front_right', center: { x: 632, y: 412 }, hideY: 429, radius: { x: 55, y: 20 } },
-    hazardous: { label: '有害垃圾', color: '#bd6870', position: 'rear_left', center: { x: 550, y: 350 }, hideY: 367, radius: { x: 47, y: 17 } },
-    other: { label: '其他垃圾', color: '#b89a55', position: 'rear_right', center: { x: 725, y: 356 }, hideY: 373, radius: { x: 48, y: 17 } }
+    recyclable: { label: '可回收物', color: '#4f8fca', position: 'front_left', center: { x: 518, y: 388 }, hideY: 392, radius: { x: 54, y: 20 } },
+    kitchen: { label: '厨余垃圾', color: '#5c9c7d', position: 'front_right', center: { x: 632, y: 412 }, hideY: 414, radius: { x: 55, y: 20 } },
+    hazardous: { label: '有害垃圾', color: '#bd6870', position: 'rear_left', center: { x: 550, y: 350 }, hideY: 354, radius: { x: 47, y: 17 } },
+    other: { label: '其他垃圾', color: '#b89a55', position: 'rear_right', center: { x: 725, y: 356 }, hideY: 360, radius: { x: 48, y: 17 } }
   },
-  drawOrder: ['fixedMother', 'targetEffect', 'carriageLift', 'leftJaw', 'rightJaw', 'wasteObject', 'stageEffects', 'pendingRealMotherOcclusion']
+  drawOrder: ['fixedMother', 'panelsOpenMother', 'targetEffect', 'carriageLift', 'leftJawBehindWaste', 'wasteObject', 'rightJawFront', 'stageEffects', 'frontTwoPanelOcclusion', 'slotHideYClip']
 })
 
 export function smartBinCutawayRasterV3Sources() {

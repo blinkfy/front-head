@@ -1,5 +1,5 @@
 <template>
-  <view :class="['layout', isDark ? 'dark-theme' : '']">
+  <view :class="['layout', isDark ? 'dark-theme' : 'light-theme', { 'admin-light-theme': !isDark }]">
 
     <!-- ===== 顶部 panel ===== -->
     <view class="panel header-panel">
@@ -238,6 +238,7 @@ import { mapConfig } from '@/api/map-config'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
+import '@/styles/admin-light-theme.css'
 
 // ─── 常量 ─────────────────────────────────────────────
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
@@ -638,7 +639,7 @@ function buildMpMapData() {
   if (_currentPlan && _currentPlan.route && Array.isArray(_currentPlan.route.polyline) && _currentPlan.route.polyline.length > 1) {
     polylineArr.push({
       points: _currentPlan.route.polyline.map(p => ({ latitude: p[0], longitude: p[1] })),
-      color: '#2f6ff0cc', width: 6
+      color: isDark.value ? '#2f6ff0cc' : '#18a77ccc', width: 6
     })
   }
   mapMarkers.value = markers
@@ -715,17 +716,17 @@ function drawH5Map() {
 
   if (startPoint.value) {
     const sp = new TMap.LatLng(startPoint.value.latitude, startPoint.value.longitude)
-    _map.startMarker = new TMap.MultiMarker({ id: 'planning-start', map: _map.instance, styles: { start: new TMap.MarkerStyle({ width: 34, height: 34, anchor: { x: 17, y: 17 }, src: getIconSrc('start', '#2f6ff0', 'S') }) }, geometries: [{ id: 'start-point', styleId: 'start', position: sp }] })
+    _map.startMarker = new TMap.MultiMarker({ id: 'planning-start', map: _map.instance, styles: { start: new TMap.MarkerStyle({ width: 34, height: 34, anchor: { x: 17, y: 17 }, src: getIconSrc('start', isDark.value ? '#2f6ff0' : '#18a77c', 'S') }) }, geometries: [{ id: 'start-point', styleId: 'start', position: sp }] })
     bounds.extend(sp); hasBounds = true
   }
 
   if (_currentPlan?.route && Array.isArray(_currentPlan.route.polyline) && _currentPlan.route.polyline.length > 1) {
     const paths = _currentPlan.route.polyline.map(p => new TMap.LatLng(p[0], p[1]))
-    _map.routePolyline = new TMap.MultiPolyline({ id: 'planning-route', map: _map.instance, styles: { route: new TMap.PolylineStyle({ color: '#2f6ff0', width: 6, borderWidth: 2, borderColor: '#ffffff', lineCap: 'round' }) }, geometries: [{ id: 'route-main', styleId: 'route', paths }] })
+    _map.routePolyline = new TMap.MultiPolyline({ id: 'planning-route', map: _map.instance, styles: { route: new TMap.PolylineStyle({ color: isDark.value ? '#2f6ff0' : '#18a77c', width: 6, borderWidth: 2, borderColor: '#ffffff', lineCap: 'round' }) }, geometries: [{ id: 'route-main', styleId: 'route', paths }] })
     paths.forEach(p => { bounds.extend(p); hasBounds = true })
     const stopStyles = {}; const stopGeos = (_currentPlan.route.stops || []).map((stop, idx) => {
       const sid = 'stop-' + stop.order
-      if (!stopStyles[sid]) stopStyles[sid] = new TMap.MarkerStyle({ width: 26, height: 26, anchor: { x: 13, y: 13 }, src: getIconSrc(sid, '#1f62db', String(stop.order)) })
+      if (!stopStyles[sid]) stopStyles[sid] = new TMap.MarkerStyle({ width: 26, height: 26, anchor: { x: 13, y: 13 }, src: getIconSrc(sid, isDark.value ? '#1f62db' : '#18a77c', String(stop.order)) })
       return { id: 'stop-' + idx, styleId: sid, position: new TMap.LatLng(stop.latitude, stop.longitude) }
     })
     if (stopGeos.length) _map.sequenceMarkers = new TMap.MultiMarker({ id: 'planning-stop-seq', map: _map.instance, styles: stopStyles, geometries: stopGeos })
@@ -1498,6 +1499,7 @@ label,navigator,image,div,span { box-sizing: border-box; }
   min-height: 100vh;
   box-sizing: border-box;
   padding: 18px;
+  gap: 10px;
   background: var(--canvas);
   color: var(--text);
   font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
@@ -1529,7 +1531,7 @@ label,navigator,image,div,span { box-sizing: border-box; }
   z-index: 100;
   overflow: visible;
   padding: 16px 18px 12px;
-  margin-bottom: 14px;
+  margin-bottom: 6px;
 }
 
 .layout .top {
@@ -1903,5 +1905,315 @@ label,navigator,image,div,span { box-sizing: border-box; }
   .layout .form-grid { grid-template-columns: 1fr; }
   .layout .btn { padding: 0 9px; }
   .layout .map-wrap { min-height: 520px; }
+}
+
+/* ─── 浅色两栏运营规划工作台 ─── */
+.layout.light-theme.admin-light-theme {
+  --canvas: var(--admin-light-bg);
+  --surface: var(--admin-light-surface);
+  --surface-soft: var(--admin-light-surface-soft);
+  --line: var(--admin-light-border);
+  --line-strong: var(--admin-light-border-strong);
+  --text: var(--admin-light-text);
+  --sub: var(--admin-light-text-secondary);
+  --accent: var(--admin-light-primary);
+  --accent-soft: var(--admin-light-primary-soft);
+  --success: var(--admin-light-success);
+  --shadow: var(--admin-light-shadow);
+  width: 100%;
+  height: 100vh;
+  min-height: 720px;
+  padding: 12px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  overflow: hidden;
+  background: var(--admin-light-bg);
+}
+.layout.light-theme.admin-light-theme .panel {
+  border: 1px solid var(--admin-light-border);
+  border-radius: var(--admin-light-radius-panel);
+  background: var(--admin-light-surface);
+  box-shadow: var(--admin-light-shadow);
+  backdrop-filter: none;
+}
+.layout.light-theme.admin-light-theme .header-panel {
+  padding: 10px 14px;
+  margin: 0;
+}
+.layout.light-theme.admin-light-theme .top {
+  min-height: 36px;
+  margin: 0 0 8px;
+  align-items: center;
+  gap: 14px;
+}
+.layout.light-theme.admin-light-theme .title {
+  color: var(--admin-light-text);
+  font-size: clamp(20px, 1.25vw, 24px);
+  font-weight: 740;
+  letter-spacing: 0;
+}
+.layout.light-theme.admin-light-theme .sub {
+  margin-top: 2px;
+  color: var(--admin-light-text-secondary);
+  line-height: 1.4;
+}
+.layout.light-theme.admin-light-theme :deep(.admin-screen-header) {
+  --admin-screen-control-height: 34px;
+  --admin-screen-control-font-size: 12px;
+  gap: 6px;
+}
+.layout.light-theme.admin-light-theme .btns { gap: 6px; }
+.layout.light-theme.admin-light-theme .btn {
+  min-height: 34px;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--admin-light-border-strong);
+  border-radius: var(--admin-light-radius-control);
+  color: var(--admin-light-text-secondary);
+  background: var(--admin-light-surface);
+  box-shadow: none;
+}
+.layout.light-theme.admin-light-theme .btn:hover {
+  color: var(--admin-light-primary);
+  border-color: #9abbe1;
+  background: var(--admin-light-primary-soft);
+}
+.layout.light-theme.admin-light-theme .btn.secondary {
+  color: var(--admin-light-primary);
+  border-color: #acc8e9;
+  background: var(--admin-light-surface);
+}
+.layout.light-theme.admin-light-theme .btn.primary {
+  color: #fff;
+  border-color: var(--admin-light-primary);
+  background: var(--admin-light-primary);
+  box-shadow: 0 3px 8px rgba(24, 167, 124, .2);
+}
+.layout.light-theme.admin-light-theme .btn.primary:hover {
+  color: #fff;
+  border-color: var(--admin-light-primary-hover);
+  background: var(--admin-light-primary-hover);
+}
+.layout.light-theme.admin-light-theme .metrics {
+  width: min(520px, 100%);
+  border-color: var(--admin-light-border);
+  border-radius: 9px;
+  background: var(--admin-light-surface-soft);
+}
+.layout.light-theme.admin-light-theme .metric {
+  min-height: 54px;
+  padding: 7px 12px;
+}
+.layout.light-theme.admin-light-theme .metric + .metric::before { top: 8px; bottom: 8px; background: var(--admin-light-border); }
+.layout.light-theme.admin-light-theme .metric .k { color: var(--admin-light-text-secondary); }
+.layout.light-theme.admin-light-theme .metric .v { color: var(--admin-light-text); font-size: 18px; }
+.layout.light-theme.admin-light-theme .metric:nth-child(2) .v { color: var(--admin-light-danger); }
+.layout.light-theme.admin-light-theme .metric:nth-child(4) .v { color: var(--admin-light-primary); }
+.layout.light-theme.admin-light-theme .main {
+  min-height: 0;
+  height: 100%;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.layout.light-theme.admin-light-theme .controls {
+  width: 300px;
+  height: 100%;
+  min-height: 0;
+  padding: 9px;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
+  box-shadow: none;
+}
+.layout.light-theme.admin-light-theme .card {
+  padding: 10px;
+  border: 1px solid var(--admin-light-border);
+  border-radius: 10px;
+  background: var(--admin-light-surface);
+  box-shadow: none;
+}
+.layout.light-theme.admin-light-theme .card-heading {
+  min-height: 22px;
+  margin-bottom: 8px;
+  padding: 0 0 7px 9px;
+  border-bottom: 1px solid var(--admin-light-border);
+  position: relative;
+}
+.layout.light-theme.admin-light-theme .card-heading::before {
+  position: absolute;
+  top: 1px;
+  bottom: 7px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--admin-light-primary);
+  content: '';
+}
+.layout.light-theme.admin-light-theme .card-title { color: var(--admin-light-text); font-size: 13px; }
+.layout.light-theme.admin-light-theme .card-note { color: var(--admin-light-text-muted); }
+.layout.light-theme.admin-light-theme .form-grid { gap: 7px; }
+.layout.light-theme.admin-light-theme .form-item,
+.layout.light-theme.admin-light-theme .form-label { color: var(--admin-light-text-secondary); }
+.layout.light-theme.admin-light-theme .form-input,
+.layout.light-theme.admin-light-theme .form-picker {
+  height: 31px;
+  min-height: 31px;
+  padding: 0 8px;
+  border-color: var(--admin-light-border-strong);
+  border-radius: 7px;
+  color: var(--admin-light-text);
+  background: var(--admin-light-surface-soft);
+  line-height: 29px;
+}
+.layout.light-theme.admin-light-theme .form-input:focus,
+.layout.light-theme.admin-light-theme .form-picker:focus { border-color: var(--admin-light-primary); }
+.layout.light-theme.admin-light-theme .inline-actions { margin-top: 8px; gap: 5px; }
+.layout.light-theme.admin-light-theme .inline-actions .btn { min-height: 30px; height: 30px; padding: 0 8px; }
+.layout.light-theme.admin-light-theme .status { margin-top: 6px; color: var(--admin-light-text-secondary); }
+.layout.light-theme.admin-light-theme .status.ok { color: var(--admin-light-success); }
+.layout.light-theme.admin-light-theme .status.err { color: var(--admin-light-danger); }
+.layout.light-theme.admin-light-theme .bins-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.layout.light-theme.admin-light-theme .legend {
+  padding-bottom: 6px;
+  color: var(--admin-light-text-secondary);
+  font-size: 10px;
+}
+.layout.light-theme.admin-light-theme .bin-list {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 4px;
+  border: 1px solid var(--admin-light-border);
+  border-radius: 8px;
+  background: var(--admin-light-surface-soft);
+}
+.layout.light-theme.admin-light-theme .bin-row {
+  padding: 7px;
+  border: 1px solid var(--admin-light-border);
+  border-radius: 8px;
+  background: var(--admin-light-surface);
+}
+.layout.light-theme.admin-light-theme .bin-row:hover { border-color: #a8c4e3; background: #fbfdff; }
+.layout.light-theme.admin-light-theme .bin-head { color: var(--admin-light-text); }
+.layout.light-theme.admin-light-theme .bin-sub { color: var(--admin-light-text-secondary); }
+.layout.light-theme.admin-light-theme .chip {
+  color: var(--admin-light-text-secondary);
+  background: #edf2f6;
+}
+.layout.light-theme.admin-light-theme .chip.urgent { color: #aa3f47; background: var(--admin-light-danger-soft); }
+.layout.light-theme.admin-light-theme .chip.warning { color: #986017; background: var(--admin-light-warning-soft); }
+.layout.light-theme.admin-light-theme .fill-input { color: var(--admin-light-text-secondary); border-color: var(--admin-light-border-strong); background: var(--admin-light-primary-soft); }
+.layout.light-theme.admin-light-theme .map-wrap {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 9px;
+  display: grid;
+  grid-template-rows: minmax(340px, 1.65fr) minmax(180px, .75fr);
+  gap: 9px;
+  overflow: hidden;
+  border-color: var(--admin-light-border-strong);
+  box-shadow: var(--admin-light-shadow-map);
+}
+.layout.light-theme.admin-light-theme .map-stage {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--admin-light-border-strong);
+  border-radius: 10px;
+  box-shadow: 0 3px 10px rgba(31, 58, 82, .08);
+}
+.layout.light-theme.admin-light-theme #map,
+.layout.light-theme.admin-light-theme .mp-map {
+  border: 0;
+  border-radius: 9px;
+}
+.layout.light-theme.admin-light-theme .map-placeholder {
+  border: 0;
+  border-radius: 9px;
+  background: var(--admin-light-surface-soft);
+}
+.layout.light-theme.admin-light-theme .route {
+  min-height: 0;
+  max-height: none;
+  padding: 9px;
+  gap: 7px;
+  border: 1px solid var(--admin-light-border);
+  border-radius: 10px;
+  background: var(--admin-light-surface);
+}
+.layout.light-theme.admin-light-theme .route-header { padding: 0 2px 7px; border-color: var(--admin-light-border); }
+.layout.light-theme.admin-light-theme .route-title { color: var(--admin-light-text); }
+.layout.light-theme.admin-light-theme .route-summary { color: var(--admin-light-text-secondary); }
+.layout.light-theme.admin-light-theme .route-count { color: var(--admin-light-primary); background: var(--admin-light-primary-soft); }
+.layout.light-theme.admin-light-theme .route-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  gap: 5px;
+}
+.layout.light-theme.admin-light-theme .route-item {
+  min-height: 40px;
+  padding: 6px 8px;
+  border-color: var(--admin-light-border);
+  border-radius: 7px;
+  color: var(--admin-light-text);
+  background: var(--admin-light-surface-soft);
+}
+.layout.light-theme.admin-light-theme .route-order { background: var(--admin-light-primary); }
+.layout.light-theme.admin-light-theme .route-item > view:nth-child(2) > view:last-child,
+.layout.light-theme.admin-light-theme .route-item > view:nth-child(3) { color: var(--admin-light-text-secondary) !important; }
+.layout.light-theme.admin-light-theme .empty {
+  min-height: 58px;
+  padding: 12px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--admin-light-text-secondary);
+  border: 0;
+  border-radius: 8px;
+  background: var(--admin-light-surface-soft);
+}
+.layout.light-theme.admin-light-theme .bin-list,
+.layout.light-theme.admin-light-theme .route-list {
+  scrollbar-color: var(--admin-light-scroll-thumb) var(--admin-light-scroll-track);
+}
+.layout.light-theme.admin-light-theme .bin-list::-webkit-scrollbar-track,
+.layout.light-theme.admin-light-theme .route-list::-webkit-scrollbar-track { background: var(--admin-light-scroll-track); }
+.layout.light-theme.admin-light-theme .bin-list::-webkit-scrollbar-thumb,
+.layout.light-theme.admin-light-theme .route-list::-webkit-scrollbar-thumb { background: var(--admin-light-scroll-thumb); }
+
+@media (max-width: 1100px) and (min-width: 901px) {
+  .layout.light-theme.admin-light-theme .main { grid-template-columns: 286px minmax(0, 1fr); }
+  .layout.light-theme.admin-light-theme .controls { width: 286px; }
+}
+
+@media (max-width: 900px) {
+  .layout.light-theme.admin-light-theme {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+  .layout.light-theme.admin-light-theme .main { height: auto; grid-template-columns: 1fr; }
+  .layout.light-theme.admin-light-theme .controls { width: auto; height: auto; overflow: visible; }
+  .layout.light-theme.admin-light-theme .bins-card { min-height: 320px; }
+  .layout.light-theme.admin-light-theme .bin-list { height: 320px; flex: none; }
+  .layout.light-theme.admin-light-theme .map-wrap { height: auto; min-height: 720px; grid-template-rows: minmax(400px, 1fr) minmax(220px, auto); }
+}
+
+@media (max-width: 640px) {
+  .layout.light-theme.admin-light-theme { padding: 8px; }
+  .layout.light-theme.admin-light-theme .header-panel { padding: 10px; }
+  .layout.light-theme.admin-light-theme .top { align-items: flex-start; }
+  .layout.light-theme.admin-light-theme .metrics { grid-template-columns: 1fr 1fr; }
+  .layout.light-theme.admin-light-theme .map-wrap { min-height: 620px; grid-template-rows: minmax(340px, 1fr) minmax(220px, auto); }
 }
 </style>

@@ -12,6 +12,26 @@ const move = (fromX, fromY, toX = fromX, toY = fromY, via = []) => Object.freeze
   to: point(toX, toY),
   via: Object.freeze(via.map(([x, y]) => point(x, y)))
 })
+const mutablePoint = (x, y) => [x, y]
+const mutableMove = (from, to = from, via = []) => ({
+  from: mutablePoint(from[0], from[1]),
+  to: mutablePoint(to[0], to[1]),
+  via: via.map(([x, y]) => mutablePoint(x, y))
+})
+const pctToScenePoint = value => Array.isArray(value) && value.length >= 2
+  ? mutablePoint(
+    Number(value[0]) / 100 * ROBOT_TASK_SCENE_SIZE.width,
+    Number(value[1]) / 100 * ROBOT_TASK_SCENE_SIZE.height
+  )
+  : null
+const offsetPoint = (value, offsetX, offsetY) => mutablePoint(value[0] + offsetX, value[1] + offsetY)
+const routePctPoints = value => Array.isArray(value) ? value.map(pctToScenePoint).filter(Boolean) : []
+const isFoodServiceContext = spatialContext => {
+  const servicePointId = String(spatialContext?.servicePointId || spatialContext?.targetServicePointId || '').toLowerCase()
+  if (servicePointId.includes('food')) return true
+  const targetBin = spatialContext?.targetBinPositionPct
+  return Array.isArray(targetBin) && Number(targetBin[0]) >= 55
+}
 
 export const ROBOT_TASK_SHOT_CONFIG = freeze({
   scan: {
@@ -27,6 +47,7 @@ export const ROBOT_TASK_SHOT_CONFIG = freeze({
     showBin: true,
     focusTarget: 'robot_waste',
     transitionDuration: 360,
+    minDurationMs: 1400,
     easing: 'cinematicOut',
     robotHeight: 60,
     binHeight: 46
@@ -38,7 +59,7 @@ export const ROBOT_TASK_SHOT_CONFIG = freeze({
     cameraOffsetX: [0, 0],
     cameraOffsetY: [0, 0],
     cameraLeadY: -30,
-    robotPosition: move(886, 519, 840, 519),
+    robotPosition: move(886, 519, 824, 519),
     wastePosition: point(804, 489),
     binPosition: point(1070, 452),
     showBin: true,
@@ -55,7 +76,7 @@ export const ROBOT_TASK_SHOT_CONFIG = freeze({
     cameraOffsetX: [0, 0],
     cameraOffsetY: [0, 0],
     cameraLeadY: -26,
-    robotPosition: move(840, 519),
+    robotPosition: move(824, 519),
     wastePosition: point(804, 489),
     binPosition: point(1070, 452),
     showBin: true,
@@ -65,6 +86,7 @@ export const ROBOT_TASK_SHOT_CONFIG = freeze({
     robotHeight: 60,
     binHeight: 46,
     graspWindow: [0.22, 0.72],
+    pickupWindow: [0.62, 0.78],
     completionHold: 0.12
   },
   transport: {
@@ -84,8 +106,8 @@ export const ROBOT_TASK_SHOT_CONFIG = freeze({
     // Arrive on the far side of the bin: the verified robot layer holds the
     // object to screen-left, so this keeps the held object between robot and
     // inlet instead of releasing it away from the bin.
-    robotPosition: move(840, 519, 1120, 460, [
-      [804, 489], [953, 475], [1020, 461], [1048, 430], [1100, 432]
+    robotPosition: move(824, 519, 1088, 460, [
+      [804, 489], [953, 475], [1020, 461], [1048, 430], [1076, 438]
     ]),
     wastePosition: point(804, 489),
     binPosition: point(1070, 452),
@@ -103,7 +125,7 @@ export const ROBOT_TASK_SHOT_CONFIG = freeze({
     cameraOffsetX: [0, 0],
     cameraOffsetY: [0, 0],
     cameraLeadY: -24,
-    robotPosition: move(1120, 460),
+    robotPosition: move(1088, 460),
     wastePosition: point(804, 489),
     binPosition: point(1070, 452),
     showBin: true,
@@ -112,7 +134,7 @@ export const ROBOT_TASK_SHOT_CONFIG = freeze({
     easing: 'cinematicOut',
     robotHeight: 60,
     binHeight: 46,
-    releaseWindow: [0.18, 0.88],
+    releaseWindow: [0.48, 0.82],
     completionHold: 0.12
   },
   return: {
@@ -122,7 +144,7 @@ export const ROBOT_TASK_SHOT_CONFIG = freeze({
     cameraOffsetX: [0, 0],
     cameraOffsetY: [0, 0],
     cameraLeadY: -28,
-    robotPosition: move(1120, 460, 1020, 461, [[1100, 432], [1048, 430]]),
+    robotPosition: move(1088, 460, 1020, 461, [[1076, 438], [1048, 430]]),
     wastePosition: point(804, 489),
     binPosition: point(1070, 452),
     showBin: true,
@@ -136,9 +158,51 @@ export const ROBOT_TASK_SHOT_CONFIG = freeze({
 
 export const ROBOT_TASK_STAGE_ORDER = Object.freeze(['scan', 'approach', 'grasp', 'transport', 'place', 'return'])
 
-export function resolveRobotTaskShot(stage = 'scan') {
+export function resolveRobotTaskShot(stage = 'scan', spatialContext = null) {
   const key = stage === 'release' ? 'place' : stage
-  return ROBOT_TASK_SHOT_CONFIG[key] || ROBOT_TASK_SHOT_CONFIG.scan
+  const shot = ROBOT_TASK_SHOT_CONFIG[key] || ROBOT_TASK_SHOT_CONFIG.scan
+  return applyRobotTaskSpatialContext(shot, spatialContext)
+}
+
+// Map handoff begins at the exact ground anchor used by the final local frame.
+// Keeping this derived from the shot avoids a one-frame jump when task-specific
+// bin coordinates do not coincide with the legacy road-graph dock.
+export function robotTaskHandoffStartPositionPct(spatialContext = null) {
+  const shot = resolveRobotTaskShot('return', spatialContext)
+  const [x, y] = shotPoint(shot.robotPosition, 1)
+  return [
+    x / ROBOT_TASK_SCENE_SIZE.width * 100,
+    y / ROBOT_TASK_SCENE_SIZE.height * 100
+  ]
+}
+
+function applyRobotTaskSpatialContext(shot, spatialContext) {
+  const garbage = pctToScenePoint(spatialContext?.garbagePositionPct)
+  const targetBin = pctToScenePoint(spatialContext?.targetBinPositionPct)
+  if (!garbage && !targetBin) return shot
+  const pickupRobot = garbage ? offsetPoint(garbage, 20, 30) : shotPoint(shot.robotPosition, 1)
+  const scanRobot = garbage ? offsetPoint(garbage, 82, 30) : shotPoint(shot.robotPosition, 0)
+  const binRobot = targetBin ? offsetPoint(targetBin, 18, 8) : shotPoint(ROBOT_TASK_SHOT_CONFIG.place.robotPosition, 1)
+  const route = spatialContext?.robotRoute || {}
+  const transportRoute = routePctPoints(route.transportWaypointsPct || spatialContext?.globalTaskRoutes?.transportToBin)
+  const contextual = { ...shot }
+  if (isFoodServiceContext(spatialContext)) {
+    contextual.scene = 'food_service'
+    if (contextual.sceneTransition) contextual.sceneTransition = null
+  }
+  if (garbage) contextual.wastePosition = garbage
+  if (targetBin) contextual.binPosition = targetBin
+  if (shot.stage === 'scan') contextual.robotPosition = mutableMove(scanRobot)
+  if (shot.stage === 'approach') contextual.robotPosition = mutableMove(scanRobot, pickupRobot)
+  if (shot.stage === 'grasp') contextual.robotPosition = mutableMove(pickupRobot)
+  if (shot.stage === 'transport') contextual.robotPosition = mutableMove(
+    pickupRobot,
+    binRobot,
+    transportRoute.length > 2 ? transportRoute.slice(1, -1) : []
+  )
+  if (shot.stage === 'place') contextual.robotPosition = mutableMove(binRobot)
+  if (shot.stage === 'return') contextual.robotPosition = mutableMove(binRobot)
+  return contextual
 }
 
 export function shotProgress(stage, progress) {
@@ -208,9 +272,9 @@ function resolveShotFocus(shot, easedProgress) {
   return { robotPosition, wastePosition, binPosition, focus }
 }
 
-export function resolveRobotTaskCamera(stage = 'scan', progress = 0) {
+export function resolveRobotTaskCamera(stage = 'scan', progress = 0, spatialContext = null) {
   const renderStage = ['idle', 'completed'].includes(stage) ? 'return' : stage === 'error' ? 'scan' : stage
-  const shot = resolveRobotTaskShot(renderStage)
+  const shot = resolveRobotTaskShot(renderStage, spatialContext)
   const configuredProgress = shotProgress(stage, progress)
   const easedProgress = shotEasing(shot.easing, configuredProgress)
   const frame = resolveShotFocus(shot, easedProgress)
@@ -219,7 +283,7 @@ export function resolveRobotTaskCamera(stage = 'scan', progress = 0) {
   let focus = frame.focus
   const focusTransition = shot.cameraFocusTransition
   if (focusTransition?.from) {
-    const previousShot = resolveRobotTaskShot(focusTransition.from)
+    const previousShot = resolveRobotTaskShot(focusTransition.from, spatialContext)
     const previousProgress = shotEasing(previousShot.easing, Number(focusTransition.fromProgress ?? 1))
     const previousFocus = resolveShotFocus(previousShot, previousProgress).focus
     const start = Math.max(0, Math.min(1, Number(focusTransition.start) || 0))
