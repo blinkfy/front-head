@@ -32,4 +32,8 @@ export function digitalTwinWebpAssetUrl(webpPath, appFallbackPath) {
   // #endif
 }
 
+export function webpPngFallbackUrl(url = '') {
+  return String(url || '').replace(/\.webp(?=([?#]|$))/i, '.png')
+}
+
 export default digitalTwinAssetUrl

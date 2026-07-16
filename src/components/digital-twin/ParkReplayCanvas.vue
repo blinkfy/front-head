@@ -12,20 +12,35 @@
     }]"
   >
     <view class="environment-back"></view>
-    <image class="park-background ground-layer" :src="sceneDev.candidate ? sceneAssets.candidateBackground : sceneAssets.formalBackground" mode="aspectFit" />
+    <image
+      webp
+      class="park-background ground-layer"
+      :src="sceneImageSrc(sceneDev.candidate ? sceneAssets.candidateBackground : sceneAssets.formalBackground)"
+      mode="aspectFit"
+      @error="handleSceneImageError(sceneDev.candidate ? sceneAssets.candidateBackground : sceneAssets.formalBackground)"
+    />
     <image v-if="sceneDev.calibration" class="park-road-overlay" :src="sceneAssets.roadOverlay" mode="scaleToFill" />
     <view class="ground-detail-layer">
       <view v-for="detail in groundDetails" :key="detail.id" class="ground-detail" :data-purpose="detail.purpose" :style="detail.style"></view>
     </view>
     <view class="atmosphere-layer"></view>
-    <image v-if="sceneDev.compare" class="candidate-background-comparison" :src="sceneAssets.candidateBackground" mode="scaleToFill" />
+    <image
+      v-if="sceneDev.compare"
+      webp
+      class="candidate-background-comparison"
+      :src="sceneImageSrc(sceneAssets.candidateBackground)"
+      mode="scaleToFill"
+      @error="handleSceneImageError(sceneAssets.candidateBackground)"
+    />
     <image
       v-for="detail in taskDetailEnvironments"
       :key="detail.sceneKey"
+      webp
       class="task-detail-environment"
-      :src="detail.src"
+      :src="sceneImageSrc(detail.src)"
       mode="scaleToFill"
       :style="taskDetailEnvironmentStyle(detail)"
+      @error="handleSceneImageError(detail.src)"
       aria-hidden="true"
     />
 
@@ -184,6 +199,7 @@ import VisitorBehaviorSprite from './VisitorBehaviorSprite.vue'
 import { centerPhaseFromEvent, eventEntityIds, eventPresentation, primaryEventEntityIds } from '@/utils/park-replay.js'
 import { layoutStableMapLabels } from '@/utils/stable-map-label-layout.js'
 import { displaySourceLabel } from '@/utils/source-display.js'
+import { webpPngFallbackUrl } from '@/utils/digital-twin-assets.js'
 import PARK_SCENE_LAYERS, { PARK_SCENE_ASSETS, readParkSceneDevFlags } from '@/config/park-scene-layers.js'
 import PARK_SCENE_OCCLUSIONS, { parkOcclusionStyle } from '@/config/park-scene-occlusion.js'
 import PARK_SCENE_ALIGNMENT from '@/config/park-scene-alignment.json'
@@ -236,6 +252,18 @@ const incidentAffectedIds = computed(() => new Set(activeIncidents.value.flatMap
 const centerQueueCount = computed(() => props.runtimeState?.operations?.centerQueue?.length || 0)
 const sceneAssets = PARK_SCENE_ASSETS
 const sceneDev = ref(readParkSceneDevFlags())
+const sceneImageFallbacks = ref({})
+
+function sceneImageSrc(src) {
+  return sceneImageFallbacks.value[src] || src
+}
+
+function handleSceneImageError(src) {
+  const fallbackSrc = webpPngFallbackUrl(src)
+  if (!src || fallbackSrc === src || sceneImageFallbacks.value[src] === fallbackSrc) return
+  sceneImageFallbacks.value = { ...sceneImageFallbacks.value, [src]: fallbackSrc }
+}
+
 const groundDetails = PARK_SCENE_LAYERS.groundDetails.items
 const foregroundOcclusions = PARK_SCENE_OCCLUSIONS
 const calibrationAnchors = Object.entries(PARK_SCENE_ALIGNMENT.anchors).map(([id, anchor]) => ({

@@ -28,7 +28,7 @@
 <script setup>
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { normalizeSortingWorkflowStage, sortingWorkflowStageLabel } from '@/utils/sorting-workflow.js'
-import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
+import { digitalTwinAssetUrl, webpPngFallbackUrl } from '@/utils/digital-twin-assets.js'
 import { resolveSmartBinVisual } from '@/config/smart-bin-visual-registry.js'
 import DIGITAL_TWIN_VISUAL_SYSTEM from '@/config/digital-twin-visual-system.js'
 import {
@@ -171,9 +171,18 @@ function roundedRect(ctx, x, y, width, height, radius) {
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const image = new Image()
+    let fallbackAttempted = false
     image.decoding = 'async'
     image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error(`Failed to load image: ${src}`))
+    image.onerror = () => {
+      const fallbackSrc = webpPngFallbackUrl(src)
+      if (!fallbackAttempted && fallbackSrc !== src) {
+        fallbackAttempted = true
+        image.src = fallbackSrc
+        return
+      }
+      reject(new Error(`Failed to load image: ${src}`))
+    }
     image.src = src
   })
 }

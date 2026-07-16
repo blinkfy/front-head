@@ -1,8 +1,14 @@
-import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
+import { digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
 
 const PARK_BACKGROUND = Object.freeze({
-  src: digitalTwinAssetUrl('digital-twin-replay/park-overview-user-layout-v1.png'),
-  source: digitalTwinAssetUrl('digital-twin-replay/park-overview-user-layout-v1.png'),
+  src: digitalTwinWebpAssetUrl(
+    'digital-twin-replay/park-overview-user-layout-v1.webp',
+    'digital-twin-replay/park-overview-user-layout-v1.png'
+  ),
+  source: digitalTwinWebpAssetUrl(
+    'digital-twin-replay/park-overview-user-layout-v1.webp',
+    'digital-twin-replay/park-overview-user-layout-v1.png'
+  ),
   view: 'orthographic_2_5d',
   lighting: 'top_left_to_bottom_right',
   status: 'formal_reuse'
@@ -33,7 +39,10 @@ export const ROBOT_TASK_SCENE_REGISTRY = freeze({
     backgroundEnvironment: PARK_BACKGROUND,
     crop: { x: 410, y: 240, width: 720, height: 405 },
     detailEnvironment: {
-      src: digitalTwinAssetUrl('digital-twin-replay/robot-task-scenes/walkway-rest-detail-v1.png'),
+      src: digitalTwinWebpAssetUrl(
+        'digital-twin-replay/robot-task-scenes/walkway-rest-detail-v1.webp',
+        'digital-twin-replay/robot-task-scenes/walkway-rest-detail-v1.png'
+      ),
       source: 'AI super-resolution edit of the registered official park crop',
       reference: PARK_BACKGROUND.source,
       view: 'exact_crop_detail_overlay',
@@ -74,7 +83,10 @@ export const ROBOT_TASK_SCENE_REGISTRY = freeze({
     backgroundEnvironment: PARK_BACKGROUND,
     crop: { x: 870, y: 220, width: 720, height: 405 },
     detailEnvironment: {
-      src: digitalTwinAssetUrl('digital-twin-replay/robot-task-scenes/food-service-detail-v1.png'),
+      src: digitalTwinWebpAssetUrl(
+        'digital-twin-replay/robot-task-scenes/food-service-detail-v1.webp',
+        'digital-twin-replay/robot-task-scenes/food-service-detail-v1.png'
+      ),
       source: 'AI super-resolution edit of the registered official park crop',
       reference: PARK_BACKGROUND.source,
       view: 'exact_crop_detail_overlay',

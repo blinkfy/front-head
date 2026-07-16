@@ -14,8 +14,8 @@
   "background": {
     "width": 1672,
     "height": 941,
-    "formalPath": "/assets/digital-twin/digital-twin-replay/park-overview-user-layout-v1.png",
-    "formalSha256": "f82fb175fdd8c358ef6a58f6faae1576d4a45cc307988005e6bb44a25bd5abf0",
+    "formalPath": "/assets/digital-twin/digital-twin-replay/park-overview-user-layout-v1.webp",
+    "formalSha256": "643f8d819c1ae68715ff7a6e98e44d45920e1f355e62dd7ea28fce8ef8d4abed",
     "formalStatus": "active_user_provided",
     "roadSkeletonPath": "/assets/digital-twin/digital-twin-replay/park-road-overlay.svg"
   },
