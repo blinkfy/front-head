@@ -1074,6 +1074,13 @@ function drawScene(time = 0) {
   const height = canvasCssHeight
   if (!width || !height) return
   const ctx = context
+  // uni-app's H5 canvas wraps coordinate methods (including translate and
+  // transform) and multiplies their position arguments by DPR when
+  // __hidpi__ is enabled. This player already owns a DPR-sized backing store
+  // and establishes that ratio below, so leaving the wrapper enabled applies
+  // DPR twice to every actor/camera translation. The error is invisible at
+  // 100% display scale and becomes a large shared drift at 125%/150%.
+  if (ctx.__hidpi__ === true) ctx.__hidpi__ = false
   ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0)
   ctx.clearRect(0, 0, width, height)
   ctx.imageSmoothingEnabled = true
@@ -1370,7 +1377,10 @@ onMounted(async () => {
     canvas.style.width = '100%'
     canvas.style.height = '100%'
   }
-  if (canvas?.getContext) context = canvas.getContext('2d', { alpha: true })
+  if (canvas?.getContext) {
+    context = canvas.getContext('2d', { alpha: true })
+    if (context?.__hidpi__ === true) context.__hidpi__ = false
+  }
   if (context && typeof ResizeObserver === 'function') {
     resizeObserver = new ResizeObserver(resizeCanvas)
     resizeObserver.observe(viewportRef.value?.$el || viewportRef.value)

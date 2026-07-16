@@ -783,10 +783,13 @@ function drawFrame(emitState = false) {
   phaseKey.value = phase.key
 
   const ctx = context
-  // uni-canvas exposes a CSS-pixel drawing coordinate system on H5 even when
-  // its internal backing surface is DPR-sized. Applying the backing-store
-  // ratio here a second time shifts the CSS centre by (DPR - 1) * width / 2.
-  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  // uni-app's H5 high-DPI wrapper scales images and most path coordinates but
+  // does not scale ellipse coordinates. Mixing those wrapped operations moves
+  // the target-slot ellipse away from the raster bin at fractional DPR. Own
+  // the backing-store transform here so every drawing operation shares one
+  // native coordinate system.
+  if (ctx.__hidpi__ === true) ctx.__hidpi__ = false
+  ctx.setTransform(canvas.width / cssWidth, 0, 0, canvas.height / cssHeight, 0, 0)
   ctx.clearRect(0, 0, cssWidth, cssHeight)
   ctx.fillStyle = '#061722'; ctx.fillRect(0, 0, cssWidth, cssHeight)
 
@@ -974,7 +977,10 @@ onMounted(async () => {
   const canvasHost = canvasRef.value?.$el || canvasRef.value
   canvas = canvasHost?.querySelector?.('canvas') || canvasHost
   if (canvas?.style) { canvas.style.display = 'block'; canvas.style.width = '100%'; canvas.style.height = '100%' }
-  if (canvas?.getContext) context = canvas.getContext('2d', { alpha: true })
+  if (canvas?.getContext) {
+    context = canvas.getContext('2d', { alpha: true })
+    if (context?.__hidpi__ === true) context.__hidpi__ = false
+  }
   if (context && typeof ResizeObserver === 'function') {
     resizeObserver = new ResizeObserver(resizeCanvas)
     resizeObserver.observe(viewportRef.value?.$el || viewportRef.value)
