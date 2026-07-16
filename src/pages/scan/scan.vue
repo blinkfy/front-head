@@ -1826,7 +1826,10 @@ page {
 }
 
 .scan-container,
-.scan-container * {
+.scan-container view,
+.scan-container text,
+.scan-container image,
+.scan-container button {
   box-sizing: border-box;
 }
 

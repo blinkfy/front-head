@@ -46,15 +46,7 @@
 			"path": "pages/map/map",
 			"style": {
 				"navigationStyle": "custom",
-				"navigationBarTitleText": "垃圾桶查找",
-				"permission": {
-					"scope.userLocation": {
-						"desc": "用于展示您的当前位置和附近垃圾桶"
-					},
-					"location": {
-						"desc": "用于获取您的地理位置，展示附近垃圾桶"
-					}
-				}
+				"navigationBarTitleText": "垃圾桶查找"
 			}
 		},
 		{

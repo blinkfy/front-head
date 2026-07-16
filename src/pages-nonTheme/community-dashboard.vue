@@ -1720,7 +1720,7 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
     flex-wrap: nowrap;
     gap: 8px;
   }
-  .screen .row > :first-child {
+  .screen .row > view:first-child {
     flex: 0 1 350px;
     min-width: 0;
   }

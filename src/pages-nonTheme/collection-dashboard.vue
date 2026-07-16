@@ -2651,7 +2651,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .screen .compact-status { display: none; }
 .screen .actions { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; min-width: 0; }
-.screen .actions > * { flex-shrink: 0; }
+.screen .actions > view { flex-shrink: 0; }
 
 @media (max-width: 1600px) {
   .screen .title { white-space: nowrap; }

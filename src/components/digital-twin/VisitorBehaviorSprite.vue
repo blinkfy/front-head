@@ -67,7 +67,12 @@
     </svg>
     <!-- #endif -->
     <!-- #ifndef H5 -->
-    <view class="person-fallback"><i></i><b></b><em></em><em></em></view>
+    <view class="person-fallback">
+      <view class="fallback-head"></view>
+      <view class="fallback-body"></view>
+      <view class="fallback-leg fallback-leg-left"></view>
+      <view class="fallback-leg fallback-leg-right"></view>
+    </view>
     <!-- #endif -->
   </view>
 </template>
@@ -116,13 +121,21 @@ const garmentDetailPath = computed(() => [
 ][visitorVariant.value % 4])
 const showFood = computed(() => normalizedBehavior.value === 'EATING')
 const showTrash = computed(() => ['DISPOSING', 'LITTERING'].includes(normalizedBehavior.value) && Number(props.progress) < .7)
-const spriteStyle = computed(() => ({
-  '--motion-duration': `${.86 / Math.max(.25, Number(props.playbackRate) || 1)}s`,
-  '--visitor-depth-scale': String(Math.max(.96, Math.min(1.04, Number(props.depthScale) || 1))),
-  '--action-progress': String(Math.max(0, Math.min(1, Number(props.progress) || 0))),
-  '--dispose-arm-angle': `${-18 - Math.max(0, Math.min(1, Number(props.progress) || 0)) * 62}deg`,
-  '--litter-arm-angle': `${8 + Math.max(0, Math.min(1, Number(props.progress) || 0)) * 34}deg`
-}))
+const spriteStyle = computed(() => {
+  const playbackRate = Math.max(.25, Number(props.playbackRate) || 1)
+  const actionProgress = Math.max(0, Math.min(1, Number(props.progress) || 0))
+  const motionDuration = .86 / playbackRate
+  return {
+    '--motion-duration': `${motionDuration}s`,
+    '--idle-duration': `${motionDuration * 2.2}s`,
+    '--eat-duration': `${motionDuration * 1.4}s`,
+    '--visitor-depth-scale': String(Math.max(.96, Math.min(1.04, Number(props.depthScale) || 1))),
+    '--action-progress': String(actionProgress),
+    '--leaving-opacity': String(1 - actionProgress * .28),
+    '--dispose-arm-angle': `${-18 - actionProgress * 62}deg`,
+    '--litter-arm-angle': `${8 + actionProgress * 34}deg`
+  }
+})
 </script>
 
 <style scoped>
@@ -164,12 +177,15 @@ const spriteStyle = computed(() => ({
 .walking .leg-right,.leaving .leg-right { animation:walk-leg-b var(--motion-duration) ease-in-out infinite; }
 .walking .lower-leg-left,.leaving .lower-leg-left { animation:walk-knee-a var(--motion-duration) ease-in-out infinite; }
 .walking .lower-leg-right,.leaving .lower-leg-right { animation:walk-knee-b var(--motion-duration) ease-in-out infinite; }
-.idle .person-root { animation: idle-breathe calc(var(--motion-duration) * 2.2) ease-in-out infinite; }
-.eating .arm-right { transform: rotate(-55deg); animation: eat-hand calc(var(--motion-duration) * 1.4) ease-in-out infinite; }
+.idle .person-root { animation: idle-breathe var(--idle-duration) ease-in-out infinite; }
+.eating .arm-right { transform: rotate(-55deg); animation: eat-hand var(--eat-duration) ease-in-out infinite; }
 .disposing .arm-right { transform: rotate(var(--dispose-arm-angle)); }
 .littering .arm-right { transform: rotate(var(--litter-arm-angle)); }
-.leaving { opacity: calc(1 - var(--action-progress) * .28); }
-.paused * { animation-play-state: paused !important; }
+.leaving { opacity: var(--leaving-opacity); }
+.paused .person-root,
+.paused .arm,
+.paused .leg,
+.paused .lower-leg { animation-play-state: paused !important; }
 @keyframes walk-body { 0%,50%,100% { transform:translateY(0) rotate(-.35deg); } 25%,75% { transform:translateY(-.72px) rotate(.35deg); } }
 @keyframes walk-arm-a { 0%,100% { transform:rotate(-9deg); } 50% { transform:rotate(10deg); } }
 @keyframes walk-arm-b { 0%,100% { transform:rotate(10deg); } 50% { transform:rotate(-9deg); } }
@@ -179,5 +195,9 @@ const spriteStyle = computed(() => ({
 @keyframes walk-knee-b { 0% { transform:rotate(-9deg); } 20% { transform:rotate(-3deg); } 48%,80% { transform:rotate(0); } 100% { transform:rotate(-9deg); } }
 @keyframes idle-breathe { 50% { transform: scaleY(.97) translateY(1px); } }
 @keyframes eat-hand { 50% { transform: rotate(-72deg) translateY(-1px); } }
-.person-fallback { position:relative;width:18px;height:34px; }.person-fallback i { position:absolute;left:5px;top:0;width:8px;height:8px;border-radius:50%;background:var(--visitor-skin); }.person-fallback b { position:absolute;left:3px;top:8px;width:12px;height:17px;border-radius:4px;background:var(--visitor-shirt); }.person-fallback em { position:absolute;left:5px;top:23px;width:3px;height:11px;background:var(--visitor-pants); }.person-fallback em:last-child { left:11px; }
+.person-fallback { position:relative;width:18px;height:34px; }
+.fallback-head { position:absolute;left:5px;top:0;width:8px;height:8px;border-radius:50%;background:var(--visitor-skin); }
+.fallback-body { position:absolute;left:3px;top:8px;width:12px;height:17px;border-radius:4px;background:var(--visitor-shirt); }
+.fallback-leg { position:absolute;left:5px;top:23px;width:3px;height:11px;background:var(--visitor-pants); }
+.fallback-leg-right { left:11px; }
 </style>

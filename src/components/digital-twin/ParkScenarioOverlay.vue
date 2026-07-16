@@ -153,7 +153,15 @@ const visualActiveRobotTasks = computed(() => {
   }
   return tasks
 })
-const visualTimingStyle = computed(() => ({ '--visual-duration': `${1.2 / Math.max(.25, Number(props.playbackRate) || 1)}s` }))
+const visualTimingStyle = computed(() => {
+  const duration = 1.2 / Math.max(.25, Number(props.playbackRate) || 1)
+  return {
+    '--visual-duration': `${duration}s`,
+    '--route-flow-duration': `${duration * 1.35}s`,
+    '--heat-breathe-duration': `${duration * 1.5}s`,
+    '--scenario-waste-motion-duration': `${duration * .7}s`
+  }
+})
 const activeGarbageId = computed(() => props.state.robotTask?.garbageId || props.currentEvent?.payload?.request?.garbageId || '')
 const localCanvasTaskActive = computed(() => Boolean(props.robotVisual?.active && props.robotVisual?.mode === 'robot'))
 const ROBOT_ROAD_ROUTE_IDS = Object.freeze(['robot_left_litter_to_bin', 'robot_right_litter_to_bin'])
@@ -704,17 +712,17 @@ onBeforeUnmount(stopMotion)
 <style scoped>
 .scenario-layer { position: absolute; z-index: 5; inset: 0; pointer-events: none; overflow: hidden; }
 .scenario-badges { position: absolute; z-index: 9; right: 42px; top: 12px; display: flex; gap: 4px; }.scenario-badges text { padding: 3px 6px; border: 1px solid rgba(245,182,72,.48); border-radius: 4px; color: #ffd57c; background: rgba(83,55,9,.75); font: 700 7px/1 ui-monospace,Consolas,monospace; }
-.scenario-route-layer { position:absolute; z-index:0; inset:0; width:100%; height:100%; overflow:visible; }.scenario-route,.scenario-route-ground { fill:none;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;transition:opacity .3s ease }.scenario-route-ground{stroke:rgba(3,22,31,.48);stroke-width:4.4;opacity:.34}.scenario-route-ground.robot-ground{stroke-width:3.1;opacity:.25}.scenario-route-ground.muted{opacity:.07}.scenario-route { stroke-width:2.55;stroke-dasharray:4 10;opacity:.18;filter:drop-shadow(1px 1px .6px rgba(0,14,24,.28))}.scenario-route.active{opacity:.82;animation:scenario-route-flow calc(var(--visual-duration,1.2s) * 1.35) linear infinite}.scenario-route.original{stroke:#e9545f}.scenario-route.original.blocked{opacity:.74}.scenario-route.original.blocked.active{opacity:.86}.scenario-route.replanned{stroke:#35cf84}.scenario-route.replanned.active{opacity:.9}.scenario-route.robot-task-route{stroke-width:2.05;stroke-dasharray:3 10}.scenario-route.robot-task-route.robot-one{stroke:#65a9b4}.scenario-route.robot-task-route.robot-two{stroke:#8c83af}.scenario-route.robot-task-route.muted{opacity:.08;animation:none}
+.scenario-route-layer { position:absolute; z-index:0; inset:0; width:100%; height:100%; overflow:visible; }.scenario-route,.scenario-route-ground { fill:none;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;transition:opacity .3s ease }.scenario-route-ground{stroke:rgba(3,22,31,.48);stroke-width:4.4;opacity:.34}.scenario-route-ground.robot-ground{stroke-width:3.1;opacity:.25}.scenario-route-ground.muted{opacity:.07}.scenario-route { stroke-width:2.55;stroke-dasharray:4 10;opacity:.18;filter:drop-shadow(1px 1px .6px rgba(0,14,24,.28))}.scenario-route.active{opacity:.82;animation:scenario-route-flow var(--route-flow-duration) linear infinite}.scenario-route.original{stroke:#e9545f}.scenario-route.original.blocked{opacity:.74}.scenario-route.original.blocked.active{opacity:.86}.scenario-route.replanned{stroke:#35cf84}.scenario-route.replanned.active{opacity:.9}.scenario-route.robot-task-route{stroke-width:2.05;stroke-dasharray:3 10}.scenario-route.robot-task-route.robot-one{stroke:#65a9b4}.scenario-route.robot-task-route.robot-two{stroke:#8c83af}.scenario-route.robot-task-route.muted{opacity:.08;animation:none}
 .scenario-layer.paused .scenario-route,
 .scenario-layer.paused .heat-zone,
 .scenario-layer.paused :deep(.map-waste-sprite.falling .waste-image) { animation-play-state: paused; }
 @keyframes scenario-route-flow { to { stroke-dashoffset:-28; } }
-.heat-zone { position: absolute; transform: translate(-50%,-50%) scale(var(--heat-scale)); border-radius: 50%; background: radial-gradient(circle,rgba(255,77,70,.86) 0,rgba(255,157,50,.48) 34%,rgba(255,210,55,.15) 60%,transparent 72%); animation: heat-breathe calc(var(--visual-duration,1.2s) * 1.5) ease-in-out infinite; }.heat-zone text { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); color: #fff6d9; font-size: 8px; font-weight: 800; text-shadow: 0 1px 4px #511; white-space: nowrap; }
+.heat-zone { position: absolute; transform: translate(-50%,-50%) scale(var(--heat-scale)); border-radius: 50%; background: radial-gradient(circle,rgba(255,77,70,.86) 0,rgba(255,157,50,.48) 34%,rgba(255,210,55,.15) 60%,transparent 72%); animation: heat-breathe var(--heat-breathe-duration) ease-in-out infinite; }.heat-zone text { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); color: #fff6d9; font-size: 8px; font-weight: 800; text-shadow: 0 1px 4px #511; white-space: nowrap; }
 @keyframes heat-breathe { 50% { filter: saturate(1.25) brightness(1.12); } }
 .zone-count { position: absolute; z-index: 5; transform: translate(-50%,-50%); padding: 3px 6px; display: flex; gap: 5px; border: 1px solid rgba(126,216,255,.36); border-radius: 5px; color: #a8d8ec; background: rgba(3,27,43,.82); font-size: 7px; }.zone-count b { color: #f0fbff; }
 .scenario-visitor { position: absolute; z-index: 8; transform: translate(-50%,-76%); pointer-events: auto; transition: filter .2s ease; }.scenario-visitor:hover { filter: drop-shadow(0 0 7px #24d9ff); }
 .scenario-visitor.selected { z-index: 12; }
-.generated-garbage,.route-obstacle,.action-trash { position: absolute; z-index: 10; transform: translate(-50%,-50%); pointer-events: auto; text-align: center; }.generated-garbage :deep(.map-waste-sprite){--waste-motion-duration:calc(var(--visual-duration,.8s) * .7)}.generated-garbage.carried{transform:translate(-50%,-95%)}.action-trash{pointer-events:none}
+.generated-garbage,.route-obstacle,.action-trash { position: absolute; z-index: 10; transform: translate(-50%,-50%); pointer-events: auto; text-align: center; }.generated-garbage :deep(.map-waste-sprite){--waste-motion-duration:var(--scenario-waste-motion-duration)}.generated-garbage.carried{transform:translate(-50%,-95%)}.action-trash{pointer-events:none}
 .route-obstacle i { display: flex; width: 25px; height: 25px; margin: auto; align-items: center; justify-content: center; border: 2px solid #ffd2d2; border-radius: 5px; color: #fff; background: #df404a; box-shadow: 0 0 14px rgba(255,75,84,.72); font-style: normal; font-weight: 900; }
 .route-vehicle { position: absolute; z-index: 9; transform: translate(-50%,-82%); text-align: center; }
 .scenario-robot { position:absolute;z-index:9;transform:translate(-50%,-82%);text-align:center;pointer-events:auto;cursor:pointer }.scenario-robot.robot-2{filter:drop-shadow(0 0 5px rgba(167,123,255,.65))}
