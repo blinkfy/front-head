@@ -1,3 +1,5 @@
+import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
+
 const freeze = value => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value
   Object.values(value).forEach(freeze)
@@ -38,7 +40,7 @@ export const SMART_BIN_INTERNAL_LAYER_ORDER = Object.freeze([
   'stageEffectsAndHud'
 ])
 
-const BASE = '/static/digital-twin-replay/smart-bin-workflow/'
+const BASE = digitalTwinAssetUrl('digital-twin-replay/smart-bin-workflow/')
 
 export const SMART_BIN_INTERNAL_LAYER_REGISTRY = freeze({
   rearFrame: {
@@ -169,16 +171,16 @@ export function smartBinInternalAssetSources(structureOverride = '') {
 }
 
 export const SMART_BIN_INTERNAL_LEGACY_VISUALS = freeze({
-  structure: '/static/digital-twin-replay/smart-bin-workflow/smart-bin-internal-frame-front-v1.png',
-  carriage: '/static/digital-twin-replay/smart-bin-workflow/gantry-carriage-v1.svg',
-  leftJaw: '/static/digital-twin-replay/smart-bin-workflow/gripper-left-jaw-v1.svg',
-  rightJaw: '/static/digital-twin-replay/smart-bin-workflow/gripper-right-jaw-v1.svg',
-  hopper: '/static/digital-twin-replay/smart-bin-workflow/receiving-hopper-v1.svg',
-  foreground: '/static/digital-twin-replay/smart-bin-workflow/foreground-frame-v1.svg'
+  structure: `${BASE}smart-bin-internal-frame-front-v1.png`,
+  carriage: `${BASE}gantry-carriage-v1.svg`,
+  leftJaw: `${BASE}gripper-left-jaw-v1.svg`,
+  rightJaw: `${BASE}gripper-right-jaw-v1.svg`,
+  hopper: `${BASE}receiving-hopper-v1.svg`,
+  foreground: `${BASE}foreground-frame-v1.svg`
 })
 
-const RASTER_V3_BASE = '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v3/'
-const RASTER_V8_BASE = '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/'
+const RASTER_V3_BASE = `${BASE}cutaway-raster-v3/`
+const RASTER_V8_BASE = `${BASE}cutaway-raster-v8/`
 
 export const SMART_BIN_CUTAWAY_RASTER_V3 = freeze({
   version: 'cutaway-raster-v8-fixed-structure-separated',

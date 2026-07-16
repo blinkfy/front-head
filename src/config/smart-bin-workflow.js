@@ -1,17 +1,21 @@
+import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
+
+const asset = path => digitalTwinAssetUrl(`digital-twin-replay/smart-bin-workflow/${path}`)
+
 export const SMART_BIN_WORKFLOW_CONFIG = Object.freeze({
   schemaVersion: 1,
   logicalSize: Object.freeze({ width: 900, height: 520 }),
   sourceBasis: Object.freeze([
-    '/static/digital-twin-replay/smart-bin-workflow/smart-bin-internal-frame-front-v1.png',
-    '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/fixed-four-panels-user-corrected.png'
+    asset('smart-bin-internal-frame-front-v1.png'),
+    asset('cutaway-raster-v8/fixed-four-panels-user-corrected.png')
   ]),
   visuals: Object.freeze({
-    structure: '/static/digital-twin-replay/smart-bin-workflow/smart-bin-internal-frame-front-v1.png',
-    carriage: '/static/digital-twin-replay/smart-bin-workflow/gantry-carriage-v1.svg',
-    leftJaw: '/static/digital-twin-replay/smart-bin-workflow/gripper-left-jaw-v1.svg',
-    rightJaw: '/static/digital-twin-replay/smart-bin-workflow/gripper-right-jaw-v1.svg',
-    hopper: '/static/digital-twin-replay/smart-bin-workflow/receiving-hopper-v1.svg',
-    foreground: '/static/digital-twin-replay/smart-bin-workflow/foreground-frame-v1.svg'
+    structure: asset('smart-bin-internal-frame-front-v1.png'),
+    carriage: asset('gantry-carriage-v1.svg'),
+    leftJaw: asset('gripper-left-jaw-v1.svg'),
+    rightJaw: asset('gripper-right-jaw-v1.svg'),
+    hopper: asset('receiving-hopper-v1.svg'),
+    foreground: asset('foreground-frame-v1.svg')
   }),
   phases: Object.freeze([
     Object.freeze({ key: 'intake', label: '进入投入口', durationMs: 720 }),

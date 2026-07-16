@@ -44,7 +44,7 @@
       :data-video-state="stageVideoState"
     >
       <view ref="sceneCanvasRef" class="scene-canvas">
-        <image class="center-stage-visual" :src="stageVisual.src" mode="aspectFill" />
+        <image webp class="center-stage-visual" :src="stageVisual.src" mode="aspectFill" />
         <view :class="['center-stage-video-layer', { active: videoVisualActive }]">
           <image class="center-stage-video-backdrop" :src="CENTER_WORKFLOW_MASTER_VIDEO.poster" mode="aspectFill" />
           <video

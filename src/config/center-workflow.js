@@ -1,4 +1,5 @@
 import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/config/center-workflow-video.js'
+import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 
 const freezeList = list => Object.freeze(list.map(item => Object.freeze(item)))
 
@@ -37,9 +38,9 @@ export const CENTER_WORKFLOW_TIMINGS = Object.freeze({
 export const CENTER_WORKFLOW_SCENE = Object.freeze({
   aspectRatio: 4 / 3,
   device: Object.freeze({
-    src: '/static/digital-twin-replay/sprites/smart-bin-v2.png',
+    src: digitalTwinAssetUrl('digital-twin-replay/sprites/smart-bin-v2.png'),
     widthPct: 18,
-    source: '/static/digital-twin-replay/sprites/smart-bin-v2.png',
+    source: digitalTwinAssetUrl('digital-twin-replay/sprites/smart-bin-v2.png'),
     dockFadeEnd: 0.58
   }),
   masks: Object.freeze({

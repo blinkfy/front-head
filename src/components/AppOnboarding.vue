@@ -129,11 +129,11 @@ const hasTarget = computed(() => !!props.targetRect && props.targetRect.width > 
 
 const getStepImageUrl = (step) => {
   if (!step || !step.tipImage) return ''
-  // #ifdef MP-WEIXIN
-  return `${baseUrl}/images/${step.tipImage}`
+  // #ifdef APP-PLUS
+  return `/static/app/images/${step.tipImage}`
   // #endif
-  // #ifndef MP-WEIXIN
-  return `/static/${step.tipImage}`
+  // #ifndef APP-PLUS
+  return `${baseUrl}/images/${step.tipImage}`
   // #endif
 }
 

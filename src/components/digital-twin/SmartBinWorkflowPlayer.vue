@@ -15,6 +15,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 import { SMART_BIN_PHASES, SMART_BIN_TOTAL_DURATION } from '@/config/smart-bin-workflow.js'
 import {
   SMART_BIN_INTERNAL_GEOMETRY,
@@ -32,7 +33,6 @@ const PHASES = SMART_BIN_PHASES
 const TOTAL_DURATION = SMART_BIN_TOTAL_DURATION
 const SCENE = SMART_BIN_INTERNAL_SCENE
 const GEOMETRY = SMART_BIN_INTERNAL_GEOMETRY
-
 const props = defineProps({
   active: { type: Boolean, default: false },
   running: { type: Boolean, default: false },
@@ -43,7 +43,7 @@ const props = defineProps({
   fillTargetPct: { type: Number, default: 0 },
   fillEventSequence: { type: Number, default: 0 },
   resetKey: { type: [String, Number], default: '' },
-  wasteConfigSrc: { type: String, default: '/static/sorting-robot/waste-adapters.json' },
+  wasteConfigSrc: { type: String, default: digitalTwinAssetUrl('sorting-robot/waste-adapters.json') },
   structureVisualSrc: { type: String, default: '' },
   visualVersion: { type: String, default: 'cutaway-raster-v8' },
   debugCalibration: { type: Boolean, default: false }
@@ -128,7 +128,7 @@ async function loadAssets() {
     const legacyEntries = Object.entries(SMART_BIN_INTERNAL_LEGACY_VISUALS)
     const rasterEntries = Object.entries(smartBinCutawayRasterV3Sources())
     const results = await Promise.all([
-      nextAdapter?.sprite ? loadImage(nextAdapter.sprite).catch(error => ({ loadError: error })) : Promise.resolve(null),
+      nextAdapter?.sprite ? loadImage(digitalTwinAssetUrl(nextAdapter.sprite)).catch(error => ({ loadError: error })) : Promise.resolve(null),
       ...entries.map(([, src]) => loadImage(src).catch(error => ({ loadError: error }))),
       ...legacyEntries.map(([, src]) => loadImage(src).catch(error => ({ loadError: error }))),
       ...rasterEntries.map(([, src]) => loadImage(src).catch(error => ({ loadError: error })))

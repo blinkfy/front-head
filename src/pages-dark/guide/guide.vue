@@ -381,11 +381,11 @@ const appVideoUrl = `${baseUrl}/files/preview/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%
 
 const getImageUrl = (url) => {
   if (!url) return ''
-  // #ifdef MP-WEIXIN
-  return `${baseUrl}/images/${url}`
+  // #ifdef APP-PLUS
+  return `/static/app/images/${url}`
   // #endif
-  // #ifndef MP-WEIXIN
-  return `/static/${url}`
+  // #ifndef APP-PLUS
+  return `${baseUrl}/images/${url}`
   // #endif
 }
 

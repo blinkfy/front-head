@@ -457,11 +457,11 @@ import { config } from "@/api/config"
 const baseUrl = config.baseUrl
 const getImageUrl = (url) => {
   if (!url) return ''
-  // #ifdef MP-WEIXIN
-  return `${baseUrl}/images/${url}`
+  // #ifdef APP-PLUS
+  return `/static/app/images/${url}`
   // #endif
-  // #ifndef MP-WEIXIN
-  return `/static/${url}`
+  // #ifndef APP-PLUS
+  return `${baseUrl}/images/${url}`
   // #endif
 }
 // 场景视频 (Scenario)

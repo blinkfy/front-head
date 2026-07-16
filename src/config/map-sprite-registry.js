@@ -1,9 +1,10 @@
 import { resolveSmartBinVisual } from './smart-bin-visual-registry.js'
+import { digitalTwinAssetUrl, digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
 
 const smartBinMapVisual = resolveSmartBinVisual('map')
 
 const patrolRobotMapSprite = Object.freeze({
-  src: '/static/digital-twin-replay/sprites/patrol-robot-v1.webp',
+  src: digitalTwinAssetUrl('digital-twin-replay/sprites/patrol-robot-v1.webp'),
   status: 'formal',
   source: 'back-end/images/lejv.webp',
   view: 'left_front_35_45',
@@ -49,7 +50,7 @@ export const MAP_SPRITE_REGISTRY = Object.freeze({
   }),
   center: Object.freeze({
     default: Object.freeze({
-      src: '/static/digital-twin-replay/sprites/center-ops-v1.png',
+      src: digitalTwinAssetUrl('digital-twin-replay/sprites/center-ops-v1.png'),
       status: 'formal',
       source: 'E:/大学日志/2024.07/集训/网挑/答辩.pptx#ppt/media/image8.png',
       view: 'left_front_35_45',
@@ -59,23 +60,23 @@ export const MAP_SPRITE_REGISTRY = Object.freeze({
   }),
   station: Object.freeze({
     unload: Object.freeze({
-      src: '/static/digital-twin-replay/sprites/station-unload-v1.png',
+      src: digitalTwinAssetUrl('digital-twin-replay/sprites/station-unload-v1.png'),
       status: 'temporary',
-      source: 'front-head/src/static/sorting-center/facility-intake.png',
+      source: 'back-end/public/digital-twin/sorting-center/facility-intake.png',
       view: 'left_front_35_45',
       transparent: true
     }),
     wash: Object.freeze({
-      src: '/static/digital-twin-replay/sprites/station-wash-v1.png',
+      src: digitalTwinAssetUrl('digital-twin-replay/sprites/station-wash-v1.png'),
       status: 'temporary',
-      source: 'front-head/src/static/sorting-center/facility-washing.png',
+      source: 'back-end/public/digital-twin/sorting-center/facility-washing.png',
       view: 'left_front_35_45',
       transparent: true
     }),
     charge: Object.freeze({
-      src: '/static/digital-twin-replay/sprites/station-charge-inspection-v1.png',
+      src: digitalTwinAssetUrl('digital-twin-replay/sprites/station-charge-inspection-v1.png'),
       status: 'temporary_inspection_reference',
-      source: 'front-head/src/static/sorting-center/facility-inspection.png',
+      source: 'back-end/public/digital-twin/sorting-center/facility-inspection.png',
       view: 'left_front_35_45',
       transparent: true
     }),
@@ -88,22 +89,22 @@ export const MAP_SPRITE_REGISTRY = Object.freeze({
 export const MAP_WASTE_SPRITES = Object.freeze({
   banana: Object.freeze({
     key: 'banana', aliases: Object.freeze(['banana', 'banana_peel', 'low-poly_banana', 'garbage_banana_01']), label: '香蕉皮', category: 'kitchen', categoryLabel: '厨余垃圾', targetSlot: 'kitchen',
-    src: '/static/sorting-robot/objects/banana.png', sourceModel: '/static/sorting-robot/objects/banana.png',
+    src: digitalTwinAssetUrl('sorting-robot/objects/banana.png'), sourceModel: digitalTwinAssetUrl('sorting-robot/objects/banana.png'),
     status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([32, 22]), rotation: -12, groundShadowScale: 1.05
   }),
   cardboard_box: Object.freeze({
     key: 'cardboard_box', aliases: Object.freeze(['cardboard', 'cardboard_box', 'paper', 'garbage_cardboard_01']), label: '纸箱', category: 'recyclable', categoryLabel: '可回收物', targetSlot: 'recyclable',
-    src: '/static/sorting-robot/objects/cardboard_box.png', sourceModel: '/static/sorting-robot/objects/cardboard_box.png',
+    src: digitalTwinAssetUrl('sorting-robot/objects/cardboard_box.png'), sourceModel: digitalTwinAssetUrl('sorting-robot/objects/cardboard_box.png'),
     status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([29, 25]), rotation: 6, groundShadowScale: 1
   }),
   battery: Object.freeze({
     key: 'battery', aliases: Object.freeze(['battery', 'battery_low_poly', 'garbage_battery_01']), label: '废电池', category: 'hazardous', categoryLabel: '有害垃圾', targetSlot: 'hazardous',
-    src: '/static/sorting-robot/objects/battery.png', sourceModel: '/static/sorting-robot/objects/battery.png',
+    src: digitalTwinAssetUrl('sorting-robot/objects/battery.png'), sourceModel: digitalTwinAssetUrl('sorting-robot/objects/battery.png'),
     status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([28, 18]), rotation: -18, groundShadowScale: .74
   }),
   papercup: Object.freeze({
     key: 'papercup', aliases: Object.freeze(['papercup', 'paper_cup', 'simple-paper-cup', 'garbage_paper_cup_01']), label: '纸杯', category: 'other', categoryLabel: '其他垃圾', targetSlot: 'other',
-    src: '/static/sorting-robot/objects/papercup.png', sourceModel: '/static/sorting-robot/objects/papercup.png',
+    src: digitalTwinAssetUrl('sorting-robot/objects/papercup.png'), sourceModel: digitalTwinAssetUrl('sorting-robot/objects/papercup.png'),
     status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([21, 27]), rotation: -8, groundShadowScale: .82
   })
 })
@@ -131,13 +132,13 @@ export function mapWasteDisplayName(value = {}) {
 }
 
 export const CENTER_WORKFLOW_SPRITES = Object.freeze({
-  arrival: Object.freeze({ src: '/static/sorting-center/facility-digital-twin.png', status: 'temporary', source: 'front-head/src/static/sorting-center/facility-digital-twin.png' }),
-  waiting: Object.freeze({ src: '/static/sorting-center/facility-digital-twin.png', status: 'temporary', source: 'front-head/src/static/sorting-center/facility-digital-twin.png' }),
-  unloading: Object.freeze({ src: '/static/sorting-center/facility-intake.png', status: 'temporary', source: 'front-head/src/static/sorting-center/facility-intake.png' }),
-  cleaning: Object.freeze({ src: '/static/sorting-center/facility-washing.png', status: 'temporary', source: 'front-head/src/static/sorting-center/facility-washing.png' }),
-  charging: Object.freeze({ src: '/static/sorting-center/facility-inspection.png', status: 'temporary_inspection_reference', source: 'front-head/src/static/sorting-center/facility-inspection.png' }),
-  status_check: Object.freeze({ src: '/static/sorting-center/facility-inspection.png', status: 'temporary', source: 'front-head/src/static/sorting-center/facility-inspection.png' }),
-  standby: Object.freeze({ src: '/static/sorting-center/facility-digital-twin.png', status: 'temporary', source: 'front-head/src/static/sorting-center/facility-digital-twin.png' })
+  arrival: Object.freeze({ src: digitalTwinWebpAssetUrl('sorting-center/facility-digital-twin.webp', 'sorting-center/facility-digital-twin.png'), status: 'temporary', source: 'back-end/public/digital-twin/sorting-center/facility-digital-twin.webp' }),
+  waiting: Object.freeze({ src: digitalTwinWebpAssetUrl('sorting-center/facility-digital-twin.webp', 'sorting-center/facility-digital-twin.png'), status: 'temporary', source: 'back-end/public/digital-twin/sorting-center/facility-digital-twin.webp' }),
+  unloading: Object.freeze({ src: digitalTwinWebpAssetUrl('sorting-center/facility-intake.webp', 'sorting-center/facility-intake.png'), status: 'temporary', source: 'back-end/public/digital-twin/sorting-center/facility-intake.webp' }),
+  cleaning: Object.freeze({ src: digitalTwinWebpAssetUrl('sorting-center/facility-washing.webp', 'sorting-center/facility-washing.png'), status: 'temporary', source: 'back-end/public/digital-twin/sorting-center/facility-washing.webp' }),
+  charging: Object.freeze({ src: digitalTwinWebpAssetUrl('sorting-center/facility-inspection.webp', 'sorting-center/facility-inspection.png'), status: 'temporary_inspection_reference', source: 'back-end/public/digital-twin/sorting-center/facility-inspection.webp' }),
+  status_check: Object.freeze({ src: digitalTwinWebpAssetUrl('sorting-center/facility-inspection.webp', 'sorting-center/facility-inspection.png'), status: 'temporary', source: 'back-end/public/digital-twin/sorting-center/facility-inspection.webp' }),
+  standby: Object.freeze({ src: digitalTwinWebpAssetUrl('sorting-center/facility-digital-twin.webp', 'sorting-center/facility-digital-twin.png'), status: 'temporary', source: 'back-end/public/digital-twin/sorting-center/facility-digital-twin.webp' })
 })
 
 export function resolveMapSprite(kind, variant = 'default', direction = '') {

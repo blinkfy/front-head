@@ -28,6 +28,7 @@
 <script setup>
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { normalizeSortingWorkflowStage, sortingWorkflowStageLabel } from '@/utils/sorting-workflow.js'
+import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 import { resolveSmartBinVisual } from '@/config/smart-bin-visual-registry.js'
 import DIGITAL_TWIN_VISUAL_SYSTEM from '@/config/digital-twin-visual-system.js'
 import {
@@ -87,9 +88,9 @@ const props = defineProps({
   autoplay: { type: Boolean, default: false },
   running: { type: Boolean, default: undefined },
   loop: { type: Boolean, default: false },
-  src: { type: String, default: '/static/sorting-robot/layers' },
-  rigSrc: { type: String, default: '/static/sorting-robot/rig.json' },
-  timelineSrc: { type: String, default: '/static/sorting-robot/timeline.json' },
+  src: { type: String, default: digitalTwinAssetUrl('sorting-robot/layers') },
+  rigSrc: { type: String, default: digitalTwinAssetUrl('sorting-robot/rig.json') },
+  timelineSrc: { type: String, default: digitalTwinAssetUrl('sorting-robot/timeline.json') },
   fallbackSrc: { type: String, default: '' },
   playbackRate: { type: Number, default: 1 },
   completeOnStageEnd: { type: Boolean, default: false },
@@ -99,7 +100,7 @@ const props = defineProps({
   objectClass: { type: String, default: '' },
   targetBinId: { type: String, default: '' },
   taskSpatialContext: { type: Object, default: () => ({}) },
-  wasteConfigSrc: { type: String, default: '/static/sorting-robot/waste-adapters.json' },
+  wasteConfigSrc: { type: String, default: digitalTwinAssetUrl('sorting-robot/waste-adapters.json') },
   binVisualSrc: { type: String, default: '' },
   transparentEnvironment: { type: Boolean, default: false },
   cameraState: { type: Object, default: null },
@@ -259,7 +260,7 @@ async function loadWasteAdapter() {
     if (!response.ok) throw new Error(`Waste adapter HTTP ${response.status}`)
     const config = await response.json()
     const adapter = resolveWasteAdapter(config)
-    const image = adapter?.sprite ? await loadImage(adapter.sprite) : null
+    const image = adapter?.sprite ? await loadImage(digitalTwinAssetUrl(adapter.sprite)) : null
     if (revision !== wasteLoadRevision) return
     wasteConfig = config
     wasteAdapter = adapter
@@ -275,7 +276,7 @@ async function loadWasteAdapter() {
       category: adapter?.category || '',
       targetSlot: targetSlotKey(),
       placeholder: visualPlaceholder.value,
-      source: adapter?.sourceModel || ''
+      source: adapter?.sourceModel ? digitalTwinAssetUrl(adapter.sourceModel) : ''
     })
   } catch (error) {
     if (revision !== wasteLoadRevision) return

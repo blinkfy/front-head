@@ -414,9 +414,9 @@
               </view>
             </view>
             <view class="twin-canvas">
-              <image :class="['twin-image', { active: sortingVisualState.key === 'intake' }]" src="/static/sorting-center/facility-intake.png" mode="aspectFit"></image>
-              <image :class="['twin-image', { active: sortingVisualState.key === 'washing' }]" src="/static/sorting-center/facility-washing.png" mode="aspectFit"></image>
-              <image :class="['twin-image', { active: sortingVisualState.key === 'inspection' }]" src="/static/sorting-center/facility-inspection.png" mode="aspectFit"></image>
+              <image webp :class="['twin-image', { active: sortingVisualState.key === 'intake' }]" :src="sortingCenterAssets.intake" mode="aspectFit"></image>
+              <image webp :class="['twin-image', { active: sortingVisualState.key === 'washing' }]" :src="sortingCenterAssets.washing" mode="aspectFit"></image>
+              <image webp :class="['twin-image', { active: sortingVisualState.key === 'inspection' }]" :src="sortingCenterAssets.inspection" mode="aspectFit"></image>
               <view v-if="monitor.active" :class="['sorting-stage-video-layer', { active: sortingStageVideoActive }]">
                 <image class="sorting-stage-video-backdrop" :src="CENTER_WORKFLOW_MASTER_VIDEO.poster" mode="aspectFill"></image>
                 <video
@@ -568,6 +568,7 @@
 import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { baseUrl } from '@/api/settings'
+import { digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
 import { mapConfig } from '@/api/map-config'
 import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/config/center-workflow-video.js'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
@@ -578,6 +579,11 @@ import '@/styles/admin-light-theme.css'
 
 // ─── 常量 ─────────────────────────────────────────────
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
+const sortingCenterAssets = Object.freeze({
+  intake: digitalTwinWebpAssetUrl('sorting-center/facility-intake.webp', 'sorting-center/facility-intake.png'),
+  washing: digitalTwinWebpAssetUrl('sorting-center/facility-washing.webp', 'sorting-center/facility-washing.png'),
+  inspection: digitalTwinWebpAssetUrl('sorting-center/facility-inspection.webp', 'sorting-center/facility-inspection.png')
+})
 const DEFAULT_CENTER = { latitude: 36.0671, longitude: 120.3826 }
 const KPI_HISTORY_KEY = 'collection_dashboard_kpi_history_v2'
 const ZHONGSHAN_PARK_POINT_NAMES = [

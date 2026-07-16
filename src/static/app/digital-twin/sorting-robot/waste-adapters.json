@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "source": "/static/sorting-robot/objects",
+  "source": "/assets/digital-twin/sorting-robot/objects",
   "coordinateUnit": "robot_source_pixel",
   "objects": {
     "banana": {
       "label": "香蕉皮",
       "aliases": ["banana", "banana_peel", "low-poly_banana", "garbage_banana_01"],
-      "sprite": "/static/sorting-robot/objects/banana.png",
-      "sourceModel": "/static/sorting-robot/objects/banana.png",
+      "sprite": "/assets/digital-twin/sorting-robot/objects/banana.png",
+      "sourceModel": "/assets/digital-twin/sorting-robot/objects/banana.png",
       "category": "kitchen",
       "targetSlot": "kitchen",
       "scale": 0.34,
@@ -28,8 +28,8 @@
     "cardboard_box": {
       "label": "纸箱",
       "aliases": ["cardboard", "cardboard_box", "paper", "garbage_cardboard_01"],
-      "sprite": "/static/sorting-robot/objects/cardboard_box.png",
-      "sourceModel": "/static/sorting-robot/objects/cardboard_box.png",
+      "sprite": "/assets/digital-twin/sorting-robot/objects/cardboard_box.png",
+      "sourceModel": "/assets/digital-twin/sorting-robot/objects/cardboard_box.png",
       "category": "recyclable",
       "targetSlot": "recyclable",
       "scale": 0.27,
@@ -50,8 +50,8 @@
     "battery": {
       "label": "废电池",
       "aliases": ["battery", "battery_low_poly", "garbage_battery_01"],
-      "sprite": "/static/sorting-robot/objects/battery.png",
-      "sourceModel": "/static/sorting-robot/objects/battery.png",
+      "sprite": "/assets/digital-twin/sorting-robot/objects/battery.png",
+      "sourceModel": "/assets/digital-twin/sorting-robot/objects/battery.png",
       "category": "hazardous",
       "targetSlot": "hazardous",
       "scale": 0.32,
@@ -72,8 +72,8 @@
     "papercup": {
       "label": "纸杯",
       "aliases": ["papercup", "paper_cup", "simple-paper-cup", "garbage_paper_cup_01"],
-      "sprite": "/static/sorting-robot/objects/papercup.png",
-      "sourceModel": "/static/sorting-robot/objects/papercup.png",
+      "sprite": "/assets/digital-twin/sorting-robot/objects/papercup.png",
+      "sourceModel": "/assets/digital-twin/sorting-robot/objects/papercup.png",
       "category": "other",
       "targetSlot": "other",
       "scale": 0.26,

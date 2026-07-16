@@ -14,25 +14,12 @@
   "background": {
     "width": 1672,
     "height": 941,
-    "formalPath": "/static/digital-twin-replay/park-overview-user-layout-v1.png",
+    "formalPath": "/assets/digital-twin/digital-twin-replay/park-overview-user-layout-v1.png",
     "formalSha256": "f82fb175fdd8c358ef6a58f6faae1576d4a45cc307988005e6bb44a25bd5abf0",
     "formalStatus": "active_user_provided",
-    "roadSkeletonPath": "/static/digital-twin-replay/park-road-overlay.svg"
+    "roadSkeletonPath": "/assets/digital-twin/digital-twin-replay/park-road-overlay.svg"
   },
-  "previousCandidates": [
-    {
-      "id": "PARK-BG-CANDIDATE-V4",
-      "path": "/static/digital-twin-replay/park-background/candidates/park-overview-road-network-orthographic-2_5d-candidate-v4.png",
-      "status": "superseded_candidate_archive",
-      "usage": "not_for_display"
-    },
-    {
-      "id": "PARK-BG-CANDIDATE-V3",
-      "path": "/static/digital-twin-replay/park-background/candidates/park-overview-orthographic-2_5d-daylight-candidate-v3.png",
-      "status": "candidate_alignment_review",
-      "usage": "material_lighting_vegetation_reference_only"
-    }
-  ],
+  "previousCandidates": [],
   "anchors": {
     "parkEntrance": { "positionPct": [48.1, 87.5], "pixel": [804, 823], "source": "visible_south_gate" },
     "centerEntry": { "positionPct": [31.5, 22.5], "pixel": [527, 212], "source": "visible_center_access" },

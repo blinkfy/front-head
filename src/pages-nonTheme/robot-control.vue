@@ -54,9 +54,9 @@
                 class="hero-workflow-player"
                 :stage="workflowStage"
                 :autoplay="workflowAutoplay"
-                src="/static/sorting-robot/layers"
-                rig-src="/static/sorting-robot/rig.json"
-                timeline-src="/static/sorting-robot/timeline.json"
+                :src="sortingRobotAssets.layers"
+                :rig-src="sortingRobotAssets.rig"
+                :timeline-src="sortingRobotAssets.timeline"
                 @error="handleWorkflowAssetError"
               />
             </view>
@@ -144,6 +144,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { onHide, onLoad, onShow } from '@dcloudio/uni-app'
 import SortingWorkflowPlayer from '@/components/SortingWorkflowPlayer.vue'
 import { baseUrl } from '@/api/settings.js'
+import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 import { mapRobotWorkflowStage } from '@/utils/sorting-workflow.js'
 import {
   fetchRobotControlSnapshot,
@@ -152,6 +153,13 @@ import {
   sendRobotDeviceCommand,
   sendRobotTaskAction
 } from '@/api/robot-control.js'
+
+const sortingRobotAssets = Object.freeze({
+  layers: digitalTwinAssetUrl('sorting-robot/layers'),
+  rig: digitalTwinAssetUrl('sorting-robot/rig.json'),
+  timeline: digitalTwinAssetUrl('sorting-robot/timeline.json'),
+  robot: digitalTwinAssetUrl('robot-control-robot.png')
+})
 
 const isDarkTheme = ref(false)
 const syncState = ref('local')
@@ -206,7 +214,7 @@ const steps = [
 ]
 
 const robotImageUrl = computed(() => robotImageFailed.value
-  ? '/static/robot-control-robot.png'
+  ? sortingRobotAssets.robot
   : `${baseUrl}/images/lejv.webp`)
 
 function useFallbackRobotImage() {
