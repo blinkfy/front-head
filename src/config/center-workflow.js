@@ -39,7 +39,7 @@ export const CENTER_WORKFLOW_SCENE = Object.freeze({
   device: Object.freeze({
     src: '/static/digital-twin-replay/sprites/smart-bin-v2.png',
     widthPct: 18,
-    source: 'digital-twin-park-v1/assets/03_smart-bin/bin2.png',
+    source: '/static/digital-twin-replay/sprites/smart-bin-v2.png',
     dockFadeEnd: 0.58
   }),
   masks: Object.freeze({

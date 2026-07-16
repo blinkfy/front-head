@@ -1,6 +1,6 @@
 const PARK_BACKGROUND = Object.freeze({
   src: '/static/digital-twin-replay/park-overview-user-layout-v1.png',
-  source: 'digital-twin-park-v1/assets/04_map/park-background/park-overview-user-layout-v1.png',
+  source: '/static/digital-twin-replay/park-overview-user-layout-v1.png',
   view: 'orthographic_2_5d',
   lighting: 'top_left_to_bottom_right',
   status: 'formal_reuse'

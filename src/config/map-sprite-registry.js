@@ -88,22 +88,22 @@ export const MAP_SPRITE_REGISTRY = Object.freeze({
 export const MAP_WASTE_SPRITES = Object.freeze({
   banana: Object.freeze({
     key: 'banana', aliases: Object.freeze(['banana', 'banana_peel', 'low-poly_banana', 'garbage_banana_01']), label: '香蕉皮', category: 'kitchen', categoryLabel: '厨余垃圾', targetSlot: 'kitchen',
-    src: '/static/sorting-robot/objects/banana.png', sourceModel: 'digital-twin-park-v1/assets/02_waste/glb/low-poly_banana.glb', sourceUsd: 'digital-twin-park-v1/assets/02_waste/usd/low-poly_banana.usd',
+    src: '/static/sorting-robot/objects/banana.png', sourceModel: '/static/sorting-robot/objects/banana.png',
     status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([32, 22]), rotation: -12, groundShadowScale: 1.05
   }),
   cardboard_box: Object.freeze({
     key: 'cardboard_box', aliases: Object.freeze(['cardboard', 'cardboard_box', 'paper', 'garbage_cardboard_01']), label: '纸箱', category: 'recyclable', categoryLabel: '可回收物', targetSlot: 'recyclable',
-    src: '/static/sorting-robot/objects/cardboard_box.png', sourceModel: 'digital-twin-park-v1/assets/02_waste/glb/cardboard_box.glb', sourceUsd: 'digital-twin-park-v1/assets/02_waste/usd/cardboard_box.usd',
+    src: '/static/sorting-robot/objects/cardboard_box.png', sourceModel: '/static/sorting-robot/objects/cardboard_box.png',
     status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([29, 25]), rotation: 6, groundShadowScale: 1
   }),
   battery: Object.freeze({
     key: 'battery', aliases: Object.freeze(['battery', 'battery_low_poly', 'garbage_battery_01']), label: '废电池', category: 'hazardous', categoryLabel: '有害垃圾', targetSlot: 'hazardous',
-    src: '/static/sorting-robot/objects/battery.png', sourceModel: 'digital-twin-park-v1/assets/02_waste/glb/battery_low_poly.glb', sourceUsd: 'digital-twin-park-v1/assets/02_waste/usd/battery_low_poly.usd',
+    src: '/static/sorting-robot/objects/battery.png', sourceModel: '/static/sorting-robot/objects/battery.png',
     status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([28, 18]), rotation: -18, groundShadowScale: .74
   }),
   papercup: Object.freeze({
     key: 'papercup', aliases: Object.freeze(['papercup', 'paper_cup', 'simple-paper-cup', 'garbage_paper_cup_01']), label: '纸杯', category: 'other', categoryLabel: '其他垃圾', targetSlot: 'other',
-    src: '/static/sorting-robot/objects/papercup.png', sourceModel: 'digital-twin-park-v1/assets/02_waste/glb/simple-paper-cup.glb', sourceUsd: 'digital-twin-park-v1/assets/02_waste/usd/simple-paper-cup.usd',
+    src: '/static/sorting-robot/objects/papercup.png', sourceModel: '/static/sorting-robot/objects/papercup.png',
     status: 'formal', view: 'model_render_left_front', transparent: true, size: Object.freeze([21, 27]), rotation: -8, groundShadowScale: .82
   })
 })

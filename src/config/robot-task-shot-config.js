@@ -205,6 +205,16 @@ export function resolveRobotTaskShot(stage = 'scan', spatialContext = null) {
   return applyRobotTaskSpatialContext(shot, spatialContext)
 }
 
+// Shared map/local handoff anchor for the opening scan frame.
+export function robotTaskScanStartPositionPct(spatialContext = null) {
+  const shot = resolveRobotTaskShot('scan', spatialContext)
+  const [x, y] = shotPoint(shot.robotPosition, 0)
+  return [
+    x / ROBOT_TASK_SCENE_SIZE.width * 100,
+    y / ROBOT_TASK_SCENE_SIZE.height * 100
+  ]
+}
+
 // Map handoff begins at the exact ground anchor used by the final local frame.
 // Keeping this derived from the shot avoids a one-frame jump when task-specific
 // bin coordinates do not coincide with the legacy road-graph dock.

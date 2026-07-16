@@ -1,9 +1,8 @@
 const EXTERIOR_45 = Object.freeze({
   src: '/static/digital-twin-replay/sprites/smart-bin-v2.png',
-  source: 'digital-twin-park-v1/assets/03_smart-bin/bin2.png',
+  source: '/static/digital-twin-replay/sprites/smart-bin-v2.png',
   referenceSources: Object.freeze([
-    'digital-twin-park-v1/assets/06_evidence/hardware/smart_bin_real_photo.jpg',
-    'E:/大学日志/2024.07/集训/工创/垃圾分类学长材料/机械/工训垃圾分类/智能分类垃圾箱.SLDASM'
+    '/static/digital-twin-replay/sprites/smart-bin-v2.png'
   ]),
   method: 'user_selected_transparent_render',
   status: 'formal',
@@ -19,11 +18,10 @@ export const SMART_BIN_VISUAL_REGISTRY = Object.freeze({
     src: '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/fixed-four-panels-user-corrected.png',
     fallbackSrc: '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/fixed-four-panels-user-corrected.png',
     layerRegistry: 'cutaway-raster-v8-fixed-structure-separated',
-    source: 'digital-twin-park-v1/assets/03_smart-bin/candidates/v12-fixed-structure-separated/',
+    source: '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/fixed-four-panels-user-corrected.png',
     referenceSources: Object.freeze([
-      'digital-twin-park-v1/assets/03_smart-bin/爆炸视图.jpg',
-      'digital-twin-park-v1/assets/06_evidence/hardware/smart_bin_internal_process.mp4',
-      'E:/大学日志/2024.07/集训/工创/垃圾分类学长材料/机械/工训垃圾分类/智能分类垃圾箱.SLDASM'
+      '/static/digital-twin-replay/smart-bin-workflow/smart-bin-internal-frame-front-v1.png',
+      '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/fixed-four-panels-user-corrected.png'
     ]),
     method: 'approved_closed_raster_with_fixed_hinge_true_open_panel_frames_and_fixed_structure_separation',
     status: 'formal_cutaway_raster_v8_conditional_hidden_geometry',

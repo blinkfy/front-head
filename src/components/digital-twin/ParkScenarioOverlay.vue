@@ -109,6 +109,7 @@ import { normalizeMapPoint, zoneLabel } from '@/utils/park-scenario-visuals.js'
 import { primaryEventEntityIds } from '@/utils/park-replay.js'
 import { displaySourceLabel } from '@/utils/source-display.js'
 import { DIGITAL_TWIN_VISUAL_SYSTEM, mapDepthScale, mapMotionProgress, mapPolylineHeading } from '@/config/digital-twin-visual-system.js'
+import { robotTaskScanStartPositionPct } from '@/config/robot-task-shot-config.js'
 import { PARK_ROAD_NETWORK, nearestParkRoadPoint, parkPolylinePoint, parkRoutePolyline, preferredParkRoadPolyline, sampleParkRoadEdge } from '@/utils/park-road-network.js'
 
 const props = defineProps({
@@ -175,17 +176,6 @@ const DAILY_REST_DRY_LANDINGS = Object.freeze({
 })
 const DAILY_FOOD_TASK_VISITOR_POSITIONS = Object.freeze({
   visitor_06: { x: 80.4, y: 50.4 }
-})
-const LOCAL_TASK_SCAN_ROBOT_OFFSET_PCT = Object.freeze({
-  x: 82 / 1672 * 100,
-  y: 30 / 941 * 100
-})
-const DAILY_FOOD_APPROACH_VISUAL_CURVE = Object.freeze({
-  central: Object.freeze({ x: 48.1, y: 58 }),
-  roadControlA: Object.freeze({ x: 48.1, y: 55.8 }),
-  roadControlB: Object.freeze({ x: 60.8, y: 56 }),
-  dock: Object.freeze({ x: 64, y: 48 }),
-  deckControlA: Object.freeze({ x: 65.3, y: 46.8 })
 })
 const ROBOT_ROAD_POINTS = Object.freeze(PARK_ROAD_NETWORK.edges
   .filter(edge => Array.isArray(edge.allowedEntities) && edge.allowedEntities.includes('robot'))
@@ -469,36 +459,12 @@ function taskApproachVisualEndpoint(target) {
   const bin = props.state.robotTask?.targetPosition
   if (props.scenario !== 'daily' || Number(bin?.x) < 55) return null
   const point = normalizeMapPoint(target)
+  const [x, y] = robotTaskScanStartPositionPct({ garbagePositionPct: [point.x, point.y] })
   return {
     ...point,
-    x: Math.max(0, Math.min(100, point.x + LOCAL_TASK_SCAN_ROBOT_OFFSET_PCT.x)),
-    y: Math.max(0, Math.min(100, point.y + LOCAL_TASK_SCAN_ROBOT_OFFSET_PCT.y))
+    x: Math.max(0, Math.min(100, x)),
+    y: Math.max(0, Math.min(100, y))
   }
-}
-function sampleVisualCurve(from, controlA, controlB, to, segments = 8) {
-  return Array.from({ length: segments + 1 }, (_, index) => {
-    const t = index / segments
-    const inverse = 1 - t
-    return {
-      x: inverse ** 3 * from.x + 3 * inverse ** 2 * t * controlA.x + 3 * inverse * t ** 2 * controlB.x + t ** 3 * to.x,
-      y: inverse ** 3 * from.y + 3 * inverse ** 2 * t * controlA.y + 3 * inverse * t ** 2 * controlB.y + t ** 3 * to.y
-    }
-  })
-}
-function dailyFoodApproachVisualRoute(route, target) {
-  const bin = props.state.robotTask?.targetPosition
-  const endpoint = taskApproachVisualEndpoint(target)
-  if (props.scenario !== 'daily' || Number(bin?.x) < 55 || !endpoint || !route?.length) return route
-  const curve = DAILY_FOOD_APPROACH_VISUAL_CURVE
-  const centralIndex = nearestRouteIndex(route, curve.central).index
-  const prefix = route.slice(0, centralIndex)
-  const roadCurve = sampleVisualCurve(curve.central, curve.roadControlA, curve.roadControlB, curve.dock, 10)
-  const deckControlB = {
-    x: curve.dock.x + (endpoint.x - curve.dock.x) * .78,
-    y: curve.dock.y + (endpoint.y - curve.dock.y) * .34
-  }
-  const deckCurve = sampleVisualCurve(curve.dock, curve.deckControlA, deckControlB, endpoint, 7)
-  return [...prefix, ...roadCurve, ...deckCurve.slice(1)]
 }
 function appendTaskApproachEndpoint(route, target) {
   const endpoint = taskApproachVisualEndpoint(target)
@@ -510,14 +476,12 @@ function appendTaskApproachEndpoint(route, target) {
 function resolveRobotRoute(points, target, phase = 'approach', fallbackStart = null) {
   // Live routes already come from the robot graph. Legacy replay coordinates may
   // describe a direct diagonal across grass, so render those through the same
-  // robot-road centerlines. Pickup and bin alignment remain in the local player.
+  // robot-road centerlines. The daily food-service route then continues to the
+  // exact scan pose used by the local task player's opening frame.
   const followsRobotRoad = routeStaysOnRobotRoad(points)
-  let route = followsRobotRoad
+  const route = followsRobotRoad
     ? points.map(point => normalizeMapPoint(point))
     : canonicalRobotRoadRoute(target, phase, fallbackStart)
-  // Fixed daily replay coordinates predate the aligned road graph. Adapt only
-  // that visual fallback; valid graph/A* routes keep their original geometry.
-  if (!followsRobotRoad && phase === 'approach') route = dailyFoodApproachVisualRoute(route, target)
   return phase === 'approach' ? appendTaskApproachEndpoint(route, target) : route
 }
 function resolveRobotReturnRoute(points, patrol, bin) {

@@ -9,7 +9,7 @@
     "renderMode": "contain",
     "distanceUnit": "normalized_scene_unit"
   },
-  "source": "digital-twin-park-v1/scripts/build-park-road-network.js",
+  "source": "front-head/src/config/park-road-network.json",
   "nodes": [
     {
       "id": "route_food",

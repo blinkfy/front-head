@@ -220,7 +220,7 @@ import { displaySourceLabel } from '@/utils/source-display.js'
 import { displayTwinStatus } from '@/utils/digital-twin-status.js'
 import { CENTER_WORKFLOW_TIMINGS } from '@/config/center-workflow.js'
 import { DIGITAL_TWIN_VISUAL_SYSTEM } from '@/config/digital-twin-visual-system.js'
-import { robotTaskHandoffStartPositionPct } from '@/config/robot-task-shot-config.js'
+import { robotTaskHandoffStartPositionPct, robotTaskScanStartPositionPct } from '@/config/robot-task-shot-config.js'
 import { PARK_ROAD_NETWORK, parkRoutePolyline, sampleParkRoadEdge } from '@/utils/park-road-network.js'
 
 const isDark = ref(applyStoredTheme() === 'dark')
@@ -249,10 +249,6 @@ const LIVE_EVENT_WINDOW = 300
 const LIVE_EVENT_FLUSH_BASE_MS = 600
 const ROBOT_ROAD_ROUTE_IDS = Object.freeze(['robot_left_litter_to_bin', 'robot_right_litter_to_bin'])
 const MAX_LEGACY_ROBOT_ROUTE_DEVIATION = 2.8
-const LOCAL_TASK_SCAN_ROBOT_OFFSET_PCT = Object.freeze({
-  x: 82 / 1672 * 100,
-  y: 30 / 941 * 100
-})
 const ROBOT_ROAD_POINTS = Object.freeze(PARK_ROAD_NETWORK.edges
   .filter(edge => Array.isArray(edge.allowedEntities) && edge.allowedEntities.includes('robot'))
   .flatMap(edge => sampleParkRoadEdge(edge)))
@@ -480,10 +476,11 @@ function resolveRobotApproachRoute(points, target, fallbackStart = null) {
 function taskApproachVisualEndpoint(target, targetBin) {
   if (activeScenario.value !== 'daily' || Number(targetBin?.x) < 55) return null
   const point = normalizeMapPoint(target)
+  const [x, y] = robotTaskScanStartPositionPct({ garbagePositionPct: [point.x, point.y] })
   return {
     ...point,
-    x: Math.max(0, Math.min(100, point.x + LOCAL_TASK_SCAN_ROBOT_OFFSET_PCT.x)),
-    y: Math.max(0, Math.min(100, point.y + LOCAL_TASK_SCAN_ROBOT_OFFSET_PCT.y))
+    x: Math.max(0, Math.min(100, x)),
+    y: Math.max(0, Math.min(100, y))
   }
 }
 

@@ -2,11 +2,8 @@ export const SMART_BIN_WORKFLOW_CONFIG = Object.freeze({
   schemaVersion: 1,
   logicalSize: Object.freeze({ width: 900, height: 520 }),
   sourceBasis: Object.freeze([
-    'digital-twin-park-v1/assets/06_evidence/hardware/smart_bin_internal_process.mp4',
-    'E:/大学日志/2024.07/集训/工创/垃圾分类学长材料/机械/工训垃圾分类/智能分类垃圾箱.SLDASM',
-    'digital-twin-park-v1/assets/03_smart-bin/candidates/v1-multiview/cad-extracted/smart-bin-interior-front-cad-v1.png',
-    'digital-twin-park-v1/assets/03_smart-bin/爆炸视图.jpg',
-    'digital-twin-park-v1/assets/06_evidence/cad/smart_bin_cad_promo.mp4'
+    '/static/digital-twin-replay/smart-bin-workflow/smart-bin-internal-frame-front-v1.png',
+    '/static/digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/fixed-four-panels-user-corrected.png'
   ]),
   visuals: Object.freeze({
     structure: '/static/digital-twin-replay/smart-bin-workflow/smart-bin-internal-frame-front-v1.png',
