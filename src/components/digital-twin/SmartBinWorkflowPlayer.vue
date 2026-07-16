@@ -71,8 +71,8 @@ let elapsedMs = 0
 let lastTimestamp = 0
 let rafId = 0
 let resizeObserver = null
+let densityMediaQuery = null
 let loadRevision = 0
-let pixelRatio = 1
 let cssWidth = 0
 let cssHeight = 0
 
@@ -783,7 +783,10 @@ function drawFrame(emitState = false) {
   phaseKey.value = phase.key
 
   const ctx = context
-  ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+  // uni-canvas exposes a CSS-pixel drawing coordinate system on H5 even when
+  // its internal backing surface is DPR-sized. Applying the backing-store
+  // ratio here a second time shifts the CSS centre by (DPR - 1) * width / 2.
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, cssWidth, cssHeight)
   ctx.fillStyle = '#061722'; ctx.fillRect(0, 0, cssWidth, cssHeight)
 
@@ -917,13 +920,44 @@ function resizeCanvas() {
   const viewport = viewportRef.value?.$el || viewportRef.value
   const rect = viewport?.getBoundingClientRect?.() || canvas.getBoundingClientRect()
   if (!rect.width || !rect.height) return
-  cssWidth = Math.round(rect.width)
-  cssHeight = Math.round(rect.height)
-  pixelRatio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1))
+  cssWidth = rect.width
+  cssHeight = rect.height
   if (canvas.style) { canvas.style.width = `${cssWidth}px`; canvas.style.height = `${cssHeight}px` }
-  canvas.width = Math.round(cssWidth * pixelRatio)
-  canvas.height = Math.round(cssHeight * pixelRatio)
+  // Match uni-canvas' own H5 backing-store rule so its resize sensor does not
+  // immediately replace our dimensions and clear a paused frame.
+  const ratio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1))
+  const width = Math.max(1, Math.floor((canvas.clientWidth || Math.round(cssWidth)) * ratio))
+  const height = Math.max(1, Math.floor((canvas.clientHeight || Math.round(cssHeight)) * ratio))
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width
+    canvas.height = height
+  }
   if (ready && props.active) draw(true)
+}
+
+function unbindDensityWatcher() {
+  if (!densityMediaQuery) return
+  if (typeof densityMediaQuery.removeEventListener === 'function') densityMediaQuery.removeEventListener('change', handleDensityChange)
+  else densityMediaQuery.removeListener?.(handleDensityChange)
+  densityMediaQuery = null
+}
+
+function bindDensityWatcher() {
+  unbindDensityWatcher()
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+  const density = Math.max(.1, Number(window.devicePixelRatio) || 1)
+  densityMediaQuery = window.matchMedia(`(resolution: ${density}dppx)`)
+  if (typeof densityMediaQuery.addEventListener === 'function') densityMediaQuery.addEventListener('change', handleDensityChange)
+  else densityMediaQuery.addListener?.(handleDensityChange)
+}
+
+function handleDensityChange() {
+  bindDensityWatcher()
+  resizeCanvas()
+}
+
+function handleWindowResize() {
+  resizeCanvas()
 }
 
 watch(() => props.running, value => value ? play() : pause(), { flush: 'sync' })
@@ -937,12 +971,17 @@ watch(() => props.debugCalibration, () => { if (ready && props.active) draw(true
 
 onMounted(async () => {
   await nextTick()
-  canvas = canvasRef.value?.$el?.querySelector?.('canvas') || canvasRef.value?.$el || canvasRef.value
+  const canvasHost = canvasRef.value?.$el || canvasRef.value
+  canvas = canvasHost?.querySelector?.('canvas') || canvasHost
   if (canvas?.style) { canvas.style.display = 'block'; canvas.style.width = '100%'; canvas.style.height = '100%' }
   if (canvas?.getContext) context = canvas.getContext('2d', { alpha: true })
   if (context && typeof ResizeObserver === 'function') {
     resizeObserver = new ResizeObserver(resizeCanvas)
     resizeObserver.observe(viewportRef.value?.$el || viewportRef.value)
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleWindowResize)
+    bindDensityWatcher()
   }
   resizeCanvas()
   await loadAssets()
@@ -954,6 +993,8 @@ onBeforeUnmount(() => {
   pause()
   resizeObserver?.disconnect()
   resizeObserver = null
+  unbindDensityWatcher()
+  if (typeof window !== 'undefined') window.removeEventListener('resize', handleWindowResize)
   objectImage = null
   layerImages = {}
   legacyImages = {}

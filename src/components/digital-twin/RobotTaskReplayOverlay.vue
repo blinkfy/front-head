@@ -30,7 +30,7 @@
       <SortingWorkflowPlayer
         v-show="viewMode === 'robot'"
         ref="playerRef"
-        class="task-player"
+        :class="['task-player', { 'camera-pending': !taskCanvasCameraState }]"
         :stage="renderStage"
         :running="active && running && !completed && viewMode === 'robot'"
         :playback-rate="playbackRate"
@@ -42,6 +42,7 @@
         :target-bin-id="request?.targetBinId"
         :task-spatial-context="taskSpatialContext"
         :transparent-environment="true"
+        :camera-state="taskCanvasCameraState"
         :show-status="false"
         @ready="handlePlayerReady"
         @framechange="handleFrameChange"
@@ -97,6 +98,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import SortingWorkflowPlayer from '@/components/SortingWorkflowPlayer.vue'
 import SmartBinWorkflowPlayer from '@/components/digital-twin/SmartBinWorkflowPlayer.vue'
 import { resolveRobotTaskCamera } from '@/config/robot-task-shot-config.js'
+import { robotTaskSceneDetailVisuals } from '@/config/robot-task-scene-registry.js'
 import { SMART_BIN_PHASES } from '@/config/smart-bin-workflow.js'
 
 const LOGICAL_STAGES = Object.freeze([
@@ -185,6 +187,21 @@ const overallProgress = computed(() => {
   return Math.min(100, (logicalStageIndex.value + withinLogicalStage) / LOGICAL_STAGES.length * 100)
 })
 const taskCamera = computed(() => resolveRobotTaskCamera(renderStage.value, stageProgress.value, taskSpatialContext.value))
+const taskCanvasCameraState = computed(() => {
+  if (viewMode.value !== 'robot' || !props.active || !playerReady.value) return null
+  const camera = taskCamera.value
+  return {
+    scale: camera.cameraScale,
+    focusX: camera.focus[0],
+    focusY: camera.focus[1]
+  }
+})
+const taskDetailEnvironments = computed(() => robotTaskSceneDetailVisuals(
+  taskCamera.value?.shot,
+  renderStage.value,
+  stageProgress.value,
+  taskCamera.value?.cameraScale
+))
 
 function resetSequence() {
   renderStepIndex.value = 0
@@ -290,7 +307,7 @@ watch(
   () => {
     const stage = viewMode.value === 'bin' ? 'bin_internal' : renderStage.value
     const carrying = viewMode.value === 'robot' && ['transport', 'place', 'release'].includes(stage)
-    const camera = viewMode.value === 'robot' && props.active && playerReady.value ? taskCamera.value : null
+    const camera = taskCanvasCameraState.value
     emit('visual-state', {
       stage,
       mode: viewMode.value,
@@ -305,16 +322,14 @@ watch(
       targetBinId: props.request?.targetBinId || '',
       servicePointId: props.request?.servicePointId || '',
       targetBinPositionPct: props.request?.targetBinPositionPct || null,
-      camera: camera ? {
-        scale: camera.cameraScale,
-        focusX: camera.focus[0],
-        focusY: camera.focus[1]
-      } : null,
+      camera,
+      detailEnvironments: camera ? taskDetailEnvironments.value : [],
       source: 'VISUAL_AID'
     })
   },
   { immediate: true, flush: 'sync' }
 )
+
 </script>
 
 <style scoped>
@@ -344,6 +359,7 @@ watch(
 .stage-chip.active .stage-index { color: #dffbff; border-color: rgba(82,216,238,.85); background: rgba(20,105,136,.72); box-shadow: 0 0 10px rgba(42,196,230,.2); }
 .player-shell { position:absolute; z-index:1; inset:0; min-height:0; margin:0; overflow:hidden; border:0; border-radius:inherit; background:transparent; box-shadow:none; pointer-events:none; }
 .task-player { width: 100%; height: 100%; }
+.task-player.camera-pending { opacity:0; }
 .progress-track { position:absolute; z-index:4; right:18px; bottom:58px; left:18px; height:3px; overflow:hidden; border-radius:999px; background:rgba(3,24,38,.48); }
 .progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg,#4aa892,#4cbad0); transition: width .1s linear; }
 .overlay-footer { position:absolute; z-index:5; right:12px; bottom:10px; left:12px; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:40px; padding:7px 10px; box-sizing:border-box; border:1px solid rgba(85,205,255,.24); border-radius:9px; background:linear-gradient(90deg,rgba(3,23,38,.9),rgba(3,23,38,.7)); box-shadow:0 -8px 24px rgba(0,13,22,.2); backdrop-filter:blur(6px); pointer-events:auto; animation:hud-enter-bottom .4s cubic-bezier(.22,1,.36,1) both; }

@@ -14,6 +14,15 @@ const freeze = value => {
 
 export const ROBOT_TASK_SCENE_SIZE = Object.freeze({ width: 1672, height: 941 })
 
+export function fitRobotTaskSceneSize(containerWidth, containerHeight) {
+  const width = Math.max(0, Number(containerWidth) || 0)
+  const height = Math.max(0, Number(containerHeight) || 0)
+  if (!width || !height) return { width: 0, height: 0 }
+  const sceneRatio = ROBOT_TASK_SCENE_SIZE.width / ROBOT_TASK_SCENE_SIZE.height
+  const fittedWidth = width / height > sceneRatio ? height * sceneRatio : width
+  return { width: fittedWidth, height: fittedWidth / sceneRatio }
+}
+
 export const ROBOT_TASK_SCENE_REGISTRY = freeze({
   walkway_rest: {
     key: 'walkway_rest',
@@ -30,7 +39,15 @@ export const ROBOT_TASK_SCENE_REGISTRY = freeze({
       status: 'reviewed_detail_overlay',
       // Preserve the close-up asset, then finish its fade before handing the
       // responsive overview back to the map renderer.
-      blend: { startScale: 1.65, endScale: 2.85, maxOpacity: 0.72, returnFade: { start: 0.68, end: 0.94 } }
+      // The detail crop replaces the matching map pixels at close range. It
+      // must become fully opaque; a permanent partial alpha exposes both the
+      // global map and this crop, producing doubled shrubs and visitor ghosts.
+      blend: {
+        startScale: 1.65,
+        endScale: 2.85,
+        maxOpacity: 1,
+        returnFade: { start: 0.38, end: 0.54 }
+      }
     },
     ground: {
       material: 'park_stone_walkway_and_grass_edge',
@@ -61,7 +78,15 @@ export const ROBOT_TASK_SCENE_REGISTRY = freeze({
       view: 'exact_crop_detail_overlay',
       method: 'conservative_super_resolution_with_original_geometry_reference',
       status: 'reviewed_detail_overlay',
-      blend: { startScale: 1.65, endScale: 2.85, maxOpacity: 0.68, returnFade: { start: 0.68, end: 0.94 } }
+      // Use the registered close-up as an opaque replacement once the local
+      // camera reaches it; blending two independently rendered backgrounds
+      // leaves foliage and global actors visible as semi-transparent ghosts.
+      blend: {
+        startScale: 1.65,
+        endScale: 2.85,
+        maxOpacity: 1,
+        returnFade: { start: 0.38, end: 0.54 }
+      }
     },
     ground: {
       material: 'dining_deck_edge_and_service_paving',
@@ -85,6 +110,58 @@ export const ROBOT_TASK_SCENE_REGISTRY = freeze({
 
 export function resolveRobotTaskScene(sceneKey = 'walkway_rest') {
   return ROBOT_TASK_SCENE_REGISTRY[sceneKey] || ROBOT_TASK_SCENE_REGISTRY.walkway_rest
+}
+
+const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0))
+const smoothstep = value => {
+  const progress = clamp01(value)
+  return progress * progress * (3 - 2 * progress)
+}
+
+export function robotTaskSceneDetailOpacity(sceneKey, stage, progress, cameraScale) {
+  const scene = resolveRobotTaskScene(sceneKey)
+  const blend = scene.detailEnvironment?.blend
+  if (!blend) return 0
+
+  const scaleRange = Math.max(.001, Number(blend.endScale) - Number(blend.startScale))
+  const scaleProgress = smoothstep((Number(cameraScale) - Number(blend.startScale)) / scaleRange)
+  let opacity = scaleProgress * clamp01(blend.maxOpacity)
+
+  if (stage === 'return' && blend.returnFade) {
+    const start = clamp01(blend.returnFade.start)
+    const end = Math.max(start + .001, clamp01(blend.returnFade.end))
+    opacity *= 1 - smoothstep((clamp01(progress) - start) / (end - start))
+  }
+  return clamp01(opacity)
+}
+
+export function robotTaskSceneDetailVisuals(shot, stage, progress, cameraScale) {
+  if (!shot) return []
+  const transition = shot.sceneTransition
+  let sceneLayers = [{ sceneKey: shot.scene, alpha: 1 }]
+  if (transition) {
+    const range = Math.max(.001, Number(transition.end) - Number(transition.start))
+    const blend = smoothstep((clamp01(progress) - Number(transition.start)) / range)
+    sceneLayers = [
+      { sceneKey: transition.from, alpha: 1 - blend },
+      { sceneKey: transition.to, alpha: blend }
+    ]
+  }
+
+  return sceneLayers.map(layer => {
+    const scene = resolveRobotTaskScene(layer.sceneKey)
+    return {
+      sceneKey: scene.key,
+      src: scene.detailEnvironment?.src || '',
+      crop: { ...scene.crop },
+      opacity: clamp01(layer.alpha) * robotTaskSceneDetailOpacity(
+        scene.key,
+        stage,
+        progress,
+        cameraScale
+      )
+    }
+  }).filter(detail => detail.src && detail.opacity > 0)
 }
 
 export function robotTaskSceneAssets() {

@@ -33,9 +33,11 @@ import DIGITAL_TWIN_VISUAL_SYSTEM from '@/config/digital-twin-visual-system.js'
 import {
   ROBOT_TASK_SCENE_SIZE,
   resolveRobotTaskScene,
+  robotTaskSceneDetailOpacity,
   robotTaskSceneAssets
 } from '@/config/robot-task-scene-registry.js'
 import {
+  robotTaskCanvasCameraTransform,
   resolveRobotTaskCamera,
   resolveRobotTaskShot,
   shotValue
@@ -100,6 +102,7 @@ const props = defineProps({
   wasteConfigSrc: { type: String, default: '/static/sorting-robot/waste-adapters.json' },
   binVisualSrc: { type: String, default: '' },
   transparentEnvironment: { type: Boolean, default: false },
+  cameraState: { type: Object, default: null },
   showControls: { type: Boolean, default: false },
   showStatus: { type: Boolean, default: false }
 })
@@ -124,7 +127,8 @@ let images = {}
 let assetsReady = false
 let resizeObserver = null
 let densityMediaQuery = null
-let canvasPixelRatio = 1
+let canvasCssWidth = 0
+let canvasCssHeight = 0
 let animationFrameId = 0
 let stageStartedAt = 0
 let stageProgress = 0
@@ -855,28 +859,15 @@ function sceneAsset(src) {
   return images.sceneAssets?.[src] || null
 }
 
-function sceneDetailOpacity(scene, cameraScale) {
-  const blend = scene?.detailEnvironment?.blend
-  if (!blend) return 0
-  if (currentStage.value === 'return' && blend.returnFade) {
-    const start = clamp(Number(blend.returnFade.start) || 0)
-    const end = Math.max(start + .001, clamp(Number(blend.returnFade.end) || 1))
-    const fade = 1 - smoothstep(clamp((stageProgress - start) / (end - start)))
-    return clamp(blend.maxOpacity) * fade
-  }
-  const progress = smoothstep(clamp((cameraScale - blend.startScale) / Math.max(.001, blend.endScale - blend.startScale)))
-  return progress * clamp(blend.maxOpacity)
-}
-
 function drawEnvironmentScene(ctx, scene, alpha = 1, cameraScale = 1, forceBackground = false) {
   const background = sceneAsset(scene?.backgroundEnvironment?.src)
   const detail = sceneAsset(scene?.detailEnvironment?.src)
   if (!scene || alpha <= 0 || (!background && !detail)) return
   const crop = scene.crop
   ctx.save()
-  // The enclosing park canvas owns the persistent full scene background when
-  // transparentEnvironment is enabled. This canvas only adds the local detail
-  // crop and re-paints the foreground masks from that same background.
+  // The embedded player owns its complete environment. In the digital-twin
+  // overlay, both formal and detailed backgrounds live in ParkReplayCanvas so
+  // they share one DOM camera; this canvas renders task actors/effects only.
   if (background && (forceBackground || !props.transparentEnvironment)) {
     ctx.globalAlpha = alpha
     ctx.drawImage(
@@ -885,7 +876,9 @@ function drawEnvironmentScene(ctx, scene, alpha = 1, cameraScale = 1, forceBackg
       0, 0, ROBOT_TASK_SCENE_SIZE.width, ROBOT_TASK_SCENE_SIZE.height
     )
   }
-  const detailOpacity = sceneDetailOpacity(scene, cameraScale)
+  const detailOpacity = props.transparentEnvironment
+    ? 0
+    : robotTaskSceneDetailOpacity(scene.key, currentStage.value, stageProgress, cameraScale)
   if (detail && detailOpacity > 0) {
     ctx.globalAlpha = alpha * detailOpacity
     ctx.drawImage(detail, 0, 0, detail.width, detail.height, crop.x, crop.y, crop.width, crop.height)
@@ -911,7 +904,7 @@ function drawGroundLayer(ctx, scene, alpha = 1) {
 }
 
 function drawForegroundOcclusion(ctx, scene, alpha = 1, cameraScale = 1) {
-  if (!scene || alpha <= 0) return
+  if (props.transparentEnvironment || !scene || alpha <= 0) return
   scene.foregroundOcclusion.forEach(mask => {
     ctx.save()
     ctx.beginPath(); ctx.ellipse(mask.x, mask.y, mask.radiusX, mask.radiusY, 0, 0, Math.PI * 2); ctx.clip()
@@ -1072,15 +1065,16 @@ function visualStageDuration(stage, timelineDuration) {
 
 function drawScene(time = 0) {
   if (!canvas || !context || !assetsReady || !rig || !timeline) return
-  // The backing-store dimensions and drawing transform must use the same DPR.
-  // Reading window.devicePixelRatio here caused a mixed old/new ratio for one
-  // or more frames after a window moved between monitors.
-  const ratio = canvasPixelRatio
-  const width = canvas.width / ratio
-  const height = canvas.height / ratio
+  // Keep the scene coordinate system tied to the exact CSS content box. At a
+  // fractional display scale, backing-store rounding means canvas.width / DPR
+  // is not necessarily the CSS width (for example 1207 / 1.25 = 965.6 while
+  // the content box is 965.421875px). Using the rounded backing size as the
+  // logical size makes actors drift from the DOM map when the camera zooms.
+  const width = canvasCssWidth
+  const height = canvasCssHeight
   if (!width || !height) return
   const ctx = context
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
+  ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0)
   ctx.clearRect(0, 0, width, height)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
@@ -1093,14 +1087,23 @@ function drawScene(time = 0) {
   if (!pose) return
   const rawProgress = clamp(stageProgress)
   const camera = resolveRobotTaskCamera(currentStage.value, rawProgress, props.taskSpatialContext)
-  const { shot, easedProgress, robotPosition, wastePosition, binPosition, cameraScale, focus } = camera
-  const baseScale = Math.min(width / ROBOT_TASK_SCENE_SIZE.width, height / ROBOT_TASK_SCENE_SIZE.height)
+  const { shot, easedProgress, robotPosition, wastePosition, binPosition } = camera
+  const canvasCamera = robotTaskCanvasCameraTransform(width, height, props.cameraState || camera)
+  const cameraScale = canvasCamera.cameraScale
   const sceneLayers = sceneLayersForShot(shot, rawProgress)
 
   ctx.save()
-  ctx.translate(width / 2, height / 2)
-  ctx.scale(baseScale * cameraScale, baseScale * cameraScale)
-  ctx.translate(-focus[0], -focus[1])
+  // Paint into the viewport at native resolution, using the exact camera state
+  // consumed by the DOM park renderer. This keeps actors scene-anchored without
+  // magnifying a scene-sized canvas texture and blurring the sprites.
+  ctx.transform(
+    canvasCamera.scale,
+    0,
+    0,
+    canvasCamera.scale,
+    canvasCamera.translateX,
+    canvasCamera.translateY
+  )
 
   sceneLayers.forEach(layer => drawEnvironmentScene(ctx, layer.scene, layer.alpha, cameraScale))
   sceneLayers.forEach(layer => drawGroundLayer(ctx, layer.scene, layer.alpha))
@@ -1149,15 +1152,16 @@ function resizeCanvas() {
   if (!canvas || !context) return
   const viewport = viewportRef.value?.$el || viewportRef.value
   const rect = viewport?.getBoundingClientRect?.() || canvas.getBoundingClientRect()
-  if (!rect.width || !rect.height) return
+  canvasCssWidth = Number(rect?.width) || 0
+  canvasCssHeight = Number(rect?.height) || 0
+  if (!canvasCssWidth || !canvasCssHeight) return
   if (canvas.style) {
-    canvas.style.width = `${Math.round(rect.width)}px`
-    canvas.style.height = `${Math.round(rect.height)}px`
+    canvas.style.width = `${canvasCssWidth}px`
+    canvas.style.height = `${canvasCssHeight}px`
   }
   const ratio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1))
-  canvasPixelRatio = ratio
-  const width = Math.round(rect.width * ratio)
-  const height = Math.round(rect.height * ratio)
+  const width = Math.round(canvasCssWidth * ratio)
+  const height = Math.round(canvasCssHeight * ratio)
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width
     canvas.height = height
@@ -1262,9 +1266,9 @@ function tick(timestamp) {
   const [start, end] = STAGE_RANGES[currentStage.value]
   frame.value = Math.round(lerp(start, end, stageProgress))
   emit('framechange', { frame: frame.value, stage: currentStage.value, progress: stageProgress })
-  // The park camera consumes framechange. Wait for Vue to commit that CSS
-  // transform, then draw the transparent local layer with the same progress.
-  nextTick(() => drawScene(timestamp))
+  // The parent publishes one camera state to both renderers. Wait for that prop
+  // to commit; its watcher draws the actor frame with the same matrix.
+  if (!props.cameraState) nextTick(() => drawScene(timestamp))
   if (props.completeOnStageEnd && stageProgress >= 1 && !stageCompletionEmitted) {
     stageCompletionEmitted = true
     pause()
@@ -1351,6 +1355,7 @@ watch(() => props.progress, value => {
 watch(() => props.autoplay, enabled => enabled ? play() : (props.running !== true && pause()), { flush: 'sync' })
 watch(() => props.running, enabled => enabled ? play() : (enabled === false && !props.autoplay && pause()), { flush: 'sync' })
 watch(() => props.playbackRate, () => { stageStartedAt = 0 }, { flush: 'sync' })
+watch(() => props.cameraState, () => { if (assetsReady) drawScene(performance.now()) }, { flush: 'post' })
 watch(() => [props.src, props.rigSrc, props.timelineSrc, props.binVisualSrc], loadAssets)
 watch(
   () => [props.dynamicObject, props.objectId, props.objectClass, props.targetBinId, props.wasteConfigSrc],

@@ -19,6 +19,15 @@
     </view>
     <view class="atmosphere-layer"></view>
     <image v-if="sceneDev.compare" class="candidate-background-comparison" :src="sceneAssets.candidateBackground" mode="scaleToFill" />
+    <image
+      v-for="detail in taskDetailEnvironments"
+      :key="detail.sceneKey"
+      class="task-detail-environment"
+      :src="detail.src"
+      mode="scaleToFill"
+      :style="taskDetailEnvironmentStyle(detail)"
+      aria-hidden="true"
+    />
 
     <view class="north-mark"><view class="north-arrow"></view><text>N</text></view>
     <view class="map-legend">
@@ -179,6 +188,8 @@ import PARK_SCENE_LAYERS, { PARK_SCENE_ASSETS, readParkSceneDevFlags } from '@/c
 import PARK_SCENE_OCCLUSIONS, { parkOcclusionStyle } from '@/config/park-scene-occlusion.js'
 import PARK_SCENE_ALIGNMENT from '@/config/park-scene-alignment.json'
 import { DIGITAL_TWIN_VISUAL_SYSTEM, mapDepthScale, mapMotionProgress } from '@/config/digital-twin-visual-system.js'
+import { fitRobotTaskSceneSize } from '@/config/robot-task-scene-registry.js'
+import { robotTaskCameraTransformStyle } from '@/config/robot-task-shot-config.js'
 import {
   PARK_ROAD_NETWORK, PARK_ROUTE_GRAPH, parkEdgesForRoute, parkRoadEdgePath,
   parkPolylinePoint, parkRoutePoint, parkRoutePolyline, parkRouteSvgPoints, sampleParkRoadEdge
@@ -282,18 +293,26 @@ const sceneSurfaceStyle = ref({ width: '100%', height: '100%' })
 const taskCameraActive = computed(() => Boolean(
   props.robotVisual?.active && props.robotVisual?.mode === 'robot' && props.robotVisual?.camera
 ))
+const taskDetailEnvironments = computed(() => taskCameraActive.value
+  ? (Array.isArray(props.robotVisual?.detailEnvironments) ? props.robotVisual.detailEnvironments : [])
+  : [])
 const visitorAnimationPlaying = computed(() => props.playing && !(props.robotVisual?.active && props.robotVisual?.mode === 'robot'))
-const taskCameraStyle = computed(() => {
-  if (!taskCameraActive.value) return { transform: 'none' }
-  const camera = props.robotVisual.camera
-  const scale = Math.max(1, Number(camera.scale) || 1)
-  const focusX = Math.max(0, Math.min(100, Number(camera.focusX) / PARK_ROAD_NETWORK.scene.width * 100))
-  const focusY = Math.max(0, Math.min(100, Number(camera.focusY) / PARK_ROAD_NETWORK.scene.height * 100))
+const taskCameraStyle = computed(() => taskCameraActive.value
+  ? robotTaskCameraTransformStyle(props.robotVisual.camera)
+  : { transform: 'none' })
+function taskDetailEnvironmentStyle(detail) {
+  const crop = detail?.crop
+  if (!crop) return { display: 'none' }
+  const sceneWidth = PARK_ROAD_NETWORK.scene.width
+  const sceneHeight = PARK_ROAD_NETWORK.scene.height
   return {
-    transformOrigin: '0 0',
-    transform: `translate(50%, 50%) scale(${scale}) translate(-${focusX}%, -${focusY}%)`
+    left: `${Number(crop.x) / sceneWidth * 100}%`,
+    top: `${Number(crop.y) / sceneHeight * 100}%`,
+    width: `${Number(crop.width) / sceneWidth * 100}%`,
+    height: `${Number(crop.height) / sceneHeight * 100}%`,
+    opacity: String(Math.max(0, Math.min(1, Number(detail.opacity) || 0)))
   }
-})
+}
 const localTaskServicePointId = computed(() => {
   const explicit = String(
     props.robotVisual?.servicePointId
@@ -363,13 +382,14 @@ function isCalibrationBlockedEdge(edgeId) {
 function fitSceneSurface() {
   const root = canvasContainerRef.value?.$el || canvasContainerRef.value
   const bounds = root?.getBoundingClientRect?.()
-  const containerWidth = Number(root?.clientWidth) || Number(bounds?.width) || 0
-  const containerHeight = Number(root?.clientHeight) || Number(bounds?.height) || 0
+  // getBoundingClientRect preserves the fractional CSS pixels produced by rpx,
+  // browser zoom and per-monitor scaling. clientWidth/clientHeight truncate them
+  // to integers, which put the DOM map and the local canvas on different bases.
+  const containerWidth = Number(bounds?.width) || Number(root?.clientWidth) || 0
+  const containerHeight = Number(bounds?.height) || Number(root?.clientHeight) || 0
   if (!containerWidth || !containerHeight) return
-  const targetRatio = PARK_ROAD_NETWORK.scene.width / PARK_ROAD_NETWORK.scene.height
-  const width = containerWidth / containerHeight > targetRatio ? containerHeight * targetRatio : containerWidth
-  const height = width / targetRatio
-  sceneSurfaceStyle.value = { width: `${Math.round(width * 100) / 100}px`, height: `${Math.round(height * 100) / 100}px` }
+  const { width, height } = fitRobotTaskSceneSize(containerWidth, containerHeight)
+  sceneSurfaceStyle.value = { width: `${width}px`, height: `${height}px` }
 }
 function stageLabel(stage) {
   return ({ DOCK: '对接', UNLOAD: '卸料', CLEAN: '清洁', CHARGE: '充电', CHECK: '检测', STANDBY: '待命' })[stage] || stage || '处理中'
@@ -629,6 +649,7 @@ onBeforeUnmount(() => {
 .atmosphere-layer { z-index: 4; background: linear-gradient(135deg,rgba(214,240,255,.08),rgba(117,166,189,.018) 35%,rgba(0,17,29,.12)),radial-gradient(ellipse at 50% 42%,rgba(55,118,134,.025),rgba(0,14,26,.18) 94%); box-shadow: inset 0 0 72px rgba(0,14,26,.38); transition:opacity .3s ease; }
 .candidate-background-comparison { z-index: 5; object-fit: fill; opacity: .48; mix-blend-mode: normal; }
 .foreground-occlusion-layer { z-index: 6; overflow: hidden; transition:opacity .3s ease; }.occlusion-region { position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:cover;transform:translateZ(0)}.occlusion-region.building_roof{filter:drop-shadow(7px 10px 10px rgba(0,17,29,.2))}
+.task-detail-environment { position:absolute; z-index:7; display:block; pointer-events:none; object-fit:fill; }
 .scene-calibration-layer { z-index: 14; overflow: hidden; }.calibration-road-layer{position:absolute;inset:0;width:100%;height:100%}.calibration-road{fill:none;stroke:#6de9ff;stroke-width:.32;stroke-dasharray:1 1;vector-effect:non-scaling-stroke}.calibration-road.pedestrian{stroke:#d9ff8f}.calibration-road.business_route_reference{stroke:#ffb866}.calibration-anchor,.calibration-object-point{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-anchor i{display:block;width:8px;height:8px;margin:-4px;border:2px solid #fff;border-radius:50%;background:#ff5d66;box-shadow:0 0 10px #ff5d66}.calibration-anchor text{position:absolute;left:8px;top:-12px;padding:2px 4px;border-radius:3px;color:#fff;background:rgba(78,12,20,.86);font:700 7px/1.2 ui-monospace,Consolas,monospace}.calibration-object-point{width:4px;height:4px;border:1px solid #24d9ff;background:#061522}.calibration-object-point text{position:absolute;left:5px;top:3px;color:#8ff2ff;font:6px/1.2 ui-monospace,Consolas,monospace}.calibration-caption{position:absolute;right:12px;top:12px;padding:5px 8px;border:1px solid rgba(255,184,102,.7);border-radius:5px;color:#fff2d8;background:rgba(70,41,9,.86);font:700 8px/1.2 ui-monospace,Consolas,monospace}
 .calibration-road.robot{stroke:#ffbf69}.calibration-road.service_device{stroke:#63e6ff}.calibration-road.blocked{stroke:#ff4f63;stroke-width:.8;stroke-dasharray:2 .5}.candidate-route path{fill:none;stroke-width:.75;stroke-dasharray:2 1;vector-effect:non-scaling-stroke}.candidate-route.east-north path{stroke:#ff9a47}.candidate-route.south-west path{stroke:#b784ff}.calibration-node,.calibration-edge-label,.calibration-anchor-error{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-node i{display:block;width:5px;height:5px;margin:-2.5px;border:1px solid #fff;border-radius:50%;background:#63e6ff}.calibration-node.pedestrian i{background:#b8eb72}.calibration-node.robot i{background:#ffbf69}.calibration-node text{position:absolute;left:4px;top:2px;color:#e8fbff;font:5px/1.1 ui-monospace,Consolas,monospace;text-shadow:0 1px 2px #00111d}.calibration-edge-label{opacity:.75}.calibration-edge-label text{display:block;padding:1px 2px;color:#bfefff;background:rgba(0,21,32,.76);font:4px/1 ui-monospace,Consolas,monospace}.calibration-edge-label.pedestrian text{color:#dfffab}.calibration-edge-label.robot text{color:#ffd49a}.calibration-edge-label.blocked text{color:#fff;background:#a4192a}.calibration-anchor-error{margin-top:9px;color:#ffd8dc;font:5px/1 ui-monospace,Consolas,monospace}.calibration-caption{max-width:52%;white-space:normal}
 .north-mark { position: absolute; z-index: 10; right: 14px; top: 12px; display: flex; flex-direction: column; align-items: center; color: #dff7ff; font-size: 10px; text-shadow: 0 1px 4px #00111d; }

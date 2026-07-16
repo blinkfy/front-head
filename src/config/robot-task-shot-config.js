@@ -1,4 +1,4 @@
-import { ROBOT_TASK_SCENE_SIZE } from '@/config/robot-task-scene-registry.js'
+import { fitRobotTaskSceneSize, ROBOT_TASK_SCENE_SIZE } from '@/config/robot-task-scene-registry.js'
 
 const freeze = value => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value
@@ -31,6 +31,47 @@ const isFoodServiceContext = spatialContext => {
   if (servicePointId.includes('food')) return true
   const targetBin = spatialContext?.targetBinPositionPct
   return Array.isArray(targetBin) && Number(targetBin[0]) >= 55
+}
+
+function normalizeRobotTaskCamera(camera) {
+  const focus = Array.isArray(camera.focus) ? camera.focus : []
+  const rawFocusX = Number(camera.focusX ?? focus[0])
+  const rawFocusY = Number(camera.focusY ?? focus[1])
+  return {
+    scale: Math.max(1, Number(camera.scale ?? camera.cameraScale) || 1),
+    focusX: Math.max(0, Math.min(
+      ROBOT_TASK_SCENE_SIZE.width,
+      Number.isFinite(rawFocusX) ? rawFocusX : ROBOT_TASK_SCENE_SIZE.width / 2
+    )),
+    focusY: Math.max(0, Math.min(
+      ROBOT_TASK_SCENE_SIZE.height,
+      Number.isFinite(rawFocusY) ? rawFocusY : ROBOT_TASK_SCENE_SIZE.height / 2
+    ))
+  }
+}
+
+export function robotTaskCameraTransformStyle(camera) {
+  if (!camera) return { transform: 'none' }
+  const normalized = normalizeRobotTaskCamera(camera)
+  return {
+    transformOrigin: '0 0',
+    transform: `translate(50%, 50%) scale(${normalized.scale}) translate(-${normalized.focusX / ROBOT_TASK_SCENE_SIZE.width * 100}%, -${normalized.focusY / ROBOT_TASK_SCENE_SIZE.height * 100}%)`
+  }
+}
+
+export function robotTaskCanvasCameraTransform(viewportWidth, viewportHeight, camera) {
+  const width = Math.max(0, Number(viewportWidth) || 0)
+  const height = Math.max(0, Number(viewportHeight) || 0)
+  const normalized = normalizeRobotTaskCamera(camera || {})
+  const fitted = fitRobotTaskSceneSize(width, height)
+  const sceneScale = fitted.width / ROBOT_TASK_SCENE_SIZE.width * normalized.scale
+  return {
+    scale: sceneScale,
+    translateX: width / 2 - normalized.focusX * sceneScale,
+    translateY: height / 2 - normalized.focusY * sceneScale,
+    cameraScale: normalized.scale,
+    focus: [normalized.focusX, normalized.focusY]
+  }
 }
 
 export const ROBOT_TASK_SHOT_CONFIG = freeze({
