@@ -88,7 +88,8 @@ const typeLabels = Object.freeze({
   ROUTE_REPLANNING: '路径重规划',
   INCIDENT_RESPONSE: '异常响应',
   FILL_RISK_ASSESSMENT: '容量风险评估',
-  RETURN_TASK_PRIORITY: '返航任务顺序'
+  RETURN_TASK_PRIORITY: '返航任务顺序',
+  DT_MARL_POLICY: 'MAPPO 调度策略'
 })
 const decisionTypeLabel = computed(() => typeLabels[trace.value?.decisionType] || trace.value?.decisionType || '调度决策')
 const isCenterDecision = computed(() => trace.value?.decisionType === 'CENTER_BAY_ASSIGNMENT')
@@ -122,7 +123,7 @@ const scoreLabels = Object.freeze({
   originalPathCost: '原路线代价', selectedPathCost: '新路线代价', extraPathCost: '绕行增加代价',
   fillScore: '当前容量项', fillContribution: '容量贡献', urgencyScore: '满载紧迫项',
   urgencyContribution: '紧迫贡献', horizonScore: '预测区间项', horizonContribution: '预测贡献',
-  riskBonus: '高容量加成', priorityScore: '最终风险评分'
+  riskBonus: '高容量加成', priorityScore: '最终风险评分', selectedProbability: '选择概率'
 })
 const scoreRows = computed(() => Object.entries(trace.value?.scoreBreakdown || {}).map(([key, value]) => ({
   key, label: scoreLabels[key] || key, value
@@ -130,7 +131,9 @@ const scoreRows = computed(() => Object.entries(trace.value?.scoreBreakdown || {
 const candidateLabel = (entityId) => props.labels?.[entityId] || ({
   A_STAR_REPLAN: 'A* 绕行规划', STANDBY_REPLACEMENT: '备用桶补位', WAITING_REPLACEMENT: '等待备用资源',
   RETURN_TO_CENTER: '返航充电', RETAIN_TASK_CONTEXT: '保留已抓取任务', REQUEUE_UNPICKED_TASK: '未抓取任务重新入队',
-  FIFO_CENTER_QUEUE: '中心到站顺序队列'
+  FIFO_CENTER_QUEUE: '中心到站顺序队列',
+  serve: '继续服务', return: '返航中心', replace: '前往补位', charge: '前往充电',
+  standby: '进入待命', wait: '原地等待', safeStop: '安全停靠'
 })[entityId] || entityId
 const candidateFacts = (candidate) => [
   candidate.status ? `状态 ${candidate.status}` : '',
@@ -145,13 +148,14 @@ const candidateFacts = (candidate) => [
   candidate.predictedFillPct != null ? `预测 ${candidate.predictedFillPct}%` : '',
   candidate.hoursToFull != null ? `满载 ${candidate.hoursToFull}h` : '',
   candidate.riskLevel ? `风险 ${riskLabel(candidate.riskLevel)}` : '',
+  candidate.priorityScore != null ? `策略概率 ${(Number(candidate.priorityScore) * 100).toFixed(1)}%` : '',
   candidate.servicePointPriority != null ? `点位级别 ${candidate.servicePointPriority}` : '',
   candidate.serviceImpact || '',
   candidate.taskOrder != null ? `任务顺序 ${candidate.taskOrder}` : '',
   candidate.hasActiveReturnTask ? '已有返航任务' : ''
 ].filter(Boolean)
-const riskLabel = (level) => ({ URGENT: '需要处置', NORMAL: '正常关注' })[level] || level
-const usesPriorityScore = computed(() => ['FILL_RISK_ASSESSMENT', 'RETURN_TASK_PRIORITY'].includes(trace.value?.decisionType))
+const riskLabel = (level) => ({ URGENT: '需要处置', NORMAL: '正常关注', EMERGENCY: '紧急', HIGH: '高', MEDIUM: '中', LOW: '低' })[level] || level
+const usesPriorityScore = computed(() => ['FILL_RISK_ASSESSMENT', 'RETURN_TASK_PRIORITY', 'DT_MARL_POLICY'].includes(trace.value?.decisionType))
 const scoreCaption = computed(() => usesPriorityScore.value ? '评分' : '代价')
 const candidateCost = (candidate) => candidate.estimatedCost ?? candidate.pathCost ?? candidate.priorityScore ?? null
 const maximumCost = computed(() => Math.max(0, ...candidateRows.value.map((candidate) => Number(candidateCost(candidate)) || 0)))

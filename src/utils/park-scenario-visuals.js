@@ -386,6 +386,11 @@ function normalizePrediction(payload) {
     predictedFillPct: asNumber(firstDefined(prediction.predictedFillPct, prediction.forecastFillPct, payload.predictedFillPct)),
     etaMinutes: asNumber(firstDefined(prediction.etaMinutes, prediction.minutesToFull, prediction.estimatedFullMinutes, payload.etaMinutes)),
     riskLevel: firstDefined(prediction.riskLevel, prediction.risk, payload.riskLevel, '—'),
+    riskScore: asNumber(firstDefined(prediction.riskScore, payload.riskScore)),
+    confidence: asNumber(firstDefined(prediction.confidence, payload.confidence)),
+    modelVersion: firstDefined(prediction.modelVersion, payload.modelVersion, ''),
+    estimatedFullAt: firstDefined(prediction.estimatedFullAt, payload.estimatedFullAt, null),
+    windows: firstDefined(prediction.windows, payload.windows, {}),
     historical: normalizeSeries(firstDefined(prediction.historical, prediction.historicalSeries, prediction.history, payload.historical, payload.historicalSeries, payload.history)),
     forecast: normalizeSeries(firstDefined(prediction.forecast, prediction.forecastSeries, prediction.future, payload.forecast, payload.forecastSeries, payload.future)),
     reason: firstDefined(prediction.reason, payload.reason, '')
