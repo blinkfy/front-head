@@ -32,6 +32,8 @@ export const EVENT_PRESENTATION = Object.freeze({
   CROWD_FLOW_UPDATED: { title: '道路人群变化', desc: '游客逐步聚集或散开，阻塞判定仍由回放事件给出', stage: 'idle', tone: 'amber' },
   HEATMAP_UPDATED: { title: '人流热区更新', desc: '回放更新餐饮区人流热区强度', stage: 'idle', tone: 'amber' },
   FILL_PREDICTION_UPDATED: { title: '满载预测更新', desc: '回放载荷提供历史与未来填充预测', stage: 'idle', tone: 'amber' },
+  DT_MARL_DECISION_UPDATED: { title: '多智能体调度决策', desc: 'MAPPO 根据全局状态、动作掩码与路径反馈生成调度动作', stage: 'idle', tone: 'cyan' },
+  ALGORITHM_FALLBACK: { title: '算法安全降级', desc: '算法不可用时切换到确定性规则以保持闭环运行', stage: 'idle', tone: 'red' },
   RETURN_ROUTE_STARTED: { title: '返航路线启动', desc: '满载设备开始沿原规划路线返航', stage: 'return', tone: 'cyan' },
   ROUTE_BLOCKED: { title: '返航路线受阻', desc: '临时障碍导致原返航路线暂停', stage: 'return', tone: 'red' },
   ROUTE_REPLANNED: { title: '返航路线重规划', desc: '路径规划输出新的可通行路线', stage: 'return', tone: 'amber' },

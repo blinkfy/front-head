@@ -50,6 +50,10 @@ export function fetchParkSimulationState() {
   return request('/api/digital-twin/simulation/state')
 }
 
+export function fetchAlgorithmStatus(refresh = false) {
+  return request(`/api/digital-twin/algorithm/status${refresh ? '?refresh=true' : ''}`)
+}
+
 export function submitParkSimulationCommand(type, payload = {}) {
   return request('/api/digital-twin/simulation/commands', {
     method: 'POST',

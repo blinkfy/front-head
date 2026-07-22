@@ -11,6 +11,7 @@
             <text v-for="source in sourceTypes" :key="source" :data-source="source" :class="['source-badge', sourceClass(source)]">{{ displaySourceLabel(source) }}</text>
           </view>
           <view class="source-summary">数据源 {{ sourceTypes.length }} 类</view>
+          <view v-if="pageMode === 'live'" :class="['algorithm-badge', { degraded: algorithmDegraded }]">{{ algorithmStatusLabel }}</view>
           <picker mode="selector" :range="pageModeOptions" range-key="label" :value="pageModeIndex" @change="onPageModeChange">
             <view class="mode-select page-mode-select">
               <text>页面模式</text>
@@ -199,6 +200,7 @@ import { fetchParkReplay } from '@/api/digital-twin-replay.js'
 import {
   connectParkSimulationStream,
   exportParkSimulationSnapshot,
+  fetchAlgorithmStatus,
   fetchParkSimulationState,
   restoreParkSimulationSnapshot,
   submitParkSimulationCommand
@@ -224,6 +226,15 @@ import { robotTaskHandoffStartPositionPct, robotTaskScanStartPositionPct } from 
 import { PARK_ROAD_NETWORK, parkRoutePolyline, sampleParkRoadEdge } from '@/utils/park-road-network.js'
 
 const isDark = ref(applyStoredTheme() === 'dark')
+const algorithmStatus = ref(null)
+const algorithmDegraded = computed(() => algorithmStatus.value?.worker?.lastError || algorithmStatus.value?.health?.stgMamba?.trained === false || algorithmStatus.value?.health?.dtMarl?.trained === false)
+const algorithmStatusLabel = computed(() => {
+  if (!algorithmStatus.value) return '算法状态读取中'
+  if (algorithmDegraded.value) return '算法已降级'
+  const stg = algorithmStatus.value.health?.stgMamba?.modelVersion || 'STG-Mamba'
+  const marl = algorithmStatus.value.health?.dtMarl?.policyVersion || 'MAPPO'
+  return `${stg} · ${marl}`
+})
 function syncThemeMode() {
   isDark.value = applyStoredTheme() === 'dark'
 }
@@ -986,6 +997,9 @@ async function connectLiveSimulation() {
     const snapshot = await fetchParkSimulationState()
     if (loadRevision !== replayLoadRevision || pageMode.value !== 'live') return
     applyLiveSnapshot(snapshot, { follow: true, force: true })
+    fetchAlgorithmStatus(true).then(status => { algorithmStatus.value = status }).catch(() => {
+      algorithmStatus.value = { worker: { lastError: 'status_unavailable' } }
+    })
     closeLiveStream = connectParkSimulationStream({
       onOpen: () => { liveConnected.value = true },
       onEvent: appendLiveEvent,
@@ -1216,6 +1230,7 @@ page { background: #071726; }
 .twin-screen-header { margin-left: auto; }
 .twin-header-business { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .source-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }.source-badge { padding: 3px 6px; border: 1px solid rgba(80,164,217,.46); border-radius: 5px; color: #91cef2; background: rgba(23,91,144,.25); font: 700 10px/1.2 ui-monospace, Consolas, monospace; }.source-badge.isaac-realtime { color: #c6b0ff; border-color: rgba(147,105,255,.52); background: rgba(88,53,143,.3); }.source-badge.backend-api { color: #8aefb8; border-color: rgba(48,205,123,.48); background: rgba(28,122,74,.28); }.source-badge.visual-aid { color: #ffd274; border-color: rgba(245,182,72,.5); background: rgba(132,87,16,.28); }
+.algorithm-badge { max-width:220px;padding:4px 7px;border:1px solid rgba(61,220,163,.45);border-radius:5px;color:#7eebbd;background:rgba(22,117,82,.2);font:700 9px/1.2 ui-monospace,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }.algorithm-badge.degraded { color:#ffc477;border-color:rgba(230,151,61,.5);background:rgba(134,77,15,.22) }
 .mode-select { min-width: 118px; padding: 6px 8px; border: 1px solid rgba(126,196,239,.28); border-radius: var(--admin-screen-control-radius, 8px); background: rgba(8,35,54,.68); }.mode-select text,.mode-select b { display: block; }.mode-select text { color: #749aae; font-size: 10px; }.mode-select b { color: #dff7ff; font-size: 12px; margin-top: 2px; }.filename { max-width: 180px; padding: 7px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid rgba(126,196,239,.2); border-radius: var(--admin-screen-control-radius, 8px); color: #8eb8ca; background: rgba(8,35,54,.54); font: 11px/1 ui-monospace, Consolas, monospace; }.header-button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-height: var(--admin-screen-control-height, 36px); height: var(--admin-screen-control-height, 36px); padding: 0 12px; border: 1px solid rgba(126,196,239,.42); border-radius: var(--admin-screen-control-radius, 8px); color: #c4deea; background: rgba(8,35,54,.42); font-size: var(--admin-screen-control-font-size, 13px); font-weight: var(--admin-screen-control-font-weight, 650); white-space: nowrap; }.header-button.primary { color: #fff; border-color: rgba(85,177,255,.92); background: linear-gradient(135deg,#2479e8,#42abff); box-shadow: 0 5px 14px rgba(44,143,255,.28); }
 .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(230px,17%) minmax(660px,1fr) minmax(320px,20%); gap: 8px; }.left-column,.center-column,.right-column { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }.timeline { flex: 1; }.current-event { flex: 0 0 158px; padding: 11px 12px; overflow: hidden; }.section-heading { display: flex; justify-content: space-between; align-items: center; color: #8bc9e7; font-size: 12px; font-weight: 700; letter-spacing: .5px; }.section-heading > text:last-child { color: #62d8ff; font: 700 11px/1 ui-monospace, Consolas, monospace; }.current-title { color: #f0fbff; font-size: 16px; font-weight: 700; margin-top: 10px; }.current-desc { color: #83a7b9; font-size: 11px; margin: 4px 0 8px; }.event-meta { min-height: 20px; display: flex; justify-content: space-between; gap: 10px; color: #7499ab; font-size: 10px; }.event-meta b { max-width: 72%; color: #cfe9f5; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.event-meta b.sim { color: #91cef2; }.event-meta b.isaac-realtime { color: #c6b0ff; }.event-meta b.backend-api { color: #8aefb8; }.event-meta b.visual-aid { color: #ffd274; }
 .park-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }.park-map { flex: 1; }.entity-inspector { flex: 1; }.state-panel { flex: 0 0 132px; padding: 11px 12px; }.state-row { min-height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #86aebf; font-size: 11px; }.state-row b { color: #dceef6; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.state-row b.success { color: #79edb5; }.state-row b.warning { color: #ffc76c; }
