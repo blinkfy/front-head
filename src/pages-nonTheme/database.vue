@@ -97,7 +97,7 @@
                         </view>
 
                         <!-- Messages表专属筛选 -->
-                        <template v-if="currentTable === 'Messages'">
+                        <template v-if="currentTable === 'Message'">
                             <view class="filter-item">
                                 <text class="filter-label">📝 消息类型</text>
                                 <picker :value="messageTypeFilterIndex" :range="messageTypeFilterOptions"
@@ -204,8 +204,8 @@
                             </view>
                         </template>
 
-                        <!-- Bin表专属筛选 -->
-                        <template v-if="currentTable === 'Bin'">
+                        <!-- Device 表专属筛选 -->
+                        <template v-if="currentTable === 'Device'">
                             <view class="filter-item">
                                 <text class="filter-label">✅ 审核状态</text>
                                 <picker :value="reviewFilterIndex" :range="reviewFilterOptions"
@@ -252,7 +252,7 @@
                 <view class="data-card" v-if="currentTable">
                     <view class="data-header">
                         <text class="data-title">{{ getCurrentTableLabel() }}</text>
-                        <view class="data-actions">
+                        <view class="data-actions" v-if="canEditCurrentTable()">
                             <view class="action-icon-btn" @click="handleAdd">
                                 <text>➕</text>
                             </view>
@@ -262,17 +262,17 @@
                     <!-- 数据列表 -->
                     <view class="data-list">
                         <view v-if="tableData.length > 0" class="data-item" v-for="(item, index) in tableData"
-                            :key="item.id || index">
+                            :key="getTableRowKey(item, index)">
                             <!-- 左侧ID列（所有表统一显示） -->
                             <view class="data-id-column">
                                 <view class="id-badge">
-                                    <text class="id-number">{{ currentTable === 'Chat' ? item.userId : item.id }}</text>
+                                    <text class="id-number">{{ getTableRowId(item) }}</text>
                                 </view>
                             </view>
 
                             <view class="data-content">
                                 <!-- Users 表 -->
-                                <template v-if="currentTable === 'Users'">
+                                <template v-if="currentTable === 'User'">
                                     <view class="data-row">
                                         <text class="data-label">用户:</text>
                                         <rich-text class="data-value highlight"
@@ -285,8 +285,8 @@
                                     </view>
                                 </template>
 
-                                <!-- Bin 表 -->
-                                <template v-if="currentTable === 'Bin'">
+                                <!-- Device 表 -->
+                                <template v-if="currentTable === 'Device'">
                                     <view class="data-row">
                                         <text class="data-label">名称:</text>
                                         <rich-text class="data-value highlight"
@@ -355,7 +355,7 @@
                                 </template>
 
                                 <!-- Messages 表 -->
-                                <template v-if="currentTable === 'Messages'">
+                                <template v-if="currentTable === 'Message'">
                                     <view class="data-row">
                                         <text class="data-label">发送者:</text>
                                         <rich-text class="data-value highlight"
@@ -438,7 +438,7 @@
                             </view>
 
                             <!-- 操作按钮 -->
-                            <view class="data-item-actions">
+                            <view class="data-item-actions" v-if="canEditCurrentTable()">
                                 <view class="item-action-btn edit" @click="handleEdit(item)">
                                     <text>✏️</text>
                                 </view>
@@ -496,7 +496,7 @@
 
                 <scroll-view class="modal-body" scroll-y>
                     <!-- Users 表单 -->
-                    <template v-if="currentTable === 'Users'">
+                    <template v-if="currentTable === 'User'">
                         <view class="form-item">
                             <text class="form-label">用户名 *</text>
                             <input class="form-input" v-model="editForm.username" placeholder="请输入用户名" />
@@ -532,11 +532,11 @@
                         </view>
                     </template>
 
-                    <!-- Bin 表单 -->
-                    <template v-if="currentTable === 'Bin'">
+                    <!-- Device 表单 -->
+                    <template v-if="currentTable === 'Device'">
                         <view class="form-item">
-                            <text class="form-label">垃圾桶名称 *</text>
-                            <input class="form-input" v-model="editForm.name" placeholder="请输入垃圾桶名称" />
+                            <text class="form-label">设备名称 *</text>
+                            <input class="form-input" v-model="editForm.name" placeholder="请输入设备名称" />
                         </view>
                         <view class="form-item">
                             <text class="form-label">描述</text>
@@ -592,7 +592,7 @@
                             <input class="form-input" v-model="editForm.userId" type="number" placeholder="请输入用户ID" />
                         </view>
                         <view class="form-item">
-                            <text class="form-label">设备ID (垃圾桶ID) *</text>
+                            <text class="form-label">设备 ID *</text>
                             <input class="form-input" v-model="editForm.deviceId" type="number" placeholder="请输入设备ID" />
                         </view>
 
@@ -662,7 +662,7 @@
                     </template>
 
                     <!-- Messages 表单 -->
-                    <template v-if="currentTable === 'Messages'">
+                    <template v-if="currentTable === 'Message'">
                         <view class="form-item">
                             <text class="form-label">发送者ID *</text>
                             <input class="form-input" v-model="editForm.senderId" type="number" placeholder="请输入发送者ID" />
@@ -834,7 +834,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import {
     getUsersList, createUser, updateUser, deleteUser,
-    getBinsList, createBin, updateBin, deleteBin,
+    getDevicesList, createDevice, updateDevice, deleteDevice,
     getUserDevicesList, createUserDevice, updateUserDevice, deleteUserDevice,
     getHistoryList, createHistory, updateHistory, deleteHistory,
     getMessagesList, createMessage, updateMessage, deleteMessage,
@@ -846,13 +846,13 @@ import {
 // 响应式数据
 const isRefreshing = ref(false)
 const lastUpdateTime = ref(Date.now())
-const currentTable = ref('Users')
+const currentTable = ref('User')
 const showEditModal = ref(false)
 const editMode = ref('add') // 'add' 或 'edit'
 const editForm = ref({})
 const adminUser = ref(false)
 const tablesCollapsed = ref(false)
-const specialTables = new Set(['Users', 'Bin', 'UserDevice', 'History', 'Messages', 'Chat'])
+const specialTables = new Set(['User', 'Device', 'UserDevice', 'History', 'Message', 'Chat'])
 const tableSchemas = ref({})
 
 // 搜索相关
@@ -951,8 +951,8 @@ const pageSize = ref(20)
 const totalCount = ref(0)
 const totalPages = ref(0)
 
-// 数据表配置
-const tableCatalog = [
+// 数据表配置（已由后端模型注册表动态提供）
+const legacyTableCatalog = [
     { name: 'Users', label: '用户表', icon: '👤' },
     { name: 'Bin', label: '垃圾桶表', icon: '🗑️' },
     { name: 'UserDevice', label: '用户设备表', icon: '📱' },
@@ -982,8 +982,7 @@ const tableCatalog = [
     { name: 'SortingCenterEvent', label: '分拣中心事件表', icon: '🏭' },
     { name: 'DeviceDepositEvent', label: '设备投递事件表', icon: '📥' }
 ]
-const tables = ref(tableCatalog.map(table => ({ ...table, count: 0 })))
-const hiddenRuntimeTables = new Set(['Device'])
+const tables = ref([])
 
 // 当前表数据
 const tableData = ref([])
@@ -1068,6 +1067,29 @@ function getTableMeta(tableName) {
     return tables.value.find(t => t.name === tableName) || null
 }
 
+function canEditCurrentTable() {
+    return getTableMeta(currentTable.value)?.editable !== false
+}
+
+function getTableRowId(item = {}) {
+    if (currentTable.value === 'Chat') {
+        return `${item.userId ?? '-'} / ${item.otherId ?? '-'}`
+    }
+    if (currentTable.value === 'UserDevice') {
+        return `${item.userId ?? '-'} / ${item.deviceId ?? '-'}`
+    }
+
+    const primaryKeys = getTableMeta(currentTable.value)?.primaryKeys || []
+    if (primaryKeys.length > 1) {
+        return primaryKeys.map(key => item[key] ?? '-').join(' / ')
+    }
+    return item[primaryKeys[0]] ?? item.id ?? '-'
+}
+
+function getTableRowKey(item = {}, index = 0) {
+    return `${currentTable.value}:${getTableRowId(item)}:${index}`
+}
+
 function formatGenericFieldLabel(key) {
     return String(key || '')
         .replace(/_/g, ' ')
@@ -1077,48 +1099,17 @@ function formatGenericFieldLabel(key) {
         .replace(/^./, ch => ch.toUpperCase())
 }
 
-function normalizeStatsTableName(name) {
-    return name === 'Device' ? 'Bin' : String(name || '').trim()
-}
-
 function mergeTablesFromStats(statsTables = []) {
-    const statsByName = new Map()
-    const normalizedStatsTables = Array.isArray(statsTables) ? statsTables : []
-
-    normalizedStatsTables.forEach(rawTable => {
-        const rawName = String(rawTable?.name || '').trim()
-        const normalizedName = normalizeStatsTableName(rawName)
-        if (!normalizedName || hiddenRuntimeTables.has(normalizedName)) return
-        if (hiddenRuntimeTables.has(rawName) && statsByName.has(normalizedName)) return
-        const previous = statsByName.get(normalizedName) || {}
-        statsByName.set(normalizedName, {
-            ...previous,
+    const mergedTables = (Array.isArray(statsTables) ? statsTables : [])
+        .map(rawTable => ({
             ...rawTable,
-            name: normalizedName,
-            count: Number(rawTable?.count || 0)
-        })
-    })
-
-    const mergedTables = tableCatalog.map(meta => {
-        const stats = statsByName.get(meta.name)
-        statsByName.delete(meta.name)
-        return {
-            ...meta,
-            count: stats ? Number(stats.count || 0) : 0,
-            editable: stats?.editable
-        }
-    })
-
-    statsByName.forEach((stats, name) => {
-        if (hiddenRuntimeTables.has(name)) return
-        mergedTables.push({
-            name,
-            label: stats.label || `${formatGenericFieldLabel(name)}表`,
-            icon: '🗂️',
-            count: Number(stats.count || 0),
-            editable: stats.editable
-        })
-    })
+            name: String(rawTable?.name || '').trim(),
+            label: rawTable?.label || `${formatGenericFieldLabel(rawTable?.name)}表`,
+            icon: rawTable?.icon || '🗂️',
+            count: Number(rawTable?.count || 0),
+            primaryKeys: Array.isArray(rawTable?.primaryKeys) ? rawTable.primaryKeys : []
+        }))
+        .filter(table => table.name)
 
     tables.value = mergedTables
     if (!mergedTables.some(table => table.name === currentTable.value)) {
@@ -1127,14 +1118,11 @@ function mergeTablesFromStats(statsTables = []) {
 }
 
 async function hydrateMissingTableCounts(statsTables = []) {
-    const normalizedStatsNames = new Set(
-        (Array.isArray(statsTables) ? statsTables : [])
-            .map(table => normalizeStatsTableName(table?.name))
-            .filter(Boolean)
-    )
+    const normalizedStatsNames = new Set((Array.isArray(statsTables) ? statsTables : [])
+        .map(table => String(table?.name || '').trim())
+        .filter(Boolean))
     const missingTables = tables.value.filter(table =>
         !normalizedStatsNames.has(table.name) &&
-        !hiddenRuntimeTables.has(table.name) &&
         !isSpecialTable(table.name)
     )
 
@@ -1497,11 +1485,11 @@ function resetFilters() {
 // 获取搜索占位符
 function getSearchPlaceholder() {
     const placeholders = {
-        'Users': '搜索用户名',
-        'Bin': '搜索垃圾桶名称、描述',
-        'UserDevice': '搜索用户名、垃圾桶名、描述',
+        'User': '搜索用户名',
+        'Device': '搜索设备名称、描述',
+        'UserDevice': '搜索用户名、设备名称、描述',
         'History': '搜索用户名、垃圾种类',
-        'Messages': '搜索消息内容',
+        'Message': '搜索消息内容',
         'Chat': '搜索用户名'
     }
     return placeholders[currentTable.value] || '搜索...'
@@ -1566,7 +1554,7 @@ async function loadTableData() {
         }
 
         // 根据当前表添加特定筛选参数
-        if (currentTable.value === 'Messages') {
+        if (currentTable.value === 'Message') {
             // Messages表筛选
             const typeFilter = messageTypeFilterOptions.value[messageTypeFilterIndex.value]
             if (typeFilter.value !== null) {
@@ -1608,7 +1596,7 @@ async function loadTableData() {
             if (sourceFilter.value !== null) {
                 params.source = sourceFilter.value
             }
-        } else if (currentTable.value === 'Bin') {
+        } else if (currentTable.value === 'Device') {
             // Bin表筛选
             const reviewFilter = reviewFilterOptions.value[reviewFilterIndex.value]
             if (reviewFilter.value !== null) {
@@ -1653,11 +1641,11 @@ async function loadTableData() {
 
         let response
         switch (currentTable.value) {
-            case 'Users':
+            case 'User':
                 response = await getUsersList(params)
                 break
-            case 'Bin':
-                response = await getBinsList(params)
+            case 'Device':
+                response = await getDevicesList(params)
                 break
             case 'UserDevice':
                 response = await getUserDevicesList(params)
@@ -1665,7 +1653,7 @@ async function loadTableData() {
             case 'History':
                 response = await getHistoryList(params)
                 break
-            case 'Messages':
+            case 'Message':
                 response = await getMessagesList(params)
                 break
             case 'Chat':
@@ -1760,9 +1748,9 @@ function handleAdd() {
     }
 
     // 根据不同表设置默认值
-    if (currentTable.value === 'Users') {
+    if (currentTable.value === 'User') {
         editForm.value = { username: '', password: '', avatar: '', points: 0 }
-    } else if (currentTable.value === 'Bin') {
+    } else if (currentTable.value === 'Device') {
         editForm.value = {
             name: '',
             describe: '',
@@ -1777,7 +1765,7 @@ function handleAdd() {
         editForm.value = { userId: '', deviceId: '' }
     } else if (currentTable.value === 'History') {
         editForm.value = { userId: '', category: '可回收垃圾', imageUrl: '', confidence: '', source: 'online' }
-    } else if (currentTable.value === 'Messages') {
+    } else if (currentTable.value === 'Message') {
         editForm.value = { 
             senderId: '', 
             receiverId: '', 
@@ -1822,11 +1810,11 @@ async function handleDelete(item) {
                     let response
                     if (isSpecialTable(currentTable.value)) {
                         switch (currentTable.value) {
-                            case 'Users':
+                            case 'User':
                                 response = await deleteUser(item.id)
                                 break
-                            case 'Bin':
-                                response = await deleteBin(item.id)
+                            case 'Device':
+                                response = await deleteDevice(item.id)
                                 break
                             case 'UserDevice':
                                 // UserDevice 使用联合主键 (userId, deviceId)
@@ -1835,7 +1823,7 @@ async function handleDelete(item) {
                             case 'History':
                                 response = await deleteHistory(item.id)
                                 break
-                            case 'Messages':
+                            case 'Message':
                                 response = await deleteMessage(item.id)
                                 break
                             case 'Chat':
@@ -1911,7 +1899,7 @@ async function handleSave() {
     }
 
     // 简单验证
-    if (currentTable.value === 'Users') {
+    if (currentTable.value === 'User') {
         if (!editForm.value.username) {
             uni.showToast({ title: '请输入用户名', icon: 'none' })
             return
@@ -1920,7 +1908,7 @@ async function handleSave() {
             uni.showToast({ title: '请输入密码', icon: 'none' })
             return
         }
-    } else if (currentTable.value === 'Bin') {
+    } else if (currentTable.value === 'Device') {
         if (!editForm.value.name || !editForm.value.type) {
             uni.showToast({ title: '请填写必填项', icon: 'none' })
             return
@@ -1935,7 +1923,7 @@ async function handleSave() {
             uni.showToast({ title: '请填写必填项', icon: 'none' })
             return
         }
-    } else if (currentTable.value === 'Messages') {
+    } else if (currentTable.value === 'Message') {
         if (!editForm.value.senderId || !editForm.value.receiverId || !editForm.value.type) {
             uni.showToast({ title: '请填写必填项', icon: 'none' })
             return
@@ -1954,9 +1942,9 @@ async function handleSave() {
         const data = { ...editForm.value }
 
         // 类型转换
-        if (currentTable.value === 'Users') {
+        if (currentTable.value === 'User') {
             data.points = Number(data.points) || 0
-        } else if (currentTable.value === 'Bin') {
+        } else if (currentTable.value === 'Device') {
             data.latitude = data.latitude ? Number(data.latitude) : null
             data.longitude = data.longitude ? Number(data.longitude) : null
             // 过滤掉不应该发送的敏感字段，避免设备token被误传导致后端身份验证混淆
@@ -1973,7 +1961,7 @@ async function handleSave() {
             if (data.imageUrl === null || data.imageUrl === '') {
                 data.imageUrl = null
             }
-        } else if (currentTable.value === 'Messages') {
+        } else if (currentTable.value === 'Message') {
             data.senderId = Number(data.senderId)
             data.receiverId = Number(data.receiverId)
         } else if (currentTable.value === 'Chat') {
@@ -1987,11 +1975,11 @@ async function handleSave() {
         if (editMode.value === 'add') {
             // 新增
             switch (currentTable.value) {
-                case 'Users':
+                case 'User':
                     response = await createUser(data)
                     break
-                case 'Bin':
-                    response = await createBin(data)
+                case 'Device':
+                    response = await createDevice(data)
                     break
                 case 'UserDevice':
                     response = await createUserDevice(data)
@@ -1999,7 +1987,7 @@ async function handleSave() {
                 case 'History':
                     response = await createHistory(data)
                     break
-                case 'Messages':
+                case 'Message':
                     response = await createMessage(data)
                     break
                 case 'Chat':
@@ -2009,11 +1997,11 @@ async function handleSave() {
         } else {
             // 编辑
             switch (currentTable.value) {
-                case 'Users':
+                case 'User':
                     response = await updateUser(editForm.value.id, data)
                     break
-                case 'Bin':
-                    response = await updateBin(editForm.value.id, data)
+                case 'Device':
+                    response = await updateDevice(editForm.value.id, data)
                     break
                 case 'UserDevice':
                     // UserDevice 使用联合主键 (userId, deviceId)
@@ -2022,7 +2010,7 @@ async function handleSave() {
                 case 'History':
                     response = await updateHistory(editForm.value.id, data)
                     break
-                case 'Messages':
+                case 'Message':
                     response = await updateMessage(editForm.value.id, data)
                     break
                 case 'Chat':
@@ -2145,10 +2133,7 @@ async function loadStats() {
         if (response && response.code === 0) {
             const stats = response.data
             if (stats.schemas && typeof stats.schemas === 'object') {
-                tableSchemas.value = {
-                    ...stats.schemas,
-                    Bin: stats.schemas.Bin || stats.schemas.Device || tableSchemas.value.Bin
-                }
+                tableSchemas.value = { ...stats.schemas }
             }
             mergeTablesFromStats(stats.tables || [])
             await hydrateMissingTableCounts(stats.tables || [])

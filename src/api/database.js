@@ -133,13 +133,49 @@
    * @param {number} id - 垃圾桶ID
    * @returns {Promise}
    */
-  export function deleteBin(id) {
-    return request({
-      url: `/api/admin/bins/${id}`,
-      method: 'DELETE',
-      needAuth: true
-    })
-  }
+export function deleteBin(id) {
+  return request({
+    url: `/api/admin/bins/${id}`,
+    method: 'DELETE',
+    needAuth: true
+  })
+}
+
+// Devices 是当前数据库模型名；bins 接口仅用于兼容历史客户端。
+export function getDevicesList(params = {}) {
+  return request({
+    url: '/api/admin/devices',
+    method: 'GET',
+    data: params,
+    needAuth: true
+  })
+}
+
+export function createDevice(data) {
+  return request({
+    url: '/api/admin/devices',
+    method: 'POST',
+    data,
+    needAuth: true
+  })
+}
+
+export function updateDevice(id, data) {
+  return request({
+    url: `/api/admin/devices/${id}`,
+    method: 'PUT',
+    data,
+    needAuth: true
+  })
+}
+
+export function deleteDevice(id) {
+  return request({
+    url: `/api/admin/devices/${id}`,
+    method: 'DELETE',
+    needAuth: true
+  })
+}
 
   /**
    * 审核通过垃圾桶

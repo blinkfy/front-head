@@ -97,6 +97,10 @@
           <text class="hint" v-if="captchaHint">{{ captchaHint }}</text>
         </view>
 
+        <!-- #ifdef APP-PLUS || MP-WEIXIN -->
+        <registration-privacy-agreement v-model="privacyAccepted" dark />
+        <!-- #endif -->
+
         <button class="register-btn" type="button" :disabled="isLoading" @click="handleRegisterClick">
           <view class="btn-content" v-if="!isLoading">
             <text class="btn-icon">🚀</text>
@@ -122,6 +126,9 @@
 import { ref, onMounted } from 'vue'
 import { register } from '@/api/user'
 import CaptchaBox from '@/components/CaptchaBox-black.vue'
+// #ifdef APP-PLUS || MP-WEIXIN
+import RegistrationPrivacyAgreement from '@/components/RegistrationPrivacyAgreement.vue'
+// #endif
 
 // 表单字段
 const username = ref('')
@@ -132,6 +139,9 @@ const showConfirmPwd = ref(false)
 const isLoading = ref(false)
 const passwordKey = ref(0) // 用于强制重新渲染密码输入框
 const confirmPasswordKey = ref(0) // 用于强制重新渲染确认密码输入框
+// #ifdef APP-PLUS || MP-WEIXIN
+const privacyAccepted = ref(false)
+// #endif
 
 // 验证码相关
 const captchaInput = ref('')
@@ -200,6 +210,13 @@ function onRegister() {
     uni.showToast({ title: '密码需包含大小写字母、数字、特殊字符中至少两种', icon: 'none' })
     return
   }
+
+  // #ifdef APP-PLUS || MP-WEIXIN
+  if (!privacyAccepted.value) {
+    uni.showToast({ title: '请先阅读并同意用户协议与隐私保护指引', icon: 'none' })
+    return
+  }
+  // #endif
 
   // 验证码校验（使用 CaptchaBox 的 validate）
   if (!captchaRef.value || typeof captchaRef.value.validate !== 'function' || !captchaRef.value.validate()) {

@@ -979,6 +979,7 @@ const _state = {
   startPoint: null,
   manualStartPoint: null,
   loading: false,
+  routePlanning: false,
   mapInstance: null,       // H5 TMap 实例
   mapReady: false,
   iconCache: new Map(),
@@ -995,6 +996,7 @@ const _state = {
   monitorBackup: null,
   shouldFitMap: false
 }
+let routePlanRevision = 0
 
 function interpolatePoint(from, to, progress) {
   const p = clamp(progress, 0, 1)
@@ -1121,6 +1123,7 @@ function buildHandlingMap(alertBinsArr, routeStops) {
 function renderMetrics() {
   const bins = _state.bins || []
   const route = _state.plan && _state.plan.route
+  const routePlanning = _state.routePlanning && !route
   const m = {
     total: bins.length,
     urgent: bins.filter(b => b.isUrgent).length,
@@ -1132,8 +1135,8 @@ function renderMetrics() {
     total: m.total,
     urgent: m.urgent,
     averageStr: `${m.average.toFixed(1)}%`,
-    distanceStr: `${m.distance.toFixed(2)} km`,
-    durationStr: `${m.duration.toFixed(1)} min`
+    distanceStr: routePlanning ? '规划中' : `${m.distance.toFixed(2)} km`,
+    durationStr: routePlanning ? '规划中' : `${m.duration.toFixed(1)} min`
   }
   const day = nearestKpi(24, m, 'day')
   const week = nearestKpi(24 * 7, m, 'week')
@@ -1149,12 +1152,15 @@ function renderMetrics() {
     distance: [deltaTag('较昨日', m.distance, day.distance, 'km', true), deltaTag('较上周', m.distance, week.distance, 'km', true), deltaTag('目标差', m.distance, target.distance, 'km', true)],
     duration: [deltaTag('较昨日', m.duration, day.duration, 'min', true), deltaTag('较上周', m.duration, week.duration, 'min', true), deltaTag('目标差', m.duration, target.duration, 'min', true)]
   }
-  if (!monitor.active) pushKpi(m)
+  if (!monitor.active && !routePlanning) pushKpi(m)
 }
 
 function renderBrief() {
   const route = _state.plan && _state.plan.route
-  if (!route) { briefLines.value = ['尚未生成路线']; return }
+  if (!route) {
+    briefLines.value = [_state.routePlanning ? '清运数据已加载，正在后台规划路线…' : '尚未生成路线']
+    return
+  }
   const start = (_state.plan && _state.plan.start) || _state.startPoint || DEFAULT_CENTER
   const providerLine = route.provider === 'tencent'
     ? '路线来源：腾讯道路'
@@ -1711,10 +1717,60 @@ function syncStartPointFromPlan() {
   _state.startPoint = null
 }
 
+function buildRoutePlanPayload() {
+  return {
+    bins: _state.bins,
+    start: _state.manualStartPoint || _state.startPoint || {},
+    options: {
+      routeStrategy: routeStrategy.value
+    }
+  }
+}
+
+async function planRouteInBackground({ silent = false } = {}) {
+  const revision = ++routePlanRevision
+  _state.routePlanning = true
+  renderAll()
+  if (!silent) setStatus('清运数据已加载，正在后台规划路线…', 'warn')
+
+  try {
+    const plan = await apiRequest('/api/planning/plan', {
+      method: 'POST',
+      body: buildRoutePlanPayload()
+    })
+    if (revision !== routePlanRevision || monitor.active) return
+
+    const namedPlan = applyDashboardBinNames({ bins: _state.bins, plan }).plan
+    _state.plan = namedPlan || plan || null
+    if (_state.plan?.options?.routeStrategy) {
+      routeStrategy.value = normalizeStrategy(_state.plan.options.routeStrategy)
+      setStorage('collection_route_strategy', routeStrategy.value)
+    }
+    syncStartPointFromPlan()
+    renderAll()
+    const stopCount = _state.plan?.route?.stops?.length || 0
+    setStatus(`路线规划完成：${stopCount} 个停靠点，策略 ${strategyLabel(routeStrategy.value)}`, 'ok')
+  } catch (error) {
+    if (revision !== routePlanRevision || monitor.active) return
+    _state.plan = null
+    renderAll()
+    setStatus(`清运数据已加载，路线规划暂不可用：${error?.message || '未知错误'}`, 'warn')
+  } finally {
+    if (revision === routePlanRevision) {
+      _state.routePlanning = false
+      if (!_state.plan) renderAll()
+    }
+  }
+}
+
 async function doRefresh(options) {
   const silent = !!(options && options.silent)
   if (monitor.active) return
   if (_state.loading) return
+  // Any incoming snapshot supersedes a still-running route calculation.
+  // The new snapshot will start its own planner after its data is rendered.
+  routePlanRevision += 1
+  _state.routePlanning = false
   _state.loading = true
   if (!silent) setStatus(`正在刷新清运数据（${strategyLabel(routeStrategy.value)}）...`, 'warn')
   try {
@@ -1722,7 +1778,10 @@ async function doRefresh(options) {
     if (monitor.active) return
     const namedData = applyDashboardBinNames(data)
     _state.bins = namedData.bins
-    _state.plan = namedData.plan
+    // New snapshots intentionally omit the expensive road route. Keep a
+    // previous valid route visible during refresh, then replace it when the
+    // background planner finishes.
+    if (namedData.plan) _state.plan = namedData.plan
     _state.points = Array.isArray(data.points) ? data.points : []
     _state.tasks = Array.isArray(data.tasks) ? data.tasks : []
     _state.runtime = data.runtime || null
@@ -1741,7 +1800,7 @@ async function doRefresh(options) {
     if (selectedBinId.value !== null && !_state.bins.some(b => String(b.id) === String(selectedBinId.value))) selectedBinId.value = null
 
     renderAll()
-    setStatus(`刷新成功：${_state.bins.length} 个桶位，${routeStops.length} 个停靠点，策略 ${strategyLabel(routeStrategy.value)}`, 'ok')
+    planRouteInBackground({ silent })
   } catch (err) {
     console.error('[collection-dashboard] refresh failed:', err)
     setStatus(err && err.message ? err.message : String(err), 'err')
@@ -2453,6 +2512,7 @@ function onStrategyTap(value) {
   if (next === routeStrategy.value) return
   routeStrategy.value = next
   setStorage('collection_route_strategy', next)
+  _state.plan = null
   doRefresh()
 }
 
@@ -2518,6 +2578,7 @@ async function initH5Map() {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
     _state.manualStartPoint = { name: '地图选择起点', latitude: lat, longitude: lng }
     _state.startPoint = { ..._state.manualStartPoint }
+    _state.plan = null
     doRefresh()
   })
   window.addEventListener('resize', () => {
@@ -2579,6 +2640,7 @@ onBeforeUnmount(() => {
   // A slow route request must not recreate its monitor interval after this
   // page has left or after another monitor session has replaced it.
   monitorRequestRevision += 1
+  routePlanRevision += 1
   monitor.active = false
   monitor.scene = ''
   clearMonitorTimer()

@@ -1,8 +1,5 @@
 <template>
   <view class="history-bg">
-    <!-- 自定义状态栏 -->
-    <view class="custom-statusbar"></view>
-    
     <!-- 科技背景动效元素 -->
     <view class="tech-bg">
       <view class="tech-grid"></view>
@@ -19,6 +16,8 @@
     <view class="history-container">
       <!-- 页面标题栏 -->
       <view class="header-section">
+        <!-- 自定义导航栏的安全区必须包含在绿色 Header 内，避免小程序顶部出现透明空白。 -->
+        <view class="custom-statusbar" :style="{ height: `${statusBarHeight}px` }"></view>
         <view class="nav-header">
           <text class="back-btn" @click="goBack">←</text>
           <text class="page-title">识别历史</text>
@@ -213,6 +212,7 @@ defineExpose({
 // 响应式数据
 const historyList = ref([])
 const loading = ref(false)
+const statusBarHeight = ref(0)
 const selectMode = ref(false)
 const selectedItems = ref([])
 const activeFilter = ref('all')
@@ -287,17 +287,12 @@ onMounted(() => {
   // 设置当前页面的来源信息（用于智能返回）
   setupPageReferrer()
 
-  // 只在H5环境中设置状态栏高度
-  if (typeof document !== 'undefined' && document.documentElement) {
-    let statusBarHeight = 0
-    try {
-      const windowInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
-      statusBarHeight = windowInfo.statusBarHeight || 0
-    } catch (e) {
-      const systemInfo = uni.getSystemInfoSync()
-      statusBarHeight = systemInfo.statusBarHeight || 0
-    }
-    document.documentElement.style.setProperty('--status-bar-height', statusBarHeight + 'px')
+  // H5 与微信小程序统一读取状态栏高度；不再依赖仅 H5 可用的 document 变量。
+  try {
+    const windowInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
+    statusBarHeight.value = Number(windowInfo.statusBarHeight) || 0
+  } catch (_) {
+    statusBarHeight.value = 0
   }
 
   // 加载历史记录
@@ -631,10 +626,9 @@ function handleBackupNavigation() {
 
 /* 自定义状态栏 */
 .custom-statusbar {
-  height: var(--status-bar-height);
-  background: transparent;
+  width: 100%;
   position: relative;
-  z-index: 10;
+  z-index: 1;
 }
 
 /* 清新背景装饰 */
@@ -742,7 +736,7 @@ function handleBackupNavigation() {
   z-index: 2;
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - var(--status-bar-height));
+  min-height: 100vh;
 }
 
 /* 标题区域 */

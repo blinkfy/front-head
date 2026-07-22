@@ -106,6 +106,7 @@
 				{
 					"path": "test",
 					"style": {
+						"navigationStyle": "custom",
 						"navigationBarTitleText": "API测试"
 					}
 				},

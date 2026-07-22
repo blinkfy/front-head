@@ -50,6 +50,12 @@
         <view v-if="!accessibleScreens.length" class="admin-screen-switcher__empty">暂无可访问大屏</view>
       </view>
     </dialog>
+
+    <view class="admin-screen-switcher__trigger" aria-hidden="true">
+      <text class="admin-screen-switcher__trigger-icon">▦</text>
+      <text class="admin-screen-switcher__trigger-label">切换大屏</text>
+      <text class="admin-screen-switcher__caret">⌄</text>
+    </view>
     <!-- #endif -->
 
     <!-- #ifndef H5 -->
@@ -58,18 +64,17 @@
       mode="selector"
       :range="accessibleScreens"
       range-key="shortTitle"
+      :value="currentScreenIndex"
       :disabled="isNavigating"
       @change="onPickerChange"
     >
-      <view class="admin-screen-switcher__picker-hitbox" />
+      <view class="admin-screen-switcher__trigger" role="button" aria-label="切换大屏">
+        <text class="admin-screen-switcher__trigger-icon">▦</text>
+        <text class="admin-screen-switcher__trigger-label">切换大屏</text>
+        <text class="admin-screen-switcher__caret">⌄</text>
+      </view>
     </picker>
     <!-- #endif -->
-
-    <view class="admin-screen-switcher__trigger" aria-hidden="true">
-      <text class="admin-screen-switcher__trigger-icon">▦</text>
-      <text class="admin-screen-switcher__trigger-label">切换大屏</text>
-      <text class="admin-screen-switcher__caret">⌄</text>
-    </view>
   </view>
 </template>
 
@@ -99,6 +104,10 @@ const accessibleScreens = computed(() => {
   accessRevision.value
   return getAdminScreenList({ onlyAccessible: true })
 })
+const currentScreenIndex = computed(() => Math.max(
+  0,
+  accessibleScreens.value.findIndex(screen => isCurrentScreen(screen))
+))
 
 onMounted(() => {
   accessRevision.value += 1
@@ -193,8 +202,7 @@ async function selectScreen(target) {
   min-width: 112px;
 }
 
-.admin-screen-switcher__dialog-trigger,
-.admin-screen-switcher__picker {
+.admin-screen-switcher__dialog-trigger {
   position: absolute;
   z-index: 2;
   inset: 0;
@@ -202,6 +210,12 @@ async function selectScreen(target) {
   height: 100%;
   margin: 0;
   cursor: pointer;
+}
+
+.admin-screen-switcher__picker {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .admin-screen-switcher__dialog-trigger {
@@ -216,11 +230,6 @@ async function selectScreen(target) {
 .admin-screen-switcher__dialog-trigger:focus-visible {
   outline: 2px solid rgba(63, 177, 239, .72);
   outline-offset: 2px;
-}
-
-.admin-screen-switcher__picker-hitbox {
-  width: 100%;
-  height: 100%;
 }
 
 .admin-screen-switcher__trigger {
