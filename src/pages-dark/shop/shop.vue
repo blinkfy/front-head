@@ -200,7 +200,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { userinfo } from '@/api/user'
 import { fetchShopRecommendations } from '@/api/shop'
 import {
@@ -224,6 +224,7 @@ const recommendLoading = ref(false)
 const recommendReady = ref(false)
 const recommendSource = ref('rule-dom')
 const recommendedNames = ref([])
+let pageDisposed = false
 
 // 商品分类
 const categories = ref([
@@ -378,6 +379,7 @@ const products = ref([
 
 // 检测平台类型
 onMounted(async () => {
+  pageDisposed = false
   // 获取系统状态栏高度
   let statusBarHeight = 0
   try {
@@ -395,22 +397,31 @@ onMounted(async () => {
   
   // 获取用户真实积分数据
   await fetchUserPoints()
+  if (pageDisposed) return
   if (currentCategory.value === 0) {
     await ensureRecommendations()
   }
+  if (pageDisposed) return
+})
+
+onBeforeUnmount(() => {
+  pageDisposed = true
 })
 
 // 获取用户积分信息
 const fetchUserPoints = async () => {
+  if (pageDisposed) return
   try {
     loading.value = true
     const token = uni.getStorageSync('token')
     if (!token) {
+      if (pageDisposed) return
       userPoints.value = '未登录'
       return
     }
     
     const response = await userinfo("false")
+    if (pageDisposed) return
     if (response.code === 0) {
       userPoints.value = response.data.points || 0
       console.log('获取用户积分成功:', userPoints.value)
@@ -421,24 +432,26 @@ const fetchUserPoints = async () => {
       userPoints.value = storedPoints || 0
     }
   } catch (error) {
+    if (pageDisposed) return
     console.error('请求用户积分出错:', error)
     // 网络错误时使用本地存储的积分
     const storedPoints = uni.getStorageSync('userPoints')
     userPoints.value = storedPoints || 0
-    
+    if (pageDisposed) return
     uni.showToast({
       title: '积分数据获取失败，显示缓存数据',
       icon: 'none',
       duration: 2000
     })
   } finally {
-    loading.value = false
+    if (!pageDisposed) loading.value = false
   }
 }
 
 // 刷新用户积分
 const refreshPoints = async () => {
   await fetchUserPoints()
+  if (pageDisposed) return
   if (!loading.value) {
     uni.showToast({
       title: '积分刷新成功',
@@ -470,6 +483,7 @@ function getProductsByRecommendedNames(names) {
 }
 
 async function ensureRecommendations(force = false) {
+  if (pageDisposed) return
   if (recommendLoading.value) return
   if (recommendReady.value && !force) return
 
@@ -487,15 +501,17 @@ async function ensureRecommendations(force = false) {
       userPoints.value,
       SHOP_RECOMMEND_LIMIT
     )
+    if (pageDisposed) return
     recommendedNames.value = Array.isArray(normalized.names) ? normalized.names : []
     recommendSource.value = normalized.source || 'rule-dom'
     recommendReady.value = true
   } catch (_) {
+    if (pageDisposed) return
     recommendedNames.value = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
     recommendSource.value = 'rule-dom'
     recommendReady.value = true
   } finally {
-    recommendLoading.value = false
+    if (!pageDisposed) recommendLoading.value = false
   }
 }
 

@@ -369,7 +369,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
-import { onPageScroll, onShow } from '@dcloudio/uni-app'
+import { onPageScroll, onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
@@ -386,6 +386,15 @@ import {
   saveSeed,
   splitUpcyclingSections
 } from '@/utils/recognition-sync'
+import {
+  beginRecognitionTask,
+  clearRecognitionTask,
+  completeRecognitionTask,
+  failRecognitionTask,
+  getRecognitionTask,
+  subscribeRecognitionTask,
+  updateRecognitionTask
+} from '@/utils/recognition-task.mjs'
 
 const resultImage = ref('')
 const resultCategory = ref('')
@@ -411,6 +420,10 @@ const displayBboxes = ref([])
 const recognizeBBoxSpace = ref('')
 let bboxRefreshTimer = 0
 const bboxLoadBoundImages = new WeakSet()
+let activeRecognitionTaskId = ''
+let recognitionTaskUnsubscribe = null
+let pageVisible = true
+let recognitionLoadingVisible = false
 
 async function refreshAiServiceState() {
   try {
@@ -646,6 +659,10 @@ const compressionConfig = {
 }
 
 onMounted(() => {
+  recognitionTaskUnsubscribe = subscribeRecognitionTask((task) => {
+    if (!pageVisible || !task || task.id === activeRecognitionTaskId) return
+    restoreRecognitionTask(task)
+  })
   refreshAiServiceState()
   let platform, uniPlatform
   try {
@@ -753,10 +770,12 @@ onMounted(() => {
 })
 
 onShow(() => {
+  pageVisible = true
   refreshAiServiceState()
+  restoreRecognitionTask()
   // 从语音扫描页面返回时自动处理已选图片
   const pendingImage = uni.getStorageSync('pending_recognize_image')
-  if (pendingImage) {
+  if (pendingImage && !getRecognitionTask()) {
     uni.removeStorageSync('pending_recognize_image')
     nextTick(() => {
       setTimeout(() => {
@@ -767,7 +786,23 @@ onShow(() => {
   }
 })
 
+onHide(() => {
+  pageVisible = false
+  hideRecognitionLoading()
+})
+
+onUnload(() => {
+  pageVisible = false
+  hideRecognitionLoading()
+  recognitionTaskUnsubscribe?.()
+  recognitionTaskUnsubscribe = null
+})
+
 onBeforeUnmount(() => {
+  pageVisible = false
+  hideRecognitionLoading()
+  recognitionTaskUnsubscribe?.()
+  recognitionTaskUnsubscribe = null
   setOnboardingScrollLock(false)
   stopUpcyclingPoll()
   if (bboxRefreshTimer) {
@@ -810,6 +845,62 @@ function resetEnhancedRecognition() {
   displayBboxes.value = []
   recognizeBBoxSpace.value = ''
   aiEnabled.value = false
+}
+
+function showRecognitionLoading(title) {
+  if (!pageVisible) return
+  uni.showLoading({ title })
+  recognitionLoadingVisible = true
+}
+
+function hideRecognitionLoading() {
+  if (!recognitionLoadingVisible) return
+  uni.hideLoading()
+  recognitionLoadingVisible = false
+}
+
+function applyRecognitionResult(res, showSuccessToast = false) {
+  const label = Array.isArray(res && res.labels) ? res.labels[0] : null
+  const rawImage = String((res && res.result_img_base64) || '')
+  resultImage.value = rawImage.startsWith('data:image/jpeg;base64,')
+    ? rawImage
+    : `data:image/jpeg;base64,${rawImage}`
+  if (label) {
+    const confidenceValue = label.confidence ? Math.round(label.confidence * 100) : 0
+    resultCategory.value = label.name || '未知类别'
+    targetConfidence.value = confidenceValue
+    resultConfidence.value = '0%'
+    resultDesc.value = label.describe
+    setTimeout(() => animateNumber(confidenceValue, 800), 300)
+  } else {
+    resultCategory.value = '未识别到'
+    resultConfidence.value = ''
+    resultDesc.value = '未检测到任何标签信息'
+  }
+  applyEnhancedRecognitionData(res)
+  aiEnabled.value = !!(res && res.aiSettings && res.aiSettings.aiEnabled === true)
+  processStatus.value = '识别完成！'
+  if (showSuccessToast) uni.showToast({ title: '识别完成！', icon: 'success' })
+}
+
+function restoreRecognitionTask(task = getRecognitionTask()) {
+  if (!task) return
+  if (task.status === 'pending') {
+    isProcessing.value = true
+    processStatus.value = task.message || '识别中...'
+    return
+  }
+  if (task.status === 'succeeded' && task.result) {
+    applyRecognitionResult(task.result)
+    isProcessing.value = false
+    clearRecognitionTask(task.id)
+    return
+  }
+  if (task.status === 'failed') {
+    isProcessing.value = false
+    processStatus.value = '处理中...'
+    clearRecognitionTask(task.id)
+  }
 }
 
 function getResultImageElement() {
@@ -1180,10 +1271,13 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 }
 
 async function processImage(filePath) {
+  const taskId = beginRecognitionTask('图片处理中...')
+  activeRecognitionTaskId = taskId
   try {
+    isProcessing.value = true
     resetEnhancedRecognition()
     processStatus.value = '图片处理中...'
-    uni.showLoading({ title: '处理中...' })
+    showRecognitionLoading('处理中...')
     
     let compressedFile = filePath
     let compressedBlob = null
@@ -1191,6 +1285,7 @@ async function processImage(filePath) {
     try {
       if (isH5Platform.value) {
         processStatus.value = '正在压缩...'
+        updateRecognitionTask(taskId, processStatus.value)
         const { quality, maxWidth } = compressionConfig.h5
         compressedBlob = await compressImage(filePath, quality, maxWidth)
         const timestamp = Date.now()
@@ -1198,6 +1293,7 @@ async function processImage(filePath) {
         compressedFile = new File([compressedBlob], `compressed_${timestamp}_${randomId}.jpg`, { type: 'image/jpeg' })
       } else {
         processStatus.value = '正在优化...'
+        updateRecognitionTask(taskId, processStatus.value)
         const { quality, maxSize } = compressionConfig.miniProgram
         compressedFile = await compressImageMiniProgram(filePath, quality, maxSize)
       }
@@ -1213,8 +1309,11 @@ async function processImage(filePath) {
     }
     
     processStatus.value = 'AI识别中...'
-    uni.showLoading({ title: '识别中...' })
+    updateRecognitionTask(taskId, processStatus.value)
+    showRecognitionLoading('识别中...')
     const res = await recognizeImage(compressedFile)
+    completeRecognitionTask(taskId, res)
+    if (!pageVisible) return
     
     if (res.labels && res.labels.length > 0) {
       const label = res.labels[0]
@@ -1251,8 +1350,13 @@ async function processImage(filePath) {
     
     processStatus.value = '识别完成！'
     uni.showToast({ title: '识别完成！', icon: 'success' })
+    clearRecognitionTask(taskId)
+    activeRecognitionTaskId = ''
     
   } catch (err) {
+    failRecognitionTask(taskId, err)
+    if (!pageVisible) return
+    clearRecognitionTask(taskId)
     resetEnhancedRecognition()
     resultImage.value = ''
     resultCategory.value = ''
@@ -1269,9 +1373,10 @@ async function processImage(filePath) {
       uni.showToast({ title: '网络错误', icon: 'none' })
     }
   } finally {
-    uni.hideLoading()
+    hideRecognitionLoading()
     isProcessing.value = false
     processStatus.value = '处理中...'
+    if (activeRecognitionTaskId === taskId) activeRecognitionTaskId = ''
   }
 }
 

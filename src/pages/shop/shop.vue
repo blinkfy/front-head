@@ -58,6 +58,8 @@
           v-for="(category, index) in categories" 
           :key="index"
           :class="['tab-item', { active: currentCategory === index }]"
+          @mousemove="updatePointerPosition"
+          @touchmove.passive="updatePointerPosition"
           @click="switchCategory(index)"
         >
           <text class="tab-icon">{{ category.icon }}</text>
@@ -82,6 +84,8 @@
             v-for="product in filteredProducts" 
             :key="product.id"
             class="product-card"
+            @mousemove="updatePointerPosition"
+            @touchmove.passive="updatePointerPosition"
             @click="showProductDetail(product)"
           >
             <view class="product-image-wrapper">
@@ -190,9 +194,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { userinfo } from '@/api/user'
 import { fetchShopRecommendations } from '@/api/shop'
+import { updatePointerCssVariables } from '@/utils/pointer-position.mjs'
 import {
   SHOP_RECOMMEND_LIMIT,
   buildCandidateProducts,
@@ -213,6 +218,13 @@ const recommendLoading = ref(false)
 const recommendReady = ref(false)
 const recommendSource = ref('rule-dom')
 const recommendedNames = ref([])
+let pageDisposed = false
+
+function updatePointerPosition(event) {
+  const element = event?.currentTarget
+  if (!element || typeof element.getBoundingClientRect !== 'function') return false
+  return updatePointerCssVariables(event)
+}
 
 const categories = ref([
   { name: '猜您喜欢', icon: '✨', type: 'recommend' },
@@ -356,65 +368,32 @@ const products = ref([
 
 onMounted(async () => {
   await fetchUserPoints()
+  if (pageDisposed) return
   if (currentCategory.value === 0) {
     await ensureRecommendations()
   }
-  
-  // 添加商品卡片鼠标追踪效果
-  if (typeof document !== 'undefined') {
-    const productCards = document.querySelectorAll('.product-card')
-    productCards.forEach(card => {
-      card.addEventListener('mousemove', (e) => {
-        const rect = card.getBoundingClientRect()
-        const x = ((e.clientX - rect.left) / rect.width) * 100
-        const y = ((e.clientY - rect.top) / rect.height) * 100
-        card.style.setProperty('--mouse-x', x + '%')
-        card.style.setProperty('--mouse-y', y + '%')
-      })
-      
-      card.addEventListener('touchmove', (e) => {
-        const touch = e.touches[0]
-        const rect = card.getBoundingClientRect()
-        const x = ((touch.clientX - rect.left) / rect.width) * 100
-        const y = ((touch.clientY - rect.top) / rect.height) * 100
-        card.style.setProperty('--mouse-x', x + '%')
-        card.style.setProperty('--mouse-y', y + '%')
-      })
-    })
-    
-    // 添加分类标签鼠标追踪效果
-    const tabItems = document.querySelectorAll('.tab-item')
-    tabItems.forEach(item => {
-      item.addEventListener('mousemove', (e) => {
-        const rect = item.getBoundingClientRect()
-        const x = ((e.clientX - rect.left) / rect.width) * 100
-        const y = ((e.clientY - rect.top) / rect.height) * 100
-        item.style.setProperty('--mouse-x', x + '%')
-        item.style.setProperty('--mouse-y', y + '%')
-      })
-      
-      item.addEventListener('touchmove', (e) => {
-        const touch = e.touches[0]
-        const rect = item.getBoundingClientRect()
-        const x = ((touch.clientX - rect.left) / rect.width) * 100
-        const y = ((touch.clientY - rect.top) / rect.height) * 100
-        item.style.setProperty('--mouse-x', x + '%')
-        item.style.setProperty('--mouse-y', y + '%')
-      })
-    })
-  }
+  if (pageDisposed) return
+})
+
+onBeforeUnmount(() => {
+  pageDisposed = true
+  // Pointer effects use Vue event bindings, so dynamic cards and tabs are
+  // released automatically with their component nodes.
 })
 
 const fetchUserPoints = async () => {
+  if (pageDisposed) return
   try {
     loading.value = true
     const token = uni.getStorageSync('token')
     if (!token) {
+      if (pageDisposed) return
       userPoints.value = 0
       return
     }
     
     const response = await userinfo("false")
+    if (pageDisposed) return
     if (response.code === 0) {
       userPoints.value = response.data.points || 0
     } else {
@@ -422,15 +401,17 @@ const fetchUserPoints = async () => {
       userPoints.value = storedPoints || 0
     }
   } catch (error) {
+    if (pageDisposed) return
     const storedPoints = uni.getStorageSync('userPoints')
     userPoints.value = storedPoints || 0
   } finally {
-    loading.value = false
+    if (!pageDisposed) loading.value = false
   }
 }
 
 const refreshPoints = async () => {
   await fetchUserPoints()
+  if (pageDisposed) return
   if (!loading.value) {
     uni.showToast({ title: '积分已刷新', icon: 'success', duration: 1500 })
   }
@@ -457,6 +438,7 @@ function getProductsByRecommendedNames(names) {
 }
 
 async function ensureRecommendations(force = false) {
+  if (pageDisposed) return
   if (recommendLoading.value) return
   if (recommendReady.value && !force) return
 
@@ -474,15 +456,17 @@ async function ensureRecommendations(force = false) {
       userPoints.value,
       SHOP_RECOMMEND_LIMIT
     )
+    if (pageDisposed) return
     recommendedNames.value = Array.isArray(normalized.names) ? normalized.names : []
     recommendSource.value = normalized.source || 'rule-dom'
     recommendReady.value = true
   } catch (_) {
+    if (pageDisposed) return
     recommendedNames.value = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
     recommendSource.value = 'rule-dom'
     recommendReady.value = true
   } finally {
-    recommendLoading.value = false
+    if (!pageDisposed) recommendLoading.value = false
   }
 }
 

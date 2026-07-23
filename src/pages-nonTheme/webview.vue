@@ -21,30 +21,49 @@
     <!-- 内容区域 -->
     <view class="webview-content">
       <!-- H5 环境使用 iframe，其他平台使用 web-view -->
-      <iframe v-if="isH5 && src" :src="src" class="webview-iframe" @load="onLoad"></iframe>
-      <web-view v-else-if="!isH5 && src" :src="src" class="webview-container" :webview-styles="webviewStyles"
-        @load="onLoad"></web-view>
+      <iframe
+        v-if="isH5 && src"
+        :key="`h5-${webviewKey}`"
+        :src="src"
+        :class="['webview-iframe', { 'is-loading': loading || loadError }]"
+        @load="onLoad"
+        @error="onLoadError"
+      ></iframe>
+      <web-view
+        v-else-if="!isH5 && src"
+        :key="`native-${webviewKey}`"
+        :src="src"
+        :class="['webview-container', { 'is-loading': loading || loadError }]"
+        :webview-styles="webviewStyles"
+        @load="onLoad"
+        @error="onLoadError"
+      ></web-view>
 
       <!-- 加载/错误状态 -->
-      <view v-else class="webview-empty">
+      <view v-if="src && (loading || loadError)" class="webview-empty webview-state-overlay" role="status">
         <view class="empty-icon">
-          <text v-if="!src">📭</text>
+          <text v-if="loadError">⚠️</text>
           <view v-else class="loading-spinner">
             <view class="spinner-ring"></view>
             <view class="spinner-ring"></view>
             <view class="spinner-ring"></view>
           </view>
         </view>
-        <text class="empty-title">{{ src ? '正在加载...' : '无可用地址' }}</text>
-        <text v-if="src" class="empty-subtitle">请稍候</text>
-        <text v-if="!src" class="debug-info">未获取到有效 URL</text>
+        <text class="empty-title">{{ loadError || '正在加载...' }}</text>
+        <text class="empty-subtitle">{{ loadError ? '请检查网络后重试' : '请稍候，页面加载完成后将自动显示' }}</text>
+        <view v-if="loadError" class="retry-btn" @click="retryLoad">重新加载</view>
+      </view>
+      <view v-else-if="!src" class="webview-empty">
+        <view class="empty-icon"><text>📭</text></view>
+        <text class="empty-title">无可用地址</text>
+        <text class="debug-info">未获取到有效 URL</text>
       </view>
     </view>
   </view>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 
 const src = ref('')
 const title = ref('内嵌页面')
@@ -53,6 +72,62 @@ const loading = ref(true)
 const isPdf = ref(false)
 const downloading = ref(false)
 const webviewStyles = ref({})
+const loadError = ref('')
+const webviewKey = ref(0)
+const adjustTimers = new Set()
+const WEBVIEW_LOAD_TIMEOUT_MS = 20000
+let plusReadyBound = false
+let resizeBound = false
+let loadTimeoutTimer = null
+let pageDisposed = false
+let downloadTask = null
+
+function scheduleWebviewAdjustment(delay, attempt = 0) {
+  if (pageDisposed) return
+  const timer = setTimeout(() => {
+    adjustTimers.delete(timer)
+    if (pageDisposed) return
+    adjustWebviewTop(attempt)
+  }, delay)
+  adjustTimers.add(timer)
+}
+
+function adjustWebviewTop(attempt = 0) {
+  if (pageDisposed) return
+  // H5 下不需要显示原生头部或调整 webview
+  if (isH5.value) {
+    webviewStyles.value = {}
+    return
+  }
+  const MAX_ATTEMPTS = 6
+  try {
+    const pagesCtx = getCurrentPages()
+    const pageCtx = pagesCtx[pagesCtx.length - 1]
+    const query = uni.createSelectorQuery().in(pageCtx)
+    query.select('.webview-header').boundingClientRect(rect => {
+      if (pageDisposed) return
+      const height = rect && rect.height ? rect.height : 0
+      if (height > 0) {
+        webviewStyles.value = { top: `${height}px`, bottom: '0px' }
+      } else if (attempt < MAX_ATTEMPTS) {
+        scheduleWebviewAdjustment(100, attempt + 1)
+      } else {
+        // 兜底值，避免被遮挡
+        webviewStyles.value = { top: '88px', bottom: '0px' }
+      }
+    }).exec()
+  } catch (err) {
+    if (attempt < 3) scheduleWebviewAdjustment(120, attempt + 1)
+  }
+}
+
+function handlePlusReady() {
+  adjustWebviewTop()
+}
+
+function handleWindowResize() {
+  adjustWebviewTop()
+}
 
 function goBack() {
   const pages = getCurrentPages()
@@ -65,14 +140,49 @@ function goBack() {
   }
 }
 
+function clearLoadTimeout() {
+  if (loadTimeoutTimer) clearTimeout(loadTimeoutTimer)
+  loadTimeoutTimer = null
+}
+
+function beginContentLoad() {
+  clearLoadTimeout()
+  if (!src.value || pageDisposed) return
+  loading.value = true
+  loadError.value = ''
+  loadTimeoutTimer = setTimeout(() => {
+    loadTimeoutTimer = null
+    if (pageDisposed) return
+    loading.value = false
+    loadError.value = '页面加载超时'
+  }, WEBVIEW_LOAD_TIMEOUT_MS)
+}
+
 function onLoad() {
+  if (pageDisposed) return
+  clearLoadTimeout()
   loading.value = false
+  loadError.value = ''
   console.log('页面加载完成')
+}
+
+function onLoadError(error) {
+  if (pageDisposed) return
+  clearLoadTimeout()
+  loading.value = false
+  loadError.value = '页面加载失败'
+  console.error('内嵌页面加载失败:', error)
+}
+
+function retryLoad() {
+  if (!src.value || pageDisposed) return
+  webviewKey.value += 1
+  beginContentLoad()
 }
 
 // 当为非 H5 且是 PDF 时，使用下载 + 打开文档的方式预览（适配 APP 等平台）
 function previewPdf() {
-  if (!src.value) return
+  if (!src.value || pageDisposed || downloading.value) return
   if (isH5.value) {
     // H5 下通常 iframe 已经在页面中显示，直接跳转新窗口以便于下载/打印
     window.open(src.value, '_blank')
@@ -81,38 +191,49 @@ function previewPdf() {
 
   // 非 H5 平台：下载临时文件并用系统打开
   downloading.value = true
-  uni.downloadFile({
+  downloadTask = uni.downloadFile({
     url: src.value,
     success(res) {
+      if (pageDisposed) return
       if (res && res.tempFilePath) {
         uni.openDocument({
           filePath: res.tempFilePath,
           fileType: 'pdf',
           success() {
+            if (pageDisposed) return
             console.log('打开文档成功')
           },
           fail(err) {
+            if (pageDisposed) return
             console.error('打开文档失败', err)
             uni.showToast({ title: '打开失败，请下载后查看', icon: 'none' })
           },
           complete() {
+            if (pageDisposed) return
             downloading.value = false
           }
         })
       } else {
+        if (pageDisposed) return
         downloading.value = false
         uni.showToast({ title: '下载失败', icon: 'none' })
       }
     },
     fail(err) {
+      if (pageDisposed) return
       downloading.value = false
       console.error('下载失败', err)
       uni.showToast({ title: '下载失败', icon: 'none' })
+    },
+    complete() {
+      if (pageDisposed) return
+      downloadTask = null
     }
   })
 }
 
 onMounted(() => {
+  pageDisposed = false
   // 检测是否为 H5 环境
   // #ifdef H5
   isH5.value = true
@@ -152,36 +273,10 @@ onMounted(() => {
       console.error('URL 解码失败:', e)
     }
   } else {
+    loading.value = false
     console.warn('未获取到 url 参数')
   }
-
-  // 计算头部高度并设置原生 webview 样式（App-Plus）
-  function adjustWebviewTop(attempt = 0) {
-    // H5 下不需要显示原生头部或调整 webview
-    if (isH5.value) {
-      webviewStyles.value = {}
-      return
-    }
-    const MAX_ATTEMPTS = 6
-    try {
-      const pagesCtx = getCurrentPages()
-      const pageCtx = pagesCtx[pagesCtx.length - 1]
-      const query = uni.createSelectorQuery().in(pageCtx)
-      query.select('.webview-header').boundingClientRect(rect => {
-        const height = rect && rect.height ? rect.height : 0
-        if (height > 0) {
-          webviewStyles.value = { top: `${height}px`, bottom: '0px' }
-        } else if (attempt < MAX_ATTEMPTS) {
-          setTimeout(() => adjustWebviewTop(attempt + 1), 100)
-        } else {
-          // 兜底值，避免被遮挡
-          webviewStyles.value = { top: '88px', bottom: '0px' }
-        }
-      }).exec()
-    } catch (err) {
-      if (attempt < 3) setTimeout(() => adjustWebviewTop(attempt + 1), 120)
-    }
-  }
+  if (src.value) beginContentLoad()
 
   adjustWebviewTop()
 
@@ -189,21 +284,45 @@ onMounted(() => {
   if (typeof window !== 'undefined') {
     if (typeof window.plus !== 'undefined') {
       adjustWebviewTop()
-    } else {
-      document.addEventListener('plusready', () => adjustWebviewTop())
+    } else if (typeof document !== 'undefined') {
+      document.addEventListener('plusready', handlePlusReady)
+      plusReadyBound = true
     }
   }
 
   // 额外延迟调整（兼容部分设备）
-  setTimeout(() => adjustWebviewTop(), 300)
-  setTimeout(() => adjustWebviewTop(), 800)
+  scheduleWebviewAdjustment(300)
+  scheduleWebviewAdjustment(800)
 
   // 监听窗口尺寸变化，重新计算
-  try {
-    window.addEventListener('resize', () => adjustWebviewTop())
-  } catch (e) {
-    // 某些小程序环境无 window
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleWindowResize)
+    resizeBound = true
   }
+})
+
+onBeforeUnmount(() => {
+  pageDisposed = true
+  clearLoadTimeout()
+  const activeDownloadTask = downloadTask
+  downloadTask = null
+  if (activeDownloadTask && typeof activeDownloadTask.abort === 'function') {
+    try {
+      activeDownloadTask.abort()
+    } catch (_) {
+      // The download may already have completed between teardown steps.
+    }
+  }
+  if (plusReadyBound && typeof document !== 'undefined') {
+    document.removeEventListener('plusready', handlePlusReady)
+    plusReadyBound = false
+  }
+  if (resizeBound && typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleWindowResize)
+    resizeBound = false
+  }
+  adjustTimers.forEach(timer => clearTimeout(timer))
+  adjustTimers.clear()
 })
 </script>
 
@@ -344,6 +463,8 @@ onMounted(() => {
   right: 0;
   bottom: 0;
 }
+.webview-container.is-loading,
+.webview-iframe.is-loading { opacity: 0; }
 
 /* 空状态/加载状态 */
 .webview-empty {
@@ -355,6 +476,12 @@ onMounted(() => {
   background: linear-gradient(180deg, #f5f7fb 0%, #e8ecf5 100%);
   gap: 28rpx;
   padding: 80rpx 40rpx;
+}
+.webview-state-overlay {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  box-sizing: border-box;
 }
 
 .empty-icon {
@@ -382,6 +509,14 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.5);
   border-radius: 12rpx;
   margin-top: 20rpx;
+}
+.retry-btn {
+  padding: 18rpx 34rpx;
+  border-radius: 999rpx;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  box-shadow: 0 8rpx 20rpx rgba(102, 126, 234, .25);
+  font-size: 26rpx;
 }
 
 /* 加载动画 */

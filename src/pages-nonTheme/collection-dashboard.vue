@@ -8,7 +8,7 @@
           <view class="title">垃圾清运可视化大屏</view>
           <view class="sub">
             <text class="sub-copy">Tencent Map + 清运路径实时调度</text>
-            <text :class="['compact-status', statusCls]">{{ compactStatusText }}</text>
+            <text :class="['compact-status', databaseOffline ? 'warn' : statusCls]">{{ compactStatusText }}</text>
           </view>
         </view>
         <AdminScreenHeader
@@ -45,6 +45,12 @@
             <view class="btn ghost" @tap="openSortingCenterMonitor">分拣中心进度</view>
           </view>
         </AdminScreenHeader>
+      </view>
+
+      <view v-if="databaseOffline" class="database-degraded-banner" role="status">
+        <text class="database-degraded-dot"></text>
+        <text>{{ DATABASE_OFFLINE_MESSAGE }}</text>
+        <text class="database-degraded-detail">部分实时写入暂不可用，数据库恢复后自动解除提示</text>
       </view>
 
       <!-- 指标卡片 -->
@@ -568,6 +574,13 @@
 import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { baseUrl } from '@/api/settings'
+import {
+  DATABASE_OFFLINE_MESSAGE,
+  getDatabaseStatus,
+  subscribeDatabaseStatus,
+  updateDatabaseStatusFromAvailability
+} from '@/api/database-status.mjs'
+import { isDatabaseHealthEndpoint } from '@/api/request-utils.mjs'
 import { digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
 import { mapConfig } from '@/api/map-config'
 import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/config/center-workflow-video.js'
@@ -576,6 +589,13 @@ import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import '@/styles/admin-light-theme.css'
+
+const databaseStatusRuntime = Object.freeze({
+  getStorageSync: key => uni.getStorageSync(key),
+  setStorageSync: (key, value) => uni.setStorageSync(key, value),
+  removeStorageSync: key => uni.removeStorageSync(key),
+  showToast: options => uni.showToast(options)
+})
 
 // ─── 常量 ─────────────────────────────────────────────
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
@@ -723,7 +743,9 @@ function seededRatio(seed) {
 const clockText = ref('--:--:--')
 const statusText = ref('准备就绪')
 const statusCls = ref('')
+const databaseOffline = ref(getDatabaseStatus(databaseStatusRuntime).offline)
 const compactStatusText = computed(() => {
+  if (databaseOffline.value) return '数据库离线'
   const text = String(statusText.value || '')
   if (statusCls.value === 'err') return '刷新失败'
   if (statusCls.value === 'warn') return text.includes('监测') ? '监测中' : '处理中'
@@ -1684,6 +1706,12 @@ function apiRequest(path, options = {}) {
         try {
           json = await r.json()
         } catch (_) {}
+        updateDatabaseStatusFromAvailability(json, {
+          runtime: databaseStatusRuntime,
+          source: path,
+          allowRecovery: isDatabaseHealthEndpoint(path),
+          notify: false
+        })
         if (!json || json.code !== 0 || !r.ok) {
           if (redirectIfAccessDenied(json, r)) {
             throw new Error(describeApiFailure(json, r))
@@ -1757,6 +1785,12 @@ function apiRequest(path, options = {}) {
       url, method, data: options.body, header: authHeaders(),
       success: res => {
         const json = res.data
+        updateDatabaseStatusFromAvailability(json, {
+          runtime: databaseStatusRuntime,
+          source: path,
+          allowRecovery: isDatabaseHealthEndpoint(path),
+          notify: false
+        })
         if (!json || json.code !== 0) { settle(() => reject(new Error((json && json.msg) || `HTTP ${res.statusCode}`))); return }
         settle(() => resolve(json.data))
       },
@@ -1873,6 +1907,8 @@ async function doRefresh(options) {
   _state.routePlanning = false
   _state.loading = true
   if (!silent) setStatus(`正在刷新清运数据（${strategyLabel(routeStrategy.value)}）...`, 'warn')
+  // 只有健康接口能够确认数据库恢复；失败时保留已有离线标记。
+  apiRequest('/api/_db_state', { timeout: 5000 }).catch(() => {})
   try {
     const data = await apiRequest(buildDashboardSnapshotPath())
     if (!dashboardActive || monitor.active) return
@@ -2648,6 +2684,7 @@ function tick() { clockText.value = fmtTime(new Date(), true) }
 let refreshTimer = null
 let faultRefreshTimer = null
 let unbindThemeWatcher = null
+let unbindDatabaseStatus = null
 let storageHandler = null
 let h5MapResizeHandler = null
 let h5MapResizeFrame = null
@@ -2710,6 +2747,9 @@ onMounted(async () => {
   const mountRevision = ++dashboardMountRevision
   if (!await ensureAdminScreenAccess('collectionDashboard') || mountRevision !== dashboardMountRevision) return
   dashboardActive = true
+  unbindDatabaseStatus = subscribeDatabaseStatus((status) => {
+    databaseOffline.value = status.offline
+  }, databaseStatusRuntime)
   syncThemeMode()
   unbindThemeWatcher = bindThemeStorageSync()
   // #ifdef H5
@@ -2777,6 +2817,8 @@ onBeforeUnmount(() => {
   faultRefreshTimer = null
   if (typeof unbindThemeWatcher === 'function') unbindThemeWatcher()
   unbindThemeWatcher = null
+  if (typeof unbindDatabaseStatus === 'function') unbindDatabaseStatus()
+  unbindDatabaseStatus = null
   // #ifdef H5
   if (storageHandler) {
     window.removeEventListener('storage', storageHandler)
@@ -2857,6 +2899,17 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .title { font-size: clamp(20px, 1.35vw, 26px); font-weight: 700; letter-spacing: 1px; text-shadow: 0 0 18px rgba(36,217,255,.4); }
 .screen .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .screen .compact-status { display: none; }
+.screen .database-degraded-banner {
+  min-height: 28px; padding: 5px 10px; box-sizing: border-box;
+  display: flex; align-items: center; gap: 7px;
+  border: 1px solid rgba(245,181,66,.45); border-radius: 9px;
+  color: #ffe6a7; background: rgba(94,62,13,.5); font-size: 11px;
+}
+.screen .database-degraded-dot {
+  width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%;
+  background: #f5b548; box-shadow: 0 0 9px rgba(245,181,72,.75);
+}
+.screen .database-degraded-detail { color: #d8c898; }
 .screen .actions { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; min-width: 0; }
 .screen .actions > view { flex-shrink: 0; }
 
@@ -3689,6 +3742,8 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   .screen .row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .screen .row > view:first-child { flex: none; width: 100%; }
   .screen .title { font-size: 18px; letter-spacing: 0.5px; }
+  .screen .database-degraded-banner { align-items: flex-start; line-height: 1.4; }
+  .screen .database-degraded-detail { display: none; }
   .screen .actions { width: 100%; gap: 6px; flex-wrap: wrap; }
   .screen .clock { font-size: 14px; min-width: unset; flex: 1; padding: 5px 8px; }
   .screen .status { font-size: 11px; min-width: unset; flex: 1; padding: 5px 8px; }
@@ -3762,6 +3817,12 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   gap: 7px;
   box-shadow: var(--admin-light-shadow);
 }
+.screen.light-theme.admin-light-theme .database-degraded-banner {
+  border-color: #e8b146;
+  color: #81560b;
+  background: #fff8e8;
+}
+.screen.light-theme.admin-light-theme .database-degraded-detail { color: #8a7446; }
 .screen.light-theme.admin-light-theme .title {
   color: var(--admin-light-text);
   font-size: clamp(20px, 1.25vw, 24px);

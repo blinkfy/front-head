@@ -3,6 +3,7 @@
   "version": "1.3.12",
   "scripts": {
     "check:mojibake": "node scripts/check-mojibake.js",
+    "test:resilience": "node scripts/test-frontend-resilience.js",
     "dev:custom": "uni -p",
     "dev:h5": "uni",
     "dev:h5:ssr": "uni --ssr",
