@@ -997,6 +997,21 @@ const _state = {
   shouldFitMap: false
 }
 let routePlanRevision = 0
+let routePlanController = null
+let dashboardActive = false
+let dashboardMountRevision = 0
+const ROUTE_PLAN_TIMEOUT_MS = 30000
+
+function cancelRoutePlan() {
+  if (routePlanController && typeof routePlanController.abort === 'function') {
+    try { routePlanController.abort() } catch (_) {}
+  }
+  routePlanController = null
+}
+
+function createAbortController() {
+  return typeof AbortController === 'function' ? new AbortController() : null
+}
 
 function interpolatePoint(from, to, progress) {
   const p = clamp(progress, 0, 1)
@@ -1639,12 +1654,31 @@ function authHeaders() {
 }
 
 function apiRequest(path, options = {}) {
+  const requestedTimeout = Number(options.timeout)
+  const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 0
   return new Promise((resolve, reject) => {
     const url = path.startsWith('/') ? `${baseUrl}${path}` : path
     const method = options.method || 'GET'
     const body = options.body === undefined ? undefined : JSON.stringify(options.body)
     // #ifdef H5
-    fetch(url, { method, body, headers: authHeaders() })
+    const requestController = createAbortController()
+    let timeoutId = null
+    let timedOut = false
+    let abortHandler = null
+    if (options.signal && requestController) {
+      abortHandler = () => requestController.abort()
+      if (options.signal.aborted) requestController.abort()
+      else if (typeof options.signal.addEventListener === 'function') {
+        options.signal.addEventListener('abort', abortHandler, { once: true })
+      }
+    }
+
+    const requestPromise = fetch(url, {
+      method,
+      body,
+      headers: authHeaders(),
+      signal: requestController ? requestController.signal : options.signal
+    })
       .then(async (r) => {
         let json = null
         try {
@@ -1656,19 +1690,77 @@ function apiRequest(path, options = {}) {
           }
           throw new Error(describeApiFailure(json, r))
         }
-        resolve(json.data)
+        return json.data
       })
-      .catch(reject)
+    const pending = [requestPromise]
+    if (timeoutMs) {
+      pending.push(new Promise((_, rejectTimeout) => {
+        timeoutId = setTimeout(() => {
+          timedOut = true
+          if (requestController) requestController.abort()
+          rejectTimeout(new Error('请求超时，请稍后重试'))
+        }, timeoutMs)
+      }))
+    }
+
+    Promise.race(pending)
+      .then(resolve)
+      .catch((error) => {
+        if (timedOut) {
+          reject(new Error('请求超时，请稍后重试'))
+        } else if (options.signal?.aborted) {
+          reject(new Error('请求已取消'))
+        } else {
+          reject(error)
+        }
+      })
+      .finally(() => {
+        if (timeoutId) clearTimeout(timeoutId)
+        if (abortHandler && typeof options.signal?.removeEventListener === 'function') {
+          options.signal.removeEventListener('abort', abortHandler)
+        }
+      })
     // #endif
     // #ifndef H5
-    uni.request({
+    let requestTask = null
+    let mpTimeoutId = null
+    let mpAbortHandler = null
+    let settled = false
+    const cleanup = () => {
+      if (mpTimeoutId) clearTimeout(mpTimeoutId)
+      if (mpAbortHandler && typeof options.signal?.removeEventListener === 'function') {
+        options.signal.removeEventListener('abort', mpAbortHandler)
+      }
+    }
+    const settle = (callback) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      callback()
+    }
+    const abortRequest = (message) => {
+      if (requestTask && typeof requestTask.abort === 'function') requestTask.abort()
+      settle(() => reject(new Error(message)))
+    }
+    if (options.signal?.aborted) {
+      abortRequest('请求已取消')
+      return
+    }
+    if (timeoutMs) {
+      mpTimeoutId = setTimeout(() => abortRequest('请求超时，请稍后重试'), timeoutMs)
+    }
+    if (options.signal && typeof options.signal.addEventListener === 'function') {
+      mpAbortHandler = () => abortRequest('请求已取消')
+      options.signal.addEventListener('abort', mpAbortHandler, { once: true })
+    }
+    requestTask = uni.request({
       url, method, data: options.body, header: authHeaders(),
       success: res => {
         const json = res.data
-        if (!json || json.code !== 0) { reject(new Error((json && json.msg) || `HTTP ${res.statusCode}`)); return }
-        resolve(json.data)
+        if (!json || json.code !== 0) { settle(() => reject(new Error((json && json.msg) || `HTTP ${res.statusCode}`))); return }
+        settle(() => resolve(json.data))
       },
-      fail: err => reject(new Error(err && err.errMsg ? err.errMsg : String(err)))
+      fail: err => settle(() => reject(new Error(err && err.errMsg ? err.errMsg : String(err))))
     })
     // #endif
   })
@@ -1728,6 +1820,10 @@ function buildRoutePlanPayload() {
 }
 
 async function planRouteInBackground({ silent = false } = {}) {
+  if (!dashboardActive || monitor.active) return
+  cancelRoutePlan()
+  const controller = createAbortController()
+  routePlanController = controller
   const revision = ++routePlanRevision
   _state.routePlanning = true
   renderAll()
@@ -1736,9 +1832,11 @@ async function planRouteInBackground({ silent = false } = {}) {
   try {
     const plan = await apiRequest('/api/planning/plan', {
       method: 'POST',
-      body: buildRoutePlanPayload()
+      body: buildRoutePlanPayload(),
+      timeout: ROUTE_PLAN_TIMEOUT_MS,
+      signal: controller?.signal
     })
-    if (revision !== routePlanRevision || monitor.active) return
+    if (revision !== routePlanRevision || monitor.active || !dashboardActive) return
 
     const namedPlan = applyDashboardBinNames({ bins: _state.bins, plan }).plan
     _state.plan = namedPlan || plan || null
@@ -1751,12 +1849,13 @@ async function planRouteInBackground({ silent = false } = {}) {
     const stopCount = _state.plan?.route?.stops?.length || 0
     setStatus(`路线规划完成：${stopCount} 个停靠点，策略 ${strategyLabel(routeStrategy.value)}`, 'ok')
   } catch (error) {
-    if (revision !== routePlanRevision || monitor.active) return
+    if (revision !== routePlanRevision || monitor.active || !dashboardActive) return
     _state.plan = null
     renderAll()
     setStatus(`清运数据已加载，路线规划暂不可用：${error?.message || '未知错误'}`, 'warn')
   } finally {
-    if (revision === routePlanRevision) {
+    if (routePlanController === controller) routePlanController = null
+    if (revision === routePlanRevision && dashboardActive) {
       _state.routePlanning = false
       if (!_state.plan) renderAll()
     }
@@ -1765,23 +1864,23 @@ async function planRouteInBackground({ silent = false } = {}) {
 
 async function doRefresh(options) {
   const silent = !!(options && options.silent)
-  if (monitor.active) return
+  if (!dashboardActive || monitor.active) return
   if (_state.loading) return
   // Any incoming snapshot supersedes a still-running route calculation.
   // The new snapshot will start its own planner after its data is rendered.
+  cancelRoutePlan()
   routePlanRevision += 1
   _state.routePlanning = false
   _state.loading = true
   if (!silent) setStatus(`正在刷新清运数据（${strategyLabel(routeStrategy.value)}）...`, 'warn')
   try {
     const data = await apiRequest(buildDashboardSnapshotPath())
-    if (monitor.active) return
+    if (!dashboardActive || monitor.active) return
     const namedData = applyDashboardBinNames(data)
     _state.bins = namedData.bins
-    // New snapshots intentionally omit the expensive road route. Keep a
-    // previous valid route visible during refresh, then replace it when the
-    // background planner finishes.
-    if (namedData.plan) _state.plan = namedData.plan
+    // Snapshots without a route must not inherit a route generated from an
+    // earlier bin set. The planner will repopulate it in the background.
+    _state.plan = namedData.plan || null
     _state.points = Array.isArray(data.points) ? data.points : []
     _state.tasks = Array.isArray(data.tasks) ? data.tasks : []
     _state.runtime = data.runtime || null
@@ -2296,6 +2395,8 @@ function updateDispatchMonitor() {
 }
 
 function startRiskMonitor() {
+  cancelRoutePlan()
+  routePlanRevision += 1
   clearMonitorTimer()
   ensureMonitorBackup()
   restoreMonitorBase()
@@ -2334,6 +2435,8 @@ function toggleRiskMonitor() {
 }
 
 async function startDispatchMonitor() {
+  cancelRoutePlan()
+  routePlanRevision += 1
   const requestRevision = ++monitorRequestRevision
   clearMonitorTimer()
   ensureMonitorBackup()
@@ -2546,6 +2649,10 @@ let refreshTimer = null
 let faultRefreshTimer = null
 let unbindThemeWatcher = null
 let storageHandler = null
+let h5MapResizeHandler = null
+let h5MapResizeFrame = null
+let h5MapClickHandler = null
+let h5MapInitRevision = 0
 
 // ─── H5 地图初始化 ─────────────────────────────────────
 // #ifdef H5
@@ -2566,13 +2673,15 @@ async function loadTMapSdk() {
   throw new Error('腾讯地图 SDK 加载失败')
 }
 async function initH5Map() {
+  const initRevision = ++h5MapInitRevision
   await loadTMapSdk()
+  if (!dashboardActive || initRevision !== h5MapInitRevision) return false
   _state.mapInstance = new window.TMap.Map('map', {
     center: new window.TMap.LatLng(DEFAULT_CENTER.latitude, DEFAULT_CENTER.longitude),
     zoom: 12, viewMode: '2D'
   })
   _state.mapReady = true
-  _state.mapInstance.on('click', evt => {
+  h5MapClickHandler = (evt) => {
     const lat = typeof evt?.latLng?.getLat === 'function' ? evt.latLng.getLat() : null
     const lng = typeof evt?.latLng?.getLng === 'function' ? evt.latLng.getLng() : null
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
@@ -2580,19 +2689,27 @@ async function initH5Map() {
     _state.startPoint = { ..._state.manualStartPoint }
     _state.plan = null
     doRefresh()
-  })
-  window.addEventListener('resize', () => {
-    requestAnimationFrame(() => {
-      if (_state.mapInstance && typeof _state.mapInstance.resize === 'function') _state.mapInstance.resize()
+  }
+  _state.mapInstance.on('click', h5MapClickHandler)
+  h5MapResizeHandler = () => {
+    if (h5MapResizeFrame !== null) return
+    h5MapResizeFrame = requestAnimationFrame(() => {
+      h5MapResizeFrame = null
+      if (!dashboardActive || !_state.mapInstance) return
+      if (typeof _state.mapInstance.resize === 'function') _state.mapInstance.resize()
       drawMap(true)
     })
-  })
+  }
+  window.addEventListener('resize', h5MapResizeHandler)
+  return true
 }
 // #endif
 
 // ─── 生命周期 ──────────────────────────────────────────
 onMounted(async () => {
-  if (!await ensureAdminScreenAccess('collectionDashboard')) return
+  const mountRevision = ++dashboardMountRevision
+  if (!await ensureAdminScreenAccess('collectionDashboard') || mountRevision !== dashboardMountRevision) return
+  dashboardActive = true
   syncThemeMode()
   unbindThemeWatcher = bindThemeStorageSync()
   // #ifdef H5
@@ -2614,12 +2731,14 @@ onMounted(async () => {
   h5MapLoading.value = true
   h5MapError.value = ''
   initH5Map()
-    .then(() => {
+    .then((ready) => {
+      if (!ready || !dashboardActive || mountRevision !== dashboardMountRevision) return
       h5MapReady.value = true
       h5MapLoading.value = false
       drawMap(true)
     })
     .catch((error) => {
+      if (!dashboardActive || mountRevision !== dashboardMountRevision) return
       h5MapLoading.value = false
       h5MapError.value = error && error.message ? error.message : '地图加载失败'
       console.error('[collection-dashboard] map init failed:', error)
@@ -2627,6 +2746,7 @@ onMounted(async () => {
   // #endif
 
   await refreshPromise
+  if (!dashboardActive || mountRevision !== dashboardMountRevision) return
   refreshTimer = setInterval(() => doRefresh({ silent: true }), 60000)
   loadFaultEvents(true)
   faultRefreshTimer = setInterval(() => loadFaultEvents(true), 15000)
@@ -2639,7 +2759,11 @@ onShow(() => {
 onBeforeUnmount(() => {
   // A slow route request must not recreate its monitor interval after this
   // page has left or after another monitor session has replaced it.
+  dashboardActive = false
+  dashboardMountRevision += 1
+  h5MapInitRevision += 1
   monitorRequestRevision += 1
+  cancelRoutePlan()
   routePlanRevision += 1
   monitor.active = false
   monitor.scene = ''
@@ -2648,17 +2772,32 @@ onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
   if (refreshTimer) clearInterval(refreshTimer)
   if (faultRefreshTimer) clearInterval(faultRefreshTimer)
+  clockTimer = null
+  refreshTimer = null
+  faultRefreshTimer = null
   if (typeof unbindThemeWatcher === 'function') unbindThemeWatcher()
+  unbindThemeWatcher = null
   // #ifdef H5
   if (storageHandler) {
     window.removeEventListener('storage', storageHandler)
     storageHandler = null
   }
-  // #endif
-  // #ifdef H5
+  if (h5MapResizeHandler) {
+    window.removeEventListener('resize', h5MapResizeHandler)
+    h5MapResizeHandler = null
+  }
+  if (h5MapResizeFrame !== null && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(h5MapResizeFrame)
+  }
+  h5MapResizeFrame = null
+  if (_state.mapInstance && h5MapClickHandler && typeof _state.mapInstance.off === 'function') {
+    try { _state.mapInstance.off('click', h5MapClickHandler) } catch (_) {}
+  }
+  h5MapClickHandler = null
   clearH5Map()
   if (_state.infoWindow) { _state.infoWindow.setMap(null); _state.infoWindow = null }
   if (_state.mapInstance) { try { _state.mapInstance.destroy() } catch (_) {} _state.mapInstance = null }
+  _state.mapReady = false
   // #endif
 })
 </script>

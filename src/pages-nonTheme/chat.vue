@@ -631,6 +631,7 @@ export default {
             
             // 拖拽和粘贴相关
             isDragOver: false, // 是否正在拖拽
+            h5DragDropListeners: null,
             // 缩略图缓存: { originalPath: thumbnailUrl }
             thumbnailCache: {},
             
@@ -802,11 +803,6 @@ export default {
         // 启动消息轮询
         this.startMessagePolling()
         
-        // 初始化拖拽事件（H5环境）
-        this.$nextTick(() => {
-            this.initDragDropEvent()
-        })
-        
         // 注意:不再使用 uni.$on 监听位置选择事件,改为在 onShow 中从 storage 读取
     },
 
@@ -822,6 +818,11 @@ export default {
         
         // 重新启动轮询
         this.startMessagePolling()
+
+        // H5 原生事件仅在当前聊天页可见时绑定，避免缓存页继续接收粘贴和拖拽事件。
+        this.$nextTick(() => {
+            this.initDragDropEvent()
+        })
         
         // 从存储中读取选择的位置（H5、APP、小程序都支持）
         const locationData = uni.getStorageSync('selectedLocation')
@@ -835,11 +836,13 @@ export default {
     onHide() {
         // 页面隐藏时停止轮询，节省资源
         this.stopMessagePolling()
+        this.cleanupDragDropEvent()
     },
 
     onUnload() {
         // 停止消息轮询
         this.stopMessagePolling()
+        this.cleanupDragDropEvent()
         if (this.mentionAbortController) this.mentionAbortController.abort()
         if (this.mentionSocket) {
             try { this.mentionSocket.close() } catch (_) {}
@@ -863,6 +866,7 @@ export default {
     beforeDestroy() {
         // 确保组件销毁时停止轮询
         this.stopMessagePolling()
+        this.cleanupDragDropEvent()
     },
 
     methods: {
@@ -1039,63 +1043,57 @@ export default {
             }
         },
 
+        cleanupDragDropEvent() {
+            // #ifdef H5
+            const listeners = this.h5DragDropListeners
+            if (!listeners) return
+
+            document.removeEventListener('paste', listeners.pasteHandler, true)
+            document.removeEventListener('dragover', listeners.documentDragOverHandler, false)
+            document.removeEventListener('drop', listeners.documentDropHandler, false)
+            this.h5DragDropListeners = null
+            this.isDragOver = false
+            // #endif
+        },
+
         // 初始化拖拽事件（H5环境）
         initDragDropEvent() {
             // #ifdef H5
+            this.cleanupDragDropEvent()
             const container = document.querySelector('.chat-container')
             if (!container) {
                 console.warn('未找到 chat-container 元素')
                 return
             }
 
-            console.log('初始化拖拽事件监听器')
-
-            // 防止浏览器默认行为
-            container.addEventListener('dragover', (e) => {
+            // 拖拽本身由模板事件处理；这里只阻止页面外拖放触发浏览器默认行为。
+            const documentDragOverHandler = (e) => {
                 e.preventDefault()
-                e.stopPropagation()
-                console.log('dragover 事件触发')
-                this.isDragOver = true
-            }, false)
-
-            container.addEventListener('dragleave', (e) => {
+            }
+            const documentDropHandler = (e) => {
                 e.preventDefault()
-                e.stopPropagation()
-                console.log('dragleave 事件触发')
-                // 只在完全离开容器时隐藏
-                if (e.target === container) {
-                    this.isDragOver = false
-                }
-            }, false)
-
-            container.addEventListener('drop', (e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                console.log('drop 事件触发')
-                this.isDragOver = false
-                this.onDrop(e)
-            }, false)
-
-            // 由于 uni-app @paste 事件无法访问 clipboardData，需要原生监听器
-            // 但要避免与 template 中的 @paste 重复触发，所以只监听 document
+            }
+            // 在捕获阶段处理文件粘贴，避免同一文件同时被原生和模板事件重复上传。
             const pasteHandler = (e) => {
-                console.log('原生粘贴事件触发')
+                if (!container.contains(e.target)) return
+                const clipboardData = e.clipboardData
+                if (!clipboardData) return
+                const hasFile = (clipboardData.files && clipboardData.files.length > 0) ||
+                    Array.from(clipboardData.items || []).some(item => item.kind === 'file')
+                if (!hasFile) return
                 e.preventDefault()
                 e.stopPropagation()
                 this.onPasteNative(e)
             }
-            document.addEventListener('paste', pasteHandler, false)
-            // 保存处理函数引用以便后续移除
-            this._pasteHandler = pasteHandler
 
-            // 阻止默认行为
-            document.addEventListener('dragover', (e) => {
-                e.preventDefault()
-            }, false)
-
-            document.addEventListener('drop', (e) => {
-                e.preventDefault()
-            }, false)
+            document.addEventListener('paste', pasteHandler, true)
+            document.addEventListener('dragover', documentDragOverHandler, false)
+            document.addEventListener('drop', documentDropHandler, false)
+            this.h5DragDropListeners = {
+                pasteHandler,
+                documentDragOverHandler,
+                documentDropHandler
+            }
             // #endif
         },
 
@@ -3592,7 +3590,7 @@ export default {
             }
             
             // 方式 2：dataTransfer.items (更现代)
-            if (!files && e.dataTransfer && e.dataTransfer.items) {
+            if ((!files || files.length === 0) && e.dataTransfer && e.dataTransfer.items) {
                 const items = e.dataTransfer.items
                 files = []
                 for (let i = 0; i < items.length; i++) {
@@ -3620,7 +3618,7 @@ export default {
             //     return
             // }
 
-            console.log(`检测到 ${files.length} 个文件`)
+            if (!files || files.length === 0) return
             
             // 处理拖拽的文件
             this.processDroppedFiles(Array.from(files))
