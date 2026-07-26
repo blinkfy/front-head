@@ -288,38 +288,7 @@
       </view>
     </view>
     
-    <!-- 成就解锁弹窗 -->
-    <view v-if="showAchievementModal" class="modal-overlay" @click="closeAchievementModal">
-      <view class="achievement-unlock-modal" @click.stop="">
-        <view class="achievement-unlock-bg"></view>
-        <view class="achievement-unlock-header">
-          <text class="achievement-unlock-emoji">🏆</text>
-          <text class="achievement-unlock-title">新成就解锁!</text>
-          <text class="achievement-unlock-subtitle">恭喜获得 {{ achievementModalItems.length }} 项新成就</text>
-        </view>
-        <view class="achievement-unlock-list">
-          <view
-            v-for="(item, idx) in achievementModalItems"
-            :key="item.key"
-            class="achievement-unlock-item"
-          >
-            <view class="achievement-unlock-icon-wrap" :class="getAchievementRarity(item.key)">
-              <text class="achievement-unlock-icon">{{ getAchievementIcon(item.key) }}</text>
-            </view>
-            <view class="achievement-unlock-info">
-              <text class="achievement-unlock-name">{{ item.name }}</text>
-              <text class="achievement-unlock-desc">{{ item.description }}</text>
-            </view>
-            <view class="achievement-unlock-badge" :class="getAchievementRarity(item.key)">
-              <text>{{ getAchievementRarityLabel(item.key) }}</text>
-            </view>
-          </view>
-        </view>
-        <view class="achievement-unlock-footer">
-          <button class="achievement-unlock-btn" @click="closeAchievementModal">太棒了!</button>
-        </view>
-      </view>
-    </view>
+    <AchievementUnlockModal :visible="showAchievementModal" :items="achievementModalItems" dark @close="closeAchievementModal" />
 
     <AppOnboarding
       :visible="showAppOnboarding"
@@ -366,8 +335,9 @@ import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr'
 import AppOnboarding from '@/components/AppOnboarding.vue'
+import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import { enqueueAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import {
-  appendAchievementQueue,
   buildExpandedUpcyclingText,
   buildSeedFromRecognizeData,
   extractRecognizedItems,
@@ -978,9 +948,9 @@ function applyEnhancedRecognitionData(recognizeData) {
     recognizeData.achievementInfo &&
     recognizeData.achievementInfo.newlyUnlocked
   ) ? recognizeData.achievementInfo.newlyUnlocked : []
-  appendAchievementQueue(unlocks)
+  enqueueAchievementUnlocks(unlocks)
   if (unlocks.length) {
-    showAchievementUnlockModal(unlocks)
+    showAchievementUnlockModal(takeAchievementUnlocks())
   }
 
   const seed = buildSeedFromRecognizeData(recognizeData)
@@ -1599,33 +1569,6 @@ function closeAchievementModal() {
   setTimeout(() => { achievementModalItems.value = [] }, 300)
 }
 
-function getAchievementIcon(key) {
-  const map = {
-    'first_recognize': '🌱', 'ten_recognize': '🌿', 'fifty_recognize': '🌳',
-    'hundred_recognize': '🏅', 'daily_five': '⭐', 'week_streak': '🔥',
-    'month_streak': '💎', 'category_master': '🎓', 'upcycle_creator': '♻️',
-    'community_contributor': '🤝', 'early_bird': '🌅', 'night_owl': '🌙',
-    'perfect分类': '💯', 'all_categories': '🎯', 'speed_demon': '⚡',
-    'collector': '📚', 'expert': '🧠', 'legend': '👑'
-  }
-  return map[key] || '🏆'
-}
-
-function getAchievementRarity(key) {
-  const epic = ['month_streak', 'legend', 'all_categories']
-  const rare = ['collector', 'expert', 'category_master', 'upcycle_creator']
-  if (epic.includes(key)) return 'epic'
-  if (rare.includes(key)) return 'rare'
-  return 'common'
-}
-
-function getAchievementRarityLabel(key) {
-  const epic = ['month_streak', 'legend', 'all_categories']
-  const rare = ['collector', 'expert', 'category_master', 'upcycle_creator']
-  if (epic.includes(key)) return '史诗'
-  if (rare.includes(key)) return '稀有'
-  return '普通'
-}
 </script>
 
 <style scoped>

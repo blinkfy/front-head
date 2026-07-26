@@ -298,38 +298,7 @@
       </view>
     </view>
 
-    <!-- 成就解锁弹窗 -->
-    <view v-if="showAchievementModal" class="modal-overlay" @click="closeAchievementModal">
-      <view class="achievement-unlock-modal" @click.stop="">
-        <view class="achievement-unlock-bg"></view>
-        <view class="achievement-unlock-header">
-          <text class="achievement-unlock-emoji">🏆</text>
-          <text class="achievement-unlock-title">新成就解锁!</text>
-          <text class="achievement-unlock-subtitle">恭喜获得 {{ achievementModalItems.length }} 项新成就</text>
-        </view>
-        <view class="achievement-unlock-list">
-          <view
-            v-for="(item, idx) in achievementModalItems"
-            :key="item.key"
-            class="achievement-unlock-item"
-          >
-            <view class="achievement-unlock-icon-wrap" :class="getAchievementRarity(item.key)">
-              <text class="achievement-unlock-icon">{{ getAchievementIcon(item.key) }}</text>
-            </view>
-            <view class="achievement-unlock-info">
-              <text class="achievement-unlock-name">{{ item.name }}</text>
-              <text class="achievement-unlock-desc">{{ item.description }}</text>
-            </view>
-            <view class="achievement-unlock-badge" :class="getAchievementRarity(item.key)">
-              <text>{{ getAchievementRarityLabel(item.key) }}</text>
-            </view>
-          </view>
-        </view>
-        <view class="achievement-unlock-footer">
-          <button class="achievement-unlock-btn" @click="closeAchievementModal">太棒了!</button>
-        </view>
-      </view>
-    </view>
+    <AchievementUnlockModal :visible="showAchievementModal" :items="achievementModalItems" @close="closeAchievementModal" />
 
     <AppOnboarding
       :visible="showAppOnboarding"
@@ -375,8 +344,9 @@ import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr'
 import AppOnboarding from '@/components/AppOnboarding.vue'
+import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import { enqueueAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import {
-  appendAchievementQueue,
   buildExpandedUpcyclingText,
   buildSeedFromRecognizeData,
   extractRecognizedItems,
@@ -1070,10 +1040,10 @@ function applyEnhancedRecognitionData(recognizeData) {
     recognizeData.achievementInfo &&
     recognizeData.achievementInfo.newlyUnlocked
   ) ? recognizeData.achievementInfo.newlyUnlocked : []
-  appendAchievementQueue(unlocks)
+  enqueueAchievementUnlocks(unlocks)
   // 识别成功后如果有新成就解锁，显示弹窗提示
   if (unlocks.length) {
-    showAchievementUnlockModal(unlocks)
+    showAchievementUnlockModal(takeAchievementUnlocks())
   }
 
   const seed = buildSeedFromRecognizeData(recognizeData)
@@ -1543,35 +1513,6 @@ function closeGuideModal() {
 }
 
 // 成就解锁弹窗
-const ACHIEVEMENT_RARITY = {
-  first_sort: { rarity: 'common', label: '普通' },
-  online_novice: { rarity: 'rare', label: '稀有' },
-  device_novice: { rarity: 'rare', label: '稀有' },
-  category_collector: { rarity: 'epic', label: '史诗' },
-  streak_3_days: { rarity: 'epic', label: '史诗' },
-  points_100: { rarity: 'legendary', label: '传说' }
-}
-const ACHIEVEMENT_ICON = {
-  first_sort: '🎯',
-  online_novice: '🌟',
-  device_novice: '📱',
-  category_collector: '🏅',
-  streak_3_days: '🔥',
-  points_100: '💯'
-}
-
-function getAchievementRarity(key) {
-  const info = ACHIEVEMENT_RARITY[key]
-  return info ? info.rarity : 'common'
-}
-function getAchievementRarityLabel(key) {
-  const info = ACHIEVEMENT_RARITY[key]
-  return info ? info.label : '普通'
-}
-function getAchievementIcon(key) {
-  return ACHIEVEMENT_ICON[key] || '🏆'
-}
-
 function showAchievementUnlockModal(items) {
   if (!Array.isArray(items) || !items.length) return
   const newItems = items.filter(item => item && item.key && !shownAchievementKeys.has(item.key))

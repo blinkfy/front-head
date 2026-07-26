@@ -25,6 +25,48 @@
 
     <!-- 主内容区 -->
     <view class="main-content">
+      <view v-if="stateMessage && achievements.length === 0" class="panel error-panel">
+        <text class="error-icon">⚠️</text>
+        <text class="error-text">{{ stateMessage }}</text>
+        <button class="retry-btn" @click="refreshAchievements">重新加载</button>
+      </view>
+
+      <view v-else class="panel overview-panel">
+        <view class="overview-progress">
+          <view class="completion-ring" :style="{ '--completion': `${completionPercent}%` }">
+            <view class="completion-ring-inner">
+              <text class="completion-value">{{ completionPercent }}%</text>
+              <text class="completion-label">总进度</text>
+            </view>
+          </view>
+          <view class="overview-copy">
+            <text class="overview-title">环保成长图鉴</text>
+            <text class="overview-desc">已解锁 {{ summary.unlockedCount }} / {{ summary.totalCount }} 项成就</text>
+            <text class="overview-updated">更新于 {{ updatedAtText }}</text>
+          </view>
+        </view>
+        <view class="next-target" v-if="nextAchievement">
+          <text class="overview-kicker">下一目标</text>
+          <view class="next-target-row">
+            <AchievementIcon :icon-key="nextAchievement.iconKey || nextAchievement.key" size="small" />
+            <view class="next-target-copy">
+              <text class="next-target-name">{{ nextAchievement.name }}</text>
+              <text class="next-target-progress">{{ getProgressValue(nextAchievement) }}/{{ getTargetValue(nextAchievement) }}{{ nextAchievement.unit || '' }}</text>
+            </view>
+            <text class="next-target-percent">{{ getPercentage(nextAchievement) }}%</text>
+          </view>
+        </view>
+        <view class="recent-unlocks" v-if="recentUnlocks.length">
+          <text class="overview-kicker">最近解锁</text>
+          <view class="recent-list">
+            <view v-for="item in recentUnlocks" :key="item.key" class="recent-item">
+              <AchievementIcon :icon-key="item.iconKey || item.key" size="small" />
+              <text>{{ item.name }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
       <!-- 成就图鉴 -->
       <view class="panel gallery-panel">
         <view class="panel-header">
@@ -35,19 +77,26 @@
           <text class="panel-subtitle">共 {{ achievements.length }} 项</text>
         </view>
 
-        <!-- 筛选标签 -->
+        <scroll-view scroll-x class="category-filter-scroll">
+          <view class="category-tabs">
+            <view v-for="item in categoryOptions" :key="item.value" class="category-tab" :class="{ active: categoryFilter === item.value }" @click="categoryFilter = item.value">
+              <text>{{ item.label }}</text><text class="category-count">{{ item.count }}</text>
+            </view>
+          </view>
+        </scroll-view>
+
         <view class="filter-tabs">
           <view class="filter-tab" :class="{ active: filter === 'all' }" @click="filter = 'all'">
             <text>全部</text>
-            <view class="tab-count">{{ achievements.length }}</view>
+            <view class="tab-count">{{ categoryAchievements.length }}</view>
           </view>
           <view class="filter-tab" :class="{ active: filter === 'unlocked' }" @click="filter = 'unlocked'">
             <text>已解锁</text>
-            <view class="tab-count">{{ unlockedAmount }}</view>
+            <view class="tab-count">{{ categoryUnlockedAmount }}</view>
           </view>
           <view class="filter-tab" :class="{ active: filter === 'locked' }" @click="filter = 'locked'">
             <text>未解锁</text>
-            <view class="tab-count">{{ achievements.length - unlockedAmount }}</view>
+            <view class="tab-count">{{ categoryAchievements.length - categoryUnlockedAmount }}</view>
           </view>
         </view>
 
@@ -56,7 +105,7 @@
           <view v-for="(item, index) in filteredAchievements" :key="item.key"
             class="achievement-card"
             :class="[
-              `rarity-${getRarityByKey(item.key).tier}`,
+              `rarity-${getRarity(item).tier}`,
               item.unlocked ? 'unlocked' : 'locked'
             ]"
             :style="{ animationDelay: `${Math.min(index * 50, 300)}ms` }"
@@ -64,8 +113,8 @@
 
             <!-- 图标区域 - 纹章风格：大图标居中 -->
             <view class="card-icon-area">
-              <view class="card-icon-frame" :class="[item.unlocked ? 'unlocked' : 'locked', `rarity-${getRarityByKey(item.key).tier}`]">
-                <achievement-icon :icon-key="item.key" size="large" />
+              <view class="card-icon-frame" :class="[item.unlocked ? 'unlocked' : 'locked', `rarity-${getRarity(item).tier}`]">
+                <achievement-icon :icon-key="item.iconKey || item.key" size="large" />
               </view>
             </view>
 
@@ -101,50 +150,7 @@
       </view>
     </view>
 
-    <!-- 新成就解锁弹窗 -->
-    <view class="modal-mask" :class="{ show: showModal }" @click.self="showModal = false">
-      <view class="unlock-modal" v-if="popupUnlocks.length > 0">
-        <!-- 闪光背景 -->
-        <view class="modal-bg-effect">
-          <view class="effect-orb effect-orb-1"></view>
-          <view class="effect-orb effect-orb-2"></view>
-          <view class="effect-orb effect-orb-3"></view>
-        </view>
-
-        <!-- 标题 -->
-        <view class="modal-header">
-          <view class="trophy-icon">🏆</view>
-          <text class="modal-title">新成就解锁!</text>
-          <text class="modal-subtitle">恭喜获得 {{ popupUnlocks.length }} 项新成就</text>
-        </view>
-
-        <!-- 成就列表 -->
-        <view class="modal-body">
-          <view class="unlock-list">
-            <view class="unlock-item" v-for="(item, index) in popupUnlocks" :key="item.key" :style="{ animationDelay: `${index * 150}ms` }">
-              <view class="unlock-icon-wrap" :class="getRarityByKey(item.key).tier">
-                <achievement-icon :icon-key="item.key" />
-              </view>
-              <view class="unlock-info">
-                <text class="unlock-name">{{ item.name }}</text>
-                <text class="unlock-desc">{{ item.description || '你已达成一个新的里程碑' }}</text>
-                <text class="unlock-time">{{ formatDateTime(item.unlockedAt) }}</text>
-              </view>
-              <view class="unlock-rarity" :class="getRarityByKey(item.key).tier">
-                {{ getRarityByKey(item.key).label }}
-              </view>
-            </view>
-          </view>
-        </view>
-
-        <!-- 底部按钮 -->
-        <view class="modal-footer">
-          <button class="confirm-btn" @click="showModal = false">
-            <text>太棒了!</text>
-          </button>
-        </view>
-      </view>
-    </view>
+    <AchievementUnlockModal :visible="showModal" :items="popupUnlocks" :dark="currentTheme !== 'light'" @close="closeUnlockModal" />
   </view>
 </template>
 
@@ -153,46 +159,25 @@ import { onBeforeUnmount, onMounted, ref, computed, reactive } from 'vue'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { baseUrl } from '@/api/settings'
 import AchievementIcon from '@/components/AchievementIcon.vue'
+import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import { dedupeAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 
 let unbindThemeWatcher = null
 
-const QUEUE_KEY = 'achievement_unlock_queue_v1'
-
 const loading = ref(false)
 const filter = ref('all')
+const categoryFilter = ref('all')
 const achievements = ref([])
 const summary = reactive({ unlockedCount: 0, totalCount: 0, completionRate: 0 })
 const popupUnlocks = ref([])
-const newUnlockCount = ref(0)
 const updatedAtText = ref('--')
 const showModal = ref(false)
 const stateMessage = ref('')
 const currentTheme = ref('light')
 
-const RARITY_MAP = {
-  first_sort: { tier: 'common', label: '普通' },
-  online_novice: { tier: 'rare', label: '稀有' },
-  device_novice: { tier: 'rare', label: '稀有' },
-  category_collector: { tier: 'epic', label: '史诗' },
-  streak_3_days: { tier: 'epic', label: '史诗' },
-  points_100: { tier: 'legendary', label: '传说' }
-}
-
 function getStorage(key) {
   const result = uni.getStorageSync(key)
   return result || null
-}
-
-function removeStorage(key) {
-  uni.removeStorageSync(key)
-}
-
-function safeJsonParse(text) {
-  try {
-    return JSON.parse(text)
-  } catch (_) {
-    return null
-  }
 }
 
 function toNumber(value, fallback) {
@@ -207,77 +192,36 @@ function formatDateTime(value) {
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-function normalizeUnlockItem(item) {
-  if (!item || typeof item !== 'object') return null
-  const key = String(item.key || '').trim()
-  if (!key) return null
-  return {
-    key,
-    name: String(item.name || '').trim() || key,
-    description: String(item.description || '').trim(),
-    unlockedAt: item.unlockedAt || null
-  }
-}
+const categoryAchievements = computed(() => categoryFilter.value === 'all'
+  ? achievements.value
+  : achievements.value.filter((item) => String(item.category || 'sorting') === categoryFilter.value))
 
-function dedupeUnlocks(items) {
-  const map = new Map()
-  const list = Array.isArray(items) ? items : []
-  for (let i = 0; i < list.length; i += 1) {
-    const normalized = normalizeUnlockItem(list[i])
-    if (!normalized) continue
-    if (!map.has(normalized.key)) {
-      map.set(normalized.key, normalized)
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => {
-    const ta = new Date(a.unlockedAt || 0).getTime()
-    const tb = new Date(b.unlockedAt || 0).getTime()
-    return tb - ta
-  })
-}
+const categoryUnlockedAmount = computed(() => categoryAchievements.value.filter(item => !!item.unlocked).length)
 
-function readUnlockQueue() {
-  const raw = getStorage(QUEUE_KEY) || ''
-  const parsed = safeJsonParse(raw)
-  return dedupeUnlocks(Array.isArray(parsed) ? parsed : [])
-}
+const completionPercent = computed(() => Math.round(Math.max(0, Math.min(100, toNumber(summary.completionRate, 0)))))
 
-function clearUnlockQueue() {
-  try {
-    removeStorage(QUEUE_KEY)
-  } catch (_) {}
-}
-
-const gradeText = computed(() => {
-  const v = Math.max(0, Math.min(100, toNumber(summary.completionRate, 0)))
-  if (v >= 95) return 'S'
-  if (v >= 80) return 'A'
-  if (v >= 60) return 'B'
-  if (v >= 40) return 'C'
-  return 'D'
-})
-
-const unlockedHint = computed(() => {
-  return summary.unlockedCount === summary.totalCount && summary.totalCount > 0 ? '全部成就已达成' : '本次会话累计'
-})
-
-const unlockedAmount = computed(() => {
-  return achievements.value.filter(item => !!item.unlocked).length
-})
-
-const latestUnlocks = computed(() => {
-  const unlockedFromApi = achievements.value
+const recentUnlocks = computed(() => achievements.value
     .filter((item) => item && item.unlocked)
     .sort((a, b) => new Date(b.unlockedAt || 0).getTime() - new Date(a.unlockedAt || 0).getTime())
-    .slice(0, 5)
-    .map((item) => ({
-      key: item.key,
-      name: item.name,
-      description: item.description,
-      unlockedAt: item.unlockedAt
-    }))
+    .slice(0, 3))
 
-  return dedupeUnlocks([...(popupUnlocks.value || []), ...unlockedFromApi]).slice(0, 5)
+const nextAchievement = computed(() => achievements.value
+  .filter((item) => item && !item.unlocked)
+  .sort((a, b) => getProgressRatio(b) - getProgressRatio(a) || toNumber(a.sortOrder, 0) - toNumber(b.sortOrder, 0))[0] || null)
+
+const categoryOptions = computed(() => {
+  const ordered = []
+  const seen = new Set()
+  for (const item of achievements.value.slice().sort((a, b) => toNumber(a.sortOrder, 0) - toNumber(b.sortOrder, 0))) {
+    const value = String(item.category || 'sorting')
+    if (seen.has(value)) continue
+    seen.add(value)
+    ordered.push({ value, label: item.categoryLabel || value })
+  }
+  return [
+    { value: 'all', label: '全部分类', count: achievements.value.length },
+    ...ordered.map((item) => ({ ...item, count: achievements.value.filter((achievement) => String(achievement.category || 'sorting') === item.value).length }))
+  ]
 })
 
 function getProgressRatio(item) {
@@ -286,8 +230,9 @@ function getProgressRatio(item) {
   return Math.min(progress / target, 1)
 }
 
-function getRarityByKey(key) {
-  return RARITY_MAP[key] || { tier: 'common', label: '普通' }
+function getRarity(item) {
+  const tier = ['common', 'rare', 'epic', 'legendary'].includes(item && item.rarity) ? item.rarity : 'common'
+  return { tier, label: (item && item.rarityLabel) || '普通' }
 }
 
 function getTargetValue(item) {
@@ -307,22 +252,7 @@ function getPercentage(item) {
 }
 
 const filteredAchievements = computed(() => {
-  let list = achievements.value.slice().sort((a, b) => {
-    const aUnlocked = !!a.unlocked
-    const bUnlocked = !!b.unlocked
-    if (aUnlocked !== bUnlocked) return aUnlocked ? -1 : 1
-
-    if (aUnlocked && bUnlocked) {
-      const ta = new Date(a.unlockedAt || 0).getTime()
-      const tb = new Date(b.unlockedAt || 0).getTime()
-      return tb - ta
-    }
-
-    const ra = getProgressRatio(a)
-    const rb = getProgressRatio(b)
-    if (rb !== ra) return rb - ra
-    return toNumber(b.progressRaw, 0) - toNumber(a.progressRaw, 0)
-  })
+  const list = categoryAchievements.value.slice().sort((a, b) => toNumber(a.sortOrder, 0) - toNumber(b.sortOrder, 0))
 
   if (filter.value === 'unlocked') return list.filter((item) => !!item.unlocked)
   if (filter.value === 'locked') return list.filter((item) => !item.unlocked)
@@ -377,31 +307,35 @@ async function refreshAchievements() {
     summary.totalCount = Math.max(0, Math.round(toNumber(sum.totalCount, 0)))
     summary.completionRate = toNumber(sum.completionRate, 0)
 
-    const apiNewlyUnlocked = dedupeUnlocks(Array.isArray(data.newlyUnlocked) ? data.newlyUnlocked : [])
-    const queuedUnlocks = readUnlockQueue()
-
-    popupUnlocks.value = dedupeUnlocks([...queuedUnlocks, ...apiNewlyUnlocked])
-    newUnlockCount.value = Math.max(0, popupUnlocks.value.length)
+    const apiNewlyUnlocked = Array.isArray(data.newlyUnlocked) ? data.newlyUnlocked : []
+    const queuedUnlocks = takeAchievementUnlocks()
+    popupUnlocks.value = dedupeAchievementUnlocks([...queuedUnlocks, ...apiNewlyUnlocked])
 
     updatedAtText.value = formatDateTime(new Date().toISOString())
 
     if (popupUnlocks.value.length > 0) {
       showModal.value = true
     }
-    clearUnlockQueue()
   } catch (error) {
     console.error('[achievements] load failed:', error)
-    achievements.value = []
-    summary.unlockedCount = 0
-    summary.totalCount = 0
-    summary.completionRate = 0
-    popupUnlocks.value = []
-    newUnlockCount.value = 0
     stateMessage.value = error && error.message ? error.message : '加载成就失败。'
-    updatedAtText.value = '--'
+    if (!achievements.value.length) {
+      summary.unlockedCount = 0
+      summary.totalCount = 0
+      summary.completionRate = 0
+      popupUnlocks.value = []
+      updatedAtText.value = '--'
+    } else {
+      uni.showToast({ title: stateMessage.value, icon: 'none' })
+    }
   } finally {
     loading.value = false
   }
+}
+
+function closeUnlockModal() {
+  showModal.value = false
+  setTimeout(() => { popupUnlocks.value = [] }, 250)
 }
 
 function goBack() {
@@ -577,6 +511,7 @@ onBeforeUnmount(() => {
   max-width: 1080px;
   margin: 0 auto;
   padding: 20px 16px calc(30px + env(safe-area-inset-bottom));
+  gap: 18px;
 }
 
 /* ==================== 面板（玻璃拟物化） ==================== */
@@ -593,6 +528,19 @@ onBeforeUnmount(() => {
 .gallery-panel { flex: 1; display: flex; flex-direction: column; min-height: 60vh; }
 .panel:hover { border-color: var(--border-medium); box-shadow: var(--shadow-hover); }
 
+.overview-panel { display: grid; grid-template-columns: minmax(280px, 1.25fr) minmax(220px, 1fr) minmax(220px, 1fr); gap: 24px; align-items: center; }
+.overview-progress { display: flex; align-items: center; gap: 20px; }
+.completion-ring { --completion: 0%; width: 108px; height: 108px; flex: 0 0 108px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--accent-gold) var(--completion), var(--border-medium) 0); box-shadow: 0 0 24px var(--glow-gold); }
+.completion-ring-inner { width: 84px; height: 84px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: var(--bg-primary); }
+.completion-value { font-size: 24px; line-height: 1; font-weight: 800; color: var(--text-primary); }
+.completion-label { margin-top: 6px; font-size: 11px; color: var(--text-muted); }
+.overview-copy { display: flex; flex-direction: column; gap: 6px; }.overview-title { font-size: 19px; font-weight: 800; color: var(--text-primary); }.overview-desc { font-size: 13px; color: var(--text-secondary); }.overview-updated { font-size: 11px; color: var(--text-muted); }
+.overview-kicker { display: block; margin-bottom: 10px; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: var(--accent-gold); }
+.next-target, .recent-unlocks { min-width: 0; padding-left: 22px; border-left: 1px solid var(--border-medium); }
+.next-target-row { display: flex; align-items: center; gap: 12px; }.next-target-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }.next-target-name { overflow: hidden; font-size: 14px; font-weight: 700; color: var(--text-primary); text-overflow: ellipsis; white-space: nowrap; }.next-target-progress { font-size: 11px; color: var(--text-muted); }.next-target-percent { font-size: 15px; font-weight: 800; color: var(--accent-gold); }
+.recent-list { display: flex; flex-direction: column; gap: 8px; }.recent-item { display: flex; align-items: center; gap: 10px; min-width: 0; }.recent-item text { overflow: hidden; font-size: 12px; color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.error-panel { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }.error-icon { font-size: 44px; }.error-text { color: var(--text-secondary); }.retry-btn { margin: 0; padding: 8px 22px; border: 0; border-radius: 999px; color: #fff; background: var(--accent-gold); font-size: 13px; }.retry-btn::after { border: 0; }
+
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .panel-title-row { display: flex; align-items: center; gap: 10px; }
 .title-icon { font-size: 22px; filter: drop-shadow(0 2px 4px var(--glow-gold)); }
@@ -600,6 +548,11 @@ onBeforeUnmount(() => {
 .panel-subtitle { font-size: 13px; color: var(--text-muted); font-weight: 500; background: var(--border-subtle); padding: 4px 12px; border-radius: 20px; }
 
 /* ==================== 胶囊筛选标签 ==================== */
+.category-filter-scroll { width: 100%; margin-bottom: 14px; white-space: nowrap; }
+.category-tabs { display: inline-flex; gap: 10px; padding-bottom: 4px; }
+.category-tab { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-secondary); background: var(--border-subtle); font-size: 12px; transition: .2s; }
+.category-tab.active { color: var(--accent-gold); border-color: var(--border-active); background: rgba(245,158,11,.08); }
+.category-count { min-width: 20px; padding: 1px 6px; border-radius: 999px; text-align: center; color: var(--text-muted); background: var(--bg-primary); font-size: 10px; }
 .filter-tabs { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
 .filter-tab { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--border-subtle); border: 1px solid transparent; border-radius: 30px; cursor: pointer; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .filter-tab text { font-size: 13px; font-weight: 500; color: var(--text-secondary); transition: color 0.3s; }
@@ -813,11 +766,13 @@ onBeforeUnmount(() => {
 
 /* ==================== 响应式设计 ==================== */
 @media (max-width: 900px) {
+  .overview-panel { grid-template-columns: 1fr 1fr; }.overview-progress { grid-column: 1 / -1; }.recent-unlocks { border-left: 0; padding-left: 0; }
   .achievement-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
   .panel { padding: 20px; border-radius: 20px; }
 }
 
 @media (max-width: 600px) {
+  .overview-panel { grid-template-columns: 1fr; gap: 18px; }.completion-ring { width: 92px; height: 92px; flex-basis: 92px; }.completion-ring-inner { width: 70px; height: 70px; }.next-target, .recent-unlocks { padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--border-medium); }
   .main-content { padding: 16px 12px calc(20px + env(safe-area-inset-bottom)); }
   .panel { padding: 16px; border-radius: 16px; }
   .achievement-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }

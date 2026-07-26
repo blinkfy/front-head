@@ -1,7 +1,6 @@
 const SEED_KEY = 'ai_chat_seed_payload';
 const LEGACY_IMAGE_KEY = 'ai_chat_seed_image';
 const LEGACY_CATEGORY_KEY = 'ai_chat_seed_category';
-const ACHIEVEMENT_QUEUE_KEY = 'achievement_unlock_queue_v1';
 
 const bboxPalette = ['#2f6fed', '#12b886', '#f59f00', '#e64980', '#7048e8', '#0ca678', '#228be6'];
 
@@ -441,50 +440,6 @@ export function buildSeedFromRecognizeData(data) {
         ? chatSeed.createdAt
         : new Date().toISOString()
   };
-}
-
-function normalizeUnlockItem(item) {
-  if (!item || typeof item !== 'object') return null;
-  const key = String(item.key || '').trim();
-  if (!key) return null;
-  return {
-    key,
-    name: String(item.name || '').trim(),
-    description: String(item.description || '').trim(),
-    unlockedAt: item.unlockedAt || new Date().toISOString()
-  };
-}
-
-function readAchievementQueue() {
-  const parsed = safeJsonParse(localStorage.getItem(ACHIEVEMENT_QUEUE_KEY) || '');
-  return Array.isArray(parsed) ? parsed : [];
-}
-
-export function appendAchievementQueue(items) {
-  const incoming = Array.isArray(items) ? items : [];
-  if (!incoming.length) return;
-
-  const merged = readAchievementQueue();
-  const dedupeMap = Object.create(null);
-
-  for (let i = 0; i < merged.length; i += 1) {
-    const oldItem = normalizeUnlockItem(merged[i]);
-    if (!oldItem) continue;
-    dedupeMap[oldItem.key] = oldItem;
-  }
-
-  for (let i = 0; i < incoming.length; i += 1) {
-    const unlockItem = normalizeUnlockItem(incoming[i]);
-    if (!unlockItem) continue;
-    if (!dedupeMap[unlockItem.key]) {
-      dedupeMap[unlockItem.key] = unlockItem;
-    }
-  }
-
-  const next = Object.keys(dedupeMap).map((key) => dedupeMap[key]);
-  try {
-    localStorage.setItem(ACHIEVEMENT_QUEUE_KEY, JSON.stringify(next));
-  } catch (_) {}
 }
 
 function hashText(text) {

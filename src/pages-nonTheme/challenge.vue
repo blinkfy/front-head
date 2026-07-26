@@ -256,6 +256,8 @@
       </view>
     </view>
 
+    <AchievementUnlockModal :visible="showAchievementModal" :items="achievementModalItems" :dark="isDark" @close="closeAchievementModal" />
+
     <!-- 加载状态 -->
     <view class="loading-overlay" v-if="quizLoading">
       <view class="loading-spinner"></view>
@@ -268,8 +270,11 @@
 import { getDailyChallenge, submitChallenge, getChallengeStats, getChallengeLeaderboard, getWeeklyCalendar, getModeQuestions } from '@/api/challenge.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
+import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue';
+import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements';
 
 export default {
+  components: { AchievementUnlockModal },
   data() {
     return {
       loading: false,
@@ -298,7 +303,9 @@ export default {
       comboActive: false,
       comboQuestion: null,
       comboAnswering: false,
-      showWrongDetail: false
+      showWrongDetail: false,
+      showAchievementModal: false,
+      achievementModalItems: []
     };
   },
   computed: {
@@ -556,6 +563,12 @@ export default {
         const data = this.extractData(res) || {};
         this.challengeResult = data;
         this.showResult = true;
+        const unlocks = extractAchievementUnlocks(data);
+        if (unlocks.length) {
+          enqueueAchievementUnlocks(unlocks);
+          this.achievementModalItems = takeAchievementUnlocks();
+          this.showAchievementModal = this.achievementModalItems.length > 0;
+        }
         if (this.currentMode === 'daily') {
           this.dailyCompleted = true;
           this.correctCount = data.correctCount || 0;
@@ -569,6 +582,10 @@ export default {
         uni.showToast({ title: e.message || '提交失败', icon: 'none' });
       }
       this.quizLoading = false;
+    },
+    closeAchievementModal() {
+      this.showAchievementModal = false;
+      setTimeout(() => { this.achievementModalItems = []; }, 250);
     },
     getFloatStyle(n) {
       const positions = [

@@ -171,6 +171,8 @@
       </view>
     </view>
 
+    <AchievementUnlockModal :visible="showAchievementModal" :items="achievementModalItems" @close="closeAchievementModal" />
+
     <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
@@ -196,7 +198,9 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { userinfo } from '@/api/user'
-import { fetchShopRecommendations } from '@/api/shop'
+import { createPurchaseRecord, fetchShopRecommendations } from '@/api/shop'
+import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import { updatePointerCssVariables } from '@/utils/pointer-position.mjs'
 import {
   SHOP_RECOMMEND_LIMIT,
@@ -212,6 +216,9 @@ const loading = ref(false)
 const currentCategory = ref(0)
 const showDetailModal = ref(false)
 const showSuccessModal = ref(false)
+const showAchievementModal = ref(false)
+const achievementModalItems = ref([])
+const exchangeSubmitting = ref(false)
 const selectedProduct = ref({})
 const exchangedProduct = ref({})
 const recommendLoading = ref(false)
@@ -489,7 +496,7 @@ const filteredProducts = computed(() => {
 })
 
 const canExchange = computed(() => {
-  return userPoints.value >= selectedProduct.value.points && selectedProduct.value.stock > 0
+  return !exchangeSubmitting.value && userPoints.value >= selectedProduct.value.points && selectedProduct.value.stock > 0
 })
 
 const switchCategory = async (index) => {
@@ -514,34 +521,53 @@ const exchangeProduct = async () => {
     uni.showToast({ title: '积分不足或商品售罄', icon: 'none' })
     return
   }
-  
-  userPoints.value -= selectedProduct.value.points
-  
-  const productIndex = products.value.findIndex(p => p.id === selectedProduct.value.id)
-  if (productIndex !== -1) products.value[productIndex].stock -= 1
-  
-  uni.setStorageSync('userPoints', userPoints.value)
-  
-  exchangedProduct.value = { ...selectedProduct.value }
-  
-  showDetailModal.value = false
-  showSuccessModal.value = true
-  
-  const exchangeRecord = {
-    id: Date.now(),
-    product: exchangedProduct.value,
-    exchangeTime: new Date().toLocaleString(),
-    status: '已兑换'
+  exchangeSubmitting.value = true
+  try {
+    const product = { ...selectedProduct.value }
+    const response = await createPurchaseRecord({
+      productId: String(product.id),
+      productName: product.name,
+      productCategory: product.category,
+      pointsPerItem: product.points,
+      quantity: 1,
+      productSnapshot: product
+    })
+    const data = response && response.data ? response.data : {}
+    userPoints.value = Number.isFinite(Number(data.remainingPoints)) ? Number(data.remainingPoints) : userPoints.value
+    uni.setStorageSync('userPoints', userPoints.value)
+
+    const productIndex = products.value.findIndex(p => p.id === product.id)
+    if (productIndex !== -1) products.value[productIndex].stock = Math.max(0, products.value[productIndex].stock - 1)
+
+    exchangedProduct.value = product
+    showDetailModal.value = false
+    showSuccessModal.value = true
+
+    const exchangeHistory = uni.getStorageSync('exchangeHistory') || []
+    exchangeHistory.unshift({ id: data.id || Date.now(), product, exchangeTime: new Date().toLocaleString(), status: '已兑换' })
+    uni.setStorageSync('exchangeHistory', exchangeHistory)
+
+    const unlocks = extractAchievementUnlocks(data)
+    if (unlocks.length) {
+      enqueueAchievementUnlocks(unlocks)
+      achievementModalItems.value = takeAchievementUnlocks()
+      showAchievementModal.value = achievementModalItems.value.length > 0
+    }
+  } catch (error) {
+    uni.showToast({ title: (error && (error.msg || error.message)) || '兑换失败，请稍后重试', icon: 'none' })
+  } finally {
+    exchangeSubmitting.value = false
   }
-  
-  let exchangeHistory = uni.getStorageSync('exchangeHistory') || []
-  exchangeHistory.unshift(exchangeRecord)
-  uni.setStorageSync('exchangeHistory', exchangeHistory)
 }
 
 const closeSuccessModal = () => {
   showSuccessModal.value = false
   exchangedProduct.value = {}
+}
+
+const closeAchievementModal = () => {
+  showAchievementModal.value = false
+  setTimeout(() => { achievementModalItems.value = [] }, 250)
 }
 
 const goHome = () => {
