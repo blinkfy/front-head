@@ -15,6 +15,7 @@
           screen-key="collectionDashboard"
           :tone="isLightTheme ? 'light' : 'dark'"
           @back="goBack"
+          @screen-action="handleAdminScreenAction"
         >
           <view class="actions">
             <view class="clock">{{ clockText }}</view>
@@ -38,11 +39,6 @@
             <view :class="['btn', 'monitor-chip', monitor.scene === 'dispatch' ? 'active' : '']" @tap="toggleDispatchMonitor">
               <text class="feature-icon">↗</text><text>{{ monitor.active && monitor.scene === 'dispatch' ? '退出监测' : '调度监测' }}</text>
             </view>
-            <view class="btn fault-btn" @tap="openFaultCenter">
-              <text class="feature-icon">!</text><text>故障处理</text>
-              <text :class="['fault-badge', faultCenter.summary.open ? '' : 'is-placeholder']">{{ faultCenter.summary.open || 0 }}</text>
-            </view>
-            <view class="btn ghost" @tap="openSortingCenterMonitor">分拣中心进度</view>
           </view>
         </AdminScreenHeader>
       </view>
@@ -395,7 +391,7 @@
       <view class="panel sorting-hero">
         <view class="sorting-head">
           <view>
-            <view class="telemetry-title">中山公园分拣中心</view>
+            <view class="telemetry-title">{{ selectedSortingCenter.name }}</view>
             <view class="telemetry-location"><text class="live-dot"></text>分拣清洗实时进度 · 返航桶 {{ monitor.returnBinCode }} · 当前点位 {{ monitor.pointCode }}</view>
           </view>
           <view class="sorting-actions">
@@ -572,7 +568,7 @@
 
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import { baseUrl } from '@/api/settings'
 import {
   DATABASE_OFFLINE_MESSAGE,
@@ -786,6 +782,17 @@ const mapPolyline = ref([])
 const h5MapReady = ref(false)
 const h5MapLoading = ref(false)
 const h5MapError = ref('')
+
+const selectedSortingCenter = reactive({
+  id: 'center-main',
+  name: '中山公园分拣中心'
+})
+const pendingEntry = reactive({
+  panel: '',
+  view: '',
+  centerId: '',
+  centerName: ''
+})
 
 const monitor = reactive({
   active: false,
@@ -1199,15 +1206,11 @@ function renderBrief() {
     return
   }
   const start = (_state.plan && _state.plan.start) || _state.startPoint || DEFAULT_CENTER
-  const providerLine = route.provider === 'tencent'
-    ? '路线来源：腾讯道路'
-    : '路线来源：降级直线（当前未拿到腾讯道路）'
   briefLines.value = [
     `策略：${strategyLabel(routeStrategy.value)} | 车辆：1 台`,
     `起点：${start.name || '清运起点'} | 停靠：${route.stops.length} 个`,
     `总里程：${fmtKm(route.totalDistanceKm)} | 总耗时：${fmtMin(route.totalMinutes)}`,
-    `开始：${fmtTime(route.startTime)} | 结束：${fmtTime(route.endTime)}`,
-    providerLine
+    `开始：${fmtTime(route.startTime)} | 结束：${fmtTime(route.endTime)}`
   ]
 }
 
@@ -1806,7 +1809,10 @@ function setStatus(text, cls) {
 }
 
 function buildDashboardSnapshotPath() {
-  const params = [`routeStrategy=${encodeURIComponent(routeStrategy.value)}`]
+  const params = [
+    `routeStrategy=${encodeURIComponent(routeStrategy.value)}`,
+    'planningHorizonHours=2'
+  ]
 
   if (_state.manualStartPoint) {
     params.push(`startLat=${encodeURIComponent(String(n(_state.manualStartPoint.latitude, 0)))}`)
@@ -2101,6 +2107,9 @@ async function loadFaultEvents(silent = false) {
 function openFaultCenter() {
   faultCenter.open = true
   loadFaultEvents()
+}
+function handleAdminScreenAction(action) {
+  if (action === 'openFaultCenter') openFaultCenter()
 }
 function closeFaultCenter() {
   faultCenter.open = false
@@ -2743,6 +2752,34 @@ async function initH5Map() {
 // #endif
 
 // ─── 生命周期 ──────────────────────────────────────────
+onLoad((options = {}) => {
+  pendingEntry.panel = String(options.panel || '')
+  pendingEntry.view = String(options.view || '')
+  pendingEntry.centerId = String(options.centerId || '')
+  pendingEntry.centerName = String(options.centerName || '')
+})
+
+async function applyPendingEntry() {
+  const entry = {
+    panel: pendingEntry.panel,
+    view: pendingEntry.view,
+    centerId: pendingEntry.centerId,
+    centerName: pendingEntry.centerName
+  }
+  pendingEntry.panel = ''
+  pendingEntry.view = ''
+  pendingEntry.centerId = ''
+  pendingEntry.centerName = ''
+
+  if (entry.view === 'sorting') {
+    selectedSortingCenter.id = entry.centerId || 'center-main'
+    selectedSortingCenter.name = entry.centerName || '中山公园分拣中心'
+    await openSortingCenterMonitor()
+    return
+  }
+  if (entry.panel === 'fault') openFaultCenter()
+}
+
 onMounted(async () => {
   const mountRevision = ++dashboardMountRevision
   if (!await ensureAdminScreenAccess('collectionDashboard') || mountRevision !== dashboardMountRevision) return
@@ -2790,6 +2827,7 @@ onMounted(async () => {
   refreshTimer = setInterval(() => doRefresh({ silent: true }), 60000)
   loadFaultEvents(true)
   faultRefreshTimer = setInterval(() => loadFaultEvents(true), 15000)
+  await applyPendingEntry()
 })
 
 onShow(() => {
@@ -3232,7 +3270,10 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   position: relative; display: flex; flex-direction: column;
 }
 /* #ifdef H5 */
-.screen .map-stage { position: relative; flex: 1; min-height: 0; }
+.screen .map-stage {
+  position: relative; z-index: 0; isolation: isolate;
+  flex: 1; min-height: 0; overflow: hidden; border-radius: 12px;
+}
 #map {
   flex: 1; min-height: 0; height: 100%;
   border-radius: 12px; border: 1px solid rgba(122,202,255,.32); overflow: hidden;
@@ -3535,7 +3576,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 
 /* ===== 故障处理抽屉 ===== */
 .screen .fault-mask {
-  position: fixed; inset: 0; z-index: 100;
+  position: fixed; inset: 0; z-index: 10000; isolation: isolate;
   display: flex; justify-content: flex-end;
   background: rgba(2,12,20,.66); backdrop-filter: blur(4px);
 }
@@ -3789,6 +3830,9 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 
 /* ===== 浅色智慧清运运营大屏 ===== */
 .screen.light-theme.admin-light-theme {
+  --admin-light-bg: #edf5f0;
+  --admin-light-primary: #118b67;
+  --admin-light-primary-hover: #0e7758;
   --bg: var(--admin-light-bg);
   --bg2: var(--admin-light-bg);
   --panel: var(--admin-light-surface);
@@ -3797,7 +3841,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   --muted: var(--admin-light-text-secondary);
   --blue: var(--admin-light-primary);
   --cyan: #258db9;
-  --green: var(--admin-light-success);
+  --green: #118b67;
   --amber: var(--admin-light-warning);
   --orange: #d8782c;
   --red: var(--admin-light-danger);
@@ -3906,6 +3950,14 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   border-radius: 10px;
   background: var(--admin-light-surface-soft);
   box-shadow: none;
+}
+.screen.light-theme.admin-light-theme .card:nth-child(odd) {
+  border-color: #bfd8ca;
+  background: #eef7f2;
+}
+.screen.light-theme.admin-light-theme .card:nth-child(even) {
+  border-color: #d2e2d9;
+  background: #f7faf8;
 }
 .screen.light-theme.admin-light-theme .card .k { color: var(--admin-light-text-secondary); }
 .screen.light-theme.admin-light-theme .card .v { margin-top: 3px; color: var(--admin-light-text); font-size: 23px; }

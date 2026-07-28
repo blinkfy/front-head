@@ -5,21 +5,20 @@
     <view class="panel header-panel">
       <view class="top">
         <view class="page-intro">
-          <view class="title">垃圾清运规划</view>
-          <view class="sub">结合地理位置、当前满载率与历史趋势，自动生成"先清哪几个、何时清、如何走"。</view>
+          <view class="title">分拣中心清运规划</view>
+          <view class="sub">选择需要到访的分拣中心，按地理位置与调度策略生成中心间清运路线。</view>
         </view>
         <view class="btns">
           <AdminScreenHeader screen-key="collectionPlanning" :tone="isDark ? 'dark' : 'light'" @back="goBack">
-          <view class="btn secondary" @tap="doLoadBins">刷新桶位</view>
-          <view class="btn secondary" @tap="doMockHistory">生成历史样本</view>
+          <view class="btn secondary" @tap="doLoadCenters">刷新中心</view>
           <view class="btn primary" @tap="doCreatePlan">一键规划路线</view>
           </AdminScreenHeader>
         </view>
       </view>
       <view class="metrics">
-        <view class="metric"><view class="k">总桶位</view><view class="v">{{ metricTotal }}</view></view>
-        <view class="metric"><view class="k">紧急桶位</view><view class="v">{{ metricUrgent }}</view></view>
-        <view class="metric"><view class="k">平均满载率</view><view class="v">{{ metricAverage }}</view></view>
+        <view class="metric"><view class="k">分拣中心</view><view class="v">{{ metricTotal }}</view></view>
+        <view class="metric"><view class="k">已选中心</view><view class="v">{{ metricUrgent }}</view></view>
+        <view class="metric"><view class="k">运行中</view><view class="v">{{ metricAverage }}</view></view>
         <view class="metric"><view class="k">计划总里程</view><view class="v">{{ metricDistance }}</view></view>
       </view>
     </view>
@@ -38,7 +37,7 @@
           </view>
           <view class="form-grid">
             <view class="form-item">
-              <text class="form-label">紧急阈值(%)</text>
+              <text class="form-label">规划策略</text>
               <picker
                 mode="selector"
                 :range="routeStrategyOptions"
@@ -50,34 +49,14 @@
               </picker>
             </view>
             <view class="form-item">
-              <text class="form-label">紧急阈值 (%)</text>
-              <input class="form-input" type="number" :value="opts.urgentThreshold"
-                @input="opts.urgentThreshold = toNumInput($event, 80)" />
-            </view>
-            <view class="form-item">
-              <text class="form-label">预测窗口(小时)</text>
-              <input class="form-input" type="number" :value="opts.planningHorizonHours"
-                @input="opts.planningHorizonHours = toNumInput($event, 8)" />
-            </view>
-            <view class="form-item">
               <text class="form-label">车辆速度(km/h)</text>
               <input class="form-input" type="number" :value="opts.speedKmh"
                 @input="opts.speedKmh = toNumInput($event, 25)" />
             </view>
             <view class="form-item">
-              <text class="form-label">每站作业(分钟)</text>
+              <text class="form-label">每中心作业(分钟)</text>
               <input class="form-input" type="number" :value="opts.serviceMinutesPerStop"
                 @input="opts.serviceMinutesPerStop = toNumInput($event, 6)" />
-            </view>
-            <view class="form-item">
-              <text class="form-label">最多停靠点</text>
-              <input class="form-input" type="number" :value="opts.maxStops"
-                @input="opts.maxStops = toNumInput($event, 12)" />
-            </view>
-            <view class="form-item">
-              <text class="form-label">最少停靠点</text>
-              <input class="form-input" type="number" :value="opts.minStops"
-                @input="opts.minStops = toNumInput($event, 3)" />
             </view>
           </view>
         </view>
@@ -104,64 +83,39 @@
           </view>
           <view class="btns inline-actions">
             <view class="btn" @tap="useMapCenter">使用地图中心</view>
-            <view class="btn" @tap="doSaveSnapshots">保存当前快照</view>
           </view>
           <view :class="['status', statusCls]">{{ statusText }}</view>
         </view>
 
-        <!-- 桶位列表 -->
+        <!-- 分拣中心列表 -->
         <view class="card bins-card">
           <view class="card-heading">
-            <view class="card-title">桶位调度列表</view>
-            <view class="card-note">已选 {{ selectedBinCount }} 个</view>
+            <view class="card-title">分拣中心列表</view>
+            <view class="card-note">已选 {{ selectedSortingCenterCount }} 个</view>
           </view>
-          <view class="legend">
-            <text><text class="legend-dot" style="background:#1fb57d"></text>低负载</text>
-            <text><text class="legend-dot" style="background:#e0a100"></text>临界</text>
-            <text><text class="legend-dot" style="background:#d06919"></text>高负载</text>
-            <text><text class="legend-dot" style="background:#c63b3b"></text>紧急</text>
-          </view>
-          <scroll-view class="bin-list" scroll-y>
-            <view v-if="!bins.length" class="empty">暂无桶位数据</view>
+          <scroll-view class="bin-list sorting-center-list" scroll-y>
             <view
-              v-for="(bin, index) in bins"
-              :key="'bin-' + bin.id"
-              class="bin-row"
-              @tap="onBinRowTap(index)"
+              v-for="center in bins"
+              :key="center.id"
+              :class="['bin-row', 'sorting-center-row', center.selected ? 'is-selected' : '']"
             >
-              <view class="bin-head">
-                <view style="display:flex;align-items:center;gap:6px;" @tap.stop>
-                  <switch
-                    :checked="bin.selected !== false"
-                    style="transform:scale(0.7);margin-left:-8px;"
-                    @change="onBinToggle(index, $event)"
-                  />
-                  <text>{{ bin.name || '未命名桶位' }}</text>
+              <view class="sorting-center-icon">分</view>
+              <view class="sorting-center-copy">
+                <view class="bin-head">
+                  <view class="sorting-center-select" @tap.stop>
+                    <switch
+                      :checked="center.selected"
+                      style="transform:scale(0.72);margin-left:-7px;"
+                      @change="onSortingCenterToggle(center.id, $event)"
+                    />
+                    <text>{{ center.name }}</text>
+                  </view>
+                  <text class="chip center-running">运行中</text>
                 </view>
-                <text :class="['chip', bin.currentFill >= 90 ? 'urgent' : bin.currentFill >= 80 ? 'warning' : '']">
-                  {{ bin.currentFill >= 90 ? '紧急' : bin.currentFill >= 80 ? '高负载' : '正常' }}
-                </text>
-              </view>
-              <view class="bin-sub">
-                满载率 {{ Number(bin.currentFill || 0).toFixed(1) }}% · 预计满载 {{ bin.hoursToFull == null ? '--' : bin.hoursToFull.toFixed(1) + 'h' }} · 斜率 {{ Number(bin.growthRatePctPerHour || 0).toFixed(2) }}%/h
-              </view>
-              <!-- 小程序用 slider 替代 range input -->
-              <view class="bin-range" @tap.stop>
-                <slider
-                  class="fill-slider"
-                  :value="Number(bin.currentFill || 0)"
-                  :min="0" :max="100" :step="0.5"
-                  activeColor="#2680eb"
-                  @changing="onFillSliderChanging(index, $event)"
-                  @change="onFillSliderChange(index, $event)"
-                />
-                <input
-                  class="fill-input"
-                  type="number"
-                  :value="Number(bin.currentFill || 0).toFixed(1)"
-                  @input="onFillInputChange(index, $event)"
-                  @tap.stop
-                />
+                <view class="bin-sub">{{ center.location }} · 编号 {{ center.id }}</view>
+                <view class="sorting-center-entry" role="button" @tap.stop="openSortingCenter(center)">
+                  查看分拣清洗实时进度 <text>→</text>
+                </view>
               </view>
             </view>
           </scroll-view>
@@ -176,7 +130,7 @@
           <view v-if="!h5MapReady" class="map-placeholder">
             <text class="map-placeholder-title">{{ h5MapError ? '地图暂不可用' : '地图加载中' }}</text>
             <text class="map-placeholder-desc">
-              {{ h5MapError || (h5MapLoading ? '桶位与路线信息会先展示，地图初始化完成后自动出现。' : '正在准备地图画布。') }}
+              {{ h5MapError || (h5MapLoading ? '分拣中心与路线信息会先展示，地图初始化完成后自动出现。' : '正在准备地图画布。') }}
             </text>
           </view>
         </view>
@@ -201,10 +155,10 @@
               <view class="route-title">最优路线</view>
               <view class="route-summary">{{ routeSummary }}</view>
             </view>
-            <view v-if="routeStops.length" class="route-count">{{ routeStops.length }} 个停靠点</view>
+            <view v-if="routeStops.length" class="route-count">{{ routeStops.length }} 个分拣中心</view>
           </view>
           <scroll-view class="route-list" scroll-y>
-            <view v-if="!routeStops.length" class="empty">请先点击"一键规划路线"。</view>
+            <view v-if="!routeStops.length" class="empty">请先选择分拣中心并点击"一键规划路线"。</view>
             <view
               v-for="stop in routeStops"
               :key="'stop-' + stop.order"
@@ -214,12 +168,12 @@
               <view>
                 <view style="font-weight:680;">{{ stop.name }}</view>
                 <view style="color:#607487;margin-top:2px;">
-                  ETA {{ fmtTime(stop.eta) }} · 满载率 {{ Number(stop.currentFill).toFixed(1) }}%
+                  ETA {{ fmtTime(stop.eta) }} · 作业 {{ Number(stop.serviceMinutes || 0).toFixed(0) }} 分钟
                 </view>
               </view>
               <view style="text-align:right;color:#445d73;">
                 <view>{{ Number(stop.travelKm).toFixed(2) }} km</view>
-                <view style="font-size:11px;">优先级 {{ Number(stop.priorityScore).toFixed(3) }}</view>
+                <view style="font-size:11px;">分拣中心停靠</view>
               </view>
             </view>
           </scroll-view>
@@ -236,7 +190,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { baseUrl } from '@/api/settings'
 import { mapConfig } from '@/api/map-config'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
-import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
+import { ensureAdminScreenAccess, goBackFromAdminPage, jumpToAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import '@/styles/admin-light-theme.css'
 
@@ -244,6 +198,11 @@ import '@/styles/admin-light-theme.css'
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
 const DEFAULT_CENTER = { latitude: 36.0671, longitude: 120.3826 }
 const ROUTE_STRATEGY_KEY = 'collection_route_strategy'
+const DEMO_SORTING_CENTERS = Object.freeze([
+  Object.freeze({ id: 'center-main', name: '中山公园分拣中心', location: '中山公园北侧', latitude: 36.0684, longitude: 120.3478 }),
+  Object.freeze({ id: 'center-west-lake', name: '小西湖分拣中心', location: '小西湖东侧', latitude: 36.0652, longitude: 120.3415 }),
+  Object.freeze({ id: 'center-sakura', name: '樱花大道分拣中心', location: '樱花大道北段', latitude: 36.0626, longitude: 120.3476 })
+])
 
 // ─── 工具函数 ──────────────────────────────────────────
 function getStorage(key) {
@@ -272,10 +231,6 @@ function toNumInput(event, fallback = 0) {
   const v = event && event.detail ? event.detail.value : event
   const n = Number(v); return Number.isFinite(n) ? n : fallback
 }
-function clamp(v, min, max) {
-  const n = Number(v); if (!Number.isFinite(n)) return min
-  return Math.max(min, Math.min(max, n))
-}
 function normalizeStrategy(value) {
   return String(value || '').trim().toLowerCase() === 'shortest_distance'
     ? 'shortest_distance'
@@ -286,15 +241,8 @@ function fmtTime(value) {
   if (Number.isNaN(d.getTime())) return '--:--'
   return d.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
 }
-function colorByFill(fill) {
-  if (fill >= 90) return '#c63b3b'; if (fill >= 80) return '#d06919'
-  if (fill >= 65) return '#e0a100'; return '#1fb57d'
-}
 function getBinStyleId(bin) {
-  if (bin.selected === false) return 'muted'
-  const fill = Number(bin.currentFill) || 0
-  if (fill >= 90) return 'urgent'; if (fill >= 80) return 'high'
-  if (fill >= 65) return 'warning'; return 'normal'
+  return bin.selected === false ? 'muted' : 'normal'
 }
 function authHeaders() {
   const token = getStorage('token') || ''
@@ -321,22 +269,17 @@ const routeStrategyIndex = computed(() => {
 const routeStrategyLabel = computed(() => routeStrategyOptions[routeStrategyIndex.value]?.label || routeStrategyOptions[0].label)
 
 const opts = reactive({
-  urgentThreshold: 80,
-  planningHorizonHours: 8,
   speedKmh: 25,
-  serviceMinutesPerStop: 6,
-  maxStops: 12,
-  minStops: 3
+  serviceMinutesPerStop: 6
 })
 
-const bins = ref([])            // { ...binData, selected: boolean }
+const bins = ref([])
 const routeStops = ref([])
 const routeSummary = ref('还未生成路线。')
-const selectedBinCount = computed(() => bins.value.filter((bin) => bin.selected !== false).length)
-
+const selectedSortingCenterCount = computed(() => bins.value.filter(center => center.selected).length)
 const metricTotal = ref('0')
 const metricUrgent = ref('0')
-const metricAverage = ref('0%')
+const metricAverage = ref('0')
 const metricDistance = ref('0 km')
 
 // 起点
@@ -379,13 +322,13 @@ function onRouteStrategyChange(event) {
 
 // ─── 指标更新 ──────────────────────────────────────────
 function updateMetrics(plan) {
-  const binsArr = bins.value
-  const total = binsArr.length
-  const urgent = binsArr.filter(b => b.isUrgent).length
-  const average = total > 0 ? binsArr.reduce((s, b) => s + (Number(b.currentFill) || 0), 0) / total : 0
+  const centers = bins.value
+  const total = centers.length
+  const selected = centers.filter(center => center.selected !== false).length
+  const running = centers.filter(center => center.status === 'online').length
   metricTotal.value = String(total)
-  metricUrgent.value = String(urgent)
-  metricAverage.value = `${average.toFixed(1)}%`
+  metricUrgent.value = String(selected)
+  metricAverage.value = String(running)
   metricDistance.value = plan && plan.route
     ? `${Number(plan.route.totalDistanceKm || 0).toFixed(2)} km` : '0 km'
 }
@@ -404,55 +347,18 @@ function onStartLngInput(event) {
   }
 }
 
-// ─── 桶位列表交互 ──────────────────────────────────────
-function onBinToggle(index, event) {
-  const bin = bins.value[index]
-  if (!bin) return
-  bin.selected = !!event.detail.value
-  buildMpMapData()
-  // #ifdef H5
-  drawH5Map()
-  // #endif
-}
-function onFillSliderChanging(index, event) {
-  const bin = bins.value[index]
-  if (!bin) return
-  bin.currentFill = clamp(event.detail.value, 0, 100)
-}
-function onFillSliderChange(index, event) {
-  updateBinFill(index, event.detail.value)
-}
-function onFillInputChange(index, event) {
-  updateBinFill(index, toNumInput(event, bins.value[index]?.currentFill ?? 0))
-}
-function updateBinFill(index, value) {
-  const bin = bins.value[index]
-  if (!bin) return
-  bin.currentFill = clamp(value, 0, 100)
-  if (bin.hoursToFull != null && Number(bin.growthRatePctPerHour) > 0.05) {
-    bin.hoursToFull = (100 - bin.currentFill) / Number(bin.growthRatePctPerHour)
-  }
-  bin.isUrgent = Number(bin.currentFill) >= Number(opts.urgentThreshold)
+// ─── 分拣中心列表交互 ──────────────────────────────────
+function onSortingCenterToggle(centerId, event) {
+  const center = bins.value.find(item => item.id === centerId)
+  if (!center) return
+  center.selected = !!event?.detail?.value
+  routeStops.value = []
+  routeSummary.value = '还未生成路线。'
+  _currentPlan = null
   updateMetrics(null)
   buildMpMapData()
   // #ifdef H5
   drawH5Map()
-  // #endif
-}
-function onBinRowTap(index) {
-  const bin = bins.value[index]
-  if (!bin) return
-  // #ifdef H5
-  if (_map.instance) {
-    _map.instance.setCenter(new window.TMap.LatLng(bin.latitude, bin.longitude))
-    if (_map.instance.getZoom && _map.instance.getZoom() < 14 && _map.instance.setZoom) _map.instance.setZoom(14)
-    showInfoWindow(bin.latitude, bin.longitude,
-      `<div style="font-size:12px;line-height:1.5"><b>${bin.name || '未命名桶位'}</b><br/>满载率 ${Number(bin.currentFill || 0).toFixed(1)}%<br/>预计满载: ${bin.hoursToFull == null ? '--' : Number(bin.hoursToFull).toFixed(1) + 'h'}<br/>优先级 ${Number(bin.priorityScore || 0).toFixed(3)}</div>`)
-  }
-  // #endif
-  // #ifndef H5
-  mapCenter.value = { latitude: bin.latitude, longitude: bin.longitude }
-  mapScale.value = 14
   // #endif
 }
 
@@ -494,45 +400,64 @@ function apiRequest(path, options) {
 }
 
 // ─── 业务操作 ──────────────────────────────────────────
-async function doLoadBins() {
-  setStatus('正在读取桶位数据...')
-  try {
-    const data = await apiRequest('/api/planning/bins')
-    bins.value = (data.bins || []).map(b => ({ ...b, selected: true }))
-    routeStops.value = []
-    routeSummary.value = '还未生成路线。'
-    _currentPlan = null
-
-    if (!startPoint.value && bins.value.length) {
-      startPoint.value = { name: '默认起点', latitude: bins.value[0].latitude, longitude: bins.value[0].longitude }
-    }
-    updateMetrics(null)
-    buildMpMapData()
-    // #ifdef H5
-    drawH5Map()
-    // #endif
-    setStatus(`已加载 ${bins.value.length} 个桶位`, 'ok')
-  } catch (err) {
-    setStatus(err && err.message ? err.message : String(err), 'err')
+async function doLoadCenters() {
+  bins.value = DEMO_SORTING_CENTERS.map(center => ({
+    ...center,
+    type: 'sorting_center',
+    status: 'online',
+    selected: true,
+    currentFill: 0,
+    growthRatePctPerHour: 0,
+    history: []
+  }))
+  routeStops.value = []
+  routeSummary.value = '还未生成路线。'
+  _currentPlan = null
+  if (!startPoint.value) {
+    startPoint.value = { name: '清运车辆起点', ...DEFAULT_CENTER }
   }
+  updateMetrics(null)
+  buildMpMapData()
+  // #ifdef H5
+  drawH5Map()
+  // #endif
+  setStatus(`已加载 ${bins.value.length} 个分拣中心`, 'ok')
 }
 
 let _currentPlan = null
 
 async function doCreatePlan() {
-  if (!startPoint.value && bins.value.length) {
-    startPoint.value = { name: '默认起点', latitude: bins.value[0].latitude, longitude: bins.value[0].longitude }
+  const selectedCenters = bins.value.filter(center => center.selected !== false)
+  if (!selectedCenters.length) {
+    setStatus('请至少选择一个分拣中心', 'err')
+    return
   }
-  setStatus('正在计算清运路线...')
+  if (!startPoint.value) {
+    startPoint.value = { name: '清运车辆起点', ...DEFAULT_CENTER }
+  }
+  setStatus('正在计算分拣中心清运路线...')
   try {
     const payload = {
+      targetType: 'sorting_center',
       start: startPoint.value,
-      options: { ...opts, routeStrategy: routeStrategy.value, startTime: new Date().toISOString() },
-      bins: bins.value.map(bin => ({
-        id: bin.id, selected: bin.selected !== false,
-        name: bin.name, type: bin.type, status: bin.status,
-        latitude: bin.latitude, longitude: bin.longitude,
-        currentFill: bin.currentFill, history: bin.history || []
+      options: {
+        ...opts,
+        routeStrategy: routeStrategy.value,
+        minStops: selectedCenters.length,
+        maxStops: selectedCenters.length,
+        startTime: new Date().toISOString()
+      },
+      centers: selectedCenters.map(center => ({
+        id: center.id,
+        selected: true,
+        name: center.name,
+        type: 'sorting_center',
+        status: center.status,
+        latitude: center.latitude,
+        longitude: center.longitude,
+        currentFill: 0,
+        growthRatePctPerHour: 0,
+        history: []
       }))
     }
     const plan = await apiRequest('/api/planning/plan', { method: 'POST', body: JSON.stringify(payload) })
@@ -541,60 +466,24 @@ async function doCreatePlan() {
       routeStrategy.value = normalizeStrategy(plan.options.routeStrategy)
       setStorage(ROUTE_STRATEGY_KEY, routeStrategy.value)
     }
-    const planBinMap = new Map((plan.bins || []).map(item => [String(item.id), item]))
-    bins.value = bins.value.map(bin => {
-      const computed = planBinMap.get(String(bin.id))
-      return computed ? { ...bin, ...computed, selected: bin.selected !== false } : bin
+    const planCenterMap = new Map((plan.centers || plan.bins || []).map(item => [String(item.id), item]))
+    bins.value = bins.value.map(center => {
+      const computed = planCenterMap.get(String(center.id))
+      return computed ? { ...center, ...computed, selected: center.selected !== false } : center
     })
     routeStops.value = plan.route && Array.isArray(plan.route.stops) ? plan.route.stops : []
     if (plan.route && plan.route.stops && plan.route.stops.length) {
       const r = plan.route
-      const providerText = r.provider === 'tencent'
-        ? '腾讯道路'
-        : '降级直线'
-      routeSummary.value = `${routeStrategyLabel.value} | Stops ${r.stops.length}, distance ${Number(r.totalDistanceKm || 0).toFixed(2)} km, total ${Number(r.totalMinutes || 0).toFixed(1)} min | ${providerText}.`
+      routeSummary.value = `${routeStrategyLabel.value}｜分拣中心 ${r.stops.length} 个，里程 ${Number(r.totalDistanceKm || 0).toFixed(2)} km，预计 ${Number(r.totalMinutes || 0).toFixed(1)} min`
     } else {
-      routeSummary.value = 'No route generated yet.'
+      routeSummary.value = '未生成分拣中心路线。'
     }
     updateMetrics(plan)
     buildMpMapData()
     // #ifdef H5
     drawH5Map()
     // #endif
-    setStatus('规划完成', 'ok')
-  } catch (err) {
-    setStatus(err && err.message ? err.message : String(err), 'err')
-  }
-}
-
-async function doSaveSnapshots() {
-  const targets = bins.value.filter(b => b.selected !== false)
-  if (!targets.length) { setStatus('请先选择至少一个桶位', 'err'); return }
-  setStatus('正在保存满载率快照...')
-  try {
-    for (const bin of targets) {
-      await apiRequest('/api/planning/snapshot', {
-        method: 'POST',
-        body: JSON.stringify({ binId: bin.id, fillLevel: bin.currentFill, timestamp: new Date().toISOString(), source: 'web-manual', syncOverride: true })
-      })
-    }
-    setStatus(`Saved snapshots for ${targets.length} bins.`, 'ok')
-  } catch (err) {
-    setStatus(err && err.message ? err.message : String(err), 'err')
-  }
-}
-
-async function doMockHistory() {
-  const targets = bins.value.filter(b => b.selected !== false).map(b => b.id)
-  if (!targets.length) { setStatus('请先选择桶位后再生成历史', 'err'); return }
-  setStatus('正在生成历史样本...')
-  try {
-    await apiRequest('/api/planning/mock-history', {
-      method: 'POST',
-      body: JSON.stringify({ binIds: targets, days: 7, pointsPerDay: 4, urgentThreshold: opts.urgentThreshold, planningHorizonHours: opts.planningHorizonHours })
-    })
-    await doLoadBins()
-    setStatus('历史样本已生成并刷新', 'ok')
+    setStatus('分拣中心路线规划完成', 'ok')
   } catch (err) {
     setStatus(err && err.message ? err.message : String(err), 'err')
   }
@@ -607,7 +496,7 @@ function useMapCenter() {
     const lat = typeof center?.getLat === 'function' ? center.getLat() : center?.lat
     const lng = typeof center?.getLng === 'function' ? center.getLng() : center?.lng
     if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      startPoint.value = { name: 'Map Center Start', latitude: lat, longitude: lng }
+      startPoint.value = { name: '地图中心起点', latitude: lat, longitude: lng }
       drawH5Map()
     }
   }
@@ -618,21 +507,32 @@ function useMapCenter() {
 }
 
 // ─── 导航 ──────────────────────────────────────────────
+function openSortingCenter(center) {
+  if (!center) return
+  jumpToAdminPage('collectionDashboard', {
+    from: 'collectionPlanning',
+    query: {
+      view: 'sorting',
+      centerId: center.id,
+      centerName: center.name
+    }
+  })
+}
+
 function goBack() {
   goBackFromAdminPage('collectionPlanning')
 }
 
 // ─── 小程序地图数据 ────────────────────────────────────
 function buildMpMapData() {
-  const binsArr = bins.value
-  const colorMap = { normal: '#1fb57d', warning: '#e0a100', high: '#d06919', urgent: '#c63b3b', muted: '#8ea1b5' }
-  const markers = binsArr.map((bin, i) => ({
+  const centers = bins.value
+  const markers = centers.map((center, i) => ({
     id: i,
-    latitude: Number(bin.latitude) || 0,
-    longitude: Number(bin.longitude) || 0,
-    title: bin.name,
+    latitude: Number(center.latitude) || 0,
+    longitude: Number(center.longitude) || 0,
+    title: center.name,
     width: 26, height: 26,
-    callout: { content: `${bin.name}\n满载率 ${Number(bin.currentFill || 0).toFixed(1)}%`, display: 'BYCLICK', color: '#17324a', fontSize: 12, borderRadius: 6, bgColor: '#fff', padding: 6 },
+    callout: { content: `${center.name}\n${center.selected === false ? '未选择' : '已选择参与规划'}`, display: 'BYCLICK', color: '#17324a', fontSize: 12, borderRadius: 6, bgColor: '#fff', padding: 6 },
     iconPath: ''
   }))
   const polylineArr = []
@@ -645,7 +545,7 @@ function buildMpMapData() {
   mapMarkers.value = markers
   mapPolyline.value = polylineArr
   if (startPoint.value) mapCenter.value = { latitude: startPoint.value.latitude, longitude: startPoint.value.longitude }
-  else if (binsArr.length) mapCenter.value = { latitude: Number(binsArr[0].latitude) || DEFAULT_CENTER.latitude, longitude: Number(binsArr[0].longitude) || DEFAULT_CENTER.longitude }
+  else if (centers.length) mapCenter.value = { latitude: Number(centers[0].latitude) || DEFAULT_CENTER.latitude, longitude: Number(centers[0].longitude) || DEFAULT_CENTER.longitude }
 }
 
 function onMapTap(event) {
@@ -653,16 +553,16 @@ function onMapTap(event) {
   const lat = event?.detail?.latitude
   const lng = event?.detail?.longitude
   if (Number.isFinite(lat) && Number.isFinite(lng)) {
-    startPoint.value = { name: 'Map Selected Start', latitude: lat, longitude: lng }
+    startPoint.value = { name: '地图选定起点', latitude: lat, longitude: lng }
   }
   // #endif
 }
 function onMarkerTap(event) {
   const i = event?.detail?.markerId
   if (!Number.isFinite(i)) return
-  const bin = bins.value[i]
-  if (!bin) return
-  mapCenter.value = { latitude: Number(bin.latitude), longitude: Number(bin.longitude) }
+  const center = bins.value[i]
+  if (!center) return
+  mapCenter.value = { latitude: Number(center.latitude), longitude: Number(center.longitude) }
   mapScale.value = 14
 }
 
@@ -690,7 +590,7 @@ function drawH5Map() {
   if (!_map.instance || !window.TMap) return
   clearH5MapOverlays()
   const TMap = window.TMap
-  const binsArr = bins.value
+  const centers = bins.value
   const bounds = new TMap.LatLngBounds(); let hasBounds = false
 
   const binStyles = {
@@ -700,17 +600,17 @@ function drawH5Map() {
     urgent: new TMap.MarkerStyle({ width: 26, height: 26, anchor: { x: 13, y: 13 }, src: getIconSrc('bin-urgent', '#c63b3b', '') }),
     muted: new TMap.MarkerStyle({ width: 24, height: 24, anchor: { x: 12, y: 12 }, src: getIconSrc('bin-muted', '#8ea1b5', '') })
   }
-  const binGeos = binsArr.map((bin, i) => {
-    const p = new TMap.LatLng(bin.latitude, bin.longitude); bounds.extend(p); hasBounds = true
-    return { id: 'bin-' + i, styleId: getBinStyleId(bin), title: bin.name || ('桶位-' + (i + 1)), position: p }
+  const binGeos = centers.map((center, i) => {
+    const p = new TMap.LatLng(center.latitude, center.longitude); bounds.extend(p); hasBounds = true
+    return { id: 'center-' + i, styleId: getBinStyleId(center), title: center.name || ('分拣中心-' + (i + 1)), position: p }
   })
   if (binGeos.length) {
-    _map.binMarkers = new TMap.MultiMarker({ id: 'planning-bins', map: _map.instance, styles: binStyles, geometries: binGeos })
+    _map.binMarkers = new TMap.MultiMarker({ id: 'planning-sorting-centers', map: _map.instance, styles: binStyles, geometries: binGeos })
     _map.binMarkers.on('click', evt => {
       const id = evt?.geometry?.id || ''
-      const i = Number(String(id).replace('bin-', ''))
-      const bin = binsArr[i]; if (!bin) return
-      showInfoWindow(bin.latitude, bin.longitude, `<div style="font-size:12px;line-height:1.5"><b>${bin.name || '未命名桶位'}</b><br/>满载率：${Number(bin.currentFill || 0).toFixed(1)}%<br/>预计满载：${bin.hoursToFull == null ? '--' : Number(bin.hoursToFull).toFixed(1) + 'h'}<br/>优先级：${Number(bin.priorityScore || 0).toFixed(3)}</div>`)
+      const i = Number(String(id).replace('center-', ''))
+      const center = centers[i]; if (!center) return
+      showInfoWindow(center.latitude, center.longitude, `<div style="font-size:12px;line-height:1.5"><b>${center.name || '未命名分拣中心'}</b><br/>位置：${center.location || '--'}<br/>规划状态：${center.selected === false ? '未选择' : '已选择'}</div>`)
     })
   }
 
@@ -755,7 +655,7 @@ async function initH5Map() {
     const lat = typeof evt?.latLng?.getLat === 'function' ? evt.latLng.getLat() : null
     const lng = typeof evt?.latLng?.getLng === 'function' ? evt.latLng.getLng() : null
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
-    startPoint.value = { name: 'Map Selected Start', latitude: lat, longitude: lng }
+    startPoint.value = { name: '地图选定起点', latitude: lat, longitude: lng }
     drawH5Map()
   })
 }
@@ -769,7 +669,7 @@ onMounted(async () => {
   const onStorage = () => { isDark.value = getStorage('app_theme') === 'dark' }
   window.addEventListener('storage', onStorage)
   // #endif
-  const loadBinsPromise = doLoadBins().catch((error) => {
+  const loadCentersPromise = doLoadCenters().catch((error) => {
     setStatus(error?.message || String(error), 'err')
   })
   // #ifdef H5
@@ -787,7 +687,7 @@ onMounted(async () => {
       console.error('[collection-planning] map init failed:', error)
     })
   // #endif
-  await loadBinsPromise
+  await loadCentersPromise
   // #ifdef H5
   window._planningOnStorage = onStorage
   // 挂载清理函数（onBeforeUnmount 不能捕获 onStorage 闭包，用全局变量中转）
@@ -1739,6 +1639,67 @@ label,navigator,image,div,span { box-sizing: border-box; }
   transition: border-color .18s ease, background-color .18s ease;
 }
 .layout .bin-row:hover { border-color: #b7cff0; background: #fbfdff; }
+.layout .sorting-center-list {
+  align-content: start;
+  height: auto;
+  min-height: 230px;
+}
+.layout .sorting-center-row {
+  min-height: 70px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.layout .sorting-center-row.is-selected {
+  border-color: rgba(24, 167, 124, 0.48);
+  background: rgba(24, 167, 124, 0.07);
+}
+.layout .sorting-center-row:not(.is-selected) {
+  opacity: 0.68;
+}
+.layout .sorting-center-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(145deg, var(--success), #3bc596);
+  font-size: 17px;
+  font-weight: 760;
+}
+.layout .sorting-center-copy { flex: 1; min-width: 0; }
+.layout .sorting-center-select {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.layout .sorting-center-select text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.layout .sorting-center-entry {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(24, 167, 124, 0.08);
+  color: var(--success);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.layout .chip.center-running {
+  color: #fff;
+  background: var(--success);
+}
 .layout .bin-head { color: var(--text); font-size: 12px; font-weight: 720; }
 .layout .bin-sub { color: var(--sub); font-size: 10px; line-height: 1.45; }
 .layout .chip {
@@ -1774,7 +1735,10 @@ label,navigator,image,div,span { box-sizing: border-box; }
   gap: 10px;
   overflow: hidden;
 }
-.layout .map-stage { min-width: 0; min-height: 0; overflow: hidden; border-radius: 11px; }
+.layout .map-stage {
+  position: relative; z-index: 0; isolation: isolate;
+  min-width: 0; min-height: 0; overflow: hidden; border-radius: 11px;
+}
 #map,
 .layout .mp-map {
   width: 100%;
@@ -2102,6 +2066,18 @@ label,navigator,image,div,span { box-sizing: border-box; }
   background: var(--admin-light-surface);
 }
 .layout.light-theme.admin-light-theme .bin-row:hover { border-color: #a8c4e3; background: #fbfdff; }
+.layout.light-theme.admin-light-theme .sorting-center-row:hover {
+  border-color: #8bc9b3;
+  background: var(--admin-light-primary-soft);
+}
+.layout.light-theme.admin-light-theme .sorting-center-row.is-selected {
+  border-color: #8bc9b3;
+  background: var(--admin-light-primary-soft);
+}
+.layout.light-theme.admin-light-theme .sorting-center-icon {
+  background: linear-gradient(145deg, var(--admin-light-primary), #43ba91);
+}
+.layout.light-theme.admin-light-theme .sorting-center-entry { color: var(--admin-light-primary); }
 .layout.light-theme.admin-light-theme .bin-head { color: var(--admin-light-text); }
 .layout.light-theme.admin-light-theme .bin-sub { color: var(--admin-light-text-secondary); }
 .layout.light-theme.admin-light-theme .chip {
@@ -2110,6 +2086,10 @@ label,navigator,image,div,span { box-sizing: border-box; }
 }
 .layout.light-theme.admin-light-theme .chip.urgent { color: #aa3f47; background: var(--admin-light-danger-soft); }
 .layout.light-theme.admin-light-theme .chip.warning { color: #986017; background: var(--admin-light-warning-soft); }
+.layout.light-theme.admin-light-theme .chip.center-running {
+  color: #117b5d;
+  background: var(--admin-light-success-soft);
+}
 .layout.light-theme.admin-light-theme .fill-input { color: var(--admin-light-text-secondary); border-color: var(--admin-light-border-strong); background: var(--admin-light-primary-soft); }
 .layout.light-theme.admin-light-theme .map-wrap {
   min-width: 0;

@@ -1222,7 +1222,10 @@ export default {
   height: 600rpx;
   min-height: 400rpx;
 }
-.map-container { width: 100%; height: 100%; }
+.map-container {
+  position: relative; z-index: 0; isolation: isolate;
+  width: 100%; height: 100%; overflow: hidden;
+}
 .map-center-marker {
   position: absolute;
   top: 50%;

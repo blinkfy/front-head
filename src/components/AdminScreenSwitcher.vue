@@ -41,7 +41,7 @@
           role="menuitem"
           :aria-current="isCurrentScreen(screen) ? 'page' : undefined"
           :disabled="isNavigating"
-          @click.stop="selectScreen(getScreenKey(screen))"
+          @click.stop="selectScreen(screen)"
         >
           <text class="admin-screen-switcher__item-icon">{{ screen.icon || '▣' }}</text>
           <text class="admin-screen-switcher__item-label">{{ screen.shortTitle || screen.title }}</text>
@@ -93,6 +93,7 @@ const props = defineProps({
     validator: (value) => ['dark', 'light'].includes(value)
   }
 })
+const emit = defineEmits(['screen-action'])
 
 const switcherRoot = ref(null)
 const menuDialog = ref(null)
@@ -173,18 +174,27 @@ function closeMenu() {
 function onPickerChange(event) {
   const index = Number(event?.detail?.value)
   const screen = accessibleScreens.value[index]
-  selectScreen(getScreenKey(screen))
+  selectScreen(screen)
 }
 
-async function selectScreen(target) {
+async function selectScreen(screenOrTarget) {
   closeMenu()
-  if (!target || isNavigating.value || target === props.screenKey) return
+  const screen = typeof screenOrTarget === 'string'
+    ? accessibleScreens.value.find(item => getScreenKey(item) === screenOrTarget)
+    : screenOrTarget
+  const target = getScreenKey(screen)
+  if (!target || isNavigating.value) return
+  if (target === props.screenKey) {
+    if (screen?.entryAction) emit('screen-action', screen.entryAction)
+    return
+  }
 
   isNavigating.value = true
   try {
     await navigateAdminScreen(target, {
       from: props.screenKey,
-      mode: 'navigate'
+      mode: 'navigate',
+      query: { ...(screen?.entryQuery || {}) }
     })
   } finally {
     isNavigating.value = false

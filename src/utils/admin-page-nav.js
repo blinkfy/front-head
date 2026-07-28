@@ -5,7 +5,7 @@ import { redirectToNoPermission } from '@/utils/access-guard.js'
 export const ADMIN_SCREEN_REGISTRY = Object.freeze({
   collectionPlanning: {
     id: 'collectionPlanning',
-    title: '垃圾清运规划',
+    title: '分拣中心清运规划',
     shortTitle: '清运规划',
     icon: '⌁',
     navOrder: 10,
@@ -17,11 +17,13 @@ export const ADMIN_SCREEN_REGISTRY = Object.freeze({
   collectionDashboard: {
     id: 'collectionDashboard',
     title: '垃圾清运可视化大屏',
-    shortTitle: '清运大屏',
+    shortTitle: '故障处理',
     icon: '◫',
     navOrder: 20,
     access: 'admin',
     fallback: 'profile',
+    entryAction: 'openFaultCenter',
+    entryQuery: Object.freeze({ panel: 'fault' }),
     prettyPath: '/collection-dashboard',
     spaPath: '/pages-nonTheme/collection-dashboard'
   },

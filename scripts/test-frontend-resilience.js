@@ -9,6 +9,10 @@ function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8')
 }
 
+function readBackend(relativePath) {
+  return fs.readFileSync(path.join(root, '..', 'newftx', relativePath), 'utf8')
+}
+
 async function run() {
   const requestUtils = await import(pathToFileURL(path.join(root, 'src/api/request-utils.mjs')).href)
   const databaseStatus = await import(pathToFileURL(path.join(root, 'src/api/database-status.mjs')).href)
@@ -125,15 +129,25 @@ async function run() {
   )
 
   const requestSource = read('src/api/index.js')
+  const apiConfigSource = read('src/api/config.js')
   const databaseStatusSource = read('src/api/database-status.mjs')
   const deviceSource = read('src/api/device.js')
   const dashboardSource = read('src/pages-nonTheme/collection-dashboard.vue')
+  const planningSource = read('src/pages-nonTheme/collection-planning.vue')
+  const planningControllerSource = readBackend('controllers/planningController.js')
+  const adminNavSource = read('src/utils/admin-page-nav.js')
+  const screenHeaderSource = read('src/components/AdminScreenHeader.vue')
+  const screenSwitcherSource = read('src/components/AdminScreenSwitcher.vue')
+  const bookingSource = read('src/pages-nonTheme/booking.vue')
+  const editProfileSource = read('src/pages-nonTheme/edit-profile.vue')
   const shopSource = read('src/pages/shop/shop.vue')
   const darkShopSource = read('src/pages-dark/shop/shop.vue')
   const webviewSource = read('src/pages-nonTheme/webview.vue')
   const homeSource = read('src/pages/home/home.vue')
   const darkHomeSource = read('src/pages-dark/home/home.vue')
   assert.match(requestSource, /requestMethod === 'GET' \? params : \{\}/)
+  assert.match(apiConfigSource, /import\.meta\.env\.DEV[\s\S]*?import\.meta\.env\.VITE_API_BASE_URL/)
+  assert.match(apiConfigSource, /baseUrl:\s*localBaseUrl \|\| 'https:\/\/rgqexbnzzipc\.sealosbja\.site'/)
   assert.match(requestSource, /const databaseStatusRuntime = Object\.freeze\(\{[\s\S]*?getStorageSync: key => uni\.getStorageSync\(key\)/)
   assert.match(requestSource, /setStorageSync: \(key, value\) => uni\.setStorageSync\(key, value\)/)
   assert.match(requestSource, /removeStorageSync: key => uni\.removeStorageSync\(key\)/)
@@ -150,6 +164,54 @@ async function run() {
   assert.match(dashboardSource, /getDatabaseStatus\(databaseStatusRuntime\)/)
   assert.match(dashboardSource, /subscribeDatabaseStatus\(\(status\) => \{[\s\S]*?\}, databaseStatusRuntime\)/)
   assert.match(dashboardSource, /allowRecovery:\s*isDatabaseHealthEndpoint\(path\)/)
+  assert.doesNotMatch(dashboardSource, /class="btn fault-btn"/)
+  assert.doesNotMatch(dashboardSource, /@tap="openSortingCenterMonitor">分拣中心进度/)
+  assert.match(dashboardSource, /'planningHorizonHours=2'/)
+  assert.doesNotMatch(dashboardSource, /路线来源：/)
+  assert.match(dashboardSource, /\{\{\s*selectedSortingCenter\.name\s*\}\}/)
+  assert.match(dashboardSource, /--admin-light-primary:\s*#118b67/)
+  assert.match(dashboardSource, /\.card:nth-child\(odd\)[\s\S]*?#eef7f2/)
+  assert.match(dashboardSource, /\.card:nth-child\(even\)[\s\S]*?#f7faf8/)
+  assert.match(planningSource, />分拣中心清运规划</)
+  assert.match(planningSource, />分拣中心列表</)
+  assert.match(planningSource, /中山公园分拣中心/)
+  assert.match(planningSource, /小西湖分拣中心/)
+  assert.match(planningSource, /樱花大道分拣中心/)
+  assert.match(planningSource, /view:\s*'sorting'/)
+  assert.match(planningSource, /centerId:\s*center\.id/)
+  assert.match(planningSource, /centerName:\s*center\.name/)
+  assert.match(planningSource, /targetType:\s*'sorting_center'/)
+  assert.match(planningSource, /centers:\s*selectedCenters\.map/)
+  assert.match(planningSource, /onSortingCenterToggle\(center\.id,\s*\$event\)/)
+  assert.doesNotMatch(planningSource, /api\/planning\/bins/)
+  assert.doesNotMatch(planningSource, /降级直线/)
+  assert.match(planningControllerSource, /targetType === 'sorting_center'/)
+  assert.match(planningControllerSource, /bins:\s*centers/)
+  assert.match(planningControllerSource, /maxStops:\s*centerCount/)
+  assert.match(planningControllerSource, /centers:\s*plan\.bins/)
+  assert.match(adminNavSource, /shortTitle:\s*'故障处理'/)
+  assert.match(adminNavSource, /entryAction:\s*'openFaultCenter'/)
+  assert.match(adminNavSource, /entryQuery:\s*Object\.freeze\(\{\s*panel:\s*'fault'\s*\}\)/)
+  assert.match(screenHeaderSource, /@screen-action="emit\('screen-action', \$event\)"/)
+  assert.match(screenSwitcherSource, /emit\('screen-action', screen\.entryAction\)/)
+  assert.match(screenSwitcherSource, /query:\s*\{\s*\.\.\.\(screen\?\.entryQuery \|\| \{\}\)\s*\}/)
+  assert.match(
+    dashboardSource,
+    /\.screen \.map-stage \{[\s\S]*?isolation:\s*isolate[\s\S]*?overflow:\s*hidden/,
+    'dashboard map SDK controls must stay inside the map stacking context'
+  )
+  assert.match(
+    dashboardSource,
+    /\.screen \.fault-mask \{[\s\S]*?z-index:\s*10000[\s\S]*?isolation:\s*isolate/,
+    'fault drawer overlay must render above all dashboard map controls'
+  )
+  assert.match(
+    planningSource,
+    /\.layout \.map-stage \{[\s\S]*?isolation:\s*isolate/,
+    'planning map SDK controls must stay inside the map stacking context'
+  )
+  assert.match(bookingSource, /\.map-container \{[\s\S]*?isolation:\s*isolate/)
+  assert.match(editProfileSource, /\.map-container \{[\s\S]*?isolation:\s*isolate/)
   assert.match(
     dashboardSource,
     /updateDatabaseStatusFromAvailability\(json,[\s\S]*?if \(!json \|\| json\.code !== 0/,

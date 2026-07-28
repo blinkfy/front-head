@@ -1430,8 +1430,12 @@ onMounted(() => {
 }
 
 .map-container {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 .map-center-marker {

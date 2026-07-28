@@ -4,7 +4,11 @@
       <slot />
     </view>
     <view class="admin-screen-header__navigation-actions">
-      <AdminScreenSwitcher :screen-key="screenKey" :tone="tone" />
+      <AdminScreenSwitcher
+        :screen-key="screenKey"
+        :tone="tone"
+        @screen-action="emit('screen-action', $event)"
+      />
       <view
         class="admin-screen-header__back"
         role="button"
@@ -37,7 +41,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['back'])
+const emit = defineEmits(['back', 'screen-action'])
 </script>
 
 <style scoped>
