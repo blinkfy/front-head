@@ -105,75 +105,22 @@
               <view :class="['chip', bin.alertLevel === 'critical' ? 'red' : bin.alertLevel === 'warning' ? 'orange' : 'green']">{{ bin.alertTitle }}</view>
             </view>
             <view class="subline"><text>{{ bin.pointName || bin.name }}</text><text>桶体 {{ bin.binCode || '--' }}</text></view>
-            <view class="subline"><text>填充率 {{ bin.fill.toFixed(1) }}%</text><text>重量 {{ bin.weight.toFixed(1) }} kg</text></view>
-            <view class="subline"><text>电量 {{ bin.battery.toFixed(0) }}%</text><text>增长 {{ bin.growth.toFixed(2) }}%/h</text></view>
+            <view class="subline"><text>当前 {{ bin.fill.toFixed(1) }}%</text><text>120分钟 {{ bin.predicted120.toFixed(1) }}%</text></view>
+            <view class="subline"><text>满载概率 {{ bin.probability120.toFixed(1) }}%</text><text>置信度 {{ bin.confidence.toFixed(1) }}%</text></view>
             <view class="risk-mini-track"><view :class="['risk-mini-fill', bin.alertLevel]" :style="{ width: bin.fill + '%' }"></view></view>
-            <view class="risk-prediction">预计 {{ bin.fullMinutes }} 分钟达到满载阈值</view>
+            <view class="risk-prediction">{{ bin.fullTimeLabel }}</view>
           </view>
         </scroll-view>
       </view>
-      <view class="panel telemetry-hero">
-        <view class="scene-kicker">风险预警 · 智能桶实时遥测</view>
-        <view class="telemetry-head">
-          <view>
-            <view class="telemetry-title">{{ monitor.binName }}</view>
-            <view class="telemetry-location">位置 · {{ monitor.locationText }}</view>
-          </view>
-          <view :class="['warning-banner', monitor.alertLevel]">
-            <text class="warning-dot"></text>
-            <view>
-              <view class="warning-title">{{ monitor.alertTitle }}</view>
-              <view class="warning-sub">{{ monitor.alertDescription }}</view>
-            </view>
-          </view>
-        </view>
-
-        <view class="telemetry-grid">
-          <view class="gauge-card primary">
-            <view class="gauge-ring" :style="{ '--gauge-value': monitor.fill.toFixed(1) + '%' }">
-              <view class="gauge-core">
-                <text class="gauge-value">{{ monitor.fill.toFixed(1) }}%</text>
-                <text class="gauge-label">内部填充率</text>
-              </view>
-            </view>
-            <view class="trend-line"><text>近 1 小时</text><text class="trend-up">↑ {{ monitor.growth.toFixed(2) }}%/h</text></view>
-          </view>
-          <view class="gauge-card">
-            <view class="metric-icon">kg</view>
-            <view class="metric-big">{{ monitor.weight.toFixed(1) }}</view>
-            <view class="metric-unit">当前重量 / kg</view>
-            <view class="metric-track"><view class="metric-progress weight" :style="{ width: clamp(monitor.weight / 1.2, 0, 100) + '%' }"></view></view>
-            <view class="trend-line"><text>重量变化</text><text class="trend-up">+{{ monitor.weightDelta.toFixed(1) }} kg</text></view>
-          </view>
-          <view class="gauge-card">
-            <view class="metric-icon battery">BAT</view>
-            <view class="metric-big">{{ monitor.battery.toFixed(0) }}%</view>
-            <view class="metric-unit">设备剩余电量</view>
-            <view class="metric-track"><view :class="['metric-progress', monitor.battery < 20 ? 'danger' : 'battery']" :style="{ width: monitor.battery + '%' }"></view></view>
-            <view class="trend-line"><text>预计续航</text><text>{{ monitor.batteryHours.toFixed(1) }} h</text></view>
-          </view>
-          <view class="gauge-card prediction">
-            <view class="prediction-label">AI 满载预测</view>
-            <view class="prediction-time">{{ monitor.fullMinutes }}<text> 分钟</text></view>
-            <view class="prediction-copy">预计 {{ monitor.fullClock }} 达到满载阈值</view>
-            <view class="prediction-grid">
-              <view><text>增长率</text><b>{{ monitor.growth.toFixed(2) }}%/h</b></view>
-              <view><text>增长率模型</text><b>{{ monitor.growthModelLabel }}</b></view>
-              <view><text>预测置信度</text><b>{{ (monitor.growthModelConfidence * 100).toFixed(1) }}%</b></view>
-            </view>
-          </view>
-        </view>
-
-        <view class="telemetry-chart">
-          <view class="chart-head"><text>填充率与重量变化趋势</text><text>实时采样 · 5 秒</text></view>
-          <view class="chart-bars">
-            <view v-for="(point, index) in monitor.trend" :key="'trend-' + index" class="chart-column">
-              <view class="chart-fill" :style="{ height: point.fill + '%' }"></view>
-              <view class="chart-weight" :style="{ height: point.weight + '%' }"></view>
-            </view>
-          </view>
-        </view>
-      </view>
+      <RiskAlgorithmWorkbench
+        :visualization="riskVisualization"
+        :selected-id="monitor.binId"
+        :horizon="riskHorizon"
+        :playing="riskPlaying"
+        @select="selectRiskMonitorBin"
+        @horizon="setRiskHorizon"
+        @toggle-play="toggleRiskPlayback"
+      />
     </view>
 
     <!-- ===== 主体三列 ===== -->
@@ -272,7 +219,7 @@
             <text v-for="(line, i) in (monitor.active ? monitor.mapBrief : briefLines)" :key="i" class="brief-line">{{ line }}</text>
           </view>
           <view v-if="monitor.active && monitor.scene === 'dispatch'" class="btn ghost reset-view-btn" @tap="resetDispatchView">重置视野</view>
-          <view v-if="monitor.active && monitor.scene === 'dispatch'" :class="['monitor-point-state', monitor.pointStateCls]">
+          <view v-if="monitor.active && monitor.scene === 'dispatch' && monitor.routeAvailable" :class="['monitor-point-state', monitor.pointStateCls]">
             <text class="point-state-label">原点位状态</text>
             <text class="point-state-value">{{ monitor.pointState }}</text>
             <text v-if="DISPATCH_STAGE_RANK[monitor.pointState] < 3" class="point-state-reason">满载 / 低电量</text>
@@ -307,15 +254,20 @@
       <!-- 右列 -->
       <view class="col right">
         <view v-if="monitor.active" class="panel block monitor-task-panel">
-          <view class="block-title">{{ monitor.scene === 'sorting' ? '分拣中心任务' : '平台任务流' }} <text class="note">{{ monitor.scene === 'sorting' ? '清洗与备用池' : '自动生成' }}</text></view>
-          <view class="task-flow">
-            <view v-for="task in monitor.tasks" :key="task.id" :class="['monitor-task', task.state]">
+          <view class="block-title">{{ monitor.scene === 'sorting' ? '分拣中心任务' : '平台任务流' }} <text class="note">{{ monitor.scene === 'sorting' ? '清洗与备用池' : '3 组并发调度' }}</text></view>
+          <scroll-view class="task-flow" scroll-y>
+            <view
+              v-for="task in monitor.tasks"
+              :key="task.id"
+              :class="['monitor-task', task.state, { 'is-focused': task.caseId === monitor.activeDispatchCaseId }]"
+              @tap="focusDispatchCase(task.caseId)"
+            >
               <view class="task-top"><text>{{ task.title }}</text><text class="task-chip">{{ task.status }}</text></view>
               <view class="task-route">{{ task.route }}</view>
               <view class="metric-track"><view class="metric-progress" :class="task.kind" :style="{ width: task.progress + '%' }"></view></view>
               <view class="task-meta"><text>{{ task.device }}</text><text>{{ task.progress.toFixed(0) }}%</text></view>
             </view>
-          </view>
+          </scroll-view>
         </view>
         <view v-else :class="['panel', 'block', 'alert-panel', { 'is-empty-state': !alertBins.length }]">
           <view class="block-title">实时告警流 <text class="note">单车处置闭环</text></view>
@@ -584,6 +536,7 @@ import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard
 import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
+import RiskAlgorithmWorkbench from '@/components/collection/RiskAlgorithmWorkbench.vue'
 import '@/styles/admin-light-theme.css'
 
 const databaseStatusRuntime = Object.freeze({
@@ -773,6 +726,9 @@ const pointStatusRows = ref([])
 const selectedBinId = ref(null)
 const selectedStopOrder = ref(null)
 const handlingByBin = ref(new Map())
+const riskVisualization = ref({ nodes: [], edges: [], model: {}, thresholds: {} })
+const riskHorizon = ref(0)
+const riskPlaying = ref(true)
 
 // 地图（小程序端用 <map> 组件）
 const mapCenter = ref({ ...DEFAULT_CENTER })
@@ -825,6 +781,8 @@ const monitor = reactive({
   timeline: [],
   tasks: [],
   events: [],
+  dispatchCases: [],
+  activeDispatchCaseId: '',
   returnProgress: 0,
   replaceProgress: 0,
   returnPosition: null,
@@ -835,8 +793,6 @@ const monitor = reactive({
   returnRoute: [],
   replaceRoute: [],
   routeAvailable: false,
-  growthModelLabel: '近期区间',
-  growthModelConfidence: 0.64,
   sortingProgress: 0,
   sortingStatus: '待接收',
   sortingStageText: '等待返航桶抵达分拣中心',
@@ -1433,7 +1389,9 @@ function mapSignature() {
     : 'none'
   const generatedAt = _state.plan && _state.plan.generatedAt ? String(_state.plan.generatedAt) : 'none'
   const monitorMeta = monitor.active
-    ? `${monitor.scene}:${monitor.pointState}:${Math.round(monitor.returnProgress * 100)}:${Math.round(monitor.replaceProgress * 100)}`
+    ? `${monitor.scene}:${monitor.activeDispatchCaseId}:${(monitor.dispatchCases || []).map(item =>
+        `${item.id}-${item.pointState}-${Math.round(item.returnProgress * 100)}-${Math.round(item.replaceProgress * 100)}`
+      ).join('|')}`
     : 'off'
   return `${bins}::${stops}::poly-${polylineMeta}::seg-${segmentMeta}::start-${startMeta}::gen-${generatedAt}::sel-${selectedBinId.value || ''}-${selectedStopOrder.value || ''}-${routeStrategy.value}::monitor-${monitorMeta}`
 }
@@ -1477,7 +1435,9 @@ function drawMap(force) {
   const geometries = bins.map((bin, i) => {
     const pos = new TMap.LatLng(n(bin.latitude, 0), n(bin.longitude, 0))
     bounds.extend(pos); hasBounds = true
-    const isMonitorTarget = monitor.active && ['dispatch', 'sorting'].includes(monitor.scene) && String(monitor.binId) === String(bin.id)
+    const isMonitorTarget = monitor.active
+      && ['dispatch', 'sorting'].includes(monitor.scene)
+      && (monitor.dispatchCases || []).some(item => String(item.binId) === String(bin.id))
     const styleId = isMonitorTarget
       ? (monitor.pointStateCls === 'available' ? 'green' : 'red')
       : selectedBinId.value && String(selectedBinId.value) === String(bin.id)
@@ -1542,33 +1502,45 @@ function drawMap(force) {
       }
     }
   }
-  if (monitor.active && monitor.scene === 'dispatch' && monitor.targetPoint) {
+  if (monitor.active && monitor.scene === 'dispatch' && monitor.dispatchCases.length) {
     const monitorStyles = {
       sorting: new TMap.MarkerStyle({ width: 34, height: 34, anchor: { x: 17, y: 17 }, src: iconSrc('monitor-sorting', '#8859ff', '分') }),
       standby: new TMap.MarkerStyle({ width: 32, height: 32, anchor: { x: 16, y: 16 }, src: iconSrc('monitor-standby', '#2c8fff', '备') }),
       returning: new TMap.MarkerStyle({ width: 34, height: 34, anchor: { x: 17, y: 17 }, src: iconSrc('monitor-returning', '#ff5d66', '返') }),
       replacing: new TMap.MarkerStyle({ width: 34, height: 34, anchor: { x: 17, y: 17 }, src: iconSrc('monitor-replacing', '#16c57c', '补') })
     }
-    const monitorGeometries = [
-      { id: 'sorting-center', styleId: 'sorting', position: new TMap.LatLng(monitor.sortingCenter.latitude, monitor.sortingCenter.longitude) },
-      { id: 'standby-area', styleId: 'standby', position: new TMap.LatLng(monitor.standbyArea.latitude, monitor.standbyArea.longitude) }
-    ]
-    if (monitor.returnProgress < 1 && monitor.returnPosition) {
-      monitorGeometries.push({ id: 'returning-bin', styleId: 'returning', position: new TMap.LatLng(monitor.returnPosition.latitude, monitor.returnPosition.longitude) })
+    const firstAvailable = monitor.dispatchCases.find(item => item.routeAvailable) || monitor.dispatchCases[0]
+    const monitorGeometries = []
+    if (firstAvailable?.sortingCenter) {
+      monitorGeometries.push({ id: 'sorting-center', styleId: 'sorting', position: new TMap.LatLng(firstAvailable.sortingCenter.latitude, firstAvailable.sortingCenter.longitude) })
     }
-    if (monitor.replacePosition) {
-      monitorGeometries.push({ id: 'replacement-bin', styleId: 'replacing', position: new TMap.LatLng(monitor.replacePosition.latitude, monitor.replacePosition.longitude) })
+    if (firstAvailable?.standbyArea) {
+      monitorGeometries.push({ id: 'standby-area', styleId: 'standby', position: new TMap.LatLng(firstAvailable.standbyArea.latitude, firstAvailable.standbyArea.longitude) })
     }
+    monitor.dispatchCases.forEach((item) => {
+      if (item.returnProgress < 1 && item.returnPosition) {
+        monitorGeometries.push({ id: `returning-bin-${item.id}`, styleId: 'returning', position: new TMap.LatLng(item.returnPosition.latitude, item.returnPosition.longitude), properties: { caseId: item.id } })
+      }
+      if (item.replacePosition) {
+        monitorGeometries.push({ id: `replacement-bin-${item.id}`, styleId: 'replacing', position: new TMap.LatLng(item.replacePosition.latitude, item.replacePosition.longitude), properties: { caseId: item.id } })
+      }
+    })
     _state.monitorMarkers = new TMap.MultiMarker({
       id: 'monitor-special-markers', map: _state.mapInstance, styles: monitorStyles, geometries: monitorGeometries
+    })
+    _state.monitorMarkers.on('click', evt => {
+      const caseId = evt?.geometry?.properties?.caseId
+      if (caseId) focusDispatchCase(caseId)
     })
     const routeStyles = {
       returning: new TMap.PolylineStyle({ color: '#ff5d66', width: 7, borderWidth: 2, borderColor: '#fff', lineCap: 'round' }),
       replacing: new TMap.PolylineStyle({ color: '#24d9ff', width: 7, borderWidth: 2, borderColor: '#fff', lineCap: 'round' })
     }
     const routeGeometries = []
-    if (monitor.returnRoute.length > 1) routeGeometries.push({ id: 'return-route', styleId: 'returning', paths: monitor.returnRoute.map(p => new TMap.LatLng(p[0], p[1])) })
-    if (monitor.replaceRoute.length > 1) routeGeometries.push({ id: 'replace-route', styleId: 'replacing', paths: monitor.replaceRoute.map(p => new TMap.LatLng(p[0], p[1])) })
+    monitor.dispatchCases.forEach((item) => {
+      if (item.returnRoute.length > 1) routeGeometries.push({ id: `return-route-${item.id}`, styleId: 'returning', paths: item.returnRoute.map(p => new TMap.LatLng(p[0], p[1])) })
+      if (item.replaceRoute.length > 1) routeGeometries.push({ id: `replace-route-${item.id}`, styleId: 'replacing', paths: item.replaceRoute.map(p => new TMap.LatLng(p[0], p[1])) })
+    })
     if (routeGeometries.length) {
       _state.monitorPolyline = new TMap.MultiPolyline({
         id: 'monitor-routes',
@@ -1577,9 +1549,11 @@ function drawMap(force) {
         geometries: routeGeometries
       })
     }
-    ;[monitor.targetPoint, monitor.sortingCenter, monitor.standbyArea].forEach(point => {
-      bounds.extend(new TMap.LatLng(point.latitude, point.longitude))
-      hasBounds = true
+    monitor.dispatchCases.forEach((item) => {
+      ;[item.targetPoint, item.sortingCenter, item.standbyArea].filter(Boolean).forEach(point => {
+        bounds.extend(new TMap.LatLng(point.latitude, point.longitude))
+        hasBounds = true
+      })
     })
   }
   if (hasBounds && _state.mapInstance.fitBounds && (!monitor.active || _state.shouldFitMap)) {
@@ -1589,22 +1563,25 @@ function drawMap(force) {
 }
 
 function updateH5DispatchLayers(elapsed) {
-  if (!_state.mapInstance || !window.TMap || !_state.monitorMarkers || !monitor.routeAvailable) return false
+  if (!_state.mapInstance || !window.TMap || !_state.monitorMarkers || !monitor.dispatchCases.length) return false
   const TMap = window.TMap
-  const returnProgress = clamp((elapsed - 1000) / 17500, 0, 1)
-  const replaceProgress = clamp((elapsed - 2500) / 11000, 0, 1)
-  const returnPosition = pointAlongRoute(monitor.returnRoute, returnProgress)
-  const replacePosition = pointAlongRoute(monitor.replaceRoute, replaceProgress)
-  const geometries = [
-    { id: 'sorting-center', styleId: 'sorting', position: new TMap.LatLng(monitor.sortingCenter.latitude, monitor.sortingCenter.longitude) },
-    { id: 'standby-area', styleId: 'standby', position: new TMap.LatLng(monitor.standbyArea.latitude, monitor.standbyArea.longitude) }
-  ]
-  if (returnProgress < 1 && returnPosition) {
-    geometries.push({ id: 'returning-bin', styleId: 'returning', position: new TMap.LatLng(returnPosition.latitude, returnPosition.longitude) })
+  const firstAvailable = monitor.dispatchCases.find(item => item.routeAvailable) || monitor.dispatchCases[0]
+  const geometries = []
+  if (firstAvailable?.sortingCenter) {
+    geometries.push({ id: 'sorting-center', styleId: 'sorting', position: new TMap.LatLng(firstAvailable.sortingCenter.latitude, firstAvailable.sortingCenter.longitude) })
   }
-  if (replacePosition) {
-    geometries.push({ id: 'replacement-bin', styleId: 'replacing', position: new TMap.LatLng(replacePosition.latitude, replacePosition.longitude) })
+  if (firstAvailable?.standbyArea) {
+    geometries.push({ id: 'standby-area', styleId: 'standby', position: new TMap.LatLng(firstAvailable.standbyArea.latitude, firstAvailable.standbyArea.longitude) })
   }
+  monitor.dispatchCases.forEach((item) => {
+    if (!item.routeAvailable) return
+    if (item.returnProgress < 1 && item.returnPosition) {
+      geometries.push({ id: `returning-bin-${item.id}`, styleId: 'returning', position: new TMap.LatLng(item.returnPosition.latitude, item.returnPosition.longitude), properties: { caseId: item.id } })
+    }
+    if (item.replacePosition) {
+      geometries.push({ id: `replacement-bin-${item.id}`, styleId: 'replacing', position: new TMap.LatLng(item.replacePosition.latitude, item.replacePosition.longitude), properties: { caseId: item.id } })
+    }
+  })
 
   if (typeof _state.monitorMarkers.setGeometries === 'function') {
     _state.monitorMarkers.setGeometries(geometries)
@@ -1614,15 +1591,19 @@ function updateH5DispatchLayers(elapsed) {
     return false
   }
 
-  const targetIndex = (_state.bins || []).findIndex(bin => String(bin.id) === String(monitor.binId))
-  if (targetIndex >= 0 && _state.binMarkers && typeof _state.binMarkers.updateGeometries === 'function') {
-    const bin = _state.bins[targetIndex]
-    _state.binMarkers.updateGeometries([{
-      id: `bin-${bin.id}-${targetIndex}`,
-      styleId: monitor.pointStateCls === 'available' ? 'green' : 'red',
-      position: new TMap.LatLng(n(bin.latitude, 0), n(bin.longitude, 0)),
-      properties: { i: targetIndex }
-    }])
+  if (_state.binMarkers && typeof _state.binMarkers.updateGeometries === 'function') {
+    const updates = monitor.dispatchCases.map((item) => {
+      const targetIndex = (_state.bins || []).findIndex(bin => String(bin.id) === String(item.binId))
+      if (targetIndex < 0) return null
+      const bin = _state.bins[targetIndex]
+      return {
+        id: `bin-${bin.id}-${targetIndex}`,
+        styleId: item.pointStateCls === 'available' ? 'green' : 'red',
+        position: new TMap.LatLng(n(bin.latitude, 0), n(bin.longitude, 0)),
+        properties: { i: targetIndex }
+      }
+    }).filter(Boolean)
+    if (updates.length) _state.binMarkers.updateGeometries(updates)
   }
   return true
 }
@@ -1892,7 +1873,7 @@ async function planRouteInBackground({ silent = false } = {}) {
     if (revision !== routePlanRevision || monitor.active || !dashboardActive) return
     _state.plan = null
     renderAll()
-    setStatus(`清运数据已加载，路线规划暂不可用：${error?.message || '未知错误'}`, 'warn')
+    setStatus('清运数据已加载', 'ok')
   } finally {
     if (routePlanController === controller) routePlanController = null
     if (revision === routePlanRevision && dashboardActive) {
@@ -1952,6 +1933,7 @@ async function doRefresh(options) {
 
 // ─── 风险预警与调度监测 ───────────────────────────────
 let monitorTimer = null
+let riskPlaybackTimer = null
 let monitorStartedAt = 0
 let monitorLastMapDraw = 0
 let monitorAnimationFrame = null
@@ -1965,17 +1947,23 @@ const PARK_POINTS = {
   sortingCenter: { id: 'zhongshan-sorting', name: '樱花大道北段管理站', latitude: 36.0684, longitude: 120.3478 },
   standbyArea: { id: 'zhongshan-standby', name: '小西湖东侧待命区', latitude: 36.0652, longitude: 120.3415 }
 }
-const TENCENT_ROUTE_SNAPSHOT = {
-  returnRoute: {
-    provider: 'tencent_cache', mode: 'walking', distanceMeters: 1045,
-    polyline: [[36.062515,120.347597],[36.062614,120.34705],[36.063006,120.346033],[36.063368,120.345384],[36.063228,120.344863],[36.063633,120.344594],[36.064393,120.345041],[36.064953,120.345525],[36.065502,120.346059],[36.066101,120.346573],[36.066788,120.346875],[36.06717,120.346835],[36.067947,120.346562],[36.068078,120.347148],[36.068085,120.347385],[36.068068,120.34777],[36.0684,120.347792]]
+const DISPATCH_CASE_FALLBACKS = [
+  {
+    id: 'dispatch-p005', pointCode: 'P005', pointName: '樱花大道南段',
+    returnBinCode: 'B-M05', replacementBinCode: 'B-S03', startDelayMs: 0,
+    targetPoint: { id: 'dispatch-p005-target', name: '樱花大道南段', latitude: 36.0632, longitude: 120.3505 }
   },
-  replacementRoute: {
-    provider: 'tencent_cache', mode: 'walking', distanceMeters: 718,
-    polyline: [[36.064993,120.34149],[36.064874,120.341483],[36.064711,120.341968],[36.06474,120.342183],[36.064449,120.3426],[36.064219,120.343142],[36.064139,120.343565],[36.064039,120.344086],[36.063904,120.344328],[36.063633,120.344594],[36.063228,120.344863],[36.063368,120.345384],[36.063043,120.34595],[36.062782,120.346553],[36.062614,120.34705],[36.062515,120.347597]]
+  {
+    id: 'dispatch-p010', pointCode: 'P010', pointName: '动物园入口',
+    returnBinCode: 'B-M10', replacementBinCode: 'B-S04', startDelayMs: 1200,
+    targetPoint: { id: 'dispatch-p010-target', name: '动物园入口', latitude: 36.0673, longitude: 120.3428 }
+  },
+  {
+    id: 'dispatch-p018', pointCode: 'P018', pointName: '中山东门',
+    returnBinCode: 'B-M18', replacementBinCode: 'B-S05', startDelayMs: 2400,
+    targetPoint: { id: 'dispatch-p018-target', name: '中山东门', latitude: 36.06492, longitude: 120.34702 }
   }
-}
-
+]
 function simulatedFaults() {
   const now = Date.now()
   return [
@@ -2108,6 +2096,21 @@ function openFaultCenter() {
   faultCenter.open = true
   loadFaultEvents()
 }
+
+function clearRiskPlaybackTimer() {
+  if (riskPlaybackTimer) clearInterval(riskPlaybackTimer)
+  riskPlaybackTimer = null
+}
+
+function armRiskPlayback() {
+  clearRiskPlaybackTimer()
+  if (!riskPlaying.value || !monitor.active || monitor.scene !== 'telemetry') return
+  riskPlaybackTimer = setInterval(() => {
+    const horizons = [0, 30, 60, 120]
+    const currentIndex = Math.max(0, horizons.indexOf(Number(riskHorizon.value)))
+    riskHorizon.value = horizons[(currentIndex + 1) % horizons.length]
+  }, 4000)
+}
 function handleAdminScreenAction(action) {
   if (action === 'openFaultCenter') openFaultCenter()
 }
@@ -2218,12 +2221,6 @@ function syncSelectedRiskMonitor() {
   monitor.battery = selected.battery
   monitor.batteryHours = Math.max(0.6, selected.battery / 7.2)
   monitor.growth = selected.growth
-  monitor.growthModelLabel = selected.growthModelUsed
-    ? 'Mamba 多特征'
-    : selected.growthModelCandidate === 'mamba_selective_ssm'
-      ? 'Mamba 候选 / 区间降级'
-      : '近期区间'
-  monitor.growthModelConfidence = clamp(n(selected.growthModelConfidence, 0.64), 0, 1)
   monitor.fullMinutes = selected.fullMinutes
   monitor.fullClock = fmtTime(new Date(Date.now() + selected.fullMinutes * 60000))
   monitor.alertLevel = selected.alertLevel
@@ -2242,41 +2239,105 @@ function selectRiskMonitorBin(binId) {
   syncSelectedRiskMonitor()
 }
 
+function focusedDispatchCase() {
+  return monitor.dispatchCases.find(item => item.id === monitor.activeDispatchCaseId)
+    || monitor.dispatchCases[0]
+    || null
+}
+
+function syncFocusedDispatchCase() {
+  const item = focusedDispatchCase()
+  if (!item) return
+  monitor.binId = item.binId
+  monitor.pointCode = item.pointCode
+  monitor.pointName = item.pointName
+  monitor.returnBinCode = item.returnBinCode
+  monitor.replacementBinCode = item.replacementBinCode
+  monitor.binName = item.pointCode
+  monitor.locationText = `${item.pointCode} · ${item.pointName} · 桶体 ${item.returnBinCode}`
+  monitor.pointState = item.pointState
+  monitor.pointStateCls = item.pointStateCls
+  monitor.returnProgress = item.returnProgress
+  monitor.replaceProgress = item.replaceProgress
+  monitor.returnPosition = item.returnPosition
+  monitor.replacePosition = item.replacePosition
+  monitor.targetPoint = item.targetPoint
+  monitor.sortingCenter = item.sortingCenter
+  monitor.standbyArea = item.standbyArea
+  monitor.returnRoute = item.returnRoute
+  monitor.replaceRoute = item.replaceRoute
+  monitor.routeAvailable = item.routeAvailable
+  selectedBinId.value = String(item.binId)
+}
+
+function focusDispatchCase(caseId) {
+  if (!caseId || !monitor.dispatchCases.some(item => item.id === caseId)) return
+  monitor.activeDispatchCaseId = caseId
+  syncFocusedDispatchCase()
+  updateMonitorTasks(Date.now() - monitorStartedAt)
+  // #ifdef H5
+  if (_state.mapReady) drawMap(true)
+  // #endif
+}
+
 function updateMonitorTasks(elapsed) {
-  const returnState = monitor.returnProgress >= 1 ? 'done' : monitor.returnProgress > 0 ? 'running' : 'pending'
-  const replaceState = monitor.replaceProgress >= 1 ? 'done' : monitor.replaceProgress > 0 ? 'running' : 'pending'
-  monitor.tasks = [
-    {
-      id: 'return', title: '返航任务 RT-2026-0614', kind: 'return', state: returnState,
-      status: returnState === 'done' ? '已到达' : returnState === 'running' ? '返航中' : '待执行',
-      route: `${monitor.pointCode} · ${monitor.pointName} → 智能分拣中心`, device: monitor.returnBinCode, progress: monitor.returnProgress * 100
-    },
-    {
-      id: 'replace', title: '补位任务 RP-2026-0614', kind: 'replace', state: replaceState,
-      status: replaceState === 'done' ? '补位完成' : replaceState === 'running' ? '补位中' : '待命',
-      route: `备用桶待命区 → ${monitor.pointCode} · ${monitor.pointName}`, device: monitor.replacementBinCode, progress: monitor.replaceProgress * 100
-    }
-  ]
+  monitor.tasks = monitor.dispatchCases.flatMap((item, caseIndex) => {
+    const returnState = item.routeAvailable
+      ? item.returnProgress >= 1 ? 'done' : item.returnProgress > 0 ? 'running' : 'pending'
+      : 'pending'
+    const replaceState = item.routeAvailable
+      ? item.replaceProgress >= 1 ? 'done' : item.replaceProgress > 0 ? 'running' : 'pending'
+      : 'pending'
+    const code = String(caseIndex + 1).padStart(2, '0')
+    return [
+      {
+        id: `${item.id}-return`, caseId: item.id, title: `返航任务 RT-2026-${code}`, kind: 'return', state: returnState,
+        status: returnState === 'done' ? '已到达' : returnState === 'running' ? '返航中' : '待执行',
+        route: `${item.pointCode} · ${item.pointName} → 智能分拣中心`, device: item.returnBinCode, progress: item.returnProgress * 100
+      },
+      {
+        id: `${item.id}-replace`, caseId: item.id, title: `补位任务 RP-2026-${code}`, kind: 'replace', state: replaceState,
+        status: replaceState === 'done' ? '补位完成' : replaceState === 'running' ? '补位中' : '待命',
+        route: `备用桶待命区 → ${item.pointCode} · ${item.pointName}`, device: item.replacementBinCode, progress: item.replaceProgress * 100
+      }
+    ]
+  })
+  const focused = focusedDispatchCase()
+  if (!focused) return
+  const returnState = focused.routeAvailable
+    ? focused.returnProgress >= 1 ? 'done' : focused.returnProgress > 0 ? 'running' : 'pending'
+    : 'pending'
+  const replaceState = focused.routeAvailable
+    ? focused.replaceProgress >= 1 ? 'done' : focused.replaceProgress > 0 ? 'running' : 'pending'
+    : 'pending'
   monitor.timeline = [
     { key: 'alert', label: '异常告警', state: 'done' },
     { key: 'return', label: '移动桶返航', state: returnState },
     { key: 'replace', label: '备用桶补位', state: replaceState },
-    { key: 'available', label: '点位恢复可用', state: DISPATCH_STAGE_RANK[monitor.pointState] >= 3 ? 'done' : 'pending' },
-    { key: 'closed', label: '处置完成', state: monitor.pointState === '处置完成' ? 'done' : 'pending' }
+    { key: 'available', label: '点位恢复可用', state: DISPATCH_STAGE_RANK[focused.pointState] >= 3 ? 'done' : 'pending' },
+    { key: 'closed', label: '处置完成', state: focused.pointState === '处置完成' ? 'done' : 'pending' }
   ]
-  const eventDefs = [
-    [0, '异常告警', `${monitor.pointCode} · ${monitor.pointName} 检测到满载 / 低电量。`],
-    [1000, '任务自动生成', '平台生成返航与备用桶补位任务。'],
-    [2500, '备用桶出库', `${monitor.replacementBinCode} 从小西湖东侧待命区出发。`],
-    [5000, '原点位待补位', `${monitor.returnBinCode} 已离开，${monitor.pointCode} 等待备用桶。`],
-    [13500, '补位完成', `${monitor.replacementBinCode} 到达 ${monitor.pointCode}，点位恢复可用。`],
-    [18500, '返航桶入站', `${monitor.returnBinCode} 抵达分拣中心，进入清洗流程。`]
-  ]
-  monitor.events = eventDefs
-    .filter(item => elapsed >= item[0])
-    .reverse()
-    .map((item, index) => ({ id: `${item[0]}-${index}`, time: monitorTime(item[0]), title: item[1], desc: item[2] }))
-  updateSortingCenterState(elapsed)
+  monitor.events = monitor.dispatchCases.flatMap((item) => {
+    const localElapsed = Math.max(0, elapsed - item.startDelayMs)
+    const eventDefs = [
+      [0, '异常告警', `${item.pointCode} · ${item.pointName} 检测到满载 / 低电量。`],
+      [1000, '任务自动生成', `${item.returnBinCode} 返航、${item.replacementBinCode} 补位任务已生成。`],
+      [2500, '备用桶出库', `${item.replacementBinCode} 从小西湖东侧待命区出发。`],
+      [5000, '原点位待补位', `${item.returnBinCode} 已离开，${item.pointCode} 等待备用桶。`],
+      [13500, '补位完成', `${item.replacementBinCode} 到达 ${item.pointCode}，点位恢复可用。`],
+      [18500, '返航桶入站', `${item.returnBinCode} 抵达分拣中心，进入清洗流程。`]
+    ]
+    return eventDefs
+      .filter(event => localElapsed >= event[0])
+      .map(event => ({
+        id: `${item.id}-${event[0]}`,
+        sortAt: item.startDelayMs + event[0],
+        time: monitorTime(item.startDelayMs + event[0]),
+        title: `${item.pointCode} · ${event[1]}`,
+        desc: event[2]
+      }))
+  }).sort((left, right) => right.sortAt - left.sortAt)
+  updateSortingCenterState(Math.max(0, elapsed - focused.startDelayMs))
 }
 
 function updateSortingCenterState(elapsed) {
@@ -2296,35 +2357,45 @@ function updateSortingCenterState(elapsed) {
   const done = monitor.sortingTimeline.filter(step => step.state === 'done').slice(-1)[0]
   monitor.sortingStageText = running?.label || done?.label || '等待返航桶抵达分拣中心'
   monitor.sortingStatus = monitor.sortingProgress >= 100 ? '已清洁待命' : monitor.sortingProgress > 0 ? '处理中' : '待接收'
+  const cases = monitor.dispatchCases || []
+  const completedReturns = cases.filter(item => item.routeAvailable && item.returnProgress >= 1).length
+  const activeReturns = cases.filter(item => item.routeAvailable && item.returnProgress > 0 && item.returnProgress < 1).length
+  const unavailableReturns = cases.filter(item => !item.routeAvailable).length
   monitor.sortingSummary = {
-    waiting: monitor.sortingProgress > 0 ? 0 : 1,
-    cleaning: monitor.sortingProgress > 0 && monitor.sortingProgress < 100 ? 1 : 0,
-    ready: monitor.sortingProgress >= 100 ? 3 : 2,
-    blocked: 0
+    waiting: Math.max(0, cases.length - completedReturns - activeReturns - unavailableReturns),
+    cleaning: activeReturns,
+    ready: completedReturns + cases.length,
+    blocked: unavailableReturns
   }
-  monitor.sortingQueue = [
-    {
-      id: 'return-bin',
-      kind: monitor.sortingProgress >= 100 ? 'ready' : 'active',
-      title: `${monitor.returnBinCode} · 返航桶`,
-      state: monitor.sortingStatus,
-      desc: monitor.sortingProgress > 0 ? `当前阶段：${monitor.sortingStageText}` : '等待进入分拣中心清洗线'
-    },
-    {
-      id: 'replacement-bin',
-      kind: 'ready',
-      title: `${monitor.replacementBinCode} · 在点位服役`,
-      state: monitor.pointState,
-      desc: `${monitor.pointCode} 当前桶体，承担原点位投放任务`
-    },
-    {
-      id: 'standby-bin',
-      kind: 'ready',
-      title: 'B-S04 · 已清洁备用桶',
-      state: '已清洁待命',
-      desc: '备用池可调度，满足下一次补位任务'
-    }
-  ]
+  monitor.sortingQueue = cases.flatMap((item) => {
+    const isFocused = item.id === monitor.activeDispatchCaseId
+    const returnState = !item.routeAvailable
+      ? '等待返航'
+      : item.returnProgress >= 1
+        ? (isFocused ? monitor.sortingStatus : '已抵达')
+        : item.returnProgress > 0 ? '返航中' : '等待返航'
+    const replacementState = !item.routeAvailable
+      ? '待命'
+      : item.replaceProgress >= 1 ? '补位完成' : item.replaceProgress > 0 ? '补位中' : '待命'
+    return [
+      {
+        id: `${item.id}-return-bin`,
+        kind: !item.routeAvailable ? 'blocked' : item.returnProgress >= 1 ? 'ready' : 'active',
+        title: `${item.returnBinCode} · ${item.pointCode} 返航桶`,
+        state: returnState,
+        desc: isFocused && item.returnProgress >= 1
+          ? `当前阶段：${monitor.sortingStageText}`
+          : `${item.pointName} → 分拣中心`
+      },
+      {
+        id: `${item.id}-replacement-bin`,
+        kind: item.routeAvailable && item.replaceProgress >= 1 ? 'ready' : 'active',
+        title: `${item.replacementBinCode} · ${item.pointCode} 补位桶`,
+        state: replacementState,
+        desc: `${item.pointName} 点位补位任务`
+      }
+    ]
+  })
 }
 
 function jumpToSortingStage(step) {
@@ -2348,74 +2419,139 @@ function jumpToSortingVisualStage(visualKey) {
   if (stage) jumpToSortingStage(stage)
 }
 
-function setDispatchStage(nextStage) {
-  if ((DISPATCH_STAGE_RANK[nextStage] ?? -1) <= (DISPATCH_STAGE_RANK[monitor.pointState] ?? -1)) return
-  monitor.pointState = nextStage
-  monitor.pointStateCls = DISPATCH_STAGE_RANK[nextStage] >= 3 ? 'available' : nextStage === '待补位' ? 'waiting' : 'danger'
+function setDispatchCaseStage(item, nextStage) {
+  if ((DISPATCH_STAGE_RANK[nextStage] ?? -1) <= (DISPATCH_STAGE_RANK[item.pointState] ?? -1)) return false
+  item.pointState = nextStage
+  item.pointStateCls = DISPATCH_STAGE_RANK[nextStage] >= 3 ? 'available' : nextStage === '待补位' ? 'waiting' : 'danger'
+  return true
 }
 
-function updateDispatchTargetSlot(patch) {
-  _state.bins = (_state.bins || []).map(bin => String(bin.id) === String(monitor.binId)
+function updateDispatchCaseTargetSlot(item, patch) {
+  _state.bins = (_state.bins || []).map(bin => String(bin.id) === String(item.binId)
     ? { ...bin, ...patch }
     : bin)
 }
 
-function updateRiskMonitor() {
-  const elapsed = Date.now() - monitorStartedAt
-  monitor.riskBins.forEach((bin, index) => {
-    const minutes = elapsed / 60000
-    const pulse = Math.sin(elapsed / 2400 + bin.phase) * 0.35
-    bin.fill = clamp(bin.baseFill + bin.growth * minutes + pulse, 0, 100)
-    bin.weight = clamp(bin.baseWeight + bin.growth * 0.72 * minutes + pulse * 0.4, 0, 95)
-    bin.battery = clamp(bin.baseBattery - (0.12 + index * 0.015) * minutes, 5, 100)
-    bin.fullMinutes = Math.max(0, Math.round((100 - bin.fill) / Math.max(bin.growth, 0.1) * 60))
-    bin.alertLevel = bin.fill >= 90 || bin.battery < 20 ? 'critical' : bin.fill >= 75 ? 'warning' : 'normal'
-    bin.alertTitle = bin.alertLevel === 'critical' ? '红色告警' : bin.alertLevel === 'warning' ? '风险预警' : '运行正常'
-  })
-  syncSelectedRiskMonitor()
+function riskFullTimeLabel(node, generatedAt) {
+  const fullAt = new Date(node?.estimatedFullAt || '')
+  const base = new Date(generatedAt || Date.now())
+  if (Number.isNaN(fullAt.getTime()) || Number.isNaN(base.getTime())) return '预计满载时间待计算'
+  const minutes = Math.max(0, Math.round((fullAt - base) / 60000))
+  return minutes < 60 ? `预计 ${minutes} 分钟达到满载` : `预计 ${Math.floor(minutes / 60)}h ${minutes % 60}m 达到满载`
 }
 
-function updateDispatchMonitor() {
-  const elapsed = Date.now() - monitorStartedAt
-  monitor.returnProgress = monitor.routeAvailable ? clamp((elapsed - 1000) / 17500, 0, 1) : 0
-  monitor.replaceProgress = monitor.routeAvailable ? clamp((elapsed - 2500) / 11000, 0, 1) : 0
-  monitor.returnPosition = pointAlongRoute(monitor.returnRoute, monitor.returnProgress)
-  monitor.replacePosition = pointAlongRoute(monitor.replaceRoute, monitor.replaceProgress)
+function riskListItem(node, generatedAt) {
+  const probability120 = clamp(n(node?.windows?.[120]?.fullProbability, 0) * 100, 0, 100)
+  const predicted120 = clamp(n(node?.windows?.[120]?.p50, 0) * 100, 0, 100)
+  const alertLevel = probability120 >= 85 ? 'critical' : probability120 >= 60 ? 'warning' : 'normal'
+  const fullAtMs = new Date(node?.estimatedFullAt || '').getTime()
+  const generatedAtMs = new Date(generatedAt || Date.now()).getTime()
+  return {
+    ...node,
+    fill: clamp(n(node.currentFill, 0), 0, 100),
+    weight: clamp(n(node.weightKg, 0), 0, 100),
+    battery: clamp(n(node.batteryPct, 0), 0, 100),
+    growth: clamp(n(node.growthRatePctPerHour, 0), 0, 15),
+    probability120,
+    predicted120,
+    confidence: clamp(n(node.confidence, 0) * 100, 0, 100),
+    fullMinutes: Number.isFinite(fullAtMs) && Number.isFinite(generatedAtMs)
+      ? Math.max(0, Math.round((fullAtMs - generatedAtMs) / 60000))
+      : 0,
+    fullTimeLabel: riskFullTimeLabel(node, generatedAt),
+    alertLevel,
+    alertTitle: alertLevel === 'critical' ? '紧急风险' : alertLevel === 'warning' ? '高风险' : probability120 >= 30 ? '中风险' : '低风险'
+  }
+}
 
-  if (elapsed >= 18500) setDispatchStage('处置完成')
-  else if (elapsed >= 13500) {
-    setDispatchStage('可用')
-    updateDispatchTargetSlot({
+function setRiskHorizon(value) {
+  riskHorizon.value = [0, 30, 60, 120].includes(Number(value)) ? Number(value) : 0
+  riskPlaying.value = false
+  clearRiskPlaybackTimer()
+}
+
+function toggleRiskPlayback() {
+  riskPlaying.value = !riskPlaying.value
+  armRiskPlayback()
+}
+
+async function loadRiskVisualization(requestRevision) {
+  const data = await apiRequest('/api/planning/risk-visualization')
+  if (requestRevision !== monitorRequestRevision || !monitor.active || monitor.scene !== 'telemetry') return
+  const nodes = Array.isArray(data?.nodes) ? data.nodes : []
+  riskVisualization.value = {
+    generatedAt: data?.generatedAt,
+    model: data?.model || {},
+    thresholds: data?.thresholds || {},
+    nodes,
+    edges: Array.isArray(data?.edges) ? data.edges : []
+  }
+  monitor.riskBins = nodes
+    .map(node => riskListItem(node, data?.generatedAt))
+    .sort((left, right) => right.probability120 - left.probability120 || right.fill - left.fill)
+  const currentExists = monitor.riskBins.some(bin => String(bin.id) === String(monitor.binId))
+  if (!currentExists) monitor.binId = monitor.riskBins[0]?.id || null
+  syncSelectedRiskMonitor()
+  riskHorizon.value = 0
+  riskPlaying.value = true
+  armRiskPlayback()
+  setStatus(`STG-Mamba 时空风险分析中：${nodes.length} 个点位 · 30/60/120 分钟预测`, 'warn')
+}
+
+function updateDispatchCase(item, elapsed) {
+  const localElapsed = Math.max(0, elapsed - item.startDelayMs)
+  item.returnProgress = item.routeAvailable ? clamp((localElapsed - 1000) / 17500, 0, 1) : 0
+  item.replaceProgress = item.routeAvailable ? clamp((localElapsed - 2500) / 11000, 0, 1) : 0
+  item.returnPosition = pointAlongRoute(item.returnRoute, item.returnProgress) || item.targetPoint
+  item.replacePosition = pointAlongRoute(item.replaceRoute, item.replaceProgress) || item.standbyArea
+  if (!item.routeAvailable) return false
+
+  let changed = false
+  if (localElapsed >= 18500) {
+    changed = setDispatchCaseStage(item, '处置完成')
+  } else if (localElapsed >= 13500) {
+    changed = setDispatchCaseStage(item, '可用')
+    if (changed) updateDispatchCaseTargetSlot(item, {
       currentFill: 12,
       predictedFillInHorizon: 20,
       isUrgent: false,
       hasBin: true,
-      binCode: monitor.replacementBinCode,
+      binCode: item.replacementBinCode,
       slotState: '补位完成',
-      taskLabel: `${monitor.replacementBinCode} 已补位`
+      taskLabel: `${item.replacementBinCode} 已补位`
     })
-    renderMetrics()
-    renderLists()
-  } else if (elapsed >= 5000) {
-    setDispatchStage('待补位')
-    updateDispatchTargetSlot({
+  } else if (localElapsed >= 5000) {
+    changed = setDispatchCaseStage(item, '待补位')
+    if (changed) updateDispatchCaseTargetSlot(item, {
       hasBin: false,
       binCode: '',
       slotState: '待补位',
-      taskLabel: `${monitor.returnBinCode} 返航，等待 ${monitor.replacementBinCode}`
+      taskLabel: `${item.returnBinCode} 返航，等待 ${item.replacementBinCode}`
     })
-    renderLists()
-  } else if (elapsed >= 1000) {
-    setDispatchStage('返航中')
-    updateDispatchTargetSlot({
+  } else if (localElapsed >= 1000) {
+    changed = setDispatchCaseStage(item, '返航中')
+    if (changed) updateDispatchCaseTargetSlot(item, {
       hasBin: false,
       binCode: '',
       slotState: '返航中',
-      taskLabel: `${monitor.returnBinCode} 离开点位`
+      taskLabel: `${item.returnBinCode} 离开点位`
     })
+  }
+  return changed
+}
+
+function updateDispatchMonitor() {
+  const elapsed = Date.now() - monitorStartedAt
+  let binsChanged = false
+  monitor.dispatchCases.forEach((item) => {
+    binsChanged = updateDispatchCase(item, elapsed) || binsChanged
+  })
+  syncFocusedDispatchCase()
+  updateMonitorTasks(elapsed)
+  if (binsChanged) {
+    renderMetrics()
     renderLists()
   }
-  updateMonitorTasks(elapsed)
 
   if (Date.now() - monitorLastMapDraw >= 250) {
     monitorLastMapDraw = Date.now()
@@ -2424,14 +2560,27 @@ function updateDispatchMonitor() {
     // #endif
   }
 
-  if (elapsed >= MONITOR_TOTAL_MS) {
+  const allTerminal = monitor.dispatchCases.length > 0 && monitor.dispatchCases.every(item =>
+    !item.routeAvailable || elapsed - item.startDelayMs >= MONITOR_TOTAL_MS
+  )
+  if (allTerminal && !monitor.completed) {
     monitor.completed = true
-    monitor.returnProgress = 1
-    monitor.replaceProgress = 1
-    monitor.returnPosition = pointAlongRoute(monitor.returnRoute, 1)
-    monitor.replacePosition = pointAlongRoute(monitor.replaceRoute, 1)
+    monitor.dispatchCases.forEach((item) => {
+      if (!item.routeAvailable) return
+      item.returnProgress = 1
+      item.replaceProgress = 1
+      item.returnPosition = pointAlongRoute(item.returnRoute, 1)
+      item.replacePosition = pointAlongRoute(item.replaceRoute, 1)
+    })
+    syncFocusedDispatchCase()
     updateMonitorTasks(elapsed)
-    setStatus('调度处置完成：返航与补位任务已闭环', 'ok')
+    const unavailable = monitor.dispatchCases.filter(item => !item.routeAvailable).length
+    setStatus(
+      unavailable
+        ? '调度监测保持待命'
+        : '调度处置完成：三组返航与补位任务已闭环',
+      unavailable ? 'warn' : 'ok'
+    )
     if (monitor.scene !== 'sorting' || monitor.sortingProgress >= 100) clearMonitorTimer()
     // #ifdef H5
     if (_state.mapReady) updateH5DispatchLayers(elapsed)
@@ -2439,10 +2588,12 @@ function updateDispatchMonitor() {
   }
 }
 
-function startRiskMonitor() {
+async function startRiskMonitor() {
   cancelRoutePlan()
   routePlanRevision += 1
+  const requestRevision = ++monitorRequestRevision
   clearMonitorTimer()
+  clearRiskPlaybackTimer()
   ensureMonitorBackup()
   restoreMonitorBase()
   monitor.active = true
@@ -2453,13 +2604,20 @@ function startRiskMonitor() {
   }
   monitor.completed = false
   monitor.scene = 'telemetry'
-  monitor.riskBins = buildRiskMonitorBins()
-  monitor.binId = monitor.riskBins[0]?.id || null
-  syncSelectedRiskMonitor()
+  monitor.dispatchCases = []
+  monitor.activeDispatchCaseId = ''
+  monitor.riskBins = []
+  riskVisualization.value = { nodes: [], edges: [], model: {}, thresholds: {} }
+  riskHorizon.value = 0
+  riskPlaying.value = true
   monitorStartedAt = Date.now()
-  setStatus(`风险预警监测中：正在分析 ${monitor.riskBins.length} 个桶位`, 'warn')
-  monitorTimer = setInterval(updateRiskMonitor, 250)
-  updateRiskMonitor()
+  setStatus('STG-Mamba 正在构建点位时空图与预测区间...', 'warn')
+  try {
+    await loadRiskVisualization(requestRevision)
+  } catch (error) {
+    if (requestRevision !== monitorRequestRevision || !monitor.active || monitor.scene !== 'telemetry') return
+    setStatus(error?.message || '风险预测数据加载失败', 'err')
+  }
 }
 
 function handleRefreshTap() {
@@ -2484,78 +2642,109 @@ async function startDispatchMonitor() {
   routePlanRevision += 1
   const requestRevision = ++monitorRequestRevision
   clearMonitorTimer()
+  clearRiskPlaybackTimer()
   ensureMonitorBackup()
   restoreMonitorBase()
   if (!_state.bins.length) _state.bins = parkFallbackBins()
-  const dispatchTarget = _state.bins.find(bin => String(bin.pointName || '').includes('樱花大道')) || _state.bins[0]
   monitor.active = true
   monitor.completed = false
   monitor.scene = 'dispatch'
   sortingManualAnchorAt = 0
   sortingManualOffsetMs = 0
   sortingManualPlaybackActive.value = false
-  monitor.binId = dispatchTarget.id
-  monitor.pointCode = dispatchTarget.pointCode || dispatchTarget.name
-  monitor.pointName = dispatchTarget.pointName || dispatchTarget.name
-  monitor.returnBinCode = dispatchTarget.binCode || 'B-M05'
-  monitor.replacementBinCode = 'B-S03'
-  monitor.binName = monitor.pointCode
-  monitor.pointState = '异常告警'
-  monitor.pointStateCls = 'danger'
-  monitor.returnProgress = 0
-  monitor.replaceProgress = 0
-  monitor.targetPoint = { ...PARK_POINTS.abnormal }
-  monitor.sortingCenter = { ...PARK_POINTS.sortingCenter }
-  monitor.standbyArea = { ...PARK_POINTS.standbyArea }
-  monitor.returnPosition = { ...monitor.targetPoint }
-  monitor.replacePosition = { ...monitor.standbyArea }
-  monitor.returnRoute = []
-  monitor.replaceRoute = []
-  monitor.routeAvailable = false
-  _state.bins = _state.bins.map(bin => String(bin.id) === String(dispatchTarget.id)
-    ? {
-        ...bin,
-        latitude: PARK_POINTS.abnormal.latitude,
-        longitude: PARK_POINTS.abnormal.longitude,
-        currentFill: Math.max(n(bin.currentFill, 0), 96),
-        predictedFillInHorizon: 100,
-        isUrgent: true,
-        hasBin: true,
-        binCode: monitor.returnBinCode,
-        slotState: '满载告警',
-        taskLabel: `${monitor.returnBinCode} 待返航`
-      }
-    : bin)
+  monitor.dispatchCases = []
+  monitor.activeDispatchCaseId = ''
   _state.plan = null
   _state.startPoint = null
-  selectedBinId.value = String(monitor.binId)
   selectedStopOrder.value = null
-  monitor.mapBrief = ['正在获取腾讯步行路径规划...', '异常原因：满载 / 低电量']
+  monitor.mapBrief = ['正在获取三组腾讯步行路径规划...', '没有真实腾讯路径时不会启动直线动画']
   monitor.timeline = []
   monitor.tasks = []
   monitor.events = []
-  updateSortingCenterState(0)
   renderAll()
   try {
     const data = await apiRequest('/api/planning/dispatch-monitor-route')
     if (requestRevision !== monitorRequestRevision || !monitor.active || monitor.scene !== 'dispatch') return
-    const points = data?.points || PARK_POINTS
-    monitor.targetPoint = { ...(points.abnormal || PARK_POINTS.abnormal) }
-    monitor.sortingCenter = { ...(points.sortingCenter || PARK_POINTS.sortingCenter) }
-    monitor.standbyArea = { ...(points.standbyArea || PARK_POINTS.standbyArea) }
-    monitor.returnRoute = Array.isArray(data?.returnRoute?.polyline) ? data.returnRoute.polyline : []
-    monitor.replaceRoute = Array.isArray(data?.replacementRoute?.polyline) ? data.replacementRoute.polyline : []
-    monitor.routeAvailable = monitor.returnRoute.length > 1 && monitor.replaceRoute.length > 1
-    if (!monitor.routeAvailable) throw new Error('腾讯步行路径为空')
+    const sourceCases = Array.isArray(data?.cases) && data.cases.length ? data.cases : DISPATCH_CASE_FALLBACKS
+    const usedBinIds = new Set()
+    monitor.dispatchCases = sourceCases.map((source, index) => {
+      const fallback = DISPATCH_CASE_FALLBACKS[index] || DISPATCH_CASE_FALLBACKS[0]
+      const pointCode = source.pointCode || fallback.pointCode
+      const matchedBin = _state.bins.find(bin =>
+        !usedBinIds.has(String(bin.id))
+        && (
+          String(bin.pointCode || bin.code || '') === String(pointCode)
+          || String(bin.pointName || '').includes(source.pointName || fallback.pointName)
+        )
+      ) || _state.bins.find(bin => !usedBinIds.has(String(bin.id))) || _state.bins[0]
+      usedBinIds.add(String(matchedBin.id))
+      const targetPoint = { ...(source.targetPoint || fallback.targetPoint) }
+      const sortingCenter = { ...(source.sortingCenter || PARK_POINTS.sortingCenter) }
+      const standbyArea = { ...(source.standbyArea || PARK_POINTS.standbyArea) }
+      const returnRoute = Array.isArray(source.returnRoute?.polyline) ? source.returnRoute.polyline : []
+      const replaceRoute = Array.isArray(source.replacementRoute?.polyline) ? source.replacementRoute.polyline : []
+      const routeAvailable = source.routeAvailable !== false && returnRoute.length > 1 && replaceRoute.length > 1
+      return {
+        id: source.id || fallback.id,
+        pointCode,
+        pointName: source.pointName || fallback.pointName,
+        returnBinCode: source.returnBinCode || fallback.returnBinCode,
+        replacementBinCode: source.replacementBinCode || fallback.replacementBinCode,
+        startDelayMs: n(source.startDelayMs, fallback.startDelayMs),
+        binId: matchedBin.id,
+        targetPoint,
+        sortingCenter,
+        standbyArea,
+        returnRoute,
+        replaceRoute,
+        routeAvailable,
+        routeProvider: source.routeProvider || null,
+        routeErrorCode: source.routeErrorCode || null,
+        pointState: routeAvailable ? '异常告警' : '等待调度',
+        pointStateCls: routeAvailable ? 'danger' : 'waiting',
+        returnProgress: 0,
+        replaceProgress: 0,
+        returnPosition: { ...targetPoint },
+        replacePosition: { ...standbyArea }
+      }
+    })
+    monitor.activeDispatchCaseId = monitor.dispatchCases[0]?.id || ''
+    monitor.dispatchCases.forEach((item) => {
+      _state.bins = _state.bins.map(bin => String(bin.id) === String(item.binId)
+        ? {
+            ...bin,
+            latitude: item.targetPoint.latitude,
+            longitude: item.targetPoint.longitude,
+            currentFill: Math.max(n(bin.currentFill, 0), 90),
+            predictedFillInHorizon: Math.min(99, Math.max(n(bin.predictedFillInHorizon, 0), 94)),
+            isUrgent: true,
+            hasBin: true,
+            binCode: item.returnBinCode,
+            slotState: '满载告警',
+            taskLabel: `${item.returnBinCode} 待返航`
+          }
+        : bin)
+    })
+    syncFocusedDispatchCase()
+    updateSortingCenterState(0)
+    const availableCount = monitor.dispatchCases.filter(item => item.routeAvailable).length
+    const cachedCount = monitor.dispatchCases.filter(item => item.routeProvider === 'tencent_cache').length
     monitor.mapBrief = [
-      `异常点位：${monitor.targetPoint.name}`,
-      `返航：${fmtKm(n(data.returnRoute.distanceMeters, 0) / 1000)} · 腾讯步行路径`,
-      `补位：${fmtKm(n(data.replacementRoute.distanceMeters, 0) / 1000)} · 腾讯步行路径`,
-      '红色路线：返航分拣中心 · 青色路线：备用桶补位'
+      `并发案例：${monitor.dispatchCases.length} 组返航与补位任务`,
+      cachedCount
+        ? `其中 ${cachedCount} 组使用最近 24 小时道路路线`
+        : '点位、备用桶与分拣中心同步展示',
+      '红色：返航分拣中心 · 青色：备用桶补位',
+      availableCount ? '三组任务按独立时序协同运行' : '当前案例保持待命'
     ]
     monitorStartedAt = Date.now()
     _state.shouldFitMap = true
-    setStatus('调度监测中：返航与补位任务协同执行', 'warn')
+    setStatus(
+      availableCount
+        ? `调度监测中：${availableCount} 组返航与补位任务并发执行`
+        : '调度监测已载入：3 组案例保持待命',
+      'warn'
+    )
     monitorTimer = setInterval(updateDispatchMonitor, 100)
     updateDispatchMonitor()
     // #ifdef H5
@@ -2564,18 +2753,36 @@ async function startDispatchMonitor() {
     // #endif
   } catch (error) {
     if (requestRevision !== monitorRequestRevision || !monitor.active || monitor.scene !== 'dispatch') return
-    monitor.returnRoute = TENCENT_ROUTE_SNAPSHOT.returnRoute.polyline
-    monitor.replaceRoute = TENCENT_ROUTE_SNAPSHOT.replacementRoute.polyline
-    monitor.routeAvailable = true
+    monitor.dispatchCases = DISPATCH_CASE_FALLBACKS.map((source, index) => {
+      const matchedBin = _state.bins[index] || _state.bins[0]
+      return {
+        ...source,
+        binId: matchedBin.id,
+        sortingCenter: { ...PARK_POINTS.sortingCenter },
+        standbyArea: { ...PARK_POINTS.standbyArea },
+        returnRoute: [],
+        replaceRoute: [],
+        routeAvailable: false,
+        routeProvider: null,
+        routeErrorCode: 'TENCENT_ROUTE_UNAVAILABLE',
+        pointState: '等待调度',
+        pointStateCls: 'waiting',
+        returnProgress: 0,
+        replaceProgress: 0,
+        returnPosition: { ...source.targetPoint },
+        replacePosition: { ...PARK_POINTS.standbyArea }
+      }
+    })
+    monitor.activeDispatchCaseId = monitor.dispatchCases[0].id
+    syncFocusedDispatchCase()
     monitor.mapBrief = [
-      `异常点位：${monitor.targetPoint.name}`,
-      `返航：${fmtKm(TENCENT_ROUTE_SNAPSHOT.returnRoute.distanceMeters / 1000)} · 腾讯步行路径快照`,
-      `补位：${fmtKm(TENCENT_ROUTE_SNAPSHOT.replacementRoute.distanceMeters / 1000)} · 腾讯步行路径快照`,
-      '路径服务连接恢复后将自动切换实时规划'
+      '并发案例：3 组返航与补位任务',
+      '点位、备用桶与分拣中心同步展示',
+      '当前案例保持待命'
     ]
     monitorStartedAt = Date.now()
     _state.shouldFitMap = true
-    setStatus('调度监测中：当前使用腾讯步行路径快照', 'warn')
+    setStatus('调度监测已载入：3 组案例保持待命', 'warn')
     monitorTimer = setInterval(updateDispatchMonitor, 100)
     updateDispatchMonitor()
     // #ifdef H5
@@ -2588,9 +2795,12 @@ async function startDispatchMonitor() {
 function exitMonitor() {
   monitorRequestRevision += 1
   clearMonitorTimer()
+  clearRiskPlaybackTimer()
   monitor.active = false
   monitor.completed = false
   monitor.scene = ''
+  monitor.dispatchCases = []
+  monitor.activeDispatchCaseId = ''
   sortingManualAnchorAt = 0
   sortingManualOffsetMs = 0
   sortingManualPlaybackActive.value = false
@@ -2846,6 +3056,7 @@ onBeforeUnmount(() => {
   monitor.active = false
   monitor.scene = ''
   clearMonitorTimer()
+  clearRiskPlaybackTimer()
   pauseSortingMasterVideo(true)
   if (clockTimer) clearInterval(clockTimer)
   if (refreshTimer) clearInterval(refreshTimer)
@@ -3163,7 +3374,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .col { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
 .screen .col.left { width: 22%; flex: 0 1 22%; min-width: 0; }
 .screen .col.center { flex: 1; min-width: 0; }
-.screen .col.right { width: 22%; flex: 0 1 22%; min-width: 0; }
+.screen .col.right { width: 22%; flex: 0 1 22%; min-width: 0; overflow: hidden; }
 
 /* ===== block ===== */
 .screen .block {
@@ -3392,10 +3603,25 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   border: 1px solid rgba(88,165,255,.45); background: rgba(28,96,191,.45);
   color: #d5ecff; font-size: 11px; padding: 2px 7px; border-radius: 999px;
 }
-.screen .task-flow { display: flex; flex-direction: column; gap: 10px; }
-.screen .monitor-task { padding: 11px; border: 1px solid rgba(125,199,242,.22); border-radius: 11px; background: rgba(9,31,48,.82); }
+.screen .monitor-task-panel { flex: 1.08; min-height: 0; overflow: hidden; }
+.screen .monitor-event-panel { flex: .92; min-height: 0; overflow: hidden; }
+.screen .monitor-task-panel .task-flow,
+.screen .monitor-event-panel .list { flex: 1; height: 0; min-height: 0; }
+.screen .task-flow {
+  display: block; overflow-y: auto; padding-right: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(63,169,233,.72) rgba(6,28,44,.58);
+}
+.screen .task-flow::-webkit-scrollbar { width: 6px; }
+.screen .task-flow::-webkit-scrollbar-track { background: rgba(6,28,44,.58); border-radius: 999px; }
+.screen .task-flow::-webkit-scrollbar-thumb { background: rgba(63,169,233,.72); border-radius: 999px; }
+.screen .task-flow .monitor-task { margin-bottom: 8px; }
+.screen .task-flow .monitor-task:last-child { margin-bottom: 0; }
+.screen .monitor-task { padding: 11px; border: 1px solid rgba(125,199,242,.22); border-radius: 11px; background: rgba(9,31,48,.82); cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.screen .monitor-task.is-focused { border-color: rgba(36,217,255,.78); box-shadow: 0 0 0 1px rgba(36,217,255,.2), 0 0 20px rgba(36,217,255,.12); transform: translateX(2px); }
 .screen .monitor-task.running { border-color: rgba(36,217,255,.52); box-shadow: 0 0 18px rgba(36,217,255,.1); }
 .screen .monitor-task.done { border-color: rgba(22,197,124,.48); }
+.screen .monitor-task.unavailable { border-color: rgba(232,84,84,.42); opacity: .78; }
 .screen .task-top, .screen .task-meta { display: flex; justify-content: space-between; gap: 6px; }
 .screen .task-top { font-size: 12px; font-weight: 600; }
 .screen .task-chip { padding: 2px 7px; border-radius: 999px; color: #b9d5df; background: rgba(99,126,141,.38); font-size: 10px; }
@@ -3692,6 +3918,11 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   border-color: #cbdde7;
   background: rgba(255,255,255,.9);
 }
+.screen.light-theme .monitor-task.is-focused {
+  border-color: #118b67;
+  box-shadow: 0 0 0 2px rgba(17,139,103,.12);
+}
+.screen.light-theme .monitor-task.unavailable { border-color: #e2a5a5; background: #fff8f8; }
 .screen.light-theme .gauge-ring::before { background: radial-gradient(circle, #fff, #edf5f8); }
 .screen.light-theme .prediction-time,
 .screen.light-theme .prediction-grid b,
