@@ -147,8 +147,9 @@ async function run() {
   const homeSource = read('src/pages/home/home.vue')
   const darkHomeSource = read('src/pages-dark/home/home.vue')
   assert.match(requestSource, /requestMethod === 'GET' \? params : \{\}/)
-  assert.match(apiConfigSource, /import\.meta\.env\.DEV[\s\S]*?import\.meta\.env\.VITE_API_BASE_URL/)
-  assert.match(apiConfigSource, /baseUrl:\s*localBaseUrl \|\| 'https:\/\/rgqexbnzzipc\.sealosbja\.site'/)
+  assert.match(apiConfigSource, /configuredBaseUrl[\s\S]*?import\.meta\.env\.VITE_API_BASE_URL/)
+  assert.match(apiConfigSource, /typeof window !== 'undefined'[\s\S]*?window\.location\?\.origin/)
+  assert.match(apiConfigSource, /baseUrl:\s*configuredBaseUrl \|\| browserOrigin \|\| 'https:\/\/rgqexbnzzipc\.sealosbja\.site'/)
   assert.match(requestSource, /const databaseStatusRuntime = Object\.freeze\(\{[\s\S]*?getStorageSync: key => uni\.getStorageSync\(key\)/)
   assert.match(requestSource, /setStorageSync: \(key, value\) => uni\.setStorageSync\(key, value\)/)
   assert.match(requestSource, /removeStorageSync: key => uni\.removeStorageSync\(key\)/)
@@ -192,6 +193,7 @@ async function run() {
   assert.match(dashboardSource, /pointCode:\s*'P018'/)
   assert.match(dashboardSource, /monitor\.dispatchCases\.flatMap/)
   assert.match(dashboardSource, /activeDispatchCaseId/)
+  assert.match(dashboardSource, /const hasAvailableCase = monitor\.dispatchCases\.some\(item => item\.routeAvailable\)/)
   assert.doesNotMatch(
     dashboardSource,
     /路径不可用|路线规划暂不可用|腾讯路径可用|当前无可用腾讯路线|不可用案例|未启动直线动画/,

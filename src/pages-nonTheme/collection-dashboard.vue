@@ -2020,7 +2020,8 @@ function startDispatchMapAnimation() {
   // #ifdef H5
   if (monitorAnimationFrame !== null || typeof requestAnimationFrame !== 'function') return
   const animate = () => {
-    if (!monitor.active || monitor.scene !== 'dispatch' || !monitor.routeAvailable || monitor.completed) {
+    const hasAvailableCase = monitor.dispatchCases.some(item => item.routeAvailable)
+    if (!monitor.active || monitor.scene !== 'dispatch' || !hasAvailableCase || monitor.completed) {
       monitorAnimationFrame = null
       return
     }
