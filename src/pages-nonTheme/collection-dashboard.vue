@@ -368,9 +368,9 @@
               </view>
             </view>
             <view class="twin-canvas">
-              <image webp :class="['twin-image', { active: sortingVisualState.key === 'intake' }]" :src="sortingCenterAssets.intake" mode="aspectFit"></image>
-              <image webp :class="['twin-image', { active: sortingVisualState.key === 'washing' }]" :src="sortingCenterAssets.washing" mode="aspectFit"></image>
-              <image webp :class="['twin-image', { active: sortingVisualState.key === 'inspection' }]" :src="sortingCenterAssets.inspection" mode="aspectFit"></image>
+              <image v-show="!sortingStageVideoActive" webp :class="['twin-image', { active: sortingVisualState.key === 'intake' }]" :src="sortingCenterAssets.intake" mode="aspectFit"></image>
+              <image v-show="!sortingStageVideoActive" webp :class="['twin-image', { active: sortingVisualState.key === 'washing' }]" :src="sortingCenterAssets.washing" mode="aspectFit"></image>
+              <image v-show="!sortingStageVideoActive" webp :class="['twin-image', { active: sortingVisualState.key === 'inspection' }]" :src="sortingCenterAssets.inspection" mode="aspectFit"></image>
               <view v-if="monitor.active" :class="['sorting-stage-video-layer', { active: sortingStageVideoActive }]">
                 <image class="sorting-stage-video-backdrop" :src="CENTER_WORKFLOW_MASTER_VIDEO.poster" mode="aspectFill"></image>
                 <video
@@ -904,8 +904,9 @@ function syncSortingMasterVideo(forceSeek = false) {
     return
   }
   const desiredTime = sortingMasterTimelineSeconds.value
-  // 自动推进期间不再触碰 currentTime，主视频由浏览器连续解码播放。
-  // 仅进入分拣页或用户手动点击阶段时才定位到对应时间点。
+  // The video is positioned once when a stage starts, then left to Chromium's
+  // media clock. Repeated currentTime/playbackRate writes cause visible frame
+  // drops during the high-motion first half of the master video.
   if (forceSeek) seekSortingMasterVideo(desiredTime)
   playSortingMasterVideo()
 }
@@ -914,12 +915,10 @@ function handleSortingMasterVideoReady() {
   const firstReady = !sortingMasterVideoReady.value
   sortingMasterVideoReady.value = true
   sortingMasterVideoFailed.value = false
-  // `canplay` 在缓冲恢复时也可能再次触发；只处理首次就绪，避免干预连续播放。
   if (firstReady) syncSortingMasterVideo(true)
 }
 
 function handleSortingMasterVideoEnded() {
-  // 母带尾部本身就是待命画面，结束后保留最后一帧。
   pauseSortingMasterVideo()
 }
 
@@ -2548,8 +2547,15 @@ function updateDispatchMonitor() {
     binsChanged = updateDispatchCase(item, elapsed) || binsChanged
   })
   syncFocusedDispatchCase()
-  updateMonitorTasks(elapsed)
-  if (binsChanged) {
+  if (monitor.scene === 'sorting') {
+    const focused = focusedDispatchCase()
+    updateSortingCenterState(Math.max(0, elapsed - n(focused?.startDelayMs, 0)))
+  } else {
+    updateMonitorTasks(elapsed)
+  }
+  // The dashboard cards are hidden in the sorting scene. Re-rendering them as
+  // the final dispatch cases complete competes with the first seconds of video.
+  if (binsChanged && monitor.scene !== 'sorting') {
     renderMetrics()
     renderLists()
   }
@@ -2849,6 +2855,8 @@ function ensureSortingProgressTimer() {
 function backToDispatchMonitor() {
   if (!monitor.active) return
   monitor.scene = 'dispatch'
+  renderMetrics()
+  renderLists()
   setStatus('调度监测中：返航与补位任务协同执行', 'warn')
   // #ifdef H5
   if (_state.mapReady) drawMap(true)
@@ -3673,12 +3681,12 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .twin-image.active { opacity: 1; filter: saturate(1.05) brightness(1); }
 .screen .sorting-stage-video-layer { position: absolute; z-index: 4; inset: 0; overflow: hidden; opacity: 0; transition: opacity .5s cubic-bezier(.22,.8,.24,1); pointer-events: none; will-change: opacity; }
 .screen .sorting-stage-video-layer.active { opacity: 1; }
-.screen .sorting-stage-video-backdrop { position: absolute; inset: -7%; width: 114%; height: 114%; opacity: .7; filter: blur(22px) saturate(.9) brightness(.38); transform: scale(1.04); }
+.screen .sorting-stage-video-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .22; filter: none; transform: none; }
 .screen .sorting-stage-video { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; opacity: 0; background: transparent; object-fit: contain; transition: opacity .22s ease-in-out; will-change: opacity; }
 .screen .sorting-stage-video.active { opacity: 1; }
 .screen .sorting-stage-video video { object-fit: contain !important; }
 .screen .sorting-video-tone { position: absolute; z-index: 2; inset: 0; background: linear-gradient(90deg, rgba(2,17,29,.48), transparent 18%, transparent 82%, rgba(2,16,27,.48)), linear-gradient(0deg, rgba(2,16,27,.58), transparent 27%, rgba(3,20,32,.14)); box-shadow: inset 0 0 48px rgba(0,10,18,.5); }
-.screen .sorting-video-info { position: absolute; z-index: 3; width: 34%; min-width: 180px; padding: 9px 11px; box-sizing: border-box; border: 1px solid rgba(83,219,255,.58); border-radius: 9px; color: #eafaff; background: linear-gradient(135deg, rgba(4,31,47,.98), rgba(5,51,66,.96)); box-shadow: 0 8px 22px rgba(0,8,15,.42), inset 3px 0 #37d8f4; backdrop-filter: blur(8px); }
+.screen .sorting-video-info { position: absolute; z-index: 3; width: 34%; min-width: 180px; padding: 9px 11px; box-sizing: border-box; border: 1px solid rgba(83,219,255,.58); border-radius: 9px; color: #eafaff; background: linear-gradient(135deg, #041f2f, #053342); box-shadow: 0 8px 22px rgba(0,8,15,.42), inset 3px 0 #37d8f4; }
 .screen .sorting-video-info.top-left { left: 6%; top: 5%; }
 .screen .sorting-video-info.bottom-right { right: 6%; bottom: 8%; border-color: rgba(84,231,177,.52); box-shadow: 0 8px 22px rgba(0,8,15,.42), inset 3px 0 #4ee5aa; }
 .screen .sorting-video-info small, .screen .sorting-video-info b, .screen .sorting-video-info text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

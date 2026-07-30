@@ -11,7 +11,7 @@
         <view class="btns">
           <AdminScreenHeader screen-key="collectionPlanning" :tone="isDark ? 'dark' : 'light'" @back="goBack">
           <view class="btn secondary" @tap="doLoadCenters">刷新中心</view>
-          <view class="btn primary" @tap="doCreatePlan">一键规划路线</view>
+          <view :class="['btn', 'primary', { 'is-disabled': planning }]" @tap="doCreatePlan">{{ planning ? '规划中…' : '一键规划路线' }}</view>
           </AdminScreenHeader>
         </view>
       </view>
@@ -276,6 +276,7 @@ const opts = reactive({
 const bins = ref([])
 const routeStops = ref([])
 const routeSummary = ref('还未生成路线。')
+const planning = ref(false)
 const selectedSortingCenterCount = computed(() => bins.value.filter(center => center.selected).length)
 const metricTotal = ref('0')
 const metricUrgent = ref('0')
@@ -427,6 +428,7 @@ async function doLoadCenters() {
 let _currentPlan = null
 
 async function doCreatePlan() {
+  if (planning.value) return
   const selectedCenters = bins.value.filter(center => center.selected !== false)
   if (!selectedCenters.length) {
     setStatus('请至少选择一个分拣中心', 'err')
@@ -435,6 +437,7 @@ async function doCreatePlan() {
   if (!startPoint.value) {
     startPoint.value = { name: '清运车辆起点', ...DEFAULT_CENTER }
   }
+  planning.value = true
   setStatus('正在计算分拣中心清运路线...')
   try {
     const payload = {
@@ -486,6 +489,8 @@ async function doCreatePlan() {
     setStatus('分拣中心路线规划完成', 'ok')
   } catch (err) {
     setStatus(err && err.message ? err.message : String(err), 'err')
+  } finally {
+    planning.value = false
   }
 }
 
@@ -1487,6 +1492,14 @@ label,navigator,image,div,span { box-sizing: border-box; }
 }
 .layout .btn:hover { border-color: #9dbce5; background: var(--accent-soft); color: var(--accent); }
 .layout .btn:active { transform: translateY(1px); }
+.layout .btn.is-disabled,
+.layout .btn.is-disabled:hover,
+.layout .btn.is-disabled:active {
+  cursor: wait;
+  opacity: .62;
+  transform: none;
+  filter: saturate(.72);
+}
 .layout .btn.secondary {
   border-color: #a7c4eb;
   background: var(--surface);
