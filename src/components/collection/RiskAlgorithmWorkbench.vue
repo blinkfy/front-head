@@ -42,7 +42,15 @@
           </view>
 
           <view class="horizon-control">
-            <button class="play-button" @tap="emit('toggle-play')">{{ playing ? 'Ⅱ' : '▶' }}</button>
+            <button
+              class="play-button"
+              :aria-label="playing ? '暂停自动演进' : '播放自动演进'"
+              :aria-pressed="String(playing)"
+              :title="playing ? '暂停自动演进' : '播放自动演进'"
+              @tap="emit('toggle-play')"
+            >
+              <span :class="['playback-glyph', playing ? 'is-pause' : 'is-play']" aria-hidden="true"></span>
+            </button>
             <view class="horizon-tabs">
               <button
                 v-for="item in horizonOptions"
@@ -315,7 +323,7 @@ const graphEdges = computed(() => (props.visualization?.edges || []).map((edge) 
     y1: source.y,
     x2: target.x,
     y2: target.y,
-    opacity: Number(Math.max(.1, Math.min(.82, edge.weight * (.25 + horizonStrength))).toFixed(2)),
+    opacity: Number(Math.max(.2, Math.min(.94, edge.weight * (.38 + horizonStrength))).toFixed(2)),
     speed: Number((3.8 - Math.min(.9, horizonStrength) * 2).toFixed(2))
   }
 }).filter(Boolean))
@@ -329,18 +337,15 @@ let riskMapRetryTimer = null
 let riskMapResizeHandler = null
 let fittedDatasetSignature = ''
 
-const riskColor = probability => probability >= .85 ? '#e64d57'
-  : probability >= .6 ? '#ef8a3a'
-    : probability >= .3 ? '#e0b63e' : '#118b67'
+const riskColor = probability => probability >= .85 ? '#ff5d66'
+  : probability >= .6 ? '#ff8b3d'
+    : probability >= .3 ? '#f5b648' : '#16c57c'
 const riskToneForProbability = probability => probability >= .85 ? 'emergency'
   : probability >= .6 ? 'high'
     : probability >= .3 ? 'medium' : 'low'
-const mapMarkerIcon = (color, selected = false) => {
-  const ring = selected ? '#ffffff' : '#d9fff2'
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 42 42">
-    <circle cx="21" cy="21" r="${selected ? 18 : 14}" fill="${color}" fill-opacity=".18"/>
-    <circle cx="21" cy="21" r="${selected ? 12 : 9}" fill="${color}" stroke="${ring}" stroke-width="${selected ? 3 : 1.5}"/>
-    <circle cx="21" cy="21" r="3" fill="#ffffff"/>
+const mapMarkerIcon = color => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
+    <circle cx="22" cy="22" r="14" fill="${color}" stroke="#ffffff" stroke-width="3"/>
   </svg>`
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
 }
@@ -360,13 +365,13 @@ function riskMapMarkerStyles(TMap) {
       width: 28,
       height: 28,
       anchor: { x: 14, y: 14 },
-      src: mapMarkerIcon(color, false)
+      src: mapMarkerIcon(color)
     })
     styles[`selected-${tone}`] = new TMap.MarkerStyle({
-      width: 38,
-      height: 38,
-      anchor: { x: 19, y: 19 },
-      src: mapMarkerIcon(color, true)
+      width: 30,
+      height: 30,
+      anchor: { x: 15, y: 15 },
+      src: mapMarkerIcon(color)
     })
   })
   return styles
@@ -380,9 +385,9 @@ function updateRiskMapInfo(TMap) {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return
   const probability = probabilityFor(node)
   const position = new TMap.LatLng(latitude, longitude)
-  const content = `<div style="min-width:112px;padding:6px 8px;color:#173c31;font:12px/1.45 Microsoft YaHei,sans-serif">
-    <b style="display:block;font-size:13px">${safeText(node.pointCode || node.id)} · ${safeText(node.pointName || node.name)}</b>
-    <span>当前 ${pct(node.currentFill)}　满载概率 ${pct(probability * 100)}</span>
+  const content = `<div style="min-width:190px;padding:2px 4px;font:12px/1.5 Microsoft YaHei,sans-serif">
+    <b style="display:block;color:#17324a;font-size:13px">${safeText(node.pointCode || node.id)} · ${safeText(node.pointName || node.name)}</b>
+    <span style="display:block;margin-top:4px;color:#365066">当前 ${pct(node.currentFill)} · 满载概率 ${pct(probability * 100)}</span>
   </div>`
   if (!riskMapInfo) {
     riskMapInfo = new TMap.InfoWindow({ map: riskMap, position, content })
@@ -429,9 +434,9 @@ function syncRiskMap(fitView = false) {
   }
 
   const edgeStyles = {
-    weak: new TMap.PolylineStyle({ color: '#6c968b', width: 1, borderWidth: 0, lineCap: 'round' }),
-    medium: new TMap.PolylineStyle({ color: '#35b38f', width: 2, borderWidth: 0, lineCap: 'round' }),
-    strong: new TMap.PolylineStyle({ color: '#18d7a0', width: 3, borderWidth: 0, lineCap: 'round' })
+    weak: new TMap.PolylineStyle({ color: '#2c8fff', width: 2, borderWidth: 1, borderColor: '#ffffff', lineCap: 'round' }),
+    medium: new TMap.PolylineStyle({ color: '#24d9ff', width: 3, borderWidth: 1, borderColor: '#ffffff', lineCap: 'round' }),
+    strong: new TMap.PolylineStyle({ color: '#ff5d66', width: 4, borderWidth: 1, borderColor: '#ffffff', lineCap: 'round' })
   }
   const edgeGeometries = (props.visualization?.edges || []).map((edge, index) => {
     const source = nodeByPointId.get(String(edge.source))
@@ -463,7 +468,7 @@ function syncRiskMap(fitView = false) {
   if ((fitView || fittedDatasetSignature !== datasetSignature) && typeof riskMap.fitBounds === 'function') {
     const bounds = new TMap.LatLngBounds()
     validNodes.forEach(node => bounds.extend(new TMap.LatLng(Number(node.latitude), Number(node.longitude))))
-    riskMap.fitBounds(bounds, { padding: 58 })
+    riskMap.fitBounds(bounds, { padding: 70 })
     fittedDatasetSignature = datasetSignature
   }
 }
@@ -483,10 +488,8 @@ async function ensureRiskMap(attempt = 0) {
   const first = selectedNode.value || nodes.value[0]
   riskMap = new window.TMap.Map('risk-tencent-map', {
     center: new window.TMap.LatLng(Number(first.latitude), Number(first.longitude)),
-    zoom: 14,
-    viewMode: '2D',
-    pitch: 0,
-    rotation: 0
+    zoom: 12,
+    viewMode: '2D'
   })
   mapStatus.value = 'ready'
   riskMapResizeHandler = () => {
@@ -663,7 +666,7 @@ function handleSlider(event) {
 .risk-level.low { color:#52d9a1!important }.risk-level.medium { color:#e7c957!important }.risk-level.high { color:#ff9b55!important }.risk-level.emergency { color:#ff737c!important }
 .algorithm-grid { min-height:0;flex:1;display:grid;grid-template-columns:minmax(0,1.22fr) minmax(400px,.78fr);gap:8px }
 .algorithm-card { min-width:0;border:1px solid var(--alg-border);border-radius:12px;background:linear-gradient(150deg,var(--alg-surface-soft),var(--alg-surface));overflow:hidden }
-.graph-card { padding:10px 11px 7px;display:flex;flex-direction:column;min-height:0 }
+.graph-card { padding:10px 11px 7px;display:flex;flex-direction:column;min-height:0;border-color:var(--line,var(--alg-border));border-radius:14px;background:var(--panel,var(--alg-surface));backdrop-filter:blur(6px) }
 .card-head { display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex:0 0 auto }
 .card-head > view:first-child b,.card-head > view:first-child text { display:block }
 .card-head > view:first-child b { color:var(--alg-text);font-size:14px }
@@ -676,32 +679,36 @@ function handleSlider(event) {
 @keyframes modelPulse { 50% { opacity:.35;transform:scale(.76) } }
 .horizon-control { display:flex;align-items:center;gap:7px;margin-top:9px }
 .play-button,.horizon-tabs button { border:0;margin:0;padding:0;line-height:1 }
-.play-button { width:28px;height:28px;border-radius:7px;color:#dffaff;background:rgba(17,139,103,.75);font-size:12px }
+.play-button { width:28px;height:28px;border-radius:7px;color:#dffaff;background:rgba(17,139,103,.75);font-size:12px;display:grid;place-items:center;cursor:pointer }
+.playback-glyph { position:relative;display:block;width:12px;height:14px }
+.playback-glyph.is-play::before { content:"";position:absolute;left:3px;top:2px;width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:8px solid currentColor }
+.playback-glyph.is-pause::before,.playback-glyph.is-pause::after { content:"";position:absolute;top:1px;width:3px;height:12px;border-radius:2px;background:currentColor }
+.playback-glyph.is-pause::before { left:2px }
+.playback-glyph.is-pause::after { right:2px }
 .horizon-tabs { display:flex;gap:4px }
 .horizon-tabs button { padding:7px 10px;border:1px solid var(--alg-border);border-radius:7px;color:#8db4c3;background:rgba(7,35,49,.72);font-size:10px }
 .horizon-tabs button.active { color:#fff;border-color:rgba(46,212,155,.65);background:rgba(17,139,103,.78);box-shadow:0 0 13px rgba(17,139,103,.22) }
 .horizon-caption { margin-left:auto;color:#76a4b5;font-size:9px }
 .horizon-slider { margin:3px 1px -2px }
-.risk-map-shell { position:relative;min-height:0;flex:1;margin:5px 0 3px;border:1px solid rgba(87,177,157,.2);border-radius:9px;overflow:hidden;background:#173b43 }
-.risk-tencent-map { position:absolute;inset:0;filter:saturate(.78) brightness(.82) contrast(1.05) }
-.risk-map-shell::after { content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(180deg,rgba(5,32,43,.06),rgba(5,32,43,.2)) }
+.risk-map-shell { position:relative;isolation:isolate;min-height:0;flex:1;margin:5px 0 3px;border:1px solid var(--map-frame-line,rgba(122,202,255,.32));border-radius:var(--map-frame-radius,12px);overflow:hidden;background:transparent }
+.risk-tencent-map { position:absolute;inset:0;filter:var(--map-canvas-filter,none) }
 .risk-map-status { position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;gap:9px;color:#b7d8df;background:rgba(7,34,46,.76);font-size:11px }
 .risk-map-status i { width:9px;height:9px;border:2px solid rgba(46,212,155,.25);border-top-color:#2ed49b;border-radius:50%;animation:orbit .9s linear infinite }
-.risk-map-corner { position:absolute;right:9px;bottom:8px;z-index:3;padding:5px 8px;border:1px solid rgba(122,219,194,.22);border-radius:6px;color:#d7eee7;background:rgba(9,46,52,.72);font-size:9px;pointer-events:none }
-.risk-map-shell :deep(.tmap-control-container) { transform:scale(.84);transform-origin:right bottom }
+.risk-map-corner { position:absolute;right:9px;bottom:8px;z-index:3;padding:5px 8px;border:1px solid rgba(144,211,255,.36);border-radius:10px;color:var(--text,#e8f8ff);background:rgba(5,22,35,.76);font-size:9px;pointer-events:none }
+.risk-map-shell :deep(.tmap-control-container) { transform:none }
 .risk-graph { width:100%;min-height:0;flex:1;margin-top:1px }
-.graph-grid line { stroke:rgba(117,190,217,.07);stroke-width:1;stroke-dasharray:2 7 }
-.graph-edges line { stroke:rgba(66,198,168,var(--edge-alpha));stroke-width:1.2;stroke-dasharray:4 8;animation:edgeFlow var(--edge-speed) linear infinite;vector-effect:non-scaling-stroke }
+.graph-grid line { stroke:rgba(117,190,217,.12);stroke-width:1;stroke-dasharray:2 7 }
+.graph-edges line { stroke:rgba(66,198,168,var(--edge-alpha));stroke-width:1.6;stroke-dasharray:4 8;animation:edgeFlow var(--edge-speed) linear infinite;vector-effect:non-scaling-stroke }
 @keyframes edgeFlow { to { stroke-dashoffset:-36 } }
 .graph-node { cursor:pointer }.graph-node circle { transition:r .55s ease,fill .55s ease }
-.node-halo { opacity:.17;filter:url(#nodeGlow) }.node-core { stroke:rgba(255,255,255,.75);stroke-width:.7;filter:url(#nodeGlow) }
+.node-halo { opacity:.28;filter:url(#nodeGlow) }.node-core { stroke:rgba(255,255,255,.95);stroke-width:1;filter:url(#nodeGlow) }
 .graph-node text { fill:#a6d0dc;font:8px/1 ui-monospace,Consolas,monospace;paint-order:stroke;stroke:rgba(3,22,31,.85);stroke-width:2px }
 .graph-node .node-value { fill:#fff;font-size:7px }.graph-node.selected .node-core { stroke:#fff;stroke-width:1.8 }
 .node-wave { fill:none;stroke:rgba(36,217,255,.65);stroke-width:1;animation:nodeWave 1.8s ease-out infinite }
 @keyframes nodeWave { 0%{opacity:.9;transform:scale(.65)} 100%{opacity:0;transform:scale(1.45)} }
 .risk-legend { display:flex;align-items:center;gap:11px;color:#79a5b6;font-size:9px }
 .risk-legend text { display:flex;align-items:center;gap:3px }.risk-legend i { width:6px;height:6px;border-radius:50% }
-.risk-legend i.low { background:#118b67 }.risk-legend i.medium { background:#e0b63e }.risk-legend i.high { background:#ef8a3a }.risk-legend i.emergency { background:#e64d57 }
+.risk-legend i.low { background:#16c57c }.risk-legend i.medium { background:#f5b648 }.risk-legend i.high { background:#ff8b3d }.risk-legend i.emergency { background:#ff5d66 }
 .risk-legend small { margin-left:auto;color:#668f9f;font-size:9px }
 .insight-column { min-height:0;display:grid;grid-template-rows:minmax(210px,.47fr) minmax(240px,.53fr);gap:8px }
 .curve-card { padding:9px 10px 4px;display:flex;flex-direction:column;min-height:0 }
@@ -756,9 +763,7 @@ function handleSlider(event) {
 :global(.screen.light-theme) .model-chip b { color:#195341 }
 :global(.screen.light-theme) .horizon-tabs button { color:#637f75;border-color:#cbded4;background:#f8fbf9 }
 :global(.screen.light-theme) .horizon-tabs button.active { color:#fff;border-color:#118b67;background:#118b67 }
-:global(.screen.light-theme) .graph-grid line { stroke:rgba(35,95,75,.08) }
-:global(.screen.light-theme) .risk-tencent-map { filter:saturate(.86) brightness(1.02) contrast(.98) }
-:global(.screen.light-theme) .risk-map-shell::after { background:linear-gradient(180deg,rgba(235,247,240,.02),rgba(226,242,234,.12)) }
+:global(.screen.light-theme) .graph-grid line { stroke:rgba(35,95,75,.14) }
 :global(.screen.light-theme) .risk-map-corner { color:#255849;border-color:#bdd9cb;background:rgba(245,251,248,.9) }
 :global(.screen.light-theme) .graph-node text { fill:#436c5e;stroke:rgba(255,255,255,.9) }
 :global(.screen.light-theme) .graph-edges line { stroke:rgba(17,139,103,var(--edge-alpha)) }
@@ -776,5 +781,14 @@ function handleSlider(event) {
   .algorithm-grid { grid-template-columns:1fr }
   .insight-column { grid-template-columns:1fr 1fr;grid-template-rows:1fr }
   .curve-card { min-height:260px }
+}
+@media (max-width:1100px) and (min-width:769px) {
+  .algorithm-grid { grid-template-rows:minmax(230px,.58fr) minmax(150px,.42fr) }
+  .insight-column { min-height:0;grid-template-rows:minmax(0,1fr) }
+  .curve-card { min-height:0 }
+  .risk-map-shell { min-height:96px }
+}
+@media (max-width:768px) {
+  .risk-map-shell { min-height:220px }
 }
 </style>

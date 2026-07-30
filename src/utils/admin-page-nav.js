@@ -17,13 +17,11 @@ export const ADMIN_SCREEN_REGISTRY = Object.freeze({
   collectionDashboard: {
     id: 'collectionDashboard',
     title: '垃圾清运可视化大屏',
-    shortTitle: '故障处理',
+    shortTitle: '清运大屏',
     icon: '◫',
     navOrder: 20,
     access: 'admin',
     fallback: 'profile',
-    entryAction: 'openFaultCenter',
-    entryQuery: Object.freeze({ panel: 'fault' }),
     prettyPath: '/collection-dashboard',
     spaPath: '/pages-nonTheme/collection-dashboard'
   },

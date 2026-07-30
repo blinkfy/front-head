@@ -51,36 +51,12 @@
       </view>
       <!-- KPI 卡片 -->
       <view class="cards">
-        <view class="card">
-          <view class="k">社区总数</view>
-          <view class="v">{{ kpi.communities }}</view>
-          <view class="m">{{ kpi.communitiesMeta }}</view>
-        </view>
-        <view class="card">
-          <view class="k">活跃社区</view>
-          <view class="v">{{ kpi.activeCommunities }}</view>
-          <view class="m">{{ kpi.activeCommunitiesMeta }}</view>
-        </view>
-        <view class="card major">
-          <view class="k">活跃用户</view>
-          <view class="v">{{ kpi.activeUsers }}</view>
-          <view class="m">{{ kpi.activeUsersMeta }}</view>
-        </view>
-        <view class="card major">
-          <view class="k">分类总次数</view>
-          <view class="v">{{ kpi.events }}</view>
-          <view class="m">{{ kpi.eventsMeta }}</view>
-        </view>
-        <view class="card">
-          <view class="k">低置信度占比</view>
-          <view class="v">{{ kpi.lowConf }}</view>
-          <view class="m">{{ kpi.lowConfMeta }}</view>
-        </view>
-        <view class="card">
-          <view class="k">平均置信度</view>
-          <view class="v">{{ kpi.avgConf }}</view>
-          <view class="m">{{ kpi.avgConfMeta }}</view>
-        </view>
+        <CompactMetricCard icon="⌂" label="社区总数" :value="kpi.communities" :tone="isDark ? 'dark' : 'light'" />
+        <CompactMetricCard icon="●" label="活跃社区" :value="kpi.activeCommunities" :tone="isDark ? 'dark' : 'light'" />
+        <CompactMetricCard icon="◎" label="活跃用户" :value="kpi.activeUsers" :tone="isDark ? 'dark' : 'light'" />
+        <CompactMetricCard icon="↗" label="分类总次数" :value="kpi.events" :tone="isDark ? 'dark' : 'light'" />
+        <CompactMetricCard icon="!" label="低置信度占比" :value="kpi.lowConf" :tone="isDark ? 'dark' : 'light'" />
+        <CompactMetricCard icon="✓" label="平均置信度" :value="kpi.avgConf" :tone="isDark ? 'dark' : 'light'" />
       </view>
     </view>
 
@@ -258,6 +234,7 @@ import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
+import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
 import '@/styles/admin-light-theme.css'
 
 // ─── 工具函数 ──────────────────────────────────────────

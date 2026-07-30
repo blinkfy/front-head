@@ -16,10 +16,10 @@
         </view>
       </view>
       <view class="metrics">
-        <view class="metric"><view class="k">分拣中心</view><view class="v">{{ metricTotal }}</view></view>
-        <view class="metric"><view class="k">已选中心</view><view class="v">{{ metricUrgent }}</view></view>
-        <view class="metric"><view class="k">运行中</view><view class="v">{{ metricAverage }}</view></view>
-        <view class="metric"><view class="k">计划总里程</view><view class="v">{{ metricDistance }}</view></view>
+        <CompactMetricCard icon="◫" label="分拣中心" :value="metricTotal" :tone="isDark ? 'dark' : 'light'" />
+        <CompactMetricCard icon="✓" label="已选中心" :value="metricUrgent" :tone="isDark ? 'dark' : 'light'" />
+        <CompactMetricCard icon="▶" label="运行中" :value="metricAverage" :tone="isDark ? 'dark' : 'light'" />
+        <CompactMetricCard icon="⌁" label="计划总里程" :value="metricDistance" :tone="isDark ? 'dark' : 'light'" />
       </view>
     </view>
 
@@ -192,6 +192,7 @@ import { mapConfig } from '@/api/map-config'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, goBackFromAdminPage, jumpToAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
+import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
 import '@/styles/admin-light-theme.css'
 
 // ─── 常量 ─────────────────────────────────────────────
@@ -281,7 +282,7 @@ const selectedSortingCenterCount = computed(() => bins.value.filter(center => ce
 const metricTotal = ref('0')
 const metricUrgent = ref('0')
 const metricAverage = ref('0')
-const metricDistance = ref('0 km')
+const metricDistance = ref('待规划')
 
 // 起点
 const startPoint = ref(null)
@@ -331,7 +332,7 @@ function updateMetrics(plan) {
   metricUrgent.value = String(selected)
   metricAverage.value = String(running)
   metricDistance.value = plan && plan.route
-    ? `${Number(plan.route.totalDistanceKm || 0).toFixed(2)} km` : '0 km'
+    ? `${Number(plan.route.totalDistanceKm || 0).toFixed(2)} km` : '待规划'
 }
 
 // ─── 起点输入 ──────────────────────────────────────────
@@ -1517,7 +1518,7 @@ label,navigator,image,div,span { box-sizing: border-box; }
 .layout .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(104px, 1fr));
-  width: min(560px, 100%);
+  width: min(760px, 100%);
   margin: 0;
   gap: 0;
   overflow: hidden;
@@ -1973,7 +1974,7 @@ label,navigator,image,div,span { box-sizing: border-box; }
   background: var(--admin-light-primary-hover);
 }
 .layout.light-theme.admin-light-theme .metrics {
-  width: min(520px, 100%);
+  width: min(760px, 100%);
   border-color: var(--admin-light-border);
   border-radius: 9px;
   background: var(--admin-light-surface-soft);

@@ -33,6 +33,10 @@
               :aria-disabled="String(monitor.active)"
               @tap="handleRefreshTap"
             >立即刷新</view>
+            <view :class="['btn', 'monitor-chip', 'fault-btn', faultCenter.open ? 'active' : '']" @tap="openFaultCenter">
+              <text class="feature-icon">⚠</text><text>故障处理</text>
+              <text v-if="faultCenter.summary.total" class="fault-badge">{{ faultCenter.summary.total }}</text>
+            </view>
             <view :class="['btn', 'monitor-chip', monitor.scene === 'telemetry' ? 'active' : '']" @tap="toggleRiskMonitor">
               <text class="feature-icon">!</text><text>{{ monitor.active && monitor.scene === 'telemetry' ? '退出预警' : '风险预警' }}</text>
             </view>
@@ -51,41 +55,11 @@
 
       <!-- 指标卡片 -->
       <view class="cards">
-        <view class="card">
-          <view class="k">桶位总数</view>
-          <view class="v">{{ metrics.total }}</view>
-          <view class="delta">
-            <text v-for="(tag, i) in metricDeltas.total" :key="i" :class="['tag', tag.cls]">{{ tag.label }}</text>
-          </view>
-        </view>
-        <view class="card">
-          <view class="k">紧急桶位</view>
-          <view class="v">{{ metrics.urgent }}</view>
-          <view class="delta">
-            <text v-for="(tag, i) in metricDeltas.urgent" :key="i" :class="['tag', tag.cls]">{{ tag.label }}</text>
-          </view>
-        </view>
-        <view class="card">
-          <view class="k">平均满载率</view>
-          <view class="v">{{ metrics.averageStr }}</view>
-          <view class="delta">
-            <text v-for="(tag, i) in metricDeltas.average" :key="i" :class="['tag', tag.cls]">{{ tag.label }}</text>
-          </view>
-        </view>
-        <view class="card">
-          <view class="k">本次路线里程</view>
-          <view class="v">{{ metrics.distanceStr }}</view>
-          <view class="delta">
-            <text v-for="(tag, i) in metricDeltas.distance" :key="i" :class="['tag', tag.cls]">{{ tag.label }}</text>
-          </view>
-        </view>
-        <view class="card">
-          <view class="k">预计完工时长</view>
-          <view class="v">{{ metrics.durationStr }}</view>
-          <view class="delta">
-            <text v-for="(tag, i) in metricDeltas.duration" :key="i" :class="['tag', tag.cls]">{{ tag.label }}</text>
-          </view>
-        </view>
+        <CompactMetricCard icon="▦" label="桶位总数" :value="metrics.total" :trend="metricDeltas.total[0]" :tone="isLightTheme ? 'light' : 'dark'" />
+        <CompactMetricCard icon="!" label="紧急桶位" :value="metrics.urgent" :trend="metricDeltas.urgent[0]" :tone="isLightTheme ? 'light' : 'dark'" />
+        <CompactMetricCard icon="◔" label="平均满载率" :value="metrics.averageStr" :gauge-value="metrics.average" :trend="metricDeltas.average[0]" :tone="isLightTheme ? 'light' : 'dark'" />
+        <CompactMetricCard icon="⌁" label="本次路线里程" :value="metrics.distanceStr" :trend="metrics.routeAvailable ? metricDeltas.distance[0] : null" :tone="isLightTheme ? 'light' : 'dark'" />
+        <CompactMetricCard icon="◷" label="预计完工时长" :value="metrics.durationStr" :trend="metrics.routeAvailable ? metricDeltas.duration[0] : null" :tone="isLightTheme ? 'light' : 'dark'" />
       </view>
     </view>
 
@@ -173,7 +147,7 @@
         </view>
 
         <view class="panel block slot-status-panel">
-          <view class="block-title">点位有桶状态表 <text class="note">是否有桶 / 当前桶体</text></view>
+          <view class="block-title">点位状态 <text class="note">点位 / 当前桶体</text></view>
           <scroll-view class="list" scroll-y>
             <view v-if="!pointStatusRows.length" class="empty">暂无点位状态</view>
             <view v-for="row in pointStatusRows" :key="'slot-' + row.id" :class="['slot-row', row.stateCls]">
@@ -182,7 +156,7 @@
                 <text class="slot-state">{{ row.slotStateLabel }}</text>
               </view>
               <view class="slot-row-sub"><text>{{ row.pointName }}</text><text>桶体 {{ row.hasBin ? row.binCode : '--' }}</text></view>
-              <view class="slot-row-sub"><text>{{ row.taskLabel }}</text><text :class="['slot-presence', row.hasBin ? 'has' : 'empty-slot']">是否有桶：{{ row.hasBin ? '有桶' : '无桶' }}</text></view>
+              <view class="slot-row-sub"><text>{{ row.taskLabel }}</text></view>
             </view>
           </scroll-view>
         </view>
@@ -325,11 +299,7 @@
                 <text>{{ fmtTime(stop.eta) }}</text>
               </view>
               <view class="dispatch-sub">
-                <text>{{ fmtKm(stop.travelKm) }} / {{ fmtMin(stop.travelMinutes) }}</text>
                 <text>满载率 {{ n(stop.currentFill, 0).toFixed(1) }}%</text>
-              </view>
-              <view class="dispatch-sub">
-                <text>优先级 {{ n(stop.priorityScore, 0).toFixed(3) }}</text>
                 <view v-if="stop.navUrl" class="nav-btn" @tap.stop="openNav(stop.navUrl)">导航</view>
               </view>
             </view>
@@ -536,6 +506,7 @@ import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard
 import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
+import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
 import RiskAlgorithmWorkbench from '@/components/collection/RiskAlgorithmWorkbench.vue'
 import '@/styles/admin-light-theme.css'
 
@@ -713,7 +684,7 @@ const strategyOptions = [
 ]
 const routeStrategy = ref(normalizeStrategy(getStorage('collection_route_strategy')))
 
-const metrics = ref({ total: 0, urgent: 0, averageStr: '0%', distanceStr: '0 km', durationStr: '0 min' })
+const metrics = ref({ total: 0, urgent: 0, average: 0, averageStr: '0%', distanceStr: '待规划', durationStr: '待规划', routePlanning: false, routeAvailable: false })
 const metricDeltas = ref({ total: [], urgent: [], average: [], distance: [], duration: [] })
 const briefLines = ref(['等待数据...'])
 
@@ -1076,12 +1047,18 @@ function nearestKpi(hoursAgo, current, seedTag) {
 // ─── delta 标签 ────────────────────────────────────────
 function deltaTag(label, current, base, unit, lowerBetter) {
   const c = n(current, NaN); const b = n(base, NaN)
-  if (!Number.isFinite(c) || !Number.isFinite(b)) return { label: `${label} --`, cls: 'flat' }
+  if (!Number.isFinite(c) || !Number.isFinite(b)) return { symbol: '•', value: '--', ariaLabel: `${label}暂无数据`, cls: 'flat' }
   const delta = c - b; const abs = Math.abs(delta)
-  const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→'
+  const symbol = delta > 0 ? '▲' : delta < 0 ? '▼' : '—'
   let cls = 'flat'
   if (delta !== 0) cls = lowerBetter ? (delta < 0 ? 'up' : 'down') : (delta > 0 ? 'up' : 'down')
-  return { label: `${label} ${arrow}${abs.toFixed(1)}${unit || ''}`, cls }
+  const sign = delta > 0 ? '+' : delta < 0 ? '−' : ''
+  return {
+    symbol,
+    value: delta === 0 ? '' : `${sign}${abs.toFixed(1)}${unit || ''}`,
+    ariaLabel: `${label}${delta > 0 ? '上升' : delta < 0 ? '下降' : '持平'}${abs.toFixed(1)}${unit || ''}`,
+    cls
+  }
 }
 
 // ─── 数据排序 ──────────────────────────────────────────
@@ -1133,23 +1110,20 @@ function renderMetrics() {
   metrics.value = {
     total: m.total,
     urgent: m.urgent,
+    average: m.average,
     averageStr: `${m.average.toFixed(1)}%`,
-    distanceStr: routePlanning ? '规划中' : `${m.distance.toFixed(2)} km`,
-    durationStr: routePlanning ? '规划中' : `${m.duration.toFixed(1)} min`
+    distanceStr: routePlanning ? '规划中' : route ? `${m.distance.toFixed(2)} km` : '待规划',
+    durationStr: routePlanning ? '规划中' : route ? `${m.duration.toFixed(1)} min` : '待规划',
+    routePlanning,
+    routeAvailable: Boolean(route)
   }
   const day = nearestKpi(24, m, 'day')
-  const week = nearestKpi(24 * 7, m, 'week')
-  const target = {
-    total: Math.max(12, Math.round(m.total * 0.9)),
-    urgent: Math.max(1, Math.round(m.total * 0.12)),
-    average: 72, distance: 9.5, duration: 42
-  }
   metricDeltas.value = {
-    total: [deltaTag('较昨日', m.total, day.total, '', false), deltaTag('较上周', m.total, week.total, '', false), deltaTag('目标差', m.total, target.total, '', false)],
-    urgent: [deltaTag('较昨日', m.urgent, day.urgent, '', true), deltaTag('较上周', m.urgent, week.urgent, '', true), deltaTag('目标差', m.urgent, target.urgent, '', true)],
-    average: [deltaTag('较昨日', m.average, day.average, '%', true), deltaTag('较上周', m.average, week.average, '%', true), deltaTag('目标差', m.average, target.average, '%', true)],
-    distance: [deltaTag('较昨日', m.distance, day.distance, 'km', true), deltaTag('较上周', m.distance, week.distance, 'km', true), deltaTag('目标差', m.distance, target.distance, 'km', true)],
-    duration: [deltaTag('较昨日', m.duration, day.duration, 'min', true), deltaTag('较上周', m.duration, week.duration, 'min', true), deltaTag('目标差', m.duration, target.duration, 'min', true)]
+    total: [deltaTag('较昨日', m.total, day.total, '', false)],
+    urgent: [deltaTag('较昨日', m.urgent, day.urgent, '', true)],
+    average: [deltaTag('较昨日', m.average, day.average, '%', true)],
+    distance: [deltaTag('较昨日', m.distance, day.distance, 'km', true)],
+    duration: [deltaTag('较昨日', m.duration, day.duration, 'min', true)]
   }
   if (!monitor.active && !routePlanning) pushKpi(m)
 }
@@ -2093,6 +2067,7 @@ async function loadFaultEvents(silent = false) {
   }
 }
 function openFaultCenter() {
+  if (monitor.active) exitMonitor()
   faultCenter.open = true
   loadFaultEvents()
 }
@@ -2637,6 +2612,7 @@ function handleRefreshTap() {
 }
 
 function toggleRiskMonitor() {
+  if (faultCenter.open) closeFaultCenter()
   if (monitor.active && monitor.scene === 'telemetry') {
     exitMonitor()
     return
@@ -2823,6 +2799,7 @@ function exitMonitor() {
 }
 
 function toggleDispatchMonitor() {
+  if (faultCenter.open) closeFaultCenter()
   if (monitor.active && monitor.scene === 'dispatch') {
     exitMonitor()
     return
@@ -3109,6 +3086,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   --bg: #071726; --bg2: #0c2840; --panel: rgba(7,27,43,.78); --line: rgba(116,197,255,.28);
   --text: #e8f8ff; --muted: #8fb1c4; --blue: #2c8fff; --cyan: #24d9ff;
   --green: #16c57c; --amber: #f5b648; --orange: #ff8b3d; --red: #ff5d66;
+  --map-frame-line: rgba(122,202,255,.32); --map-frame-radius: 12px; --map-canvas-filter: none;
 
   min-height: 100vh;
   height: 100vh;
@@ -3138,6 +3116,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   --amber: #d98b12;
   --orange: #dd6f2a;
   --red: #d64d59;
+  --map-frame-line: rgba(93,143,171,.28);
   background:
     radial-gradient(900px 500px at -20% 20%, rgba(39,127,211,.1), transparent 55%),
     linear-gradient(160deg, var(--bg), var(--bg2));
@@ -3198,6 +3177,20 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   .screen .strategy-btn { padding: 5px 6px; font-size: 11px; }
   .screen .btn { padding: 7px 8px; font-size: 11px; }
 }
+
+@media (max-width: 1200px) and (min-width: 901px) {
+  .screen .row { flex-wrap: wrap; align-items: flex-start; gap: 6px; }
+  .screen .row > view:first-child { flex: 1 0 100%; width: 100%; }
+  .screen .row > view:nth-child(2) { flex: 1 0 100%; width: 100%; }
+  .screen .actions { gap: 4px; }
+  .screen .clock { min-width: 88px; padding: 4px 6px; font-size: 16px; }
+  .screen .strategy { gap: 2px; padding: 3px; }
+  .screen .strategy-btn { padding: 4px 5px; }
+  .screen .btn.monitor-chip { padding: 0 7px; gap: 3px; }
+  .screen .btn.monitor-chip .feature-icon { display: none; }
+  .screen .fault-badge { min-width: 15px; height: 15px; padding: 0 3px; }
+}
+
 .screen .clock {
   font-size: 20px; min-width: 150px; text-align: center;
   padding: 6px 10px; border: 1px solid rgba(132,212,255,.4);
@@ -3492,11 +3485,12 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 /* #ifdef H5 */
 .screen .map-stage {
   position: relative; z-index: 0; isolation: isolate;
-  flex: 1; min-height: 0; overflow: hidden; border-radius: 12px;
+  flex: 1; min-height: 0; overflow: hidden; border-radius: var(--map-frame-radius);
 }
 #map {
   flex: 1; min-height: 0; height: 100%;
-  border-radius: 12px; border: 1px solid rgba(122,202,255,.32); overflow: hidden;
+  border-radius: var(--map-frame-radius); border: 1px solid var(--map-frame-line); overflow: hidden;
+  filter: var(--map-canvas-filter);
   opacity: 0; transition: opacity .24s ease;
 }
 #map.is-ready { opacity: 1; }
@@ -4085,6 +4079,8 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   --amber: var(--admin-light-warning);
   --orange: #d8782c;
   --red: var(--admin-light-danger);
+  --map-frame-line: var(--admin-light-border-strong);
+  --map-frame-radius: 10px;
   padding: 10px;
   gap: 9px;
   background: var(--admin-light-bg);

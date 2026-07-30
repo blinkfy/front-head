@@ -9,6 +9,7 @@ unpackage
 __pycache__
 *.local
 .npm_cache
+.npm-cache/
 # Editor directories and files
 .idea
 *.suo
