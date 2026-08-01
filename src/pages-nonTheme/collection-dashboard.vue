@@ -98,7 +98,15 @@
     </view>
 
     <!-- ===== 主体三列 ===== -->
-    <view v-show="!(monitor.active && (monitor.scene === 'telemetry' || monitor.scene === 'sorting'))" class="main">
+    <view v-if="entryTransitioning" class="panel sorting-entry-loading" role="status">
+      <view class="sorting-entry-loading__pulse"></view>
+      <view>
+        <text class="sorting-entry-loading__title">{{ selectedSortingCenter.name }}</text>
+        <text class="sorting-entry-loading__desc">正在载入分拣清洗实时进度…</text>
+      </view>
+    </view>
+
+    <view v-show="!entryTransitioning && !(monitor.active && (monitor.scene === 'telemetry' || monitor.scene === 'sorting'))" class="main">
 
       <!-- 左列 -->
       <view class="col left">
@@ -714,12 +722,27 @@ const selectedSortingCenter = reactive({
   id: 'center-main',
   name: '中山公园分拣中心'
 })
+const entryTransitioning = ref(false)
 const pendingEntry = reactive({
   panel: '',
   view: '',
   centerId: '',
   centerName: ''
 })
+
+function decodeEntryParam(value) {
+  let decoded = String(value || '')
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const next = decodeURIComponent(decoded)
+      if (next === decoded) break
+      decoded = next
+    } catch (_) {
+      break
+    }
+  }
+  return decoded
+}
 
 const monitor = reactive({
   active: false,
@@ -813,13 +836,14 @@ const sortingMasterVideoRef = ref(null)
 const sortingMasterVideoReady = ref(false)
 const sortingMasterVideoFailed = ref(false)
 const sortingManualPlaybackActive = ref(false)
+const sortingAutomaticPlaybackActive = ref(false)
 const sortingMasterTimelineSeconds = computed(() => clamp(
   monitor.sortingProgress / 100 * CENTER_WORKFLOW_MASTER_VIDEO.durationSeconds,
   0,
   CENTER_WORKFLOW_MASTER_VIDEO.durationSeconds
 ))
 const sortingWorkflowStarted = computed(() => Boolean(
-  monitor.sortingProgress > 0 || sortingManualPlaybackActive.value
+  sortingAutomaticPlaybackActive.value || sortingManualPlaybackActive.value
 ))
 const sortingStageVideoActive = computed(() => Boolean(
   monitor.active && monitor.scene === 'sorting' && sortingWorkflowStarted.value && sortingMasterVideoReady.value && !sortingMasterVideoFailed.value
@@ -962,6 +986,10 @@ function cancelRoutePlan() {
     try { routePlanController.abort() } catch (_) {}
   }
   routePlanController = null
+  if (_state.routePlanning) {
+    _state.routePlanning = false
+    if (dashboardActive) renderMetrics()
+  }
 }
 
 function createAbortController() {
@@ -1895,7 +1923,9 @@ async function doRefresh(options) {
     if (selectedBinId.value !== null && !_state.bins.some(b => String(b.id) === String(selectedBinId.value))) selectedBinId.value = null
 
     renderAll()
-    planRouteInBackground({ silent })
+    // A sorting-center deep link does not need the dashboard's 51-bin route.
+    // Starting it here delays the target scene and leaves its KPI in planning.
+    if (pendingEntry.view !== 'sorting') planRouteInBackground({ silent })
   } catch (err) {
     console.error('[collection-dashboard] refresh failed:', err)
     setStatus(err && err.message ? err.message : String(err), 'err')
@@ -2317,9 +2347,25 @@ function updateMonitorTasks(elapsed) {
 
 function updateSortingCenterState(elapsed) {
   const sortingStart = 18500
-  const cleaningElapsed = sortingManualAnchorAt
+  const scheduledElapsed = sortingManualAnchorAt
     ? Math.max(0, sortingManualOffsetMs + Date.now() - sortingManualAnchorAt)
     : Math.max(0, elapsed - sortingStart)
+  if (!sortingManualPlaybackActive.value && scheduledElapsed > 0) {
+    sortingAutomaticPlaybackActive.value = true
+  }
+
+  // Once playback has been requested, the video media clock is authoritative.
+  // This keeps the cards, stage rail and queue paused whenever decoding stalls
+  // instead of allowing Date.now() to run ahead of the visible animation.
+  const media = sortingMasterVideoElement()
+  const mediaSeconds = Number(media?.currentTime)
+  const hasMediaClock = sortingWorkflowStarted.value
+    && sortingMasterVideoReady.value
+    && !sortingMasterVideoFailed.value
+    && Number.isFinite(mediaSeconds)
+  const cleaningElapsed = hasMediaClock
+    ? clamp(mediaSeconds * 1000, 0, SORTING_WORKFLOW_TOTAL_MS)
+    : scheduledElapsed
   monitor.sortingProgress = clamp(cleaningElapsed / SORTING_WORKFLOW_TOTAL_MS * 100, 0, 100)
   monitor.sortingTimeline = SORTING_OPERATION_STEPS.map((step, index) => {
     const next = SORTING_OPERATION_STEPS[index + 1]
@@ -2336,10 +2382,11 @@ function updateSortingCenterState(elapsed) {
   const completedReturns = cases.filter(item => item.routeAvailable && item.returnProgress >= 1).length
   const activeReturns = cases.filter(item => item.routeAvailable && item.returnProgress > 0 && item.returnProgress < 1).length
   const unavailableReturns = cases.filter(item => !item.routeAvailable).length
+  const focusedCleaning = monitor.sortingProgress > 0 && monitor.sortingProgress < 100 ? 1 : 0
   monitor.sortingSummary = {
     waiting: Math.max(0, cases.length - completedReturns - activeReturns - unavailableReturns),
-    cleaning: activeReturns,
-    ready: completedReturns + cases.length,
+    cleaning: focusedCleaning,
+    ready: Math.max(0, completedReturns + cases.length - focusedCleaning),
     blocked: unavailableReturns
   }
   monitor.sortingQueue = cases.flatMap((item) => {
@@ -2375,8 +2422,11 @@ function updateSortingCenterState(elapsed) {
 
 function jumpToSortingStage(step) {
   if (!monitor.active || monitor.scene !== 'sorting' || !step) return
+  pauseSortingMasterVideo()
+  seekSortingMasterVideo(step.at / 1000)
   sortingManualOffsetMs = step.at
   sortingManualAnchorAt = Date.now()
+  sortingAutomaticPlaybackActive.value = false
   sortingManualPlaybackActive.value = true
   updateSortingCenterState(0)
   ensureSortingProgressTimer()
@@ -2568,6 +2618,10 @@ function updateDispatchMonitor() {
     if (_state.mapReady) updateH5DispatchLayers(elapsed)
     // #endif
   }
+
+  if (monitor.scene === 'sorting' && monitor.completed && monitor.sortingProgress >= 100) {
+    clearMonitorTimer()
+  }
 }
 
 async function startRiskMonitor() {
@@ -2634,6 +2688,7 @@ async function startDispatchMonitor() {
   monitor.scene = 'dispatch'
   sortingManualAnchorAt = 0
   sortingManualOffsetMs = 0
+  sortingAutomaticPlaybackActive.value = false
   sortingManualPlaybackActive.value = false
   monitor.dispatchCases = []
   monitor.activeDispatchCaseId = ''
@@ -2786,6 +2841,7 @@ function exitMonitor() {
   monitor.activeDispatchCaseId = ''
   sortingManualAnchorAt = 0
   sortingManualOffsetMs = 0
+  sortingAutomaticPlaybackActive.value = false
   sortingManualPlaybackActive.value = false
   if (_state.monitorBackup) {
     _state.bins = JSON.parse(JSON.stringify(_state.monitorBackup.bins))
@@ -2949,10 +3005,15 @@ async function initH5Map() {
 
 // ─── 生命周期 ──────────────────────────────────────────
 onLoad((options = {}) => {
-  pendingEntry.panel = String(options.panel || '')
-  pendingEntry.view = String(options.view || '')
-  pendingEntry.centerId = String(options.centerId || '')
-  pendingEntry.centerName = String(options.centerName || '')
+  pendingEntry.panel = decodeEntryParam(options.panel)
+  pendingEntry.view = decodeEntryParam(options.view)
+  pendingEntry.centerId = decodeEntryParam(options.centerId)
+  pendingEntry.centerName = decodeEntryParam(options.centerName)
+  if (pendingEntry.view === 'sorting') {
+    selectedSortingCenter.id = pendingEntry.centerId || 'center-main'
+    selectedSortingCenter.name = pendingEntry.centerName || '中山公园分拣中心'
+    entryTransitioning.value = true
+  }
 })
 
 async function applyPendingEntry() {
@@ -2970,9 +3031,14 @@ async function applyPendingEntry() {
   if (entry.view === 'sorting') {
     selectedSortingCenter.id = entry.centerId || 'center-main'
     selectedSortingCenter.name = entry.centerName || '中山公园分拣中心'
-    await openSortingCenterMonitor()
+    try {
+      await openSortingCenterMonitor()
+    } finally {
+      entryTransitioning.value = false
+    }
     return
   }
+  entryTransitioning.value = false
   if (entry.panel === 'fault') openFaultCenter()
 }
 
@@ -3639,6 +3705,28 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .event-desc { font-size: 10px; color: #82a7b9; line-height: 1.45; margin-top: 3px; }
 
 /* ===== 分拣中心进度 ===== */
+.screen .sorting-entry-loading {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text);
+}
+.screen .sorting-entry-loading__pulse {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(22, 197, 124, .28);
+  animation: sortingEntryPulse 1.4s ease-out infinite;
+}
+.screen .sorting-entry-loading__title,
+.screen .sorting-entry-loading__desc { display: block; }
+.screen .sorting-entry-loading__title { font-size: 18px; font-weight: 760; }
+.screen .sorting-entry-loading__desc { margin-top: 5px; color: var(--muted); font-size: 12px; }
+
 .screen .sorting-scene { flex: 1; min-height: 0; display: flex; }
 .screen .sorting-hero {
   flex: 1; min-height: 0; padding: 15px 18px 18px; display: flex; flex-direction: column; gap: 13px;
@@ -3792,6 +3880,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 @keyframes chargePulse { from { filter: brightness(.72); transform: scale(.96); } to { filter: brightness(1.18); transform: scale(1.03); } }
 @keyframes checkScan { 0%,100% { top: 2%; opacity: .45; } 50% { top: calc(100% - 3px); opacity: 1; } }
 @keyframes poolRelease { from { transform: translateX(-10px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes sortingEntryPulse { 70%, 100% { box-shadow: 0 0 0 13px rgba(22, 197, 124, 0); } }
 
 @media (max-width: 1180px) {
   .screen .sorting-body { grid-template-columns: minmax(0, 1.15fr) minmax(430px, 1fr); }
