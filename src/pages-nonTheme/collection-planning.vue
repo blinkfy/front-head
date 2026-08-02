@@ -616,7 +616,7 @@ function drawH5Map() {
       const id = evt?.geometry?.id || ''
       const i = Number(String(id).replace('center-', ''))
       const center = centers[i]; if (!center) return
-      showInfoWindow(center.latitude, center.longitude, `<div style="font-size:12px;line-height:1.5"><b>${center.name || '未命名分拣中心'}</b><br/>位置：${center.location || '--'}<br/>规划状态：${center.selected === false ? '未选择' : '已选择'}</div>`)
+      showInfoWindow(center.latitude, center.longitude, `<div style="font-size:12px;line-height:1.5"><span style="font-weight:bold">${center.name || '未命名分拣中心'}</span><br/>位置：${center.location || '--'}<br/>规划状态：${center.selected === false ? '未选择' : '已选择'}</div>`)
     })
   }
 
@@ -718,7 +718,7 @@ onBeforeUnmount(() => {
 /* #endif */
 /* #ifndef H5 */
 page,view,text,scroll-view,swiper,button,form,input,textarea,
-label,navigator,image,div,span { box-sizing: border-box; }
+label,navigator,image { box-sizing: border-box; }
 /* #endif */
 
 /* ===== 命名空间隔离：所有选择器须在 .layout 根节点下 ===== */

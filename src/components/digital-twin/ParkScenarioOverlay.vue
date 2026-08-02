@@ -23,7 +23,7 @@
       :key="`count-${zoneId}`"
       class="zone-count"
       :style="pointStyle(zonePoint(zoneId))"
-    ><text>{{ zoneName(zoneId) }}</text><b>{{ count }} 人</b></view>
+    ><text>{{ zoneName(zoneId) }}</text><text class="b-text">{{ count }} 人</text></view>
 
     <view
       v-for="visitor in renderedVisitors"
@@ -58,7 +58,7 @@
     </view>
 
     <view v-if="showFormalObstacle" class="route-obstacle" :style="pointStyle(state.route.obstacle.position)" @tap.stop="$emit('select', state.route.obstacle.id)">
-      <i>!</i>
+      <i class="obstacle-icon">!</i>
     </view>
 
     <view v-for="(robot, index) in mapVisibleRobots" v-if="scenario === 'daily'" :key="robot.id" :class="['scenario-robot', `robot-${index + 1}`]" :style="pointStyle(robot.renderedPosition)" @tap.stop="$emit('select', robot.id)">
@@ -72,7 +72,7 @@
     <view v-if="state.route?.original?.length" class="route-key">
       <view><i class="original"></i><text>受阻路线</text></view>
       <view v-if="state.route.replanned?.length"><i class="replanned"></i><text>绕行路线</text></view>
-      <small :data-source="state.route.algorithmSource">{{ displaySourceLabel(state.route.algorithmSource) }}</small>
+      <text class="small-text" :data-source="state.route.algorithmSource">{{ displaySourceLabel(state.route.algorithmSource) }}</text>
     </view>
   </view>
 
@@ -676,8 +676,19 @@ function heatStyle(heat) {
   }
 }
 
+function safeRaf(cb) {
+  if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(cb)
+  if (typeof setTimeout === 'function') return setTimeout(cb, 16)
+  return 0
+}
+function safeCancelRaf(id) {
+  if (!id) return
+  if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id)
+  else if (typeof clearTimeout === 'function') clearTimeout(id)
+}
+
 function stopMotion() {
-  if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId)
+  safeCancelRaf(rafId)
   rafId = 0; lastTimestamp = 0
 }
 function hasMotion() {
@@ -689,11 +700,11 @@ function tick(timestamp) {
   const delta = Math.min(100, timestamp - lastTimestamp); lastTimestamp = timestamp
   moveProgress.value = Math.min(1, moveProgress.value + delta * Math.max(.25, Number(props.playbackRate) || 1) / motionDurationMs.value)
   if (moveProgress.value >= 1) return stopMotion()
-  rafId = requestAnimationFrame(tick)
+  rafId = safeRaf(tick)
 }
 function startMotion() {
   if (!props.playing || !hasMotion() || moveProgress.value >= 1 || rafId) return
-  lastTimestamp = 0; rafId = requestAnimationFrame(tick)
+  lastTimestamp = 0; rafId = safeRaf(tick)
 }
 function resetMotion() {
   stopMotion()
@@ -719,14 +730,20 @@ onBeforeUnmount(stopMotion)
 @keyframes scenario-route-flow { to { stroke-dashoffset:-28; } }
 .heat-zone { position: absolute; transform: translate(-50%,-50%) scale(var(--heat-scale)); border-radius: 50%; background: radial-gradient(circle,rgba(255,77,70,.86) 0,rgba(255,157,50,.48) 34%,rgba(255,210,55,.15) 60%,transparent 72%); animation: heat-breathe var(--heat-breathe-duration) ease-in-out infinite; }.heat-zone text { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); color: #fff6d9; font-size: 8px; font-weight: 800; text-shadow: 0 1px 4px #511; white-space: nowrap; }
 @keyframes heat-breathe { 50% { filter: saturate(1.25) brightness(1.12); } }
-.zone-count { position: absolute; z-index: 5; transform: translate(-50%,-50%); padding: 3px 6px; display: flex; gap: 5px; border: 1px solid rgba(126,216,255,.36); border-radius: 5px; color: #a8d8ec; background: rgba(3,27,43,.82); font-size: 7px; }.zone-count b { color: #f0fbff; }
+.zone-count { position: absolute; z-index: 5; transform: translate(-50%,-50%); padding: 3px 6px; display: flex; gap: 5px; border: 1px solid rgba(126,216,255,.36); border-radius: 5px; color: #a8d8ec; background: rgba(3,27,43,.82); font-size: 7px; }.zone-count .b-text { color: #f0fbff; }
 .scenario-visitor { position: absolute; z-index: 8; transform: translate(-50%,-76%); pointer-events: auto; transition: filter .2s ease; }.scenario-visitor:hover { filter: drop-shadow(0 0 7px #24d9ff); }
 .scenario-visitor.selected { z-index: 12; }
 .generated-garbage,.route-obstacle,.action-trash { position: absolute; z-index: 10; transform: translate(-50%,-50%); pointer-events: auto; text-align: center; }.generated-garbage :deep(.map-waste-sprite){--waste-motion-duration:var(--scenario-waste-motion-duration)}.generated-garbage.carried{transform:translate(-50%,-95%)}.action-trash{pointer-events:none}
-.route-obstacle i { display: flex; width: 25px; height: 25px; margin: auto; align-items: center; justify-content: center; border: 2px solid #ffd2d2; border-radius: 5px; color: #fff; background: #df404a; box-shadow: 0 0 14px rgba(255,75,84,.72); font-style: normal; font-weight: 900; }
+.route-obstacle .obstacle-icon { display: flex; width: 25px; height: 25px; margin: auto; align-items: center; justify-content: center; border: 2px solid #ffd2d2; border-radius: 5px; color: #fff; background: #df404a; box-shadow: 0 0 14px rgba(255,75,84,.72); font-style: normal; font-weight: 900; }
 .route-vehicle { position: absolute; z-index: 9; transform: translate(-50%,-82%); text-align: center; }
 .scenario-robot { position:absolute;z-index:9;transform:translate(-50%,-82%);text-align:center;pointer-events:auto;cursor:pointer }.scenario-robot.robot-2{filter:drop-shadow(0 0 5px rgba(167,123,255,.65))}
 .scenario-label-overlay{position:absolute;z-index:12;inset:0;overflow:visible;pointer-events:none}.scenario-label-anchor{position:absolute;transform:translate(-50%,-50%);width:1px;height:1px}.scenario-label-anchor.visitor{width:24px;height:41px;transform:translate(-50%,-76%)}.scenario-label-anchor.robot{width:42px;height:60px;transform:translate(-50%,-82%)}.scenario-label-anchor.bin{width:36px;height:46px;transform:translate(-50%,-82%)}.scenario-label-anchor.garbage{width:32px;height:27px}.scenario-label-anchor.obstacle{width:25px;height:25px}
-.route-key { position: absolute; z-index: 8; right: 12px; bottom: 67px; padding: 6px 8px; display: grid; gap: 4px; border: 1px solid rgba(116,197,255,.3); border-radius: 6px; color: #dff7ff; background: rgba(3,25,40,.82); font-size: 7px; }.route-key view { display: flex; align-items: center; gap: 6px; }.route-key i { width:22px; border-top:2px dotted; }.route-key i.original { border-color:#e9545f; }.route-key i.replanned { border-color:#35cf84; }.route-key small { color: #ffd57c; font: 6px/1 ui-monospace,Consolas,monospace; }
+.route-key { position: absolute; z-index: 8; right: 12px; bottom: 67px; padding: 6px 8px; display: grid; gap: 4px; border: 1px solid rgba(116,197,255,.3); border-radius: 6px; color: #dff7ff; background: rgba(3,25,40,.82); font-size: 7px; }.route-key view { display: flex; align-items: center; gap: 6px; }.route-key .original,.route-key .replanned { width:22px; border-top:2px dotted; }.route-key .original { border-color:#e9545f; }.route-key .replanned { border-color:#35cf84; }.route-key .small-text { color: #ffd57c; font: 6px/1 ui-monospace,Consolas,monospace; }
 @media (max-width: 900px) { .scenario-badges { right: 34px; }.zone-count { padding: 2px 4px; }.zone-count text { display: none; }.route-key { bottom: 62px; } }
+
+/* #ifdef MP-WEIXIN */
+.scenario-layer,.scenario-route-layer,.scenario-label-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; }
+.scenario-badges { right: 8px; top: 8px; }
+.route-key { right: 8px; bottom: 8px; }
+/* #endif */
 </style>

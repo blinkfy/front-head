@@ -128,9 +128,9 @@
           </view>
           <view class="chart-wrap">
             <view class="legend">
-              <text><view class="dot events"></view>分类次数</text>
-              <text><view class="dot active"></view>活跃用户</text>
-              <text><view class="dot" style="background:var(--chart-warning)"></view>风险指数</text>
+              <text class="legend-item"><view class="dot events"></view>分类次数</text>
+              <text class="legend-item"><view class="dot active"></view>活跃用户</text>
+              <text class="legend-item"><view class="dot" style="background:var(--chart-warning)"></view>风险指数</text>
             </view>
             <!-- #ifdef H5 -->
             <svg id="trendSvg" viewBox="0 0 860 300" preserveAspectRatio="none"
@@ -1441,7 +1441,7 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
 .screen .donut-svg-placeholder { display: flex; align-items: center; justify-content: center; width: 100%; height: clamp(190px, 22vh, 240px); font-size: 12px; color: var(--muted); }
 .screen .donut-legend { display: grid; gap: 6px; }
 .screen .donut-item  { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
-.screen .donut-item b { color: var(--text); font-family: "Rajdhani", "DIN Alternate", sans-serif; font-size: 13px; }
+.screen .donut-item .b-text { color: var(--text); font-family: "Rajdhani", "DIN Alternate", sans-serif; font-size: 13px; }
 .screen .donut-key   { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .screen .donut-pct   { font-family: "Rajdhani", "DIN Alternate", sans-serif; font-size: 12px; }
 .screen .donut-color { width: 10px; height: 10px; border-radius: 50%; }
@@ -1475,7 +1475,7 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
   position: absolute; right: 10px; top: 8px;
   display: flex; gap: 8px; font-size: 11px; color: #a5d3dc;
 }
-.screen .legend span { display: inline-flex; align-items: center; gap: 4px; }
+.screen .legend-item { display: inline-flex; align-items: center; gap: 4px; }
 .screen .dot { width: 8px; height: 8px; border-radius: 50%; }
 .screen .dot.events { background: #2bc6de; }
 .screen .dot.active { background: #24d392; }

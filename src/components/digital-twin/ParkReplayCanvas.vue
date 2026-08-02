@@ -51,8 +51,8 @@
       <view><i class="legend-shape waste"></i><text>垃圾物体</text></view>
     </view>
 
-    <view class="zone-label entrance"><text>公园入口</text><small>zone_entrance_01</small></view>
-    <view class="zone-label food"><text>餐饮/休息区</text><small>zone_food_rest_01</small></view>
+    <view class="zone-label entrance"><text>公园入口</text><text class="small-text">zone_entrance_01</text></view>
+    <view class="zone-label food"><text>餐饮/休息区</text><text class="small-text">zone_food_rest_01</text></view>
     <view class="road-label">设备返航道路</view>
 
     <view
@@ -61,7 +61,7 @@
       :class="['center-bay-anchor', `bay-${index + 1}`, { occupied: bay.deviceId, selected: selectedId === bay.id }]"
       @tap.stop="$emit('select', bay.id)"
     >
-      <i></i>
+      <i class="bay-marker"></i>
     </view>
     <view v-for="station in visibleCenterStations" :key="station.id" :class="['facility-anchor', 'station-facility', station.key]">
       <MapEntitySprite kind="station" :variant="station.key" :active="centerPhase === station.phase" :depth-scale="mapDepthScale(18)" />
@@ -148,7 +148,7 @@
         :key="anchor.id"
         class="calibration-anchor"
         :style="calibrationPointStyle(anchor.positionPct)"
-      ><i></i><text>{{ anchor.id }} · {{ anchor.positionPct.join(',') }}</text></view>
+      ><i class="calibration-dot"></i><text>{{ anchor.id }} · {{ anchor.positionPct.join(',') }}</text></view>
       <view
         v-for="anchor in calibrationAnchors"
         :key="`${anchor.id}:error`"
@@ -160,7 +160,7 @@
         :key="node.id"
         :class="['calibration-node', node.networkType]"
         :style="calibrationPointStyle([node.x, node.y])"
-      ><i></i><text>{{ node.id }}</text></view>
+      ><i class="calibration-dot"></i><text>{{ node.id }}</text></view>
       <view
         v-for="edge in calibrationEdgeLabels"
         :key="`${edge.id}:label`"
@@ -441,8 +441,19 @@ function routePose(route, amount) {
   }
 }
 
+function safeRaf(cb) {
+  if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(cb)
+  if (typeof setTimeout === 'function') return setTimeout(cb, 16)
+  return 0
+}
+function safeCancelRaf(id) {
+  if (!id) return
+  if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id)
+  else if (typeof clearTimeout === 'function') clearTimeout(id)
+}
+
 function pauseDispatchAnimation() {
-  if (dispatchRafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(dispatchRafId)
+  safeCancelRaf(dispatchRafId)
   dispatchRafId = 0; dispatchLastTimestamp = 0
 }
 
@@ -452,12 +463,12 @@ function tickDispatch(timestamp) {
   const delta = Math.min(100, timestamp - dispatchLastTimestamp); dispatchLastTimestamp = timestamp
   dispatchProgress.value = Math.min(1, dispatchProgress.value + delta * Math.max(.25, Number(props.playbackRate) || 1) / dispatchTravelMs)
   if (dispatchProgress.value >= 1) return pauseDispatchAnimation()
-  dispatchRafId = requestAnimationFrame(tickDispatch)
+  dispatchRafId = safeRaf(tickDispatch)
 }
 
 function startDispatchAnimation() {
   if (!props.playing || !dispatchTransitActive.value || dispatchProgress.value >= 1 || dispatchRafId) return
-  dispatchLastTimestamp = 0; dispatchRafId = requestAnimationFrame(tickDispatch)
+  dispatchLastTimestamp = 0; dispatchRafId = safeRaf(tickDispatch)
 }
 
 function resetDispatchAnimation() {
@@ -621,16 +632,16 @@ function runLabelLayout() {
 }
 
 function scheduleLabelLayout() {
-  if (labelRafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(labelRafId)
+  safeCancelRaf(labelRafId)
   if (labelSettleTimer) clearTimeout(labelSettleTimer)
   nextTick(() => {
-    labelRafId = requestAnimationFrame(runLabelLayout)
+    labelRafId = safeRaf(runLabelLayout)
     if (props.playing) labelSettleTimer = setTimeout(runLabelLayout, Math.round(1580 / Math.max(.25, Number(props.playbackRate) || 1)))
   })
 }
 
 function stopLabelLayout() {
-  if (labelRafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(labelRafId)
+  safeCancelRaf(labelRafId)
   if (labelSettleTimer) clearTimeout(labelSettleTimer)
   labelRafId = 0; labelSettleTimer = 0
   labelResizeObserver?.disconnect(); labelResizeObserver = null
@@ -678,18 +689,18 @@ onBeforeUnmount(() => {
 .candidate-background-comparison { z-index: 5; object-fit: fill; opacity: .48; mix-blend-mode: normal; }
 .foreground-occlusion-layer { z-index: 6; overflow: hidden; transition:opacity .3s ease; }.occlusion-region { position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:cover;transform:translateZ(0)}.occlusion-region.building_roof{filter:drop-shadow(7px 10px 10px rgba(0,17,29,.2))}
 .task-detail-environment { position:absolute; z-index:7; display:block; pointer-events:none; object-fit:fill; }
-.scene-calibration-layer { z-index: 14; overflow: hidden; }.calibration-road-layer{position:absolute;inset:0;width:100%;height:100%}.calibration-road{fill:none;stroke:#6de9ff;stroke-width:.32;stroke-dasharray:1 1;vector-effect:non-scaling-stroke}.calibration-road.pedestrian{stroke:#d9ff8f}.calibration-road.business_route_reference{stroke:#ffb866}.calibration-anchor,.calibration-object-point{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-anchor i{display:block;width:8px;height:8px;margin:-4px;border:2px solid #fff;border-radius:50%;background:#ff5d66;box-shadow:0 0 10px #ff5d66}.calibration-anchor text{position:absolute;left:8px;top:-12px;padding:2px 4px;border-radius:3px;color:#fff;background:rgba(78,12,20,.86);font:700 7px/1.2 ui-monospace,Consolas,monospace}.calibration-object-point{width:4px;height:4px;border:1px solid #24d9ff;background:#061522}.calibration-object-point text{position:absolute;left:5px;top:3px;color:#8ff2ff;font:6px/1.2 ui-monospace,Consolas,monospace}.calibration-caption{position:absolute;right:12px;top:12px;padding:5px 8px;border:1px solid rgba(255,184,102,.7);border-radius:5px;color:#fff2d8;background:rgba(70,41,9,.86);font:700 8px/1.2 ui-monospace,Consolas,monospace}
-.calibration-road.robot{stroke:#ffbf69}.calibration-road.service_device{stroke:#63e6ff}.calibration-road.blocked{stroke:#ff4f63;stroke-width:.8;stroke-dasharray:2 .5}.candidate-route path{fill:none;stroke-width:.75;stroke-dasharray:2 1;vector-effect:non-scaling-stroke}.candidate-route.east-north path{stroke:#ff9a47}.candidate-route.south-west path{stroke:#b784ff}.calibration-node,.calibration-edge-label,.calibration-anchor-error{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-node i{display:block;width:5px;height:5px;margin:-2.5px;border:1px solid #fff;border-radius:50%;background:#63e6ff}.calibration-node.pedestrian i{background:#b8eb72}.calibration-node.robot i{background:#ffbf69}.calibration-node text{position:absolute;left:4px;top:2px;color:#e8fbff;font:5px/1.1 ui-monospace,Consolas,monospace;text-shadow:0 1px 2px #00111d}.calibration-edge-label{opacity:.75}.calibration-edge-label text{display:block;padding:1px 2px;color:#bfefff;background:rgba(0,21,32,.76);font:4px/1 ui-monospace,Consolas,monospace}.calibration-edge-label.pedestrian text{color:#dfffab}.calibration-edge-label.robot text{color:#ffd49a}.calibration-edge-label.blocked text{color:#fff;background:#a4192a}.calibration-anchor-error{margin-top:9px;color:#ffd8dc;font:5px/1 ui-monospace,Consolas,monospace}.calibration-caption{max-width:52%;white-space:normal}
+.scene-calibration-layer { z-index: 14; overflow: hidden; }.calibration-road-layer{position:absolute;inset:0;width:100%;height:100%}.calibration-road{fill:none;stroke:#6de9ff;stroke-width:.32;stroke-dasharray:1 1;vector-effect:non-scaling-stroke}.calibration-road.pedestrian{stroke:#d9ff8f}.calibration-road.business_route_reference{stroke:#ffb866}.calibration-anchor,.calibration-object-point{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-anchor .calibration-dot{display:block;width:8px;height:8px;margin:-4px;border:2px solid #fff;border-radius:50%;background:#ff5d66;box-shadow:0 0 10px #ff5d66}.calibration-anchor text{position:absolute;left:8px;top:-12px;padding:2px 4px;border-radius:3px;color:#fff;background:rgba(78,12,20,.86);font:700 7px/1.2 ui-monospace,Consolas,monospace}.calibration-object-point{width:4px;height:4px;border:1px solid #24d9ff;background:#061522}.calibration-object-point text{position:absolute;left:5px;top:3px;color:#8ff2ff;font:6px/1.2 ui-monospace,Consolas,monospace}.calibration-caption{position:absolute;right:12px;top:12px;padding:5px 8px;border:1px solid rgba(255,184,102,.7);border-radius:5px;color:#fff2d8;background:rgba(70,41,9,.86);font:700 8px/1.2 ui-monospace,Consolas,monospace}
+.calibration-road.robot{stroke:#ffbf69}.calibration-road.service_device{stroke:#63e6ff}.calibration-road.blocked{stroke:#ff4f63;stroke-width:.8;stroke-dasharray:2 .5}.candidate-route path{fill:none;stroke-width:.75;stroke-dasharray:2 1;vector-effect:non-scaling-stroke}.candidate-route.east-north path{stroke:#ff9a47}.candidate-route.south-west path{stroke:#b784ff}.calibration-node,.calibration-edge-label,.calibration-anchor-error{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-node .calibration-dot{display:block;width:5px;height:5px;margin:-2.5px;border:1px solid #fff;border-radius:50%;background:#63e6ff}.calibration-node.pedestrian .calibration-dot{background:#b8eb72}.calibration-node.robot .calibration-dot{background:#ffbf69}.calibration-node text{position:absolute;left:4px;top:2px;color:#e8fbff;font:5px/1.1 ui-monospace,Consolas,monospace;text-shadow:0 1px 2px #00111d}.calibration-edge-label{opacity:.75}.calibration-edge-label text{display:block;padding:1px 2px;color:#bfefff;background:rgba(0,21,32,.76);font:4px/1 ui-monospace,Consolas,monospace}.calibration-edge-label.pedestrian text{color:#dfffab}.calibration-edge-label.robot text{color:#ffd49a}.calibration-edge-label.blocked text{color:#fff;background:#a4192a}.calibration-anchor-error{margin-top:9px;color:#ffd8dc;font:5px/1 ui-monospace,Consolas,monospace}.calibration-caption{max-width:52%;white-space:normal}
 .north-mark { position: absolute; z-index: 10; right: 14px; top: 12px; display: flex; flex-direction: column; align-items: center; color: #dff7ff; font-size: 10px; text-shadow: 0 1px 4px #00111d; }
 .north-arrow { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 22px solid #e9f8ff; filter: drop-shadow(0 1px 3px #00111d); }
 .map-legend { position: absolute; z-index: 10; left: 12px; top: 12px; padding: 8px 9px; display: grid; gap: 6px; border: 1px solid rgba(118,201,255,.28); border-radius: 9px; color: #b8d8e7; background: rgba(3,25,40,.8); font-size: 10px; backdrop-filter: blur(5px); }
 .map-legend view { display: flex; align-items: center; gap: 7px; }.legend-shape { display: inline-block; width: 10px; height: 10px; }.legend-shape.robot { border: 2px solid #8cecff; border-radius: 3px; }.legend-shape.bin { background: #2c8fff; border-radius: 2px; }.legend-shape.waste { background: #ff5d66; border-radius: 50%; }
 .zone-label { position: absolute; z-index: 9; padding: 4px 6px; border-radius: 5px; color: #f0fbff; background: rgba(4,26,40,.7); text-shadow: 0 1px 3px #00111d; pointer-events: none; }
-.zone-label text,.zone-label small { display: block; }.zone-label text { font-size: 11px; font-weight: 700; }.zone-label small { color: #8eb4c7; font: 8px/1.2 ui-monospace, Consolas, monospace; margin-top: 2px; }
+.zone-label text,.zone-label .small-text { display: block; }.zone-label text { font-size: 11px; font-weight: 700; }.zone-label .small-text { color: #8eb4c7; font: 8px/1.2 ui-monospace, Consolas, monospace; margin-top: 2px; }
 .zone-label.entrance { left: 44%; bottom: 3%; }.zone-label.food { right: 20%; top: 41%; }
 .road-label { position: absolute; z-index: 9; top: 10%; left: 52%; color: #b6cbd4; font-size: 10px; letter-spacing: 1px; text-shadow: 0 1px 3px #00111d; }
 .facility-anchor { position:absolute; z-index:5; transform:translate(-50%,-50%); pointer-events:none; }.center-facility{left:24%;top:16%}.station-facility{top:20.5%}.station-facility.unload{left:20.5%}.station-facility.wash{left:23%}.station-facility.charge{left:25.5%}
-.center-bay-anchor { position:absolute; z-index:5; top:17.5%; width:14px; height:8px; transform:translate(-50%,-50%); cursor:pointer; }.center-bay-anchor.bay-1{left:21.2%}.center-bay-anchor.bay-2{left:24%}.center-bay-anchor>i{display:block;width:100%;height:100%;box-sizing:border-box;border:1px solid rgba(115,171,199,.7);border-radius:2px;background:rgba(19,54,72,.82)}.center-bay-anchor.occupied>i{border-color:#24d9ff;background:rgba(36,217,255,.32);box-shadow:0 0 10px rgba(36,217,255,.5)}.center-bay-anchor.selected>i{outline:1px solid #fff;outline-offset:2px}
+.center-bay-anchor { position:absolute; z-index:5; top:17.5%; width:14px; height:8px; transform:translate(-50%,-50%); cursor:pointer; }.center-bay-anchor.bay-1{left:21.2%}.center-bay-anchor.bay-2{left:24%}.center-bay-anchor>.bay-marker{display:block;width:100%;height:100%;box-sizing:border-box;border:1px solid rgba(115,171,199,.7);border-radius:2px;background:rgba(19,54,72,.82)}.center-bay-anchor.occupied>.bay-marker{border-color:#24d9ff;background:rgba(36,217,255,.32);box-shadow:0 0 10px rgba(36,217,255,.5)}.center-bay-anchor.selected>.bay-marker{outline:1px solid #fff;outline-offset:2px}
 .route-layer { position:absolute; z-index:3; inset:0; width:100%; height:100%; pointer-events:none; }.route-layer.paused .route-path { animation-play-state:paused; }.route-path { fill:none; stroke-width:2.65px; stroke-linecap:round; stroke-dasharray:4px 10px; vector-effect:non-scaling-stroke; opacity:0; transition:opacity .3s ease; animation:route-flow 1.65s linear infinite; filter:drop-shadow(1px 1px .7px rgba(0,14,24,.34)); }.route-path.visible { opacity:.82; }.route-path.complete { opacity:.14; animation:none; }.route-path.return { stroke:#bd866b; }.route-path.replacement { stroke:#65a9b4; }.route-path.route-bed { stroke:rgba(3,19,29,.52);stroke-width:4.8px;stroke-dasharray:none;animation:none;filter:none;opacity:0}.route-path.route-bed.visible{opacity:.42}.route-path.route-bed.complete{opacity:.09}
 @keyframes route-flow { to { stroke-dashoffset: -28; } }
 .scene-object { position: absolute; z-index: 5; transform: translate(-50%,-50%); transition: left .7s cubic-bezier(.22,1,.36,1),top .7s cubic-bezier(.22,1,.36,1),opacity .25s ease; cursor: pointer; }.scene-object.robot,.scene-object.bin{transform:translate(-50%,-82%)}.scene-object.bin.task-bin-behind-robot{z-index:4}.scene-object.moving,.scene-object.handoff { transition: none; }.scene-object::after { content: ''; position: absolute; inset: -7px; border: 1px solid transparent; border-radius: 10px; transition: all .18s ease; }.scene-object:hover::after { border-color:rgba(36,217,255,.5);box-shadow:0 0 12px rgba(36,217,255,.28)}.scene-object.faded { opacity: .34; }
@@ -713,5 +724,44 @@ onBeforeUnmount(() => {
 .service-symbol { width: 31px; height: 31px; border: 2px dashed #69e4ff; border-radius: 8px; background: rgba(36,217,255,.12); }
 .event-overlay { position: absolute; z-index: 10; left: 12px; bottom: 12px; min-width: 230px; padding: 8px 10px; display: grid; grid-template-columns: 9px 1fr auto; align-items: center; gap: 8px; border: 1px solid rgba(116,197,255,.34); border-radius: 9px; background: rgba(2,23,38,.86); backdrop-filter: blur(6px); }.event-pulse { width: 8px; height: 8px; border-radius: 50%; background: #2c8fff; box-shadow: 0 0 10px currentColor; }.event-pulse.cyan { background: #24d9ff; }.event-pulse.green { background: #16c57c; }.event-pulse.amber { background: #f5b648; }.event-pulse.red { background: #ff5d66; }.event-overlay-label,.event-overlay-title { display: block; }.event-overlay-label { color: #789fb4; font-size: 8px; }.event-overlay-title { color: #e9f9ff; font-size: 11px; font-weight: 700; margin-top: 2px; }.source-tag { padding: 2px 5px; border-radius: 4px; color: #8ec8eb; border: 1px solid rgba(100,174,226,.34); background: rgba(22,91,143,.24); font: 700 8px/1.2 ui-monospace, Consolas, monospace; }.source-tag.isaac-realtime { color: #c1a7ff; }.source-tag.backend-api { color: #8af1be; }.source-tag.visual-aid { color: #ffd57c; }
 .hide-dynamic-objects .route-layer,.hide-dynamic-objects .scene-object,.hide-dynamic-objects .facility-anchor,.hide-dynamic-objects .center-bay-anchor,.hide-dynamic-objects .map-legend,.hide-dynamic-objects .north-mark,.hide-dynamic-objects .zone-label,.hide-dynamic-objects .road-label,.hide-dynamic-objects .event-overlay,.hide-dynamic-objects :deep(.scenario-layer),.hide-dynamic-objects :deep(.stable-map-label){display:none!important}
-@media (max-width: 900px) { .road-label,.map-legend { display: none; }.zone-label small { display: none; }.event-overlay { min-width: 190px; } }
+@media (max-width: 900px) { .road-label,.map-legend { display: none; }.zone-label .small-text { display: none; }.event-overlay { min-width: 190px; } }
+
+/* #ifdef MP-WEIXIN */
+/* 微信小程序端不支持 aspect-ratio / backdrop-filter / inset，调整布局避免地图高度异常 */
+.park-canvas { position: relative; width: 100%; height: 100%; min-height: 320px; box-sizing: border-box; }
+.park-scene-surface { position: relative; width: 100%; height: 100%; min-height: 320px; max-width: 100%; aspect-ratio: auto; }
+.park-scene-surface .environment-back,
+.park-scene-surface .park-background,
+.park-scene-surface .park-road-overlay,
+.park-scene-surface .ground-detail-layer,
+.park-scene-surface .atmosphere-layer,
+.park-scene-surface .candidate-background-comparison,
+.park-scene-surface .foreground-occlusion-layer,
+.park-scene-surface .scene-calibration-layer,
+.park-scene-surface .route-layer,
+.park-scene-surface .scene-object::after,
+.park-scene-surface .occlusion-region,
+.park-scene-surface .scene-label-overlay,
+.park-scene-surface .center-stage-visual,
+.park-scene-surface .center-stage-video-layer,
+.park-scene-surface .center-stage-video-backdrop,
+.park-scene-surface .center-stage-video,
+.park-scene-surface .center-stage-video-tone,
+.park-scene-surface .scene-vignette,
+.park-scene-surface .device-actor image,
+.park-scene-surface .ready-halo,
+.park-scene-surface .dock-zone > .dock-pulse,
+.park-scene-surface .clean-sweep,
+.park-scene-surface .player-shell { position: absolute; left: 0; top: 0; right: 0; bottom: 0; width: 100%; height: 100%; }
+.park-scene-surface .north-mark { display: none; }
+.map-legend { position: absolute; left: 8px; top: 8px; display: flex; flex-direction: column; gap: 4px; padding: 6px 7px; backdrop-filter: none; }
+.map-legend view { display: flex; align-items: center; gap: 5px; }
+.event-overlay { position: absolute; left: 8px; bottom: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; max-width: 92%; min-width: 0; padding: 6px 8px; box-sizing: border-box; backdrop-filter: none; }
+.event-overlay::before { content: ''; display: block; width: 8px; height: 8px; border-radius: 50%; background: #2c8fff; box-shadow: 0 0 10px currentColor; }
+.event-overlay .event-pulse { display: none; }
+.event-overlay > view { flex: 1 1 150px; min-width: 0; }
+.event-overlay-label,
+.event-overlay-title { white-space: normal; word-break: break-word; line-height: 1.3; }
+.event-overlay .source-tag { flex: 0 0 auto; }
+/* #endif */
 </style>

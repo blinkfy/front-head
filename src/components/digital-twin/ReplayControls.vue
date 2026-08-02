@@ -2,7 +2,7 @@
   <view class="controls panel">
     <view class="button-rail">
       <view :class="['control-button', 'primary', { active: playing }]" @tap="$emit(playing ? 'pause' : 'play')">
-        <view :class="playing ? 'icon-pause' : 'icon-play'"><i></i><i></i></view>
+        <view :class="playing ? 'icon-pause' : 'icon-play'"><i class="pause-bar"></i><i class="pause-bar"></i></view>
         <text>{{ playing ? '暂停' : currentIndex > 0 ? '继续' : '开始' }}</text>
       </view>
       <view class="control-button" @tap="$emit('reset')"><view class="icon-reset">↺</view><text>重置</text></view>
@@ -66,7 +66,7 @@ function jump() {
 .control-button.primary { color: #fff; border-color: rgba(57,176,255,.8); background: linear-gradient(135deg, #1769c9, #2c8fff); }
 .control-button:active { transform: translateY(1px); }
 .icon-play { width: 0; height: 0; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 11px solid currentColor; }
-.icon-pause { display: flex; gap: 4px; }.icon-pause i { display: block; width: 3px; height: 14px; border-radius: 1px; background: currentColor; }
+.icon-pause { display: flex; gap: 4px; }.pause-bar { display: block; width: 3px; height: 14px; border-radius: 1px; background: currentColor; }
 .icon-reset { font-size: 20px; line-height: 1; }.icon-step { width: 14px; height: 14px; position: relative; }
 .icon-step::before { content: ''; position: absolute; top: 2px; width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
 .icon-step::after { content: ''; position: absolute; top: 2px; width: 2px; height: 10px; background: currentColor; }
@@ -82,4 +82,19 @@ function jump() {
 .jump-button { padding: 7px 10px; border-radius: 6px; color: #fff; background: #247ee5; font-size: 10px; }
 @media (max-width: 1180px) { .controls { grid-template-columns: 1fr; }.progress-row { grid-column: 1; }.button-rail { min-width: 0; }.control-button { flex: 1; min-width: 0; }.speed-control { min-width: 0; } }
 @media (max-width: 900px) { .button-rail { overflow-x: auto; }.control-button { flex: none; min-width: 72px; } }
+
+/* #ifdef MP-WEIXIN */
+.controls { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 10px; overflow: visible; box-sizing: border-box; }
+.button-rail { display: flex; flex-wrap: wrap; width: 100%; gap: 7px; overflow: visible; }
+.control-button { flex: 1 1 140px; min-width: 0; height: 40px; padding: 0 6px; }
+.control-button text { white-space: nowrap; }
+.speed-control { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 6px; }
+.speed-options { display: flex; flex-wrap: wrap; width: 100%; gap: 6px; }
+.speed-button { flex: 1 1 52px; min-width: 52px; box-sizing: border-box; }
+.progress-row { display: flex; flex-wrap: wrap; align-items: center; width: 100%; gap: 7px; box-sizing: border-box; }
+.event-slider { flex: 1 1 150px; min-width: 140px; }
+.progress-count { flex: 0 0 auto; }
+.jump-control { flex: 0 0 auto; margin-left: auto; }
+.jump-input { box-sizing: border-box; }
+/* #endif */
 </style>

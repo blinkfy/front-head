@@ -1297,7 +1297,7 @@ function onRegister() {
 
 /* 叶子图标晃动动画 - 持续进行 */
 .footer-text .leaf-icon,
-.footer-text span:first-child {
+.footer-text .footer-leaf-icon {
   display: inline-block;
   animation: leafSway 1.5s ease-in-out infinite;
   transform-origin: bottom center;

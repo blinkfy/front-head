@@ -6,10 +6,10 @@
         <view class="overlay-stage-title">{{ activeDisplayStage.label }}<text>/ {{ activeDisplayStage.key.toUpperCase() }}</text></view>
       </view>
       <view class="task-facts">
-        <view><text>垃圾类别</text><b>{{ garbageText }}</b></view>
-        <view><text>目标桶</text><b>{{ targetBinText }}</b></view>
-        <view><text>任务</text><b>{{ taskId || '—' }}</b></view>
-        <view class="progress-fact"><text>阶段进度</text><b>{{ Math.round(overallProgress) }}%</b></view>
+        <view><text>垃圾类别</text><text class="b-text">{{ garbageText }}</text></view>
+        <view><text>目标桶</text><text class="b-text">{{ targetBinText }}</text></view>
+        <view><text>任务</text><text class="b-text">{{ taskId || '—' }}</text></view>
+        <view class="progress-fact"><text>阶段进度</text><text class="b-text">{{ Math.round(overallProgress) }}%</text></view>
       </view>
     </view>
 
@@ -75,7 +75,7 @@
     <view class="overlay-footer">
       <view class="task-identity">
         <text>{{ taskId || '未登记任务 ID' }}</text>
-        <small>{{ identityDetail }}</small>
+        <text class="small-text">{{ identityDetail }}</text>
       </view>
       <view class="local-controls">
         <button class="local-button" size="mini" @tap="running ? emit('pause') : emit('play')">
@@ -344,10 +344,10 @@ watch(
 .overlay-stage-title text { margin-left: 5px; color: #7298aa; font: 650 8px/1.2 ui-monospace,Consolas,monospace; }
 .task-facts { display: grid; grid-template-columns: 1fr 1fr 1.25fr .68fr; min-width: 0; border-left: 1px solid rgba(112,194,232,.2); }
 .task-facts view { min-width: 0; padding: 2px 10px; border-right: 1px solid rgba(112,194,232,.16); }
-.task-facts text,.task-facts b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-facts text,.task-facts .b-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-facts text { color: #6f94a7; font-size: 8px; font-weight: 560; }
-.task-facts b { margin-top: 4px; color: #dff7ff; font-size: 10px; font-weight: 720; }
-.task-facts .progress-fact b { color: #68d8ec; font: 760 12px/1.1 ui-monospace,Consolas,monospace; }
+.task-facts .b-text { margin-top: 4px; color: #dff7ff; font-size: 10px; font-weight: 720; }
+.task-facts .progress-fact .b-text { color: #68d8ec; font: 760 12px/1.1 ui-monospace,Consolas,monospace; }
 .stage-selector { position:absolute; z-index:5; top:70px; right:12px; left:12px; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:0; margin:0; padding:7px 0 6px; border-top:1px solid rgba(103,173,205,.2); border-bottom:1px solid rgba(103,173,205,.18); background:linear-gradient(90deg,rgba(3,23,38,.8),rgba(3,23,38,.54)); backdrop-filter:blur(5px); pointer-events:auto; animation:hud-enter-top .42s .04s cubic-bezier(.22,1,.36,1) both; }
 .stage-selector::before { position: absolute; top: 14px; right: 8.5%; left: 8.5%; height: 1px; content: ''; background: rgba(112,166,186,.2); }
 .stage-selector.bin-stages { grid-template-columns:repeat(8,minmax(0,1fr)); }
@@ -364,9 +364,9 @@ watch(
 .progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg,#4aa892,#4cbad0); transition: width .1s linear; }
 .overlay-footer { position:absolute; z-index:5; right:12px; bottom:10px; left:12px; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:40px; padding:7px 10px; box-sizing:border-box; border:1px solid rgba(85,205,255,.24); border-radius:9px; background:linear-gradient(90deg,rgba(3,23,38,.9),rgba(3,23,38,.7)); box-shadow:0 -8px 24px rgba(0,13,22,.2); backdrop-filter:blur(6px); pointer-events:auto; animation:hud-enter-bottom .4s cubic-bezier(.22,1,.36,1) both; }
 .task-identity { min-width: 0; }
-.task-identity text,.task-identity small { display: block; }
+.task-identity text,.task-identity .small-text { display: block; }
 .task-identity text { overflow: hidden; color: #9fd5eb; font: 700 9px/1.2 ui-monospace,Consolas,monospace; text-overflow: ellipsis; white-space: nowrap; }
-.task-identity small { margin-top: 3px; color: #668a9b; font-size: 8px; }
+.task-identity .small-text { margin-top: 3px; color: #668a9b; font-size: 8px; }
 .local-controls { display: flex; gap: 6px; }
 .local-button { margin: 0; padding: 0 12px; border: 1px solid rgba(68,190,236,.55); color: #fff; background: #1679a7; font-size: 10px; }
 .local-button.secondary { color: #a9d6e8; background: rgba(255,255,255,.055); }
@@ -384,7 +384,19 @@ watch(
 @media (max-width: 560px) {
   .task-facts { grid-template-columns: repeat(2,1fr); row-gap: 5px; }
   .stage-selector { top:132px; grid-template-columns:repeat(3,1fr); row-gap:6px; }
-  .stage-selector::before,.task-identity small { display: none; }
-  .stage-chip { font-size: 7px; }
+  .stage-selector::before,.task-identity .small-text { display: none; }
+  .stage-chip { flex: 1; min-width: 60px; font-size: 7px; }
+  .stage-index { display: flex; align-items: center; justify-content: center; }
+  .overlay-footer { backdrop-filter: none; }
 }
+
+/* #ifdef MP-WEIXIN */
+.robot-task-replay-overlay { position: relative; top: auto; left: auto; right: auto; bottom: auto; width: 100%; height: auto; min-height: 300px; }
+.overlay-head { position: relative; top: auto; left: auto; right: auto; bottom: auto; display: flex; flex-direction: column; gap: 7px; backdrop-filter: none; }
+.task-facts { display: flex; flex-wrap: wrap; border-left: 0; }
+.task-facts view { flex: 1; min-width: 80px; border-right: 0; }
+.stage-selector { position: relative; top: auto; left: auto; right: auto; bottom: auto; display: flex; flex-wrap: wrap; backdrop-filter: none; }
+.stage-selector.bin-stages { display: flex; flex-wrap: wrap; }
+.overlay-footer { position: relative; top: auto; left: auto; right: auto; bottom: auto; backdrop-filter: none; }
+/* #endif */
 </style>

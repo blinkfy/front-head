@@ -2,15 +2,15 @@
   <view class="live-controls panel">
     <view class="section-heading"><text>场景控制</text><text :class="['connection', { online: connected }]">{{ connected ? statusLabel : '连接中' }}</text></view>
     <view class="auto-summary">
-      <view><small>仿真时间</small><b>{{ timeOfDay }}</b></view>
-      <view><small>客流阶段</small><b>{{ flowPhaseLabel }}</b></view>
-      <view><small>固定种子</small><b>{{ randomSeed }}</b></view>
+      <view><text class="small-text">仿真时间</text><text class="b-text">{{ timeOfDay }}</text></view>
+      <view><text class="small-text">客流阶段</text><text class="b-text">{{ flowPhaseLabel }}</text></view>
+      <view><text class="small-text">固定种子</text><text class="b-text">{{ randomSeed }}</text></view>
     </view>
     <view class="coordination-summary">
-      <view v-for="robot in robotSummaries" :key="robot.id"><small>{{ robot.shortLabel }}</small><b>{{ robot.statusLabel }}</b></view>
-      <view><small>可用备用桶</small><b>{{ availableStandbyCount }} / 2</b></view>
-      <view><small>中心泊位</small><b>{{ occupiedBayCount }} / 2</b></view>
-      <view><small>并行任务</small><b>{{ parallelTaskCount }} / 2</b></view>
+      <view v-for="robot in robotSummaries" :key="robot.id"><text class="small-text">{{ robot.shortLabel }}</text><text class="b-text">{{ robot.statusLabel }}</text></view>
+      <view><text class="small-text">可用备用桶</text><text class="b-text">{{ availableStandbyCount }} / 2</text></view>
+      <view><text class="small-text">中心泊位</text><text class="b-text">{{ occupiedBayCount }} / 2</text></view>
+      <view><text class="small-text">并行任务</text><text class="b-text">{{ parallelTaskCount }} / 2</text></view>
     </view>
     <view class="automation-row">
       <label><text>自动运行</text><switch :checked="autoRunEnabled" color="#28c98b" @change="toggle('SET_AUTO_RUN', $event)" /></label>
@@ -20,19 +20,19 @@
     </view>
     <view class="incident-row">
       <picker mode="selector" :range="incidentProfiles" range-key="label" :value="incidentProfileIndex" @change="changeIncidentProfile">
-        <view class="field"><small>异常强度</small><b>{{ incidentProfiles[incidentProfileIndex].label }}</b></view>
+        <view class="field"><text class="small-text">异常强度</text><text class="b-text">{{ incidentProfiles[incidentProfileIndex].label }}</text></view>
       </picker>
-      <view class="incident-count"><small>活动异常</small><b>{{ activeIncidentCount }}</b></view>
+      <view class="incident-count"><text class="small-text">活动异常</text><text class="b-text">{{ activeIncidentCount }}</text></view>
       <view :class="['command', 'resolve', { disabled: !activeIncidentCount }]" @tap="resolveIncident">一键解除</view>
     </view>
-    <view class="recent-incident"><small>最近异常</small><b>{{ recentIncidentText }}</b></view>
+    <view class="recent-incident"><text class="small-text">最近异常</text><text class="b-text">{{ recentIncidentText }}</text></view>
     <view class="metric-grid">
-      <view><small>服务可用率</small><b>{{ metrics.servicePointAvailabilityPct ?? 100 }}%</b></view>
-      <view><small>异常 / 恢复</small><b>{{ metrics.incidentCount || 0 }} / {{ metrics.autoRecoveryCount || 0 }}</b></view>
-      <view><small>平均恢复时长</small><b>{{ metrics.averageRecoveryDuration || 0 }}</b></view>
-      <view><small>路线额外代价</small><b>{{ metrics.routeExtraCost || 0 }}</b></view>
-      <view><small>等待任务</small><b>{{ metrics.waitingTaskCount || 0 }}</b></view>
-      <view><small>中心排队</small><b>{{ metrics.centerQueueCount || 0 }}</b></view>
+      <view><text class="small-text">服务可用率</text><text class="b-text">{{ metrics.servicePointAvailabilityPct ?? 100 }}%</text></view>
+      <view><text class="small-text">异常 / 恢复</text><text class="b-text">{{ metrics.incidentCount || 0 }} / {{ metrics.autoRecoveryCount || 0 }}</text></view>
+      <view><text class="small-text">平均恢复时长</text><text class="b-text">{{ metrics.averageRecoveryDuration || 0 }}</text></view>
+      <view><text class="small-text">路线额外代价</text><text class="b-text">{{ metrics.routeExtraCost || 0 }}</text></view>
+      <view><text class="small-text">等待任务</text><text class="b-text">{{ metrics.waitingTaskCount || 0 }}</text></view>
+      <view><text class="small-text">中心排队</text><text class="b-text">{{ metrics.centerQueueCount || 0 }}</text></view>
     </view>
     <view class="control-grid primary-actions">
       <view class="command primary" @tap="emitCommand(running ? 'PAUSE' : 'START')">{{ running ? '暂停仿真' : '开始仿真' }}</view>
@@ -50,16 +50,16 @@
 
     <view class="picker-row">
       <picker mode="selector" :range="positionOptions" range-key="label" :value="positionIndex" @change="changePosition">
-        <view class="field"><small>垃圾位置</small><b>{{ positionOptions[positionIndex].label }}</b></view>
+        <view class="field"><text class="small-text">垃圾位置</text><text class="b-text">{{ positionOptions[positionIndex].label }}</text></view>
       </picker>
       <picker mode="selector" :range="flowOptions" range-key="label" :value="flowIndex" @change="changeFlow">
-        <view class="field"><small>客流状态</small><b>{{ flowOptions[flowIndex].label }}</b></view>
+        <view class="field"><text class="small-text">客流状态</text><text class="b-text">{{ flowOptions[flowIndex].label }}</text></view>
       </picker>
     </view>
 
     <view class="fill-row">
       <picker mode="selector" :range="deviceOptions" range-key="label" :value="deviceIndex" @change="changeDevice">
-        <view class="field device"><small>指定智能桶</small><b>{{ deviceOptions[deviceIndex].shortLabel }}</b></view>
+        <view class="field device"><text class="small-text">指定智能桶</text><text class="b-text">{{ deviceOptions[deviceIndex].shortLabel }}</text></view>
       </picker>
       <slider class="fill-slider" :value="fillPct" min="0" max="100" step="1" activeColor="#24d9ff" backgroundColor="#183c50" @changing="changeFill" @change="changeFill" />
       <view class="fill-value">{{ fillPct }}%</view>
@@ -179,8 +179,8 @@ function resolveIncident() {
 .connection { color: #7896a6; }.connection.online { color: #72e6ad; }
 .auto-summary { display: grid; grid-template-columns: .8fr 1.2fr 1fr; gap: 5px; margin-top: 8px; }
 .auto-summary view { padding: 5px 6px; border: 1px solid rgba(126,196,239,.18); border-radius: 7px; background: rgba(7,33,50,.58); }
-.auto-summary small,.auto-summary b { display: block; }.auto-summary small { color: #6f93a5; font-size: 9px; }.auto-summary b { margin-top: 2px; color: #d9f3fb; font: 700 11px/1.2 ui-monospace,Consolas,monospace; }
-.coordination-summary { display: grid; grid-template-columns: repeat(5,1fr); gap: 4px; margin-top: 5px; }.coordination-summary view { min-width: 0; padding: 4px 5px; border: 1px solid rgba(89,216,255,.16); border-radius: 6px; background: rgba(7,33,50,.48); }.coordination-summary small,.coordination-summary b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.coordination-summary small { color: #6f93a5; font-size: 8px; }.coordination-summary b { margin-top: 2px; color: #bcefff; font: 700 9px/1.2 ui-monospace,Consolas,monospace; }
+.auto-summary .small-text,.auto-summary .b-text { display: block; }.auto-summary .small-text { color: #6f93a5; font-size: 9px; }.auto-summary .b-text { margin-top: 2px; color: #d9f3fb; font: 700 11px/1.2 ui-monospace,Consolas,monospace; }
+.coordination-summary { display: grid; grid-template-columns: repeat(5,1fr); gap: 4px; margin-top: 5px; }.coordination-summary view { min-width: 0; padding: 4px 5px; border: 1px solid rgba(89,216,255,.16); border-radius: 6px; background: rgba(7,33,50,.48); }.coordination-summary .small-text,.coordination-summary .b-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.coordination-summary .small-text { color: #6f93a5; font-size: 8px; }.coordination-summary .b-text { margin-top: 2px; color: #bcefff; font: 700 9px/1.2 ui-monospace,Consolas,monospace; }
 .automation-row { display: grid; grid-template-columns: repeat(2,1fr); gap: 4px 7px; margin-top: 7px; }
 .automation-row label { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 2px; color: #8fb3c4; font-size: 10px; }
 .automation-row switch { transform: scale(.62); transform-origin: right center; margin-left: -8px; }
@@ -193,10 +193,31 @@ function resolveIncident() {
 .command.danger { color: #ffd4d6; border-color: rgba(255,93,103,.4); }
 .picker-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 7px; }
 .field { min-height: 34px; padding: 5px 7px; box-sizing: border-box; border: 1px solid rgba(126,196,239,.2); border-radius: 7px; background: rgba(7,33,50,.58); }
-.field small,.field b { display: block; }.field small { color: #6f93a5; font-size: 9px; }.field b { margin-top: 2px; color: #d6edf6; font-size: 10px; }
+.field .small-text,.field .b-text { display: block; }.field .small-text { color: #6f93a5; font-size: 9px; }.field .b-text { margin-top: 2px; color: #d6edf6; font-size: 10px; }
 .fill-row { display: grid; grid-template-columns: 86px 1fr 38px 42px; gap: 5px; align-items: center; margin-top: 7px; }
 .fill-slider { margin: 0; }.fill-value { color: #75dcff; font: 700 10px/1 ui-monospace,Consolas,monospace; }.apply { min-height: 28px; color: #7ce9ba; }
 .feedback { margin-top: 7px; color: #ffca76; font-size: 9px; line-height: 1.4; }
 .snapshot-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 7px; }
-.incident-row { display: grid; grid-template-columns: 1.2fr .75fr .85fr; gap: 5px; align-items: stretch; margin-top: 7px; }.incident-count,.metric-grid view { padding: 5px 6px; border: 1px solid rgba(245,182,72,.2); border-radius: 7px; background: rgba(67,43,8,.22); }.incident-count small,.incident-count b,.recent-incident small,.recent-incident b,.metric-grid small,.metric-grid b { display: block; }.incident-count small,.recent-incident small,.metric-grid small { color: #8ca5ae; font-size: 9px; }.incident-count b { margin-top: 2px; color: #ffd27d; font-size: 11px; }.command.resolve { color: #ffd7a0; border-color: rgba(245,182,72,.36); }.command.disabled { opacity: .38; }.recent-incident { margin-top: 5px; padding: 5px 7px; border-left: 2px solid #f5b648; background: rgba(245,182,72,.06); }.recent-incident b { margin-top: 2px; color: #e6f5fa; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.metric-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 4px; margin-top: 5px; }.metric-grid b { margin-top: 2px; color: #d9f3fb; font: 700 10px/1.2 ui-monospace,Consolas,monospace; }
+.incident-row { display: grid; grid-template-columns: 1.2fr .75fr .85fr; gap: 5px; align-items: stretch; margin-top: 7px; }.incident-count,.metric-grid view { padding: 5px 6px; border: 1px solid rgba(245,182,72,.2); border-radius: 7px; background: rgba(67,43,8,.22); }.incident-count .small-text,.incident-count .b-text,.recent-incident .small-text,.recent-incident .b-text,.metric-grid .small-text,.metric-grid .b-text { display: block; }.incident-count .small-text,.recent-incident .small-text,.metric-grid .small-text { color: #8ca5ae; font-size: 9px; }.incident-count .b-text { margin-top: 2px; color: #ffd27d; font-size: 11px; }.command.resolve { color: #ffd7a0; border-color: rgba(245,182,72,.36); }.command.disabled { opacity: .38; }.recent-incident { margin-top: 5px; padding: 5px 7px; border-left: 2px solid #f5b648; background: rgba(245,182,72,.06); }.recent-incident .b-text { margin-top: 2px; color: #e6f5fa; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.metric-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 4px; margin-top: 5px; }.metric-grid .b-text { margin-top: 2px; color: #d9f3fb; font: 700 10px/1.2 ui-monospace,Consolas,monospace; }
+
+/* #ifdef MP-WEIXIN */
+.auto-summary { display: flex; flex-wrap: wrap; }
+.auto-summary view { flex: 1; min-width: 90px; }
+.coordination-summary { display: flex; flex-wrap: wrap; }
+.coordination-summary view { flex: 1; min-width: 70px; }
+.automation-row { display: flex; flex-wrap: wrap; }
+.automation-row label { flex: 1; min-width: 140px; }
+.control-grid { display: flex; flex-wrap: wrap; }
+.command,.apply { flex: 1; min-width: 70px; }
+.picker-row { display: flex; flex-wrap: wrap; }
+.picker-row .field { flex: 1; min-width: 120px; }
+.fill-row { display: flex; flex-wrap: wrap; align-items: center; }
+.fill-row .fill-slider { flex: 1; min-width: 120px; }
+.snapshot-row { display: flex; flex-wrap: wrap; }
+.snapshot-row .command { flex: 1; min-width: 120px; }
+.incident-row { display: flex; flex-wrap: wrap; }
+.incident-row .field,.incident-row .command { flex: 1; min-width: 90px; }
+.metric-grid { display: flex; flex-wrap: wrap; }
+.metric-grid view { flex: 1; min-width: 80px; }
+/* #endif */
 </style>

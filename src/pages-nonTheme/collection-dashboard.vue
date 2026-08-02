@@ -374,8 +374,8 @@
                   @error="handleSortingMasterVideoError"
                 ></video>
                 <view class="sorting-video-tone"></view>
-                <view class="sorting-video-info top-left"><small>{{ monitor.sortingStageText }}</small><b>{{ monitor.returnBinCode }}</b><text>当前设备</text></view>
-                <view class="sorting-video-info bottom-right"><small>设备状态</small><b>{{ sortingDeviceStatus }}</b><text>阶段进度 {{ sortingOperation.progress.toFixed(0) }}%</text></view>
+                <view class="sorting-video-info top-left"><text class="small-text">{{ monitor.sortingStageText }}</text><text class="b-text">{{ monitor.returnBinCode }}</text><text>当前设备</text></view>
+                <view class="sorting-video-info bottom-right"><text class="small-text">设备状态</text><text class="b-text">{{ sortingDeviceStatus }}</text><text>阶段进度 {{ sortingOperation.progress.toFixed(0) }}%</text></view>
               </view>
               <view v-show="!sortingStageVideoActive" :class="['operation-layer', 'stage-' + sortingOperation.key]">
                 <view class="weigh-operation">
@@ -389,7 +389,7 @@
                 <view class="pool-operation"><text>入库</text><view></view></view>
                 <view class="workpiece" :style="sortingWorkpieceStyle">
                   <view class="workpiece-bin"><text></text><text></text></view>
-                  <b>{{ monitor.returnBinCode }}</b>
+                  <text class="b-text">{{ monitor.returnBinCode }}</text>
                 </view>
               </view>
               <view v-show="!sortingStageVideoActive" :class="['zone-tag', 'zone-weigh', { active: monitor.sortingStageText.includes('抵达') || monitor.sortingStageText.includes('称重') }]">
@@ -410,17 +410,17 @@
                   <view class="flow-progress" :style="{ width: monitor.sortingProgress + '%' }"></view>
                   <text class="flow-dot" :style="{ left: 'calc(' + monitor.sortingProgress + '% - 4px)' }"></text>
                 </view>
-                <b>{{ monitor.sortingStageText }} · {{ sortingOperation.progress.toFixed(0) }}%</b>
+                <text class="b-text">{{ monitor.sortingStageText }} · {{ sortingOperation.progress.toFixed(0) }}%</text>
               </view>
             </view>
           </view>
 
           <view class="sorting-rail">
             <view class="sorting-summary">
-              <view class="waiting"><text>待分拣</text><b>{{ monitor.sortingSummary.waiting }}</b></view>
-              <view class="cleaning"><text>清洗中</text><b>{{ monitor.sortingSummary.cleaning }}</b></view>
-              <view class="ready"><text>已清洁待命</text><b>{{ monitor.sortingSummary.ready }}</b></view>
-              <view class="blocked"><text>异常滞留</text><b>{{ monitor.sortingSummary.blocked }}</b></view>
+              <view class="waiting"><text>待分拣</text><text class="b-text">{{ monitor.sortingSummary.waiting }}</text></view>
+              <view class="cleaning"><text>清洗中</text><text class="b-text">{{ monitor.sortingSummary.cleaning }}</text></view>
+              <view class="ready"><text>已清洁待命</text><text class="b-text">{{ monitor.sortingSummary.ready }}</text></view>
+              <view class="blocked"><text>异常滞留</text><text class="b-text">{{ monitor.sortingSummary.blocked }}</text></view>
             </view>
 
             <view class="sorting-progress">
@@ -434,7 +434,7 @@
               <view class="sorting-card active">
                 <view class="task-top"><text>{{ monitor.returnBinCode }} · {{ monitor.sortingStageText }}</text><text class="task-chip">{{ monitor.sortingStatus }}</text></view>
                 <view class="stage-detail">当前进度由分拣中心设备状态实时推演</view>
-                <view class="sorting-progress-row"><view class="metric-track"><view class="metric-progress replace" :style="{ width: monitor.sortingProgress + '%' }"></view></view><b>{{ monitor.sortingProgress.toFixed(0) }}%</b></view>
+                <view class="sorting-progress-row"><view class="metric-track"><view class="metric-progress replace" :style="{ width: monitor.sortingProgress + '%' }"></view></view><text class="b-text">{{ monitor.sortingProgress.toFixed(0) }}%</text></view>
               </view>
             </view>
 
@@ -465,10 +465,10 @@
           <view class="btn ghost" @tap="closeFaultCenter">关闭</view>
         </view>
         <view class="fault-summary">
-          <view><text>故障总数</text><b>{{ faultCenter.summary.total }}</b></view>
-          <view><text>待确认</text><b>{{ faultCenter.summary.open }}</b></view>
-          <view><text>处理中</text><b>{{ faultCenter.summary.processing }}</b></view>
-          <view><text>已关闭</text><b>{{ faultCenter.summary.resolved }}</b></view>
+          <view><text>故障总数</text><text class="b-text">{{ faultCenter.summary.total }}</text></view>
+          <view><text>待确认</text><text class="b-text">{{ faultCenter.summary.open }}</text></view>
+          <view><text>处理中</text><text class="b-text">{{ faultCenter.summary.processing }}</text></view>
+          <view><text>已关闭</text><text class="b-text">{{ faultCenter.summary.resolved }}</text></view>
         </view>
         <scroll-view class="fault-list" scroll-y>
           <view v-if="faultCenter.loading" class="empty">正在同步故障事件...</view>
@@ -1338,7 +1338,7 @@ function buildMpMapData() {
     latitude: n(bin.latitude, 0),
     longitude: n(bin.longitude, 0),
     title: bin.name,
-    iconPath: '',
+    iconPath: bin.type === 'smart' ? '/static/smart-marker.png' : '/static/normal-marker.png',
     label: { content: String(bin.name || '').slice(0, 4), color: '#fff', fontSize: 10, bgColor: colorMap[sev(bin.currentFill)] || '#2c8fff', padding: 3, borderRadius: 4 },
     width: 24, height: 24,
     callout: { content: `${bin.name}\n满载率 ${clampFill(bin.currentFill).toFixed(1)}%`, display: 'BYCLICK', color: '#17324a', fontSize: 12, borderRadius: 6, bgColor: '#fff', padding: 6 }
@@ -3425,9 +3425,9 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .prediction-copy { color: #ffd5aa; font-size: 12px; }
 .screen .prediction-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; }
 .screen .prediction-grid view { padding: 8px; border: 1px solid rgba(126,198,241,.18); border-radius: 9px; background: rgba(8,29,44,.64); }
-.screen .prediction-grid text, .screen .prediction-grid b { display: block; }
+.screen .prediction-grid text, .screen .prediction-grid .b-text { display: block; }
 .screen .prediction-grid text { color: var(--muted); font-size: 10px; }
-.screen .prediction-grid b { color: #c9efff; font-size: 13px; margin-top: 4px; }
+.screen .prediction-grid .b-text { color: #c9efff; font-size: 13px; margin-top: 4px; }
 .screen .telemetry-chart { height: 130px; padding: 12px 14px; border-radius: 13px; border: 1px solid rgba(123,202,255,.2); background: rgba(7,26,41,.72); }
 .screen .chart-head { display: flex; justify-content: space-between; color: #a7d1e2; font-size: 11px; }
 .screen .chart-bars { height: 92px; display: flex; align-items: flex-end; gap: 8px; border-bottom: 1px solid rgba(123,202,255,.18); }
@@ -3772,14 +3772,14 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .sorting-video-info { position: absolute; z-index: 3; width: 34%; min-width: 180px; padding: 9px 11px; box-sizing: border-box; border: 1px solid rgba(83,219,255,.58); border-radius: 9px; color: #eafaff; background: linear-gradient(135deg, #041f2f, #053342); box-shadow: 0 8px 22px rgba(0,8,15,.42), inset 3px 0 #37d8f4; }
 .screen .sorting-video-info.top-left { left: 6%; top: 5%; }
 .screen .sorting-video-info.bottom-right { right: 6%; bottom: 8%; border-color: rgba(84,231,177,.52); box-shadow: 0 8px 22px rgba(0,8,15,.42), inset 3px 0 #4ee5aa; }
-.screen .sorting-video-info small, .screen .sorting-video-info b, .screen .sorting-video-info text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.screen .sorting-video-info small { color: #69dff7; font-size: 8px; }
-.screen .sorting-video-info b { margin-top: 4px; color: #fff; font-size: 12px; }
+.screen .sorting-video-info .small-text, .screen .sorting-video-info .b-text, .screen .sorting-video-info text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.screen .sorting-video-info .small-text { color: #69dff7; font-size: 8px; }
+.screen .sorting-video-info .b-text { margin-top: 4px; color: #fff; font-size: 12px; }
 .screen .sorting-video-info text { margin-top: 4px; color: #9fc6d5; font-size: 8px; }
-.screen .sorting-video-info.bottom-right small { color: #71eab9; }
+.screen .sorting-video-info.bottom-right .small-text { color: #71eab9; }
 .screen .operation-layer { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
 .screen .workpiece { position: absolute; display: flex; align-items: center; gap: 6px; transform: translate(-50%, -50%); transition: left .8s cubic-bezier(.22,.8,.24,1), top .8s cubic-bezier(.22,.8,.24,1); }
-.screen .workpiece b { padding: 3px 6px; border: 1px solid rgba(100,229,255,.72); border-radius: 5px; color: #e8fbff; font-size: 8px; font-weight: 700; background: rgba(3,25,39,.9); box-shadow: 0 0 13px rgba(42,212,245,.24); }
+.screen .workpiece .b-text { padding: 3px 6px; border: 1px solid rgba(100,229,255,.72); border-radius: 5px; color: #e8fbff; font-size: 8px; font-weight: 700; background: rgba(3,25,39,.9); box-shadow: 0 0 13px rgba(42,212,245,.24); }
 .screen .workpiece-bin { position: relative; width: 15px; height: 18px; border: 1px solid #92ecff; border-radius: 3px 3px 5px 5px; background: rgba(27,185,214,.55); box-shadow: 0 0 11px rgba(47,224,255,.58); }
 .screen .workpiece-bin::before { content: ''; position: absolute; left: 1px; right: 1px; top: -4px; height: 3px; border: 1px solid #92ecff; border-radius: 2px; }
 .screen .workpiece-bin text { position: absolute; bottom: -4px; width: 4px; height: 4px; border-radius: 50%; background: #b5f5ff; }
@@ -3826,7 +3826,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .zone-check { left: 64%; top: 38%; }
 .screen .zone-pool { right: 5%; top: 57%; }
 .screen .twin-flow { position: absolute; z-index: 8; left: 16px; right: 16px; bottom: 13px; height: 35px; padding: 0 11px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(77,174,218,.24); border-radius: 8px; background: rgba(4,21,34,.92); color: #759bad; font-size: 9px; }
-.screen .twin-flow b { color: #d5f6ff; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.screen .twin-flow .b-text { color: #d5f6ff; font-size: 10px; font-weight: 650; white-space: nowrap; }
 .screen .flow-line { position: relative; flex: 1; height: 2px; overflow: visible; border-radius: 2px; background: rgba(61,116,139,.35); }
 .screen .flow-progress { position: absolute; inset: 0 auto 0 0; max-width: 100%; border-radius: inherit; background: #35dfff; box-shadow: 0 0 8px rgba(53,223,255,.55); transition: width .25s linear; }
 .screen .flow-dot { position: absolute; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #53e9ff; box-shadow: 0 0 0 3px rgba(83,233,255,.13), 0 0 12px rgba(83,233,255,.9); transition: left .25s linear; }
@@ -3836,13 +3836,13 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .sorting-summary view {
   min-width: 0; padding: 10px 11px 9px; border-radius: 10px; border: 1px solid rgba(124,198,244,.2); background: rgba(8,29,45,.82);
 }
-.screen .sorting-summary text, .screen .sorting-summary b { display: block; }
+.screen .sorting-summary text, .screen .sorting-summary .b-text { display: block; }
 .screen .sorting-summary text { color: var(--muted); font-size: 9px; white-space: nowrap; }
-.screen .sorting-summary b { font-size: 24px; line-height: 1; margin-top: 7px; }
-.screen .sorting-summary .cleaning b { color: #47ddff; }
+.screen .sorting-summary .b-text { font-size: 24px; line-height: 1; margin-top: 7px; }
+.screen .sorting-summary .cleaning .b-text { color: #47ddff; }
 .screen .sorting-summary .ready { border-color: rgba(34,205,139,.28); }
-.screen .sorting-summary .ready b { color: #45dfa5; }
-.screen .sorting-summary .blocked b { color: #ff6b71; }
+.screen .sorting-summary .ready .b-text { color: #45dfa5; }
+.screen .sorting-summary .blocked .b-text { color: #ff6b71; }
 .screen .sorting-progress, .screen .sorting-queue {
   min-height: 0; padding: 13px; border-radius: 13px; border: 1px solid rgba(123,202,255,.2); background: rgba(6,24,38,.78); display: flex; flex-direction: column; gap: 11px;
 }
@@ -3868,7 +3868,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen .stage-detail { margin-top: 6px; color: #779cad; font-size: 9px; }
 .screen .sorting-progress-row { margin-top: 10px; display: flex; align-items: center; gap: 9px; }
 .screen .sorting-progress-row .metric-track { flex: 1; }
-.screen .sorting-progress-row b { width: 34px; text-align: right; color: #dff8ff; font-size: 10px; }
+.screen .sorting-progress-row .b-text { width: 34px; text-align: right; color: #dff8ff; font-size: 10px; }
 .screen .sorting-queue .list { flex: 1; min-height: 0; }
 .screen .sorting-queue .sorting-card { display: flex; align-items: center; gap: 10px; }
 .screen .queue-copy { flex: 1; min-width: 0; }
@@ -3913,9 +3913,9 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   padding: 10px; border-radius: 10px; border: 1px solid rgba(124,198,244,.2);
   background: rgba(9,31,48,.78);
 }
-.screen .fault-summary text, .screen .fault-summary b { display: block; }
+.screen .fault-summary text, .screen .fault-summary .b-text { display: block; }
 .screen .fault-summary text { color: var(--muted); font-size: 10px; }
-.screen .fault-summary b { font-size: 22px; margin-top: 3px; }
+.screen .fault-summary .b-text { font-size: 22px; margin-top: 3px; }
 .screen .danger-text { color: #ff7e86; }
 .screen .fault-list { flex: 1; min-height: 0; }
 .screen .fault-card {
@@ -4018,9 +4018,9 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen.light-theme .monitor-task.unavailable { border-color: #e2a5a5; background: #fff8f8; }
 .screen.light-theme .gauge-ring::before { background: radial-gradient(circle, #fff, #edf5f8); }
 .screen.light-theme .prediction-time,
-.screen.light-theme .prediction-grid b,
+.screen.light-theme .prediction-grid .b-text,
 .screen.light-theme .event-title,
-.screen.light-theme .sorting-progress-row b { color: var(--text); }
+.screen.light-theme .sorting-progress-row .b-text { color: var(--text); }
 .screen.light-theme .prediction-label,
 .screen.light-theme .scene-kicker,
 .screen.light-theme .brief-title,

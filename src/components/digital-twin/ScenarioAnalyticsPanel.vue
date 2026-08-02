@@ -1,26 +1,26 @@
 <template>
   <view class="analytics-panel panel">
     <view class="analytics-head">
-      <view><text>{{ panelTitle }}</text><small>{{ panelSubtitle }}</small></view>
-      <view class="analytics-tags"><b>算法说明</b></view>
+      <view><text>{{ panelTitle }}</text><text class="small-text">{{ panelSubtitle }}</text></view>
+      <view class="analytics-tags"><text class="b-text">算法说明</text></view>
     </view>
     <view class="metric-grid">
-      <view><small>{{ primaryMetricLabel }}</small><b>{{ primaryMetricValue }}</b></view>
-      <view><small>{{ secondaryMetricLabel }}</small><b>{{ secondaryMetricValue }}</b></view>
-      <view><small>{{ riskTrace ? '容量增长率' : '垃圾增长率' }}</small><b>{{ growthRate }}</b></view>
-      <view><small>当前填充率</small><b>{{ fillPct }}</b><em v-if="fillSource">{{ fillSource }}</em></view>
-      <view><small>预测填充率</small><b>{{ predictedFill }}</b></view>
-      <view><small>预计满载</small><b>{{ eta }}</b></view>
+      <view><text class="small-text">{{ primaryMetricLabel }}</text><text class="b-text">{{ primaryMetricValue }}</text></view>
+      <view><text class="small-text">{{ secondaryMetricLabel }}</text><text class="b-text">{{ secondaryMetricValue }}</text></view>
+      <view><text class="small-text">{{ riskTrace ? '容量增长率' : '垃圾增长率' }}</text><text class="b-text">{{ growthRate }}</text></view>
+      <view><text class="small-text">当前填充率</text><text class="b-text">{{ fillPct }}</text><text class="em-label" v-if="fillSource">{{ fillSource }}</text></view>
+      <view><text class="small-text">预测填充率</text><text class="b-text">{{ predictedFill }}</text></view>
+      <view><text class="small-text">预计满载</text><text class="b-text">{{ eta }}</text></view>
     </view>
 
     <view v-if="prediction" class="prediction-block">
       <view class="prediction-title">
         <text>填充率预测曲线</text>
-        <b :class="riskTone">{{ riskLabel }}</b>
+        <text class="b-text" :class="riskTone">{{ riskLabel }}</text>
       </view>
       <view v-if="predictionWindows.length" class="horizon-grid">
         <view v-for="window in predictionWindows" :key="window.minutes">
-          <small>{{ window.minutes }} 分钟</small><b>{{ window.p50 }}%</b><em>{{ window.p10 }}–{{ window.p90 }}%</em>
+          <text class="small-text">{{ window.minutes }} 分钟</text><text class="b-text">{{ window.p50 }}%</text><text class="em-label">{{ window.p10 }}–{{ window.p90 }}%</text>
         </view>
       </view>
       <!-- #ifdef H5 -->
@@ -33,15 +33,15 @@
         <polyline v-if="forecastPoints" :points="forecastPoints" class="chart-line forecast" />
       </svg>
       <!-- #endif -->
-      <view class="chart-legend"><text><i class="history"></i>历史</text><text><i class="band"></i>P10–P90</text><text><i class="forecast"></i>P50</text><small :data-source="prediction.source">{{ prediction.modelVersion || displaySourceLabel(prediction.source) }}</small></view>
+      <view class="chart-legend"><text><i class="history"></i>历史</text><text><i class="band"></i>P10–P90</text><text><i class="forecast"></i>P50</text><text class="small-text" :data-source="prediction.source">{{ prediction.modelVersion || displaySourceLabel(prediction.source) }}</text></view>
     </view>
     <view v-else class="prediction-empty">当前事件之前没有预测载荷，不在前端补造数值。</view>
 
     <view class="reason-block">
-      <small>{{ routeReason ? '调度 / 重规划原因' : '当前行为说明' }}</small>
+      <text class="small-text">{{ routeReason ? '调度 / 重规划原因' : '当前行为说明' }}</text>
       <text>{{ routeReason || activityReason || '回放事件暂未提供说明' }}</text>
       <view v-if="routeMetrics" class="route-metrics">
-        <b>距离 {{ routeMetrics.distance }}</b><b>代价 {{ routeMetrics.cost }}</b><b :data-source="state.route.algorithmSource">{{ displaySourceLabel(state.route.algorithmSource) }}</b>
+        <text class="b-text">距离 {{ routeMetrics.distance }}</text><text class="b-text">代价 {{ routeMetrics.cost }}</text><text class="b-text" :data-source="state.route.algorithmSource">{{ displaySourceLabel(state.route.algorithmSource) }}</text>
       </view>
     </view>
   </view>
@@ -174,13 +174,20 @@ function pointsFor(series, offset) { return series.map((item, index) => `${chart
 
 <style scoped>
 .analytics-panel { flex: 0 0 auto; padding: 10px 11px; overflow: hidden; }
-.analytics-head,.prediction-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }.analytics-head > view:first-child text,.analytics-head > view:first-child small { display: block; }.analytics-head text { color: #e7f8ff; font-size: 11px; font-weight: 750; }.analytics-head small { margin-top: 2px; color: #7fa8ba; font-size: 9px; }.analytics-tags { display: flex; gap: 3px; }.analytics-tags b { padding: 2px 4px; border: 1px solid rgba(245,182,72,.42); border-radius: 3px; color: #ffd57c; background: rgba(121,77,11,.28); font: 700 8px/1 ui-monospace,Consolas,monospace; }
-.metric-grid { margin-top: 8px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; }.metric-grid view { min-width: 0; padding: 5px 6px; border: 1px solid rgba(116,197,255,.14); border-radius: 5px; background: rgba(10,43,65,.56); }.metric-grid small,.metric-grid b,.metric-grid em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.metric-grid small { color: #719aad; font-size: 8px; }.metric-grid b { margin-top: 2px; color: #e3f7ff; font-size: 10px; }.metric-grid em { margin-top: 2px; color: #7eb4ca; font: 8px/1.1 ui-monospace,Consolas,monospace; font-style: normal; }
-.prediction-block { margin-top: 7px; padding: 7px; border: 1px solid rgba(116,197,255,.14); border-radius: 6px; background: rgba(3,25,40,.62); }.prediction-title text { color: #a8cedd; font-size: 10px; }.prediction-title b { padding: 2px 5px; border-radius: 4px; color: #bfe7f6; background: rgba(28,101,145,.5); font-size: 9px; }.prediction-title b.high,.prediction-title b.critical { color: #ffd5d5; background: rgba(175,47,56,.7); }.prediction-title b.medium { color: #ffe4a8; background: rgba(145,90,14,.68); }.prediction-title b.low { color: #aef4cf; background: rgba(16,112,71,.66); }
-.prediction-title b.emergency { color: #fff; background: #a9232d; }.horizon-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px }.horizon-grid view { padding:4px;border-radius:4px;background:rgba(39,104,135,.2) }.horizon-grid small,.horizon-grid b,.horizon-grid em { display:block;text-align:center }.horizon-grid small { color:#739caf;font-size:7px }.horizon-grid b { color:#f2c76f;font-size:9px }.horizon-grid em { color:#8ab4c6;font-size:6px;font-style:normal }
-.prediction-chart { width: 100%; height: 72px; margin-top: 3px; overflow: visible; }.chart-axis { stroke: rgba(154,207,233,.25); stroke-width: 1; }.risk-line { stroke: rgba(255,93,102,.35); stroke-width: 1; stroke-dasharray: 3 3; }.split-line { stroke: rgba(222,244,255,.24); stroke-width: 1; stroke-dasharray: 2 3; }.chart-line { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }.chart-line.history { stroke: #69a9d2; }.chart-line.forecast { stroke: #f5b648; stroke-dasharray: 5 4; filter: drop-shadow(0 0 3px rgba(245,182,72,.5)); }.chart-legend { display: flex; align-items: center; gap: 8px; color: #86adbf; font-size: 6px; }.chart-legend text { display: flex; align-items: center; gap: 3px; }.chart-legend i { width: 12px; border-top: 2px solid; }.chart-legend i.history { border-color: #69a9d2; }.chart-legend i.forecast { border-color: #f5b648; border-top-style: dashed; }.chart-legend small { margin-left: auto; color: #ffd57c; font: 6px/1 ui-monospace,Consolas,monospace; }
-.forecast-band { fill:rgba(245,182,72,.14);stroke:rgba(245,182,72,.25);stroke-width:.7 }.chart-legend i.band { height:4px;border:0;background:rgba(245,182,72,.25) }.chart-legend small { max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
-.prediction-empty { margin-top: 7px; padding: 8px; border: 1px dashed rgba(116,197,255,.18); border-radius: 6px; color: #688fa1; font-size: 9px; line-height: 1.5; }.reason-block { margin-top: 7px; padding: 7px; border-left: 2px solid #24d9ff; border-radius: 0 5px 5px 0; background: rgba(15,65,90,.36); }.reason-block small,.reason-block text { display: block; }.reason-block small { color: #719bac; font-size: 8px; }.reason-block text { margin-top: 3px; color: #d8edf6; font-size: 9px; line-height: 1.45; }.route-metrics { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 3px; }.route-metrics b { padding: 2px 4px; border-radius: 3px; color: #9bdcf1; background: rgba(26,100,130,.5); font: 8px/1.2 ui-monospace,Consolas,monospace; }
+.analytics-head,.prediction-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }.analytics-head > view:first-child text,.analytics-head > view:first-child .small-text { display: block; }.analytics-head text { color: #e7f8ff; font-size: 11px; font-weight: 750; }.analytics-head .small-text { margin-top: 2px; color: #7fa8ba; font-size: 9px; }.analytics-tags { display: flex; gap: 3px; }.analytics-tags .b-text { padding: 2px 4px; border: 1px solid rgba(245,182,72,.42); border-radius: 3px; color: #ffd57c; background: rgba(121,77,11,.28); font: 700 8px/1 ui-monospace,Consolas,monospace; }
+.metric-grid { margin-top: 8px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; }.metric-grid view { min-width: 0; padding: 5px 6px; border: 1px solid rgba(116,197,255,.14); border-radius: 5px; background: rgba(10,43,65,.56); }.metric-grid .small-text,.metric-grid .b-text,.metric-grid .em-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.metric-grid .small-text { color: #719aad; font-size: 8px; }.metric-grid .b-text { margin-top: 2px; color: #e3f7ff; font-size: 10px; }.metric-grid .em-label { margin-top: 2px; color: #7eb4ca; font: 8px/1.1 ui-monospace,Consolas,monospace; font-style: normal; }
+.prediction-block { margin-top: 7px; padding: 7px; border: 1px solid rgba(116,197,255,.14); border-radius: 6px; background: rgba(3,25,40,.62); }.prediction-title text { color: #a8cedd; font-size: 10px; }.prediction-title .b-text { padding: 2px 5px; border-radius: 4px; color: #bfe7f6; background: rgba(28,101,145,.5); font-size: 9px; }.prediction-title .b-text.high,.prediction-title .b-text.critical { color: #ffd5d5; background: rgba(175,47,56,.7); }.prediction-title .b-text.medium { color: #ffe4a8; background: rgba(145,90,14,.68); }.prediction-title .b-text.low { color: #aef4cf; background: rgba(16,112,71,.66); }
+.prediction-title .b-text.emergency { color: #fff; background: #a9232d; }.horizon-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px }.horizon-grid view { padding:4px;border-radius:4px;background:rgba(39,104,135,.2) }.horizon-grid .small-text,.horizon-grid .b-text,.horizon-grid .em-label { display:block;text-align:center }.horizon-grid .small-text { color:#739caf;font-size:7px }.horizon-grid .b-text { color:#f2c76f;font-size:9px }.horizon-grid .em-label { color:#8ab4c6;font-size:6px;font-style:normal }
+.prediction-chart { width: 100%; height: 72px; margin-top: 3px; overflow: visible; }.chart-axis { stroke: rgba(154,207,233,.25); stroke-width: 1; }.risk-line { stroke: rgba(255,93,102,.35); stroke-width: 1; stroke-dasharray: 3 3; }.split-line { stroke: rgba(222,244,255,.24); stroke-width: 1; stroke-dasharray: 2 3; }.chart-line { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }.chart-line.history { stroke: #69a9d2; }.chart-line.forecast { stroke: #f5b648; stroke-dasharray: 5 4; filter: drop-shadow(0 0 3px rgba(245,182,72,.5)); }.chart-legend { display: flex; align-items: center; gap: 8px; color: #86adbf; font-size: 6px; }.chart-legend text { display: flex; align-items: center; gap: 3px; }.chart-legend .history,.chart-legend .band,.chart-legend .forecast { width: 12px; border-top: 2px solid; }.chart-legend .history { border-color: #69a9d2; }.chart-legend .forecast { border-color: #f5b648; border-top-style: dashed; }.chart-legend .small-text { margin-left: auto; color: #ffd57c; font: 6px/1 ui-monospace,Consolas,monospace; }
+.forecast-band { fill:rgba(245,182,72,.14);stroke:rgba(245,182,72,.25);stroke-width:.7 }.chart-legend .band { height:4px;border:0;background:rgba(245,182,72,.25) }.chart-legend .small-text { max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+.prediction-empty { margin-top: 7px; padding: 8px; border: 1px dashed rgba(116,197,255,.18); border-radius: 6px; color: #688fa1; font-size: 9px; line-height: 1.5; }.reason-block { margin-top: 7px; padding: 7px; border-left: 2px solid #24d9ff; border-radius: 0 5px 5px 0; background: rgba(15,65,90,.36); }.reason-block .small-text,.reason-block text { display: block; }.reason-block .small-text { color: #719bac; font-size: 8px; }.reason-block text { margin-top: 3px; color: #d8edf6; font-size: 9px; line-height: 1.45; }.route-metrics { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 3px; }.route-metrics .b-text { padding: 2px 4px; border-radius: 3px; color: #9bdcf1; background: rgba(26,100,130,.5); font: 8px/1.2 ui-monospace,Consolas,monospace; }
 @media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }.prediction-chart { height: 90px; } }
 @media (max-width: 560px) { .metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+
+/* #ifdef MP-WEIXIN */
+.metric-grid { display: flex; flex-wrap: wrap; }
+.metric-grid view { flex: 1; min-width: 120px; }
+.horizon-grid { display: flex; flex-wrap: wrap; }
+.horizon-grid view { flex: 1; min-width: 80px; }
+/* #endif */
 </style>

@@ -841,7 +841,8 @@ page,
 .topbar,
 .workspace,
 .history-panel {
-  width: min(1520px, 100%);
+  width: 100%;
+  max-width: 1520px;
   margin: 0 auto;
 }
 
@@ -1069,8 +1070,10 @@ page,
 .rail-note__title { display: block; color: #506782; font-size: 12px; font-weight: 650; }
 .rail-note__copy { display: block; margin-top: 6px; color: #8291a5; font-size: 11px; line-height: 1.6; }
 
+/* #ifdef H5 */
 .endpoint-rail::-webkit-scrollbar { width: 6px; }
 .endpoint-rail::-webkit-scrollbar-thumb { border-radius: 6px; background: #c6d9ee; }
+/* #endif */
 
 .main-stage {
   min-width: 0;
@@ -1238,7 +1241,7 @@ page,
   .endpoint-item { display: inline-flex; width: calc(50% - 4px); vertical-align: top; margin: 3px 2px; }
   .rail-note { display: none; }
   .history-row { grid-template-columns: 80px minmax(170px, 1fr) 60px 55px; }
-  .history-row > :last-child { display: none; }
+  .history-row > view:last-child { display: none; }
 }
 
 @media screen and (max-width: 600px) {

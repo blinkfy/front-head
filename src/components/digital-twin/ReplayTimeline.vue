@@ -73,4 +73,20 @@ const sourceClass = value => String(value || '').toLowerCase().replace(/_/g, '-'
 .timeline-list :deep(.uni-scroll-view)::-webkit-scrollbar-track { border-radius: 99px; background: rgba(5,29,46,.75); }
 .timeline-list :deep(.uni-scroll-view)::-webkit-scrollbar-thumb { border-radius: 99px; background: rgba(65,158,215,.7); }
 .timeline-list :deep(.uni-scroll-view)::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
+/* #ifdef MP-WEIXIN */
+.timeline-panel { height: 100%; min-height: 0; overflow: hidden; }
+.panel-head { flex: 0 0 auto; padding: 10px 12px 9px; gap: 8px; }
+.panel-head > view { flex: 1; min-width: 0; }
+.panel-sub { white-space: normal; line-height: 1.35; }
+.counter { flex: 0 0 auto; }
+.timeline-list { flex: 1; height: 0; min-height: 0; overflow: hidden; }
+.event-row { display: flex; align-items: center; width: 100%; min-height: 58px; gap: 8px; }
+.event-sequence { flex: 0 0 28px; }
+.event-dot { flex: 0 0 7px; }
+.event-copy { flex: 1; min-width: 0; }
+.event-title,
+.event-desc { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; }
+.source-tag { flex: 0 0 auto; max-width: 76px; white-space: normal; word-break: break-word; text-align: center; }
+/* #endif */
 </style>
