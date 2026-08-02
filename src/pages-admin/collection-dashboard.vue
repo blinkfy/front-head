@@ -509,13 +509,13 @@ import {
 import { isDatabaseHealthEndpoint } from '@/api/request-utils.mjs'
 import { digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
 import { mapConfig } from '@/api/map-config'
-import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/config/center-workflow-video.js'
+import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/pages-admin/config/center-workflow-video.js'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
-import RiskAlgorithmWorkbench from '@/components/collection/RiskAlgorithmWorkbench.vue'
+import RiskAlgorithmWorkbench from '@/pages-admin/components/collection/RiskAlgorithmWorkbench.vue'
 import '@/styles/admin-light-theme.css'
 
 const databaseStatusRuntime = Object.freeze({

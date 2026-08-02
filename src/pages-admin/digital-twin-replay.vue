@@ -188,16 +188,16 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
-import EntityInspector from '@/components/digital-twin/EntityInspector.vue'
-import DecisionExplanationPanel from '@/components/digital-twin/DecisionExplanationPanel.vue'
-import CenterWorkflowOverlay from '@/components/digital-twin/CenterWorkflowOverlay.vue'
-import LiveSimulationControls from '@/components/digital-twin/LiveSimulationControls.vue'
-import ParkReplayCanvas from '@/components/digital-twin/ParkReplayCanvas.vue'
-import ReplayControls from '@/components/digital-twin/ReplayControls.vue'
-import ReplayTimeline from '@/components/digital-twin/ReplayTimeline.vue'
-import RobotTaskReplayOverlay from '@/components/digital-twin/RobotTaskReplayOverlay.vue'
-import ScenarioAnalyticsPanel from '@/components/digital-twin/ScenarioAnalyticsPanel.vue'
-import { fetchParkReplay } from '@/api/digital-twin-replay.js'
+import EntityInspector from '@/pages-admin/components/digital-twin/EntityInspector.vue'
+import DecisionExplanationPanel from '@/pages-admin/components/digital-twin/DecisionExplanationPanel.vue'
+import CenterWorkflowOverlay from '@/pages-admin/components/digital-twin/CenterWorkflowOverlay.vue'
+import LiveSimulationControls from '@/pages-admin/components/digital-twin/LiveSimulationControls.vue'
+import ParkReplayCanvas from '@/pages-admin/components/digital-twin/ParkReplayCanvas.vue'
+import ReplayControls from '@/pages-admin/components/digital-twin/ReplayControls.vue'
+import ReplayTimeline from '@/pages-admin/components/digital-twin/ReplayTimeline.vue'
+import RobotTaskReplayOverlay from '@/pages-admin/components/digital-twin/RobotTaskReplayOverlay.vue'
+import ScenarioAnalyticsPanel from '@/pages-admin/components/digital-twin/ScenarioAnalyticsPanel.vue'
+import { fetchParkReplay } from '@/pages-admin/api/digital-twin-replay.js'
 import {
   connectParkSimulationStream,
   exportParkSimulationSnapshot,
@@ -205,7 +205,7 @@ import {
   fetchParkSimulationState,
   restoreParkSimulationSnapshot,
   submitParkSimulationCommand
-} from '@/api/digital-twin-simulation.js'
+} from '@/pages-admin/api/digital-twin-simulation.js'
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav.js'
 import { redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme.js'
@@ -217,14 +217,14 @@ import {
   eventEntityIds,
   eventPresentation,
   normalizeReplayBundle
-} from '@/utils/park-replay.js'
-import { blockedReturnLeftRoadRoute, deriveScenarioVisualState, normalizeMapPoint, withVisualGarbageTaskRequest } from '@/utils/park-scenario-visuals.js'
+} from '@/pages-admin/utils/park-replay.js'
+import { blockedReturnLeftRoadRoute, deriveScenarioVisualState, normalizeMapPoint, withVisualGarbageTaskRequest } from '@/pages-admin/utils/park-scenario-visuals.js'
 import { displaySourceLabel } from '@/utils/source-display.js'
-import { displayTwinStatus } from '@/utils/digital-twin-status.js'
-import { CENTER_WORKFLOW_TIMINGS } from '@/config/center-workflow.js'
+import { displayTwinStatus } from '@/pages-admin/utils/digital-twin-status.js'
+import { CENTER_WORKFLOW_TIMINGS } from '@/pages-admin/config/center-workflow.js'
 import { DIGITAL_TWIN_VISUAL_SYSTEM } from '@/config/digital-twin-visual-system.js'
 import { robotTaskHandoffStartPositionPct, robotTaskScanStartPositionPct } from '@/config/robot-task-shot-config.js'
-import { PARK_ROAD_NETWORK, parkRoutePolyline, sampleParkRoadEdge } from '@/utils/park-road-network.js'
+import { PARK_ROAD_NETWORK, parkRoutePolyline, sampleParkRoadEdge } from '@/pages-admin/utils/park-road-network.js'
 
 const isDark = ref(applyStoredTheme() === 'dark')
 const algorithmStatus = ref(null)

@@ -719,7 +719,7 @@ function goFileManagement() {
 function goDbMonitor() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) {
-      uni.navigateTo({ url: '/pages-nonTheme/database' }).catch(() => {
+      uni.navigateTo({ url: '/pages-admin/database' }).catch(() => {
         uni.showToast({ title: '无权限访问', icon: 'none' })
       })
     }
@@ -729,7 +729,7 @@ function goDbMonitor() {
 function goAPITest() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) {
-      uni.navigateTo({ url: '/pages-nonTheme/test' })
+      uni.navigateTo({ url: '/pages-admin/test' })
     }
   })
 }
@@ -753,7 +753,7 @@ function go2048() {
 function goAdminAISettings() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) {
-      uni.navigateTo({ url: '/pages-nonTheme/admin-ai-settings' })
+      uni.navigateTo({ url: '/pages-admin/admin-ai-settings' })
     }
   })
 }

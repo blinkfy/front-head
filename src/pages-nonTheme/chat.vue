@@ -1,4 +1,4 @@
-﻿<template>
+<template>
     <view class="chat-container" :class="{ 'dark-theme': isDarkTheme }" @drop="onDrop" @dragover.prevent="onDragOver" @dragleave="onDragLeave"
         :style="{ 'background': isDragOver ? 'rgba(7, 193, 96, 0.1)' : 'transparent', 'transition': 'background 0.3s ease' }">
         <!-- 拖拽提示 -->
@@ -844,9 +844,7 @@ export default {
         this.stopMessagePolling()
         this.cleanupDragDropEvent()
         if (this.mentionAbortController) this.mentionAbortController.abort()
-        if (this.mentionSocket) {
-            try { this.mentionSocket.close() } catch (_) {}
-        }
+        this.closeMentionSocket()
         
         // 清理资源
         if (this.recorderManager) {
@@ -1819,10 +1817,7 @@ export default {
             this.isMentionStreaming = false
             this.aiStreamingMessageId = ''
             this.mentionAbortController = null
-            if (this.mentionSocket) {
-                try { this.mentionSocket.close() } catch (_) {}
-                this.mentionSocket = null
-            }
+            this.closeMentionSocket()
         },
 
         failMentionAi(messageId, message) {
@@ -1830,6 +1825,15 @@ export default {
             this.isMentionStreaming = false
             this.aiStreamingMessageId = ''
             this.mentionAbortController = null
+            this.closeMentionSocket()
+        },
+
+        closeMentionSocket() {
+            if (!this.mentionSocket) return
+            try {
+                if (typeof this.mentionSocket.close === 'function') this.mentionSocket.close()
+                else if (typeof uni.closeSocket === 'function') uni.closeSocket()
+            } catch (_) {}
             this.mentionSocket = null
         },
 
@@ -1901,33 +1905,51 @@ export default {
                 settled = true
                 this.failMentionAi(messageId, message)
             }
-            try {
-                const socket = uni.connectSocket({ url: socketUrl })
-                this.mentionSocket = socket
-                socket.onOpen(() => {
-                    socket.send({
-                        data: JSON.stringify({
-                            type: 'mention',
-                            conversationType: this.isGroupChat ? 'group' : 'direct',
-                            targetUserId: this.otherUserId,
-                            groupId: this.groupId,
-                            mentionText
-                        })
+            const sendMentionPayload = (sender) => {
+                try {
+                    const payload = JSON.stringify({
+                        type: 'mention',
+                        conversationType: this.isGroupChat ? 'group' : 'direct',
+                        targetUserId: this.otherUserId,
+                        groupId: this.groupId,
+                        mentionText
                     })
-                })
-                socket.onMessage((event) => {
-                    let data
-                    try { data = JSON.parse(event.data) } catch (_) { return }
-                    if (data.type === 'delta') this.updateStreamingAiMessage(messageId, data.full || data.chunk)
-                    else if (data.type === 'done') {
-                        settled = true
-                        this.finishMentionAi(messageId, data.content, data.messageId)
-                    } else if (data.type === 'error') fail(data.message || 'AI 回复失败，请稍后重试。')
-                })
-                socket.onError(() => fail('AI 连接失败，请稍后重试。'))
-                socket.onClose(() => {
-                    if (!settled && this.isMentionStreaming) fail('AI 连接已关闭，请重试。')
-                })
+                    if (sender && typeof sender.send === 'function') {
+                        sender.send({ data: payload })
+                    } else if (typeof uni.sendSocketMessage === 'function') {
+                        uni.sendSocketMessage({ data: payload })
+                    }
+                } catch (_) {}
+            }
+            const handleMessage = (event) => {
+                let data
+                try { data = JSON.parse(event.data) } catch (_) { return }
+                if (data.type === 'delta') this.updateStreamingAiMessage(messageId, data.full || data.chunk)
+                else if (data.type === 'done') {
+                    settled = true
+                    this.finishMentionAi(messageId, data.content, data.messageId)
+                } else if (data.type === 'error') fail(data.message || 'AI 回复失败，请稍后重试。')
+            }
+            const handleError = () => fail('AI 连接失败，请稍后重试。')
+            const handleClose = () => {
+                if (!settled && this.isMentionStreaming) fail('AI 连接已关闭，请重试。')
+            }
+            try {
+                const socket = uni.connectSocket({ url: socketUrl, complete: () => {} })
+                this.mentionSocket = socket
+                // 兼容性处理：部分平台 socket 实例没有 onOpen 等方法，回退到全局监听
+                if (socket && typeof socket.onOpen === 'function') {
+                    socket.onOpen(() => sendMentionPayload(socket))
+                    socket.onMessage(handleMessage)
+                    socket.onError(handleError)
+                    socket.onClose(handleClose)
+                } else {
+                    // 使用全局事件监听（兼容旧版/部分平台）
+                    uni.onSocketOpen(() => sendMentionPayload(socket))
+                    uni.onSocketMessage(handleMessage)
+                    uni.onSocketError(handleError)
+                    uni.onSocketClose(handleClose)
+                }
             } catch (error) {
                 fail(error?.message || 'AI 连接失败，请稍后重试。')
             }

@@ -16,7 +16,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { resolveMapWasteSprite } from '@/config/map-sprite-registry.js'
+import { resolveMapWasteSprite } from '@/pages-admin/config/map-sprite-registry.js'
 import DIGITAL_TWIN_VISUAL_SYSTEM from '@/config/digital-twin-visual-system.js'
 
 const props = defineProps({

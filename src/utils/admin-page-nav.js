@@ -12,7 +12,7 @@ export const ADMIN_SCREEN_REGISTRY = Object.freeze({
     access: 'admin',
     fallback: 'profile',
     prettyPath: '/collection-planning',
-    spaPath: '/pages-nonTheme/collection-planning'
+    spaPath: '/pages-admin/collection-planning'
   },
   collectionDashboard: {
     id: 'collectionDashboard',
@@ -23,7 +23,7 @@ export const ADMIN_SCREEN_REGISTRY = Object.freeze({
     access: 'admin',
     fallback: 'profile',
     prettyPath: '/collection-dashboard',
-    spaPath: '/pages-nonTheme/collection-dashboard'
+    spaPath: '/pages-admin/collection-dashboard'
   },
   communityDashboard: {
     id: 'communityDashboard',
@@ -34,7 +34,7 @@ export const ADMIN_SCREEN_REGISTRY = Object.freeze({
     access: 'admin',
     fallback: 'profile',
     prettyPath: '/community-dashboard',
-    spaPath: '/pages-nonTheme/community-dashboard'
+    spaPath: '/pages-admin/community-dashboard'
   },
   digitalTwinReplay: {
     id: 'digitalTwinReplay',
@@ -45,7 +45,7 @@ export const ADMIN_SCREEN_REGISTRY = Object.freeze({
     access: 'admin',
     fallback: 'collectionDashboard',
     prettyPath: '/digital-twin-replay',
-    spaPath: '/pages-nonTheme/digital-twin-replay'
+    spaPath: '/pages-admin/digital-twin-replay'
   }
 })
 

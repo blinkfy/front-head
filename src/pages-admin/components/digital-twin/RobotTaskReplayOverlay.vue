@@ -96,10 +96,10 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import SortingWorkflowPlayer from '@/components/SortingWorkflowPlayer.vue'
-import SmartBinWorkflowPlayer from '@/components/digital-twin/SmartBinWorkflowPlayer.vue'
+import SmartBinWorkflowPlayer from '@/pages-admin/components/digital-twin/SmartBinWorkflowPlayer.vue'
 import { resolveRobotTaskCamera } from '@/config/robot-task-shot-config.js'
 import { robotTaskSceneDetailVisuals } from '@/config/robot-task-scene-registry.js'
-import { SMART_BIN_PHASES } from '@/config/smart-bin-workflow.js'
+import { SMART_BIN_PHASES } from '@/pages-admin/config/smart-bin-workflow.js'
 
 const LOGICAL_STAGES = Object.freeze([
   { key: 'scan', label: '扫描识别' },

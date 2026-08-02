@@ -193,23 +193,23 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ParkScenarioOverlay from './ParkScenarioOverlay.vue'
 import MapEntitySprite from './MapEntitySprite.vue'
 import MapWasteSprite from './MapWasteSprite.vue'
-import { mapWasteDisplayName } from '@/config/map-sprite-registry.js'
+import { mapWasteDisplayName } from '@/pages-admin/config/map-sprite-registry.js'
 import StableMapLabel from './StableMapLabel.vue'
 import VisitorBehaviorSprite from './VisitorBehaviorSprite.vue'
-import { centerPhaseFromEvent, eventEntityIds, eventPresentation, primaryEventEntityIds } from '@/utils/park-replay.js'
+import { centerPhaseFromEvent, eventEntityIds, eventPresentation, primaryEventEntityIds } from '@/pages-admin/utils/park-replay.js'
 import { layoutStableMapLabels } from '@/utils/stable-map-label-layout.js'
 import { displaySourceLabel } from '@/utils/source-display.js'
 import { webpPngFallbackUrl } from '@/utils/digital-twin-assets.js'
-import PARK_SCENE_LAYERS, { PARK_SCENE_ASSETS, readParkSceneDevFlags } from '@/config/park-scene-layers.js'
-import PARK_SCENE_OCCLUSIONS, { parkOcclusionStyle } from '@/config/park-scene-occlusion.js'
-import PARK_SCENE_ALIGNMENT from '@/config/park-scene-alignment.json'
+import PARK_SCENE_LAYERS, { PARK_SCENE_ASSETS, readParkSceneDevFlags } from '@/pages-admin/config/park-scene-layers.js'
+import PARK_SCENE_OCCLUSIONS, { parkOcclusionStyle } from '@/pages-admin/config/park-scene-occlusion.js'
+import PARK_SCENE_ALIGNMENT from '@/pages-admin/config/park-scene-alignment.json'
 import { DIGITAL_TWIN_VISUAL_SYSTEM, mapDepthScale, mapMotionProgress } from '@/config/digital-twin-visual-system.js'
 import { fitRobotTaskSceneSize } from '@/config/robot-task-scene-registry.js'
 import { robotTaskCameraTransformStyle } from '@/config/robot-task-shot-config.js'
 import {
   PARK_ROAD_NETWORK, PARK_ROUTE_GRAPH, parkEdgesForRoute, parkRoadEdgePath,
   parkPolylinePoint, parkRoutePoint, parkRoutePolyline, parkRouteSvgPoints, sampleParkRoadEdge
-} from '@/utils/park-road-network.js'
+} from '@/pages-admin/utils/park-road-network.js'
 
 const props = defineProps({
   currentEvent: { type: Object, default: () => ({}) },

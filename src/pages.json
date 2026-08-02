@@ -104,26 +104,6 @@
 					}
 				},
 				{
-					"path": "test",
-					"style": {
-						"navigationStyle": "custom",
-						"navigationBarTitleText": "API测试"
-					}
-				},
-				{
-					"path": "test-map",
-					"style": {
-						"navigationBarTitleText": "地图功能测试"
-					}
-				},
-				{
-					"path": "database",
-					"style": {
-						"navigationStyle": "custom",
-						"navigationBarTextStyle": "white"
-					}
-				},
-				{
 					"path": "webview",
 					"style": {
 						"navigationStyle": "custom"
@@ -154,37 +134,7 @@
 					}
 				},
 				{
-					"path": "admin-ai-settings",
-					"style": {
-						"navigationStyle": "custom"
-					}
-				},
-				{
 					"path": "achievements",
-					"style": {
-						"navigationStyle": "custom"
-					}
-				},
-				{
-					"path": "collection-dashboard",
-					"style": {
-						"navigationStyle": "custom"
-					}
-				},
-				{
-					"path": "collection-planning",
-					"style": {
-						"navigationStyle": "custom"
-					}
-				},
-				{
-					"path": "digital-twin-replay",
-					"style": {
-						"navigationStyle": "custom"
-					}
-				},
-				{
-					"path": "community-dashboard",
 					"style": {
 						"navigationStyle": "custom"
 					}
@@ -238,16 +188,54 @@
 					}
 				},
 				{
-					"path": "robot-control",
+					"path": "voice-scan",
 					"style": {
 						"navigationStyle": "custom"
 					}
 				},
 				{
-					"path": "voice-scan",
+					"path": "robot-control",
 					"style": {
 						"navigationStyle": "custom"
 					}
+				}
+			]
+		},
+		{
+			"root": "pages-admin",
+			"name": "pages-admin",
+			"pages": [
+				{
+					"path": "admin-ai-settings",
+					"style": { "navigationStyle": "custom" }
+				},
+				{
+					"path": "collection-dashboard",
+					"style": { "navigationStyle": "custom" }
+				},
+				{
+					"path": "collection-planning",
+					"style": { "navigationStyle": "custom" }
+				},
+				{
+					"path": "community-dashboard",
+					"style": { "navigationStyle": "custom" }
+				},
+				{
+					"path": "database",
+					"style": { "navigationStyle": "custom", "navigationBarTextStyle": "white" }
+				},
+				{
+					"path": "digital-twin-replay",
+					"style": { "navigationStyle": "custom" }
+				},
+				{
+					"path": "test",
+					"style": { "navigationStyle": "custom", "navigationBarTitleText": "API测试" }
+				},
+				{
+					"path": "test-map",
+					"style": { "navigationBarTitleText": "地图功能测试" }
 				}
 			]
 		},

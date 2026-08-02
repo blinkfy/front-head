@@ -49,7 +49,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { scenarioMetricText, zoneLabel } from '@/utils/park-scenario-visuals.js'
+import { scenarioMetricText, zoneLabel } from '@/pages-admin/utils/park-scenario-visuals.js'
 import { displaySourceLabel } from '@/utils/source-display.js'
 
 const props = defineProps({

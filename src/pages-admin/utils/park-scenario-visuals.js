@@ -1,4 +1,4 @@
-import { parkRoadNode, parkRoutePolyline } from '@/utils/park-road-network.js'
+import { parkRoadNode, parkRoutePolyline } from '@/pages-admin/utils/park-road-network.js'
 
 const ZONE_POINTS = Object.freeze({
   zone_entrance_01: { x: 48.1, y: 87.5 },

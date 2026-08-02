@@ -1,4 +1,4 @@
-import { baseUrl } from './settings.js'
+import { baseUrl } from '@/api/settings.js'
 
 function readAuthorizationToken() {
   try {

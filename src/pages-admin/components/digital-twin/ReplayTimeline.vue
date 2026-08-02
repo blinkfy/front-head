@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { eventPresentation } from '@/utils/park-replay.js'
+import { eventPresentation } from '@/pages-admin/utils/park-replay.js'
 import { displaySourceLabel } from '@/utils/source-display.js'
 
 defineProps({

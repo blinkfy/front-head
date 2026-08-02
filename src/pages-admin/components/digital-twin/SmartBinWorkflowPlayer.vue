@@ -16,7 +16,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
-import { SMART_BIN_PHASES, SMART_BIN_TOTAL_DURATION } from '@/config/smart-bin-workflow.js'
+import { SMART_BIN_PHASES, SMART_BIN_TOTAL_DURATION } from '@/pages-admin/config/smart-bin-workflow.js'
 import {
   SMART_BIN_INTERNAL_GEOMETRY,
   SMART_BIN_CUTAWAY_RASTER_V3,
@@ -26,8 +26,8 @@ import {
   SMART_BIN_INTERNAL_SCENE,
   smartBinCutawayRasterV3Sources,
   smartBinInternalAssetSources
-} from '@/config/smart-bin-internal-layer-registry.js'
-import { resolveSmartBinInternalShot } from '@/config/smart-bin-internal-shot-config.js'
+} from '@/pages-admin/config/smart-bin-internal-layer-registry.js'
+import { resolveSmartBinInternalShot } from '@/pages-admin/config/smart-bin-internal-shot-config.js'
 
 const PHASES = SMART_BIN_PHASES
 const TOTAL_DURATION = SMART_BIN_TOTAL_DURATION

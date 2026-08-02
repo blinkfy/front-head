@@ -1,4 +1,4 @@
-import { SMART_BIN_INTERNAL_SCENE } from '@/config/smart-bin-internal-layer-registry.js'
+import { SMART_BIN_INTERNAL_SCENE } from '@/pages-admin/config/smart-bin-internal-layer-registry.js'
 
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, Number(value) || 0))
 const lerp = (start, end, amount) => start + (end - start) * amount

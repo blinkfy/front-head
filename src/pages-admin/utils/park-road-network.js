@@ -1,5 +1,5 @@
-import PARK_ROAD_NETWORK from '@/config/park-road-network.json'
-import PARK_ROUTE_GRAPH from '@/config/park-route-graph.json'
+import PARK_ROAD_NETWORK from '@/pages-admin/config/park-road-network.json'
+import PARK_ROUTE_GRAPH from '@/pages-admin/config/park-route-graph.json'
 
 const nodeById = new Map(PARK_ROAD_NETWORK.nodes.map(node => [node.id, node]))
 const edgeById = new Map(PARK_ROAD_NETWORK.edges.map(edge => [edge.id, edge]))

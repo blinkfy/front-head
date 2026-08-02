@@ -82,7 +82,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { displayTwinStatus } from '@/utils/digital-twin-status.js'
+import { displayTwinStatus } from '@/pages-admin/utils/digital-twin-status.js'
 
 const props = defineProps({
   connected: { type: Boolean, default: false },

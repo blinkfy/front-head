@@ -1,4 +1,4 @@
-import { resolveSmartBinVisual } from './smart-bin-visual-registry.js'
+import { resolveSmartBinVisual } from '@/config/smart-bin-visual-registry.js'
 import { digitalTwinAssetUrl, digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
 
 const smartBinMapVisual = resolveSmartBinVisual('map')

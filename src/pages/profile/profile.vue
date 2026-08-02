@@ -568,13 +568,13 @@ function goFileManagement() {
 
 function goDbMonitor() {
   verifyAdminPermission().then(hasPermission => {
-    if (hasPermission) uni.navigateTo({ url: '/pages-nonTheme/database' })
+    if (hasPermission) uni.navigateTo({ url: '/pages-admin/database' })
   })
 }
 
 function goAPITest() {
   verifyAdminPermission().then(hasPermission => {
-    if (hasPermission) uni.navigateTo({ url: '/pages-nonTheme/test' })
+    if (hasPermission) uni.navigateTo({ url: '/pages-admin/test' })
   })
 }
 
@@ -596,7 +596,7 @@ function go2048() {
 function goAdminAISettings() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) {
-      uni.navigateTo({ url: '/pages-nonTheme/admin-ai-settings' })
+      uni.navigateTo({ url: '/pages-admin/admin-ai-settings' })
     }
   })
 }

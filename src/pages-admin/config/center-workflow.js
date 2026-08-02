@@ -1,4 +1,4 @@
-import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/config/center-workflow-video.js'
+import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/pages-admin/config/center-workflow-video.js'
 import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 
 const freezeList = list => Object.freeze(list.map(item => Object.freeze(item)))

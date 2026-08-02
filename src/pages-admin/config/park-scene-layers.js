@@ -1,4 +1,4 @@
-import DIGITAL_TWIN_VISUAL_SYSTEM from './digital-twin-visual-system.js'
+import DIGITAL_TWIN_VISUAL_SYSTEM from '@/config/digital-twin-visual-system.js'
 import { digitalTwinAssetUrl, digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
 
 const freeze = value => {

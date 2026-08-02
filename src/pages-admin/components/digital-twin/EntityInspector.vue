@@ -72,9 +72,9 @@
 
 <script setup>
 import { computed } from 'vue'
-import { entityTypeLabel, eventPresentation, explicitEntityStatus } from '@/utils/park-replay.js'
+import { entityTypeLabel, eventPresentation, explicitEntityStatus } from '@/pages-admin/utils/park-replay.js'
 import { displaySourceLabel } from '@/utils/source-display.js'
-import { displayTwinStatus } from '@/utils/digital-twin-status.js'
+import { displayTwinStatus } from '@/pages-admin/utils/digital-twin-status.js'
 
 const props = defineProps({
   selectedId: { type: String, default: '' },

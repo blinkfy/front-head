@@ -164,9 +164,9 @@ import {
   centerWorkflowLocalProgress,
   centerWorkflowStage,
   resolveCenterWorkflowPhase
-} from '@/config/center-workflow.js'
-import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/config/center-workflow-video.js'
-import { resolveCenterWorkflowSprite } from '@/config/map-sprite-registry.js'
+} from '@/pages-admin/config/center-workflow.js'
+import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/pages-admin/config/center-workflow-video.js'
+import { resolveCenterWorkflowSprite } from '@/pages-admin/config/map-sprite-registry.js'
 
 const props = defineProps({
   currentEvent: { type: Object, default: () => ({}) },
