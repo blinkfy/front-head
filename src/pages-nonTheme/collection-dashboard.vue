@@ -511,7 +511,7 @@ import { digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
 import { mapConfig } from '@/api/map-config'
 import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/config/center-workflow-video.js'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
-import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
+import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
@@ -2927,7 +2927,7 @@ function openNav(url) {
   // #endif
 }
 function goBack() {
-  goBackFromAdminPage('collectionDashboard')
+  jumpToAdminPage('profile', { mode: 'redirect' })
 }
 function onMarkerTap(e) {
   // 小程序 <map> 标记点击：e.detail.markerId 即 mapMarkers 中的 id（即 bins 索引）

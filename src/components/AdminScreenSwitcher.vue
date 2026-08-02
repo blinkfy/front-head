@@ -16,10 +16,8 @@
       aria-haspopup="menu"
       :aria-expanded="String(menuOpen)"
       :disabled="isNavigating"
-      @click.stop="toggleMenu"
-      @pointerdown.stop
-      @mousedown.stop
-      @touchstart.stop
+      @click.stop="onTriggerClick"
+      @touchend.stop.prevent="onTriggerTouchEnd"
     />
 
     <dialog
@@ -27,7 +25,7 @@
       :class="['admin-screen-switcher__dialog', `admin-screen-switcher__dialog--${tone}`]"
       @cancel.prevent="closeMenu"
       @close="menuOpen = false"
-      @click.self="closeMenu"
+      @click.self="onDialogClick"
     >
       <view class="admin-screen-switcher__menu" role="menu" @click.stop>
         <button
@@ -100,6 +98,8 @@ const menuDialog = ref(null)
 const menuOpen = ref(false)
 const isNavigating = ref(false)
 const accessRevision = ref(0)
+let lastTouchEnd = 0
+let menuOpenedAt = 0
 
 const accessibleScreens = computed(() => {
   accessRevision.value
@@ -158,17 +158,53 @@ async function toggleMenu() {
   await nextTick()
 
   const dialog = getElement(menuDialog.value)
-  if (!dialog || typeof dialog.showModal !== 'function') return
+  if (!dialog) return
 
   positionDialog()
-  dialog.showModal()
+  try {
+    if (typeof dialog.showModal === 'function') {
+      dialog.showModal()
+    } else {
+      dialog.setAttribute('open', '')
+    }
+  } catch (error) {
+    console.warn('[AdminScreenSwitcher] showModal failed, fallback to open attribute', error)
+    dialog.setAttribute('open', '')
+  }
+  menuOpenedAt = Date.now()
   menuOpen.value = true
+}
+
+function onTriggerTouchEnd() {
+  if (isNavigating.value) return
+  lastTouchEnd = Date.now()
+  toggleMenu()
+}
+
+function onTriggerClick() {
+  // 移动端 touchend 已触发 toggleMenu，忽略紧随其后的合成 click 避免双重触发
+  if (Date.now() - lastTouchEnd < 500) return
+  toggleMenu()
 }
 
 function closeMenu() {
   const dialog = getElement(menuDialog.value)
-  if (dialog?.open) dialog.close()
+  if (dialog) {
+    try {
+      if (typeof dialog.close === 'function') dialog.close()
+      else dialog.removeAttribute('open')
+    } catch (_) {
+      dialog.removeAttribute('open')
+    }
+  }
   menuOpen.value = false
+}
+
+function onDialogClick() {
+  // 移动端 touchend 打开弹窗后，合成 click 可能命中已置顶的 dialog 而非按钮，
+  // 在打开后 350ms 内忽略此类 click 防止弹窗秒关
+  if (menuOpenedAt && Date.now() - menuOpenedAt < 350) return
+  closeMenu()
 }
 
 function onPickerChange(event) {

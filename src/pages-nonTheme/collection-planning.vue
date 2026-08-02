@@ -190,7 +190,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { baseUrl } from '@/api/settings'
 import { mapConfig } from '@/api/map-config'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
-import { ensureAdminScreenAccess, goBackFromAdminPage, jumpToAdminPage } from '@/utils/admin-page-nav'
+import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
 import '@/styles/admin-light-theme.css'
@@ -526,7 +526,7 @@ function openSortingCenter(center) {
 }
 
 function goBack() {
-  goBackFromAdminPage('collectionPlanning')
+  jumpToAdminPage('profile', { mode: 'redirect' })
 }
 
 // ─── 小程序地图数据 ────────────────────────────────────

@@ -205,7 +205,7 @@ import {
   restoreParkSimulationSnapshot,
   submitParkSimulationCommand
 } from '@/api/digital-twin-simulation.js'
-import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav.js'
+import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav.js'
 import { redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme.js'
 import '@/styles/admin-light-theme.css'
@@ -1139,7 +1139,7 @@ function onScenarioChange(event) {
   const option = scenarioOptions[Number(event?.detail?.value)] || scenarioOptions[0]
   loadReplay('sim', option.value)
 }
-function goBack() { goBackFromAdminPage('digitalTwinReplay', { fallback: 'collectionDashboard' }) }
+function goBack() { jumpToAdminPage('profile', { mode: 'redirect' }) }
 
 function redirectForAccessDenied(error) {
   const payload = error?.payload || error?.data || null

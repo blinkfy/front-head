@@ -232,7 +232,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { baseUrl } from '@/api/settings'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
-import { ensureAdminScreenAccess, goBackFromAdminPage } from '@/utils/admin-page-nav'
+import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
 import '@/styles/admin-light-theme.css'
@@ -1022,7 +1022,7 @@ function renderCommunityList(breakdown) {
 }
 
 function goBack() {
-  goBackFromAdminPage('communityDashboard')
+  jumpToAdminPage('profile', { mode: 'redirect' })
 }
 
 // ─── 数据刷新 ──────────────────────────────────────────
