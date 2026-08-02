@@ -477,7 +477,22 @@ async function ensureRiskMap(attempt = 0) {
   if (riskMap || !nodes.value.length || typeof window === 'undefined') return
   await nextTick()
   const container = document.getElementById('risk-tencent-map')
-  if (!container || container.clientWidth < 20 || container.clientHeight < 20 || !window.TMap) {
+  if (!container) {
+    mapStatus.value = attempt >= 40 ? 'error' : 'loading'
+    if (attempt < 40) {
+      clearTimeout(riskMapRetryTimer)
+      riskMapRetryTimer = setTimeout(() => ensureRiskMap(attempt + 1), 250)
+    }
+    return
+  }
+  // 容器高度为 0 时常见原因是父 flex 链未撑开，给 shell 一个保底高度
+  const shell = container.closest('.risk-map-shell')
+  if (container.clientHeight < 20 && shell) {
+    const rect = shell.getBoundingClientRect()
+    if (rect.height < 20) shell.style.height = '240px'
+  }
+  if (container.clientWidth < 20 || container.clientHeight < 20 || !window.TMap) {
+    if (attempt === 0 && !window.TMap) console.warn('[RiskWorkbench] TMap not available')
     mapStatus.value = attempt >= 40 ? 'error' : 'loading'
     if (attempt < 40) {
       clearTimeout(riskMapRetryTimer)
@@ -690,7 +705,7 @@ function handleSlider(event) {
 .horizon-tabs button.active { color:#fff;border-color:rgba(46,212,155,.65);background:rgba(17,139,103,.78);box-shadow:0 0 13px rgba(17,139,103,.22) }
 .horizon-caption { margin-left:auto;color:#76a4b5;font-size:9px }
 .horizon-slider { margin:3px 1px -2px }
-.risk-map-shell { position:relative;isolation:isolate;min-height:0;flex:1;margin:5px 0 3px;border:1px solid var(--map-frame-line,rgba(122,202,255,.32));border-radius:var(--map-frame-radius,12px);overflow:hidden;background:transparent }
+.risk-map-shell { position:relative;isolation:isolate;min-height:180px;flex:1;margin:5px 0 3px;border:1px solid var(--map-frame-line,rgba(122,202,255,.32));border-radius:var(--map-frame-radius,12px);overflow:hidden;background:transparent }
 .risk-tencent-map { position:absolute;inset:0;filter:var(--map-canvas-filter,none) }
 .risk-map-status { position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;gap:9px;color:#b7d8df;background:rgba(7,34,46,.76);font-size:11px }
 .risk-map-status i { width:9px;height:9px;border:2px solid rgba(46,212,155,.25);border-top-color:#2ed49b;border-radius:50%;animation:orbit .9s linear infinite }
@@ -747,36 +762,7 @@ function handleSlider(event) {
 .threshold-facts text { color:#739ead;font-size:8px }.threshold-facts b { margin-top:3px;color:#bfe3e9;font-size:10px }
 .model-metrics { display:flex;flex-wrap:wrap;gap:4px;margin-top:7px }.model-metrics span { padding:3px 5px;border-radius:5px;color:#80afbc;background:rgba(13,58,72,.52);font-size:8px }
 
-:global(.screen.light-theme) .risk-algorithm-workbench {
-  --alg-surface:#f7faf8;
-  --alg-surface-soft:#eef7f2;
-  --alg-border:#c5dbcf;
-  --alg-text:#173c31;
-  --alg-muted:#66877c;
-  --alg-primary:#118b67;
-  --alg-green:#118b67;
-}
-:global(.screen.light-theme) .algorithm-card,:global(.screen.light-theme) .summary-card { box-shadow:0 6px 18px rgba(41,82,67,.055) }
-:global(.screen.light-theme) .summary-card > small,:global(.screen.light-theme) .card-head > view:first-child text { color:#6b8d81 }
-:global(.screen.light-theme) .summary-card.risk > b { color:#c76e25 }
-:global(.screen.light-theme) .model-chip { border-color:#bad8ca;background:#e4f2eb }
-:global(.screen.light-theme) .model-chip b { color:#195341 }
-:global(.screen.light-theme) .horizon-tabs button { color:#637f75;border-color:#cbded4;background:#f8fbf9 }
-:global(.screen.light-theme) .horizon-tabs button.active { color:#fff;border-color:#118b67;background:#118b67 }
-:global(.screen.light-theme) .graph-grid line { stroke:rgba(35,95,75,.14) }
-:global(.screen.light-theme) .risk-map-corner { color:#255849;border-color:#bdd9cb;background:rgba(245,251,248,.9) }
-:global(.screen.light-theme) .graph-node text { fill:#436c5e;stroke:rgba(255,255,255,.9) }
-:global(.screen.light-theme) .graph-edges line { stroke:rgba(17,139,103,var(--edge-alpha)) }
-:global(.screen.light-theme) .risk-legend,:global(.screen.light-theme) .horizon-caption { color:#68877d }
-:global(.screen.light-theme) .curve-grid line { stroke:rgba(39,91,73,.12) }
-:global(.screen.light-theme) .curve-grid text,:global(.screen.light-theme) .curve-x-labels text { fill:#718c83 }
-:global(.screen.light-theme) .secondary-metrics span { color:#416c5e;background:#e5f1eb }
-:global(.screen.light-theme) .radar-grid,:global(.screen.light-theme) .radar-axis { stroke:rgba(31,95,73,.18) }
-:global(.screen.light-theme) .driver-radar text { fill:#617e74 }
-:global(.screen.light-theme) .threshold-status { background:#e9f4ee }
-:global(.screen.light-theme) .threshold-status text { color:#58766c }
-:global(.screen.light-theme) .threshold-facts view,:global(.screen.light-theme) .model-metrics span { background:#e8f1ec;color:#527266 }
-:global(.screen.light-theme) .threshold-facts b { color:#245443 }
+/* 亮色主题覆盖已迁移到文件末尾的非 scoped <style> 块，避免 scoped :global() 穿透失败 */
 @media (max-width:1100px) {
   .algorithm-grid { grid-template-columns:1fr }
   .insight-column { grid-template-columns:1fr 1fr;grid-template-rows:1fr }
@@ -791,4 +777,60 @@ function handleSlider(event) {
 @media (max-width:768px) {
   .risk-map-shell { min-height:220px }
 }
+</style>
+
+<!-- 非 scoped 全局样式：确保亮色主题在 H5 下可靠覆盖 RiskAlgorithmWorkbench 内部元素 -->
+<style>
+.screen.light-theme .risk-algorithm-workbench {
+  --alg-surface:#f7faf8;
+  --alg-surface-soft:#eef7f2;
+  --alg-border:#c5dbcf;
+  --alg-text:#173c31;
+  --alg-muted:#66877c;
+  --alg-primary:#118b67;
+  --alg-green:#118b67;
+}
+.screen.light-theme .algorithm-card,
+.screen.light-theme .summary-card { box-shadow:0 6px 18px rgba(41,82,67,.055);background:linear-gradient(150deg,#f4faf7,#eef7f2);border-color:#c5dbcf }
+.screen.light-theme .graph-card { background:#f7faf8;border-color:#c5dbcf;backdrop-filter:none }
+.screen.light-theme .algorithm-empty { background:#f3f8f5 !important;border-color:#c5dbcf;color:#66877c }
+.screen.light-theme .summary-card > small,
+.screen.light-theme .card-head > view:first-child text { color:#6b8d81 }
+.screen.light-theme .summary-card > b { color:#173c31 }
+.screen.light-theme .summary-card.risk > b { color:#c76e25 }
+.screen.light-theme .model-chip { border-color:#bad8ca;background:#e4f2eb }
+.screen.light-theme .model-chip b { color:#195341 }
+.screen.light-theme .horizon-tabs button { color:#637f75;border-color:#cbded4;background:#f8fbf9 }
+.screen.light-theme .horizon-tabs button.active { color:#fff;border-color:#118b67;background:#118b67 }
+.screen.light-theme .graph-grid line { stroke:rgba(35,95,75,.14) }
+.screen.light-theme .risk-map-status { color:#537466;background:rgba(245,251,248,.9) }
+.screen.light-theme .risk-map-corner { color:#255849;border-color:#bdd9cb;background:rgba(245,251,248,.9) }
+.screen.light-theme .graph-node text { fill:#436c5e;stroke:rgba(255,255,255,.9) }
+.screen.light-theme .graph-edges line { stroke:rgba(17,139,103,var(--edge-alpha)) }
+.screen.light-theme .risk-legend,
+.screen.light-theme .horizon-caption { color:#68877d }
+.screen.light-theme .curve-grid line { stroke:rgba(39,91,73,.12) }
+.screen.light-theme .curve-grid text,
+.screen.light-theme .curve-x-labels text { fill:#718c83 }
+.screen.light-theme .secondary-metrics span { color:#416c5e;background:#e5f1eb }
+.screen.light-theme .radar-grid,
+.screen.light-theme .radar-axis { stroke:rgba(31,95,73,.18) }
+.screen.light-theme .driver-radar text { fill:#617e74 }
+.screen.light-theme .threshold-status { background:#e9f4ee }
+.screen.light-theme .threshold-status text { color:#58766c }
+.screen.light-theme .threshold-facts view,
+.screen.light-theme .model-metrics span { background:#e8f1ec;color:#527266 }
+.screen.light-theme .threshold-facts b { color:#245443 }
+.screen.light-theme .threshold-track { background:#dbe8e1 }
+.screen.light-theme .threshold-zone.low { background:#118b67 }
+.screen.light-theme .threshold-zone.medium { background:#c6ad35 }
+.screen.light-theme .threshold-zone.high { background:#e77f32 }
+.screen.light-theme .threshold-zone.emergency { background:#d94550 }
+.screen.light-theme .threshold-mark { background:rgba(35,80,62,.25) }
+.screen.light-theme .threshold-mark em { color:#58766c }
+.screen.light-theme .threshold-pointer { background:#f7faf8;border-color:#173c31;box-shadow:0 0 9px rgba(23,60,49,.25) }
+.screen.light-theme .threshold-pointer em { color:#173c31 }
+.screen.light-theme .driver-ranking > view { color:#58766c }
+.screen.light-theme .driver-ranking b { color:#245443 }
+.screen.light-theme .risk-legend small { color:#718c83 }
 </style>

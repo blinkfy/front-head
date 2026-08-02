@@ -3523,6 +3523,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 
 /* ===== 点位状态表 ===== */
 .screen .slot-status-panel { flex: 1.05; }
+.screen .alert-panel { flex: 12.6; }
 .screen .slot-row {
   padding: 8px 9px; margin-bottom: 7px; border-radius: 10px;
   border: 1px solid rgba(124,198,244,.2); background: rgba(8,30,47,.72);
@@ -4032,20 +4033,23 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen.light-theme .list,
 .screen.light-theme .line,
 .screen.light-theme .monitor-timeline,
-.screen.light-theme .bars {
+.screen.light-theme .bars,
+.screen.light-theme .task-flow {
   scrollbar-width: thin;
   scrollbar-color: #55a9cf #e6eff4;
 }
 .screen.light-theme::-webkit-scrollbar,
 .screen.light-theme .list::-webkit-scrollbar,
 .screen.light-theme .monitor-timeline::-webkit-scrollbar,
-.screen.light-theme .bars::-webkit-scrollbar { width: 6px; height: 6px; }
+.screen.light-theme .bars::-webkit-scrollbar,
+.screen.light-theme .task-flow::-webkit-scrollbar { width: 6px; height: 6px; }
 .screen.light-theme .line::-webkit-scrollbar { height: 6px; }
 .screen.light-theme::-webkit-scrollbar-track,
 .screen.light-theme .list::-webkit-scrollbar-track,
 .screen.light-theme .line::-webkit-scrollbar-track,
 .screen.light-theme .monitor-timeline::-webkit-scrollbar-track,
-.screen.light-theme .bars::-webkit-scrollbar-track {
+.screen.light-theme .bars::-webkit-scrollbar-track,
+.screen.light-theme .task-flow::-webkit-scrollbar-track {
   border-radius: 999px;
   background: #e6eff4;
 }
@@ -4053,7 +4057,8 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen.light-theme .list::-webkit-scrollbar-thumb,
 .screen.light-theme .line::-webkit-scrollbar-thumb,
 .screen.light-theme .monitor-timeline::-webkit-scrollbar-thumb,
-.screen.light-theme .bars::-webkit-scrollbar-thumb {
+.screen.light-theme .bars::-webkit-scrollbar-thumb,
+.screen.light-theme .task-flow::-webkit-scrollbar-thumb {
   border: 1px solid #d8e7ef;
   border-radius: 999px;
   background: linear-gradient(180deg, #70bdd8, #3d95c5);
@@ -4062,7 +4067,8 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen.light-theme .list::-webkit-scrollbar-button,
 .screen.light-theme .line::-webkit-scrollbar-button,
 .screen.light-theme .monitor-timeline::-webkit-scrollbar-button,
-.screen.light-theme .bars::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.screen.light-theme .bars::-webkit-scrollbar-button,
+.screen.light-theme .task-flow::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 .screen.light-theme .bar-shell { border-color: #c8dbe6; background: linear-gradient(180deg, #f8fbfd, #edf4f8); }
 .screen.light-theme .brief { border-color: #bdd5e1; background: rgba(255,255,255,.92); box-shadow: 0 6px 16px rgba(35,78,105,.1); }
 .screen.light-theme .reset-view-btn { color: #315f78; background: rgba(255,255,255,.94); }
