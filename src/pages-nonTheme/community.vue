@@ -566,7 +566,7 @@ export default {
     },
     async loadMyCommunityCover() {
       if (!this.myCommunity || !this.myCommunity.id || !this.myCommunity.hasCoverImage) return;
-      const cachedCover = getCachedCommunityImage('cover', this.myCommunity.id);
+      const cachedCover = await getCachedCommunityImage('cover', this.myCommunity.id);
       if (cachedCover) {
         this.myCommunity = {
           ...this.myCommunity,
@@ -590,7 +590,7 @@ export default {
     async loadVisiblePostImages(posts) {
       const targets = (posts || []).filter(post => post.imageCount > 0 && (!post.images || post.images.length === 0));
       targets.forEach(async (post) => {
-        const cachedImages = getCachedCommunityImage('post', post.id);
+        const cachedImages = await getCachedCommunityImage('post', post.id);
         if (cachedImages && cachedImages.length) {
           const index = this.posts.findIndex(item => item.id === post.id);
           if (index >= 0) {

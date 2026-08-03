@@ -6,12 +6,30 @@ import {
 import { appendQueryParams, isDatabaseHealthEndpoint } from './request-utils.mjs'
 
 let loginRedirectTimer = null
+let loginPromptActive = false
 const databaseStatusRuntime = Object.freeze({
   getStorageSync: key => uni.getStorageSync(key),
   setStorageSync: (key, value) => uni.setStorageSync(key, value),
   removeStorageSync: key => uni.removeStorageSync(key),
   showToast: options => uni.showToast(options)
 })
+
+function isExplicitlyLoggedOut() {
+  try {
+    return !uni.getStorageSync('token') && uni.getStorageSync('autoLogin') === false
+  } catch (e) {
+    return false
+  }
+}
+
+function handleUnauthorized() {
+  // 用户已主动退出时，旧页面中尚未完成的请求不应再提示或重新跳转登录页。
+  if (isExplicitlyLoggedOut() || loginPromptActive) return
+
+  loginPromptActive = true
+  uni.showToast({ title: '请重新登录', icon: 'none' })
+  redirectToLogin()
+}
 
 function redirectToLogin() {
   try {
@@ -53,9 +71,15 @@ function httpErrorMessage(res) {
 }
 
 function getToken() {
+  // 退出后不要继续从 H5 URL 回退取得旧 token。
+  if (isExplicitlyLoggedOut()) return ''
+
   try {
     const cachedToken = uni.getStorageSync('token') || ''
-    if (cachedToken) return cachedToken
+    if (cachedToken) {
+      loginPromptActive = false
+      return cachedToken
+    }
   } catch (e) {
     // ignore storage errors and fall back to URL parsing below
   }
@@ -135,8 +159,7 @@ function request({
           ) {
             resolve(res.data)
           } else if (responseData.code === 401 || responseData.error === 'Unauthorized') {
-            uni.showToast({ title: '请重新登录', icon: 'none' })
-            redirectToLogin()
+            handleUnauthorized()
             reject(responseData)
           } else if (responseData.code === 2) {
             // 数据库临时关闭：持久化降级状态，并对连续失败做 toast 去重。
@@ -153,8 +176,11 @@ function request({
           }
         } else {
           const message = httpErrorMessage(res)
-          uni.showToast({ title: message, icon: 'none' })
-          if (res?.statusCode === 401) redirectToLogin()
+          if (res?.statusCode === 401) {
+            handleUnauthorized()
+          } else {
+            uni.showToast({ title: message, icon: 'none' })
+          }
           reject({ ...res, msg: message, message })
         }
       },

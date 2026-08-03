@@ -141,10 +141,11 @@ export function deleteBin(id) {
   })
 }
 
-// Devices 是当前数据库模型名；bins 接口仅用于兼容历史客户端。
+// Devices 是当前数据库模型名。管理端继续使用长期存在的 bins 路径，
+// 以兼容尚未部署 /admin/devices 别名的后端实例。
 export function getDevicesList(params = {}) {
   return request({
-    url: '/api/admin/devices',
+    url: '/api/admin/bins',
     method: 'GET',
     data: params,
     needAuth: true
@@ -153,7 +154,7 @@ export function getDevicesList(params = {}) {
 
 export function createDevice(data) {
   return request({
-    url: '/api/admin/devices',
+    url: '/api/admin/bins',
     method: 'POST',
     data,
     needAuth: true
@@ -162,7 +163,7 @@ export function createDevice(data) {
 
 export function updateDevice(id, data) {
   return request({
-    url: `/api/admin/devices/${id}`,
+    url: `/api/admin/bins/${id}`,
     method: 'PUT',
     data,
     needAuth: true
@@ -171,7 +172,7 @@ export function updateDevice(id, data) {
 
 export function deleteDevice(id) {
   return request({
-    url: `/api/admin/devices/${id}`,
+    url: `/api/admin/bins/${id}`,
     method: 'DELETE',
     needAuth: true
   })

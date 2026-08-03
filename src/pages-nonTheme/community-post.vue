@@ -349,7 +349,7 @@ export default {
     },
     async loadPostImages() {
       if (!this.postId || this.post.imageCount <= 0) return;
-      const cachedImages = getCachedCommunityImage('post', this.postId);
+      const cachedImages = await getCachedCommunityImage('post', this.postId);
       if (cachedImages && cachedImages.length) {
         this.post.images = cachedImages;
         this.post.imageCount = Math.max(this.post.imageCount || 0, cachedImages.length);

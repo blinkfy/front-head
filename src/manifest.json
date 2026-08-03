@@ -2,7 +2,7 @@
     "name" : "分投侠",
     "appid" : "__UNI__0B093BC",
     "description" : "",
-    "versionName" : "1.3.13",
+    "versionName" : "1.3.14",
     "versionCode" : 102,
     "transformPx" : false,
     "app-plus" : {
@@ -141,5 +141,6 @@
         "enable" : false
     },
     "vueVersion" : "3",
-    "locale" : "auto"
+    "locale" : "auto",
+    "fallbackLocale" : "zh-Hans"
 }

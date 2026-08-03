@@ -75,12 +75,17 @@
 
                             <!-- 图片消息 -->
                             <view v-else-if="msg.type === 'image'" class="image-content" @click="previewImage(msg)">
-                                <!-- 列表中优先使用 msg.thumbnail 或通过后端缩略图接口获取的小图以节省流量 -->
-                                <image :src="msg.thumbnail || getThumbnail(msg.content)" mode="widthFix" class="msg-image" 
+                                <!-- 原图已预加载时直接复用；未缓存时仍优先使用缩略图以节省首次流量 -->
+                                <image :src="getImageDisplaySrc(msg)" :data-original-token="loadedOriginalImageTokens[msg.id] || ''" :data-retry-nonce="imageRetryNonces[msg.id] || ''" mode="widthFix" class="msg-image"
                                     :class="{ 'image-error': mediaLoadErrors[msg.id]?.type === 'image' }"
-                                    @error="onImageError(msg)" @load="onImageLoad(msg)" />
+                                    @error="onImageError(msg, $event)" @load="onImageLoad(msg, $event)" />
+                                <view v-if="imageRetryLoadingIds[msg.id]" class="media-error-mask">
+                                    <view class="error-content">
+                                        <text class="error-text">重新加载中</text>
+                                    </view>
+                                </view>
                                 <!-- 加载失败遮罩 -->
-                                <view v-if="mediaLoadErrors[msg.id]?.type === 'image'" class="media-error-mask" @click.stop="retryLoadMedia(msg, 'image')">
+                                <view v-else-if="mediaLoadErrors[msg.id]?.type === 'image'" class="media-error-mask" @click.stop="retryLoadMedia(msg, 'image')">
                                     <view class="error-content">
                                         <text class="error-text">图片加载失败</text>
                                         <text class="retry-btn">点击重试</text>
@@ -213,9 +218,10 @@
                 </view>
 
                 <!-- 文本输入框 -->
-                <view v-if="!isVoiceMode" class="input-wrapper">
+                <view v-if="!isVoiceMode" class="input-wrapper" :style="{ height: inputWrapperHeight + 'rpx' }">
                     <textarea class="text-input" v-model="inputText" :placeholder="inputPlaceholder" :maxlength="2000"
-                        :auto-height="true" :show-confirm-bar="false" @focus="onInputFocus" @blur="onInputBlur"
+                        :style="{ height: inputTextareaHeight + 'rpx' }" :auto-height="false" :show-confirm-bar="false"
+                        @linechange="onInputLineChange" @focus="onInputFocus" @blur="onInputBlur"
                         @confirm="sendTextMessage" @paste="onPaste" />
                 </view>
 
@@ -480,11 +486,15 @@
                 
                 <!-- 图片主体 -->
                 <view class="preview-content-box">
-                    <image :src="loadedOriginalImages[currentPreviewMessage.id] || currentPreviewMessage.thumbnail || getThumbnail(currentPreviewMessage.content)" 
-                        mode="aspectFit" class="preview-img-main"/>
+                    <image :key="'preview-image-' + currentPreviewMessage.id" :src="getImageDisplaySrc(currentPreviewMessage)"
+                        :data-message-id="currentPreviewMessage.id" :data-original-token="loadedOriginalImageTokens[currentPreviewMessage.id] || ''" :data-retry-nonce="imageRetryNonces[currentPreviewMessage.id] || ''" mode="aspectFit" class="preview-img-main" @error="onImageError(currentPreviewMessage, $event)" @load="onImageLoad(currentPreviewMessage, $event)"/>
                     
                     <!-- 加载中遮罩 -->
-                    <view v-if="previewImageLoading" class="loading-overlay">
+                    <view v-if="isCurrentPreviewImageRetrying" class="loading-overlay">
+                        <view class="loading-spinner"></view>
+                        <text class="loading-text">重新加载中</text>
+                    </view>
+                    <view v-else-if="isCurrentPreviewImageLoading" class="loading-overlay">
                         <view class="loading-spinner"></view>
                         <text class="loading-text">正在加载高清原图...</text>
                     </view>
@@ -503,10 +513,12 @@
                 <!-- 底部交互层 -->
                 <view class="preview-bottom-bar">
                     <view class="bar-inner">
-                        <view v-if="isLargeImage(currentPreviewMessage) && !loadedOriginalImages[currentPreviewMessage.id]" 
+                        <view v-if="isLargeImage(currentPreviewMessage) && !loadedOriginalImages[currentPreviewMessage.id] && !isCurrentPreviewImageLoading && !isCurrentPreviewImageRetrying"
                             class="action-btn-primary" @click.stop="loadOriginalImage(currentPreviewMessage)">
                             <text class="btn-inner-text">查看原图 ({{ formatFileSize(currentPreviewMessage.fileSize) }})</text>
                         </view>
+                        <text v-else-if="isLargeImage(currentPreviewMessage) && isCurrentPreviewImageRetrying" class="status-badge">重新加载中</text>
+                        <text v-else-if="isLargeImage(currentPreviewMessage) && isCurrentPreviewImageLoading" class="status-badge">正在加载原图</text>
                         <text v-else-if="isLargeImage(currentPreviewMessage) && loadedOriginalImages[currentPreviewMessage.id]" class="status-badge">已加载原图</text>
                     </view>
                 </view>
@@ -521,6 +533,10 @@ import { getUserProfile } from '@/api/user.js'
 import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
+import { loadChatHistoryCache, saveChatHistoryCache } from '@/utils/chat-history-cache.js'
+// #ifndef H5
+import { cacheChatOriginalImage, removeCachedChatOriginalImage, restoreCachedChatOriginalImages } from '@/utils/chat-media-cache.js'
+// #endif
 
 // 本地存储 key 前缀
 const CHAT_STORAGE_PREFIX = 'chat_messages_'
@@ -558,6 +574,14 @@ export default {
 
             // 消息相关
             messages: [],
+            messageCacheReady: false,
+            // 页面离开后异步恢复的缓存不能重新启动轮询，避免退出登录后遗留请求持续报未登录。
+            isChatPageActive: false,
+            isChatPageDestroyed: false,
+            messagePollingVersion: 0,
+            activeMessagePollingVersion: null,
+            hasInitialScrolledToBottom: false,
+            lastGroupHistoryReconcileAt: 0,
             scrollTop: 0,
             scrollToMessage: '',
             hasMoreMessages: true,
@@ -568,6 +592,7 @@ export default {
             // 输入相关
             inputText: '',
             inputPlaceholder: '输入消息...',
+            inputTextLineCount: 1,
             isVoiceMode: false,
             showEmojiPanel: false,
             showMorePanel: false,
@@ -637,12 +662,20 @@ export default {
             
             // 已加载原图的消息: { messageId: originalImageUrl } - 用于缓存大图的原始URL
             loadedOriginalImages: {},
+            // 绑定到 image 节点的版本号，用来忽略图片换源前遗留的异步 error 回调。
+            loadedOriginalImageTokens: {},
+            originalImageTokenSeed: 0,
+            // 只用于强制重新请求 image 标签的网络地址，绝不写回消息 content。
+            imageRetryNonces: {},
+            imageRetryCounts: {},
+            imageRetryLoadingIds: {},
+            // 正在加载原图的消息，用于防止重复点击；每个图片独立计数，不和预览页全局状态混用。
+            originalImageLoadingIds: {},
             
             // 图片预览面板
             showImagePreview: false, // 是否显示图片预览
             previewImageList: [], // 预览图片列表（按时间排序的所有图片消息）
             previewCurrentIndex: 0, // 当前预览的图片索引
-            previewImageLoading: false, // 原图加载中
             
             // 消息引用相关
             refMessageId: null, // 当前要引用的消息ID
@@ -667,6 +700,15 @@ export default {
             return this.conversationType === 'group' && !!this.groupId
         },
 
+        // 输入区最多显示四行，超过后让 textarea 自身滚动，避免撑开底栏。
+        inputTextareaHeight() {
+            return Math.min(Math.max(this.inputTextLineCount, 1), 4) * 45
+        },
+
+        inputWrapperHeight() {
+            return Math.min(Math.max(this.inputTextareaHeight + 24, 72), 204)
+        },
+
         // 处理撤回消息的显示
         visibleMessages() {
             return this.messages.map(msg => {
@@ -688,6 +730,17 @@ export default {
         currentPreviewMessage() {
             if (this.previewImageList.length === 0) return null
             return this.previewImageList[this.previewCurrentIndex] || null
+        },
+
+        // 仅当前正在预览的那一张大图展示加载遮罩，其他图片的异步完成不会影响它。
+        isCurrentPreviewImageLoading() {
+            const message = this.currentPreviewMessage
+            return Boolean(message && this.isLargeImage(message) && this.originalImageLoadingIds[message.id])
+        },
+
+        isCurrentPreviewImageRetrying() {
+            const message = this.currentPreviewMessage
+            return Boolean(message && this.imageRetryLoadingIds[message.id])
         },
         
         voiceBtnText() {
@@ -788,7 +841,7 @@ export default {
         if (!this.chatId) {
             this.chatId = 'chat_' + this.otherUserId + '_' + Date.now()
         }
-        this.loadMessagesFromStorage()
+        this.initializeMessages()
         
         // 加载本地文件缓存
         this.loadLocalFileCache()
@@ -800,24 +853,22 @@ export default {
             this.loadContactSettings()
         }
         
-        // 启动消息轮询
-        this.startMessagePolling()
-        
         // 注意:不再使用 uni.$on 监听位置选择事件,改为在 onShow 中从 storage 读取
     },
 
     onShow() {
+        this.isChatPageActive = true
+
         // 每次显示页面时重新加载用户信息（确保头像更新）
         this.loadUserInfo()
 
         // 进入聊天即同步已读状态，避免返回消息列表时读取到旧缓存
         this.markCurrentChatRead()
         
-        // 每次显示页面时从服务器刷新消息
-        this.loadMessagesFromServer()
-        
-        // 重新启动轮询
-        this.startMessagePolling()
+        // 首次进入会等待本地缓存恢复完成，之后每次显示只重启一次轮询。
+        if (this.messageCacheReady) {
+            this.startMessagePolling()
+        }
 
         // H5 原生事件仅在当前聊天页可见时绑定，避免缓存页继续接收粘贴和拖拽事件。
         this.$nextTick(() => {
@@ -835,12 +886,15 @@ export default {
     
     onHide() {
         // 页面隐藏时停止轮询，节省资源
+        this.isChatPageActive = false
         this.stopMessagePolling()
         this.cleanupDragDropEvent()
     },
 
     onUnload() {
         // 停止消息轮询
+        this.isChatPageActive = false
+        this.isChatPageDestroyed = true
         this.stopMessagePolling()
         this.cleanupDragDropEvent()
         if (this.mentionAbortController) this.mentionAbortController.abort()
@@ -863,6 +917,8 @@ export default {
     
     beforeDestroy() {
         // 确保组件销毁时停止轮询
+        this.isChatPageActive = false
+        this.isChatPageDestroyed = true
         this.stopMessagePolling()
         this.cleanupDragDropEvent()
     },
@@ -1095,6 +1151,41 @@ export default {
             // #endif
         },
 
+        getImageDisplaySrc(msg) {
+            if (!msg) return ''
+            const baseImageUrl = this.loadedOriginalImages[msg.id] || msg.thumbnail || this.getThumbnail(msg.content)
+            const nonce = this.imageRetryNonces[msg.id]
+            if (!nonce || typeof baseImageUrl !== 'string' || !/^https?:\/\//i.test(baseImageUrl)) {
+                return baseImageUrl
+            }
+            const hashIndex = baseImageUrl.indexOf('#')
+            const urlWithoutHash = hashIndex >= 0 ? baseImageUrl.slice(0, hashIndex) : baseImageUrl
+            const hash = hashIndex >= 0 ? baseImageUrl.slice(hashIndex) : ''
+            const separator = urlWithoutHash.includes('?') ? '&' : '?'
+            return `${urlWithoutHash}${separator}__chat_retry=${encodeURIComponent(String(nonce))}${hash}`
+        },
+
+        setLoadedOriginalImage(messageId, sourceUrl) {
+            if (messageId === undefined || messageId === null || !sourceUrl) return
+            this.originalImageTokenSeed += 1
+            this.$set(this.loadedOriginalImageTokens, messageId, `${Date.now()}_${this.originalImageTokenSeed}`)
+            this.$set(this.loadedOriginalImages, messageId, sourceUrl)
+        },
+
+        clearLoadedOriginalImage(messageId) {
+            if (messageId === undefined || messageId === null) return
+            delete this.loadedOriginalImages[messageId]
+            delete this.loadedOriginalImageTokens[messageId]
+        },
+
+        getCurrentImageMessage(messageId, sourceUrl) {
+            return this.messages.find((message) => (
+                String(message?.id) === String(messageId) &&
+                message?.type === 'image' &&
+                message.content === sourceUrl
+            )) || null
+        },
+
         // 生成并缓存缩略图 URL（通过后端接口 /api/chat/imageReview?path=...），优先用于列表展示以节省流量
         // 注意：msg.content 可能是完整路径或服务器存储路径，caller 需要传入后端可识别的 path
         getThumbnail(originalPath) {
@@ -1157,11 +1248,47 @@ export default {
         },
 
         // ==================== 本地存储 ====================
-        loadMessagesFromStorage() {
+        async initializeMessages() {
+            await this.loadMessagesFromStorage()
+            if (this.isChatPageDestroyed) return
+            this.messageCacheReady = true
+            this.positionInitialChatAtBottom()
+            if (this.canPollMessages()) {
+                this.startMessagePolling()
+            }
+        },
+
+        async loadMessagesFromStorage() {
+            // #ifdef H5
+            try {
+                let cachedMessages = await loadChatHistoryCache(this.storageKey)
+                // 迁移旧版 localStorage 缓存，迁移后释放会导致 QuotaExceededError 的旧存储空间。
+                if (!Array.isArray(cachedMessages)) {
+                    const legacyCache = uni.getStorageSync(this.storageKey)
+                    if (legacyCache) {
+                        const parsedMessages = JSON.parse(legacyCache)
+                        if (Array.isArray(parsedMessages)) {
+                            cachedMessages = parsedMessages
+                            this.messages = cachedMessages
+                            await saveChatHistoryCache(this.storageKey, cachedMessages)
+                        }
+                    }
+                }
+                if (Array.isArray(cachedMessages)) {
+                    this.messages = cachedMessages
+                    await this.restoreCachedOriginalImages()
+                    uni.removeStorageSync(this.storageKey)
+                }
+            } catch (e) {
+                console.warn('读取 IndexedDB 聊天缓存失败，将从服务器恢复消息。', e)
+            }
+            return
+            // #endif
             try {
                 const stored = uni.getStorageSync(this.storageKey)
                 if (stored) {
                     this.messages = JSON.parse(stored)
+                    await this.restoreCachedOriginalImages()
                 }
                 // 同时从服务器加载最新消息(服务器数据会覆盖本地的临时数据)
                 this.loadMessagesFromServer()
@@ -1172,7 +1299,51 @@ export default {
             }
         },
 
+        // 已查看过的原图在 H5 复用浏览器缓存；小程序 / APP 则优先恢复 saveFile 的持久文件。
+        async restoreCachedOriginalImages() {
+            const originalMessages = this.messages.filter((message) => (
+                message?.type === 'image' && message.originalLoaded && message.content
+            ))
+            if (originalMessages.length === 0) return
+
+            // #ifdef H5
+            originalMessages.forEach((message) => {
+                this.setLoadedOriginalImage(message.id, message.content)
+            })
+            return
+            // #endif
+
+            // #ifndef H5
+            const cachedPaths = await restoreCachedChatOriginalImages({
+                userId: this.getCurrentUserId() || 'unknown',
+                conversationId: this.chatId,
+                images: originalMessages.map((message) => ({
+                    id: message.id,
+                    sourceUrl: message.content
+                }))
+            })
+            let resetOriginalLoaded = false
+            originalMessages.forEach((message) => {
+                const localPath = cachedPaths[message.id]
+                if (localPath) {
+                    this.setLoadedOriginalImage(message.id, localPath)
+                    return
+                }
+                // LRU 或系统清理了文件时回到缩略图，避免进入聊天就重新请求所有原图。
+                message.originalLoaded = false
+                resetOriginalLoaded = true
+            })
+            if (resetOriginalLoaded) this.saveMessagesToStorage()
+            // #endif
+        },
+
         saveMessagesToStorage() {
+            // #ifdef H5
+            saveChatHistoryCache(this.storageKey, this.messages).catch(e => {
+                console.warn('保存 IndexedDB 聊天缓存失败，当前聊天不受影响。', e)
+            })
+            return
+            // #endif
             try {
                 // 清理消息中的大文件 blob URL,避免超出 localStorage 限制
                 const messagesToSave = this.messages.map(msg => {
@@ -1253,20 +1424,35 @@ export default {
         startMessagePolling() {
             // 清除现有的轮询
             this.stopMessagePolling()
+            if (!this.canPollMessages()) return
+
+            const pollingVersion = this.messagePollingVersion
             
             // 立即执行一次
-            this.pollMessages()
+            this.pollMessages(pollingVersion)
             
             // 启动定时轮询
             this.messagePollingTimer = setInterval(() => {
-                this.pollMessages()
+                this.pollMessages(pollingVersion)
             }, this.pollingInterval)
         },
         
         stopMessagePolling() {
+            // 令已经发出的请求在返回后失效，避免它更新已隐藏或销毁的页面。
+            this.messagePollingVersion += 1
+            this.activeMessagePollingVersion = null
             if (this.messagePollingTimer) {
                 clearInterval(this.messagePollingTimer)
                 this.messagePollingTimer = null
+            }
+        },
+
+        canPollMessages() {
+            if (!this.isChatPageActive || this.isChatPageDestroyed || !this.chatId) return false
+            try {
+                return Boolean(uni.getStorageSync('token'))
+            } catch (e) {
+                return false
             }
         },
 
@@ -1275,14 +1461,49 @@ export default {
                 ? chatApi.getGroupHistory(this.groupId, params)
                 : chatApi.getChatHistory({ chatId: this.chatId, ...params })
         },
+
+        getGroupMessageBoundaryId(direction = 'latest') {
+            if (!this.isGroupChat) return null
+            const ids = this.messages
+                .map(message => Number(message.id))
+                .filter(id => Number.isSafeInteger(id) && id > 0)
+            if (ids.length === 0) return null
+            return ids.reduce((boundary, id) => (
+                direction === 'earliest' ? Math.min(boundary, id) : Math.max(boundary, id)
+            ))
+        },
+
+        getPollingHistoryParams() {
+            const params = {
+                page: 1,
+                pageSize: this.pageSize
+            }
+            if (!this.isGroupChat) return params
+
+            const latestMessageId = this.getGroupMessageBoundaryId()
+            const now = Date.now()
+            // 每分钟全量校验最近一页，保证撤回等旧消息状态仍能及时同步；其余轮询只取增量。
+            const shouldReconcile = !latestMessageId || now - this.lastGroupHistoryReconcileAt >= 60 * 1000
+            if (shouldReconcile) {
+                this.lastGroupHistoryReconcileAt = now
+            } else {
+                params.afterId = latestMessageId
+            }
+            return params
+        },
         
-        async pollMessages() {
+        async pollMessages(pollingVersion = this.messagePollingVersion) {
+            if (
+                !this.canPollMessages() ||
+                pollingVersion !== this.messagePollingVersion ||
+                this.activeMessagePollingVersion === pollingVersion
+            ) return
+
+            this.activeMessagePollingVersion = pollingVersion
             try {
                 // 静默获取最新消息（不显示加载提示）
-                const res = await this.getConversationHistory({
-                    page: 1,
-                    pageSize: this.pageSize
-                })
+                const res = await this.getConversationHistory(this.getPollingHistoryParams())
+                if (!this.canPollMessages() || pollingVersion !== this.messagePollingVersion) return
 
                 // 后端返回的data可能直接是数组，也可能是 { list: [], total: 0 }
                 let messageList = []
@@ -1305,6 +1526,7 @@ export default {
                         
                         // 如果在底部，自动滚动
                         this.$nextTick(() => {
+                            // #ifdef H5
                             const scrollView = document.querySelector('.message-list')
                             if (scrollView) {
                                 const isAtBottom = scrollView.scrollHeight - scrollView.scrollTop - scrollView.clientHeight < 100
@@ -1312,15 +1534,23 @@ export default {
                                     this.scrollToBottom()
                                 }
                             }
+                            // #endif
                         })
                     } else {
                         // 即使没有新消息，也要更新现有消息（可能状态变化）
                         this.mergeMessages(serverMessages)
                     }
                 }
+                this.positionInitialChatAtBottom()
             } catch (e) {
-                console.error('轮询消息失败:', e)
+                if (this.canPollMessages() && pollingVersion === this.messagePollingVersion) {
+                    console.error('轮询消息失败:', e)
+                }
                 // 轮询失败不影响用户使用，静默处理
+            } finally {
+                if (this.activeMessagePollingVersion === pollingVersion) {
+                    this.activeMessagePollingVersion = null
+                }
             }
         },
 
@@ -1627,6 +1857,15 @@ export default {
                         hasChanges = true
                         console.log(`消息 ${localMsg.id} 状态更新: isWithdraw ${localMsg.isWithdraw} -> ${serverMsg.isWithdraw}`)
                     }
+
+                    // 同一消息被服务端换成另一张图片时，绝不能继续显示旧原图缓存。
+                    if (localMsg.type === 'image' && serverMsg.type === 'image' &&
+                        localMsg.content !== serverMsg.content) {
+                        hasChanges = true
+                        this.clearLoadedOriginalImage(localMsg.id)
+                        delete this.imageRetryNonces[localMsg.id]
+                        localMsg.originalLoaded = false
+                    }
                     
                     // 如果是自己发送的媒体消息,保留本地的 content(blob URL)
                     if (serverMsg.isSelf && 
@@ -1642,6 +1881,16 @@ export default {
                     }
                     
                     // 其他情况使用服务器版本（更可靠）
+                    // 服务器消息没有该本地展示状态；同一张图片刷新时保留它，
+                    // 避免轮询把已加载原图重新降级为缩略图。
+                    if (localMsg.originalLoaded &&
+                        serverMsg.type === 'image' &&
+                        localMsg.content === serverMsg.content) {
+                        return {
+                            ...serverMsg,
+                            originalLoaded: true
+                        }
+                    }
                     return serverMsg
                 }
                 return localMsg
@@ -1694,10 +1943,18 @@ export default {
 
             try {
                 this.currentPage++
-                const res = await this.getConversationHistory({
+                const historyParams = {
                     page: this.currentPage,
                     pageSize: this.pageSize
-                })
+                }
+                if (this.isGroupChat) {
+                    const earliestMessageId = this.getGroupMessageBoundaryId('earliest')
+                    if (earliestMessageId) {
+                        historyParams.page = 1
+                        historyParams.beforeId = earliestMessageId
+                    }
+                }
+                const res = await this.getConversationHistory(historyParams)
 
                 // 后端返回的data可能直接是数组，也可能是 { list: [], total: 0 }
                 let messageList = []
@@ -1740,6 +1997,7 @@ export default {
             }
             this.addMessage(msg)
             this.inputText = ''
+            this.resetTextInputHeight()
 
             // 发送到服务器
             try {
@@ -2697,7 +2955,6 @@ export default {
             
             // 打开预览面板
             this.showImagePreview = true
-            this.previewImageLoading = false
             
             // 如果是小于1M的图片，自动加载并缓存原图以直接显示高清
             if (!this.isLargeImage(msg) && !this.loadedOriginalImages[msg.id] && msg.content) {
@@ -2710,14 +2967,12 @@ export default {
             this.showImagePreview = false
             this.previewImageList = []
             this.previewCurrentIndex = 0
-            this.previewImageLoading = false
         },
 
         // 切换到下一张图片
         nextPreviewImage() {
             if (this.previewImageList.length > 0) {
                 this.previewCurrentIndex = (this.previewCurrentIndex + 1) % this.previewImageList.length
-                this.previewImageLoading = false
                 
                 // 获取新的当前图片
                 const currentMsg = this.currentPreviewMessage
@@ -2737,7 +2992,6 @@ export default {
         prevPreviewImage() {
             if (this.previewImageList.length > 0) {
                 this.previewCurrentIndex = (this.previewCurrentIndex - 1 + this.previewImageList.length) % this.previewImageList.length
-                this.previewImageLoading = false
                 
                 // 获取新的当前图片
                 const currentMsg = this.currentPreviewMessage
@@ -2764,32 +3018,59 @@ export default {
         // 加载原图并缓存
         loadOriginalImage(msg) {
             if (!msg || !msg.content) return
+            const currentMessage = this.getCurrentImageMessage(msg.id, msg.content)
+            if (!currentMessage) return
+            msg = currentMessage
 
-            // 如果已经加载过,直接跳过
-            if (this.loadedOriginalImages[msg.id]) {
+            // 已加载或请求尚未结束时均不重复发起下载。
+            if (this.loadedOriginalImages[msg.id] || this.originalImageLoadingIds[msg.id]) {
                 return
             }
 
-            // 只有大图才显示加载提示，小图快速加载无需提示
-            const showLoadingTip = this.isLargeImage(msg)
-            if (showLoadingTip) {
-                this.previewImageLoading = true
-            }
+            this.$set(this.originalImageLoadingIds, msg.id, true)
 
-            // 预加载图片到本地缓存,这样 image 标签可以快速显示
+            // #ifdef H5
+            // H5 继续交给浏览器图片缓存处理，不额外写入媒体文件。
+            this.preloadOriginalImageFromNetwork(msg)
+            return
+            // #endif
+
+            // #ifndef H5
+            // 小程序 / APP 用同一次 downloadFile 结果直接保存为持久文件，避免先 getImageInfo
+            // 再 downloadFile 造成原图双下载；保存失败时才退回原有在线预加载。
+            this.loadAndPersistOriginalImage(msg)
+            // #endif
+        },
+
+        // 在线预加载兜底：H5 的唯一加载路径；非 H5 仅在持久缓存失败时使用。
+        preloadOriginalImageFromNetwork(msg) {
+            const sourceUrl = msg?.content
+            if (!sourceUrl) {
+                this.finishOriginalImageLoading(msg?.id)
+                return
+            }
             uni.getImageInfo({
-                src: msg.content,
+                src: sourceUrl,
                 success: (image) => {
-                    // 设置已加载的原图 URL
-                    this.$set(this.loadedOriginalImages, msg.id, msg.content)
+                    // 等待期间同一消息的图片已被服务器替换时，不把旧请求结果回写回来。
+                    const currentMessage = this.getCurrentImageMessage(msg.id, sourceUrl)
+                    if (!currentMessage) {
+                        this.finishOriginalImageLoading(msg.id)
+                        return
+                    }
+                    // 先立即使用在线原图，持久化下载失败也不影响预览。
+                    currentMessage.originalLoaded = true
+                    this.setLoadedOriginalImage(currentMessage.id, currentMessage.content)
+                    // 使退出并重新进入聊天后，仍按原图策略渲染。
+                    this.saveMessagesToStorage()
                     
-                    // 加载成功后隐藏提示
-                    this.previewImageLoading = false
+                    this.finishOriginalImageLoading(msg.id)
                     
                     console.log('原图加载成功:', msg.id)
                 },
                 fail: (err) => {
-                    this.previewImageLoading = false
+                    this.finishOriginalImageLoading(msg.id)
+                    if (!this.getCurrentImageMessage(msg.id, sourceUrl)) return
                     console.error('原图加载失败:', err)
                     
                     uni.showToast({
@@ -2798,6 +3079,49 @@ export default {
                     })
                 }
             })
+        },
+
+        // #ifndef H5
+        // 小程序 / APP 在用户实际查看原图后才下载并保存，不会预取整段聊天中的所有图片。
+        async loadAndPersistOriginalImage(msg) {
+            const sourceUrl = msg?.content
+            if (!sourceUrl) return
+            try {
+                const localPath = await cacheChatOriginalImage({
+                    userId: this.getCurrentUserId() || 'unknown',
+                    conversationId: this.chatId,
+                    messageId: msg.id,
+                    sourceUrl,
+                    expectedSize: msg.fileSize || 0
+                })
+                // 下载期间消息可能已被服务器更新，不能把旧图覆盖到新消息上。
+                const currentMessage = this.getCurrentImageMessage(msg.id, sourceUrl)
+                if (localPath && currentMessage) {
+                    currentMessage.originalLoaded = true
+                    this.setLoadedOriginalImage(currentMessage.id, localPath)
+                    this.saveMessagesToStorage()
+                    this.finishOriginalImageLoading(currentMessage.id)
+                    console.log('原图已保存到本地缓存:', currentMessage.id)
+                    return
+                }
+                if (!currentMessage) {
+                    this.finishOriginalImageLoading(msg.id)
+                    return
+                }
+            } catch (error) {
+                // 工具内部通常会吞掉下载/保存失败；这里额外兜底，确保图片预览不会被异常打断。
+                console.warn('保存聊天原图到本地失败，改用在线原图。', error)
+            }
+            // 文件下载或保存失败时仍保留原有预览逻辑，不影响用户查看图片。
+            const currentMessage = this.getCurrentImageMessage(msg.id, sourceUrl)
+            if (currentMessage) this.preloadOriginalImageFromNetwork(currentMessage)
+            else this.finishOriginalImageLoading(msg.id)
+        },
+        // #endif
+
+        finishOriginalImageLoading(messageId) {
+            if (messageId === undefined || messageId === null) return
+            delete this.originalImageLoadingIds[messageId]
         },
 
         // ==================== 视频播放 ====================
@@ -3038,6 +3362,8 @@ export default {
 
         // H5 环境下载文件并指定文件名
         downloadFileWithName(url, fileName) {
+            // #ifdef H5
+            if (typeof document === 'undefined') return
             const a = document.createElement('a')
             a.href = url
             a.download = fileName || 'download'
@@ -3045,6 +3371,7 @@ export default {
             document.body.appendChild(a)
             a.click()
             document.body.removeChild(a)
+            // #endif
         },
 
         getFileExtension(fileName = '') {
@@ -3171,6 +3498,17 @@ export default {
                 chars.pop()
                 this.inputText = chars.join('')
             }
+        },
+
+        // linechange 同时覆盖逐字输入、换行和一次性粘贴；不支持该事件的平台会保持单行并在框内滚动。
+        onInputLineChange(event) {
+            const lineCount = Number(event?.detail?.lineCount)
+            if (!Number.isFinite(lineCount) || lineCount < 1) return
+            this.inputTextLineCount = Math.min(Math.max(Math.round(lineCount), 1), 4)
+        },
+
+        resetTextInputHeight() {
+            this.inputTextLineCount = 1
         },
 
         // ==================== UI交互 ====================
@@ -3695,10 +4033,15 @@ export default {
 
         // Vue 模板粘贴事件处理（备用，以防 uni-app 能访问 clipboardData）
         onPaste(e) {
+            // #ifndef H5
+            return
+            // #endif
+
+            // #ifdef H5
             console.log('Vue @paste 触发', e)
             
             // 获取粘贴的内容
-            const clipboardData = e.clipboardData || window.clipboardData
+            const clipboardData = e?.clipboardData || (typeof window !== 'undefined' ? window.clipboardData : null)
             if (!clipboardData) {
                 console.warn('Vue @paste 无法获取 clipboardData，将使用原生事件处理')
                 return
@@ -3740,6 +4083,7 @@ export default {
             } else {
                 console.warn('粘贴内容中未找到文件')
             }
+            // #endif
         },
 
         processDroppedFiles(files) {
@@ -4010,6 +4354,16 @@ export default {
             }
         },
 
+        positionInitialChatAtBottom() {
+            if (this.hasInitialScrolledToBottom || this.messages.length === 0) return
+            this.hasInitialScrolledToBottom = true
+            this.$nextTick(() => {
+                this.scrollToBottom()
+                // 等待首屏图片等异步布局稳定后再确认一次，保证长缓存进入时落在最新消息。
+                setTimeout(() => this.scrollToBottom(), 60)
+            })
+        },
+
         scrollToBottom() {
             if (this.messages.length > 0) {
                 this.scrollToMessage = 'msg-' + this.messages[this.messages.length - 1].id
@@ -4022,8 +4376,57 @@ export default {
         },
 
         // 图片加载失败
-        async onImageError(msg) {
+        async onImageError(msg, event) {
+            if (!msg) return
+            const eventMessageId = event?.currentTarget?.dataset?.messageId
+            if (eventMessageId !== undefined && eventMessageId !== null &&
+                String(eventMessageId) !== String(msg.id)) {
+                return
+            }
+            const expectedRetryNonce = this.imageRetryNonces[msg.id]
+            const failedRetryNonce = event?.currentTarget?.dataset?.retryNonce
+            if (this.imageRetryLoadingIds[msg.id] && expectedRetryNonce &&
+                failedRetryNonce !== undefined && failedRetryNonce !== null &&
+                String(failedRetryNonce) !== String(expectedRetryNonce)) {
+                return
+            }
+            if (this.imageRetryLoadingIds[msg.id]) {
+                delete this.imageRetryLoadingIds[msg.id]
+            }
             console.error('图片加载失败:', msg.content)
+
+            const displayedOriginal = this.loadedOriginalImages[msg.id]
+            const expectedToken = this.loadedOriginalImageTokens[msg.id]
+            const failedToken = event?.currentTarget?.dataset?.originalToken
+            // image 换源后可能收到旧节点的 error；token 不一致时不影响当前的新图。
+            if (displayedOriginal && expectedToken && failedToken !== undefined && failedToken !== null &&
+                String(failedToken) !== String(expectedToken)) {
+                return
+            }
+
+            // 无论线上原图还是 saveFile 本地原图，只要当前原图渲染失败都回到缩略图。
+            if (displayedOriginal) {
+                const isPersistentLocalOriginal = displayedOriginal !== msg.content
+                this.clearLoadedOriginalImage(msg.id)
+                msg.originalLoaded = false
+                this.finishOriginalImageLoading(msg.id)
+                this.saveMessagesToStorage()
+                // #ifndef H5
+                if (isPersistentLocalOriginal) {
+                    removeCachedChatOriginalImage({
+                        userId: this.getCurrentUserId() || 'unknown',
+                        conversationId: this.chatId,
+                        messageId: msg.id,
+                        sourceUrl: msg.content
+                    }).catch((error) => {
+                        console.warn('清理失效聊天原图缓存失败，后续会由 LRU 再次尝试。', error)
+                    })
+                }
+                // #endif
+                // 让列表和预览重新使用缩略图，不保留“图片加载失败”的遮罩。
+                delete this.mediaLoadErrors[msg.id]
+                return
+            }
             
             // 标记加载失败
             this.$set(this.mediaLoadErrors, msg.id, { type: 'image', error: true, retryCount: 0 })
@@ -4074,7 +4477,24 @@ export default {
         },
         
         // 图片加载成功
-        onImageLoad(msg) {
+        onImageLoad(msg, event) {
+            if (!msg) return
+            const eventMessageId = event?.currentTarget?.dataset?.messageId
+            if (eventMessageId !== undefined && eventMessageId !== null &&
+                String(eventMessageId) !== String(msg.id)) {
+                return
+            }
+            const expectedRetryNonce = this.imageRetryNonces[msg.id]
+            const loadedRetryNonce = event?.currentTarget?.dataset?.retryNonce
+            if (this.imageRetryLoadingIds[msg.id]) {
+                if (expectedRetryNonce && loadedRetryNonce !== undefined && loadedRetryNonce !== null &&
+                    String(loadedRetryNonce) !== String(expectedRetryNonce)) {
+                    return
+                }
+                delete this.imageRetryLoadingIds[msg.id]
+                // 成功后才重置独立计数，连续失败不会因为错误遮罩清理而归零。
+                delete this.imageRetryCounts[msg.id]
+            }
             // 清除错误标记
             if (this.mediaLoadErrors[msg.id]) {
                 delete this.mediaLoadErrors[msg.id]
@@ -4083,8 +4503,11 @@ export default {
 
         // 统一的媒体重试方法
         async retryLoadMedia(msg, type) {
-            // 检查重试次数
-            const currentRetry = this.mediaLoadErrors[msg.id]?.retryCount || 0
+            if (type === 'image' && this.imageRetryLoadingIds[msg.id]) return
+            // 图片使用独立计数，避免删除 mediaLoadErrors 后每次都从 0 开始。
+            const currentRetry = type === 'image'
+                ? (Number(this.imageRetryCounts[msg.id]) || 0)
+                : (this.mediaLoadErrors[msg.id]?.retryCount || 0)
             if (currentRetry >= 3) {
                 uni.showToast({
                     title: `${type === 'image' ? '图片' : type === 'voice' ? '语音' : type === 'video' ? '视频' : '文件'}重试次数过多，请稍后再试`,
@@ -4100,6 +4523,10 @@ export default {
                 error: true,
                 retryCount: currentRetry + 1
             })
+            if (type === 'image') {
+                this.$set(this.imageRetryCounts, msg.id, currentRetry + 1)
+                this.$set(this.imageRetryLoadingIds, msg.id, true)
+            }
 
             // 清除错误标记,准备重试
             delete this.mediaLoadErrors[msg.id]
@@ -4118,23 +4545,18 @@ export default {
                             if (res.data && res.data.length > 0) {
                                 const msgIndex = this.messages.findIndex(m => m.id === msg.id)
                                 if (msgIndex !== -1) {
-                                    const serverMsg = res.data[0]
+                                    const serverMsg = this.formatServerMessage(res.data[0])
                                     this.messages[msgIndex].content = serverMsg.content
+                                    if (serverMsg.thumbnail) this.messages[msgIndex].thumbnail = serverMsg.thumbnail
+                                    if (serverMsg.fileSize !== undefined && serverMsg.fileSize !== null) {
+                                        this.messages[msgIndex].fileSize = serverMsg.fileSize
+                                    }
                                     this.saveMessagesToStorage()
                                 }
                             }
                         } else {
-                            // 触发图片重新加载(通过修改src)
-                            const msgIndex = this.messages.findIndex(m => m.id === msg.id)
-                            if (msgIndex !== -1) {
-                                let originalUrl = this.messages[msgIndex].content
-                                // 移除已存在的?retry=参数，防止参数堆积
-                                originalUrl = originalUrl.split('?retry=')[0]
-                                this.messages[msgIndex].content = ''
-                                this.$nextTick(() => {
-                                    this.messages[msgIndex].content = originalUrl + '?retry=' + Date.now()
-                                })
-                            }
+                            // 仅变更渲染地址的 nonce，保留消息 canonical URL，避免破坏媒体缓存 key / 服务端比对。
+                            this.$set(this.imageRetryNonces, msg.id, Date.now())
                         }
                         break
 
@@ -4171,6 +4593,7 @@ export default {
                 }
             } catch (error) {
                 console.error(`${type}重试失败:`, error)
+                if (type === 'image') delete this.imageRetryLoadingIds[msg.id]
                 // 重试失败,恢复错误标记
                 this.$set(this.mediaLoadErrors, msg.id, {
                     type: type,
@@ -5445,13 +5868,16 @@ page {
 
 .input-wrapper {
     flex: 1;
+    min-width: 0;
+    min-height: 72rpx;
+    max-height: 204rpx;
     background: var(--input-bg);
     border-radius: 36rpx;
-    padding: 16rpx 28rpx;
-    min-height: 72rpx;
-    max-height: 200rpx;
+    padding: 12rpx 28rpx;
+    overflow: hidden;
+    box-sizing: border-box;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     border: 1px solid var(--border-color);
     transition: all 0.3s ease;
     box-shadow: var(--card-shadow);
@@ -5459,11 +5885,16 @@ page {
 
 .text-input {
     width: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+    box-sizing: border-box;
     font-size: 30rpx;
     line-height: 1.5;
-    max-height: 160rpx;
     color: var(--text-primary);
     background: transparent;
+    overflow-y: auto;
+    word-break: break-all;
     transition: all 0.3s ease;
 
     &::placeholder {

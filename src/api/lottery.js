@@ -32,7 +32,7 @@ export function getLotteryRecords(page = 1, limit = 20) {
   return request({
     url: '/api/lottery/records',
     method: 'GET',
-    data: { page, limit },
+    params: { page, limit },
     needAuth: true
   });
 }

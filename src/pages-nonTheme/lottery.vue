@@ -73,24 +73,14 @@
               ></canvas>
               <!-- #endif -->
               <!-- #ifndef H5 -->
-              <view class="wheel-rotor" :style="{ transform: `rotate(${spinAngle}deg)` }">
-                <image
-                  v-if="wheelImageSrc"
-                  class="wheel-image"
-                  :src="wheelImageSrc"
-                  mode="aspectFit"
-                  @click="onWheelClick"
-                />
-                <view v-else class="wheel-loading">
-                  <text class="wheel-loading-text">加載中</text>
-                </view>
-              </view>
               <canvas
                 canvas-id="lotteryWheel"
                 id="lotteryWheel"
-                class="wheel-canvas-stage"
+                class="wheel-canvas wheel-canvas-native"
                 :width="wheelCanvasSize"
                 :height="wheelCanvasSize"
+                :style="{ transform: `rotate(${spinAngle}deg)` }"
+                @click="onWheelClick"
               ></canvas>
               <!-- #endif -->
               <view
@@ -137,13 +127,17 @@
             <view class="title-icon-pill small"><text>🎁</text></view>
             <text class="section-title">奖品池</text>
           </view>
-          <view class="prizes-grid">
+          <view class="prizes-grid" v-if="displayPrizes.length > 0">
             <view v-for="prize in displayPrizes" :key="prize.id" class="prize-card" :class="`level-${prize.level}`">
               <text class="prize-icon">{{ getPrizeIcon(prize.type) }}</text>
               <text class="prize-name">{{ prize.name }}</text>
               <text class="prize-desc">{{ prize.description }}</text>
               <text class="prize-prob">{{ Math.round(prize.probability * 100) }}%概率</text>
             </view>
+          </view>
+          <view class="prizes-empty" v-else>
+            <text>{{ loadError || '暂未配置可展示的奖品' }}</text>
+            <view class="prizes-retry" v-if="loadError" @click="loadData"><text>重新加载</text></view>
           </view>
         </view>
 
@@ -268,11 +262,11 @@ export default {
       showRules: false,
       currentPrize: null,
       spinAngle: 0,
-      wheelImageSrc: '',
       wheelCanvasSize: 280,
       canDraw: false,
       isDark: false,
-      hasLoadedData: false
+      hasLoadedData: false,
+      loadError: ''
     };
   },
   computed: {
@@ -296,7 +290,11 @@ export default {
   },
   methods: {
     extractData(res) {
-      return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
+      let data = res;
+      // request() 通常直接返回响应体；部分 App/小程序运行环境会多包一层 { data: ... }。
+      if (data && Object.prototype.hasOwnProperty.call(data, 'data')) data = data.data;
+      if (data && data.success === true && Object.prototype.hasOwnProperty.call(data, 'data')) data = data.data;
+      return data;
     },
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
@@ -426,7 +424,7 @@ export default {
           ctx.setFontSize(16);
           ctx.setTextAlign('center');
           ctx.setTextBaseline('middle');
-          ctx.fillText('奖品加载中', center, center);
+          ctx.fillText(this.loadError ? '奖品加载失败' : '奖品加载中', center, center);
           ctx.draw();
           return;
         }
@@ -520,22 +518,8 @@ export default {
         ctx.draw();
         // #endif
         // #ifndef H5
-        ctx.draw(false, () => {
-          try {
-            uni.canvasToTempFilePath({
-              canvasId: 'lotteryWheel',
-              success: (res) => {
-                this.wheelImageSrc = (res && res.tempFilePath) || '';
-              },
-              fail: () => {
-                this.wheelImageSrc = '';
-              }
-            }, this);
-          } catch (err) {
-            console.warn('[lottery] export wheel image failed:', err && err.message ? err.message : err);
-            this.wheelImageSrc = '';
-          }
-        });
+        // 小程序/App 直接显示 Canvas。屏幕外 Canvas 导出临时图片在部分运行环境会得到空白结果。
+        ctx.draw();
         // #endif
       }).exec();
     },
@@ -570,24 +554,50 @@ export default {
       }
     },
     async loadData() {
+      const settle = (promise) => Promise.resolve(promise)
+        .then(value => ({ ok: true, value }))
+        .catch(error => ({ ok: false, error }));
+
+      this.loadError = '';
       try {
-        const [configRes, statusRes, recordsRes] = await Promise.all([
-          getLotteryConfig(),
-          getLotteryDailyStatus(),
-          getLotteryRecords(1, 20),
-          this.loadUserPoints()
+        const [configTask, statusTask, recordsTask] = await Promise.all([
+          settle(getLotteryConfig()),
+          settle(getLotteryDailyStatus()),
+          settle(getLotteryRecords(1, 20)),
+          settle(this.loadUserPoints())
         ]);
-        const configData = this.extractData(configRes) || {};
-        const statusData = this.extractData(statusRes) || {};
-        const recordData = this.extractData(recordsRes) || {};
-        this.config = configData;
-        this.freeCount = statusData.freeCount || 0;
-        this.totalFree = statusData.totalFree || 1;
-        this.records = recordData.records || [];
+
+        if (configTask.ok) {
+          const configData = this.extractData(configTask.value) || {};
+          if (Array.isArray(configData.prizes)) {
+            this.config = { ...this.config, ...configData, prizes: configData.prizes };
+          } else {
+            this.loadError = '奖品配置数据异常，请重新加载';
+          }
+        } else {
+          this.loadError = '奖品配置加载失败，请检查网络后重试';
+          console.error('加载奖品配置失败:', configTask.error);
+        }
+
+        if (statusTask.ok) {
+          const statusData = this.extractData(statusTask.value) || {};
+          this.freeCount = Number(statusData.freeCount) || 0;
+          this.totalFree = Number(statusData.totalFree) || 1;
+        } else {
+          console.error('加载抽奖次数失败:', statusTask.error);
+        }
+
+        if (recordsTask.ok) {
+          const recordData = this.extractData(recordsTask.value) || {};
+          this.records = Array.isArray(recordData.records) ? recordData.records : [];
+        } else {
+          console.error('加载中奖记录失败:', recordsTask.error);
+        }
+
         this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
-        this.wheelImageSrc = '';
       } catch (e) {
         console.error('加载失败:', e);
+        this.loadError = '抽奖数据加载失败，请重新加载';
       } finally {
         this.hasLoadedData = true;
         this.requestDrawWheel();
@@ -958,52 +968,15 @@ export default {
   background: radial-gradient(circle, rgba(16, 185, 129, 0.22) 0%, rgba(245, 158, 11, 0.12) 44%, transparent 72%);
   pointer-events: none;
 }
-.wheel-rotor {
-  position: relative;
-  z-index: 1;
-  width: 532rpx;
-  height: 532rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform-origin: center center;
-  will-change: transform;
-}
-.wheel-image {
-  width: 532rpx;
-  height: 532rpx;
-  border-radius: 50%;
-  display: block;
-}
-.wheel-loading {
-  width: 532rpx;
-  height: 532rpx;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.88);
-  border: 2rpx dashed rgba(16, 185, 129, 0.28);
-}
-.wheel-loading-text {
-  color: #059669;
-  font-size: 24rpx;
-  font-weight: 700;
-}
 .wheel-canvas {
   position: relative;
   z-index: 1;
   width: 532rpx; height: 532rpx;
   border-radius: 50%;
 }
-.wheel-canvas-stage {
-  position: absolute;
-  left: -9999rpx;
-  top: -9999rpx;
-  width: 532rpx;
-  height: 532rpx;
-  opacity: 0;
-  pointer-events: none;
+.wheel-canvas-native {
+  transform-origin: center center;
+  will-change: transform;
 }
 .wheel-bulb {
   position: absolute;
@@ -1137,6 +1110,29 @@ export default {
 .dark-mode .prize-card { background: rgba(255, 255, 255, 0.08); border: 1rpx solid rgba(255, 255, 255, 0.1); }
 .prize-card.level-3 { border-color: rgba(245, 158, 11, 0.4); background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%); }
 .prize-card.level-2 { border-color: rgba(16, 185, 129, 0.4); background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(52, 211, 153, 0.05) 100%); }
+.prizes-empty {
+  min-height: 132rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1rpx dashed rgba(16, 185, 129, 0.26);
+  color: #64748b;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  font-size: 22rpx;
+}
+.dark-mode .prizes-empty { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.62); }
+.prizes-retry {
+  padding: 8rpx 22rpx;
+  border-radius: 24rpx;
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+.dark-mode .prizes-retry { color: #34d399; background: rgba(16, 185, 129, 0.2); }
 .prize-icon { display: block; font-size: 40rpx; margin-bottom: 8rpx; }
 .prize-name { display: block; color: #1f2937; font-size: 22rpx; font-weight: 700; margin-bottom: 4rpx; }
 .dark-mode .prize-name { color: #fff; }
