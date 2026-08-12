@@ -1,10 +1,19 @@
 import MarkdownIt from 'markdown-it/index.mjs'
+import mdTable from 'markdown-it-multimd-table'
 
 const md = new MarkdownIt({
-  html: false,
+  html: true,
   linkify: true,
   typographer: true,
-  breaks: true
+  breaks: false  // 关闭自动换行，避免表格内的换行混乱
+})
+
+md.use(mdTable, {
+  multiline: false,  // 关闭多行支持，保持简单
+  rowspan: false,
+  headerless: false,
+  multibody: false,
+  autolabel: false
 })
 
 // Use a class so mini-program styles never need the unsupported `hr` tag selector.
@@ -63,7 +72,14 @@ export function renderMarkdown(markdownText) {
   if (!markdownText || typeof markdownText !== 'string') return ''
   try {
     const normalized = normalizeMarkdown(markdownText.trim())
-    return addMarkdownStyleClasses(md.render(normalized))
+    let html = addMarkdownStyleClasses(md.render(normalized))
+    // 将 table 元素包裹在滚动容器中，防止表格溢出
+    html = html.replace(
+      /<table class="md-table">/g,
+      '<div class="md-table-wrapper"><table class="md-table">'
+    )
+    html = html.replace(/<\/table>/g, '</table></div>')
+    return html
   } catch (e) {
     console.warn('[renderMarkdown] failed:', e && e.message ? e.message : e)
     return markdownText

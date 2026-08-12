@@ -59,6 +59,7 @@
     "@dcloudio/uni-quickapp-webview": "3.0.0-4060620250520001",
     "hls.js": "^1.6.16",
     "markdown-it": "^14.1.1",
+    "markdown-it-multimd-table": "^4.2.3",
     "mp-html": "^2.5.2",
     "vue": "^3.4.21",
     "vue-i18n": "^9.1.9",

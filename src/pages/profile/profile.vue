@@ -167,7 +167,7 @@
         <view class="admin-item" @click="goFileManagement">📂 文件管理</view>
         <view class="admin-item" @click="go2048">🎲 2048后台</view>
         <view class="admin-item" @click="goDbMonitor">📊 数据库</view>
-        <view class="admin-item" @click="goAdminAISettings">⚙️ 管理设置</view>
+        <view class="admin-item" @click="goAdminAISettings">⚙️ AI设置</view>
         <view class="admin-item" @click="goDigitalTwin">🌐 数字孪生</view>
         <view class="admin-item" @click="goCollectionDashboard">🗺️ 清运仪表板</view>
         <view class="admin-item" @click="goCollectionPlanning">📋 清运规划</view>
@@ -574,7 +574,7 @@ function goDbMonitor() {
 
 function goDigitalTwin() {
   verifyAdminPermission().then(hasPermission => {
-    if (hasPermission) uni.navigateTo({ url: '/pages-admin/digital-twin-replay' })
+    if (hasPermission) uni.navigateTo({ url: '/pages-nonTheme/digital-twin-replay' })
   })
 }
 

@@ -312,7 +312,7 @@
 
     <!-- 底部导航栏-->
     <view v-if="aiServiceEnabled" class="floating-agent" @click="goAiAssistant">
-      <text class="floating-agent-main">AI</text>
+      <image class="floating-agent-img" src="/static/ai.png" mode="aspectFit" />
     </view>
 
     <view class="tabbar">
@@ -3392,7 +3392,6 @@ function closeAchievementModal() {
   width: 92rpx;
   height: 92rpx;
   border-radius: 50%;
-  background: linear-gradient(135deg, #10b981, #2563eb);
   box-shadow: 0 14rpx 34rpx rgba(37, 99, 235, 0.28);
   display: flex;
   align-items: center;
@@ -3404,10 +3403,10 @@ function closeAchievementModal() {
   transform: scale(0.96);
 }
 
-.floating-agent-main {
-  color: #fff;
-  font-size: 28rpx;
-  font-weight: 800;
+.floating-agent-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
 }
 
 .tabbar {

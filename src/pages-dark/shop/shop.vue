@@ -610,7 +610,9 @@ const exchangeProduct = async () => {
     showSuccessModal.value = true
 
     const exchangeHistory = uni.getStorageSync('exchangeHistory') || []
-    exchangeHistory.unshift({ id: data.id || Date.now(), product, exchangeTime: new Date().toLocaleString(), status: '已兑换' })
+    const now = new Date()
+    const formattedTime = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+    exchangeHistory.unshift({ id: data.id || Date.now(), product, exchangeTime: formattedTime, status: '已兑换' })
     uni.setStorageSync('exchangeHistory', exchangeHistory)
 
     const unlocks = extractAchievementUnlocks(data)

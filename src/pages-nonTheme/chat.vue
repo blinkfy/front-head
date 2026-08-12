@@ -70,13 +70,14 @@
                                 </view>
                             </view>
 
-                            <!-- 文本消息 -->
-                            <text v-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
+                            <!-- AI 文本使用受限 Markdown，普通用户消息保持原有纯文本展示。 -->
+                            <ChatMarkdown v-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" />
+                            <text v-else-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
 
                             <!-- 图片消息 -->
                             <view v-else-if="msg.type === 'image'" class="image-content" @click="previewImage(msg)">
                                 <!-- 原图已预加载时直接复用；未缓存时仍优先使用缩略图以节省首次流量 -->
-                                <image :src="getImageDisplaySrc(msg)" :data-original-token="loadedOriginalImageTokens[msg.id] || ''" :data-retry-nonce="imageRetryNonces[msg.id] || ''" mode="widthFix" class="msg-image"
+                                <image :src="getImageDisplaySrc(msg)" :data-message-id="msg.id" :data-original-token="loadedOriginalImageTokens[msg.id] || ''" :data-retry-nonce="imageRetryNonces[msg.id] || ''" mode="widthFix" class="msg-image"
                                     :class="{ 'image-error': mediaLoadErrors[msg.id]?.type === 'image' }"
                                     @error="onImageError(msg, $event)" @load="onImageLoad(msg, $event)" />
                                 <view v-if="imageRetryLoadingIds[msg.id]" class="media-error-mask">
@@ -533,6 +534,7 @@ import { getUserProfile } from '@/api/user.js'
 import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
+import ChatMarkdown from '@/components/ChatMarkdown.vue'
 import { loadChatHistoryCache, saveChatHistoryCache } from '@/utils/chat-history-cache.js'
 // #ifndef H5
 import { cacheChatOriginalImage, removeCachedChatOriginalImage, restoreCachedChatOriginalImages } from '@/utils/chat-media-cache.js'
@@ -550,6 +552,9 @@ const chatRelationshipLabels = {
 }
 
 export default {
+    components: {
+        ChatMarkdown
+    },
     data() {
         return {
             chatId: '', // 聊天会话ID
@@ -669,6 +674,8 @@ export default {
             imageRetryNonces: {},
             imageRetryCounts: {},
             imageRetryLoadingIds: {},
+            // 缩略图服务临时不可用时直接回退原图下载地址（可从对象存储回源）。
+            thumbnailFallbackIds: {},
             // 正在加载原图的消息，用于防止重复点击；每个图片独立计数，不和预览页全局状态混用。
             originalImageLoadingIds: {},
             
@@ -778,6 +785,9 @@ export default {
 
         // 对方头像 (计算属性，避免重复调用)
         otherAvatarUrl() {
+            if (this.chatTitle && (this.chatTitle.includes('AI') || this.chatTitle.includes('ai') || this.chatTitle.includes('智能') || this.chatTitle.includes('助手'))) {
+                return '/static/ai.png'
+            }
             // 检查是否有有效的真实头像
             if (this.otherAvatar && 
                 typeof this.otherAvatar === 'string' &&
@@ -1153,7 +1163,10 @@ export default {
 
         getImageDisplaySrc(msg) {
             if (!msg) return ''
-            const baseImageUrl = this.loadedOriginalImages[msg.id] || msg.thumbnail || this.getThumbnail(msg.content)
+            const shouldUseOriginalFallback = Boolean(this.thumbnailFallbackIds[msg.id])
+            const baseImageUrl = this.loadedOriginalImages[msg.id] || (
+                shouldUseOriginalFallback ? msg.content : (msg.thumbnail || this.getThumbnail(msg.content))
+            )
             const nonce = this.imageRetryNonces[msg.id]
             if (!nonce || typeof baseImageUrl !== 'string' || !/^https?:\/\//i.test(baseImageUrl)) {
                 return baseImageUrl
@@ -4427,6 +4440,19 @@ export default {
                 delete this.mediaLoadErrors[msg.id]
                 return
             }
+
+            // 缩略图依赖本地缓存，服务重启后可能短暂 404；原图下载接口会从对象存储回源。
+            if (
+                !this.thumbnailFallbackIds[msg.id] &&
+                msg.type === 'image' &&
+                msg.thumbnail &&
+                msg.content &&
+                msg.thumbnail !== msg.content
+            ) {
+                this.$set(this.thumbnailFallbackIds, msg.id, true)
+                delete this.mediaLoadErrors[msg.id]
+                return
+            }
             
             // 标记加载失败
             this.$set(this.mediaLoadErrors, msg.id, { type: 'image', error: true, retryCount: 0 })
@@ -4624,13 +4650,18 @@ export default {
             const now = new Date()
             const diff = now - date
 
+            const hours = String(date.getHours()).padStart(2, '0')
+            const minutes = String(date.getMinutes()).padStart(2, '0')
+            const timeStr = `${hours}:${minutes}`
+
             if (diff < 86400000 && date.getDate() === now.getDate()) {
-                return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                return timeStr
             } else if (diff < 172800000) {
-                return '昨天 ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                return '昨天 ' + timeStr
             } else {
-                return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) +
-                    ' ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                const month = String(date.getMonth() + 1).padStart(2, '0')
+                const day = String(date.getDate()).padStart(2, '0')
+                return `${month}/${day} ${timeStr}`
             }
         },
 
@@ -4826,11 +4857,18 @@ export default {
         },
 
         getMessageAvatar(msg) {
-            if (msg?.isAi) {
-                return this.generateAvatarFromName('AI 环保助手', true)
+            if (msg?.isAi || (msg?.senderName && (msg.senderName.includes('AI') || msg.senderName.includes('ai')))) {
+                return '/static/ai.png'
             }
-            if (msg?.senderAvatar && typeof msg.senderAvatar === 'string') {
+            if (msg?.senderAvatar && typeof msg.senderAvatar === 'string' &&
+                msg.senderAvatar.trim() !== '' &&
+                msg.senderAvatar !== 'null' &&
+                msg.senderAvatar !== 'undefined') {
                 return getAvatarUrl(msg.senderAvatar, baseUrl)
+            }
+            // 群聊中用发送者姓名生成头像，避免回落到群聊标题首字
+            if (this.isGroupChat && msg?.senderName) {
+                return this.generateAvatarFromName(msg.senderName, true)
             }
             return this.otherAvatarUrl
         },
@@ -4943,6 +4981,8 @@ page {
 .chat-container {
     display: flex;
     flex-direction: column;
+    // 旧版或部分小程序内核不识别 100dvh 时，保留可用的视口高度回退。
+    height: 100vh;
     height: 100dvh;
     width: 100vw;
     margin: 0;
@@ -5140,6 +5180,19 @@ page {
     width: 100%;
     box-sizing: border-box;
 }
+
+/* #ifdef MP-WEIXIN */
+// 小程序的 scroll-view 必须拥有确定高度，才能由自身而不是 page 承担滚动。
+.chat-container {
+    min-height: 0;
+    max-height: 100vh;
+}
+
+.message-list {
+    height: 0;
+    min-height: 0;
+}
+/* #endif */
 
 .load-more {
     text-align: center;

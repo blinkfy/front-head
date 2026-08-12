@@ -1078,6 +1078,10 @@ computed: {
 
 		// 获取用户头像 (如果没有则生成)
 		getUserAvatar(user) {
+			const username = user.note || user.username || '用户'
+			if (user.isAi || user.otherId === 'ai' || (username && (username.includes('AI') || username.includes('ai') || username.includes('智能') || username.includes('助手')))) {
+				return '/static/ai.png'
+			}
 			// 检查是否有有效的真实头像
 			if (user.avatar && 
 				typeof user.avatar === 'string' &&
@@ -1090,7 +1094,6 @@ computed: {
 				return avatarUrl
 			}
 			// 没有有效头像时，生成基于用户名的头像
-			const username = user.note || user.username || '用户'
 			const generatedUrl = this.generateAvatarFromName(username)
 			return generatedUrl
 		}

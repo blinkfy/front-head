@@ -8,7 +8,7 @@
       <view class="sidebar-top">
         <!-- DeepSeek式极简顶栏 -->
         <view class="brand-bar">
-          <view class="brand-icon"></view>
+          <image class="brand-icon" src="/static/ai.png" mode="aspectFit" />
           <view class="brand-title">AI 环保助手</view>
         </view>
         <view class="new-chat-btn" @tap="onNewChat">
@@ -23,10 +23,41 @@
         <view
           v-for="item in conversationList"
           :key="item.id"
-          :class="['conversation-item', item.id === activeSessionId ? 'active' : '']"
+          :class="['conversation-item', item.id === activeSessionId ? 'active' : '', editingSessionId === item.id ? 'is-editing' : '']"
           @tap="onSelectConversation(item.id)"
         >
-          <view class="conversation-title">{{ item.title || '环保分类咨询' }}</view>
+          <view class="conversation-item-top">
+            <input
+              v-if="editingSessionId === item.id"
+              class="conversation-title-input"
+              v-model="editingTitle"
+              :focus="editingSessionId === item.id"
+              placeholder="输入对话名称"
+              @tap.stop
+              @confirm.stop="confirmRenameConversation(item.id)"
+              @blur="confirmRenameConversation(item.id)"
+            />
+            <view v-else class="conversation-title">{{ item.title || '环保分类咨询' }}</view>
+
+            <view class="conversation-actions">
+              <template v-if="editingSessionId === item.id">
+                <view class="action-btn check-btn" title="确认" @tap.stop="confirmRenameConversation(item.id)">
+                  <text class="action-icon">✓</text>
+                </view>
+                <view class="action-btn cancel-btn" title="取消" @tap.stop="cancelRenameConversation">
+                  <text class="action-icon">✕</text>
+                </view>
+              </template>
+              <template v-else>
+                <view class="action-btn edit-btn" title="重命名" @tap.stop="startRenameConversation(item.id, item.title)">
+                  <text class="action-icon">✏️</text>
+                </view>
+                <view class="action-btn delete-btn" title="删除对话" @tap.stop="onDeleteConversation(item.id)">
+                  <text class="action-icon">🗑️</text>
+                </view>
+              </template>
+            </view>
+          </view>
           <view class="conversation-meta">
             <text>{{ formatTimeLabel(item.updatedAt) }}</text>
           </view>
@@ -70,9 +101,7 @@
         @scroll="onMessagesScroll"
       >
         <view v-if="showIntroPanel" class="welcome-hero">
-          <view class="welcome-icon">
-            <view class="welcome-icon-inner"></view>
-          </view>
+          <image class="welcome-icon" src="/static/ai.png" mode="aspectFit" />
           <view class="welcome-text">今天有什么可以帮您？</view>
         </view>
         <view v-if="!messageList.length && !isStreaming" class="empty-chat">
@@ -83,7 +112,7 @@
           :key="`${msg.createdAt || idx}_${idx}`"
           :class="['message-row', msg.role === 'user' ? 'from-user' : 'from-assistant']"
         >
-          <view v-if="msg.role !== 'user'" class="avatar assistant-avatar">AI</view>
+          <image v-if="msg.role !== 'user'" class="avatar assistant-avatar" src="/static/ai.png" mode="aspectFit" />
           <view class="message-content">
             <view class="message-meta">
               <text class="message-author">{{ msg.role === 'user' ? '你' : '环保 AI' }}</text>
@@ -130,7 +159,7 @@
           </view>
         </view>
         <view v-if="isStreaming" class="message-row from-assistant">
-          <view class="avatar assistant-avatar">AI</view>
+          <image class="avatar assistant-avatar" src="/static/ai.png" mode="aspectFit" />
           <view class="message-content">
             <view class="message-meta">
               <text class="message-author">环保 AI</text>
@@ -311,6 +340,8 @@ const promptText   = ref('')
 const messageList  = ref([])          // { role, content, imageBase64, createdAt }[]
 const conversationList = ref([])      // 侧边栏渲染用的排序列表
 const activeSessionId = ref('')
+const editingSessionId = ref('')      // 当前处于行内重命名的 sessionId
+const editingTitle = ref('')          // 当前行内重命名的输入文本
 const isStreaming   = ref(false)
 const streamingText = ref('')
 const streamingReasoning = ref('')   // 流式推理内容
@@ -607,9 +638,128 @@ function refreshConversationMeta(conversation) {
   else if (firstMsg) smartSummary = truncateText(firstMsg.content, 16)
   else smartSummary = '环保分类咨询'
 
-  conversation.title     = smartSummary
-  conversation.summary   = smartSummary
+  if (conversation.customTitle) {
+    conversation.title = conversation.customTitle
+    conversation.summary = conversation.customTitle
+  } else {
+    conversation.title     = smartSummary
+    conversation.summary   = smartSummary
+  }
   conversation.updatedAt = (lastMsg && lastMsg.createdAt) || conversation.updatedAt || new Date().toISOString()
+}
+
+const isCancelingRename = ref(false)
+
+function startRenameConversation(sessionId, defaultTitle = '') {
+  const conversation = conversationMap.get(sessionId)
+  if (!conversation) return
+  editingSessionId.value = sessionId
+  editingTitle.value = conversation.customTitle || conversation.title || defaultTitle || ''
+}
+
+function confirmRenameConversation(sessionId) {
+  if (!editingSessionId.value || isCancelingRename.value) return
+  const targetId = sessionId || editingSessionId.value
+  const conversation = conversationMap.get(targetId)
+  if (conversation) {
+    const trimmed = (editingTitle.value || '').trim()
+    const originalTitle = (conversation.customTitle || conversation.title || '').trim()
+    if (trimmed && trimmed !== originalTitle) {
+      conversation.customTitle = trimmed
+      conversation.title = trimmed
+      conversation.summary = trimmed
+      syncConversationList()
+      updateHeader()
+      
+      // 异步同步给后端保存
+      const token = getStorage('token') || ''
+      if (token) {
+        // #ifdef H5
+        fetch(`${baseUrl}/api/ai/chat/rename`, {
+          method: 'POST',
+          headers: buildAuthHeaders(true),
+          body: JSON.stringify({ sessionId: targetId, customTitle: trimmed })
+        }).catch(() => {})
+        // #endif
+        // #ifndef H5
+        uni.request({
+          url: `${baseUrl}/api/ai/chat/rename`,
+          method: 'POST',
+          header: buildAuthHeaders(true),
+          data: { sessionId: targetId, customTitle: trimmed }
+        })
+        // #endif
+      }
+
+      uni.showToast({ title: '重命名成功', icon: 'success' })
+    }
+  }
+  editingSessionId.value = ''
+  editingTitle.value = ''
+}
+
+function cancelRenameConversation() {
+  isCancelingRename.value = true
+  editingSessionId.value = ''
+  editingTitle.value = ''
+  setTimeout(() => {
+    isCancelingRename.value = false
+  }, 150)
+}
+
+function onRenameConversation(sessionId) {
+  startRenameConversation(sessionId)
+}
+
+function onDeleteConversation(sessionId) {
+  const conversation = conversationMap.get(sessionId)
+  if (!conversation) return
+
+  uni.showModal({
+    title: '删除对话',
+    content: `确定要删除对话“${conversation.title || '此对话'}”吗？`,
+    confirmColor: '#EF4444',
+    success: (res) => {
+      if (res.confirm) {
+        conversationMap.delete(sessionId)
+        
+        // 异步同步给后端进行永久删除与标记
+        const token = getStorage('token') || ''
+        if (token) {
+          // #ifdef H5
+          fetch(`${baseUrl}/api/ai/chat/delete`, {
+            method: 'POST',
+            headers: buildAuthHeaders(true),
+            body: JSON.stringify({ sessionId })
+          }).catch(() => {})
+          // #endif
+          // #ifndef H5
+          uni.request({
+            url: `${baseUrl}/api/ai/chat/delete`,
+            method: 'POST',
+            header: buildAuthHeaders(true),
+            data: { sessionId }
+          })
+          // #endif
+        }
+
+        if (activeSessionId.value === sessionId) {
+          const sorted = getSortedConversations()
+          if (sorted.length > 0) {
+            setActiveSession(sorted[0].id)
+          } else {
+            const nextId = createSessionId()
+            ensureConversation(nextId)
+            setActiveSession(nextId)
+          }
+        } else {
+          syncConversationList()
+        }
+        
+        uni.showToast({ title: '已删除对话', icon: 'none' })
+      }
+    }
+  })
 }
 function getSortedConversations() {
   return Array.from(conversationMap.values()).sort((a, b) =>
@@ -879,17 +1029,22 @@ function goBack() {
 // ─── 历史加载 ─────────────────────────────────────────────
 async function loadHistoryItems() {
   const token = getStorage('token') || ''
-  if (!token) return []
+  if (!token) return { items: [], sessionMetas: {} }
   try {
     // #ifdef H5
     const res = await fetch(`${baseUrl}/api/ai/chat/history?limit=100`, {
       method: 'GET', headers: buildAuthHeaders(false)
     })
-    if (!res.ok) return []
+    if (!res.ok) return { items: [], sessionMetas: {} }
     const payload = await res.json()
     const items = payload && payload.code === 0 && payload.data && Array.isArray(payload.data.items)
       ? payload.data.items : []
-    return items.filter(item => item && (item.role === 'user' || item.role === 'assistant'))
+    const sessionMetas = payload && payload.code === 0 && payload.data && payload.data.sessionMetas
+      ? payload.data.sessionMetas : {}
+    return {
+      items: items.filter(item => item && (item.role === 'user' || item.role === 'assistant')),
+      sessionMetas
+    }
     // #endif
     // #ifndef H5
     return await new Promise((resolve) => {
@@ -901,20 +1056,34 @@ async function loadHistoryItems() {
           const payload = res.data
           const items = payload && payload.code === 0 && payload.data && Array.isArray(payload.data.items)
             ? payload.data.items : []
-          resolve(items.filter(item => item && (item.role === 'user' || item.role === 'assistant')))
+          const sessionMetas = payload && payload.code === 0 && payload.data && payload.data.sessionMetas
+            ? payload.data.sessionMetas : {}
+          resolve({
+            items: items.filter(item => item && (item.role === 'user' || item.role === 'assistant')),
+            sessionMetas
+          })
         },
-        fail: () => resolve([])
+        fail: () => resolve({ items: [], sessionMetas: {} })
       })
     })
     // #endif
-  } catch (_) { return [] }
+  } catch (_) { return { items: [], sessionMetas: {} } }
 }
-function hydrateConversations(items) {
+function hydrateConversations(historyData) {
   conversationMap = new Map()
-  const list = Array.isArray(items) ? items : []
+  const list = historyData && Array.isArray(historyData.items) ? historyData.items : []
+  const sessionMetas = (historyData && historyData.sessionMetas) || {}
+
   for (const item of list) {
     const sessionId = normalizeSessionId(item.sessionId) || 'legacy_default'
     const conversation = ensureConversation(sessionId)
+    
+    // 使用后端数据库返回的 customTitle
+    const title = sessionMetas[sessionId]
+    if (title) {
+      conversation.customTitle = title
+    }
+    
     const content = String(item.content || '').trim()
     if (!content) continue
     conversation.messages.push({
@@ -1423,9 +1592,9 @@ onMounted(async () => {
   }
   // #endif
 
-  let historyItems = []
-  try { historyItems = await loadHistoryItems() } catch (_) {}
-  hydrateConversations(historyItems)
+  let historyData = { items: [], sessionMetas: {} }
+  try { historyData = await loadHistoryItems() } catch (_) {}
+  hydrateConversations(historyData)
 
   const freshSeedSession = maybeStartFromFreshSeed()
   if (freshSeedSession) {
@@ -1701,6 +1870,7 @@ page {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
 
 .shell .conversation-title {
@@ -1711,6 +1881,69 @@ page {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+.shell .conversation-title-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-card, rgba(255, 255, 255, 0.8));
+  border: 1px solid var(--accent, #3b82f6);
+  border-radius: 4px;
+  padding: 0 6px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.shell .conversation-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+
+.shell .conversation-item:hover .conversation-actions,
+.shell .conversation-item.active .conversation-actions,
+.shell .conversation-item.is-editing .conversation-actions {
+  opacity: 1;
+}
+
+.shell .action-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.shell .action-btn:hover {
+  background: rgba(128, 128, 128, 0.2);
+  transform: scale(1.08);
+}
+
+.shell .action-btn.check-btn:hover {
+  background: rgba(34, 197, 94, 0.2);
+  color: #16a34a;
+}
+
+.shell .action-btn.cancel-btn:hover {
+  background: rgba(156, 163, 175, 0.2);
+}
+
+.shell .action-btn.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.shell .action-icon {
+  font-size: 11px;
+  line-height: 1;
 }
 
 .shell .conversation-dot {
@@ -2040,8 +2273,7 @@ page {
 
 .shell .assistant-avatar {
   margin-right: 12px;
-  background: linear-gradient(135deg, #4D6BFE, #6B8BFF);
-  color: #fff;
+  background: transparent;
 }
 
 .shell .user-avatar {
@@ -2503,7 +2735,6 @@ page {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #4D6BFE, #7B9BFF);
   flex-shrink: 0;
 }
 .shell .brand-title {
@@ -2749,16 +2980,9 @@ page {
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #4D6BFE, #7B9BFF);
   display: flex;
   align-items: center;
   justify-content: center;
-}
-.shell .welcome-icon-inner {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.5);
 }
 .shell .welcome-text {
   font-size: 20px;
@@ -3475,8 +3699,7 @@ page {
 .shell.dark-theme .btn-stop { background: #333333; border-color: #52525B; }
 .shell.dark-theme .suggestion-pill { background: #262626; border-color: #3F3F46; }
 .shell.dark-theme .conversation-item:hover { background: #333333; }
-.shell.dark-theme .welcome-icon { background: linear-gradient(135deg, #3D5BEE, #6B8AFF); }
-.shell.dark-theme .brand-icon { background: linear-gradient(135deg, #3D5BEE, #6B8AFF); }
+.shell.dark-theme .brand-icon { opacity: 0.9; }
 .shell.dark-theme .deep-think-icon-char {
   background: rgba(255, 255, 255, 0.08);
   color: var(--btn-think-inactive-text);

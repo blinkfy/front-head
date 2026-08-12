@@ -293,19 +293,17 @@ const isCurrentUser = (username) => {
 // 格式化日期
 const formatDate = (dateString) => {
   const date = new Date(dateString)
-  return date.toLocaleDateString('zh-CN', {
-    month: 'short',
-    day: 'numeric'
-  })
+  if (isNaN(date.getTime())) return dateString || ''
+  return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
 // 格式化更新时间
 const formatUpdateTime = (dateString) => {
   const date = new Date(dateString)
-  return date.toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  if (isNaN(date.getTime())) return dateString || ''
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
 }
 </script>
 

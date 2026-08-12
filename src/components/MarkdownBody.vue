@@ -153,17 +153,34 @@ const plainText = computed(() => {
   margin: 0.6em 0;
 }
 
+.md-body :deep(.md-table-wrapper) {
+  overflow-x: auto;
+  margin: 0.4em 0;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
 .md-body :deep(.md-table) {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9em;
-  margin: 0.4em 0;
+  margin: 0;
+  table-layout: auto;
 }
 
 .md-body :deep(.md-table-cell) {
   border: 1px solid rgba(0, 0, 0, 0.1);
-  padding: 0.3em 0.5em;
+  padding: 0.5em 0.6em;
   text-align: left;
+  word-break: break-word;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+
+.md-body :deep(.md-table-heading) {
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .md-body :deep(.md-image) {
@@ -234,6 +251,9 @@ const plainText = computed(() => {
 }
 .shell.dark-theme .md-body :deep(.md-code-block) {
   background: rgba(255, 255, 255, 0.05);
+}
+.shell.dark-theme .md-body :deep(.md-table-wrapper) {
+  border-color: rgba(255, 255, 255, 0.1);
 }
 .shell.dark-theme .md-body :deep(.md-table-cell) {
   border-color: rgba(255, 255, 255, 0.1);
