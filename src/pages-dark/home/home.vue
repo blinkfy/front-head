@@ -3027,6 +3027,17 @@ function closeAchievementModal() {
   }
 }
 
+@keyframes ai-float-idle-dark {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes ai-pulse-ring-dark {
+  0% { box-shadow: 0 14rpx 34rpx rgba(56, 189, 248, 0.3), 0 0 0 0 rgba(64, 224, 255, 0.4); }
+  70% { box-shadow: 0 20rpx 48rpx rgba(56, 189, 248, 0.5), 0 0 0 14px rgba(64, 224, 255, 0); }
+  100% { box-shadow: 0 14rpx 34rpx rgba(56, 189, 248, 0.3), 0 0 0 0 rgba(64, 224, 255, 0); }
+}
+
 .floating-agent {
   position: fixed;
   right: 32rpx;
@@ -3040,16 +3051,37 @@ function closeAchievementModal() {
   align-items: center;
   justify-content: center;
   z-index: 120;
+  animation: ai-float-idle-dark 3.5s ease-in-out infinite;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.25s ease,
+              background 0.25s ease;
+  cursor: pointer;
+}
+
+.floating-agent:hover {
+  transform: translateY(-8px) scale(1.1);
+  background: linear-gradient(135deg, #34d399, #67e8f9);
+  box-shadow:
+    0 20rpx 48rpx rgba(56, 189, 248, 0.55),
+    0 0 0 6px rgba(64, 224, 255, 0.15),
+    0 0 28px rgba(64, 224, 255, 0.45);
+  animation: ai-pulse-ring-dark 1.5s ease-out infinite;
+}
+
+.floating-agent:hover .floating-agent-main {
+  transform: scale(1.1);
 }
 
 .floating-agent:active {
-  transform: scale(0.96);
+  transform: scale(0.93) translateY(0);
+  animation: none;
 }
 
 .floating-agent-main {
   color: #051923;
   font-size: 28rpx;
   font-weight: 800;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .tabbar {

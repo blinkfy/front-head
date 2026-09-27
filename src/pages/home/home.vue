@@ -3385,6 +3385,17 @@ function closeAchievementModal() {
 }
 
 /* 底部导航 */
+@keyframes ai-float-idle {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes ai-pulse-ring {
+  0% { box-shadow: 0 14rpx 34rpx rgba(37, 99, 235, 0.28), 0 0 0 0 rgba(37, 99, 235, 0.35); }
+  70% { box-shadow: 0 14rpx 34rpx rgba(37, 99, 235, 0.28), 0 0 0 14px rgba(37, 99, 235, 0); }
+  100% { box-shadow: 0 14rpx 34rpx rgba(37, 99, 235, 0.28), 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
 .floating-agent {
   position: fixed;
   right: 32rpx;
@@ -3397,16 +3408,35 @@ function closeAchievementModal() {
   align-items: center;
   justify-content: center;
   z-index: 120;
+  animation: ai-float-idle 3.5s ease-in-out infinite;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.25s ease;
+  cursor: pointer;
+}
+
+.floating-agent:hover {
+  transform: translateY(-8px) scale(1.1);
+  box-shadow:
+    0 20rpx 48rpx rgba(37, 99, 235, 0.45),
+    0 0 0 6px rgba(37, 99, 235, 0.12),
+    0 0 24px rgba(37, 99, 235, 0.3);
+  animation: ai-pulse-ring 1.5s ease-out infinite;
+}
+
+.floating-agent:hover .floating-agent-img {
+  transform: rotate(8deg) scale(1.05);
 }
 
 .floating-agent:active {
-  transform: scale(0.96);
+  transform: scale(0.93) translateY(0);
+  animation: none;
 }
 
 .floating-agent-img {
   width: 100%;
   height: 100%;
   border-radius: 50%;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .tabbar {

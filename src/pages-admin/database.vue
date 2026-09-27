@@ -2185,6 +2185,44 @@ onUnmounted(() => {
     width: 100%;
     position: relative;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(64, 224, 255, 0.4) rgba(0, 35, 65, 0.3);
+}
+
+.database-scroll-container::-webkit-scrollbar {
+    width: 5px;
+}
+
+.database-scroll-container::-webkit-scrollbar-track {
+    background: rgba(0, 20, 40, 0.4);
+    border-radius: 10px;
+}
+
+.database-scroll-container::-webkit-scrollbar-thumb {
+    background: linear-gradient(
+        to bottom,
+        rgba(64, 224, 255, 0.15),
+        rgba(64, 224, 255, 0.55),
+        rgba(64, 224, 255, 0.15)
+    );
+    border-radius: 10px;
+    border: none;
+    box-shadow: 0 0 6px rgba(64, 224, 255, 0.4);
+    transition: background 0.3s;
+}
+
+.database-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+        to bottom,
+        rgba(64, 224, 255, 0.3),
+        rgba(64, 224, 255, 0.8),
+        rgba(64, 224, 255, 0.3)
+    );
+    box-shadow: 0 0 10px rgba(64, 224, 255, 0.7);
+}
+
+.database-scroll-container::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 /* 内容容器 */
@@ -3080,6 +3118,40 @@ rich-text {
     flex: 1;
     padding: 24rpx;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(64, 224, 255, 0.35) rgba(0, 25, 50, 0.2);
+}
+
+.modal-body::-webkit-scrollbar {
+    width: 4px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+    background: rgba(0, 20, 40, 0.3);
+    border-radius: 10px;
+    margin: 8px 0;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+    background: linear-gradient(
+        to bottom,
+        rgba(64, 224, 255, 0.1),
+        rgba(64, 224, 255, 0.5),
+        rgba(64, 224, 255, 0.1)
+    );
+    border-radius: 10px;
+    box-shadow: 0 0 5px rgba(64, 224, 255, 0.35);
+    transition: background 0.3s;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+        to bottom,
+        rgba(64, 224, 255, 0.25),
+        rgba(64, 224, 255, 0.75),
+        rgba(64, 224, 255, 0.25)
+    );
+    box-shadow: 0 0 8px rgba(64, 224, 255, 0.6);
 }
 
 .form-item {

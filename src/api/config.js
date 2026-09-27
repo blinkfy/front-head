@@ -5,7 +5,7 @@
 // 根据环境获取配置
 export function getConfig() {
   return {
-    baseUrl: '',
+    baseUrl: 'http://localhost:3000',
     timeout: 30000
   }
 }

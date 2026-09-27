@@ -729,7 +729,7 @@ function goDbMonitor() {
 function goDigitalTwin() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) {
-      uni.navigateTo({ url: '/pages-nonTheme/digital-twin-replay' })
+      uni.navigateTo({ url: '/pages-admin/digital-twin-replay' })
     }
   })
 }
