@@ -113,6 +113,7 @@ function request({
   params = {},
   header = {},
   needAuth = false,
+  silent = false,
   contentType
 }) {
   const token = getToken()
@@ -166,19 +167,20 @@ function request({
             markDatabaseOffline({
               runtime: databaseStatusRuntime,
               message: responseData.msg || responseData.error || '数据库暂时关闭，该操作暂不可用',
-              source: url
+              source: url,
+              notify: !silent
             })
             reject(responseData)
           } else {
             // 同时显示 msg（社区风格）或 error（新增API风格）
-            uni.showToast({ title: responseData.msg || responseData.error || '请求失败', icon: 'none' })
+            if (!silent) uni.showToast({ title: responseData.msg || responseData.error || '请求失败', icon: 'none' })
             reject(responseData)
           }
         } else {
           const message = httpErrorMessage(res)
           if (res?.statusCode === 401) {
             handleUnauthorized()
-          } else {
+          } else if (!silent) {
             uni.showToast({ title: message, icon: 'none' })
           }
           reject({ ...res, msg: message, message })
@@ -186,7 +188,7 @@ function request({
       },
       fail: err => {
         const message = err?.msg || err?.errMsg || err?.message || '网络请求失败，请检查网络后重试'
-        uni.showToast({ title: message, icon: 'none' })
+        if (!silent) uni.showToast({ title: message, icon: 'none' })
         reject({ ...err, msg: message, message })
       }
     })

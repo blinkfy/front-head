@@ -23,13 +23,8 @@ export function useDeviceConnection() {
       return
     }
 
-    // 检查连接时间是否过期（超过10分钟自动清除）
-    const now = Date.now()
-    const timeDiff = now - connectionTime
-    if (timeDiff > 10 * 60 * 1000) { // 10分钟
-      clearConnectionStorage()
-      return
-    }
+    // Connection expiry is determined by the backend's last activity time.
+    // Continuous deposits must not be disconnected by a fixed local age limit.
 
     const mockConnection = getMockDeviceConnection()
     if (mockConnection) {

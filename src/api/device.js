@@ -49,6 +49,16 @@ export function getConnectedDevices() {
   })
 }
 
+/** 获取当前用户本次连接的投放记录；读取不会延长连接时间。 */
+export function getDeviceSession(deviceId) {
+  return request({
+    url: `/api/device/${encodeURIComponent(deviceId)}/session`,
+    method: 'GET',
+    needAuth: true,
+    silent: true
+  })
+}
+
 /**
  * 断开设备连接
  * @param {string} deviceId - 设备ID

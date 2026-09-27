@@ -1,5 +1,5 @@
 <template>
-  <view class="scan-container scan-dark">
+  <view class="scan-container scan-dark" :class="{ 'session-mode': connected && deviceMode === 'bin' }">
     <view class="light-eco-decor" aria-hidden="true">
       <text class="eco-symbol eco-leaf-one">🌿</text>
       <text class="eco-symbol eco-leaf-two">🍃</text>
@@ -18,7 +18,7 @@
       </view>
       <view class="topbar-state" :class="{ online: connected, pending: loading, offline: !connected && !loading }">
         <view class="state-dot"></view>
-        <text>{{ connected ? '已连接' : loading ? '连接中' : '待连接' }}</text>
+        <text>{{ connected ? (sessionSyncState === 'paused' ? '同步暂停' : '已连接') : loading ? '连接中' : '待连接' }}</text>
       </view>
     </view>
 
@@ -34,15 +34,32 @@
             <text v-else>!</text>
           </view>
         </view>
-        <text class="overview-title">{{ connected ? '设备已准备就绪' : loading ? '正在验证设备' : '等待设备连接' }}</text>
-        <text class="overview-desc">{{ connected ? '连接状态正常，分类数据将实时同步' : loading ? '正在校验设备身份与安全令牌' : '请返回后重新扫描设备二维码' }}</text>
-        <view class="connection-steps">
+        <text class="overview-title">{{ connected ? (deviceMode === 'bin' ? '连接后的每一投，都算数' : '设备已连接') : loading ? '正在验证设备' : '等待设备连接' }}</text>
+        <text class="overview-desc">{{ connected ? (sessionSyncState === 'paused' ? '暂时无法更新投放反馈' : '在这里查看分类记录与积分反馈') : loading ? '正在校验设备身份与安全令牌' : '请返回后重新扫描设备二维码' }}</text>
+        <view v-if="!connected || deviceMode !== 'bin'" class="connection-steps">
           <view class="step-item active"><view class="step-dot"></view><text>设备</text></view>
           <view class="step-line" :class="{ active: loading || connected }"></view>
           <view class="step-item" :class="{ active: loading || connected }"><view class="step-dot"></view><text>验证</text></view>
           <view class="step-line" :class="{ active: connected }"></view>
           <view class="step-item" :class="{ active: connected }"><view class="step-dot"></view><text>完成</text></view>
         </view>
+      </view>
+
+      <view v-if="connected && deviceMode === 'bin'" class="session-guide">
+        <view class="guide-heading"><text class="guide-leaf">♻</text><text>让每次投放都有回响</text></view>
+        <view class="guide-step">
+          <text class="guide-number">01</text>
+          <view class="guide-copy"><text class="guide-title">跟随垃圾桶提示投放</text><text class="guide-description">开门、识别等操作，请以设备提示为准。</text></view>
+        </view>
+        <view class="guide-step">
+          <text class="guide-number">02</text>
+          <view class="guide-copy"><text class="guide-title">查看这一次分类结果</text><text class="guide-description">收到分类记录后，投放面板会自动更新。</text></view>
+        </view>
+        <view class="guide-step">
+          <text class="guide-number">03</text>
+          <view class="guide-copy"><text class="guide-title">收下你的环保积分</text><text class="guide-description">积分到账后会有加分反馈，也可查看记录。</text></view>
+        </view>
+        <view class="guide-note"><text>投放后稍等片刻，让分类结果与积分自动同步。</text></view>
       </view>
 
       <view class="status-card">
@@ -62,28 +79,26 @@
         </view>
 
         <view v-else-if="connected" class="status-section success-section">
-          <view class="section-kicker success">连接成功</view>
-          <text class="status-title">设备连接成功</text>
-          <text class="status-desc">安全连接已建立，可以开始分类投放</text>
-          <view class="device-info-card success">
-            <view class="device-info-row">
-              <text class="device-label">设备名称</text>
-              <text class="device-value">{{ deviceName || '智能分类设备' }}</text>
-            </view>
-            <view class="device-info-row">
-              <text class="device-label">设备 ID</text>
-              <text class="device-value mono">{{ deviceId }}</text>
-            </view>
+          <view class="session-device-heading">
+            <text class="session-device-name">{{ deviceName || '智能分类设备' }}</text>
+            <text class="session-device-id">#{{ deviceId }}</text>
           </view>
+          <BinSessionPanel
+            v-if="deviceMode === 'bin'"
+            :device-id="deviceId"
+            :active="pageVisible"
+            :dark="true"
+            @disconnected="handleSessionDisconnected"
+            @sync-state="sessionSyncState = $event"
+          />
+          <template v-else>
+            <text class="status-title">设备连接成功</text>
+            <text class="status-desc">可以开始操作设备</text>
+          </template>
           <view class="action-group">
-            <button class="action-btn primary" @click="goToMap">
-              <text class="btn-text">查看地图</text>
-            </button>
-            <button class="action-btn danger" @click="endConnection">
-              <text class="btn-text">结束连接</text>
-            </button>
+            <button class="action-btn secondary" @click="goToMap"><text class="btn-text">查看地图</text></button>
+            <button class="action-btn danger" @click="endConnection"><text class="btn-text">结束连接</text></button>
           </view>
-          <view class="timeout-note"><text>5 分钟无投放记录时将自动断开</text></view>
         </view>
 
         <view v-else class="status-section error-section">
@@ -117,6 +132,8 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { onShow, onHide } from '@dcloudio/uni-app'
+import BinSessionPanel from '@/components/BinSessionPanel.vue'
 import { getDeviceAPI, testDeviceAPI } from '@/utils/device-api-loader.js'
 import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr.js'
 
@@ -154,6 +171,18 @@ const isTokenError = ref(false)
 const isH5 = ref(false)
 const connectedDevices = ref([])
 const deviceCheckTimer = ref(null)
+const pageVisible = ref(true)
+const sessionSyncState = ref('pending')
+onShow(() => { pageVisible.value = true })
+onHide(() => { pageVisible.value = false })
+
+function handleSessionDisconnected(message) {
+  connected.value = false
+  errorMessage.value = message
+  uni.removeStorageSync('connection')
+  uni.removeStorageSync('connected_device_mode')
+  stopDeviceCheckTimer()
+}
 
 // 跨平台参数获取函数
 function getPageParams() {
@@ -861,6 +890,8 @@ async function fetchConnectedDevices() {
 function startDeviceCheckTimer() {
   // 清除之前的定时器
   stopDeviceCheckTimer()
+  // The bin panel reads connection and records together.
+  if (deviceMode.value === 'bin') return
   // 立即获取一次
   fetchConnectedDevices()
   // 每5秒检查一次已连接设备
@@ -3722,5 +3753,46 @@ button.action-btn {
   .status-card {
     animation: none !important;
   }
+}
+
+/* Give the connected bin's actual feedback the main space. */
+.session-mode .content-wrapper { grid-template-columns: minmax(220px, .7fr) minmax(420px, 1.3fr); align-items: start; }
+.session-mode .connection-overview { min-height: 340px; padding: 30px 18px; box-sizing: border-box; }
+.session-mode .success-section { padding: 26px 32px; justify-content: flex-start; }
+.session-device-heading { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--scan-border); }
+.session-device-name { font-size: 14px; font-weight: 700; color: var(--scan-text); overflow-wrap: anywhere; }
+.session-device-id { color: var(--scan-muted); font-size: 12px; }
+.session-mode .action-group { margin-top: 22px; }
+@media (max-width: 780px) {
+  .session-mode .content-wrapper { grid-template-columns: 1fr; }
+  .session-mode .connection-overview { min-height: 0; padding: 16px; }
+  .session-mode .success-section { padding: 22px 20px; }
+}
+@media (max-width: 420px) {
+  .session-mode .success-section { padding: 20px 16px; }
+  .session-mode .overview-title { font-size: 16px; }
+}
+
+.session-mode .content-wrapper { grid-template-areas: "overview status" "guide status" "tip tip"; grid-template-rows: auto 1fr auto; align-items: stretch; }
+.session-guide { grid-area: guide; display: flex; flex-direction: column; justify-content: flex-start; padding: 24px; gap: 20px; border: 1px solid var(--scan-border); border-radius: 8px; background: var(--scan-surface); color: var(--scan-text); box-shadow: var(--scan-shadow); }
+.guide-note { margin-top: auto; padding: 12px; border-radius: 8px; background: var(--scan-surface-soft); color: var(--scan-muted); font-size: 11px; line-height: 1.8; }
+.guide-heading { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+.guide-leaf { color: var(--scan-primary); font-size: 22px; }
+.guide-step { display: flex; align-items: flex-start; gap: 12px; }
+.guide-number { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--scan-border); border-radius: 8px; color: var(--scan-primary); background: var(--scan-surface-soft); font-size: 11px; font-weight: 700; }
+.guide-copy { display: flex; flex-direction: column; gap: 5px; }
+.guide-title { font-size: 12px; font-weight: 700; line-height: 1.5; }
+.guide-description { font-size: 11px; line-height: 1.7; color: var(--scan-muted); }
+@media (max-width: 780px) {
+  .session-guide { display: none; }
+  .session-mode .content-wrapper { grid-template-areas: "overview" "status" "tip"; grid-template-rows: auto; }
+}
+
+@media (max-width: 780px) {
+  .session-mode .content-wrapper { grid-template-areas: "status"; margin-top: 8px; gap: 0; }
+  .session-mode .connection-overview, .session-mode .eco-tip { display: none; }
+  .session-mode .success-section { padding: 16px; }
+  .session-mode .session-device-heading { padding-bottom: 10px; margin-bottom: 12px; }
+  .session-mode .action-group { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; gap: 10px; }
 }
 </style>
