@@ -91,6 +91,7 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { getDeviceSession } from '@/api/device.js'
+import { subscribeDeviceSession } from '@/utils/device-session-stream.js'
 import { reconcileDepositFeedback } from '@/utils/device-session-feedback.mjs'
 
 const props = defineProps({
@@ -136,6 +137,33 @@ let pollTimer = null
 let animationTimer = null
 let generation = 0
 let previousConnectionId = null
+let unsubscribeStream = null
+let transportOnline = false
+let pushRefreshTimer = null
+let refreshQueued = false
+
+function requestSessionRefresh() {
+  if (!props.active) return
+  clearTimeout(pollTimer)
+  if (fetching.value) {
+    refreshQueued = true
+    return
+  }
+  // Coalesce bursts without losing a change that arrives during an HTTP read.
+  clearTimeout(pushRefreshTimer)
+  pushRefreshTimer = setTimeout(refresh, 75)
+}
+
+function scheduleSessionCheck() {
+  if (!props.active) return
+  let delay = 3000
+  if (transportOnline && !syncError.value && session.value) {
+    // Keep a low-frequency reconciliation for missed events and multi-instance deployments.
+    const untilExpiry = new Date(session.value.expiresAt).getTime() - Date.now() + 250
+    delay = Math.max(3000, Math.min(60000, untilExpiry))
+  }
+  pollTimer = setTimeout(refresh, delay)
+}
 
 function formatTime(value) {
   const date = new Date(value)
@@ -160,15 +188,19 @@ function goToHistory() {
 }
 
 async function refresh() {
-  if (!props.active || fetching.value || !props.deviceId) return
+  if (!props.active || !props.deviceId) return
+  if (fetching.value) { refreshQueued = true; return }
   clearTimeout(pollTimer)
+  clearTimeout(pushRefreshTimer)
   const currentGeneration = generation
+  let disconnected = false
   fetching.value = true
   try {
     const response = await getDeviceSession(props.deviceId)
     if (generation !== currentGeneration) return
     if (response.code !== 0 || !response.data) throw new Error('服务暂不可用，请稍后重试')
     if (!response.data.connected) {
+      disconnected = true
       emit('disconnected', response.data.reason === 'idle_timeout' ? '长时间无投放，连接已自动结束' : '设备连接已结束')
       return
     }
@@ -205,13 +237,23 @@ async function refresh() {
   } finally {
     if (generation === currentGeneration) {
       fetching.value = false
-      if (props.active) pollTimer = setTimeout(refresh, 3000)
+      if (!disconnected && props.active) {
+        if (refreshQueued) {
+          refreshQueued = false
+          requestSessionRefresh()
+        } else scheduleSessionCheck()
+      }
     }
   }
 }
 
 watch(() => [props.active, props.deviceId], ([active], previous) => {
   generation += 1
+  unsubscribeStream?.()
+  unsubscribeStream = null
+  transportOnline = false
+  refreshQueued = false
+  clearTimeout(pushRefreshTimer)
   clearTimeout(pollTimer)
   clearTimeout(animationTimer)
   fetching.value = false
@@ -224,11 +266,27 @@ watch(() => [props.active, props.deviceId], ([active], previous) => {
     seen.clear()
     initialized.value = false
   }
-  if (active) refresh()
+  if (active && props.deviceId) {
+    const subscriptionGeneration = generation
+    unsubscribeStream = subscribeDeviceSession(props.deviceId, {
+      onState: state => {
+        if (generation !== subscriptionGeneration) return
+        const wasOnline = transportOnline
+        transportOnline = state === 'online'
+        if (transportOnline !== wasOnline) requestSessionRefresh()
+      },
+      onChange: () => {
+        if (generation === subscriptionGeneration) requestSessionRefresh()
+      }
+    })
+    refresh()
+  }
 }, { immediate: true })
 
 onUnmounted(() => {
   generation += 1
+  unsubscribeStream?.()
+  clearTimeout(pushRefreshTimer)
   clearTimeout(pollTimer)
   clearTimeout(animationTimer)
 })

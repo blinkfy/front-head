@@ -1,6 +1,6 @@
 <!-- #ifdef H5 -->
 <template>
-  <view class="chat-markdown" v-html="renderedHtml" />
+  <view class="chat-markdown" :class="{ 'dark-theme': dark }" v-html="renderedHtml" />
 </template>
 
 <script setup>
@@ -8,6 +8,10 @@ import { computed } from 'vue'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 
 const props = defineProps({
+  dark: {
+    type: Boolean,
+    default: false
+  },
   markdown: {
     type: String,
     default: ''
@@ -20,7 +24,7 @@ const renderedHtml = computed(() => renderMarkdown(props.markdown || ''))
 
 <!-- #ifndef H5 -->
 <template>
-  <view class="chat-markdown">
+  <view class="chat-markdown" :class="{ 'dark-theme': dark }">
     <view
       v-for="block in blocks"
       :key="block.key"
@@ -223,6 +227,10 @@ function parseMarkdown(markdown) {
 export default {
   name: 'ChatMarkdown',
   props: {
+    dark: {
+      type: Boolean,
+      default: false
+    },
     markdown: {
       type: String,
       default: ''
@@ -507,30 +515,28 @@ export default {
   background: rgba(0, 0, 0, 0.04);
 }
 
-/* 深色主题 */
-@media (prefers-color-scheme: dark) {
-  .chat-markdown :deep(.md-code),
-  .chat-markdown :deep(.md-code-block) {
-    background: rgba(255, 255, 255, 0.1);
-  }
-  .chat-markdown :deep(.md-table-wrapper),
-  .chat-markdown :deep(.md-table-cell) {
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-  .chat-markdown :deep(.md-table-heading) {
-    background: rgba(255, 255, 255, 0.06);
-  }
+/* 由页面传入应用主题，避免系统主题单独改变消息内容。 */
+.chat-markdown.dark-theme :deep(.md-code),
+.chat-markdown.dark-theme :deep(.md-code-block) {
+  background: rgba(255, 255, 255, 0.1);
+}
+.chat-markdown.dark-theme :deep(.md-table-wrapper),
+.chat-markdown.dark-theme :deep(.md-table-cell) {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.chat-markdown.dark-theme :deep(.md-table-heading) {
+  background: rgba(255, 255, 255, 0.06);
 }
 
-.dark-theme .chat-markdown-table-row {
+.chat-markdown.dark-theme .chat-markdown-table-row {
   border-bottom-color: rgba(255, 255, 255, 0.1);
 }
 
-.dark-theme .chat-markdown-table-row.header-row {
+.chat-markdown.dark-theme .chat-markdown-table-row.header-row {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.dark-theme .chat-markdown-table-cell.header-cell {
+.chat-markdown.dark-theme .chat-markdown-table-cell.header-cell {
   background: rgba(255, 255, 255, 0.08);
 }
 </style>

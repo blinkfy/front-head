@@ -71,7 +71,7 @@
                             </view>
 
                             <!-- AI 文本使用受限 Markdown，普通用户消息保持原有纯文本展示。 -->
-                            <ChatMarkdown v-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" />
+                            <ChatMarkdown v-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" :dark="isDarkTheme" />
                             <text v-else-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
 
                             <!-- 图片消息 -->
