@@ -2,14 +2,14 @@
   <view v-if="visible" class="modal-overlay" @click="handleOverlayClick">
     <!-- 自定义Toast提示 -->
     <view v-if="customToast.show" class="custom-toast" :class="customToast.type">
-      <text class="toast-icon">{{ customToast.icon }}</text>
+      <ManifestIcon class="toast-icon" :id="customToast.icon" />
       <text class="toast-text">{{ customToast.message }}</text>
     </view>
     
     <view class="modal-content" @click.stop>
       <view class="modal-header">
         <text class="modal-title">新增垃圾桶</text>
-        <text class="modal-close" @click="closeModal">✕</text>
+        <ManifestIcon class="modal-close" id="close" @click="closeModal" />
       </view>
       
       <view class="modal-body">
@@ -58,7 +58,7 @@
               v-if="!formData.imageUrl" 
               class="image-placeholder" 
               @click="chooseImage">
-              <text class="upload-icon">📷</text>
+              <ManifestIcon class="upload-icon" id="camera_scan" />
               <text class="upload-text">点击上传照片</text>
             </view>
             <view v-else class="image-preview">
@@ -70,7 +70,7 @@
                 @error="onImageError"
                 @load="onImageLoad"
               />
-              <text class="image-remove" @click="removeImage">✕</text>
+              <ManifestIcon class="image-remove" id="close" @click="removeImage" />
               <text class="image-debug-url">URL: {{ formData.imageUrl }}</text>
               <text v-if="imageErrorMsg" class="image-error">错误: {{ imageErrorMsg }}</text>
             </view>
@@ -93,6 +93,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import ManifestIcon from './ManifestIcon.vue'
 import { addTrashBin, uploadTrashBinImage, reverseGeocoder } from '../api/map.js'
 import { getUserLocationOnce } from '../utils/location'
 
@@ -130,16 +131,16 @@ const customToast = ref({
   show: false,
   message: '',
   type: 'info',
-  icon: 'ℹ️'
+  icon: 'help'
 })
 
 // 显示自定义Toast
 function showCustomToast(message, type = 'info', duration = 2000) {
   const icons = {
-    success: '✅',
-    error: '❌',
-    warning: '⚠️',
-    info: 'ℹ️'
+    success: 'confirm',
+    error: 'dark_alert',
+    warning: 'dark_alert',
+    info: 'help'
   }
   
   customToast.value = {

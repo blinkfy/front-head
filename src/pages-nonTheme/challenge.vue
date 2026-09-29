@@ -15,17 +15,17 @@
       <view class="safe-area-top"></view>
       <view class="nav-content">
         <view class="nav-left" @click="goBack">
-          <text class="back-icon">←</text>
+          <ManifestIcon class="back-icon" id="back" :scale="1" />
         </view>
         <view class="nav-title-wrap">
           <view class="title-icon-pill">
-            <text>🏆</text>
+            <ManifestIcon id="challenge_trophy" />
           </view>
           <text class="nav-title">挑战赛中心</text>
         </view>
         <view class="nav-right">
           <view class="action-icon-btn" :class="{ spinning: loading }" @click="refreshAll">
-            <text>↻</text>
+            <ManifestIcon class="refresh-icon" id="refresh" />
           </view>
         </view>
       </view>
@@ -38,9 +38,9 @@
         <!-- 每日进度卡片 -->
         <view class="daily-progress-card">
           <view class="progress-header">
-            <text class="progress-title">📅 今日挑战进度</text>
+            <view class="progress-title"><ManifestIcon id="challenge_progress" /> 今日挑战进度</view>
             <text class="progress-status" :class="{ completed: dailyCompleted }">
-              {{ dailyCompleted ? '✅ 已完成' : '进行中' }}
+              <ManifestIcon v-if="dailyCompleted" id="confirm" />{{ dailyCompleted ? '已完成' : '进行中' }}
             </text>
           </view>
           <view class="progress-bar-wrap">
@@ -50,7 +50,7 @@
             <text class="progress-text">{{ correctCount }}/{{ totalCount }} 题</text>
           </view>
           <view class="progress-reward">
-            <text class="reward-icon">🎁</text>
+            <ManifestIcon id="reward_gift" class="reward-icon" />
             <text class="reward-text">完成挑战可获得 +{{ totalCount }} 积分</text>
           </view>
         </view>
@@ -73,22 +73,22 @@
 
         <!-- 模式选择 -->
         <view class="mode-section">
-          <text class="section-title">🎮 挑战模式</text>
+          <view class="section-title"><ManifestIcon id="challenge_trophy" /> 挑战模式</view>
           <view class="mode-grid">
             <view class="mode-card daily" :class="{ active: currentMode === 'daily' }" @click="selectMode('daily')">
-              <text class="mode-icon">📝</text>
+            <ManifestIcon id="daily_question" class="mode-icon" />
               <text class="mode-name">每日答题</text>
               <text class="mode-desc">10题挑战</text>
               <text class="mode-reward">每题+1分</text>
             </view>
             <view class="mode-card" :class="{ active: currentMode === 'speed' }" @click="selectMode('speed')">
-              <text class="mode-icon">⚡</text>
+            <ManifestIcon id="speed_challenge" class="mode-icon" />
               <text class="mode-name">速度挑战</text>
               <text class="mode-desc">限时60秒</text>
               <text class="mode-reward">每题+1分</text>
             </view>
             <view class="mode-card" :class="{ active: currentMode === 'combo' }" @click="selectMode('combo')">
-              <text class="mode-icon">🔥</text>
+            <ManifestIcon id="streak_mode" class="mode-icon" />
               <text class="mode-name">连击模式</text>
               <text class="mode-desc">连续答对</text>
               <text class="mode-reward">连击×2分</text>
@@ -98,13 +98,13 @@
 
         <!-- 本周日历 -->
         <view class="calendar-section">
-          <text class="section-title">📆 本周挑战日历</text>
+          <view class="section-title"><ManifestIcon id="challenge_calendar" /> 本周挑战日历</view>
           <view class="calendar-card">
             <view class="week-days">
               <view v-for="day in weeklyDays" :key="day.date" class="day-item" :class="{ completed: day.completed, today: day.isToday }">
                 <text class="day-name">{{ day.dayName }}</text>
                 <view class="day-dot" :class="{ done: day.completed }">
-                  <text v-if="day.completed">✓</text>
+                  <ManifestIcon v-if="day.completed" id="confirm" />
                   <text v-else-if="day.isToday">今</text>
                   <text v-else>○</text>
                 </view>
@@ -113,7 +113,7 @@
             </view>
             <view class="week-summary">
               <text class="summary-text">本周完成: {{ completedDays }}/7 天</text>
-              <text class="reward-hint" v-if="completedDays === 7">🏅 连续7天额外奖励 +20积分!</text>
+              <view class="reward-hint" v-if="completedDays === 7"><ManifestIcon id="challenge_champion" /> 连续7天额外奖励 +20积分!</view>
             </view>
           </view>
         </view>
@@ -121,7 +121,7 @@
         <!-- 开始挑战按钮 -->
         <view class="start-btn-wrap" v-if="!dailyCompleted || showRetry">
           <view class="start-btn" @click="startChallenge" v-if="!showResult">
-            <text class="btn-icon">▶️</text>
+            <ManifestIcon id="challenge_start" class="btn-icon" />
             <text class="btn-text">{{ dailyCompleted ? '重新挑战' : '开始挑战' }}</text>
           </view>
         </view>
@@ -129,7 +129,7 @@
         <!-- 结果展示 -->
         <view class="result-section" v-if="showResult">
           <view class="result-card">
-            <text class="result-icon">{{ challengeResult.correctCount === challengeResult.totalCount ? '🏆' : '🎉' }}</text>
+            <ManifestIcon class="result-icon" :id="challengeResult.correctCount === challengeResult.totalCount ? 'challenge_champion' : 'reward_gift'" />
             <text class="result-title">{{ challengeResult.correctCount === challengeResult.totalCount ? '全部正确！' : '挑战完成!' }}</text>
             <view class="result-stats">
               <view class="result-item">
@@ -145,8 +145,8 @@
             <!-- 错题回顾 -->
             <view class="wrong-answers" v-if="wrongAnswers.length > 0">
               <view class="wrong-header" @click="showWrongDetail = !showWrongDetail">
-                <text class="wrong-title">📋 错题回顾 ({{ wrongAnswers.length }}题)</text>
-                <text class="wrong-arrow" :class="{ open: showWrongDetail }">▼</text>
+                <view class="wrong-title"><ManifestIcon id="challenge_checklist" /> 错题回顾 ({{ wrongAnswers.length }}题)</view>
+                <ManifestIcon class="wrong-arrow" id="chevron_down" :scale="0.8" :class="{ open: showWrongDetail }" />
               </view>
               <view class="wrong-list" v-if="showWrongDetail">
                 <view v-for="(item, idx) in wrongAnswers" :key="idx" class="wrong-item">
@@ -157,15 +157,15 @@
                   <view class="wrong-answer-row">
                     <text class="wrong-label">你的答案：</text>
                     <text class="wrong-your">{{ item.yourAnswer }}</text>
-                    <text class="wrong-mark">✗</text>
+                    <ManifestIcon class="wrong-mark" id="cancel" />
                   </view>
                   <view class="wrong-answer-row correct-row">
                     <text class="wrong-label">正确答案：</text>
                     <text class="wrong-correct">{{ item.correctAnswer }}</text>
-                    <text class="wrong-mark correct-mark">✓</text>
+                    <ManifestIcon class="wrong-mark correct-mark" id="confirm" />
                   </view>
                   <view class="wrong-explain" v-if="item.explanation">
-                    <text class="explain-icon">💡</text>
+                    <ManifestIcon class="explain-icon" id="help" />
                     <text class="explain-text">{{ item.explanation }}</text>
                   </view>
                 </view>
@@ -186,7 +186,7 @@
         <!-- 排行榜 -->
         <view class="leaderboard-section">
           <view class="section-header">
-            <text class="section-title">🥇 挑战排行榜</text>
+            <view class="section-title"><ManifestIcon id="challenge_rank" /> 挑战排行榜</view>
             <view class="tab-switch">
               <view class="tab-item" :class="{ active: rankType === 'all' }" @click="rankType = 'all'; loadLeaderboard()">
                 <text>总榜</text>
@@ -202,9 +202,9 @@
           <view class="leaderboard-list" v-if="leaderboard.length > 0">
             <view v-for="(item, index) in leaderboard.slice(0, 10)" :key="item.userId" class="rank-item" :class="`rank-${index + 1}`">
               <view class="rank-badge">
-                <text v-if="index === 0" class="rank-medal">🥇</text>
-                <text v-else-if="index === 1" class="rank-medal">🥈</text>
-                <text v-else-if="index === 2" class="rank-medal">🥉</text>
+                <ManifestIcon v-if="index === 0" class="rank-medal" id="challenge_champion" />
+                <ManifestIcon v-else-if="index === 1" class="rank-medal" id="rank_second" />
+                <ManifestIcon v-else-if="index === 2" class="rank-medal" id="rank_third" />
                 <text v-else class="rank-num">{{ index + 1 }}</text>
               </view>
               <image class="rank-avatar" :src="getAvatarUrl(item.avatar)" mode="aspectFill"></image>
@@ -216,7 +216,7 @@
             </view>
           </view>
           <view class="empty-list" v-else>
-            <text class="empty-icon">📊</text>
+            <ManifestIcon class="empty-icon" id="challenge_rank" />
             <text class="empty-text">暂无排行数据</text>
           </view>
         </view>
@@ -229,8 +229,8 @@
       <view class="quiz-container">
         <view class="quiz-header">
           <text class="quiz-progress" v-if="currentMode !== 'combo'">第 {{ currentQuestionIndex + 1 }}/{{ questions.length }} 题</text>
-          <text class="quiz-progress combo-progress" v-else>🔥 连击 ×{{ comboCount }}</text>
-          <text class="quiz-timer" v-if="currentMode === 'speed'">⏱️ {{ timeLeft }}s</text>
+          <view class="quiz-progress combo-progress" v-else><ManifestIcon id="streak_mode" /> 连击 ×{{ comboCount }}</view>
+          <view class="quiz-timer" v-if="currentMode === 'speed'"><ManifestIcon id="timer" :scale="1" /><text>{{ timeLeft }}s</text></view>
         </view>
         <view class="quiz-progress-bar" v-if="currentMode !== 'combo'">
           <view class="quiz-progress-fill" :style="{ width: ((currentQuestionIndex) / questions.length * 100) + '%' }"></view>
@@ -271,11 +271,13 @@
 import { getDailyChallenge, submitChallenge, getChallengeStats, getChallengeLeaderboard, getWeeklyCalendar, getModeQuestions } from '@/api/challenge.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
+import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue';
+import ManifestIcon from '@/components/ManifestIcon.vue';
 import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements';
 
 export default {
-  components: { AchievementUnlockModal },
+  components: { AchievementUnlockModal, ManifestIcon },
   data() {
     return {
       loading: false,
@@ -496,14 +498,14 @@ export default {
         if (isCorrect) {
           this.comboCount++;
           uni.vibrateShort && uni.vibrateShort();
-          uni.showToast({ title: `✅ 连击 ×${this.comboCount}`, icon: 'none', duration: 600 });
+          uni.showToast({ title: `连击 ×${this.comboCount}`, icon: 'none', duration: 600 });
           setTimeout(() => {
             this.comboAnswering = false;
             this.nextComboQuestion();
           }, 700);
         } else {
           uni.vibrateShort && uni.vibrateShort();
-          uni.showToast({ title: '❌ 答错了！', icon: 'none', duration: 1000 });
+          uni.showToast({ title: '答错了！', icon: 'none', duration: 1000 });
           setTimeout(() => {
             this.submitQuiz();
           }, 1000);
@@ -601,11 +603,12 @@ export default {
       return { left: p.left, top: p.top, animationDelay: p.delay };
     },
     getAvatarUrl(avatar) {
-      if (!avatar) return '/static/person.webp.png';
-      if (typeof avatar !== 'string') return '/static/person.webp.png';
-      if (avatar.startsWith('blob:')) return '/static/person.webp.png';
+      const fallbackAvatar = getManifestIconPath('profile_user');
+      if (!avatar) return fallbackAvatar;
+      if (typeof avatar !== 'string') return fallbackAvatar;
+      if (avatar.startsWith('blob:')) return fallbackAvatar;
       const resolved = resolveAvatarUrl(avatar, baseUrl);
-      if (resolved !== '/static/person.webp.png') return resolved;
+      if (resolved !== fallbackAvatar) return resolved;
       if (avatar.startsWith('/')) return `${baseUrl}${avatar}`;
       return `${baseUrl}/${avatar}`;
     }
@@ -708,6 +711,8 @@ export default {
 }
 .navbar-dark { color: #1f2937; }
 .dark-mode .navbar { color: #fff; }
+.dark-mode .navbar .back-icon,
+.dark-mode .navbar .refresh-icon { filter: brightness(0) invert(1); }
 .safe-area-top {
   height: env(safe-area-inset-top);
   min-height: 44rpx;
@@ -753,6 +758,7 @@ export default {
   font-size: 28rpx;
   transition: all 0.3s;
 }
+.action-icon-btn .refresh-icon { transform: scale(0.82); }
 .dark-mode .action-icon-btn { background: rgba(255, 255, 255, 0.15); color: #fff; }
 .action-icon-btn:active { transform: scale(0.92); }
 .action-icon-btn.spinning { animation: spin 1s linear infinite; }
@@ -925,7 +931,7 @@ export default {
 }
 .dark-mode .mode-card { background: rgba(255, 255, 255, 0.08); border: 1rpx solid rgba(255, 255, 255, 0.1); }
 .dark-mode .mode-card.active { background: rgba(16, 185, 129, 0.2); border-color: #34d399; }
-.mode-icon { display: block; font-size: 40rpx; margin-bottom: 10rpx; }
+.mode-icon { display: block; font-size: 40rpx; margin: 0 auto 10rpx; }
 .mode-name { display: block; color: #1f2937; font-size: 24rpx; font-weight: 700; margin-bottom: 6rpx; }
 .dark-mode .mode-name { color: #fff; }
 .mode-desc { display: block; color: #9ca3af; font-size: 20rpx; margin: 6rpx 0; }
@@ -1216,7 +1222,7 @@ export default {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
-.quiz-timer { color: #d97706; font-size: 30rpx; font-weight: 800; }
+.quiz-timer { display: flex; align-items: center; gap: 6rpx; color: #d97706; font-size: 30rpx; font-weight: 800; }
 .quiz-progress-bar {
   height: 8rpx;
   background: rgba(16, 185, 129, 0.12);

@@ -1,5 +1,5 @@
 <template>
-  <view class="home-page">
+  <view class="home-page" :class="tabPageClass">
     <!-- 背景装饰 -->
     <view class="bg-decoration">
       <view class="bg-circle circle-1"></view>
@@ -13,7 +13,7 @@
     </view>
     
     <!-- 顶部绿色背景区域 -->
-    <view class="header-bg">
+    <view class="header-bg tab-page-motion">
       <!-- 装饰元素 -->
       <view class="header-deco">
         <view class="deco-leaf leaf-1">🌿</view>
@@ -32,7 +32,7 @@
       <!-- 页面标题 -->
       <view class="header-content">
         <view class="main-title">
-          <image class="title-icon" src="/static/colorful-bin.png" mode="aspectFill"></image>
+          <image class="title-icon" :src="getManifestIconPath('colorful_bin')" mode="aspectFill"></image>
           <text class="title-text">分投侠·智慧环保</text>
         </view>
         <text class="subtitle">智能分类 · 绿色环保 · 科技赋能</text>
@@ -40,20 +40,20 @@
     </view>
 
     <!-- 主内容区域-->
-    <view class="content-wrapper">
+    <view class="content-wrapper tab-page-motion">
       <!-- 设备连接状态卡片-->
       <view v-if="hasConnection" class="device-card" @click="goToDeviceConnection">
         <view class="device-card-content">
           <view class="device-status">
             <view class="status-dot"></view>
             <view class="device-info">
-              <text class="device-title">📡 智能设备在线</text>
+              <view class="device-title"><ManifestIcon id="device_connect" /> 智能设备在线</view>
               <text class="device-name">{{ connectedDevice?.device_name || '环保分类设备' }}</text>
             </view>
           </view>
           <view class="device-action">
             <text class="action-text">管理</text>
-            <text class="action-arrow">›</text>
+            <ManifestIcon id="chevron_right" class="action-arrow" :scale="1" />
           </view>
         </view>
       </view>
@@ -66,7 +66,7 @@
         <view class="glass-reflection"></view>
         <view class="upload-content">
           <view class="upload-icon-wrapper">
-            <text v-if="!isProcessing" class="upload-icon">📷</text>
+            <ManifestIcon v-if="!isProcessing" id="camera_scan" class="upload-icon" :scale="2.05" />
             <view v-else class="loading-spinner"></view>
           </view>
           <text class="upload-title" v-if="!isProcessing">点击拍照识别</text>
@@ -79,7 +79,7 @@
       <!-- 识别结果区域 -->
       <view v-if="resultImage" class="result-card">
         <view class="result-header">
-          <text class="result-title">🎯 识别结果</text>
+          <view class="result-title"><ManifestIcon id="accuracy_target" /> 识别结果</view>
           <view class="confidence-badge">
             <text class="confidence-text">{{ resultConfidence }}</text>
           </view>
@@ -102,7 +102,7 @@
         <view class="result-info">
           <view class="category-row">
             <view class="category-tag" :class="getCategoryClass(resultCategory)">
-              <text class="tag-icon">{{ getCategoryIcon(resultCategory) }}</text>
+              <ManifestIcon class="tag-icon" :id="getCategoryIcon(resultCategory)" />
               <text class="tag-text">{{ resultCategory }}</text>
             </view>
             <view class="ai-helper-btn" v-if="aiServiceEnabled && aiEnabled" @click="goAiChatFromResult">AI对话</view>
@@ -152,7 +152,7 @@
           </view>
 
           <view v-else-if="resultDesc" class="desc-box">
-            <text class="desc-label">💡 处理建议</text>
+            <view class="desc-label"><ManifestIcon id="eco_tip" /> 处理建议</view>
             <view class="desc-text" v-html="formatSemicolonNewline(resultDesc)"></view>
           </view>
         </view>
@@ -161,7 +161,7 @@
       <!-- 默认欢迎区域 -->
       <view v-if="!resultImage" class="welcome-section">
         <view class="tips-card">
-          <text class="tips-icon">🌱</text>
+          <ManifestIcon id="smart_sort" class="tips-icon" />
           <text class="tips-title">开始智能分类</text>
           <text class="tips-desc">上传图片，AI将为您识别垃圾类型</text>
         </view>
@@ -172,7 +172,7 @@
           <view class="guide-grid">
             <view class="guide-item recyclable" @click="showGuideDetail('recyclable')">
               <view class="guide-icon-wrapper">
-                <text class="guide-icon">♻️</text>
+                <ManifestIcon id="bin_recyclable" class="guide-icon" />
               </view>
               <view class="guide-info">
                 <text class="guide-name">可回收</text>
@@ -182,7 +182,7 @@
             
             <view class="guide-item harmful" @click="showGuideDetail('harmful')">
               <view class="guide-icon-wrapper">
-                <text class="guide-icon">☢️</text>
+                <ManifestIcon id="bin_hazardous" class="guide-icon" />
               </view>
               <view class="guide-info">
                 <text class="guide-name">有害垃圾</text>
@@ -192,7 +192,7 @@
             
             <view class="guide-item kitchen" @click="showGuideDetail('kitchen')">
               <view class="guide-icon-wrapper">
-                <text class="guide-icon">🍎</text>
+                <ManifestIcon id="bin_kitchen" class="guide-icon" />
               </view>
               <view class="guide-info">
                 <text class="guide-name">厨余垃圾</text>
@@ -202,7 +202,7 @@
             
             <view class="guide-item other" @click="showGuideDetail('other')">
               <view class="guide-icon-wrapper">
-                <text class="guide-icon">🗑️</text>
+                <ManifestIcon id="bin_other" class="guide-icon" />
               </view>
               <view class="guide-info">
                 <text class="guide-name">其他垃圾</text>
@@ -223,7 +223,7 @@
         <view class="quick-actions-featured">
           <view class="action-item featured challenge-card" @click="goChallenge">
             <view class="action-icon-wrapper challenge">
-              <text class="action-icon">🏆</text>
+              <ManifestIcon id="challenge_trophy" class="action-icon" />
             </view>
             <view class="action-copy">
               <text class="action-name">挑战赛</text>
@@ -233,14 +233,7 @@
 
           <view class="action-item featured lottery-card" @click="goLottery">
             <view class="action-icon-wrapper lottery">
-              <view class="lottery-icon-mark">
-                <view class="lottery-pointer"></view>
-                <view class="lottery-wheel">
-                  <view class="lottery-wheel-center"></view>
-                </view>
-                <view class="lottery-spark lottery-spark-one"></view>
-                <view class="lottery-spark lottery-spark-two"></view>
-              </view>
+              <ManifestIcon id="lucky_wheel" class="action-icon" />
             </view>
             <view class="action-copy">
               <text class="action-name">积分抽奖</text>
@@ -252,28 +245,28 @@
         <view class="quick-actions-grid" :class="{ 'three-items': isH5Platform }">
           <view v-if="!isH5Platform" class="action-item compact onboarding-target-device" @click="scanDeviceQR">
             <view class="action-icon-wrapper device">
-              <text class="action-icon">📱</text>
+              <ManifestIcon id="device_connect" class="action-icon" />
             </view>
             <text class="action-name">连接设备</text>
           </view>
 
           <view class="action-item compact" @click="goCommunity">
             <view class="action-icon-wrapper community">
-              <text class="action-icon">🏘️</text>
+              <ManifestIcon id="community_home" class="action-icon" />
             </view>
             <text class="action-name">环保社区</text>
           </view>
 
           <view class="action-item compact onboarding-target-booking" @click="goBooking">
             <view class="action-icon-wrapper booking">
-              <text class="action-icon">📦</text>
+            <ManifestIcon class="action-icon" id="recycling_booking" :scale="2.2" />
             </view>
             <text class="action-name">预约回收</text>
           </view>
 
           <view class="action-item compact" @click="goVoiceScan">
             <view class="action-icon-wrapper voice">
-              <text class="action-icon">🎤</text>
+              <ManifestIcon id="voice_recognition" class="action-icon" />
             </view>
             <text class="action-name">语音识别</text>
           </view>
@@ -285,9 +278,9 @@
     <view v-if="showGuideModal && currentGuide.title" class="modal-overlay" @click="closeGuideModal">
       <view class="modal-content" @click.stop="">
         <view class="modal-header" :class="currentGuide.type">
-          <text class="modal-icon">{{ currentGuide.icon }}</text>
+          <ManifestIcon class="modal-icon" :id="currentGuide.icon" />
           <text class="modal-title">{{ currentGuide.title }}</text>
-          <text class="modal-close" @click="closeGuideModal">✕</text>
+          <ManifestIcon id="close" class="modal-close" @click="closeGuideModal" />
         </view>
         <view class="modal-body">
           <text class="modal-text">{{ currentGuide.content }}</text>
@@ -312,24 +305,24 @@
 
     <!-- 底部导航栏-->
     <view v-if="aiServiceEnabled" class="floating-agent" @click="goAiAssistant">
-      <image class="floating-agent-img" src="/static/ai.png" mode="aspectFit" />
+      <image class="floating-agent-img" :src="getManifestIconPath('ai_assistant')" mode="aspectFit" />
     </view>
 
     <view class="tabbar">
       <view class="tabbar-item active">
-        <text class="tabbar-icon">🏠</text>
+        <ManifestIcon id="home" class="tabbar-icon" />
         <text class="tabbar-label">首页</text>
       </view>
       <view class="tabbar-item onboarding-target-map" @click="goMap">
-        <text class="tabbar-icon">🗺️</text>
+        <ManifestIcon id="map_location" class="tabbar-icon" />
         <text class="tabbar-label">地图</text>
       </view>
       <view class="tabbar-item onboarding-target-shop" @click="goShop">
-        <text class="tabbar-icon">🛍️</text>
+        <ManifestIcon id="store" class="tabbar-icon" />
         <text class="tabbar-label">商城</text>
       </view>
       <view class="tabbar-item" @click="goProfile">
-        <text class="tabbar-icon">👤</text>
+        <ManifestIcon id="user_profile" class="tabbar-icon" />
         <text class="tabbar-label">我的</text>
       </view>
     </view>
@@ -345,6 +338,9 @@ import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr'
 import AppOnboarding from '@/components/AppOnboarding.vue'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import { getManifestIconPath } from '@/utils/manifest-icons.js'
+import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 import { enqueueAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import {
   buildExpandedUpcyclingText,
@@ -366,6 +362,7 @@ import {
   updateRecognitionTask
 } from '@/utils/recognition-task.mjs'
 
+const tabPageClass = useTabPageTransition('pages/home/home')
 const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
@@ -798,10 +795,10 @@ function getCategoryClass(category) {
 
 function getCategoryIcon(category) {
   const cls = getCategoryClass(category)
-  if (cls === 'recyclable') return '♻️'
-  if (cls === 'harmful') return '☠️'
-  if (cls === 'kitchen') return '🍃'
-  return '🗑️'
+  if (cls === 'recyclable') return 'bin_recyclable'
+  if (cls === 'harmful') return 'bin_hazardous'
+  if (cls === 'kitchen') return 'bin_kitchen'
+  return 'bin_other'
 }
 
 function resetEnhancedRecognition() {
@@ -1376,15 +1373,15 @@ function goHistory() {
 }
 
 function goShop() {
-  uni.navigateTo({ url: '/pages/shop/shop?from=home' })
+  navigateBottomTab('home', 'shop', '/pages/shop/shop?from=home', 'navigateTo')
 }
 
 function goProfile() {
-  uni.redirectTo({ url: '/pages/profile/profile' })
+  navigateBottomTab('home', 'profile', '/pages/profile/profile')
 }
 
 function goMap() {
-  uni.navigateTo({ url: '/pages/map/map?from=home' })
+  navigateBottomTab('home', 'map', '/pages/map/map?from=home', 'navigateTo')
 }
 
 function goRanking() {
@@ -1476,25 +1473,25 @@ function showGuideDetail(type) {
   const guides = {
     recyclable: {
       type: 'recyclable',
-      icon: '♻️',
+      icon: 'bin_recyclable',
       title: '可回收垃圾',
       content: '包括废纸、塑料、玻璃、金属和布料五大类。这些垃圾可以通过综合处理回收利用，减少污染，节省资源。正确分类投放可以大大提高回收效率，为环保事业贡献力量。'
     },
     harmful: {
       type: 'harmful',
-      icon: '☢️',
+      icon: 'bin_hazardous',
       title: '有害垃圾',
       content: '包括废电池、废灯管、废药品、废油漆及其容器等。这些垃圾含有有毒有害物质，需要特殊处理，避免对环境和人体造成危害。请务必投放到专门的有害垃圾收集点。'
     },
     kitchen: {
       type: 'kitchen',
-      icon: '🍎',
+      icon: 'bin_kitchen',
       title: '厨余垃圾',
       content: '包括剩菜剩饭、骨头、菜根菜叶、果皮等食品类废物。这些有机垃圾可以通过生物技术就地处理堆肥，转化为有机肥料，实现资源循环利用。'
     },
     other: {
       type: 'other',
-      icon: '🗑️',
+      icon: 'bin_other',
       title: '其他垃圾',
       content: '包括除上述几类垃圾之外的砖瓦陶瓷、渣土、卫生间废纸、纸巾等难以回收的废弃物。这些垃圾通常采用卫生填埋等方式进行无害化处理。'
     }
@@ -2546,8 +2543,10 @@ function closeAchievementModal() {
 }
 
 .tips-icon {
-  font-size: 64rpx;
+  font-size: 70rpx;
   display: block;
+  margin-left: auto;
+  margin-right: auto;
   margin-bottom: 16rpx;
   animation: gentleSway 4s ease-in-out infinite;
   transform-origin: bottom center;
@@ -3007,32 +3006,32 @@ function closeAchievementModal() {
 }
 
 .action-icon-wrapper.shop {
-  background: linear-gradient(135deg, #fef3c7 0%, #fbbf24 50%, #f59e0b 100%);
+  background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 50%, #fbbf24 100%);
 }
 
 .action-icon-wrapper.device {
-  background: linear-gradient(135deg, #dbeafe 0%, #60a5fa 50%, #3b82f6 100%);
+  background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 50%, #60a5fa 100%);
 }
 
 .action-icon-wrapper.map {
-  background: linear-gradient(135deg, #d1fae5 0%, #34d399 50%, #10b981 100%);
+  background: linear-gradient(135deg, #d1fae5 0%, #6ee7b7 50%, #34d399 100%);
 }
 
 .action-icon-wrapper.ranking {
-  background: linear-gradient(135deg, #fce7f3 0%, #f472b6 50%, #ec4899 100%);
+  background: linear-gradient(135deg, #fce7f3 0%, #f9a8d4 50%, #f472b6 100%);
 }
 
 .action-icon-wrapper.challenge {
-  background: linear-gradient(135deg, #fef3c7 0%, #fbbf24 50%, #f59e0b 100%);
+  background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 50%, #fbbf24 100%);
 }
 
 .action-icon-wrapper.lottery {
   background:
     radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.9) 0%, transparent 34%),
-    linear-gradient(135deg, #fef3c7 0%, #34d399 54%, #059669 100%);
+    linear-gradient(135deg, #fef3c7 0%, #6ee7b7 54%, #34d399 100%);
   box-shadow:
-    0 10rpx 22rpx rgba(5, 150, 105, 0.18),
-    0 4rpx 10rpx rgba(245, 158, 11, 0.18),
+    0 10rpx 22rpx rgba(5, 150, 105, 0.14),
+    0 4rpx 10rpx rgba(245, 158, 11, 0.14),
     inset 0 1rpx 2rpx rgba(255, 255, 255, 0.7),
     inset 0 -2rpx 4rpx rgba(4, 120, 87, 0.16);
 }
@@ -3118,24 +3117,24 @@ function closeAchievementModal() {
 }
 
 .action-icon-wrapper.community {
-  background: linear-gradient(135deg, #d1fae5 0%, #6ee7b7 50%, #10b981 100%);
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 50%, #34d399 100%);
 }
 
 .action-icon-wrapper.booking {
-  background: linear-gradient(135deg, #fee2e2 0%, #fca5a5 50%, #ef4444 100%);
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 50%, #f87171 100%);
 }
 
 .action-icon-wrapper.voice {
-  background: linear-gradient(135deg, #e0f2fe 0%, #7dd3fc 50%, #0ea5e9 100%);
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 50%, #38bdf8 100%);
 }
 
 .action-icon {
-  font-size: 32rpx;
+  font-size: 36rpx;
   animation: iconPulse 2.5s ease-in-out infinite;
 }
 
 .action-item.featured .action-icon {
-  font-size: 38rpx;
+  font-size: 42rpx;
 }
 
 @keyframes iconPulse {
@@ -3492,7 +3491,13 @@ function closeAchievementModal() {
 }
 
 .tabbar-item.active .tabbar-icon {
-  filter: grayscale(0%) brightness(1.1);
+  opacity: 1;
+  filter: grayscale(0%) brightness(1.1) saturate(1);
+}
+
+.tabbar-item:not(.active) .tabbar-icon {
+  opacity: 0.6;
+  filter: grayscale(30%) saturate(0.7);
 }
 
 .tabbar-label {
@@ -3604,7 +3609,7 @@ function closeAchievementModal() {
   }
 
   .action-item.featured .action-icon {
-    font-size: 30rpx;
+    font-size: 33rpx;
   }
 
   .action-copy {
@@ -3634,7 +3639,7 @@ function closeAchievementModal() {
   }
 
   .action-item.compact .action-icon {
-    font-size: 28rpx;
+    font-size: 31rpx;
   }
 
   .action-item.compact .action-name {
@@ -3828,3 +3833,6 @@ function closeAchievementModal() {
 }
 
 </style>
+
+
+\r\n

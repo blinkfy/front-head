@@ -10,13 +10,13 @@
 
     <!-- 返回按钮 -->
     <view class="back-btn" @click="goBack">
-      <text class="back-icon">←</text>
+      <ManifestIcon class="back-icon" id="back" :scale="1" />
     </view>
 
     <!-- 主卡片 -->
     <view class="password-card">
       <view class="card-header">
-        <text class="header-icon">🔐</text>
+        <ManifestIcon class="header-icon" id="password" />
         <text class="header-title">修改密码</text>
         <text class="header-subtitle">保护您的账户安全</text>
       </view>
@@ -55,6 +55,7 @@
 <script setup>
 import { ref } from 'vue'
 import { changePassword } from '@/api/user'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 const username = ref('')
 const password = ref('')
 const newPassword = ref('')
@@ -200,7 +201,7 @@ function onChangePassword() {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  z-index: 20;
   transition: all 0.3s ease;
 }
 
@@ -213,6 +214,7 @@ function onChangePassword() {
   color: #40e0ff;
   font-size: 32rpx;
   font-weight: bold;
+  filter: brightness(0) invert(1);
 }
 
 /* 主卡片 */
@@ -237,6 +239,8 @@ function onChangePassword() {
 
 .header-icon {
   display: block;
+  margin-left: auto;
+  margin-right: auto;
   font-size: 80rpx;
   margin-bottom: 20rpx;
   animation: iconPulse 3s ease-in-out infinite;
@@ -358,4 +362,4 @@ function onChangePassword() {
 .submit-btn:active .btn-glow {
   left: 100%;
 }
-</style> 
+</style>\r\n

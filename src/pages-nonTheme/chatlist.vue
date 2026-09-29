@@ -4,12 +4,12 @@
 		<view class="nav-bar" @click.stop>
 			<view class="nav-content">
 				<view class="nav-left" @click="goBack">
-					<text class="back-icon">‹</text>
+				<ManifestIcon class="back-icon nav-white-icon" id="back" :scale="1.15" />
 				</view>
 				<view class="nav-title">用户消息</view>
 			<view class="nav-right">
-				<text v-if="aiEnabled" class="add-icon" @click.stop="openContacts">＋</text>
-				<text class="search-icon" @click="toggleSearch">🔍</text>
+				<ManifestIcon v-if="aiEnabled" class="add-icon" id="add" :scale="1.1" @click.stop="openContacts" />
+				<ManifestIcon class="search-icon nav-white-icon" id="search" :scale="1.1" @click="toggleSearch" />
 				</view>
 			</view>
 		</view>
@@ -17,10 +17,10 @@
 		<!-- 搜索栏 -->
 		<view class="search-bar" v-if="showSearch" @click.stop>
 			<view class="search-input-wrap">
-				<text class="search-input-icon">🔍</text>
+				<ManifestIcon class="search-input-icon" id="search" />
 				<input ref="searchInput" class="search-input" v-model="searchKeyword" placeholder="搜索用户"
 					placeholder-class="search-placeholder" @input="onSearchInput" />
-				<text class="clear-icon" v-if="searchKeyword" @click="clearSearch">×</text>
+				<ManifestIcon class="clear-icon" v-if="searchKeyword" id="close" @click="clearSearch" />
 			</view>
 		</view>
 
@@ -35,7 +35,7 @@
 
 			<!-- 空状态 -->
 			<view class="empty-wrap" v-else-if="!loading && filteredUserList.length === 0">
-				<text class="empty-icon">💬</text>
+				<ManifestIcon class="empty-icon" id="empty_chat" :scale="1" />
 				<text class="empty-text">{{ searchKeyword ? '未找到匹配的用户' : '暂无用户消息' }}</text>
 			</view>
 
@@ -103,7 +103,10 @@ import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import { getManifestIconPath } from '@/utils/manifest-icons.js'
 export default {
+	components: { ManifestIcon },
 	data() {
 		return {
 			statusBarHeight: 20,
@@ -1080,7 +1083,7 @@ computed: {
 		getUserAvatar(user) {
 			const username = user.note || user.username || '用户'
 			if (user.isAi || user.otherId === 'ai' || (username && (username.includes('AI') || username.includes('ai') || username.includes('智能') || username.includes('助手')))) {
-				return '/static/ai.png'
+				return getManifestIconPath('ai_assistant')
 			}
 			// 检查是否有有效的真实头像
 			if (user.avatar && 
@@ -1242,6 +1245,8 @@ computed: {
 		}
 	}
 }
+
+.nav-bar .nav-white-icon { filter: brightness(0) invert(1); }
 
 // 搜索栏
 .search-bar {

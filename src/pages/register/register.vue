@@ -11,7 +11,7 @@
       <view class="header-content">
         <view class="header-top">
           <view class="back-btn" @click="goLogin">
-            <text class="back-icon">‹</text>
+            <ManifestIcon class="back-icon" id="back" :scale="1" />
           </view>
         </view>
         
@@ -51,7 +51,7 @@
           <!-- 用户名输入 -->
           <view class="input-group">
             <view class="input-label">
-              <text class="label-icon">👤</text>
+              <ManifestIcon class="label-icon" id="user_profile" />
               <text class="label-text">用户名</text>
             </view>
             <view class="input-wrap">
@@ -71,7 +71,7 @@
           <!-- 密码输入 -->
           <view class="input-group">
             <view class="input-label">
-              <text class="label-icon">🔐</text>
+              <ManifestIcon class="label-icon" id="password" />
               <text class="label-text">密码</text>
             </view>
             <view class="input-wrap">
@@ -87,7 +87,7 @@
                 @keyup="handleKeyup"
               />
               <view class="pwd-toggle" @click="togglePassword">
-                <text class="toggle-icon">{{ showPwd ? '👁️' : '🔒' }}</text>
+              <ManifestIcon class="toggle-icon" :id="showPwd ? 'visibility_off' : 'visibility'" />
               </view>
             </view>
             <text class="input-hint">密码需包含大小写字母、数字、特殊字符中至少两种</text>
@@ -96,7 +96,7 @@
           <!-- 确认密码 -->
           <view class="input-group">
             <view class="input-label">
-              <text class="label-icon">🔄</text>
+              <ManifestIcon class="label-icon" id="password" />
               <text class="label-text">确认密码</text>
             </view>
             <view class="input-wrap">
@@ -112,7 +112,7 @@
                 @keyup="handleKeyup"
               />
               <view class="pwd-toggle" @click="toggleConfirmPassword">
-                <text class="toggle-icon">{{ showConfirmPwd ? '👁️' : '🔒' }}</text>
+              <ManifestIcon class="toggle-icon" :id="showConfirmPwd ? 'visibility_off' : 'visibility'" />
               </view>
             </view>
           </view>
@@ -120,7 +120,7 @@
           <!-- 验证码 -->
           <view class="input-group captcha-group">
             <view class="input-label">
-              <text class="label-icon">🛡️</text>
+              <ManifestIcon class="label-icon" id="shield_captcha" />
               <text class="label-text">验证码</text>
             </view>
             <captcha-box v-model="captchaInput" ref="captchaRef" @confirm="handleEnterKey" />
@@ -135,6 +135,7 @@
           <button type="submit" id="registerBtn" class="register-btn" :disabled="isLoading" @click="handleRegisterClick">
             <view class="light-track"></view>
             <view class="btn-content" v-if="!isLoading">
+              <ManifestIcon class="btn-icon" id="submit_action" :scale="1.2" />
               <text class="btn-text">创建账号</text>
             </view>
             <view class="loading-content" v-else>
@@ -165,6 +166,7 @@ import { register } from '@/api/user'
 import CaptchaBox from '@/components/CaptchaBox.vue'
 // #ifdef APP-PLUS || MP-WEIXIN
 import RegistrationPrivacyAgreement from '@/components/RegistrationPrivacyAgreement.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 // #endif
 
 // 表单字段
@@ -377,8 +379,8 @@ onMounted(() => {
 }
 
 .back-btn {
-  width: 52rpx;
-  height: 52rpx;
+  width: 80rpx;
+  height: 80rpx;
   background: rgba(255, 255, 255, 0.2);
   border-radius: 50%;
   display: flex;
@@ -391,7 +393,6 @@ onMounted(() => {
   color: #ffffff;
   font-size: 40rpx;
   font-weight: bold;
-  margin-left: -4rpx;
 }
 
 .header-main {

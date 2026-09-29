@@ -12,15 +12,15 @@
       <view class="safe-area-top"></view>
       <view class="nav-content">
         <view class="nav-left" @click="goBack">
-          <text class="back-icon">←</text>
+          <ManifestIcon id="back" class="back-icon" :scale="1" />
         </view>
         <view class="nav-title-wrap">
-          <view class="title-icon-pill"><text>♻️</text></view>
+          <view class="title-icon-pill"><ManifestIcon id="recycling_booking" :scale="1" /></view>
           <text class="nav-title">预约回收</text>
         </view>
         <view class="nav-right">
           <view class="action-icon-btn" @click="goToOrders">
-            <text>📋</text>
+            <ManifestIcon class="nav-action-icon" id="reservation_order_table" :scale="1" />
           </view>
         </view>
       </view>
@@ -98,7 +98,7 @@
                 placeholder-class="input-placeholder"
               />
               <view class="location-action" @click="selectLocation">
-                <text>📍</text>
+                <ManifestIcon id="map_location" />
               </view>
             </view>
           </view>
@@ -160,7 +160,7 @@
       <view class="map-picker-modal">
         <view class="map-picker-header">
           <text class="map-picker-title">选择位置</text>
-          <text class="map-picker-close" @click="closeMapPicker">✕</text>
+          <ManifestIcon class="map-picker-close" id="close" @click="closeMapPicker" />
         </view>
         <view class="map-picker-search">
           <input
@@ -194,7 +194,7 @@
       <view class="nearby-picker-modal">
         <view class="nearby-picker-header">
           <text class="nearby-picker-title">选择附近地点</text>
-          <text class="nearby-picker-close" @click="closeNearbyPicker">✕</text>
+          <ManifestIcon class="nearby-picker-close" id="close" @click="closeNearbyPicker" />
         </view>
         <view class="nearby-picker-search">
           <input
@@ -230,8 +230,10 @@
 import { getWasteTypes, createBooking, getAvailableTimeSlots, estimatePrice } from '@/api/booking.js';
 import { getUserProfile, updateUserProfile } from '@/api/user.js';
 import { searchPlaces } from '@/api/map.js';
+import ManifestIcon from '@/components/ManifestIcon.vue';
 
 export default {
+  components: { ManifestIcon },
   data() {
     return {
       wasteTypes: [],
@@ -933,14 +935,17 @@ export default {
   height: 136rpx; box-sizing: border-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
-.dark-mode .back-icon { color: #fff; }
+.dark-mode .back-icon { color: #fff; filter: brightness(0) invert(1); }
+.dark-mode .navbar .nav-right .nav-action-icon {
+  filter: saturate(1.2) brightness(1.08) drop-shadow(0 0 4rpx rgba(255, 255, 255, 0.4));
+}
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
   width: 56rpx; height: 56rpx;
   background: rgba(16, 185, 129, 0.12);
   border-radius: 14rpx;
   display: flex; align-items: center; justify-content: center;
-  font-size: 26rpx;
+  font-size: 32rpx;
 }
 .dark-mode .title-icon-pill { background: rgba(255, 255, 255, 0.15); }
 .nav-title { font-size: 32rpx; font-weight: 700; color: #1f2937; }
@@ -950,7 +955,7 @@ export default {
   border-radius: 50%;
   background: rgba(16, 185, 129, 0.12);
   display: flex; align-items: center; justify-content: center;
-  font-size: 28rpx;
+  font-size: 34rpx;
   transition: all 0.3s;
 }
 .action-icon-btn:active { transform: scale(0.92); }

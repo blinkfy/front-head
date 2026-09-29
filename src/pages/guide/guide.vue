@@ -10,7 +10,7 @@
     </view>
     <!-- 返回按钮 -->
     <view class="back-btn" @click="goBack">
-      <text class="back-icon">←</text>
+      <ManifestIcon class="back-icon" id="back" />
     </view>
     <!-- 顶部封面区 -->
     <view class="hero-section">
@@ -48,7 +48,7 @@
         <!-- 播放叠加层 -->
         <view v-if="showScenarioOverlay" class="video-overlay" @click="requestPlay('scenario')">
           <view class="play-icon-wrapper">
-            <text class="play-icon">▶</text>
+            <ManifestIcon class="play-icon" id="play_action" :scale="1" />
           </view>
           <text class="overlay-title">观看 使用场景演示</text>
         </view>
@@ -56,11 +56,11 @@
 
       <view v-if="showVideo" class="hero-actions">
         <view class="action-btn primary" @click="goHome">
-          <text class="btn-icon">🚀</text>
+          <ManifestIcon class="btn-icon" id="home" :scale="1" />
           <text>立即体验</text>
         </view>
         <view class="action-btn secondary" @click="scrollToSteps">
-          <text class="btn-icon">📖</text>
+          <ManifestIcon class="btn-icon" id="user_guide" :scale="1" />
           <text>查看新手步骤</text>
         </view>
       </view>
@@ -172,7 +172,7 @@
           <!-- #endif -->
           <view v-if="showAppOverlay" class="video-overlay app-overlay" @click="requestPlay('app')">
             <view class="play-icon-wrapper mini">
-              <text class="play-icon">▶</text>
+              <ManifestIcon class="play-icon" id="play_action" :scale="1" />
             </view>
             <text class="overlay-title">App 功能演示</text>
           </view>
@@ -189,21 +189,21 @@
       
       <view class="features-detailed-grid">
         <view class="fd-item ai" @click="goHome">
-          <view class="fd-icon">🤖</view>
+          <view class="fd-icon"><ManifestIcon id="ai_assistant" /></view>
           <view class="fd-info">
             <text class="fd-name">AI 图像增强识别</text>
             <text class="fd-desc">万物皆可识别，自研模型持续进化</text>
           </view>
         </view>
         <view class="fd-item map" @click="navigateTo('/pages/map/map')">
-          <view class="fd-icon">🗺️</view>
+          <view class="fd-icon"><ManifestIcon id="nearby_map" /></view>
           <view class="fd-info">
             <text class="fd-name">智能网点地图</text>
             <text class="fd-desc">一键导航至最近的回收桶点位</text>
           </view>
         </view>
         <view class="fd-item device" @click="goScan">
-          <view class="fd-icon">📱</view>
+          <view class="fd-icon"><ManifestIcon id="device_connect" /></view>
           <view class="fd-info">
             <text class="fd-name">物联网设备联动</text>
             <text class="fd-desc">蓝牙/扫码极速连接，智享开盖体验</text>
@@ -245,7 +245,7 @@
       <!-- 可回收垃圾 -->
       <view class="category-card recyclable">
         <view class="card-header">
-          <text class="category-icon">♻️</text>
+          <ManifestIcon id="bin_recyclable" class="category-icon" />
           <text class="category-title">可回收垃圾</text>
         </view>
         <view class="card-content">
@@ -280,7 +280,7 @@
       <!-- 有害垃圾 -->
       <view class="category-card harmful">
         <view class="card-header">
-          <text class="category-icon">☢️</text>
+          <ManifestIcon id="bin_hazardous" class="category-icon" />
           <text class="category-title">有害垃圾</text>
         </view>
         <view class="card-content">
@@ -316,7 +316,7 @@
       <!-- 厨余垃圾 -->
       <view class="category-card kitchen">
         <view class="card-header">
-          <text class="category-icon">🍎</text>
+          <ManifestIcon id="bin_kitchen" class="category-icon" />
           <text class="category-title">厨余垃圾</text>
         </view>
         <view class="card-content">
@@ -352,7 +352,7 @@
       <!-- 其他垃圾 -->
       <view class="category-card other">
         <view class="card-header">
-          <text class="category-icon">🗑️</text>
+          <ManifestIcon id="bin_other" class="category-icon" />
           <text class="category-title">其他垃圾</text>
         </view>
         <view class="card-content">
@@ -439,7 +439,7 @@
         <text>🎞️ 打开宣传片</text>
       </view>
       <view class="footer-btn main" @click="goHome">
-        <text>🏠 去首页体验</text>
+        <ManifestIcon id="home" /> <text>去首页体验</text>
       </view>
       <view class="footer-link-box">
         <text class="footer-link" @click="navigateTo('/pages-nonTheme/chatlist')">联系我们</text>
@@ -453,6 +453,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
 import { config } from "@/api/config"
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 const baseUrl = config.baseUrl
 const getImageUrl = (url) => {

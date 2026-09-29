@@ -3,7 +3,7 @@
     <view class="achievement-modal" @click.stop>
       <view class="achievement-modal-glow"></view>
       <view class="achievement-modal-header">
-        <text class="achievement-modal-trophy">🏆</text>
+        <ManifestIcon id="challenge_trophy" class="achievement-modal-trophy" />
         <text class="achievement-modal-title">新成就解锁!</text>
         <text class="achievement-modal-subtitle">恭喜获得 {{ normalizedItems.length }} 项新成就</text>
       </view>
@@ -27,6 +27,7 @@
 <script setup>
 import { computed } from 'vue'
 import AchievementIcon from '@/components/AchievementIcon.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 import { dedupeAchievementUnlocks } from '@/utils/achievements'
 
 const props = defineProps({

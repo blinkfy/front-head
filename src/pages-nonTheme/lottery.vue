@@ -13,17 +13,17 @@
       <view class="safe-area-top"></view>
       <view class="nav-content">
         <view class="nav-left" @click="goBack">
-          <text class="back-icon">←</text>
+          <ManifestIcon class="back-icon" id="back" :scale="1" />
         </view>
         <view class="nav-title-wrap">
           <view class="title-icon-pill">
-            <text>🎰</text>
+            <ManifestIcon id="lucky_wheel" />
           </view>
           <text class="nav-title">积分抽奖</text>
         </view>
         <view class="nav-right">
           <view class="action-icon-btn" @click="showRules = true">
-            <text>📜</text>
+            <ManifestIcon class="nav-help-icon" id="help" />
           </view>
         </view>
       </view>
@@ -47,7 +47,7 @@
         <!-- 积分显示（信息卡片） -->
         <view class="points-card">
           <view class="points-icon-wrap">
-            <text class="points-icon">💎</text>
+            <ManifestIcon id="points_coin" class="points-icon" />
           </view>
           <view class="points-info">
             <text class="points-label">我的积分</text>
@@ -105,11 +105,11 @@
         <!-- 抽奖状态 -->
         <view class="draw-status">
           <view class="status-pill free-usage" v-if="freeCount > 0">
-            <text class="free-icon">🎁</text>
+            <ManifestIcon id="free_ticket" class="free-icon" />
             <text class="free-text">今日免费次数: {{ freeCount }}/{{ totalFree }}</text>
           </view>
           <view class="status-pill points-usage" v-else>
-            <text class="cost-icon">💰</text>
+            <ManifestIcon id="points_coin" class="cost-icon" />
             <text class="cost-text">免费次数已用完，消耗 {{ getDrawCost() }} 积分抽奖</text>
           </view>
         </view>
@@ -124,12 +124,12 @@
         <!-- 奖品列表 -->
         <view class="prizes-section">
           <view class="section-title-row">
-            <view class="title-icon-pill small"><text>🎁</text></view>
+            <view class="title-icon-pill small"><ManifestIcon id="prize_pool" /></view>
             <text class="section-title">奖品池</text>
           </view>
           <view class="prizes-grid" v-if="displayPrizes.length > 0">
             <view v-for="prize in displayPrizes" :key="prize.id" class="prize-card" :class="`level-${prize.level}`">
-              <text class="prize-icon">{{ getPrizeIcon(prize.type) }}</text>
+              <view class="prize-icon-wrap"><ManifestIcon class="prize-icon" :id="getPrizeIcon(prize)" /></view>
               <text class="prize-name">{{ prize.name }}</text>
               <text class="prize-desc">{{ prize.description }}</text>
               <text class="prize-prob">{{ Math.round(prize.probability * 100) }}%概率</text>
@@ -144,7 +144,7 @@
         <!-- 中奖记录 -->
         <view class="records-section">
           <view class="section-title-row">
-            <view class="title-icon-pill small"><text>📜</text></view>
+            <view class="title-icon-pill small"><ManifestIcon id="lottery_record_table" /></view>
             <text class="section-title">中奖记录</text>
           </view>
           <view class="records-list" v-if="records.length > 0">
@@ -160,7 +160,7 @@
             </view>
           </view>
           <view class="empty-records" v-else>
-            <text class="empty-icon">📋</text>
+            <ManifestIcon id="lottery_record_table" class="empty-icon" />
             <text class="empty-text">暂无抽奖记录</text>
           </view>
         </view>
@@ -185,7 +185,7 @@
         <view class="prize-icon-wrap">
           <view class="prize-icon-halo"></view>
           <view class="prize-icon-ring" :class="currentPrize && currentPrize.level > 1 ? 'win' : 'lose'">
-            <text class="prize-modal-icon">{{ currentPrize && currentPrize.level > 1 ? '🎉' : '🍀' }}</text>
+              <ManifestIcon class="prize-modal-icon" id="reward_gift" />
           </view>
         </view>
         
@@ -202,7 +202,7 @@
           </view>
           <text class="prize-modal-name">{{ currentPrize.prizeName }}</text>
           <view class="prize-detail" v-if="isPointsPrize(currentPrize) && currentPrize.level > 1">
-            <text class="prize-points-icon">💎</text>
+            <ManifestIcon id="points_coin" class="prize-points-icon" />
             <text class="prize-modal-type">+{{ currentPrize.prizeValue }} 积分已到账</text>
           </view>
           <text class="prize-modal-type" v-else>{{ currentPrize.description }}</text>
@@ -211,11 +211,11 @@
         <!-- 操作按钮 -->
         <view class="prize-modal-actions">
           <view class="modal-btn primary" v-if="currentPrize && currentPrize.grantsRetry" @click="continueDraw">
-            <text class="btn-icon">🎰</text>
+            <ManifestIcon id="lucky_wheel" class="btn-icon" />
             <text>再来一次</text>
           </view>
           <view class="modal-btn primary" v-else-if="freeCount > 0 && currentPrize && currentPrize.level === 1" @click="continueDraw">
-            <text class="btn-icon">🎰</text>
+            <ManifestIcon id="lucky_wheel" class="btn-icon" />
             <text>继续抽奖</text>
           </view>
           <view class="modal-btn secondary" @click="closePrizeModal">
@@ -248,8 +248,11 @@
 <script>
 import { getLotteryConfig, getLotteryDailyStatus, drawLottery, getLotteryRecords } from '@/api/lottery.js';
 import { userinfo } from '@/api/user.js';
+import ManifestIcon from '@/components/ManifestIcon.vue';
+import { getManifestIconPath } from '@/utils/manifest-icons.js';
 
 export default {
+  components: { ManifestIcon },
   data() {
     return {
       config: { prizes: [], cost: 10, dailyFreeCount: 1 },
@@ -369,9 +372,17 @@ export default {
       const map = { 1: '谢谢参与', 2: '幸运奖', 3: '大奖' };
       return map[level] || '奖品';
     },
-    getPrizeIcon(type) {
-      const map = { points: '💎', coupon: '🎟️', goods: '📦' };
-      return map[type] || '🎁';
+    getPrizeIcon(prize) {
+      const item = typeof prize === 'string' ? { type: prize } : (prize || {});
+      if (item.type === 'coupon') return 'discount_coupon';
+      if (item.type === 'goods') return 'shopping_bag';
+      if (item.type === 'points') {
+        const value = Number(item.value) || 0;
+        if (value <= 0 && /再来一次|再抽|重抽/.test(String(item.name || ''))) return 'play_action';
+        if (value <= 0) return 'reward_gift';
+        return value >= 20 ? 'points_stack' : 'points_coin';
+      }
+      return 'reward_gift';
     },
     getDrawCost() {
       return Number(this.config && this.config.cost) || 10;
@@ -481,7 +492,7 @@ export default {
 
           ctx.setFillStyle(accentColors[index % accentColors.length]);
           ctx.setFontSize(22);
-          ctx.fillText(this.getPrizeIcon(prize.type), 0, -18);
+          ctx.drawImage(getManifestIconPath(this.getPrizeIcon(prize)), -12, -32, 24, 24);
 
           ctx.setFillStyle('#1f2937');
           ctx.setFontSize(12);
@@ -765,6 +776,10 @@ export default {
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
 .dark-mode .back-icon { color: #fff; }
+.dark-mode .navbar .back-icon { filter: brightness(0) invert(1); }
+.dark-mode .navbar .nav-help-icon {
+  filter: saturate(1.2) brightness(1.08) drop-shadow(0 0 4rpx rgba(255, 255, 255, 0.4));
+}
 .nav-title-wrap {
   display: flex; align-items: center; gap: 12rpx;
   flex: 1; justify-content: center;
@@ -794,6 +809,7 @@ export default {
   font-size: 28rpx;
   transition: all 0.3s;
 }
+.nav-right .action-icon-btn { opacity: 0.78; filter: saturate(0.75); }
 .action-icon-btn:active { transform: scale(0.92); }
 .dark-mode .action-icon-btn { background: rgba(255, 255, 255, 0.15); }
 
@@ -1100,7 +1116,7 @@ export default {
 .prize-card {
   background: #fff;
   border-radius: 20rpx;
-  padding: 20rpx 12rpx;
+  padding: 16rpx 12rpx;
   text-align: center;
   box-shadow: 0 4rpx 16rpx rgba(16, 185, 129, 0.06);
   border: 1rpx solid rgba(16, 185, 129, 0.06);
@@ -1133,7 +1149,8 @@ export default {
   font-weight: 700;
 }
 .dark-mode .prizes-retry { color: #34d399; background: rgba(16, 185, 129, 0.2); }
-.prize-icon { display: block; font-size: 40rpx; margin-bottom: 8rpx; }
+.prize-card .prize-icon-wrap { width: 100%; min-height: 108rpx; display: flex; align-items: center; justify-content: center; margin-bottom: 6rpx; }
+.prize-icon { display: block; font-size: 40rpx; }
 .prize-name { display: block; color: #1f2937; font-size: 22rpx; font-weight: 700; margin-bottom: 4rpx; }
 .dark-mode .prize-name { color: #fff; }
 .prize-desc { display: block; color: #9ca3af; font-size: 18rpx; margin: 4rpx 0; }
@@ -1295,7 +1312,7 @@ export default {
 }
 
 /* 图标区域 */
-.prize-icon-wrap {
+.prize-modal-content .prize-icon-wrap {
   position: relative; z-index: 1;
   margin-bottom: 22rpx;
   min-height: 172rpx;

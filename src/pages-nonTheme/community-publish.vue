@@ -14,7 +14,7 @@
           <text class="cancel-text">取消</text>
         </view>
         <view class="nav-title-wrap">
-          <view class="title-icon-pill small"><text>✏️</text></view>
+          <view class="title-icon-pill small"><ManifestIcon id="post_edit" /></view>
           <text class="nav-title">发布信息</text>
         </view>
         <view
@@ -87,11 +87,11 @@
             <view v-for="(img, idx) in uploadedImages" :key="idx" class="upload-item">
               <image class="upload-img" :src="img" mode="aspectFill"></image>
               <view class="upload-delete" @click="removeImage(idx)">
-                <text>×</text>
+                <ManifestIcon id="close" />
               </view>
             </view>
             <view v-if="uploadedImages.length < 9" class="upload-add" @click="chooseImage">
-              <text class="add-icon">+</text>
+              <ManifestIcon class="add-icon" id="community_camera" />
               <text class="add-text">添加图片</text>
             </view>
           </view>
@@ -100,7 +100,7 @@
 
       <!-- 预览提示 -->
       <view class="tips-card">
-        <text class="tips-icon">💡</text>
+        <ManifestIcon class="tips-icon" id="help" />
         <view class="tips-content">
           <text class="tips-title">发布须知</text>
           <text class="tips-text">1. 请遵守社区规范，文明发言</text>
@@ -112,7 +112,7 @@
 
     <view class="content-wrapper unavailable-panel" v-else>
       <view class="tips-card unavailable-card">
-        <text class="tips-icon">❗</text>
+        <ManifestIcon class="tips-icon" id="dark_alert" />
         <view class="tips-content">
           <text class="tips-title">该功能未开放</text>
           <text class="tips-text">暂不支持普通用户发布信息</text>
@@ -127,6 +127,7 @@ import { createPost } from '@/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { compressImageToBase64 } from '@/utils/avatar-handler.js';
 import { baseUrl } from '@/api/settings';
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 function requestJson(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -142,6 +143,7 @@ function requestJson(url, options = {}) {
 }
 
 export default {
+  components: { ManifestIcon },
   data() {
     return {
       communityId: 0,

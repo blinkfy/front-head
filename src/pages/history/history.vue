@@ -19,7 +19,7 @@
         <!-- 自定义导航栏的安全区必须包含在绿色 Header 内，避免小程序顶部出现透明空白。 -->
         <view class="custom-statusbar" :style="{ height: `${statusBarHeight}px` }"></view>
         <view class="nav-header">
-          <text class="back-btn" @click="goBack">←</text>
+          <ManifestIcon class="back-btn nav-white-icon" id="back" :scale="1" @click="goBack" />
           <text class="page-title">识别历史</text>
           <view class="header-actions">
             <text class="action-btn" @click="toggleSelectMode">{{ selectMode ? '取消' : '编辑' }}</text>
@@ -72,7 +72,7 @@
         
         <!-- 空状态 -->
         <view v-else-if="!loading && historyList.length === 0" class="empty-section">
-          <text class="empty-icon">📋</text>
+          <ManifestIcon class="empty-icon" id="recognition_history" />
           <text class="empty-title">暂无历史记录</text>
           <text class="empty-desc">开始使用AI识别功能</text>
           <text class="empty-desc">记录将在这里显示</text>
@@ -89,7 +89,7 @@
           >
             <!-- 选择框 -->
             <view v-if="selectMode" class="select-checkbox">
-              <text class="checkbox-icon" :class="{ checked: selectedItems.includes(item.id) }">✓</text>
+              <ManifestIcon v-if="selectedItems.includes(item.id)" class="checkbox-icon checked" id="confirm" />
             </view>
             
             <!-- 记录内容 -->
@@ -115,7 +115,7 @@
               
               <!-- 操作按钮 -->
               <view v-if="!selectMode" class="item-actions">
-                <text class="action-icon" @click.stop="deleteItem(item.id)">🗑️</text>
+              <ManifestIcon id="delete" class="action-icon" @click.stop="deleteItem(item.id)" />
               </view>
             </view>
           </view>
@@ -145,7 +145,7 @@
         
         <!-- 关闭按钮 -->
         <view class="detail-close" @click="closeDetail">
-          <text class="close-icon">✕</text>
+          <ManifestIcon class="close-icon" id="close" />
         </view>
         
         <!-- 图片区域 -->
@@ -195,6 +195,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { getRecognitionHistory, deleteHistoryRecord, batchDeleteHistoryRecords } from '@/api/history'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 // 页面参数接收
 const onLoad = (options) => {
@@ -771,6 +772,8 @@ function handleBackupNavigation() {
   cursor: pointer;
   transition: all 0.3s ease;
 }
+
+.nav-white-icon { filter: brightness(0) invert(1); }
 
 .back-btn:active {
   transform: scale(0.9);

@@ -1,5 +1,5 @@
 ﻿<template>
-  <view class="profile-page">
+  <view class="profile-page" :class="tabPageClass">
     <!-- 背景装饰 -->
     <view class="bg-decoration">
       <view class="bg-circle circle-1"></view>
@@ -13,12 +13,12 @@
     </view>
     
     <!-- 顶部绿色背景区域 -->
-    <view class="profile-header">
+    <view class="profile-header tab-page-motion">
       <view class="header-content">
         <view class="header-top">
-          <text class="header-title">👤 个人中心</text>
+          <view class="header-title"><ManifestIcon id="user_profile" /> 个人中心</view>
           <view class="carbon-badge">
-            <text class="carbon-icon">🍃</text>
+            <ManifestIcon id="co2_saved" class="carbon-icon" />
             <text class="carbon-text">已减碳{{ calculateCarbonReduction(points || 0) }}</text>
           </view>
         </view>
@@ -26,14 +26,14 @@
     </view>
 
     <!-- 用户信息卡片 -->
-    <view class="user-card">
+    <view class="user-card tab-page-motion">
       <view class="user-avatar-section">
         <view class="avatar-wrapper">
-          <image class="user-avatar" :src="getAvatarUrl(userInfo.avatar || '/static/person.webp.png', baseUrl)" mode="aspectFill"></image>
+          <image class="user-avatar" :src="getAvatarUrl(userInfo.avatar || getManifestIconPath('profile_user'), baseUrl)" mode="aspectFill"></image>
           <view class="avatar-ring"></view>
         </view>
         <view class="user-level">
-          <text class="level-badge">LV.{{ Math.floor((points || 0) / 100) + 1 }}</text>
+          <view class="level-badge-row"><ManifestIcon class="level-icon" id="level_badge" :scale="0.8" /><text class="level-badge">LV.{{ Math.floor((points || 0) / 100) + 1 }}</text></view>
           <text class="level-text">环保达人</text>
         </view>
       </view>
@@ -42,26 +42,26 @@
         <text class="username">{{ userInfo.username || username }}</text>
         <text class="user-id">ID: {{ (userInfo.username || username).toUpperCase() }}</text>
         <view class="user-badges">
-          <text class="badge" v-if="(points || 0) >= 100">🌿 分类专家</text>
-          <text class="badge" v-if="(points || 0) >= 300">♻️ 回收王者</text>
-          <text class="badge" v-if="(points || 0) >= 500">🌍 地球守护者</text>
+          <view class="badge" v-if="(points || 0) >= 100"><ManifestIcon id="classification_expert" /> 分类专家</view>
+          <view class="badge" v-if="(points || 0) >= 300"><ManifestIcon id="recycling_king" /> 回收王者</view>
+          <view class="badge" v-if="(points || 0) >= 500"><ManifestIcon id="earth_guardian" /> 地球守护者</view>
         </view>
       </view>
     </view>
 
     <!-- 统计数据卡片 -->
-    <view class="stats-card">
+    <view class="stats-card tab-page-motion">
       <view class="stats-header">
-        <text class="stats-title">🌍 环保贡献</text>
+        <view class="stats-title"><ManifestIcon id="recycling_contribution" /> 环保贡献</view>
         <view class="refresh-btn" @click="handleRefresh" :class="{ rotating: loading }">
-          <text>♻️</text>
+          <ManifestIcon id="refresh" class="refresh-icon" />
         </view>
       </view>
       
       <view class="stats-grid" v-if="!loading">
         <view class="stat-item" @click="showPointsInfo">
           <view class="stat-icon-wrapper green">
-            <text class="stat-icon">🌟</text>
+            <ManifestIcon id="eco_points" class="stat-icon" />
           </view>
           <view class="stat-data">
             <text class="stat-value">{{ points || 0 }}</text>
@@ -71,7 +71,7 @@
 
         <view class="stat-item" @click="showCarbonInfo">
           <view class="stat-icon-wrapper blue">
-            <text class="stat-icon">🍃</text>
+            <ManifestIcon id="carbon_reduction" class="stat-icon" />
           </view>
           <view class="stat-data">
             <text class="stat-value">{{ calculateCarbonReduction(points || 0) }}</text>
@@ -81,7 +81,7 @@
 
         <view class="stat-item">
           <view class="stat-icon-wrapper orange">
-            <text class="stat-icon">♻️</text>
+            <ManifestIcon id="recycling_contribution" class="stat-icon" />
           </view>
           <view class="stat-data">
             <text class="stat-value">{{ Math.floor((points || 0) / 8) }}</text>
@@ -97,10 +97,10 @@
     </view>
 
     <!-- 设备连接状态卡片-->
-    <view v-if="hasConnection" class="device-card">
+    <view v-if="hasConnection" class="device-card tab-page-motion">
       <view class="device-header">
         <view class="device-title">
-          <text class="device-icon">📱</text>
+          <ManifestIcon id="device_connect" class="device-icon" />
           <text>设备连接</text>
         </view>
         <view class="device-status">
@@ -114,7 +114,7 @@
           <text class="device-name">{{ connectedDevice?.device_name || '智能垃圾分类设备' }}</text>
           <text class="device-id">ID: {{ connectedDevice?.device_id || connectedDevice?.id || 'N/A' }}</text>
         </view>
-        <text class="device-arrow">›</text>
+        <ManifestIcon class="device-arrow" id="chevron_right" :scale="1" />
       </view>
       
       <view class="device-footer">
@@ -130,67 +130,67 @@
     </view>
 
     <!-- 功能菜单 -->
-    <view class="menu-section">
+    <view class="menu-section tab-page-motion">
       <view class="menu-title">功能服务</view>
       <view class="menu-grid">
         <view class="menu-item" @click="goHistory">
-          <view class="menu-icon blue">📋</view>
+          <view class="menu-icon blue"><ManifestIcon id="recognition_history" /></view>
           <text class="menu-text">识别历史</text>
         </view>
         <view class="menu-item" @click="goRanking">
-          <view class="menu-icon orange">🏆</view>
+          <view class="menu-icon orange"><ManifestIcon id="ranking" /></view>
           <text class="menu-text">排行榜</text>
         </view>
                 <view class="menu-item" @click="goAchievements">
-          <view class="menu-icon green">🏅</view>
+          <view class="menu-icon green"><ManifestIcon id="achievements" /></view>
           <text class="menu-text">成就系统</text>
         </view>
         <view class="menu-item" @click="goGuide">
-          <view class="menu-icon purple">📚</view>
+          <view class="menu-icon purple"><ManifestIcon id="user_guide" /></view>
           <text class="menu-text">使用指南</text>
         </view>
         <view class="menu-item" @click="goSettings">
-          <view class="menu-icon gray">⚙️</view>
+          <view class="menu-icon gray"><ManifestIcon id="settings" /></view>
           <text class="menu-text">用户设置</text>
         </view>
         <view class="menu-item" @click="goAbout">
-          <view class="menu-icon cyan">ℹ️</view>
+          <view class="menu-icon cyan"><ManifestIcon id="about_app" /></view>
           <text class="menu-text">关于软件</text>
         </view>
       </view>
     </view>
 
     <!-- 管理员功能-->
-    <view v-if="isAdmin" class="admin-section">
+    <view v-if="isAdmin" class="admin-section tab-page-motion">
       <view class="menu-title">管理员功能</view>
       <view class="admin-grid">
-        <view class="admin-item" @click="goFileManagement">📂 文件管理</view>
-        <view class="admin-item" @click="go2048">🎲 2048后台</view>
-        <view class="admin-item" @click="goDbMonitor">📊 数据库</view>
-        <view class="admin-item" @click="goAdminAISettings">⚙️ AI设置</view>
-        <view class="admin-item" @click="goDigitalTwin">🌐 数字孪生</view>
-        <view class="admin-item" @click="goCollectionDashboard">🗺️ 清运仪表板</view>
-        <view class="admin-item" @click="goCollectionPlanning">📋 清运规划</view>
-        <view class="admin-item" @click="goCommunityDashboard">🏘️ 社区仪表板</view>
+        <view class="admin-item" @click="goFileManagement"><ManifestIcon id="file_manager" /> 文件管理</view>
+        <view class="admin-item" @click="go2048"><ManifestIcon id="admin_2048" /> 2048后台</view>
+        <view class="admin-item" @click="goDbMonitor"><ManifestIcon id="database" /> 数据库</view>
+        <view class="admin-item" @click="goAdminAISettings"><ManifestIcon id="ai_settings" /> AI设置</view>
+        <view class="admin-item" @click="goDigitalTwin"><ManifestIcon id="digital_twin" /> 数字孪生</view>
+        <view class="admin-item" @click="goCollectionDashboard"><ManifestIcon id="cleanup_dashboard" /> 清运仪表板</view>
+        <view class="admin-item" @click="goCollectionPlanning"><ManifestIcon id="cleanup_plan" /> 清运规划</view>
+        <view class="admin-item" @click="goCommunityDashboard"><ManifestIcon id="community_dashboard" /> 社区仪表板</view>
       </view>
     </view>
 
     <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
-        <text class="tabbar-icon">🏠</text>
+        <ManifestIcon id="home" class="tabbar-icon" />
         <text class="tabbar-label">首页</text>
       </view>
       <view class="tabbar-item" @click="goMap">
-        <text class="tabbar-icon">🗺️</text>
+        <ManifestIcon id="map_location" class="tabbar-icon" />
         <text class="tabbar-label">地图</text>
       </view>
       <view class="tabbar-item" @click="goShop">
-        <text class="tabbar-icon">🛍️</text>
+        <ManifestIcon id="store" class="tabbar-icon" />
         <text class="tabbar-label">商城</text>
       </view>
       <view class="tabbar-item active">
-        <text class="tabbar-icon">👤</text>
+        <ManifestIcon id="user_profile" class="tabbar-icon" />
         <text class="tabbar-label">我的</text>
       </view>
     </view>
@@ -199,12 +199,12 @@
     <view v-if="showInfoModal" class="modal-overlay" @click="closePointsInfo">
       <view class="info-modal" @click.stop>
         <view class="modal-header">
-          <text class="modal-title">💰 积分获取说明</text>
-          <view class="modal-close" @click="closePointsInfo">✕</view>
+          <view class="modal-title"><ManifestIcon id="points_info" /> 积分获取说明</view>
+          <ManifestIcon id="close" class="modal-close" @click="closePointsInfo" />
         </view>
         <view class="modal-body">
           <view class="info-item">
-            <view class="info-icon blue">🔍</view>
+            <view class="info-icon blue"><ManifestIcon id="camera_scan" /></view>
             <view class="info-content">
               <text class="info-title">在线识别</text>
               <text class="info-desc">每次识别垃圾可获得1积分</text>
@@ -212,7 +212,7 @@
             </view>
           </view>
           <view class="info-item">
-            <view class="info-icon green">🗑️</view>
+            <view class="info-icon green"><ManifestIcon id="device_connect" /></view>
             <view class="info-content">
               <text class="info-title">智能分类装置</text>
               <text class="info-desc">使用分类装置投放垃圾</text>
@@ -220,7 +220,7 @@
             </view>
           </view>
           <view class="info-item">
-            <view class="info-icon orange">🎁</view>
+            <view class="info-icon orange"><ManifestIcon id="challenge_trophy" /></view>
             <view class="info-content">
               <text class="info-title">额外奖励</text>
               <text class="info-desc">连续登录、完美分类等可获得额外积分</text>
@@ -238,12 +238,12 @@
     <view v-if="showCarbonModal" class="modal-overlay" @click="closeCarbonInfo">
       <view class="info-modal" @click.stop>
         <view class="modal-header">
-          <text class="modal-title">🍃 减碳量计算说明</text>
-          <view class="modal-close" @click="closeCarbonInfo">✕</view>
+          <view class="modal-title"><ManifestIcon id="carbon_calculator" /> 减碳量计算说明</view>
+          <ManifestIcon id="close" class="modal-close" @click="closeCarbonInfo" />
         </view>
         <view class="modal-body">
           <view class="info-item">
-            <view class="info-icon blue">♻️</view>
+            <view class="info-icon blue"><ManifestIcon id="recycling_contribution" /></view>
             <view class="info-content">
               <text class="info-title">可回收垃圾分类</text>
               <text class="info-desc">每次正确分类可回收垃圾</text>
@@ -251,7 +251,7 @@
             </view>
           </view>
           <view class="info-item">
-            <view class="info-icon green">🍎</view>
+            <view class="info-icon green"><ManifestIcon id="bin_kitchen" /></view>
             <view class="info-content">
               <text class="info-title">厨余垃圾分类</text>
               <text class="info-desc">避免厨余垃圾填埋产生甲烷</text>
@@ -259,7 +259,7 @@
             </view>
           </view>
           <view class="info-item">
-            <view class="info-icon red">☢️</view>
+            <view class="info-icon red"><ManifestIcon id="bin_hazardous" /></view>
             <view class="info-content">
               <text class="info-title">有害垃圾分类</text>
               <text class="info-desc">专业处理避免环境污染</text>
@@ -296,7 +296,11 @@ import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
 import { jumpToAdminPage } from '@/utils/admin-page-nav'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
+import { getManifestIconPath } from '@/utils/manifest-icons.js'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 
+const tabPageClass = useTabPageTransition('pages/profile/profile')
 const username = ref('')
 const userInfo = ref({})
 const loading = ref(false)
@@ -625,9 +629,9 @@ function goCommunityDashboard() {
   })
 }
 
-function goHome() { uni.redirectTo({ url: '/pages/home/home' }) }
-function goMap() { uni.navigateTo({ url: '/pages/map/map' }) }
-function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
+function goHome() { navigateBottomTab('profile', 'home', '/pages/home/home') }
+function goMap() { navigateBottomTab('profile', 'map', '/pages/map/map', 'navigateTo') }
+function goShop() { navigateBottomTab('profile', 'shop', '/pages/shop/shop') }
 </script>
 
 <style scoped>
@@ -985,6 +989,16 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   color: #10b981;
 }
 
+.level-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.level-icon {
+  font-size: 24rpx;
+}
+
 .level-text {
   font-size: 24rpx;
   color: #6b7280;
@@ -1149,6 +1163,8 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
   font-size: 28rpx;
   color: #6b7280;
 }
+
+.refresh-icon { transform: scale(0.72); }
 
 .refresh-btn.rotating {
   animation: rotate 1s linear infinite;
@@ -1651,7 +1667,13 @@ function goShop() { uni.redirectTo({ url: '/pages/shop/shop' }) }
 }
 
 .tabbar-item.active .tabbar-icon {
-  filter: grayscale(0%) brightness(1.1);
+  opacity: 1;
+  filter: grayscale(0%) brightness(1.1) saturate(1);
+}
+
+.tabbar-item:not(.active) .tabbar-icon {
+  opacity: 0.6;
+  filter: grayscale(30%) saturate(0.7);
 }
 
 .tabbar-label {

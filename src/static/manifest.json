@@ -1,0 +1,1220 @@
+[
+  {
+    "id": "ai_assistant",
+    "zh_name": "AI助手",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/ai_assistant_64.webp"
+  },
+  {
+    "id": "back",
+    "zh_name": "返回",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/back_32.webp"
+  },
+  {
+    "id": "bin_hazardous",
+    "zh_name": "有害垃圾",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/bin_hazardous_64.webp"
+  },
+  {
+    "id": "bin_kitchen",
+    "zh_name": "厨余垃圾",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/bin_kitchen_64.webp"
+  },
+  {
+    "id": "bin_other",
+    "zh_name": "其他垃圾",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/bin_other_64.webp"
+  },
+  {
+    "id": "bin_recyclable",
+    "zh_name": "可回收垃圾",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/bin_recyclable_64.webp"
+  },
+  {
+    "id": "camera_scan",
+    "zh_name": "拍照识别",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/camera_scan_64.webp"
+  },
+  {
+    "id": "cancel",
+    "zh_name": "取消",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/cancel_32.webp"
+  },
+  {
+    "id": "close",
+    "zh_name": "关闭",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/close_32.webp"
+  },
+  {
+    "id": "confirm",
+    "zh_name": "确认",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/confirm_32.webp"
+  },
+  {
+    "id": "device_connect",
+    "zh_name": "设备连接",
+    "category": "01_core",
+    "recommended_size": 48,
+    "file": "icons/device_connect_48.webp"
+  },
+  {
+    "id": "filter",
+    "zh_name": "筛选",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/filter_32.webp"
+  },
+  {
+    "id": "help",
+    "zh_name": "帮助",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/help_32.webp"
+  },
+  {
+    "id": "home",
+    "zh_name": "首页",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/home_32.webp"
+  },
+  {
+    "id": "map_location",
+    "zh_name": "地图",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/map_location_32.webp"
+  },
+  {
+    "id": "more",
+    "zh_name": "更多",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/more_32.webp"
+  },
+  {
+    "id": "notification",
+    "zh_name": "通知",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/notification_32.webp"
+  },
+  {
+    "id": "refresh",
+    "zh_name": "刷新",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/refresh_32.webp"
+  },
+  {
+    "id": "search",
+    "zh_name": "搜索",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/search_32.webp"
+  },
+  {
+    "id": "settings",
+    "zh_name": "设置",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/settings_32.webp"
+  },
+  {
+    "id": "smart_sort",
+    "zh_name": "智能分类",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/smart_sort_64.webp"
+  },
+  {
+    "id": "store",
+    "zh_name": "商城",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/store_32.webp"
+  },
+  {
+    "id": "user_profile",
+    "zh_name": "我的",
+    "category": "01_core",
+    "recommended_size": 32,
+    "file": "icons/user_profile_32.webp"
+  },
+  {
+    "id": "voice_recognition",
+    "zh_name": "语音识别",
+    "category": "01_core",
+    "recommended_size": 48,
+    "file": "icons/voice_recognition_48.webp"
+  },
+  {
+    "id": "accuracy_target",
+    "zh_name": "正确率",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/accuracy_target_48.webp"
+  },
+  {
+    "id": "challenge_calendar",
+    "zh_name": "挑战日历",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/challenge_calendar_48.webp"
+  },
+  {
+    "id": "challenge_champion",
+    "zh_name": "总榜冠军",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/challenge_champion_48.webp"
+  },
+  {
+    "id": "challenge_checklist",
+    "zh_name": "已挑战",
+    "category": "02_engagement",
+    "recommended_size": 32,
+    "file": "icons/challenge_checklist_32.webp"
+  },
+  {
+    "id": "challenge_progress",
+    "zh_name": "今日挑战进度",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/challenge_progress_48.webp"
+  },
+  {
+    "id": "challenge_rank",
+    "zh_name": "挑战排行榜",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/challenge_rank_48.webp"
+  },
+  {
+    "id": "challenge_start",
+    "zh_name": "开始挑战",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/challenge_start_48.webp"
+  },
+  {
+    "id": "challenge_trophy",
+    "zh_name": "挑战赛",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/challenge_trophy_48.webp"
+  },
+  {
+    "id": "comment",
+    "zh_name": "评论",
+    "category": "02_engagement",
+    "recommended_size": 32,
+    "file": "icons/comment_32.webp"
+  },
+  {
+    "id": "community_activity",
+    "zh_name": "社区活动",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/community_activity_48.webp"
+  },
+  {
+    "id": "community_camera",
+    "zh_name": "晒图",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/community_camera_48.webp"
+  },
+  {
+    "id": "community_help",
+    "zh_name": "求助",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/community_help_48.webp"
+  },
+  {
+    "id": "community_home",
+    "zh_name": "社区首页",
+    "category": "02_engagement",
+    "recommended_size": 64,
+    "file": "icons/community_home_64.webp"
+  },
+  {
+    "id": "community_rank",
+    "zh_name": "社区排行榜",
+    "category": "02_engagement",
+    "recommended_size": 64,
+    "file": "icons/community_rank_64.webp"
+  },
+  {
+    "id": "daily_question",
+    "zh_name": "每日答题",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/daily_question_48.webp"
+  },
+  {
+    "id": "eco_tip",
+    "zh_name": "环保技巧",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/eco_tip_48.webp"
+  },
+  {
+    "id": "free_ticket",
+    "zh_name": "免费次数",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/free_ticket_48.webp"
+  },
+  {
+    "id": "like",
+    "zh_name": "喜欢",
+    "category": "02_engagement",
+    "recommended_size": 32,
+    "file": "icons/like_32.webp"
+  },
+  {
+    "id": "lucky_wheel",
+    "zh_name": "幸运转盘",
+    "category": "02_engagement",
+    "recommended_size": 64,
+    "file": "icons/lucky_wheel_64.webp"
+  },
+  {
+    "id": "mystery_bag",
+    "zh_name": "低门槛试手气",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/mystery_bag_48.webp"
+  },
+  {
+    "id": "points_coin",
+    "zh_name": "积分",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/points_coin_48.webp"
+  },
+  {
+    "id": "points_stack",
+    "zh_name": "积分堆",
+    "category": "02_engagement",
+    "recommended_size": 64,
+    "file": "icons/points_stack_64.webp"
+  },
+  {
+    "id": "post_edit",
+    "zh_name": "发帖",
+    "category": "02_engagement",
+    "recommended_size": 64,
+    "file": "icons/post_edit_64.webp"
+  },
+  {
+    "id": "prize_pool",
+    "zh_name": "奖品池",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/prize_pool_48.webp"
+  },
+  {
+    "id": "rank_month",
+    "zh_name": "本月榜",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/rank_month_48.webp"
+  },
+  {
+    "id": "rank_week",
+    "zh_name": "本周榜",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/rank_week_48.webp"
+  },
+  {
+    "id": "reward_gift",
+    "zh_name": "奖励礼盒",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/reward_gift_48.webp"
+  },
+  {
+    "id": "speed_challenge",
+    "zh_name": "速度挑战",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/speed_challenge_48.webp"
+  },
+  {
+    "id": "streak_mode",
+    "zh_name": "连击模式",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/streak_mode_48.webp"
+  },
+  {
+    "id": "thumbs_up",
+    "zh_name": "点赞",
+    "category": "02_engagement",
+    "recommended_size": 32,
+    "file": "icons/thumbs_up_32.webp"
+  },
+  {
+    "id": "normal_bin_marker",
+    "zh_name": "普通垃圾桶地图标记",
+    "category": "02_map",
+    "recommended_size": 48,
+    "file": "icons/normal_bin_marker_48.webp"
+  },
+  {
+    "id": "smart_bin_marker",
+    "zh_name": "智能垃圾桶地图标记",
+    "category": "02_map",
+    "recommended_size": 48,
+    "file": "icons/smart_bin_marker_48.webp"
+  },
+  {
+    "id": "add",
+    "zh_name": "新增/添加",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/add_32.webp"
+  },
+  {
+    "id": "announcement",
+    "zh_name": "公告广播",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/announcement_32.webp"
+  },
+  {
+    "id": "attachment",
+    "zh_name": "附件",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/attachment_32.webp"
+  },
+  {
+    "id": "chevron_down",
+    "zh_name": "下拉",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/chevron_down_32.webp"
+  },
+  {
+    "id": "chevron_left",
+    "zh_name": "向左/上一页",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/chevron_left_32.webp"
+  },
+  {
+    "id": "chevron_right",
+    "zh_name": "向右/下一页",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/chevron_right_32.webp"
+  },
+  {
+    "id": "contacts",
+    "zh_name": "联系人",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/contacts_32.webp"
+  },
+  {
+    "id": "delete",
+    "zh_name": "删除",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/delete_32.webp"
+  },
+  {
+    "id": "empty_chat",
+    "zh_name": "空会话",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/empty_chat_32.webp"
+  },
+  {
+    "id": "empty_state",
+    "zh_name": "空状态/无结果",
+    "category": "03_common_actions",
+    "recommended_size": 48,
+    "file": "icons/empty_state_48.webp"
+  },
+  {
+    "id": "file_document",
+    "zh_name": "文件文档",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/file_document_32.webp"
+  },
+  {
+    "id": "image_gallery",
+    "zh_name": "图片相册",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/image_gallery_32.webp"
+  },
+  {
+    "id": "keyboard",
+    "zh_name": "键盘输入",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/keyboard_32.webp"
+  },
+  {
+    "id": "leave_group",
+    "zh_name": "退出群组/社区",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/leave_group_32.webp"
+  },
+  {
+    "id": "notification_off",
+    "zh_name": "消息免打扰",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/notification_off_32.webp"
+  },
+  {
+    "id": "pin",
+    "zh_name": "置顶/定位",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/pin_32.webp"
+  },
+  {
+    "id": "play_action",
+    "zh_name": "开始/播放",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/play_action_32.webp"
+  },
+  {
+    "id": "restore",
+    "zh_name": "恢复",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/restore_32.webp"
+  },
+  {
+    "id": "shield_captcha",
+    "zh_name": "安全验证",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/shield_captcha_32.webp"
+  },
+  {
+    "id": "submit_action",
+    "zh_name": "提交操作",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/submit_action_32.webp"
+  },
+  {
+    "id": "timer",
+    "zh_name": "计时器",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/timer_32.webp"
+  },
+  {
+    "id": "translate",
+    "zh_name": "翻译/语言",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/translate_32.webp"
+  },
+  {
+    "id": "video",
+    "zh_name": "视频",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/video_32.webp"
+  },
+  {
+    "id": "visibility",
+    "zh_name": "显示密码/可见",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/visibility_32.webp"
+  },
+  {
+    "id": "visibility_off",
+    "zh_name": "隐藏密码/不可见",
+    "category": "03_common_actions",
+    "recommended_size": 32,
+    "file": "icons/visibility_off_32.webp"
+  },
+  {
+    "id": "about_app",
+    "zh_name": "关于软件",
+    "category": "03_profile_shop",
+    "recommended_size": 48,
+    "file": "icons/about_app_48.webp"
+  },
+  {
+    "id": "account_management",
+    "zh_name": "账户管理",
+    "category": "03_profile_shop",
+    "recommended_size": 48,
+    "file": "icons/account_management_48.webp"
+  },
+  {
+    "id": "achievements",
+    "zh_name": "成就系统",
+    "category": "03_profile_shop",
+    "recommended_size": 48,
+    "file": "icons/achievements_48.webp"
+  },
+  {
+    "id": "ai_recommend",
+    "zh_name": "AI推荐",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/ai_recommend_32.webp"
+  },
+  {
+    "id": "carbon_calculator",
+    "zh_name": "减碳量计算说明",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/carbon_calculator_64.webp"
+  },
+  {
+    "id": "carbon_reduction",
+    "zh_name": "减碳量",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/carbon_reduction_64.webp"
+  },
+  {
+    "id": "category_all",
+    "zh_name": "全部分类",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/category_all_32.webp"
+  },
+  {
+    "id": "classification_expert",
+    "zh_name": "分类专家",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/classification_expert_32.webp"
+  },
+  {
+    "id": "clear_cache",
+    "zh_name": "清除缓存",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/clear_cache_32.webp"
+  },
+  {
+    "id": "co2_saved",
+    "zh_name": "已减碳",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/co2_saved_64.webp"
+  },
+  {
+    "id": "customer_service",
+    "zh_name": "联系客服",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/customer_service_32.webp"
+  },
+  {
+    "id": "dark_mode",
+    "zh_name": "深色模式",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/dark_mode_32.webp"
+  },
+  {
+    "id": "digital_accessories",
+    "zh_name": "数码配件",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/digital_accessories_32.webp"
+  },
+  {
+    "id": "discount_coupon",
+    "zh_name": "优惠券",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/discount_coupon_64.webp"
+  },
+  {
+    "id": "earth_guardian",
+    "zh_name": "地球守护者",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/earth_guardian_32.webp"
+  },
+  {
+    "id": "eco_points",
+    "zh_name": "环保积分",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/eco_points_64.webp"
+  },
+  {
+    "id": "eco_products",
+    "zh_name": "环保用品",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/eco_products_32.webp"
+  },
+  {
+    "id": "edit_profile",
+    "zh_name": "编辑资料",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/edit_profile_32.webp"
+  },
+  {
+    "id": "food_coupon",
+    "zh_name": "美食券",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/food_coupon_32.webp"
+  },
+  {
+    "id": "home_living",
+    "zh_name": "生活用品",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/home_living_32.webp"
+  },
+  {
+    "id": "inventory",
+    "zh_name": "库存",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/inventory_32.webp"
+  },
+  {
+    "id": "learning_supplies",
+    "zh_name": "学习用品",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/learning_supplies_32.webp"
+  },
+  {
+    "id": "level_badge",
+    "zh_name": "等级徽章",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/level_badge_64.webp"
+  },
+  {
+    "id": "limited_offer",
+    "zh_name": "限量",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/limited_offer_32.webp"
+  },
+  {
+    "id": "logout",
+    "zh_name": "退出登录",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/logout_32.webp"
+  },
+  {
+    "id": "nearby_map",
+    "zh_name": "附近设备",
+    "category": "03_profile_shop",
+    "recommended_size": 48,
+    "file": "icons/nearby_map_48.webp"
+  },
+  {
+    "id": "password",
+    "zh_name": "修改密码",
+    "category": "03_profile_shop",
+    "recommended_size": 128,
+    "file": "icons/password_128.webp"
+  },
+  {
+    "id": "points_info",
+    "zh_name": "积分获取说明",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/points_info_64.webp"
+  },
+  {
+    "id": "profile_user",
+    "zh_name": "个人头像",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/profile_user_64.webp"
+  },
+  {
+    "id": "ranking",
+    "zh_name": "排行榜",
+    "category": "03_profile_shop",
+    "recommended_size": 48,
+    "file": "icons/ranking_48.webp"
+  },
+  {
+    "id": "recognition_history",
+    "zh_name": "识别历史",
+    "category": "03_profile_shop",
+    "recommended_size": 48,
+    "file": "icons/recognition_history_48.webp"
+  },
+  {
+    "id": "recycling_contribution",
+    "zh_name": "回收贡献",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/recycling_contribution_64.webp"
+  },
+  {
+    "id": "recycling_king",
+    "zh_name": "回收王者",
+    "category": "03_profile_shop",
+    "recommended_size": 32,
+    "file": "icons/recycling_king_32.webp"
+  },
+  {
+    "id": "redeem_gift",
+    "zh_name": "兑换礼品",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/redeem_gift_64.webp"
+  },
+  {
+    "id": "shopping_bag",
+    "zh_name": "购物袋",
+    "category": "03_profile_shop",
+    "recommended_size": 64,
+    "file": "icons/shopping_bag_64.webp"
+  },
+  {
+    "id": "user_guide",
+    "zh_name": "使用指南",
+    "category": "03_profile_shop",
+    "recommended_size": 48,
+    "file": "icons/user_guide_48.webp"
+  },
+  {
+    "id": "achievement_unlock_table",
+    "zh_name": "成就解锁表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/achievement_unlock_table_32.webp"
+  },
+  {
+    "id": "admin_2048",
+    "zh_name": "2048后台",
+    "category": "04_admin_data",
+    "recommended_size": 48,
+    "file": "icons/admin_2048_48.webp"
+  },
+  {
+    "id": "ai_chat_message_table",
+    "zh_name": "AI对话表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/ai_chat_message_table_32.webp"
+  },
+  {
+    "id": "ai_conversation_table",
+    "zh_name": "AI会话元数据表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/ai_conversation_table_32.webp"
+  },
+  {
+    "id": "ai_settings",
+    "zh_name": "AI设置",
+    "category": "04_admin_data",
+    "recommended_size": 48,
+    "file": "icons/ai_settings_48.webp"
+  },
+  {
+    "id": "algorithm_prediction_table",
+    "zh_name": "算法预测表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/algorithm_prediction_table_32.webp"
+  },
+  {
+    "id": "algorithm_telemetry_sample_table",
+    "zh_name": "算法遥测样本表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/algorithm_telemetry_sample_table_32.webp"
+  },
+  {
+    "id": "challenge_question_table",
+    "zh_name": "挑战题库表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/challenge_question_table_32.webp"
+  },
+  {
+    "id": "challenge_record_table",
+    "zh_name": "挑战记录表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/challenge_record_table_32.webp"
+  },
+  {
+    "id": "chat_session_relation_table",
+    "zh_name": "会话关系表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/chat_session_relation_table_32.webp"
+  },
+  {
+    "id": "classification_table",
+    "zh_name": "全分类表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/classification_table_32.webp"
+  },
+  {
+    "id": "cleanup_dashboard",
+    "zh_name": "清运仪表板",
+    "category": "04_admin_data",
+    "recommended_size": 48,
+    "file": "icons/cleanup_dashboard_48.webp"
+  },
+  {
+    "id": "cleanup_plan",
+    "zh_name": "清运规划",
+    "category": "04_admin_data",
+    "recommended_size": 48,
+    "file": "icons/cleanup_plan_48.webp"
+  },
+  {
+    "id": "community_daily_stat_table",
+    "zh_name": "社区日统计表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/community_daily_stat_table_32.webp"
+  },
+  {
+    "id": "community_dashboard",
+    "zh_name": "社区仪表板",
+    "category": "04_admin_data",
+    "recommended_size": 48,
+    "file": "icons/community_dashboard_48.webp"
+  },
+  {
+    "id": "community_post_table",
+    "zh_name": "社区帖子表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/community_post_table_32.webp"
+  },
+  {
+    "id": "community_table",
+    "zh_name": "社区表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/community_table_32.webp"
+  },
+  {
+    "id": "dark_alert",
+    "zh_name": "预警状态",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/dark_alert_32.webp"
+  },
+  {
+    "id": "dark_growth",
+    "zh_name": "数据增长",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/dark_growth_32.webp"
+  },
+  {
+    "id": "dark_navigation",
+    "zh_name": "深色导航",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/dark_navigation_32.webp"
+  },
+  {
+    "id": "dark_online",
+    "zh_name": "在线状态",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/dark_online_32.webp"
+  },
+  {
+    "id": "dark_success",
+    "zh_name": "成功状态",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/dark_success_32.webp"
+  },
+  {
+    "id": "dark_sync",
+    "zh_name": "数据同步",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/dark_sync_32.webp"
+  },
+  {
+    "id": "database",
+    "zh_name": "数据库",
+    "category": "04_admin_data",
+    "recommended_size": 48,
+    "file": "icons/database_48.webp"
+  },
+  {
+    "id": "device_deposit_event_table",
+    "zh_name": "设备投递事件表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/device_deposit_event_table_32.webp"
+  },
+  {
+    "id": "device_table",
+    "zh_name": "设备表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/device_table_32.webp"
+  },
+  {
+    "id": "digital_twin",
+    "zh_name": "数字孪生",
+    "category": "04_admin_data",
+    "recommended_size": 48,
+    "file": "icons/digital_twin_48.webp"
+  },
+  {
+    "id": "file_manager",
+    "zh_name": "文件管理",
+    "category": "04_admin_data",
+    "recommended_size": 48,
+    "file": "icons/file_manager_48.webp"
+  },
+  {
+    "id": "friend_request_table",
+    "zh_name": "好友申请表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/friend_request_table_32.webp"
+  },
+  {
+    "id": "group_chat_table",
+    "zh_name": "群聊表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/group_chat_table_32.webp"
+  },
+  {
+    "id": "group_member_relation_table",
+    "zh_name": "群成员关系表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/group_member_relation_table_32.webp"
+  },
+  {
+    "id": "group_message_table",
+    "zh_name": "群消息表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/group_message_table_32.webp"
+  },
+  {
+    "id": "lottery_config_table",
+    "zh_name": "抽奖配置表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/lottery_config_table_32.webp"
+  },
+  {
+    "id": "lottery_record_table",
+    "zh_name": "抽奖记录表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/lottery_record_table_32.webp"
+  },
+  {
+    "id": "maintenance_task_table",
+    "zh_name": "运维任务表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/maintenance_task_table_32.webp"
+  },
+  {
+    "id": "operation_task_table",
+    "zh_name": "运营任务表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/operation_task_table_32.webp"
+  },
+  {
+    "id": "post_comment_table",
+    "zh_name": "帖子评论表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/post_comment_table_32.webp"
+  },
+  {
+    "id": "post_like_table",
+    "zh_name": "帖子点赞表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/post_like_table_32.webp"
+  },
+  {
+    "id": "private_message_table",
+    "zh_name": "私聊消息表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/private_message_table_32.webp"
+  },
+  {
+    "id": "prize_table",
+    "zh_name": "奖品表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/prize_table_32.webp"
+  },
+  {
+    "id": "product_recommendation_table",
+    "zh_name": "商品推荐表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/product_recommendation_table_32.webp"
+  },
+  {
+    "id": "purchase_record_table",
+    "zh_name": "购买记录表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/purchase_record_table_32.webp"
+  },
+  {
+    "id": "recognition_history_table",
+    "zh_name": "识别历史表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/recognition_history_table_32.webp"
+  },
+  {
+    "id": "region_node_table",
+    "zh_name": "区域节点表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/region_node_table_32.webp"
+  },
+  {
+    "id": "relationship_link_table",
+    "zh_name": "关系链接表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/relationship_link_table_32.webp"
+  },
+  {
+    "id": "reservation_order_table",
+    "zh_name": "预约订单表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/reservation_order_table_32.webp"
+  },
+  {
+    "id": "service_point_table",
+    "zh_name": "服务点表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/service_point_table_32.webp"
+  },
+  {
+    "id": "sorting_center_event_table",
+    "zh_name": "分拣中心事件表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/sorting_center_event_table_32.webp"
+  },
+  {
+    "id": "user_community_relation_table",
+    "zh_name": "用户社区关系表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/user_community_relation_table_32.webp"
+  },
+  {
+    "id": "user_device_relation_table",
+    "zh_name": "用户设备关系表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/user_device_relation_table_32.webp"
+  },
+  {
+    "id": "user_table",
+    "zh_name": "用户表",
+    "category": "04_admin_data",
+    "recommended_size": 32,
+    "file": "icons/user_table_32.webp"
+  },
+  {
+    "id": "rank_second",
+    "zh_name": "第二名",
+    "category": "06_challenge",
+    "recommended_size": 48,
+    "file": "icons/rank_second_48.webp"
+  },
+  {
+    "id": "rank_third",
+    "zh_name": "第三名",
+    "category": "06_challenge",
+    "recommended_size": 48,
+    "file": "icons/rank_third_48.webp"
+  },
+  {
+    "id": "device_recycle",
+    "zh_name": "设备回收/回收模式",
+    "category": "08_booking",
+    "recommended_size": 48,
+    "file": "icons/device_recycle_48.webp"
+  },
+  {
+    "id": "device_start",
+    "zh_name": "设备启动",
+    "category": "08_booking",
+    "recommended_size": 48,
+    "file": "icons/device_start_48.webp"
+  },
+  {
+    "id": "recycling_booking",
+    "zh_name": "预约回收",
+    "category": "08_booking",
+    "recommended_size": 48,
+    "file": "icons/recycling_booking_48.webp"
+  },
+  {
+    "id": "colorful_bin",
+    "zh_name": "彩色垃圾桶",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/colorful-bin.webp"
+  }
+]

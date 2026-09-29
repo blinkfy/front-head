@@ -36,7 +36,7 @@
       <!-- 登录表单 -->
       <form class="login-form" @submit.prevent="onLogin(false)">
         <view class="form-group">
-          <text class="form-label">👤 用户名</text>
+          <view class="form-label"><ManifestIcon id="user_profile" /> 用户名</view>
           <view class="input-wrapper-simple">
             <input
               v-model="username"
@@ -52,7 +52,7 @@
         </view>
         
         <view class="form-group">
-          <text class="form-label">🔐 密码</text>
+          <view class="form-label"><ManifestIcon id="password" /> 密码</view>
           <view class="input-wrapper-simple">
             <input
               v-model="password"
@@ -65,15 +65,15 @@
               @keyup.enter="handleEnterKey"
               @keyup="handleKeyup"
             />
-            <text class="pwd-toggle" @click="togglePassword">
-              {{ showPwd ? '👁️' : '🔒' }}
-            </text>
+            <view class="pwd-toggle" @click="togglePassword">
+              <ManifestIcon :id="showPwd ? 'visibility_off' : 'visibility'" />
+            </view>
           </view>
         </view>
         
         <!-- 验证码区域（失败3次后显示） -->
         <view class="form-group captcha-form-group" v-if="showCaptcha">
-          <text class="form-label">🛡️ 验证码</text>
+          <view class="form-label"><ManifestIcon id="shield_captcha" /> 验证码</view>
           <captcha-box v-model="captchaInput" ref="captchaRef" @confirm="handleEnterKey" />
           <text class="hint" v-if="captchaHint">{{ captchaHint }}</text>
         </view>
@@ -89,7 +89,7 @@
         
         <button type="submit" class="login-btn" @click="onLogin(false)" :disabled="isLoading">
           <view class="btn-content" v-if="!isLoading">
-            <text class="btn-icon">🚀</text>
+            <ManifestIcon class="btn-icon" id="submit_action" :scale="1.2" />
             <text class="btn-text">登录系统</text>
           </view>
           <view class="loading-content" v-else>
@@ -113,6 +113,7 @@ import { ref, onMounted } from 'vue'
 import { login, userinfo } from '@/api/user'
 import { checkDB } from '@/api/health'
 import CaptchaBox from '@/components/CaptchaBox-black.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 const username = ref('')
 const password = ref('')

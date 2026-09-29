@@ -11,10 +11,10 @@
       <view class="safe-area-top"></view>
       <view class="nav-content">
         <view class="nav-left" @click="goBack">
-          <text class="back-icon">←</text>
+          <ManifestIcon class="back-icon" id="back" :scale="1" />
         </view>
         <view class="nav-title-wrap">
-          <view class="title-icon-pill small"><text>📄</text></view>
+          <view class="title-icon-pill small"><ManifestIcon id="post_edit" /></view>
           <text class="nav-title">{{ postTag }}</text>
         </view>
         <view class="nav-right"></view>
@@ -72,11 +72,11 @@
 
           <view class="post-actions">
             <view class="action-item" @click="toggleLike">
-              <text class="action-icon">{{ post.liked ? '❤️' : '🤍' }}</text>
+              <ManifestIcon id="thumbs_up" class="action-icon" />
               <text class="action-count">{{ post.likeCount }}</text>
             </view>
             <view class="action-item" @click="focusComment">
-              <text class="action-icon">💬</text>
+              <ManifestIcon id="comment" class="action-icon" />
               <text class="action-count">{{ comments.length }}</text>
             </view>
           </view>
@@ -142,7 +142,7 @@
     <view v-if="imagePreviewVisible" class="custom-preview" @click.self="closeImagePreview">
       <view class="preview-topbar">
         <text class="preview-count">{{ previewIndex + 1 }}/{{ previewImages.length }}</text>
-        <text class="preview-close" @click="closeImagePreview">×</text>
+        <ManifestIcon class="preview-close" id="close" @click="closeImagePreview" />
       </view>
       <scroll-view class="preview-scroll" scroll-y>
         <view class="preview-image-wrap">
@@ -168,7 +168,9 @@ import { getComments, addComment, togglePostLike, getCommunityPosts, getCommunit
 import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
+import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage } from '@/utils/community-image.js';
+import ManifestIcon from '@/components/ManifestIcon.vue';
 function requestJson(url, options = {}) {
   return new Promise((resolve, reject) => {
     uni.request({
@@ -182,6 +184,7 @@ function requestJson(url, options = {}) {
   })
 }
 export default {
+  components: { ManifestIcon },
   data() {
     return {
       postId: 0,
@@ -568,11 +571,12 @@ export default {
       return `${Math.floor(diff / 86400000)}天前`;
     },
     getAvatarUrl(avatar) {
-      if (!avatar) return '/static/person.webp.png';
-      if (typeof avatar !== 'string') return '/static/person.webp.png';
-      if (avatar.startsWith('blob:')) return '/static/person.webp.png';
+      const fallbackAvatar = getManifestIconPath('profile_user');
+      if (!avatar) return fallbackAvatar;
+      if (typeof avatar !== 'string') return fallbackAvatar;
+      if (avatar.startsWith('blob:')) return fallbackAvatar;
       const resolved = resolveAvatarUrl(avatar, baseUrl);
-      if (resolved !== '/static/person.webp.png') return resolved;
+      if (resolved !== fallbackAvatar) return resolved;
       if (avatar.startsWith('/')) return `${baseUrl}${avatar}`;
       return `${baseUrl}/${avatar}`;
     }
@@ -630,7 +634,7 @@ export default {
   height: 88rpx; box-sizing: content-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
-.dark-mode .back-icon { color: #fff; }
+.dark-mode .back-icon { color: #fff; filter: brightness(0) invert(1); }
 .nav-title-wrap {
   display: flex; align-items: center; gap: 12rpx;
   flex: 1; justify-content: center;

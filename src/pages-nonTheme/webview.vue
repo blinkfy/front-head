@@ -4,7 +4,7 @@
     <view v-if="!isH5" class="webview-header">
       <view class="header-content">
         <view class="back-btn" @click="goBack">
-          <text class="back-icon">←</text>
+          <ManifestIcon class="back-icon" id="back" />
           <text class="back-text">返回</text>
         </view>
         <view v-if="isPdf" class="preview-btn" @click="previewPdf">
@@ -42,7 +42,7 @@
       <!-- 加载/错误状态 -->
       <view v-if="src && (loading || loadError)" class="webview-empty webview-state-overlay" role="status">
         <view class="empty-icon">
-          <text v-if="loadError">⚠️</text>
+          <ManifestIcon v-if="loadError" id="dark_alert" />
           <view v-else class="loading-spinner">
             <view class="spinner-ring"></view>
             <view class="spinner-ring"></view>
@@ -54,7 +54,7 @@
         <view v-if="loadError" class="retry-btn" @click="retryLoad">重新加载</view>
       </view>
       <view v-else-if="!src" class="webview-empty">
-        <view class="empty-icon"><text>📭</text></view>
+        <view class="empty-icon"><ManifestIcon id="empty_state" /></view>
         <text class="empty-title">无可用地址</text>
         <text class="debug-info">未获取到有效 URL</text>
       </view>
@@ -64,6 +64,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 const src = ref('')
 const title = ref('内嵌页面')
@@ -366,7 +367,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 6rpx;
   padding: 10rpx 20rpx;
-  height: 48rpx;
+  height: 80rpx;
   background: rgba(255, 255, 255, 0.12);
   border-radius: 20rpx;
   color: #fff;

@@ -11,10 +11,10 @@
         </div>
         <div class="topbar-actions">
           <button class="btn icon-btn" @click="goBack" type="button">
-            <text class="btn-icon">‹</text> 返回
+            <ManifestIcon class="btn-icon" id="back" /> 返回
           </button>
           <button class="btn btn-refresh" @click="loadSettings" :disabled="loading" type="button">
-            <text class="btn-icon" :class="{ spinning: loading }">↻</text> 读取
+            <ManifestIcon class="btn-icon" id="refresh" :class="{ spinning: loading }" /> 读取
           </button>
           <button class="btn btn-chat" @click="goToAiChat" type="button">AI 聊天</button>
           <button class="btn btn-test" @click="goToTest" type="button">Test</button>
@@ -24,7 +24,7 @@
 
       <!-- 状态横幅 -->
       <view v-if="statusText" class="status-banner" :class="statusCls">
-        <text class="status-icon">{{ statusCls === 'ok' ? '✓' : statusCls === 'err' ? '✕' : 'ℹ' }}</text>
+        <ManifestIcon class="status-icon" :id="statusCls === 'ok' ? 'confirm' : statusCls === 'err' ? 'cancel' : 'help'" />
         <text>{{ statusText }}</text>
       </view>
 
@@ -32,7 +32,7 @@
       <section class="card">
         <div class="card-h">
           <view class="card-h-left">
-            <text class="card-icon">⚙</text>
+            <ManifestIcon class="card-icon" id="ai_settings" />
             <span>运行参数</span>
           </view>
           <view class="ai-badge" :class="form.aiEnabled ? 'badge-on' : 'badge-off'">
@@ -70,7 +70,7 @@
             <picker :range="detectorModeOptions" :range-key="'label'" :value="detectorModeIndex" @change="onDetectorModeChange" class="picker-wrap">
               <view class="picker-display">
                 <text>{{ detectorModeOptions[detectorModeIndex].label }}</text>
-                <text class="picker-arrow">⌄</text>
+                <ManifestIcon class="picker-arrow" id="chevron_down" :scale="0.8" />
               </view>
             </picker>
           </div>
@@ -81,10 +81,10 @@
               <view class="row-dot dot-purple"></view>
               <div>
                 <div class="label">模型名</div>
-                <div class="desc">例如：qwen3-vl-flash</div>
+                <div class="desc">例如：qwen3.5-flash</div>
               </div>
             </div>
-            <input class="input" type="text" :value="form.model" @input="form.model = $event.detail.value" placeholder="qwen3-vl-flash" />
+            <input class="input" type="text" :value="form.model" @input="form.model = $event.detail.value" placeholder="qwen3.5-flash" />
           </div>
 
           <!-- 推荐算法 -->
@@ -99,7 +99,7 @@
             <picker :range="recommendOptions" :range-key="'label'" :value="recommendIndex" @change="onRecommendChange" class="picker-wrap">
               <view class="picker-display">
                 <text>{{ recommendOptions[recommendIndex].label }}</text>
-                <text class="picker-arrow">⌄</text>
+                <ManifestIcon class="picker-arrow" id="chevron_down" :scale="0.8" />
               </view>
             </picker>
           </div>
@@ -170,9 +170,9 @@
           <!-- 操作区 -->
           <div class="action-bar">
             <button class="btn btn-save" @click="saveSettings" :disabled="loading" type="button">
-              {{ loading ? '保存中…' : '✓ 保存设置' }}
+              <text v-if="loading">保存中…</text><template v-else><ManifestIcon id="confirm" /> 保存设置</template>
             </button>
-            <button class="btn btn-reset" @click="resetForm" type="button">↩ 恢复默认</button>
+            <button class="btn btn-reset" @click="resetForm" type="button"><ManifestIcon id="restore" :scale="1" /> 恢复默认</button>
           </div>
 
         </div>
@@ -187,6 +187,7 @@ import { onBeforeUnmount, onMounted, reactive, ref, computed } from 'vue'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 let unbindThemeWatcher = null
 
@@ -198,7 +199,7 @@ const statusCls = ref('')
 const DEFAULT_FORM = {
   aiEnabled: true,
   detectorMode: 'yolo',
-  model: 'qwen3-vl-flash',
+  model: 'qwen3.5-flash',
   recommendAlgorithm: 'qwen',
   include3d: true,
   enableThinking: false,
@@ -254,7 +255,7 @@ function normalizeRecommendAlgorithm(input) {
 function applyData(data) {
   form.aiEnabled = !!data.aiEnabled
   form.detectorMode = data.detectorMode === 'ai' ? 'ai' : 'yolo'
-  form.model = data.model || 'qwen3-vl-flash'
+  form.model = data.model || 'qwen3.5-flash'
   form.recommendAlgorithm = normalizeRecommendAlgorithm(
     data.recommendAlgorithm !== undefined ? data.recommendAlgorithm : data.recommendAlgo
   )
@@ -309,7 +310,7 @@ function saveSettings() {
   const payload = {
     aiEnabled: form.aiEnabled,
     detectorMode: form.detectorMode,
-    model: (form.model || '').trim() || 'qwen3-vl-flash',
+    model: (form.model || '').trim() || 'qwen3.5-flash',
     recommendAlgorithm: normalizeRecommendAlgorithm(form.recommendAlgorithm),
     include3d: form.include3d,
     enableThinking: form.enableThinking,

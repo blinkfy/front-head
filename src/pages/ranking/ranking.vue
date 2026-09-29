@@ -21,11 +21,11 @@
       <view class="safe-area-top"></view>
       <view class="nav-content">
         <view class="nav-left">
-          <text class="back-btn" @click="goBack">←</text>
+          <ManifestIcon class="back-btn nav-white-icon" id="back" :scale="1" @click="goBack" />
         </view>
         <text class="nav-title">环保排行榜</text>
         <view class="nav-right">
-          <text class="refresh-btn" @click="refreshRanking" :class="{ rotating: loading }">♻️</text>
+          <ManifestIcon class="refresh-btn nav-white-icon" id="refresh" @click="refreshRanking" :class="{ rotating: loading }" />
         </view>
       </view>
     </view>
@@ -34,7 +34,7 @@
     <view class="period-info" v-if="rankingData">
       <view class="period-card">
         <view class="ripple-effect"></view>
-        <text class="period-icon">📊</text>
+          <ManifestIcon class="period-icon" id="rank_month" />
         <view class="period-content">
           <text class="period-title">统计周期</text>
           <text class="period-desc">过去30天 ({{ formatDate(rankingData.period_range.start) }} - {{ formatDate(rankingData.period_range.end) }})</text>
@@ -55,7 +55,7 @@
           <view v-for="(user, index) in rankingData.ranking.slice(0, 3)" :key="user.rank" 
                 class="top-item" :class="'rank-' + user.rank">
             <view class="rank-medal">
-              <text class="medal-icon">{{ getMedalIcon(user.rank) }}</text>
+              <ManifestIcon v-if="getMedalIcon(user.rank)" class="medal-icon" :id="getMedalIcon(user.rank)" />
               <view class="medal-glow"></view>
             </view>
             <view class="top-user-info">
@@ -106,7 +106,7 @@
 
       <!-- 空状态 -->
       <view v-else class="empty-state">
-        <text class="empty-icon">📊</text>
+        <ManifestIcon class="empty-icon" id="ranking" />
         <text class="empty-title">暂无排行榜数据</text>
         <text class="empty-desc">开始垃圾分类，争夺环保榜首！</text>
       </view>
@@ -132,6 +132,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getRanking } from '@/api/ranking'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 const rankingData = ref(null)
 const loading = ref(false)
@@ -285,10 +286,7 @@ const handleBackupNavigation = () => {
 }
 
 // 获取奖牌图标
-const getMedalIcon = (rank) => {
-  const medals = { 1: '🥇', 2: '🥈', 3: '🥉' }
-  return medals[rank] || '🏅'
-}
+const getMedalIcon = (rank) => ({ 1: 'challenge_champion', 2: 'rank_week', 3: 'rank_month' })[rank] || ''
 
 // 判断是否为当前用户
 const isCurrentUser = (username) => {
@@ -490,7 +488,7 @@ const formatUpdateTime = (dateString) => {
 
 .refresh-btn {
   color: #ffffff;
-  font-size: 32rpx;
+  font-size: 29rpx;
   padding: 10rpx;
   transition: transform 0.3s ease;
 }
@@ -718,12 +716,18 @@ const formatUpdateTime = (dateString) => {
 }
 
 .top-user-info {
+  width: 100%;
+  min-width: 0;
   text-align: center;
   margin-bottom: 16rpx;
 }
 
 .top-username {
   display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #1f2937;
   font-size: 24rpx;
   font-weight: 600;
@@ -824,7 +828,8 @@ const formatUpdateTime = (dateString) => {
 
 .table-header {
   display: grid;
-  grid-template-columns: 80rpx 1fr 100rpx 100rpx 80rpx;
+  box-sizing: border-box;
+  grid-template-columns: 80rpx minmax(0, 1fr) 100rpx 100rpx 80rpx;
   background: linear-gradient(145deg,
     rgba(236, 253, 245, 0.7) 0%,
     rgba(209, 250, 229, 0.5) 100%);
@@ -863,7 +868,8 @@ const formatUpdateTime = (dateString) => {
 
 .table-row {
   display: grid;
-  grid-template-columns: 80rpx 1fr 100rpx 100rpx 80rpx;
+  box-sizing: border-box;
+  grid-template-columns: 80rpx minmax(0, 1fr) 100rpx 100rpx 80rpx;
   padding: 20rpx;
   border-bottom: 1px solid rgba(52, 211, 153, 0.08);
   transition: all 0.3s ease;
@@ -916,6 +922,8 @@ const formatUpdateTime = (dateString) => {
 .user-cell {
   display: flex;
   align-items: center;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .user-avatar {
@@ -936,10 +944,19 @@ const formatUpdateTime = (dateString) => {
 }
 
 .username {
+  display: block;
+  flex: 1 1 0;
+  width: 0;
   color: #1f2937;
   font-size: 26rpx;
   font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+.nav-white-icon { filter: brightness(0) invert(1); }
 
 .points-cell, .count-cell, .total-cell {
   display: flex;

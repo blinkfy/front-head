@@ -3,7 +3,7 @@
     <view class="feedback-heading">
       <text class="feedback-label">投放反馈</text>
       <view class="sync-badge" :class="{ warning: syncError }">
-        <view class="sync-dot"></view>
+        <ManifestIcon class="sync-status-icon" :id="syncError ? 'dark_alert' : 'dark_sync'" :scale="1" />
         <text>{{ syncError ? '同步暂停' : initialized ? '已同步' : '同步中' }}</text>
       </view>
     </view>
@@ -13,9 +13,9 @@
         <view class="waiting-ring ring-outer"></view>
         <view class="waiting-ring ring-inner"></view>
         <view class="bin-ground"></view>
-        <image class="feedback-bin" src="/static/colorful-bin.png" mode="aspectFit" />
-        <view v-if="celebrating" class="arrival-item"><text>♻</text></view>
-        <view v-if="latest" class="result-check"><text>✓</text></view>
+        <image class="feedback-bin" :src="latest ? categoryIconSource(latest.category) : getManifestIconPath('colorful_bin')" mode="aspectFit" />
+        <view v-if="celebrating" class="arrival-item"><ManifestIcon id="recycling_contribution" /></view>
+        <view v-if="latest" class="result-check"><ManifestIcon id="confirm" /></view>
         <view v-if="celebrating" class="celebration-burst">
           <view class="burst-ring burst-ring-one"></view>
           <view class="burst-ring burst-ring-two"></view>
@@ -70,7 +70,7 @@
       <view class="recent-heading">
         <text class="recent-title">投放足迹</text>
         <button class="history-toggle" :aria-expanded="historyExpanded" @click="historyExpanded = !historyExpanded">{{ historyExpanded ? '收起' : '展开' }}</button>
-        <button class="history-button" @click="goToHistory">查看记录 ›</button>
+        <button class="history-button" @click="goToHistory">查看记录 <ManifestIcon id="chevron_right" :scale="0.8" /></button>
       </view>
       <view v-for="record in recent" :key="record.id" class="recent-row">
         <view class="record-dot" :class="categoryClass(record.category)"></view>
@@ -93,6 +93,8 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { getDeviceSession } from '@/api/device.js'
 import { subscribeDeviceSession } from '@/utils/device-session-stream.js'
 import { reconcileDepositFeedback } from '@/utils/device-session-feedback.mjs'
+import { getManifestIconPath } from '@/utils/manifest-icons.js'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 const props = defineProps({
   deviceId: { type: [String, Number], required: true },
@@ -176,6 +178,16 @@ function categoryClass(category = '') {
   if (category.includes('有害')) return 'hazardous'
   if (category.includes('厨余') || category.includes('湿垃圾')) return 'kitchen'
   return 'other'
+}
+
+function categoryIconSource(category = '') {
+  const iconId = {
+    recyclable: 'bin_recyclable',
+    hazardous: 'bin_hazardous',
+    kitchen: 'bin_kitchen',
+    other: 'bin_other'
+  }[categoryClass(category)]
+  return getManifestIconPath(iconId)
 }
 
 function creditLabel(record) {
@@ -299,9 +311,8 @@ onUnmounted(() => {
 .feedback-heading { justify-content: space-between; }
 .feedback-label { font-size: 14px; font-weight: 700; }
 .sync-badge { gap: 6px; padding: 5px 9px; border-radius: 20px; color: #11835e; background: var(--soft); font-size: 11px; }
-.sync-dot { width: 6px; height: 6px; background: #20ad7a; border-radius: 50%; }
+.sync-status-icon { font-size: 11px; }
 .sync-badge.warning { color: #c48b23; }
-.sync-badge.warning .sync-dot { background: #c48b23; }
 .feedback-stage { position: relative; display: flex; flex-direction: column; align-items: center; padding: 10px 0 22px; text-align: center; }
 .bin-illustration { position: relative; width: 148px; height: 128px; display: flex; align-items: center; justify-content: center; }
 .waiting-ring { position: absolute; border: 1px solid #bce8d1; border-radius: 50%; }

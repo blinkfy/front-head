@@ -4,20 +4,20 @@
         <!-- 拖拽提示 -->
         <view v-if="isDragOver" class="drag-overlay">
             <view class="drag-hint">
-                <text class="drag-icon">📁</text>
+                <ManifestIcon class="drag-icon" id="file_document" :scale="1" />
                 <text class="drag-text">释放即可发送文件</text>
             </view>
         </view>
         <!-- 顶部导航栏 -->
         <view class="chat-header">
             <view class="header-left" @click="goBack">
-                <text class="back-icon">‹</text>
+                <ManifestIcon class="back-icon" id="back" :scale="1.1" />
             </view>
             <view class="header-center">
                 <text class="chat-title">{{ chatTitle }}{{ isGroupChat ? ' · 群聊' : '' }}</text>
             </view>
             <view class="header-right" @click="showMoreOptions">
-                <text class="more-icon">⋯</text>
+                <ManifestIcon class="more-icon" id="more" :scale="1.1" />
             </view>
         </view>
 
@@ -116,7 +116,7 @@
                                     :class="{ 'media-error': mediaLoadErrors[msg.id]?.type === 'video' }" />
                                 <!-- 播放按钮或错误提示 -->
                                 <view v-if="!mediaLoadErrors[msg.id]?.type" class="play-btn">
-                                    <text class="play-icon">▶</text>
+                                    <ManifestIcon class="play-icon" id="play_action" :scale="1.1" />
                                 </view>
                                 <view v-else class="media-error-overlay" @click.stop="retryLoadMedia(msg, 'video')">
                                     <text class="error-text">视频加载失败</text>
@@ -144,7 +144,7 @@
                                 :class="{ 'file-error': mediaLoadErrors[msg.id]?.type === 'file' }"
                                 @click="openFile(msg)">
                                 <view class="file-icon">
-                                    <text>{{ mediaLoadErrors[msg.id]?.type === 'file' ? '❌' : getFileIcon(msg.fileName) }}</text>
+                                    <ManifestIcon :id="getFileIcon(msg.fileName)" :scale="1.1" />
                                 </view>
                                 <view class="file-info">
                                     <text class="file-name">{{ msg.fileName }}</text>
@@ -172,7 +172,7 @@
 
                             <!-- 位置消息 -->
                             <view v-else-if="msg.type === 'location'" class="location-content" @click="openLocation(msg)">
-                                <view class="location-icon">📍</view>
+                                <ManifestIcon class="location-icon" id="map_location" />
                                 <view class="location-info">
                                     <text class="location-name">{{ msg.locationName || '位置分享' }}</text>
                                     <text class="location-address">{{ msg.locationAddress || '' }}</text>
@@ -207,7 +207,7 @@
                         <text class="ref-tip-label">引用:</text>
                         <text class="ref-tip-text">{{ getRefMessagePreview(refMessageId) }}</text>
                     </view>
-                    <text class="ref-tip-close" @click="clearRefMessage">✕</text>
+                    <ManifestIcon class="ref-tip-close" id="close" @click="clearRefMessage" />
                 </view>
             </view>
             
@@ -215,7 +215,8 @@
             <view class="input-bar">
                 <!-- 语音/键盘切换 -->
                 <view class="input-btn" @click="toggleVoiceMode">
-                    <text class="btn-icon">{{ isVoiceMode ? '⌨️' : '🎤' }}</text>
+                    <ManifestIcon v-if="!isVoiceMode" class="btn-icon" id="voice_recognition" />
+                    <ManifestIcon v-else class="btn-icon" id="keyboard" :scale="1.1" />
                 </view>
 
                 <!-- 文本输入框 -->
@@ -243,7 +244,7 @@
                     <text class="send-text">发送</text>
                 </view>
                 <view v-else class="input-btn" @click="toggleMorePanel">
-                    <text class="btn-icon">➕</text>
+                    <ManifestIcon class="btn-icon" id="attachment" :scale="1.1" />
                 </view>
             </view>
 
@@ -259,7 +260,7 @@
                 </scroll-view>
                 <!-- 退格按钮 - 悬浮在右侧 -->
                 <view class="emoji-delete-btn" @click="deleteLastChar">
-                    <text class="delete-icon">⌫</text>
+                    <ManifestIcon class="delete-icon" id="delete" :scale="1" />
                 </view>
             </view>
 
@@ -268,37 +269,37 @@
                 <view class="more-grid">
                     <view class="more-item" @click="chooseImage">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #43cea2, #185a9d);">
-                            <text class="more-icon">🖼️</text>
+                            <ManifestIcon class="more-icon" id="image_gallery" :scale="1.1" />
                         </view>
                         <text class="more-text">图片</text>
                     </view>
                     <view class="more-item" @click="shootPhoto">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #667eea, #764ba2);">
-                            <text class="more-icon">📷</text>
+                            <ManifestIcon class="more-icon" id="camera_scan" />
                         </view>
                         <text class="more-text">拍照</text>
                     </view>
                     <view class="more-item" @click="chooseVideo">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
-                            <text class="more-icon">🎬</text>
+                            <ManifestIcon class="more-icon" id="video" :scale="1.1" />
                         </view>
                         <text class="more-text">视频</text>
                     </view>
                     <view class="more-item" @click="recordVideo">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
-                            <text class="more-icon">📹</text>
+                            <ManifestIcon class="more-icon" id="video" :scale="1.1" />
                         </view>
                         <text class="more-text">录像</text>
                     </view>
                     <view class="more-item" @click="chooseFile">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #fa709a, #fee140);">
-                            <text class="more-icon">📁</text>
+                            <ManifestIcon class="more-icon" id="file_document" :scale="1.1" />
                         </view>
                         <text class="more-text">文件</text>
                     </view>
                     <view class="more-item" @click="sendLocation">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #a8edea, #fed6e3);">
-                            <text class="more-icon">📍</text>
+                            <ManifestIcon class="more-icon" id="map_location" />
                         </view>
                         <text class="more-text">位置</text>
                     </view>
@@ -311,7 +312,7 @@
             <view class="recording-panel" :class="{ 'cancel-mode': isCancelVoice }">
                 <view class="recording-animation">
                     <view class="wave-circle" v-for="i in 3" :key="i"></view>
-                    <view class="mic-icon">🎤</view>
+                    <ManifestIcon class="mic-icon" id="voice_recognition" />
                 </view>
                 <text class="recording-tip">{{ isCancelVoice ? '松开取消发送' : '松开发送，上滑取消' }}</text>
                 <text class="recording-duration">{{ recordingDuration }}"</text>
@@ -329,7 +330,7 @@
                 <!-- 头部 -->
                 <view class="settings-header">
                     <text class="settings-title">聊天设置</text>
-                    <text class="close-btn" @click="closeSettingsModal">×</text>
+                    <ManifestIcon class="close-btn" id="close" @click="closeSettingsModal" />
                 </view>
 
                 <!-- 用户信息 -->
@@ -365,62 +366,61 @@
                     <template v-if="isGroupChat">
                         <view class="setting-item" @click="showGroupAnnouncement">
                             <view class="setting-left">
-                                <text class="setting-icon">📢</text>
+                                <ManifestIcon class="setting-icon" id="announcement" :scale="1.1" />
                                 <text class="setting-label">群公告</text>
                             </view>
-                            <text class="arrow-icon">›</text>
+                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                         </view>
                         <view class="setting-item">
                             <view class="setting-left">
-                                <text class="setting-icon">📌</text>
+                                <ManifestIcon class="setting-icon" id="pin" :scale="1.1" />
                                 <text class="setting-label">置顶聊天</text>
                             </view>
                             <switch :checked="contactSettings.top" @change="toggleTop" color="#07c160" />
                         </view>
                         <view class="setting-item" @click="inviteGroupMembers">
                             <view class="setting-left">
-                                <text class="setting-icon">➕</text>
+                                <ManifestIcon class="setting-icon" id="add" :scale="1.1" />
                                 <text class="setting-label">邀请成员</text>
                             </view>
-                            <text class="arrow-icon">›</text>
+                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                         </view>
                         <view class="setting-item danger" @click="confirmLeaveGroup">
                             <view class="setting-left">
-                                <text class="setting-icon">🚪</text>
+                                <ManifestIcon class="setting-icon" id="leave_group" :scale="1.1" />
                                 <text class="setting-label danger-text">退出群聊</text>
                             </view>
-                            <text class="arrow-icon">›</text>
+                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                         </view>
                     </template>
                     <template v-else>
                     <!-- 备注名 -->
                     <view class="setting-item" @click="startEditNote">
                         <view class="setting-left">
-                            <text class="setting-icon">✏️</text>
+                            <ManifestIcon class="setting-icon" id="post_edit" />
                             <text class="setting-label">备注名</text>
                         </view>
                         <view class="setting-right">
                             <text class="setting-value">{{ contactSettings.note || '未设置' }}</text>
-                            <text class="arrow-icon">›</text>
+                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                         </view>
                     </view>
 
                     <!-- 关系 -->
                     <view class="setting-item" @click="selectRelationship">
                         <view class="setting-left">
-                            <text class="setting-icon">👥</text>
                             <text class="setting-label">关系</text>
                         </view>
                         <view class="setting-right">
                             <text class="setting-value">{{ getRelationshipLabel(contactSettings.relationship) }}</text>
-                            <text class="arrow-icon">›</text>
+                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                         </view>
                     </view>
 
                     <!-- 免打扰 -->
                     <view class="setting-item">
                         <view class="setting-left">
-                            <text class="setting-icon">🔕</text>
+                                <ManifestIcon class="setting-icon" id="notification_off" :scale="1.1" />
                             <text class="setting-label">消息免打扰</text>
                         </view>
                         <switch :checked="contactSettings.mute" @change="toggleMute" color="#07c160" />
@@ -429,7 +429,7 @@
                     <!-- 置顶 -->
                     <view class="setting-item">
                         <view class="setting-left">
-                            <text class="setting-icon">📌</text>
+                                <ManifestIcon class="setting-icon" id="pin" :scale="1.1" />
                             <text class="setting-label">置顶聊天</text>
                         </view>
                         <switch :checked="contactSettings.top" @change="toggleTop" color="#07c160" />
@@ -438,19 +438,19 @@
                     <!-- 清空聊天记录 -->
                     <view class="setting-item" @click="confirmClearChat">
                         <view class="setting-left">
-                            <text class="setting-icon">🗑️</text>
+                                <ManifestIcon class="setting-icon" id="delete" :scale="1.1" />
                             <text class="setting-label">清空聊天记录</text>
                         </view>
-                        <text class="arrow-icon">›</text>
+                        <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                     </view>
 
                     <!-- 删除联系人 -->
                     <view class="setting-item danger" @click="confirmDeleteContact">
                         <view class="setting-left">
-                            <text class="setting-icon">❌</text>
+                                <ManifestIcon class="setting-icon" id="delete" :scale="1.1" />
                             <text class="setting-label danger-text">删除联系人</text>
                         </view>
-                        <text class="arrow-icon">›</text>
+                        <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                     </view>
                     </template>
                 </view>
@@ -479,7 +479,7 @@
                 <!-- 顶部 -->
                 <view class="preview-header">
                     <view class="preview-close-box">
-                        <text class="close-icon">✕</text>
+                        <ManifestIcon class="close-icon" id="close" />
                     </view>
                     <text class="count-tag" v-if="previewImageList.length > 1">{{ previewCurrentIndex + 1 }} / {{ previewImageList.length }}</text>
                     <view class="header-placeholder"></view>
@@ -504,10 +504,10 @@
                 <!-- 左右导航 -->
                 <template v-if="previewImageList.length > 1">
                     <view class="preview-nav preview-prev" @click.stop="prevPreviewImage">
-                        <text class="nav-symbol">‹</text>
+                        <ManifestIcon class="nav-symbol" id="chevron_left" :scale="1" />
                     </view>
                     <view class="preview-nav preview-next" @click.stop="nextPreviewImage">
-                        <text class="nav-symbol">›</text>
+                        <ManifestIcon class="nav-symbol" id="chevron_right" :scale="1" />
                     </view>
                 </template>
                 
@@ -535,6 +535,8 @@ import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
 import ChatMarkdown from '@/components/ChatMarkdown.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { loadChatHistoryCache, saveChatHistoryCache } from '@/utils/chat-history-cache.js'
 // #ifndef H5
 import { cacheChatOriginalImage, removeCachedChatOriginalImage, restoreCachedChatOriginalImages } from '@/utils/chat-media-cache.js'
@@ -553,7 +555,8 @@ const chatRelationshipLabels = {
 
 export default {
     components: {
-        ChatMarkdown
+        ChatMarkdown,
+        ManifestIcon
     },
     data() {
         return {
@@ -786,7 +789,7 @@ export default {
         // 对方头像 (计算属性，避免重复调用)
         otherAvatarUrl() {
             if (this.chatTitle && (this.chatTitle.includes('AI') || this.chatTitle.includes('ai') || this.chatTitle.includes('智能') || this.chatTitle.includes('助手'))) {
-                return '/static/ai.png'
+                return getManifestIconPath('ai_assistant')
             }
             // 检查是否有有效的真实头像
             if (this.otherAvatar && 
@@ -1663,6 +1666,7 @@ export default {
                 content: content,
                 isSelf: isSelf,
                 isAi: !!serverMsg.isAi,
+                senderId: serverMsg.senderId,
                 senderName: serverMsg.isAi ? 'AI 环保助手' : (serverMsg.Sender?.username || serverMsg.sender?.username || ''),
                 senderAvatar: serverMsg.isAi ? '' : (serverMsg.Sender?.avatar || serverMsg.sender?.avatar || ''),
                 timestamp: new Date(serverMsg.sendTime || serverMsg.createTime || serverMsg.timestamp).getTime() || Date.now(),
@@ -1869,6 +1873,12 @@ export default {
                     if (localMsg.isWithdraw !== serverMsg.isWithdraw) {
                         hasChanges = true
                         console.log(`消息 ${localMsg.id} 状态更新: isWithdraw ${localMsg.isWithdraw} -> ${serverMsg.isWithdraw}`)
+                    }
+
+                    // 旧缓存可能没有发送者信息，服务端补齐后需触发列表更新。
+                    if (this.isGroupChat && !localMsg.isSelf &&
+                        (localMsg.senderId !== serverMsg.senderId || localMsg.senderAvatar !== serverMsg.senderAvatar)) {
+                        hasChanges = true
                     }
 
                     // 同一消息被服务端换成另一张图片时，绝不能继续显示旧原图缓存。
@@ -4679,22 +4689,12 @@ export default {
         },
 
         getFileIcon(fileName) {
-            if (!fileName) return '📄'
+            if (!fileName) return 'file_document'
 
             const ext = fileName.split('.').pop().toLowerCase()
-            const icons = {
-                pdf: '📕',
-                doc: '📘', docx: '📘',
-                xls: '📗', xlsx: '📗',
-                ppt: '📙', pptx: '📙',
-                txt: '📝',
-                zip: '📦', rar: '📦', '7z': '📦',
-                mp3: '🎵', wav: '🎵', flac: '🎵',
-                mp4: '🎬', avi: '🎬', mkv: '🎬',
-                jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️'
-            }
-
-            return icons[ext] || '📄'
+            if (['mp4', 'avi', 'mkv'].includes(ext)) return 'video'
+            if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) return 'image_gallery'
+            return 'file_document'
         },
 
         // ==================== 消息引用相关 ====================
@@ -4858,13 +4858,24 @@ export default {
 
         getMessageAvatar(msg) {
             if (msg?.isAi || (msg?.senderName && (msg.senderName.includes('AI') || msg.senderName.includes('ai')))) {
-                return '/static/ai.png'
+                return getManifestIconPath('ai_assistant')
             }
             if (msg?.senderAvatar && typeof msg.senderAvatar === 'string' &&
                 msg.senderAvatar.trim() !== '' &&
                 msg.senderAvatar !== 'null' &&
                 msg.senderAvatar !== 'undefined') {
                 return getAvatarUrl(msg.senderAvatar, baseUrl)
+            }
+            if (this.isGroupChat) {
+                const members = this.groupInfo?.Members || []
+                let member = msg?.senderId != null
+                    ? members.find(member => String(member.userId) === String(msg.senderId))
+                    : null
+                if (!member && msg?.senderId == null && msg?.senderName) {
+                    const matches = members.filter(member => member.User?.username === msg.senderName)
+                    if (matches.length === 1) member = matches[0]
+                }
+                if (member) return this.getGroupMemberAvatar(member)
             }
             // 群聊中用发送者姓名生成头像，避免回落到群聊标题首字
             if (this.isGroupChat && msg?.senderName) {
@@ -5108,6 +5119,9 @@ page {
         transition: all 0.3s ease;
     }
 }
+
+.chat-header .back-icon,
+.chat-header .more-icon { filter: brightness(0) invert(1); }
 
 // ==================== 拖拽提示 ====================
 .drag-overlay {

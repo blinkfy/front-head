@@ -12,15 +12,15 @@
       <view class="safe-area-top"></view>
       <view class="nav-content">
         <view class="nav-left" @click="goBack">
-          <text class="back-icon">←</text>
+          <ManifestIcon class="back-icon" id="back" :scale="1" />
         </view>
         <view class="nav-title-wrap">
-          <view class="title-icon-pill"><text>🎤</text></view>
+          <view class="title-icon-pill"><ManifestIcon id="voice_recognition" /></view>
           <text class="nav-title">语音识别</text>
         </view>
         <view class="nav-right">
           <view class="action-icon-btn" @click="goToCamera">
-            <text>📷</text>
+            <ManifestIcon id="camera_scan" />
           </view>
         </view>
       </view>
@@ -36,7 +36,7 @@
             @touchcancel="stopListening"
           >
             <view class="mic-inner">
-              <text class="mic-icon">🎤</text>
+              <ManifestIcon id="voice_recognition" class="mic-icon" />
             </view>
           </view>
           <view class="mic-status">
@@ -101,7 +101,7 @@
           </view>
           <view class="result-card">
             <view class="result-category">
-              <text class="category-icon">{{ currentResult.icon }}</text>
+              <ManifestIcon class="category-icon" :id="currentResult.icon" />
               <text class="category-name">{{ currentResult.category }}</text>
             </view>
             <view class="result-detail">
@@ -127,10 +127,12 @@
 <script>
 import { transcribeAudio, transcribeAudioBlob, transcribeAudioSegments, recognizeByText } from '@/api/voice.js';
 import { baseUrl } from '@/api/settings.js';
+import ManifestIcon from '@/components/ManifestIcon.vue';
 
 let recorderManager = null;
 
 export default {
+  components: { ManifestIcon },
   data() {
     return {
       isListening: false,
@@ -912,28 +914,28 @@ export default {
       const lower = raw.toLowerCase();
       const rules = [
         {
-          icon: '♻️',
+          icon: 'bin_recyclable',
           category: '可回收垃圾',
           keywords: ['纸', '报纸', '纸箱', '纸盒', '塑料瓶', '饮料瓶', '矿泉水瓶', '玻璃瓶', '易拉罐', '金属', '铁罐', '衣服', '书', '快递盒', '包装盒', '牛奶盒'],
           description: '清空残留并尽量压扁，保持干燥后投放到可回收物桶。',
           tags: ['可回收', '清空残留', '保持干燥']
         },
         {
-          icon: '⚠️',
+          icon: 'bin_hazardous',
           category: '有害垃圾',
           keywords: ['电池', '纽扣电池', '充电宝', '药', '过期药', '药瓶', '灯管', '荧光灯', '油漆', '杀虫剂', '温度计', '水银'],
           description: '请单独密封或包好，投放到有害垃圾收集点，避免破损泄漏。',
           tags: ['有害', '单独投放', '防破损']
         },
         {
-          icon: '🍎',
+          icon: 'bin_kitchen',
           category: '厨余垃圾',
           keywords: ['剩饭', '剩菜', '果皮', '果核', '菜叶', '骨头', '鱼刺', '茶叶', '咖啡渣', '蛋壳', '食物', '饭', '菜', '苹果', '香蕉皮'],
           description: '沥干水分后投放到厨余垃圾桶，包装袋请另外分类。',
           tags: ['厨余', '沥干水分', '去包装']
         },
         {
-          icon: '🗑️',
+          icon: 'bin_other',
           category: '其他垃圾',
           keywords: ['纸巾', '湿巾', '口罩', '烟头', '陶瓷', '尘土', '污损纸', '尿不湿', '一次性餐具', '保鲜膜', '包装袋'],
           description: '这类通常难以再利用，请投放到其他垃圾桶。',
@@ -951,7 +953,7 @@ export default {
         };
       }
       return {
-        icon: '🔎',
+        icon: 'search',
         category: '其他垃圾',
         description: raw ? `暂未精确匹配“${raw}”，建议优先确认是否干净可回收；若无法清洁或材质不明，投放其他垃圾更稳妥。` : '请说出或输入具体物品名称，我会判断分类。',
         tags: ['规则回退', '需确认材质', '按当地标准'],
@@ -1040,7 +1042,7 @@ export default {
   height: 136rpx; box-sizing: border-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
-.dark-mode .back-icon { color: #fff; }
+.dark-mode .back-icon { color: #fff; filter: brightness(0) invert(1); }
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
   width: 56rpx; height: 56rpx;

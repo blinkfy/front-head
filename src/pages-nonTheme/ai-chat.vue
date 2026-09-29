@@ -8,11 +8,11 @@
       <view class="sidebar-top">
         <!-- DeepSeek式极简顶栏 -->
         <view class="brand-bar">
-          <image class="brand-icon" src="/static/ai.png" mode="aspectFit" />
+          <image class="brand-icon" :src="getManifestIconPath('ai_assistant')" mode="aspectFit" />
           <view class="brand-title">AI 环保助手</view>
         </view>
         <view class="new-chat-btn" @tap="onNewChat">
-          <text class="new-chat-icon">+</text>
+          <ManifestIcon class="new-chat-icon" id="add" :scale="1.1" />
           <text>新建对话</text>
         </view>
       </view>
@@ -42,18 +42,18 @@
             <view class="conversation-actions">
               <template v-if="editingSessionId === item.id">
                 <view class="action-btn check-btn" title="确认" @tap.stop="confirmRenameConversation(item.id)">
-                  <text class="action-icon">✓</text>
+                  <ManifestIcon class="action-icon" id="confirm" />
                 </view>
                 <view class="action-btn cancel-btn" title="取消" @tap.stop="cancelRenameConversation">
-                  <text class="action-icon">✕</text>
+                  <ManifestIcon class="action-icon" id="close" />
                 </view>
               </template>
               <template v-else>
                 <view class="action-btn edit-btn" title="重命名" @tap.stop="startRenameConversation(item.id, item.title)">
-                  <text class="action-icon">✏️</text>
+                  <ManifestIcon class="action-icon" id="post_edit" />
                 </view>
                 <view class="action-btn delete-btn" title="删除对话" @tap.stop="onDeleteConversation(item.id)">
-                  <text class="action-icon">🗑️</text>
+                  <ManifestIcon class="action-icon" id="delete" :scale="1.1" />
                 </view>
               </template>
             </view>
@@ -89,7 +89,7 @@
           </view>
         </view>
         <view class="header-actions">
-          <view class="btn ghost" @tap="goBack">返回识别页</view>
+          <view class="btn ghost" @tap="goBack">返回识别页<ManifestIcon class="compact-back-icon" id="back" :scale="1.1" /></view>
         </view>
       </view>
 
@@ -101,7 +101,7 @@
         @scroll="onMessagesScroll"
       >
         <view v-if="showIntroPanel" class="welcome-hero">
-          <image class="welcome-icon" src="/static/ai.png" mode="aspectFit" />
+          <image class="welcome-icon" :src="getManifestIconPath('ai_assistant')" mode="aspectFit" />
           <view class="welcome-text">今天有什么可以帮您？</view>
         </view>
         <view v-if="!messageList.length && !isStreaming" class="empty-chat">
@@ -112,7 +112,7 @@
           :key="`${msg.createdAt || idx}_${idx}`"
           :class="['message-row', msg.role === 'user' ? 'from-user' : 'from-assistant']"
         >
-          <image v-if="msg.role !== 'user'" class="avatar assistant-avatar" src="/static/ai.png" mode="aspectFit" />
+          <image v-if="msg.role !== 'user'" class="avatar assistant-avatar" :src="getManifestIconPath('ai_assistant')" mode="aspectFit" />
           <view class="message-content">
             <view class="message-meta">
               <text class="message-author">{{ msg.role === 'user' ? '你' : '环保 AI' }}</text>
@@ -138,7 +138,7 @@
                   @tap="toggleReasoning(idx)"
                 >
                   <text class="reasoning-label">思考过程</text>
-                  <text class="reasoning-chevron" :class="isReasoningCollapsed(idx) ? 'collapsed' : ''">&#9658;</text>
+                  <ManifestIcon class="reasoning-chevron" :class="isReasoningCollapsed(idx) ? 'collapsed' : ''" id="chevron_down" :scale="1" />
                 </view>
                 <view
                   v-show="!isReasoningCollapsed(idx)"
@@ -148,18 +148,42 @@
                 </view>
               </view>
               <!-- #ifdef H5 -->
-              <MarkdownBody v-if="msg.role !== 'user'" :markdown="msg.content || 'AI 暂未返回内容。'" />
+              <MarkdownBody v-if="msg.role !== 'user' && !recognitionSeedSummaries[idx]" :markdown="msg.content || 'AI 暂未返回内容。'" />
               <!-- #endif -->
               <!-- #ifndef H5 -->
-              <text v-if="msg.role !== 'user'" class="msg-body assistant-text">
+              <text v-if="msg.role !== 'user' && !recognitionSeedSummaries[idx]" class="msg-body assistant-text">
                 {{ getDisplayMessageText(msg) }}
               </text>
               <!-- #endif -->
+              <view v-if="recognitionSeedSummaries[idx]" class="seed-summary">
+                <text class="seed-summary-title">本次识别概览</text>
+                <view class="seed-summary-labels">
+                  <view v-for="(label, labelIndex) in recognitionSeedSummaries[idx].labels" :key="labelIndex" class="seed-summary-label">
+                    <text class="seed-label-name">{{ label.name }}</text>
+                    <text class="seed-label-confidence">{{ label.confidence }}</text>
+                  </view>
+                </view>
+                <view v-if="recognitionSeedSummaries[idx].items.length" class="seed-summary-items">
+                  <text class="seed-summary-caption">识别物品</text>
+                  <text class="seed-summary-copy">{{ (isSeedSummaryExpanded(idx) ? recognitionSeedSummaries[idx].items : recognitionSeedSummaries[idx].items.slice(0, 3)).join('、') }}{{ !isSeedSummaryExpanded(idx) && recognitionSeedSummaries[idx].items.length > 3 ? `等 ${recognitionSeedSummaries[idx].items.length} 件` : '' }}</text>
+                </view>
+                <view v-if="isSeedSummaryExpanded(idx) && recognitionSeedSummaries[idx].disposal" class="seed-summary-detail">
+                  <text class="seed-summary-caption">分类建议</text>
+                  <text class="seed-summary-copy">{{ recognitionSeedSummaries[idx].disposal }}</text>
+                </view>
+                <view v-if="isSeedSummaryExpanded(idx) && recognitionSeedSummaries[idx].upcycling" class="seed-summary-detail">
+                  <text class="seed-summary-caption">变废为宝</text>
+                  <text class="seed-summary-copy">{{ recognitionSeedSummaries[idx].upcycling }}</text>
+                </view>
+                <view v-if="recognitionSeedSummaries[idx].disposal || recognitionSeedSummaries[idx].upcycling || recognitionSeedSummaries[idx].items.length > 3" class="seed-summary-toggle" @tap="toggleSeedSummary(idx)">
+                  {{ isSeedSummaryExpanded(idx) ? '收起详细建议' : '查看完整分类与投放建议' }}
+                </view>
+              </view>
             </view>
           </view>
         </view>
         <view v-if="isStreaming" class="message-row from-assistant">
-          <image class="avatar assistant-avatar" src="/static/ai.png" mode="aspectFit" />
+          <image class="avatar assistant-avatar" :src="getManifestIconPath('ai_assistant')" mode="aspectFit" />
           <view class="message-content">
             <view class="message-meta">
               <text class="message-author">环保 AI</text>
@@ -176,7 +200,7 @@
                   @tap="toggleReasoning('__stream__')"
                 >
                   <text class="reasoning-label">思考过程</text>
-                  <text class="reasoning-chevron" :class="isReasoningCollapsed('__stream__') ? 'collapsed' : ''">&#9658;</text>
+                  <ManifestIcon class="reasoning-chevron" :class="isReasoningCollapsed('__stream__') ? 'collapsed' : ''" id="chevron_down" :scale="1" />
                 </view>
                 <view
                   v-show="!isReasoningCollapsed('__stream__')"
@@ -254,7 +278,7 @@
 
             <view class="composer-right">
               <view class="btn-attach" @tap="onPickImage">
-                <text class="attach-icon">📎</text>
+                <ManifestIcon class="attach-icon" id="image_gallery" :scale="1.1" />
               </view>
               <view
                 v-if="isStreaming"
@@ -268,7 +292,7 @@
                 class="btn-send"
                 @tap="onSend"
               >
-                <text class="send-icon">↑</text>
+                <ManifestIcon class="send-icon" id="submit_action" :scale="1" />
               </view>
             </view>
           </view>
@@ -284,6 +308,9 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { baseUrl } from '@/api/settings'
 import MarkdownBody from '@/components/MarkdownBody.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import { getManifestIconPath } from '@/utils/manifest-icons.js'
+import { parseRecognitionSeedSummary } from '@/utils/recognition-seed-display.mjs'
 
 // ─── Storage 工具 ────────────────────────────────────────
 function getStorage(key) {
@@ -354,6 +381,20 @@ const pickedImageName    = ref('')
 const isDeepThinking = ref(false)    // DeepSeek风格：深度思考开关
 const isNarrowScreen = ref(false)    // 超小屏（≤480px）标识
 const reasoningCollapsed = ref({})   // reasoning-block 折叠状态，key=消息index
+const expandedSeedSummaries = ref({})
+const recognitionSeedSummaries = computed(() =>
+  messageList.value.map((message, index) => parseRecognitionSeedSummary(message, index))
+)
+
+function toggleSeedSummary(index) {
+  expandedSeedSummaries.value = {
+    ...expandedSeedSummaries.value,
+    [index]: !isSeedSummaryExpanded(index)
+  }
+}
+function isSeedSummaryExpanded(index) {
+  return expandedSeedSummaries.value[index] !== false
+}
 
 // 深度思考按钮标签：窄屏时显示短文案，始终可见
 const deepThinkLabel = computed(() =>
@@ -788,6 +829,7 @@ function setActiveSession(sessionId) {
   activeSessionId.value = nextId
   setStorage(SESSION_KEY, nextId)
   ensureConversation(nextId)
+  expandedSeedSummaries.value = {}
   updateHeader()
   syncConversationList()
   renderActiveMessages()
@@ -2343,6 +2385,59 @@ page {
   opacity: 0.9;
 }
 
+.shell .seed-summary { min-width: 0; }
+.shell .seed-summary-title {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.shell .seed-summary-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.shell .seed-summary-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: var(--accent-light);
+  font-size: 12px;
+}
+.shell .seed-label-name { color: var(--text-primary); }
+.shell .seed-label-confidence { color: var(--accent); font-weight: 600; }
+.shell .seed-summary-items,
+.shell .seed-summary-detail {
+  padding: 10px 0;
+  border-top: 1px solid var(--border-light);
+}
+.shell .seed-summary-caption {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.shell .seed-summary-copy {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+.shell .seed-summary-toggle {
+  padding: 10px 0 2px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* 深度思考推理区：DeepSeek风格，浅底左侧竖线 */
 .shell .reasoning-block {
   margin-bottom: 8px;
@@ -2369,7 +2464,7 @@ page {
 }
 
 .shell .reasoning-chevron {
-  font-size: 9px;
+  font-size: 13px;
   color: var(--btn-think-active-text, #4D6BFE);
   transition: transform 0.18s ease;
   flex-shrink: 0;
@@ -3410,6 +3505,7 @@ page {
   padding: 8px 14px;
   background: var(--bg-secondary);
 }
+.shell .compact-back-icon { display: none; }
 .shell .messages {
   padding: 22px 28px;
 }
@@ -3571,11 +3667,9 @@ page {
     align-items: center;
     justify-content: center;
   }
-  .shell .header-actions .btn.ghost::before {
-    content: "↩";
+  .shell .compact-back-icon {
+    display: inline-flex;
     font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
   }
   .shell .messages {
     padding: 14px 14px 12px;

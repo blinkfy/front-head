@@ -7,13 +7,13 @@
 
         <!-- 返回按钮 -->
         <view class="back-btn" @click="goBack">
-            <text class="back-icon">←</text>
+            <ManifestIcon class="back-icon" id="back" :scale="1" />
         </view>
 
         <!-- 头部 -->
         <view class="settings-header">
             <view class="header-content">
-                <text class="header-title">⚙️ 设置</text>
+                <view class="header-title"><ManifestIcon id="settings" /> 设置</view>
             </view>
         </view>
 
@@ -24,24 +24,24 @@
                 <view class="section-title">账户管理</view>
                 <view class="setting-item" @click="goEditProfile">
                     <view class="item-left">
-                        <text class="item-icon">👤</text>
+                        <ManifestIcon class="item-icon" id="edit_profile" />
                         <view class="item-info">
                             <text class="item-title">编辑个人资料</text>
                             <text class="item-desc">修改姓名、头像等信息</text>
                         </view>
                     </view>
-                    <text class="item-arrow">›</text>
+                    <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
                 </view>
 
                 <view class="setting-item" @click="goChangePassword">
                     <view class="item-left">
-                        <text class="item-icon">🔐</text>
+                        <ManifestIcon class="item-icon" id="password" />
                         <view class="item-info">
                             <text class="item-title">修改密码</text>
                             <text class="item-desc">更改您的账户密码</text>
                         </view>
                     </view>
-                    <text class="item-arrow">›</text>
+                    <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
                 </view>
             </view>
 
@@ -50,7 +50,7 @@
                 <view class="section-title">显示设置</view>
                 <view class="setting-item" @click="toggleTheme">
                     <view class="item-left">
-                        <text class="item-icon">🌙</text>
+                        <ManifestIcon class="item-icon" id="dark_mode" />
                         <view class="item-info">
                             <text class="item-title">深色模式</text>
                             <text class="item-desc">{{ isDarkTheme ? '已启用' : '已禁用' }}</text>
@@ -67,35 +67,35 @@
                 <view class="section-title">帮助与反馈</view>
                 <view class="setting-item" @click="openAppOnboarding">
                     <view class="item-left">
-                        <text class="item-icon">🧭</text>
+                        <ManifestIcon class="item-icon" id="user_guide" />
                         <view class="item-info">
                             <text class="item-title">新用户引导</text>
                             <text class="item-desc">查看识别、地图和预约回收的基础用法</text>
                         </view>
                     </view>
-                    <text class="item-arrow">›</text>
+                    <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
                 </view>
 
                 <view class="setting-item" @click="contactService">
                     <view class="item-left">
-                        <text class="item-icon">💬</text>
+                        <ManifestIcon class="item-icon" id="customer_service" />
                         <view class="item-info">
                             <text class="item-title">联系客服</text>
                             <text class="item-desc">获取技术支持和反馈</text>
                         </view>
                     </view>
-                    <text class="item-arrow">›</text>
+                    <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
                 </view>
 
                 <view class="setting-item" @click="goAbout">
                     <view class="item-left">
-                        <text class="item-icon">ℹ️</text>
+                        <ManifestIcon class="item-icon" id="about_app" />
                         <view class="item-info">
                             <text class="item-title">关于应用</text>
                             <text class="item-desc">查看应用信息和版本</text>
                         </view>
                     </view>
-                    <text class="item-arrow">›</text>
+                    <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
                 </view>
             </view>
 
@@ -104,20 +104,20 @@
                 <view class="section-title">数据管理</view>
                 <view class="setting-item" @click="clearData">
                     <view class="item-left">
-                        <text class="item-icon">🗑️</text>
+                        <ManifestIcon class="item-icon" id="clear_cache" />
                         <view class="item-info">
                             <text class="item-title">清除缓存</text>
                             <text class="item-desc">清除本地缓存和历史记录</text>
                         </view>
                     </view>
-                    <text class="item-arrow">›</text>
+                    <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
                 </view>
             </view>
 
             <!-- 退出登录 -->
             <view class="logout-section">
                 <view class="logout-btn" @click="logout">
-                    <text class="logout-icon">🚪</text>
+                    <ManifestIcon class="logout-icon" id="logout" />
                     <text class="logout-text">退出登录</text>
                 </view>
             </view>
@@ -144,8 +144,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ThemeManager } from '../utils/theme.js'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
-const isDarkTheme = ref(false)
+const isDarkTheme = ref(ThemeManager.getTheme() === 'dark')
 const showConfirmModal = ref(false)
 const confirmTitle = ref('')
 const confirmMessage = ref('')
@@ -435,6 +436,8 @@ onMounted(() => {
     color: #d1d5db;
     margin-left: 20rpx;
     flex-shrink: 0;
+    opacity: 0.62;
+    filter: saturate(0.7);
 }
 
 .settings-container.dark-theme .item-arrow {
@@ -513,8 +516,8 @@ onMounted(() => {
     position: fixed;
     top: 65rpx;
     left: 25rpx;
-    width: 50rpx;
-    height: 50rpx;
+    width: 80rpx;
+    height: 80rpx;
     background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(10px);
     border-radius: 50%;

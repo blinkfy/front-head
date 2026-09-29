@@ -1,20 +1,20 @@
 <template>
-  <view class="map-page">
+  <view class="map-page" :class="tabPageClass">
     <!-- 顶部导航栏 -->
-    <view class="map-header" :style="{ paddingTop: (statusBarHeight + 10) + 'px' }">
+    <view class="map-header tab-page-motion" :style="{ paddingTop: (statusBarHeight + 10) + 'px' }">
       <view class="header-decoration">
         <view class="deco-circle c1"></view>
         <view class="deco-circle c2"></view>
         <view class="deco-circle c3"></view>
       </view>
       <view class="header-content">
-        <text class="header-title">🗺️ 垃圾桶地图</text>
+        <view class="header-title"><ManifestIcon id="nearby_map" /> 垃圾桶地图</view>
         <text class="header-subtitle">查找附近的垃圾分类投放点</text>
       </view>
     </view>
 
     <!-- 地图容器 -->
-    <view class="map-container">
+    <view class="map-container tab-page-motion">
       <div v-if="isH5" id="container" class="map-canvas"></div>
       <map v-else
         id="select-map"
@@ -31,12 +31,12 @@
       >
         <!-- App/小程序端控件：必须使用 cover-view 放在 map 内部 -->
         <cover-view v-if="selectMode" class="center-pin">📍</cover-view>
-        <cover-view v-if="selectMode" class="location-control" @click="moveToMyLocation">◎</cover-view>
+        <cover-view v-if="selectMode" class="location-control" @click="moveToMyLocation"><cover-image :src="getManifestIconPath('map_location')" style="width: 24px; height: 24px;" /></cover-view>
         
         <!-- App/小程序端选择面板 (使用 cover-view) -->
         <cover-view v-if="selectMode" class="select-location-panel-native">
           <cover-view class="panel-box-native">
-            <cover-view class="select-tips-native">📍 移动地图选择中心位置</cover-view>
+            <cover-view class="select-tips-native"><cover-image :src="getManifestIconPath('map_location')" style="width: 24px; height: 24px;" /> 移动地图选择中心位置</cover-view>
             <cover-view v-if="selectedLocation" class="selected-coords-native">
               {{ selectedLocation.latitude.toFixed(6) }}, {{ selectedLocation.longitude.toFixed(6) }}
             </cover-view>
@@ -52,7 +52,7 @@
           <cover-view class="nearby-location-cover-panel">
             <cover-view class="nearby-location-cover-header">
               <cover-view class="nearby-location-cover-title">选择发送地点</cover-view>
-              <cover-view class="nearby-location-cover-close" @click="closeNearbyLocationPicker">×</cover-view>
+              <cover-image class="nearby-location-cover-close" :src="getManifestIconPath('close')" @click="closeNearbyLocationPicker" />
             </cover-view>
             <cover-view v-if="nearbyLocationLoading" class="nearby-location-cover-state">正在加载附近地点...</cover-view>
             <cover-view v-else>
@@ -77,7 +77,7 @@
       <view class="nearby-location-panel">
         <view class="nearby-location-header">
           <text class="nearby-location-title">选择发送地点</text>
-          <text class="nearby-location-close" @click="closeNearbyLocationPicker">×</text>
+          <ManifestIcon class="nearby-location-close" id="close" :scale="1" @click="closeNearbyLocationPicker" />
         </view>
         <view class="nearby-location-body">
           <view v-if="nearbyLocationLoading" class="nearby-location-state">正在加载附近地点...</view>
@@ -108,14 +108,14 @@
       <view class="info-header">
         <view class="info-title-wrapper">
           <view class="info-icon" :class="selectedMarker.type === 'smart' ? 'smart' : 'normal'">
-            <text>{{ selectedMarker.type === 'smart' ? '🤖' : '🗑️' }}</text>
+            <ManifestIcon v-if="selectedMarker.type === 'smart'" id="device_connect" />
           </view>
           <view class="info-title-content">
             <text class="info-title">{{ selectedMarker.title }}</text>
             <text class="info-distance">{{ selectedMarker.distance || '附近' }}</text>
           </view>
         </view>
-        <text class="info-close" @click="closeInfo">✕</text>
+        <ManifestIcon class="info-close" id="close" @click="closeInfo" />
       </view>
       
       <view class="info-body">
@@ -125,15 +125,15 @@
       
       <view class="info-actions">
         <button class="info-btn primary" @click="goNavigate(selectedMarker)">
-          <text class="btn-icon">🧭</text>
+          <ManifestIcon class="btn-icon" id="dark_navigation" />
           <text>导航</text>
         </button>
         <button class="info-btn secondary" @click="openHistoryImage(selectedMarker)">
-          <text class="btn-icon">📷</text>
+          <ManifestIcon class="btn-icon" id="camera_scan" />
           <text>查看</text>
         </button>
         <button class="info-btn danger" @click="reportErrorMarker(selectedMarker)">
-          <text class="btn-icon">⚠️</text>
+          <ManifestIcon class="btn-icon" id="dark_alert" />
           <text>报错</text>
         </button>
       </view>
@@ -141,7 +141,7 @@
     
     <!-- 位置选择模式：显示选择按钮 (仅H5) -->
     <view v-if="selectMode && isH5" class="select-location-panel" :style="{ top: (statusBarHeight + 50) + 'px' }">
-      <view class="select-tips">拖动地图到目标位置，或点击“选取中心点”</view>
+      <view class="select-tips"><ManifestIcon id="map_location" /> 拖动地图到目标位置，或点击“选取中心点”</view>
       <view v-if="selectedLocation" class="selected-info">
         <text class="selected-text">已选择位置</text>
         <text class="selected-coords">{{ selectedLocation.latitude.toFixed(6) }}, {{ selectedLocation.longitude.toFixed(6) }}</text>
@@ -156,7 +156,7 @@
     <view v-if="viewMode && viewLocationInfo" class="view-location-panel">
       <view class="view-location-header">
         <text class="location-name">{{ viewLocationInfo.name }}</text>
-        <text class="location-close" @click="handleBack">✕</text>
+        <ManifestIcon class="location-close" id="close" @click="handleBack" />
       </view>
       <view class="location-details">
         <text class="location-address">{{ viewLocationInfo.address }}</text>
@@ -170,7 +170,7 @@
     <!-- 右下角新增垃圾桶按钮（非选择模式且非查看模式才显示） -->
     <view v-if="!selectMode && !viewMode" class="add-btn-container">
       <view class="add-btn" @click="openAddModal">
-        <text class="add-btn-icon">+</text>
+        <ManifestIcon id="add" class="add-btn-icon" :scale="1" />
         <text class="add-btn-text">新增</text>
       </view>
     </view>
@@ -178,19 +178,19 @@
     <!-- 底部导航栏 -->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
-        <text class="tabbar-icon">🏠</text>
+        <ManifestIcon class="tabbar-icon" id="home" />
         <text class="tabbar-label">首页</text>
       </view>
       <view class="tabbar-item active">
-        <text class="tabbar-icon">🗺️</text>
+        <ManifestIcon class="tabbar-icon" id="map_location" />
         <text class="tabbar-label">地图</text>
       </view>
       <view class="tabbar-item" @click="goShop">
-        <text class="tabbar-icon">🛍️</text>
+        <ManifestIcon class="tabbar-icon" id="store" />
         <text class="tabbar-label">商城</text>
       </view>
       <view class="tabbar-item" @click="goProfile">
-        <text class="tabbar-icon">👤</text>
+        <ManifestIcon class="tabbar-icon" id="user_profile" />
         <text class="tabbar-label">我的</text>
       </view>
     </view>
@@ -206,13 +206,17 @@
 </template>
 
 <script setup>
+import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { ref, onMounted, computed, getCurrentInstance, nextTick } from 'vue'
 import { onReady } from '@dcloudio/uni-app'
 import { config } from '../../api/config.js'
 import { mapConfig } from '../../api/map-config.js'
 import { reportDeviceError, getTrashBinList, reverseGeocoder, searchPlaces } from '../../api/map.js'
 import AddTrashBinModal from '../../components/AddTrashBinModal.vue'
+import ManifestIcon from '../../components/ManifestIcon.vue'
+import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 
+const tabPageClass = useTabPageTransition('pages/map/map')
 const isH5 = process.env.UNI_PLATFORM === 'h5'
 // 位置选择模式
 const selectMode = ref(false)
@@ -252,7 +256,7 @@ const markers = computed(() => {
     latitude: typeof p.latitude === 'number' ? p.latitude : parseFloat(p.latitude),
     longitude: typeof p.longitude === 'number' ? p.longitude : parseFloat(p.longitude),
     title: p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
-    iconPath: (p.type === 'smart' ? '/static/smart-marker.png' : '/static/normal-marker.png'),
+  iconPath: (p.type === 'smart' ? '/static/smart-marker.png' : '/static/normal-marker.png'),
     width: 42,
     height: 46,
     anchor: { x: 0.5, y: 1 },
@@ -1117,15 +1121,15 @@ function initH5Markers() {
 }
 
 function goHome() {
-  uni.redirectTo({ url: '/pages/home/home' })
+  navigateBottomTab('map', 'home', '/pages/home/home')
 }
 
 function goShop() {
-  uni.navigateTo({ url: '/pages/shop/shop' })
+  navigateBottomTab('map', 'shop', '/pages/shop/shop', 'navigateTo')
 }
 
 function goProfile() {
-  uni.redirectTo({ url: '/pages/profile/profile' })
+  navigateBottomTab('map', 'profile', '/pages/profile/profile')
 }
 </script>
 
@@ -1752,7 +1756,13 @@ function goProfile() {
 }
 
 .tabbar-item.active .tabbar-icon {
-  filter: grayscale(0%) brightness(1.1);
+  opacity: 1;
+  filter: grayscale(0%) brightness(1.1) saturate(1);
+}
+
+.tabbar-item:not(.active) .tabbar-icon {
+  opacity: 0.6;
+  filter: grayscale(30%) saturate(0.7);
 }
 
 .tabbar-label {

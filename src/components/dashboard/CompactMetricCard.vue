@@ -1,6 +1,9 @@
 <template>
   <view :class="['compact-metric-card', `tone-${tone}`, { 'is-gauge': hasGauge }]">
-    <view class="compact-metric-icon" aria-hidden="true">{{ icon }}</view>
+    <view class="compact-metric-icon" aria-hidden="true">
+      <ManifestIcon v-if="manifestIconIds.has(icon)" :id="icon" />
+      <text v-else>{{ icon }}</text>
+    </view>
     <view class="compact-metric-copy">
       <text class="compact-metric-label">{{ label }}</text>
       <view v-if="!hasGauge" class="compact-metric-value-row">
@@ -43,6 +46,10 @@
 
 <script setup>
 import { computed } from 'vue'
+import manifest from '@/static/manifest.json'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+
+const manifestIconIds = new Set(manifest.map(item => item.id))
 
 const props = defineProps({
   icon: {

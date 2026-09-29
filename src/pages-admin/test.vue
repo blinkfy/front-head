@@ -16,7 +16,7 @@
       <view class="topbar">
         <view class="topbar-leading">
           <view class="back-control" role="button" aria-label="返回" @tap="goBack">
-            <text>‹</text>
+            <ManifestIcon id="back" />
           </view>
           <view>
             <text class="page-title">API 测试</text>
@@ -29,7 +29,7 @@
             <text>{{ adminName }}</text>
           </view>
           <view class="refresh-control" role="button" :class="{ disabled: loading }" @tap="runSelectedEndpoint">
-            <text class="refresh-symbol" :class="{ spinning: loading }">↻</text>
+            <ManifestIcon id="refresh" class="refresh-symbol" :class="{ spinning: loading }" />
             <text>{{ loading ? '请求中' : '重新请求' }}</text>
           </view>
         </view>
@@ -119,7 +119,7 @@
               <text class="request-footnote">所有测试均使用当前管理员会话，并由服务端二次鉴权。</text>
               <view class="send-button" role="button" :class="{ loading }" @tap="runSelectedEndpoint">
                 <text>{{ loading ? '正在发送…' : '发送请求' }}</text>
-                <text class="send-arrow">→</text>
+                <ManifestIcon id="submit_action" class="send-arrow" :scale="1" />
               </view>
             </view>
           </view>
@@ -208,6 +208,7 @@
 import { computed, onMounted, ref } from 'vue'
 import request from '@/api/index'
 import { userinfo } from '@/api/user'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 const endpointCatalog = [
   {

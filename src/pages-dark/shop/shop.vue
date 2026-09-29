@@ -1,5 +1,5 @@
 ﻿<template>
-  <view class="shop-bg">
+  <view class="shop-bg" :class="tabPageClass">
     <!-- 自定义状态栏 -->
     <view class="custom-statusbar"></view>
     
@@ -12,12 +12,12 @@
     </view>
     
     <!-- 主要内容区域 -->
-    <view class="shop-container">
+    <view class="shop-container tab-page-motion">
       <!-- 页面标题 -->
       <view class="page-title">
         <view class="title-decoration">
           <view class="title-line left"></view>
-          <view class="title-icon">🛍️</view>
+          <ManifestIcon id="store" class="title-icon" />
           <view class="title-line right"></view>
         </view>
         <text class="title-text">积分商城</text>
@@ -28,7 +28,7 @@
       <!-- 顶部积分信息 -->
       <view class="points-header">
         <view class="points-card">
-          <view class="points-icon">💎</view>
+          <ManifestIcon id="points_coin" class="points-icon" />
           <view class="points-info">
             <text class="points-label">我的积分</text>
             <text class="points-value" v-if="!loading">{{ userPoints }}</text>
@@ -39,12 +39,12 @@
             </view>
           </view>
           <view class="points-refresh" @click="refreshPoints" :class="{ rotating: loading }">
-            <text class="refresh-icon">♻️</text>
+            <ManifestIcon id="refresh" class="refresh-icon" />
           </view>
           <view class="points-glow"></view>
         </view>
         <view class="points-tips">
-          <text class="tip-icon">💡</text>
+          <ManifestIcon id="points_info" class="tip-icon" />
           <text class="tip-text">每次垃圾识别可获得1-3积分</text>
         </view>
       </view>
@@ -57,7 +57,7 @@
           :class="['tab-item', { active: currentCategory === index }]"
           @click="switchCategory(index)"
         >
-          <text class="tab-icon">{{ category.icon }}</text>
+          <ManifestIcon class="tab-icon" :id="category.icon" />
           <text class="tab-text">{{ category.name }}</text>
         </view>
       </view>
@@ -65,7 +65,7 @@
       <!-- 商品列表 -->
       <view class="products-section">
         <view class="section-title">
-          <text class="title2-icon">{{ selectedCategory.icon }}</text>
+          <ManifestIcon class="title2-icon" :id="selectedCategory.icon" />
           <text class="title2-text">{{ displayCategoryTitle }}</text>
           <text class="product-count">({{ filteredProducts.length }}件商品)</text>
         </view>
@@ -84,8 +84,8 @@
             <view class="product-image-container">
               <image :src="product.image" class="product-image" mode="aspectFill" />
               <view v-if="isRecommendCategory" class="product-badge ai">AI推荐</view>
-              <view v-if="product.hot" class="product-badge hot">🔥 热门</view>
-              <view v-if="product.limited" class="product-badge limited">🔥 限量</view>
+              <view v-if="product.hot" class="product-badge hot">热门</view>
+              <view v-if="product.limited" class="product-badge limited"><ManifestIcon id="limited_offer" /> 限量</view>
             </view>
             
             <view class="product-info">
@@ -94,11 +94,11 @@
               
               <view class="product-footer">
                 <view class="product-price">
-                  <text class="price-icon">💎</text>
+                  <ManifestIcon id="points_coin" class="price-icon" />
                   <text class="price-value">{{ product.points }}</text>
                 </view>
                 <view class="product-stock">
-                  <text class="stock-text">库存: {{ product.stock }}</text>
+                  <view class="stock-text"><ManifestIcon id="inventory" /> 库存: {{ product.stock }}</view>
                 </view>
               </view>
             </view>
@@ -114,7 +114,7 @@
       <view class="detail-modal" @click.stop="">
         <view class="modal-header">
           <image :src="selectedProduct.image" class="modal-product-image" mode="aspectFill" />
-          <view class="modal-close" @click="closeProductDetail">✕</view>
+          <ManifestIcon id="close" class="modal-close" @click="closeProductDetail" />
           <view class="modal-image-glow"></view>
         </view>
         
@@ -127,7 +127,7 @@
               <view class="detail-item">
                 <text class="detail-label">所需积分:</text>
                 <view class="detail-price">
-                  <text class="price-icon">💎</text>
+                  <ManifestIcon id="points_coin" class="price-icon" />
                   <text class="price-value">{{ selectedProduct.points }}</text>
                 </view>
               </view>
@@ -153,7 +153,7 @@
             :class="['exchange-btn', { disabled: !canExchange }]"
             @click="exchangeProduct"
           >
-            <text class="btn-icon">🎁</text>
+            <ManifestIcon id="redeem_gift" class="btn-icon" />
             <text class="btn-text">{{ userPoints >= selectedProduct.points ? (selectedProduct.stock > 0 ? '立即兑换' : '库存不足') : '积分不足' }}</text>
           </view>
         </view>
@@ -166,7 +166,7 @@
     <view v-if="showSuccessModal" class="success-modal-overlay" @click="closeSuccessModal">
       <view class="success-modal" @click.stop="">
         <view class="success-animation">
-          <view class="success-icon">🎉</view>
+          <ManifestIcon id="reward_gift" class="success-icon" />
           <view class="success-circle"></view>
         </view>
         <text class="success-title">兑换成功！</text>
@@ -182,19 +182,19 @@
     <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
-        <text class="tabbar-icon">🏠</text>
+        <ManifestIcon id="home" class="tabbar-icon" />
         <text class="tabbar-label">首页</text>
       </view>
       <view class="tabbar-item" @click="goMap">
-        <text class="tabbar-icon">🗺️</text>
+        <ManifestIcon id="map_location" class="tabbar-icon" />
         <text class="tabbar-label">地图</text>
       </view>
       <view class="tabbar-item active">
-        <text class="tabbar-icon">🛍️</text>
+        <ManifestIcon id="store" class="tabbar-icon" />
         <text class="tabbar-label">商城</text>
       </view>
       <view class="tabbar-item" @click="goProfile">
-        <text class="tabbar-icon">👤</text>
+        <ManifestIcon id="user_profile" class="tabbar-icon" />
         <text class="tabbar-label">我的</text>
       </view>
     </view>
@@ -206,7 +206,9 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { userinfo } from '@/api/user'
 import { createPurchaseRecord, fetchShopRecommendations } from '@/api/shop'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
+import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 import {
   SHOP_RECOMMEND_LIMIT,
   buildCandidateProducts,
@@ -216,6 +218,7 @@ import {
   orderProductsByRecommendation
 } from '@/utils/shop-recommendation'
 
+const tabPageClass = useTabPageTransition('pages-dark/shop/shop')
 // 响应式数据
 const userPoints = ref(0) // 用户当前积分
 const loading = ref(false) // 加载状态
@@ -235,13 +238,13 @@ let pageDisposed = false
 
 // 商品分类
 const categories = ref([
-  { name: '猜您喜欢', icon: '✨', type: 'recommend' },
-  { name: '全部', icon: '🛍️', type: 'all' },
-  { name: '环保用品', icon: '🌿', type: 'category', categoryId: 1 },
-  { name: '数码配件', icon: '📱', type: 'category', categoryId: 2 },
-  { name: '生活用品', icon: '🏠', type: 'category', categoryId: 3 },
-  { name: '学习用品', icon: '📚', type: 'category', categoryId: 4 },
-  { name: '美食券', icon: '🍜', type: 'category', categoryId: 5 }
+  { name: '猜您喜欢', icon: 'ai_recommend', type: 'recommend' },
+  { name: '全部', icon: 'category_all', type: 'all' },
+  { name: '环保用品', icon: 'eco_products', type: 'category', categoryId: 1 },
+  { name: '数码配件', icon: 'digital_accessories', type: 'category', categoryId: 2 },
+  { name: '生活用品', icon: 'home_living', type: 'category', categoryId: 3 },
+  { name: '学习用品', icon: 'learning_supplies', type: 'category', categoryId: 4 },
+  { name: '美食券', icon: 'food_coupon', type: 'category', categoryId: 5 }
 ])
 
 // 模拟商品数据
@@ -475,7 +478,7 @@ const isRecommendCategory = computed(() => {
 })
 
 const selectedCategory = computed(() => {
-  return categories.value[currentCategory.value] || categories.value[0] || { icon: '🛍️', name: '全部', type: 'all' }
+  return categories.value[currentCategory.value] || categories.value[0] || { icon: 'category_all', name: '全部', type: 'all' }
 })
 
 const displayCategoryTitle = computed(() => {
@@ -643,13 +646,13 @@ const closeAchievementModal = () => {
 
 // 页面跳转
 const goHome = () => {
-  uni.redirectTo({ url: '/pages-dark/home/home' })
+  navigateBottomTab('shop', 'home', '/pages-dark/home/home')
 }
 const goMap = () => {
-  uni.redirectTo({ url: '/pages-dark/map/map' })
+  navigateBottomTab('shop', 'map', '/pages-dark/map/map')
 }
 const goProfile = () => {
-  uni.redirectTo({ url: '/pages-dark/profile/profile' })
+  navigateBottomTab('shop', 'profile', '/pages-dark/profile/profile')
 }
 </script>
 
@@ -968,7 +971,7 @@ const goProfile = () => {
 }
 
 .refresh-icon {
-  font-size: 32rpx;
+  font-size: 27rpx;
   color: #FFD700;
   filter: drop-shadow(0 0 8rpx rgba(255, 215, 0, 0.6));
 }
@@ -1647,13 +1650,15 @@ const goProfile = () => {
 }
 
 .tabbar-icon {
-  font-size: 48rpx;
+  font-size: 40rpx;
   margin-bottom: 8rpx;
-  filter: drop-shadow(0 0 8px rgba(64, 224, 255, 0.3));
+  opacity: 0.6;
+  filter: saturate(0.7) drop-shadow(0 0 8px rgba(64, 224, 255, 0.3));
 }
 
 .tabbar-item.active .tabbar-icon {
-  filter: drop-shadow(0 0 12px rgba(64, 224, 255, 0.8));
+  opacity: 1;
+  filter: saturate(1) drop-shadow(0 0 12px rgba(64, 224, 255, 0.8));
   animation: iconGlow 2s ease-in-out infinite;
 }
 

@@ -146,6 +146,78 @@ export default {
 <style>
 /*每个页面公共css */
 
+/* #ifdef H5 */
+:root {
+  --page-transition-background: #f8f8f8;
+}
+
+:root[data-theme='dark'] {
+  --page-transition-background: #020617;
+}
+
+html,
+body,
+#app,
+uni-page,
+uni-page-wrapper,
+uni-page-body {
+  background-color: var(--page-transition-background, #f8f8f8) !important;
+}
+/* #endif */
+
+/* 底部四个主页面按导航位置执行短时位移，不触发重排。 */
+/* #ifdef MP-WEIXIN */
+.tab-page-enter-left .tab-page-motion {
+  animation: bottom-tab-mp-enter-left 200ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+}
+
+.tab-page-enter-right .tab-page-motion {
+  animation: bottom-tab-mp-enter-right 200ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+}
+
+@keyframes bottom-tab-mp-enter-left {
+  from { opacity: 0.82; transform: translateX(96rpx); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes bottom-tab-mp-enter-right {
+  from { opacity: 0.82; transform: translateX(-96rpx); }
+  to { opacity: 1; transform: translateX(0); }
+}
+/* #endif */
+
+/* #ifndef MP-WEIXIN */
+.tab-page-enter-left > view {
+  animation: bottom-tab-page-enter-left 180ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+  will-change: transform, opacity;
+}
+
+.tab-page-enter-right > view {
+  animation: bottom-tab-page-enter-right 180ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+  will-change: transform, opacity;
+}
+
+.tab-page-enter-left > .tabbar,
+.tab-page-enter-left > .tech-tabbar,
+.tab-page-enter-right > .tabbar,
+.tab-page-enter-right > .tech-tabbar {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  will-change: auto;
+}
+/* #endif */
+
+@keyframes bottom-tab-page-enter-left {
+  from { opacity: 0.92; transform: translateX(36rpx); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes bottom-tab-page-enter-right {
+  from { opacity: 0.92; transform: translateX(-36rpx); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 /* 启动动画样式 */
 .app-splash {
   position: fixed;

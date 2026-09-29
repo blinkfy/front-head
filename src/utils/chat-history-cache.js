@@ -52,6 +52,7 @@ function toCachedMessage(message = {}) {
     content,
     isSelf: Boolean(message.isSelf),
     isAi: Boolean(message.isAi),
+    senderId: message.senderId,
     senderName: message.senderName || '',
     senderAvatar,
     timestamp: message.timestamp,

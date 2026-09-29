@@ -13,7 +13,7 @@
     <view class="tour-card" :class="{ 'is-visible': cardVisible }" :style="cardStyle" @touchmove.stop.prevent @wheel.stop.prevent>
       <view class="tour-top">
         <view class="step-badge">{{ currentIndex + 1 }} / {{ visibleSteps.length }}</view>
-        <view class="close-btn" @click="dismiss">×</view>
+        <ManifestIcon class="close-btn" id="close" :scale="1" @click="dismiss" />
       </view>
 
       <view class="tip-image-box" v-if="displayedStep.tipImage">

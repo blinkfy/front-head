@@ -24,6 +24,11 @@ export const ThemeManager = {
   // 设置主题并保存
   setTheme(theme) {
     uni.setStorageSync('app_theme', theme)
+    if (typeof document !== 'undefined' && document.documentElement && document.body) {
+      document.documentElement.setAttribute('data-theme', theme)
+      document.body.classList.toggle('dark-theme', theme === 'dark')
+      document.body.classList.toggle('light-theme', theme !== 'dark')
+    }
     console.log('setTheme: saved', theme)
   },
 

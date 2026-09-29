@@ -11,14 +11,14 @@
       <view class="safe-area-top"></view>
       <view class="nav-content">
         <view class="nav-left">
-          <text class="back-btn" @click="goBack">←</text>
+          <ManifestIcon class="back-btn" id="back" :scale="1" @click="goBack" />
         </view>
         <view class="nav-title-wrap">
           <text class="nav-title">成就中心</text>
         </view>
         <view class="nav-right">
           <text class="stat-inline">已解锁: {{ summary.unlockedCount }}/{{ summary.totalCount }}</text>
-          <text class="refresh-btn" :class="{ rotating: loading }" @click="refreshAchievements">↻</text>
+          <ManifestIcon class="refresh-btn" id="refresh" :class="{ rotating: loading }" @click="refreshAchievements" />
         </view>
       </view>
     </view>
@@ -26,7 +26,7 @@
     <!-- 主内容区 -->
     <view class="main-content">
       <view v-if="stateMessage && achievements.length === 0" class="panel error-panel">
-        <text class="error-icon">⚠️</text>
+        <ManifestIcon class="error-icon" id="dark_alert" />
         <text class="error-text">{{ stateMessage }}</text>
         <button class="retry-btn" @click="refreshAchievements">重新加载</button>
       </view>
@@ -71,7 +71,7 @@
       <view class="panel gallery-panel">
         <view class="panel-header">
           <view class="panel-title-row">
-            <view class="title-icon">📜</view>
+            <ManifestIcon class="title-icon" id="achievements" />
             <text class="panel-title">成就图鉴</text>
           </view>
           <text class="panel-subtitle">共 {{ achievements.length }} 项</text>
@@ -144,7 +144,7 @@
         </view>
 
         <view class="empty-gallery" v-else>
-          <text class="empty-icon">🔍</text>
+          <ManifestIcon class="empty-icon" id="search" />
           <text class="empty-text">当前筛选条件下没有可展示的成就</text>
         </view>
       </view>
@@ -160,6 +160,7 @@ import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { baseUrl } from '@/api/settings'
 import AchievementIcon from '@/components/AchievementIcon.vue'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 import { dedupeAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 
 let unbindThemeWatcher = null
@@ -173,7 +174,7 @@ const popupUnlocks = ref([])
 const updatedAtText = ref('--')
 const showModal = ref(false)
 const stateMessage = ref('')
-const currentTheme = ref('light')
+const currentTheme = ref(applyStoredTheme())
 
 function getStorage(key) {
   const result = uni.getStorageSync(key)
@@ -348,7 +349,6 @@ function goBack() {
 }
 
 onMounted(() => {
-  currentTheme.value = applyStoredTheme()
   unbindThemeWatcher = bindThemeStorageSync()
   refreshAchievements()
 })

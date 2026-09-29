@@ -11,10 +11,10 @@
       <view class="safe-area-top"></view>
       <view class="nav-content">
         <view class="nav-left" @click="goBack">
-          <text class="back-icon">←</text>
+          <ManifestIcon id="back" class="back-icon" :scale="1" />
         </view>
         <view class="nav-title-wrap">
-          <view class="title-icon-pill"><text>📋</text></view>
+          <view class="title-icon-pill"><ManifestIcon id="reservation_order_table" :scale="1" /></view>
           <text class="nav-title">我的订单</text>
         </view>
         <view class="nav-right"></view>
@@ -95,7 +95,7 @@
 
         <!-- 空状态 -->
         <view class="empty-state" v-if="!loading && orders.length === 0">
-          <text class="empty-icon">📋</text>
+          <ManifestIcon class="empty-icon" id="empty_state" :scale="1" />
           <text class="empty-text">暂无订单</text>
           <view class="empty-btn" @click="goToBooking">
             <text>去预约</text>
@@ -139,8 +139,10 @@
 
 <script>
 import { getBookingList, cancelBooking } from '@/api/booking.js';
+import ManifestIcon from '@/components/ManifestIcon.vue';
 
 export default {
+  components: { ManifestIcon },
   data() {
     return {
       loading: false,
@@ -299,7 +301,7 @@ export default {
   height: 88rpx; box-sizing: content-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
-.dark-mode .back-icon { color: #fff; }
+.dark-mode .back-icon { color: #fff; filter: brightness(0) invert(1); }
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
   width: 56rpx; height: 56rpx;

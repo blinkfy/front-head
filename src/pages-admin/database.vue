@@ -25,11 +25,11 @@
                     <view class="safe-area-top"></view>
                     <view class="status-content">
                         <view class="back-btn" @click="goBack">
-                            <text class="back-icon">←</text>
+                            <ManifestIcon class="back-icon" id="back" :scale="1" />
                         </view>
                         <text class="title-text">数据库管理</text>
                         <view class="refresh-btn" @click="handleRefresh" :class="{ rotating: isRefreshing }">
-                            <text>♻️</text>
+                            <ManifestIcon id="refresh" />
                         </view>
                     </view>
                 </view>
@@ -42,14 +42,14 @@
                             <text class="tables-subtitle">{{ currentTable ? getCurrentTableLabel() : '请选择表' }}</text>
                         </view>
                         <view class="tables-toggle" @click="toggleTablesCollapsed">
-                            <text class="tables-toggle-icon">{{ tablesCollapsed ? '▾' : '▴' }}</text>
+                            <ManifestIcon class="tables-toggle-icon" id="chevron_down" :scale="1" :style="{ transform: tablesCollapsed ? 'rotate(0deg)' : 'rotate(180deg)' }" />
                         </view>
                     </view>
                     <view v-show="!tablesCollapsed" class="tables-grid">
                         <view class="table-item" v-for="table in tables" :key="table.name"
                             :class="{ active: currentTable === table.name }"
                             @click="selectTable(table)">
-                            <text class="table-icon">{{ table.icon }}</text>
+                            <ManifestIcon v-if="table.icon" class="table-icon" :id="table.icon" />
                             <view class="table-info">
                                 <text class="table-name">{{ table.label }}</text>
                                 <text class="table-count">{{ table.count }}</text>
@@ -61,11 +61,11 @@
                 <!-- 搜索栏 -->
                 <view class="search-card" v-if="currentTable">
                     <view class="search-container">
-                        <view class="search-icon">🔍</view>
+                        <view class="search-icon"><ManifestIcon id="search" /></view>
                         <input class="search-input" :value="searchKeyword" :placeholder="getSearchPlaceholder()"
                             @input="handleSearchInput" @confirm="handleSearch" confirm-type="search" />
                         <view class="search-clear" v-if="searchKeyword" @click="clearSearch">
-                            <text>✕</text>
+                            <ManifestIcon id="close" />
                         </view>
                         <view class="search-btn" @click="handleSearch">
                             <text>搜索</text>
@@ -75,23 +75,23 @@
                     <!-- 时间筛选栏 -->
                     <view class="filter-container">
                         <view class="filter-item">
-                            <text class="filter-label">📅 开始日期</text>
+                            <view class="filter-label"><ManifestIcon id="challenge_calendar" /> 开始日期</view>
                             <picker mode="date" :value="startDate" @change="onStartDateChange"
                                 :end="endDate || getCurrentDate()">
                                 <view class="filter-picker">
                                     <text class="filter-value">{{ startDate || '选择日期' }}</text>
-                                    <text class="picker-arrow">▼</text>
+                                    <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                 </view>
                             </picker>
                         </view>
 
                         <view class="filter-item">
-                            <text class="filter-label">📅 结束日期</text>
+                            <view class="filter-label"><ManifestIcon id="challenge_calendar" /> 结束日期</view>
                             <picker mode="date" :value="endDate" @change="onEndDateChange" :start="startDate"
                                 :end="getCurrentDate()">
                                 <view class="filter-picker">
                                     <text class="filter-value">{{ endDate || '选择日期' }}</text>
-                                    <text class="picker-arrow">▼</text>
+                                    <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                 </view>
                             </picker>
                         </view>
@@ -99,56 +99,56 @@
                         <!-- Messages表专属筛选 -->
                         <template v-if="currentTable === 'Message'">
                             <view class="filter-item">
-                                <text class="filter-label">📝 消息类型</text>
+                                <text class="filter-label">消息类型</text>
                                 <picker :value="messageTypeFilterIndex" :range="messageTypeFilterOptions"
                                     range-key="label" @change="onMessageTypeFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ messageTypeFilterOptions[messageTypeFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
 
                             <view class="filter-item">
-                                <text class="filter-label">👁️ 已读状态</text>
+                                <view class="filter-label"><ManifestIcon id="visibility" :scale="1" /> 已读状态</view>
                                 <picker :value="readStatusFilterIndex" :range="readStatusFilterOptions"
                                     range-key="label" @change="onReadStatusFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ readStatusFilterOptions[readStatusFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
 
                             <view class="filter-item">
-                                <text class="filter-label">↩️ 撤回状态</text>
+                                <text class="filter-label">撤回状态</text>
                                 <picker :value="withdrawStatusFilterIndex" :range="withdrawStatusFilterOptions"
                                     range-key="label" @change="onWithdrawStatusFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ withdrawStatusFilterOptions[withdrawStatusFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
 
                             <view class="filter-item">
-                                <text class="filter-label">🗑️ 发送者删除</text>
+                                <view class="filter-label"><ManifestIcon id="delete" :scale="1" /> 发送者删除</view>
                                 <picker :value="senderDeletedFilterIndex" :range="deletedFilterOptions"
                                     range-key="label" @change="onSenderDeletedFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ deletedFilterOptions[senderDeletedFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
 
                             <view class="filter-item">
-                                <text class="filter-label">🗑️ 接收者删除</text>
+                                <view class="filter-label"><ManifestIcon id="delete" :scale="1" /> 接收者删除</view>
                                 <picker :value="receiverDeletedFilterIndex" :range="deletedFilterOptions"
                                     range-key="label" @change="onReceiverDeletedFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ deletedFilterOptions[receiverDeletedFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
@@ -157,34 +157,34 @@
                         <!-- Chat表专属筛选 -->
                         <template v-if="currentTable === 'Chat'">
                             <view class="filter-item">
-                                <text class="filter-label">👥 关系类型</text>
+                                <view class="filter-label"><ManifestIcon id="relationship_link_table" :scale="1" /> 关系类型</view>
                                 <picker :value="relationshipFilterIndex" :range="relationshipFilterOptions"
                                     range-key="label" @change="onRelationshipFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ relationshipFilterOptions[relationshipFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
 
                             <view class="filter-item">
-                                <text class="filter-label">🔇 勿扰状态</text>
+                                <view class="filter-label"><ManifestIcon id="notification_off" :scale="1" /> 勿扰状态</view>
                                 <picker :value="muteFilterIndex" :range="muteFilterOptions"
                                     range-key="label" @change="onMuteFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ muteFilterOptions[muteFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
 
                             <view class="filter-item">
-                                <text class="filter-label">📌 置顶状态</text>
+                                <view class="filter-label"><ManifestIcon id="pin" :scale="1" /> 置顶状态</view>
                                 <picker :value="topFilterIndex" :range="topFilterOptions"
                                     range-key="label" @change="onTopFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ topFilterOptions[topFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
@@ -193,12 +193,12 @@
                         <!-- History表专属筛选 -->
                         <template v-if="currentTable === 'History'">
                             <view class="filter-item">
-                                <text class="filter-label">📍 来源</text>
+                                <view class="filter-label"><ManifestIcon id="map_location" /> 来源</view>
                                 <picker :value="sourceFilterIndex" :range="sourceFilterOptions"
                                     range-key="label" @change="onSourceFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ sourceFilterOptions[sourceFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
@@ -207,34 +207,34 @@
                         <!-- Device 表专属筛选 -->
                         <template v-if="currentTable === 'Device'">
                             <view class="filter-item">
-                                <text class="filter-label">✅ 审核状态</text>
+                                <view class="filter-label"><ManifestIcon id="dark_success" /> 审核状态</view>
                                 <picker :value="reviewFilterIndex" :range="reviewFilterOptions"
                                     range-key="label" @change="onReviewFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ reviewFilterOptions[reviewFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
 
                             <view class="filter-item">
-                                <text class="filter-label">📡 状态</text>
+                                <view class="filter-label"><ManifestIcon id="dark_online" /> 状态</view>
                                 <picker :value="statusFilterIndex" :range="statusFilterOptions"
                                     range-key="label" @change="onStatusFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ statusFilterOptions[statusFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
 
                             <view class="filter-item">
-                                <text class="filter-label">🗑️ 类型</text>
+                                <text class="filter-label">类型</text>
                                 <picker :value="binTypeFilterIndex" :range="binTypeFilterOptions"
                                     range-key="label" @change="onBinTypeFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ binTypeFilterOptions[binTypeFilterIndex].label }}</text>
-                                        <text class="picker-arrow">▼</text>
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
                                     </view>
                                 </picker>
                             </view>
@@ -254,7 +254,7 @@
                         <text class="data-title">{{ getCurrentTableLabel() }}</text>
                         <view class="data-actions" v-if="canEditCurrentTable()">
                             <view class="action-icon-btn" @click="handleAdd">
-                                <text>➕</text>
+                                <ManifestIcon id="add" :scale="1" />
                             </view>
                         </view>
                     </view>
@@ -440,10 +440,10 @@
                             <!-- 操作按钮 -->
                             <view class="data-item-actions" v-if="canEditCurrentTable()">
                                 <view class="item-action-btn edit" @click="handleEdit(item)">
-                                    <text>✏️</text>
+                                    <text>编辑</text>
                                 </view>
                                 <view class="item-action-btn delete" @click="handleDelete(item)">
-                                    <text>🗑️</text>
+                                    <ManifestIcon id="delete" :scale="1" />
                                 </view>
                             </view>
                         </view>
@@ -457,7 +457,7 @@
                     <view v-if="totalPages > 1" class="pagination">
                         <view class="pagination-left">
                             <view class="page-btn" :class="{ disabled: currentPage === 1 }" @click="handlePrevPage">
-                                <text>◀</text>
+                                <ManifestIcon id="chevron_left" :scale="1" />
                             </view>
                         </view>
 
@@ -469,7 +469,7 @@
                         <view class="pagination-right">
                             <view class="page-btn" :class="{ disabled: currentPage === totalPages }"
                                 @click="handleNextPage">
-                                <text>▶</text>
+                                <ManifestIcon id="chevron_right" :scale="1" />
                             </view>
                         </view>
                     </view>
@@ -477,7 +477,7 @@
 
                 <!-- 底部提示 -->
                 <view class="footer-tip">
-                    <text class="tip-icon">ℹ️</text>
+                    <ManifestIcon class="tip-icon" id="help" />
                     <text class="tip-text">最后更新：{{ formatTime(lastUpdateTime) }}</text>
                 </view>
 
@@ -490,7 +490,7 @@
                 <view class="modal-header">
                     <text class="modal-title">{{ editMode === 'add' ? '新增' : '编辑' }}{{ getCurrentTableLabel() }}</text>
                     <view class="modal-close" @click="closeEditModal">
-                        <text>✕</text>
+                        <ManifestIcon id="close" />
                     </view>
                 </view>
 
@@ -628,7 +628,7 @@
                             <view v-if="editForm.imageUrl" class="image-preview-container">
                                 <image class="form-image-preview" :src="editForm.imageUrl" mode="aspectFit" />
                                 <view class="image-delete-btn" @click="deleteImage">
-                                    <text>🗑️ 删除图片</text>
+                                    <ManifestIcon id="delete" :scale="1" /><text>删除图片</text>
                                 </view>
                             </view>
                         </view>
@@ -636,7 +636,7 @@
                         <!-- 新增模式：不显示图片字段（由设备自动上传） -->
                         <view v-if="editMode === 'add'" class="form-item">
                             <view class="form-tip">
-                                <text class="tip-icon">ℹ️</text>
+                                <ManifestIcon class="tip-icon" id="help" />
                                 <text class="tip-text">图片由设备自动识别上传，手动新增记录无需填写图片</text>
                             </view>
                         </view>
@@ -799,14 +799,14 @@
                                 />
 
                                 <view v-if="field.help" class="form-tip">
-                                    <text class="tip-icon">ℹ️</text>
+                                    <ManifestIcon class="tip-icon" id="help" />
                                     <text class="tip-text">{{ field.help }}</text>
                                 </view>
                             </view>
                         </view>
                         <view v-else class="form-item">
                             <view class="form-tip">
-                                <text class="tip-icon">ℹ️</text>
+                                <ManifestIcon class="tip-icon" id="help" />
                                 <text class="tip-text">当前表字段结构暂不可用，请刷新后重试。</text>
                             </view>
                         </view>
@@ -832,6 +832,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 import {
     getUsersList, createUser, updateUser, deleteUser,
     getDevicesList, createDevice, updateDevice, deleteDevice,
@@ -953,34 +954,43 @@ const totalPages = ref(0)
 
 // 数据表配置（已由后端模型注册表动态提供）
 const legacyTableCatalog = [
-    { name: 'Users', label: '用户表', icon: '👤' },
-    { name: 'Bin', label: '垃圾桶表', icon: '🗑️' },
-    { name: 'UserDevice', label: '用户设备表', icon: '📱' },
-    { name: 'History', label: '历史记录表', icon: '📝' },
-    { name: 'Messages', label: '消息表', icon: '💬' },
-    { name: 'Chat', label: '聊天表', icon: '💭' },
-    { name: 'PurchaseRecord', label: '购买记录表', icon: '🛒' },
-    { name: 'CommunityDailyStat', label: '社区日统计表', icon: '📊' },
-    { name: 'AiChatMessage', label: 'AI 对话表', icon: '🤖' },
-    { name: 'ShopRecommendation', label: '商品推荐表', icon: '🏪' },
-    { name: 'AchievementUnlock', label: '成就解锁表', icon: '🏆' },
-    { name: 'ChallengeRecord', label: '挑战记录表', icon: '🎯' },
-    { name: 'ChallengeQuestion', label: '挑战题库表', icon: '🧠' },
-    { name: 'BookingOrder', label: '预约订单表', icon: '📅' },
-    { name: 'WasteType', label: '垃圾分类表', icon: '♻️' },
-    { name: 'Community', label: '社区表', icon: '🏘️' },
-    { name: 'RegionNode', label: '地区节点表', icon: '🧭' },
-    { name: 'UserCommunity', label: '用户社区表', icon: '🤝' },
-    { name: 'Post', label: '帖子表', icon: '📝' },
-    { name: 'Comment', label: '评论表', icon: '💬' },
-    { name: 'PostLike', label: '帖子点赞表', icon: '👍' },
-    { name: 'Prize', label: '奖品表', icon: '🎁' },
-    { name: 'LotteryConfig', label: '抽奖配置表', icon: '🎯' },
-    { name: 'LotteryRecord', label: '抽奖记录表', icon: '🎟️' },
-    { name: 'ServicePoint', label: '服务点表', icon: '📍' },
-    { name: 'OperationTask', label: '运营任务表', icon: '🧾' },
-    { name: 'SortingCenterEvent', label: '分拣中心事件表', icon: '🏭' },
-    { name: 'DeviceDepositEvent', label: '设备投递事件表', icon: '📥' }
+    { name: 'User', label: '用户表', icon: 'user_table' },
+    { name: 'Device', label: '设备表', icon: 'device_table' },
+    { name: 'Bin', label: '垃圾桶表', icon: '' },
+    { name: 'FriendRequest', label: '好友申请表', icon: 'friend_request_table' },
+    { name: 'UserDevice', label: '用户设备表', icon: 'user_device_relation_table' },
+    { name: 'History', label: '历史记录表', icon: 'recognition_history_table' },
+    { name: 'Message', label: '私聊消息表', icon: 'private_message_table' },
+    { name: 'Chat', label: '会话关系表', icon: 'chat_session_relation_table' },
+    { name: 'ChatGroup', label: '群聊表', icon: 'group_chat_table' },
+    { name: 'ChatGroupMember', label: '群成员关系表', icon: 'group_member_relation_table' },
+    { name: 'GroupMessage', label: '群消息表', icon: 'group_message_table' },
+    { name: 'PurchaseRecord', label: '购买记录表', icon: 'purchase_record_table' },
+    { name: 'CommunityDailyStat', label: '社区日统计表', icon: 'community_daily_stat_table' },
+    { name: 'AiChatMessage', label: 'AI 对话表', icon: 'ai_chat_message_table' },
+    { name: 'AiSessionMeta', label: 'AI 会话元数据表', icon: 'ai_conversation_table' },
+    { name: 'ShopRecommendation', label: '商品推荐表', icon: 'product_recommendation_table' },
+    { name: 'AchievementUnlock', label: '成就解锁表', icon: 'achievement_unlock_table' },
+    { name: 'ChallengeRecord', label: '挑战记录表', icon: 'challenge_record_table' },
+    { name: 'ChallengeQuestion', label: '挑战题库表', icon: 'challenge_question_table' },
+    { name: 'BookingOrder', label: '预约订单表', icon: 'reservation_order_table' },
+    { name: 'WasteType', label: '垃圾分类表', icon: 'classification_table' },
+    { name: 'Community', label: '社区表', icon: 'community_table' },
+    { name: 'RegionNode', label: '地区节点表', icon: 'region_node_table' },
+    { name: 'UserCommunity', label: '用户社区表', icon: 'user_community_relation_table' },
+    { name: 'Post', label: '帖子表', icon: 'community_post_table' },
+    { name: 'Comment', label: '评论表', icon: 'post_comment_table' },
+    { name: 'PostLike', label: '帖子点赞表', icon: 'post_like_table' },
+    { name: 'Prize', label: '奖品表', icon: 'prize_table' },
+    { name: 'LotteryConfig', label: '抽奖配置表', icon: 'lottery_config_table' },
+    { name: 'LotteryRecord', label: '抽奖记录表', icon: 'lottery_record_table' },
+    { name: 'ServicePoint', label: '服务点表', icon: 'service_point_table' },
+    { name: 'MaintenanceTask', label: '运维任务表', icon: 'maintenance_task_table' },
+    { name: 'OperationTask', label: '运营任务表', icon: 'operation_task_table' },
+    { name: 'SortingCenterEvent', label: '分拣中心事件表', icon: 'sorting_center_event_table' },
+    { name: 'DeviceDepositEvent', label: '设备投递事件表', icon: 'device_deposit_event_table' },
+    { name: 'AlgorithmTelemetrySample', label: '算法遥测样本表', icon: 'algorithm_telemetry_sample_table' },
+    { name: 'AlgorithmPrediction', label: '算法预测表', icon: 'algorithm_prediction_table' }
 ]
 const tables = ref([])
 
@@ -1101,14 +1111,19 @@ function formatGenericFieldLabel(key) {
 
 function mergeTablesFromStats(statsTables = []) {
     const mergedTables = (Array.isArray(statsTables) ? statsTables : [])
-        .map(rawTable => ({
-            ...rawTable,
-            name: String(rawTable?.name || '').trim(),
-            label: rawTable?.label || `${formatGenericFieldLabel(rawTable?.name)}表`,
-            icon: rawTable?.icon || '🗂️',
-            count: Number(rawTable?.count || 0),
-            primaryKeys: Array.isArray(rawTable?.primaryKeys) ? rawTable.primaryKeys : []
-        }))
+        .map(rawTable => {
+            const name = String(rawTable?.name || '').trim()
+            const catalogEntry = legacyTableCatalog.find(item => item.name === name)
+            return {
+                ...rawTable,
+                name,
+                label: rawTable?.label || `${formatGenericFieldLabel(name)}表`,
+                icon: catalogEntry?.icon || 'database',
+                unmappedIcon: !catalogEntry?.icon,
+                count: Number(rawTable?.count || 0),
+                primaryKeys: Array.isArray(rawTable?.primaryKeys) ? rawTable.primaryKeys : []
+            }
+        })
         .filter(table => table.name)
 
     tables.value = mergedTables
@@ -2436,6 +2451,9 @@ onUnmounted(() => {
     border-bottom: 1px solid rgba(64, 224, 255, 0.4);
 }
 
+.status-bar .back-icon,
+.status-bar .refresh-btn .manifest-icon { filter: brightness(0) invert(1); }
+
 .safe-area-top {
     height: env(safe-area-inset-top);
     min-height: 44rpx;
@@ -2450,8 +2468,8 @@ onUnmounted(() => {
 }
 
 .back-btn {
-    width: 60rpx;
-    height: 60rpx;
+    width: 80rpx;
+    height: 80rpx;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2491,7 +2509,7 @@ onUnmounted(() => {
     border-radius: 50%;
     background: rgba(64, 224, 255, 0.1);
     border: 1px solid rgba(64, 224, 255, 0.3);
-    font-size: 32rpx;
+    font-size: 24rpx;
     cursor: pointer;
     transition: all 0.3s ease;
 }
@@ -3236,6 +3254,10 @@ rich-text {
 
 .image-delete-btn {
     padding: 16rpx 32rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6rpx;
     background: rgba(239, 68, 68, 0.2);
     border: 1px solid rgba(239, 68, 68, 0.5);
     border-radius: 12rpx;

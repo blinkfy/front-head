@@ -10,7 +10,7 @@
 
     <!-- 返回按钮 -->
     <view class="back-btn" @click="goBack">
-      <text>←</text>
+      <ManifestIcon id="back" />
     </view>
 
     <!-- 头部 -->
@@ -24,9 +24,9 @@
       <view class="avatar-section">
         <view class="section-label">头像</view>
         <view class="avatar-wrapper">
-          <image :src="getAvatarUrl(formData.avatar || userInfo.avatar || '/static/person.webp.png', baseUrl)" class="avatar-image" mode="aspectFill"></image>
+          <image :src="getAvatarUrl(formData.avatar || userInfo.avatar || getManifestIconPath('profile_user'), baseUrl)" class="avatar-image" mode="aspectFill"></image>
           <view class="avatar-overlay" @click="uploadAvatar">
-            <text class="overlay-icon">📷</text>
+            <ManifestIcon class="overlay-icon" id="camera_scan" />
             <text class="overlay-text">更换头像</text>
           </view>
         </view>
@@ -108,7 +108,7 @@
               class="form-input location-field"
             />
             <view class="location-action" @click="selectLocation">
-              <text>📍</text>
+              <ManifestIcon id="map_location" />
             </view>
           </view>
         </view>
@@ -149,7 +149,7 @@
       <view class="map-picker-modal">
         <view class="map-picker-header">
           <text class="map-picker-title">选择位置</text>
-          <text class="map-picker-close" @click="closeMapPicker">✕</text>
+          <ManifestIcon class="map-picker-close" id="close" @click="closeMapPicker" />
         </view>
         <view class="map-picker-search">
           <input
@@ -159,7 +159,7 @@
             class="map-search-input"
             @confirm="searchAddress"
           />
-          <text class="map-search-btn" @click="searchAddress">搜索</text>
+          <view class="map-search-btn" @click="searchAddress"><ManifestIcon id="search" /> 搜索</view>
         </view>
         <view class="map-picker-body">
           <view id="map-container" class="map-container"></view>
@@ -184,7 +184,7 @@
       <view class="nearby-picker-modal">
         <view class="nearby-picker-header">
           <text class="nearby-picker-title">选择附近地点</text>
-          <text class="nearby-picker-close" @click="closeNearbyPicker">✕</text>
+          <ManifestIcon class="nearby-picker-close" id="close" @click="closeNearbyPicker" />
         </view>
         <view class="nearby-picker-search">
           <input
@@ -194,7 +194,7 @@
             class="nearby-search-input"
             @confirm="onNearbySearch"
           />
-          <text class="nearby-search-btn" @click="onNearbySearch">搜索</text>
+          <view class="nearby-search-btn" @click="onNearbySearch"><ManifestIcon id="search" /> 搜索</view>
         </view>
         <view class="nearby-picker-body">
           <view v-if="nearbyLoading" class="nearby-loading">正在加载附近地点...</view>
@@ -221,8 +221,10 @@ import { ref, reactive, onMounted } from 'vue'
 import * as userApi from '@/api/user.js'
 import { getCommunityTree } from '@/api/community.js'
 import { compressImageToBase64, getAvatarUrl, validateAvatarSize } from '@/utils/avatar-handler.js'
+import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { baseUrl } from '@/api/settings.js'
 import { searchPlaces } from '@/api/map.js'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 const isDarkTheme = ref(false)
 const userInfo = ref({})
@@ -1005,8 +1007,8 @@ onMounted(() => {
   position: fixed;
   top: 65rpx;
   left: 25rpx;
-  width: 50rpx;
-  height: 50rpx;
+  width: 80rpx;
+  height: 80rpx;
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);
   border-radius: 50%;

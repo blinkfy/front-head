@@ -12,12 +12,12 @@
     <view class="hero">
       <view class="safe-area"></view>
       <view class="back-btn" @tap="goBack">
-        <text>‹</text>
+        <ManifestIcon id="back" />
       </view>
       <view class="hero-title-row">
         <view class="title-wrap">
           <view class="title-icon-box">
-            <image class="title-icon" src="/static/colorful-bin.png" mode="aspectFit"></image>
+            <ManifestIcon class="title-icon" id="device_connect" />
           </view>
           <view>
             <text class="page-title">机器人控制</text>
@@ -39,7 +39,7 @@
                 <text>当前状态：{{ statusLabel }}</text>
               </view>
               <view class="robot-task-line">
-                <text class="task-icon">▣</text>
+              <ManifestIcon class="task-icon" id="file_document" :scale="1" />
                 <text>今日任务：{{ currentTask.title }}</text>
               </view>
             </view>
@@ -64,15 +64,13 @@
 
           <view class="control-actions">
             <view class="primary-action" @tap="startOrResumeTask">
-              <text class="action-symbol">{{ actionState === 'paused' ? '▶' : '▶' }}</text>
+              <ManifestIcon class="action-symbol" :id="actionState === 'paused' ? 'play_action' : 'device_start'" :scale="1" />
               <text>{{ actionState === 'paused' ? '继续任务' : '开始任务' }}</text>
             </view>
             <view :class="['secondary-action', { disabled: actionState !== 'running' }]" @tap="pauseTask">
-              <text class="action-symbol">Ⅱ</text>
               <text>暂停任务</text>
             </view>
             <view class="danger-action" @tap="emergencyStop">
-              <text class="danger-dot">!</text>
               <text>紧急停止</text>
             </view>
           </view>
@@ -81,7 +79,6 @@
         <view class="status-panel panel">
           <view class="panel-title-row">
             <view class="panel-title">
-              <text class="panel-icon">▤</text>
               <text>任务状态信息</text>
             </view>
             <view class="sync-chip">{{ syncLabel }}</view>
@@ -89,7 +86,9 @@
 
           <view class="status-grid">
             <view v-for="item in statusItems" :key="item.label" class="status-item">
-              <view :class="['status-icon', item.tone]">{{ item.icon }}</view>
+              <view :class="['status-icon', item.tone]">
+                <ManifestIcon v-if="item.iconId" :id="item.iconId" />
+              </view>
               <view class="status-texts">
                 <text class="status-label">{{ item.label }}</text>
                 <text :class="['status-value', item.tone]">{{ item.value }}</text>
@@ -100,7 +99,7 @@
 
         <view class="progress-panel panel">
           <view class="panel-title">
-            <text class="panel-icon">◒</text>
+            <ManifestIcon class="panel-icon" id="challenge_progress" />
             <text>闭环执行进度</text>
           </view>
 
@@ -109,10 +108,10 @@
             <view class="track-fill" :style="{ width: progressLineWidth }"></view>
             <view v-for="(step, index) in steps" :key="step.key" :class="['step-node', stepState(index)]">
               <view class="node-circle">
-                <text>{{ step.icon }}</text>
+              <ManifestIcon v-if="step.iconId" :id="step.iconId" :scale="1" />
               </view>
               <text class="node-label">{{ step.label }}</text>
-              <text class="node-mark">{{ stepState(index) === 'done' ? '✓' : stepState(index) === 'active' ? '◌' : '•' }}</text>
+              <ManifestIcon v-if="stepState(index) === 'done'" class="node-mark" id="confirm" :scale="1" />
             </view>
           </view>
         </view>
@@ -120,10 +119,9 @@
         <view class="feedback-panel panel">
           <view class="panel-title-row">
             <view class="panel-title">
-              <text class="panel-icon">●</text>
               <text>实时反馈</text>
             </view>
-            <view class="more-link" @tap="appendDiagnosticLog">查看全部 ›</view>
+            <view class="more-link" @tap="appendDiagnosticLog">查看全部 <ManifestIcon id="chevron_right" :scale="1" /></view>
           </view>
 
           <view class="feedback-list">
@@ -143,6 +141,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { onHide, onLoad, onShow } from '@dcloudio/uni-app'
 import SortingWorkflowPlayer from '@/components/SortingWorkflowPlayer.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 import { baseUrl } from '@/api/settings.js'
 import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 import { mapRobotWorkflowStage } from '@/utils/sorting-workflow.js'
@@ -206,11 +205,11 @@ const feedbackLogs = ref([
 ])
 
 const steps = [
-  { key: 'recognize', label: '识别', icon: '◎' },
-  { key: 'navigate', label: '导航', icon: '⌖' },
-  { key: 'grasp', label: '抓取', icon: '♙' },
-  { key: 'drop', label: '投放', icon: '▥' },
-  { key: 'return', label: '返回', icon: '↶' }
+  { key: 'recognize', label: '识别', iconId: 'camera_scan' },
+  { key: 'navigate', label: '导航', iconId: 'map_location' },
+  { key: 'grasp', label: '抓取', iconId: '' },
+  { key: 'drop', label: '投放', iconId: '' },
+  { key: 'return', label: '返回', iconId: 'device_recycle' }
 ]
 
 const robotImageUrl = computed(() => robotImageFailed.value
@@ -248,13 +247,24 @@ const workflowAutoplay = computed(() => (
 ))
 
 const statusItems = computed(() => [
-  { icon: '➤', label: '当前阶段', value: currentTask.value.stage, tone: 'green' },
-  { icon: '▣', label: '当前目标', value: currentTask.value.target, tone: 'blue' },
-  { icon: '♻', label: '垃圾类别', value: robot.value.category, tone: 'green' },
-  { icon: '▥', label: '目标垃圾桶', value: currentTask.value.bin, tone: 'blue' },
-  { icon: '◎', label: 'RGB-D定位', value: robot.value.coordinates, tone: 'mint' },
-  { icon: '♙', label: '抓取状态', value: robot.value.grasp, tone: actionState.value === 'running' ? 'green' : 'orange' }
+  { iconId: 'challenge_progress', label: '当前阶段', value: currentTask.value.stage, tone: 'green' },
+  { iconId: 'accuracy_target', label: '当前目标', value: currentTask.value.target, tone: 'blue' },
+  { iconId: getCategoryBinIcon(robot.value.category), label: '垃圾类别', value: robot.value.category, tone: 'green' },
+  { label: '目标垃圾桶', value: currentTask.value.bin, tone: 'blue' },
+  { iconId: 'map_location', label: 'RGB-D定位', value: robot.value.coordinates, tone: 'mint' },
+  { label: '抓取状态', value: robot.value.grasp, tone: actionState.value === 'running' ? 'green' : 'orange' }
 ])
+
+function getCategoryBinIcon(category) {
+  const categoryIcons = {
+    '可回收物': 'bin_recyclable',
+    '可回收垃圾': 'bin_recyclable',
+    '有害垃圾': 'bin_hazardous',
+    '厨余垃圾': 'bin_kitchen',
+    '其他垃圾': 'bin_other'
+  }
+  return categoryIcons[String(category || '').trim()] || ''
+}
 
 function checkTheme() {
   try {
@@ -665,8 +675,8 @@ onBeforeUnmount(() => {
   left: 24rpx;
   top: calc(env(safe-area-inset-top) + 18rpx);
   z-index: 8;
-  width: 62rpx;
-  height: 62rpx;
+  width: 80rpx;
+  height: 80rpx;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1432,8 +1442,8 @@ onBeforeUnmount(() => {
   .back-btn {
     left: 24px;
     top: calc(env(safe-area-inset-top) + 18px);
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
   }
 
   .back-btn text {

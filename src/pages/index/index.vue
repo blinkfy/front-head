@@ -61,7 +61,7 @@
           <!-- 用户名输入 -->
           <view class="input-group">
             <view class="input-label">
-              <text class="label-icon">👤</text>
+              <ManifestIcon class="label-icon" id="user_profile" />
               <text class="label-text">用户名</text>
             </view>
             <view class="input-wrap">
@@ -81,7 +81,7 @@
           <!-- 密码输入 -->
           <view class="input-group">
             <view class="input-label">
-              <text class="label-icon">🔐</text>
+              <ManifestIcon class="label-icon" id="password" />
               <text class="label-text">密码</text>
             </view>
             <view class="input-wrap">
@@ -97,7 +97,7 @@
                 @keyup="handleKeyup"
               />
               <view class="pwd-toggle" @click="togglePassword">
-                <text class="toggle-icon">{{ showPwd ? '👁️' : '🔒' }}</text>
+                <ManifestIcon class="toggle-icon" :id="showPwd ? 'visibility_off' : 'visibility'" />
               </view>
             </view>
           </view>
@@ -105,7 +105,7 @@
           <!-- 验证码区域 -->
           <view class="input-group captcha-group" v-if="showCaptcha">
             <view class="input-label">
-              <text class="label-icon">🛡️</text>
+              <ManifestIcon class="label-icon" id="shield_captcha" />
               <text class="label-text">验证码</text>
             </view>
             <captcha-box v-model="captchaInput" ref="captchaRef" @confirm="handleEnterKey" />
@@ -116,7 +116,7 @@
           <view class="options-row">
             <view class="remember-me" @click="toggleRememberMe">
               <view class="checkbox" :class="{ 'checked': rememberMe }">
-                <view class="check-mark" v-if="rememberMe">✓</view>
+                <ManifestIcon class="check-mark" v-if="rememberMe" id="confirm" :scale="1" />
               </view>
               <text class="remember-text">记住我</text>
             </view>
@@ -126,6 +126,7 @@
           <button type="submit" class="login-btn" @click="onLogin(false)" :disabled="isLoading" id="loginBtn">
             <view class="light-track"></view>
             <view class="btn-content" v-if="!isLoading">
+              <ManifestIcon class="btn-icon" id="submit_action" :scale="1.2" />
               <text class="btn-text">登 录</text>
             </view>
             <view class="loading-content" v-else>
@@ -168,6 +169,7 @@ import { login,userinfo } from '@/api/user'
 import { checkDB } from '@/api/health'
 import { ThemeManager } from '@/utils/theme.js'
 import CaptchaBox from '@/components/CaptchaBox.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 import AppSplash from '@/components/AppSplash.vue'
 
 const username = ref('')

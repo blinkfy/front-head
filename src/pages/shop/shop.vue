@@ -1,5 +1,5 @@
 ﻿<template>
-  <view class="shop-page">
+  <view class="shop-page" :class="tabPageClass">
     <!-- 背景装饰 -->
     <view class="bg-decoration">
       <view class="bg-circle circle-1"></view>
@@ -13,19 +13,19 @@
     </view>
     
     <!-- 顶部绿色背景区域 -->
-    <view class="shop-header">
+    <view class="shop-header tab-page-motion">
       <view class="header-content">
-        <text class="header-title">🛍️ 积分商城</text>
+        <view class="header-title"><ManifestIcon id="store" /> 积分商城</view>
         <text class="header-subtitle">环保积分 · 兑换好礼</text>
       </view>
     </view>
 
     <!-- 主内容区域-->
-    <view class="content-wrapper">
+    <view class="content-wrapper tab-page-motion">
       <!-- 积分卡片 -->
       <view class="points-card">
         <view class="points-icon-wrapper">
-          <text class="points-icon">💎</text>
+          <ManifestIcon id="points_coin" class="points-icon" />
         </view>
         <view class="points-info">
           <text class="points-label">我的积分</text>
@@ -37,13 +37,13 @@
           </view>
         </view>
         <view class="points-refresh" @click="refreshPoints" :class="{ rotating: loading }">
-          <text class="refresh-icon">♻️</text>
+          <ManifestIcon id="refresh" class="refresh-icon" />
         </view>
       </view>
 
       <!-- 积分提示 -->
       <view class="points-tips">
-        <text class="tip-icon">💡</text>
+        <ManifestIcon id="points_info" class="tip-icon" />
         <view class="tip-text-wrapper">
           <view class="tip-text-track">
             <text class="tip-text">每次垃圾识别可获得1-3积分</text>
@@ -62,7 +62,7 @@
           @touchmove.passive="updatePointerPosition"
           @click="switchCategory(index)"
         >
-          <text class="tab-icon">{{ category.icon }}</text>
+          <ManifestIcon class="tab-icon" :id="category.icon" />
           <text class="tab-text">{{ category.name }}</text>
         </view>
       </view>
@@ -70,7 +70,7 @@
       <!-- 商品列表 -->
       <view class="products-section">
         <view class="section-header">
-          <text class="section-icon">{{ selectedCategory.icon }}</text>
+          <ManifestIcon class="section-icon" :id="selectedCategory.icon" />
           <text class="section-title">{{ displayCategoryTitle }}</text>
           <text class="product-count">共{{ filteredProducts.length }} 件</text>
         </view>
@@ -91,8 +91,8 @@
             <view class="product-image-wrapper">
               <image :src="product.image" class="product-image" mode="aspectFill" />
               <view v-if="isRecommendCategory" class="product-badge ai">AI推荐</view>
-              <view v-if="product.hot" class="product-badge hot">🔥 热门</view>
-              <view v-if="product.limited" class="product-badge limited">🔥 限量</view>
+              <view v-if="product.hot" class="product-badge hot">热门</view>
+              <view v-if="product.limited" class="product-badge limited"><ManifestIcon id="limited_offer" /> 限量</view>
             </view>
             
             <view class="product-info">
@@ -101,11 +101,11 @@
               
               <view class="product-footer">
                 <view class="product-price">
-                  <text class="price-icon">💎</text>
+                  <ManifestIcon id="points_coin" class="price-icon" />
                   <text class="price-value">{{ product.points }}</text>
                 </view>
                 <view class="product-stock" :class="{ low: product.stock <= 2 }">
-                  <text>库存 {{ product.stock }}</text>
+                  <view class="stock-label"><ManifestIcon id="inventory" /> 库存 {{ product.stock }}</view>
                 </view>
               </view>
             </view>
@@ -119,7 +119,7 @@
       <view class="detail-modal" @click.stop="">
         <view class="modal-header">
           <image :src="selectedProduct.image" class="modal-image" mode="aspectFill" />
-          <view class="modal-close" @click="closeProductDetail">✕</view>
+          <ManifestIcon id="close" class="modal-close" @click="closeProductDetail" />
         </view>
         
         <view class="modal-body">
@@ -130,7 +130,7 @@
             <view class="detail-row">
               <text class="detail-label">所需积分</text>
               <view class="detail-value points">
-                <text class="value-icon">💎</text>
+                <ManifestIcon id="points_coin" class="value-icon" />
                 <text>{{ selectedProduct.points }}</text>
               </view>
             </view>
@@ -150,7 +150,7 @@
             :class="['exchange-btn', { disabled: !canExchange }]"
             @click="exchangeProduct"
           >
-            <text class="btn-icon">🎁</text>
+            <ManifestIcon id="redeem_gift" class="btn-icon" />
             <text class="btn-text">{{ userPoints >= selectedProduct.points ? (selectedProduct.stock > 0 ? '立即兑换' : '库存不足') : '积分不足' }}</text>
           </view>
         </view>
@@ -161,7 +161,7 @@
     <view v-if="showSuccessModal" class="modal-overlay" @click="closeSuccessModal">
       <view class="success-modal" @click.stop="">
         <view class="success-icon-wrapper">
-          <text class="success-icon">🎉</text>
+          <ManifestIcon id="reward_gift" class="success-icon" />
         </view>
         <text class="success-title">兑换成功！</text>
         <text class="success-desc">{{ exchangedProduct.name }} 已添加到您的奖品库</text>
@@ -176,19 +176,19 @@
     <!-- 底部导航栏-->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
-        <text class="tabbar-icon">🏠</text>
+        <ManifestIcon id="home" class="tabbar-icon" />
         <text class="tabbar-label">首页</text>
       </view>
       <view class="tabbar-item" @click="goMap">
-        <text class="tabbar-icon">🗺️</text>
+        <ManifestIcon id="map_location" class="tabbar-icon" />
         <text class="tabbar-label">地图</text>
       </view>
       <view class="tabbar-item active">
-        <text class="tabbar-icon">🛍️</text>
+        <ManifestIcon id="store" class="tabbar-icon" />
         <text class="tabbar-label">商城</text>
       </view>
       <view class="tabbar-item" @click="goProfile">
-        <text class="tabbar-icon">👤</text>
+        <ManifestIcon id="user_profile" class="tabbar-icon" />
         <text class="tabbar-label">我的</text>
       </view>
     </view>
@@ -200,8 +200,10 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { userinfo } from '@/api/user'
 import { createPurchaseRecord, fetchShopRecommendations } from '@/api/shop'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import { updatePointerCssVariables } from '@/utils/pointer-position.mjs'
+import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 import {
   SHOP_RECOMMEND_LIMIT,
   buildCandidateProducts,
@@ -211,6 +213,7 @@ import {
   orderProductsByRecommendation
 } from '@/utils/shop-recommendation'
 
+const tabPageClass = useTabPageTransition('pages/shop/shop')
 const userPoints = ref(0)
 const loading = ref(false)
 const currentCategory = ref(0)
@@ -234,20 +237,20 @@ function updatePointerPosition(event) {
 }
 
 const categories = ref([
-  { name: '猜您喜欢', icon: '✨', type: 'recommend' },
-  { name: '全部', icon: '🛍️', type: 'all' },
-  { name: '环保用品', icon: '🌿', type: 'category', categoryId: 1 },
-  { name: '数码配件', icon: '📱', type: 'category', categoryId: 2 },
-  { name: '生活用品', icon: '🏠', type: 'category', categoryId: 3 },
-  { name: '学习用品', icon: '📚', type: 'category', categoryId: 4 },
-  { name: '美食券', icon: '🍜', type: 'category', categoryId: 5 }
+  { name: '猜您喜欢', icon: 'ai_recommend', type: 'recommend' },
+  { name: '全部', icon: 'category_all', type: 'all' },
+  { name: '环保用品', icon: 'eco_products', type: 'category', categoryId: 1 },
+  { name: '数码配件', icon: 'digital_accessories', type: 'category', categoryId: 2 },
+  { name: '生活用品', icon: 'home_living', type: 'category', categoryId: 3 },
+  { name: '学习用品', icon: 'learning_supplies', type: 'category', categoryId: 4 },
+  { name: '美食券', icon: 'food_coupon', type: 'category', categoryId: 5 }
 ])
 
 const products = ref([
   {
     id: 1,
     name: '环保购物袋',
-    description: '可重复使用的环保袋，减少塑料污染',
+    description: '重复利用环保袋，减少塑料污染',
     image: 'https://image.made-in-china.com/226f3j00UTjleWhIhYoJ/Landscape-Recycle-Shopping-Bag.jpg',
     points: 50,
     stock: 10,
@@ -430,7 +433,7 @@ const isRecommendCategory = computed(() => {
 })
 
 const selectedCategory = computed(() => {
-  return categories.value[currentCategory.value] || categories.value[0] || { icon: '🛍️', name: '全部', type: 'all' }
+  return categories.value[currentCategory.value] || categories.value[0] || { icon: 'category_all', name: '全部', type: 'all' }
 })
 
 const displayCategoryTitle = computed(() => {
@@ -573,15 +576,15 @@ const closeAchievementModal = () => {
 }
 
 const goHome = () => {
-  uni.redirectTo({ url: '/pages/home/home' })
+  navigateBottomTab('shop', 'home', '/pages/home/home')
 }
 
 const goMap = () => {
-  uni.redirectTo({ url: '/pages/map/map' })
+  navigateBottomTab('shop', 'map', '/pages/map/map')
 }
 
 const goProfile = () => {
-  uni.redirectTo({ url: '/pages/profile/profile' })
+  navigateBottomTab('shop', 'profile', '/pages/profile/profile')
 }
 </script>
 
@@ -1543,7 +1546,13 @@ const goProfile = () => {
 }
 
 .tabbar-item.active .tabbar-icon {
-  filter: grayscale(0%) brightness(1.1);
+  opacity: 1;
+  filter: grayscale(0%) brightness(1.1) saturate(1);
+}
+
+.tabbar-item:not(.active) .tabbar-icon {
+  opacity: 0.6;
+  filter: grayscale(30%) saturate(0.7);
 }
 
 .tabbar-label {

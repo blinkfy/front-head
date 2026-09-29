@@ -1,10 +1,10 @@
 <template>
-  <view class="map-container">
+  <view class="map-container" :class="tabPageClass">
     <!-- H5端用div容器，微信小程序端用<map>组件 -->
-    <div v-if="isH5" id="container" class="map-canvas"></div>
+    <div v-if="isH5" id="container" class="map-canvas tab-page-motion"></div>
     <map v-else
       id="select-map"
-      class="map-canvas"
+      class="map-canvas tab-page-motion"
       :latitude="center.latitude"
       :longitude="center.longitude"
       :scale="12"
@@ -15,12 +15,12 @@
     >
       <!-- App/小程序端控件：cover-view -->
       <cover-view v-if="selectMode" class="center-pin">📍</cover-view>
-      <cover-view v-if="selectMode" class="location-control" @click="moveToMyLocation">◎</cover-view>
+      <cover-view v-if="selectMode" class="location-control" @click="moveToMyLocation"><cover-image :src="getManifestIconPath('map_location')" style="width: 24px; height: 24px;" /></cover-view>
       
       <!-- Native Dark 选择面板 -->
       <cover-view v-if="selectMode" class="select-location-panel-native">
         <cover-view class="panel-box-native">
-          <cover-view class="select-tips-native">📍 移动地图选择中心位置</cover-view>
+          <cover-view class="select-tips-native"><cover-image :src="getManifestIconPath('map_location')" style="width: 24px; height: 24px; vertical-align: middle;" /><cover-view>移动地图选择中心位置</cover-view></cover-view>
           <cover-view v-if="selectedLocation" class="selected-coords-native">
             {{ selectedLocation.latitude.toFixed(6) }}, {{ selectedLocation.longitude.toFixed(6) }}
           </cover-view>
@@ -35,7 +35,7 @@
         <cover-view class="nearby-location-cover-panel">
           <cover-view class="nearby-location-cover-header">
             <cover-view class="nearby-location-cover-title">选择发送地点</cover-view>
-            <cover-view class="nearby-location-cover-close" @click="closeNearbyLocationPicker">×</cover-view>
+          <cover-image class="nearby-location-cover-close" :src="getManifestIconPath('close')" @click="closeNearbyLocationPicker" />
           </cover-view>
           <cover-view v-if="nearbyLocationLoading" class="nearby-location-cover-state">正在加载附近地点...</cover-view>
           <cover-view v-else>
@@ -59,7 +59,7 @@
       <view class="nearby-location-panel">
         <view class="nearby-location-header">
           <text class="nearby-location-title">选择发送地点</text>
-          <text class="nearby-location-close" @click="closeNearbyLocationPicker">×</text>
+          <ManifestIcon class="nearby-location-close" id="close" @click="closeNearbyLocationPicker" />
         </view>
         <view class="nearby-location-body">
           <view v-if="nearbyLocationLoading" class="nearby-location-state">正在加载附近地点...</view>
@@ -88,7 +88,7 @@
     <!-- H5端选择面板 -->
     <view v-if="selectMode && isH5" class="select-location-panel">
       <view class="select-tips">
-        📍 点击地图或拖动选择位置
+        <ManifestIcon id="map_location" /> 点击地图或拖动选择位置
       </view>
       <view class="center-marker">📍</view>
       <view v-if="selectedLocation" class="selected-info">
@@ -103,13 +103,13 @@
     </view>
 
     <!-- 位置选择右下角辅助按钮 (H5) -->
-    <view v-if="selectMode && isH5" class="location-control" @click="moveToMyLocation">◎</view>
+    <view v-if="selectMode && isH5" class="location-control" @click="moveToMyLocation"><ManifestIcon id="map_location" /></view>
 
     <!-- 查看位置模式：显示位置信息 -->
     <view v-if="viewMode && viewLocationInfo" class="view-location-panel">
       <view class="view-location-header">
         <text class="location-name">{{ viewLocationInfo.name }}</text>
-        <text class="location-close" @click="handleBack">✕</text>
+        <ManifestIcon class="location-close" id="close" @click="handleBack" />
       </view>
       <view class="location-details">
         <text class="location-address">{{ viewLocationInfo.address }}</text>
@@ -122,7 +122,7 @@
     </view>
 
     <!-- 右下角新增垃圾桶按钮（非选择模式且非查看模式才显示） -->
-    <view v-if="!selectMode && !viewMode" class="add-btn-container">
+    <view v-if="!selectMode && !viewMode" class="add-btn-container tab-page-motion">
       <view class="add-btn" @click="openAddModal">
         <text class="add-btn-icon">+</text>
         <text class="add-btn-text">新增垃圾桶</text>
@@ -133,7 +133,7 @@
     <view v-if="selectedMarker && !selectMode && !viewMode" class="info-card">
       <view class="info-header">
         <text class="info-title">{{ selectedMarker.title }}</text>
-        <text class="info-close" @click="closeInfo">✕</text>
+        <ManifestIcon class="info-close" id="close" @click="closeInfo" />
       </view>
       <view class="info-body">
         <text class="info-line">经纬度: {{ selectedMarker.latitude }}, {{ selectedMarker.longitude }}</text>
@@ -157,19 +157,19 @@
     <!-- 底部导航栏 -->
     <view class="tabbar">
       <view class="tabbar-item" @click="goHome">
-        <text class="tabbar-icon">🏠</text>
+        <ManifestIcon class="tabbar-icon" id="home" />
         <text class="tabbar-label">首页</text>
       </view>
       <view class="tabbar-item active">
-        <text class="tabbar-icon">🗺️</text>
+        <ManifestIcon class="tabbar-icon" id="map_location" />
         <text class="tabbar-label">地图</text>
       </view>
       <view class="tabbar-item" @click="goShop">
-        <text class="tabbar-icon">🛍️</text>
+        <ManifestIcon class="tabbar-icon" id="store" />
         <text class="tabbar-label">商城</text>
       </view>
       <view class="tabbar-item" @click="goProfile">
-        <text class="tabbar-icon">👤</text>
+        <ManifestIcon class="tabbar-icon" id="user_profile" />
         <text class="tabbar-label">我的</text>
       </view>
     </view>
@@ -177,15 +177,19 @@
 </template>
 
 <script setup>
+import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { ref, onMounted, computed, getCurrentInstance } from 'vue'
 import { config } from '../../api/config.js'
 import { mapConfig } from '../../api/map-config.js'
 import { reportDeviceError, getTrashBinList, reverseGeocoder, searchPlaces } from '../../api/map.js'
 import AddTrashBinModal from '../../components/AddTrashBinModal.vue'
+import ManifestIcon from '../../components/ManifestIcon.vue'
+import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 /*
   如果不想引入 lodash，注释掉上面 import 并在需要时用简单 typeof/Array.isArray 校验
 */
 
+const tabPageClass = useTabPageTransition('pages-dark/map/map')
 const isH5 = process.env.UNI_PLATFORM === 'h5'
 
 // 位置选择模式
@@ -1390,15 +1394,15 @@ function initH5Markers() {
   })
 }
 function goHome() {
-  uni.redirectTo({ url: '/pages-dark/home/home' })
+  navigateBottomTab('map', 'home', '/pages-dark/home/home')
 }
 
 function goShop() {
-  uni.navigateTo({ url: '/pages-dark/shop/shop' })
+  navigateBottomTab('map', 'shop', '/pages-dark/shop/shop', 'navigateTo')
 }
 
 function goProfile() {
-  uni.redirectTo({ url: '/pages-dark/profile/profile' })
+  navigateBottomTab('map', 'profile', '/pages-dark/profile/profile')
 }
 </script>
 
@@ -1942,13 +1946,15 @@ function goProfile() {
 }
 
 .tabbar-icon {
-  font-size: 48rpx;
+  font-size: 40rpx;
   margin-bottom: 8rpx;
-  filter: drop-shadow(0 0 8px rgba(64, 224, 255, 0.3));
+  opacity: 0.6;
+  filter: saturate(0.7) drop-shadow(0 0 8px rgba(64, 224, 255, 0.3));
 }
 
 .tabbar-item.active .tabbar-icon {
-  filter: drop-shadow(0 0 12px rgba(64, 224, 255, 0.8));
+  opacity: 1;
+  filter: saturate(1) drop-shadow(0 0 12px rgba(64, 224, 255, 0.8));
   animation: iconGlow 2s ease-in-out infinite;
 }
 

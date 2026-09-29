@@ -2,7 +2,7 @@
   <view class="privacy-agreement" :class="{ 'privacy-agreement-dark': dark }">
     <view class="privacy-consent-row" @tap="toggleConsent">
       <view class="privacy-checkbox" :class="{ checked: modelValue }" aria-label="同意用户协议与隐私保护指引">
-        <text v-if="modelValue" class="privacy-checkmark">✓</text>
+        <ManifestIcon v-if="modelValue" class="privacy-checkmark" id="confirm" :scale="1" />
       </view>
       <view class="privacy-consent-copy">
         <text class="privacy-consent-text">我已阅读并同意</text>
@@ -14,7 +14,7 @@
       <view class="privacy-modal" @tap.stop>
         <view class="privacy-modal-header">
           <text class="privacy-modal-title">分投侠用户协议与隐私保护说明</text>
-          <text class="privacy-modal-close" @tap="closeDetails">×</text>
+          <ManifestIcon class="privacy-modal-close" id="close" @tap="closeDetails" />
         </view>
 
         <scroll-view class="privacy-modal-content" scroll-y>
@@ -63,6 +63,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import ManifestIcon from './ManifestIcon.vue'
 
 const props = defineProps({
   modelValue: {

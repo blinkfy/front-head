@@ -12,15 +12,15 @@
       <view class="safe-area-top"></view>
       <view class="nav-content">
         <view class="nav-left" @click="goBack">
-          <text class="back-icon">←</text>
+          <ManifestIcon class="back-icon" id="back" :scale="1" />
         </view>
         <view class="nav-title-wrap">
-          <view class="title-icon-pill"><text>🏘️</text></view>
+          <view class="title-icon-pill"><ManifestIcon id="community_home" /></view>
           <text class="nav-title">环保社区</text>
         </view>
         <view class="nav-right" v-if="myCommunity">
           <view class="action-icon-btn" @click="goToPublish">
-            <text>📝</text>
+            <ManifestIcon class="nav-action-icon" id="post_edit" />
           </view>
         </view>
       </view>
@@ -56,7 +56,7 @@
 
         <!-- 未加入社区 -->
         <view class="join-prompt" v-if="!myCommunity && !loading">
-          <text class="prompt-icon">🏠</text>
+          <ManifestIcon id="community_home" class="prompt-icon" />
           <text class="prompt-text">加入社区，与邻居一起环保</text>
           <view class="join-btn" @click="showCommunityPicker = true">
             <text>选择社区</text>
@@ -66,13 +66,15 @@
         <!-- 社区排行榜 -->
         <view class="ranking-section">
           <view class="section-title-row">
-            <view class="title-icon-pill small"><text>📊</text></view>
+            <view class="title-icon-pill small"><ManifestIcon id="community_rank" /></view>
             <text class="section-title">社区排行榜</text>
           </view>
           <text class="section-sub">季度环保优秀小区评选中</text>
           <view class="ranking-cards">
             <view v-for="(item, index) in communityRanking.slice(0, 3)" :key="item.id" class="ranking-card" :class="`rank-${index + 1}`">
-              <text class="rank-medal">{{ index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉' }}</text>
+              <ManifestIcon v-if="index === 0" class="rank-medal" id="community_rank" />
+              <ManifestIcon v-else-if="index === 1" class="rank-medal" id="rank_second" />
+              <ManifestIcon v-else-if="index === 2" class="rank-medal" id="rank_third" />
               <text class="rank-name">{{ item.name }}</text>
               <text class="rank-rate">{{ item.monthlyRate }}%</text>
             </view>
@@ -147,22 +149,22 @@
 
             <view class="post-actions">
               <view class="action-item" @click.stop="toggleLike(post)">
-                <text class="action-icon">{{ post.liked ? '❤️' : '🤍' }}</text>
+                <ManifestIcon id="thumbs_up" class="action-icon" />
                 <text class="action-count">{{ post.likeCount }}</text>
               </view>
               <view class="action-item" @click.stop="goToPostDetail(post)">
-                <text class="action-icon">💬</text>
+                <ManifestIcon id="comment" class="action-icon" />
                 <text class="action-count">{{ post.commentCount }}</text>
               </view>
               <view class="action-item" @click.stop="sharePost(post)">
-                <text class="action-icon">🔗</text>
+                <text class="action-label">分享</text>
                 <text class="action-count">{{ post.shareCount }}</text>
               </view>
             </view>
           </view>
 
           <view class="empty-posts" v-if="!loading && posts.length === 0">
-            <text class="empty-icon">📝</text>
+            <ManifestIcon id="post_edit" class="empty-icon" />
             <text class="empty-text">暂无帖子，快来发布第一条吧！</text>
           </view>
 
@@ -179,7 +181,7 @@
       <view class="picker-content" @click.stop>
         <view class="picker-header">
           <text class="picker-title">选择社区</text>
-          <text class="picker-close" @click="showCommunityPicker = false">×</text>
+          <ManifestIcon class="picker-close" id="close" @click="showCommunityPicker = false" />
         </view>
         <scroll-view class="picker-list" scroll-y>
           <view v-for="c in allCommunities" :key="c.communityCode || c.id" class="picker-item" @click="joinCommunity(c)">
@@ -195,7 +197,7 @@
 
     <!-- 发布 FAB 按钮 -->
     <view class="fab" @click="goToPublish" v-if="myCommunity">
-      <text class="fab-icon">+</text>
+          <ManifestIcon class="fab-icon" id="post_edit" />
     </view>
   </view>
 </template>
@@ -205,10 +207,13 @@ import { getCommunityList, getCommunityTree, getMyCommunity, getCommunityCover, 
 import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
+import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import { buildH5SpaPath } from '@/utils/h5-route.js';
 import { getCachedCommunityImage, normalizeCommunityImages, normalizeCommunityImageUrl, setCachedCommunityImage } from '@/utils/community-image.js';
+import ManifestIcon from '@/components/ManifestIcon.vue';
 
 export default {
+  components: { ManifestIcon },
   data() {
     return {
       loading: false,
@@ -643,11 +648,12 @@ export default {
       return `${Math.floor(diff / 86400000)}天前`;
     },
     getAvatarUrl(avatar) {
-      if (!avatar) return '/static/person.webp.png';
-      if (typeof avatar !== 'string') return '/static/person.webp.png';
-      if (avatar.startsWith('blob:')) return '/static/person.webp.png';
+      const fallbackAvatar = getManifestIconPath('profile_user');
+      if (!avatar) return fallbackAvatar;
+      if (typeof avatar !== 'string') return fallbackAvatar;
+      if (avatar.startsWith('blob:')) return fallbackAvatar;
       const resolved = resolveAvatarUrl(avatar, baseUrl);
-      if (resolved !== '/static/person.webp.png') return resolved;
+      if (resolved !== fallbackAvatar) return resolved;
       if (avatar.startsWith('/')) return `${baseUrl}${avatar}`;
       return `${baseUrl}/${avatar}`;
     },
@@ -726,7 +732,10 @@ export default {
   height: 136rpx; box-sizing: border-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
-.dark-mode .back-icon { color: #fff; }
+.dark-mode .back-icon { color: #fff; filter: brightness(0) invert(1); }
+.dark-mode .navbar .nav-right .nav-action-icon {
+  filter: saturate(1.2) brightness(1.08) drop-shadow(0 0 4rpx rgba(255, 255, 255, 0.4));
+}
 .nav-title-wrap {
   display: flex; align-items: center; gap: 12rpx;
   flex: 1; justify-content: center;
@@ -876,9 +885,9 @@ export default {
   font-weight: 600;
 }
 .dark-mode .section-sub { color: #fbbf24; }
-.ranking-cards { display: flex; gap: 16rpx; }
+.ranking-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16rpx; width: 100%; box-sizing: border-box; }
 .ranking-card {
-  flex: 1;
+  min-width: 0;
   background: #fff;
   border-radius: 20rpx;
   padding: 24rpx 12rpx;
@@ -892,7 +901,7 @@ export default {
 .ranking-card.rank-1 { border-color: rgba(245, 158, 11, 0.4); background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%); }
 .ranking-card.rank-2 { border-color: rgba(156, 163, 175, 0.3); }
 .ranking-card.rank-3 { border-color: rgba(217, 119, 6, 0.3); }
-.rank-medal { font-size: 40rpx; display: block; margin-bottom: 8rpx; }
+.rank-medal { font-size: 40rpx; display: block; margin: 0 auto 8rpx; }
 .rank-name {
   display: block;
   color: #1f2937;
@@ -1145,7 +1154,8 @@ export default {
   box-shadow: 0 8rpx 32rpx rgba(16, 185, 129, 0.4);
   z-index: 100;
   transition: all 0.3s;
+  transform: scale(0.91);
 }
-.fab:active { transform: scale(0.92); }
+.fab:active { transform: scale(0.84); }
 .fab-icon { color: #fff; font-size: 48rpx; font-weight: 300; }
 </style>

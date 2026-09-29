@@ -1,5 +1,5 @@
 <template>
-  <view class="home-bg">
+  <view class="home-bg" :class="tabPageClass">
     <!-- 自定义状态栏 -->
     <view class="custom-statusbar"></view>
     
@@ -12,11 +12,11 @@
     </view>
     
     <!-- 主要内容区域 -->
-    <view class="home-container">
+    <view class="home-container tab-page-motion">
       <!-- 顶部标题区域 -->
       <view class="header-section">
         <view class="main-title">
-          <image class="title-icon" src="/static/colorful-bin.png" mode="aspectFill"></image>
+          <image class="title-icon" :src="getManifestIconPath('colorful_bin')" mode="aspectFill"></image>
           <text class="title-text">AI垃圾识别</text>
         </view>
         <view class="subtitle">智能分类 · 绿色环保 · 科技赋能</view>
@@ -33,14 +33,14 @@
             </view>
             <view class="connection-info">
               <view class="connection-header">
-                <text class="connection-icon">📡</text>
+                <ManifestIcon class="connection-icon" id="device_connect" />
                 <text class="connection-title">智能设备在线</text>
               </view>
               <text class="connection-desc">{{ connectedDevice?.device_name || '环保分类设备' }}</text>
             </view>
           </view>
           <view class="connection-action">
-            <view class="action-icon">⚡</view>
+            <ManifestIcon class="action-icon" id="settings" />
             <text class="action-text">管理</text>
           </view>
         </view>
@@ -54,7 +54,7 @@
           <view class="upload-border">
             <view class="upload-inner">
               <view class="upload-icon">
-                <text v-if="!isProcessing">📷</text>
+                <ManifestIcon v-if="!isProcessing" id="camera_scan" />
                 <view v-else class="loading-spinner">
                   <view class="spinner"></view>
                 </view>
@@ -73,7 +73,7 @@
       <view v-if="resultImage" class="result-section">
         <view class="result-card">
           <view class="result-header">
-            <text class="result-title">🎯 识别结果</text>
+              <view class="result-title"><ManifestIcon id="accuracy_target" /> 识别结果</view>
             <view class="confidence-badge">
               <text class="confidence-text">{{ resultConfidence }}</text>
             </view>
@@ -96,7 +96,7 @@
           <view class="result-details">
             <view class="category-row">
               <view :class="['category-display', getCategoryClass(resultCategory)]">
-                <view class="category-icon">{{ getCategoryIcon(resultCategory) }}</view>
+            <ManifestIcon class="category-icon" :id="getCategoryIcon(resultCategory)" />
               <view class="category-info">
                 <text class="category-label">分类结果</text>
                 <text class="category-name">{{ resultCategory }}</text>
@@ -150,7 +150,7 @@
             </view>
 
             <view v-else-if="resultDesc" class="description-panel">
-              <text class="desc-label">💡 处理建议</text>
+              <view class="desc-label"><ManifestIcon id="eco_tip" /> 处理建议</view>
               <view class="desc-content" v-html="formatSemicolonNewline(resultDesc)"></view>
             </view>
           </view>
@@ -160,7 +160,7 @@
       <!-- 默认提示区域 -->
       <view v-if="!resultImage" class="welcome-section">
         <view class="welcome-card">
-          <text class="welcome-icon">🌱</text>
+          <ManifestIcon class="welcome-icon" id="smart_sort" />
           <text class="welcome-title">开始智能分类</text>
           <text class="welcome-desc">上传图片，AI将为您识别垃圾类型<br/>共同践行绿色环保理念</text>
         </view>
@@ -168,39 +168,39 @@
         <!-- 垃圾分类指南卡片 -->
         <view class="guide-cards">
           <view class="guide-card recyclable" @click="showGuideDetail('recyclable')">
-            <view class="guide-icon">♻️</view>
+            <ManifestIcon class="guide-icon" id="bin_recyclable" />
             <view class="guide-content">
               <text class="guide-title">可回收垃圾</text>
               <text class="guide-desc">塑料、纸类、金属等</text>
             </view>
-            <view class="guide-arrow">→</view>
+            <ManifestIcon id="chevron_right" class="guide-arrow" :scale="1" />
           </view>
           
           <view class="guide-card harmful" @click="showGuideDetail('harmful')">
-            <view class="guide-icon">☢️</view>
+            <ManifestIcon class="guide-icon" id="bin_hazardous" />
             <view class="guide-content">
               <text class="guide-title">有害垃圾</text>
               <text class="guide-desc">电池、药品、化学品</text>
             </view>
-            <view class="guide-arrow">→</view>
+            <ManifestIcon id="chevron_right" class="guide-arrow" :scale="1" />
           </view>
           
           <view class="guide-card kitchen" @click="showGuideDetail('kitchen')">
-            <view class="guide-icon">🍎</view>
+            <ManifestIcon class="guide-icon" id="bin_kitchen" />
             <view class="guide-content">
               <text class="guide-title">厨余垃圾</text>
               <text class="guide-desc">剩菜剩饭、果皮等</text>
             </view>
-            <view class="guide-arrow">→</view>
+            <ManifestIcon id="chevron_right" class="guide-arrow" :scale="1" />
           </view>
           
           <view class="guide-card other" @click="showGuideDetail('other')">
-            <view class="guide-icon">🗑️</view>
+            <ManifestIcon class="guide-icon" id="bin_other" />
             <view class="guide-content">
               <text class="guide-title">其他垃圾</text>
               <text class="guide-desc">难以回收的废弃物</text>
             </view>
-            <view class="guide-arrow">→</view>
+            <ManifestIcon id="chevron_right" class="guide-arrow" :scale="1" />
           </view>
         </view>
       </view>
@@ -216,7 +216,7 @@
           <view class="quick-actions-featured">
             <view class="action-item featured challenge-card" @click="goChallenge">
               <view class="action-icon-wrapper challenge">
-                <text class="action-icon">🏆</text>
+                <ManifestIcon class="action-icon" id="challenge_trophy" />
               </view>
               <view class="action-copy">
                 <text class="action-text">挑战赛</text>
@@ -226,7 +226,7 @@
 
             <view class="action-item featured lottery-card" @click="goLottery">
               <view class="action-icon-wrapper lottery">
-                <text class="action-icon">🎰</text>
+                <ManifestIcon class="action-icon" id="lucky_wheel" />
               </view>
               <view class="action-copy">
                 <text class="action-text">积分抽奖</text>
@@ -238,28 +238,28 @@
           <view class="quick-actions-grid" :class="{ 'three-items': isH5Platform }">
             <view v-if="!isH5Platform" class="action-item compact onboarding-target-device" @click="scanDeviceQR">
               <view class="action-icon-wrapper device">
-                <text class="action-icon">📱</text>
+                <ManifestIcon class="action-icon" id="device_connect" />
               </view>
               <text class="action-text">连接设备</text>
             </view>
 
             <view class="action-item compact" @click="goCommunity">
               <view class="action-icon-wrapper community">
-                <text class="action-icon">🏘️</text>
+                <ManifestIcon class="action-icon" id="community_home" />
               </view>
               <text class="action-text">环保社区</text>
             </view>
 
             <view class="action-item compact onboarding-target-booking" @click="goBooking">
               <view class="action-icon-wrapper booking">
-                <text class="action-icon">📦</text>
+                <ManifestIcon class="action-icon" id="recycling_booking" :scale="2.2" />
               </view>
               <text class="action-text">预约回收</text>
             </view>
 
             <view class="action-item compact" @click="goVoiceScan">
               <view class="action-icon-wrapper voice">
-                <text class="action-icon">🎤</text>
+                <ManifestIcon class="action-icon" id="voice_recognition" />
               </view>
               <text class="action-text">语音识别</text>
             </view>
@@ -272,9 +272,9 @@
     <view v-if="showGuideModal && currentGuide.title" class="guide-modal-overlay" @click="closeGuideModal">
       <view class="guide-modal" @click.stop="">
         <view class="modal-header">
-          <view class="modal-icon">{{ currentGuide.icon || '❓' }}</view>
+        <ManifestIcon class="modal-icon" :id="currentGuide.icon || 'help'" />
           <text class="modal-title">{{ currentGuide.title || '未知分类' }}</text>
-          <view class="modal-close" @click="closeGuideModal">✕</view>
+          <ManifestIcon class="modal-close" id="close" @click="closeGuideModal" />
         </view>
         <view class="modal-content">
           <text class="modal-text">{{ currentGuide.content || '暂无相关信息' }}</text>
@@ -303,24 +303,24 @@
 
     <!-- 科技感底部导航栏 -->
     <view v-if="aiServiceEnabled" class="floating-agent" @click="goAiAssistant">
-      <text class="floating-agent-main">AI</text>
+      <ManifestIcon class="floating-agent-main" id="ai_assistant" :scale="2.2" />
     </view>
 
     <view class="tabbar">
       <view class="tabbar-item active">
-        <text class="tabbar-icon">🏠</text>
+        <ManifestIcon class="tabbar-icon" id="home" />
         <text class="tabbar-label">首页</text>
       </view>
       <view class="tabbar-item onboarding-target-map" @click="goMap">
-        <text class="tabbar-icon">🗺️</text>
+        <ManifestIcon class="tabbar-icon" id="map_location" />
         <text class="tabbar-label">地图</text>
       </view>
       <view class="tabbar-item onboarding-target-shop" @click="goShop">
-        <text class="tabbar-icon">🛍️</text>
+        <ManifestIcon class="tabbar-icon" id="store" />
         <text class="tabbar-label">商城</text>
       </view>
       <view class="tabbar-item" @click="goProfile">
-        <text class="tabbar-icon">👤</text>
+        <ManifestIcon class="tabbar-icon" id="user_profile" />
         <text class="tabbar-label">我的</text>
       </view>
     </view>
@@ -336,6 +336,9 @@ import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr'
 import AppOnboarding from '@/components/AppOnboarding.vue'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import { getManifestIconPath } from '@/utils/manifest-icons.js'
+import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 import { enqueueAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import {
   buildExpandedUpcyclingText,
@@ -357,6 +360,7 @@ import {
   updateRecognitionTask
 } from '@/utils/recognition-task.mjs'
 
+const tabPageClass = useTabPageTransition('pages-dark/home/home')
 const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
@@ -714,10 +718,10 @@ function getCategoryClass(category) {
 
 function getCategoryIcon(category) {
   const cls = getCategoryClass(category)
-  if (cls === 'recyclable') return '♻️'
-  if (cls === 'harmful') return '☠️'
-  if (cls === 'kitchen') return '🍃'
-  return '🗑️'
+  if (cls === 'recyclable') return 'bin_recyclable'
+  if (cls === 'harmful') return 'bin_hazardous'
+  if (cls === 'kitchen') return 'bin_kitchen'
+  return 'bin_other'
 }
 
 function resetEnhancedRecognition() {
@@ -1387,15 +1391,15 @@ function goHistory() {
 }
 
 function goShop() {
-  uni.navigateTo({ url: '/pages-dark/shop/shop?from=home' })
+  navigateBottomTab('home', 'shop', '/pages-dark/shop/shop?from=home', 'navigateTo')
 }
 
 function goProfile() {
-  uni.redirectTo({ url: '/pages-dark/profile/profile' })
+  navigateBottomTab('home', 'profile', '/pages-dark/profile/profile')
 }
 
 function goMap() {
-  uni.navigateTo({ url: '/pages-dark/map/map?from=home' })
+  navigateBottomTab('home', 'map', '/pages-dark/map/map?from=home', 'navigateTo')
 }
 
 function goGuide() {
@@ -1512,22 +1516,22 @@ function showGuideDetail(type) {
 
   const guides = {
     recyclable: {
-      icon: '♻️',
+      icon: 'bin_recyclable',
       title: '可回收垃圾',
       content: '包括废纸、塑料、玻璃、金属和布料等。可回收物经过分类处理后可再利用，能减少污染并节约资源。'
     },
     harmful: {
-      icon: '☢️',
+      icon: 'bin_hazardous',
       title: '有害垃圾',
       content: '包括废电池、废灯管、废药品、废油漆及其容器等，需投放到有害垃圾回收点进行专门处理。'
     },
     kitchen: {
-      icon: '🍎',
+      icon: 'bin_kitchen',
       title: '厨余垃圾',
       content: '包括剩菜剩饭、果皮果核、骨头、菜叶等厨余废弃物，可通过堆肥等方式资源化处理。'
     },
     other: {
-      icon: '🗑️',
+      icon: 'bin_other',
       title: '其他垃圾',
       content: '包括砖瓦陶瓷、卫生纸、尘土等难以回收利用的废弃物，一般采用卫生填埋等方式处理。'
     }
@@ -1539,7 +1543,7 @@ function showGuideDetail(type) {
     showGuideModal.value = true
   } else {
     currentGuide.value = {
-      icon: '❓',
+      icon: 'help',
       title: '信息缺失',
       content: '抱歉，该分类的详细信息暂时无法显示，请稍后重试。'
     }
@@ -2339,7 +2343,7 @@ function closeAchievementModal() {
 .welcome-card {
   text-align: center;
   background: rgba(15, 15, 35, 0.8);
-  padding: 48rpx 40rpx;
+  padding: 20rpx 40rpx;
   border-radius: 24rpx;
   border: 1px solid rgba(64, 224, 255, 0.2);
   backdrop-filter: blur(20px);
@@ -2348,8 +2352,10 @@ function closeAchievementModal() {
 }
 
 .welcome-icon {
-  font-size: 80rpx;
+  font-size: 88rpx;
   display: block;
+  margin-left: auto;
+  margin-right: auto;
   margin-bottom: 24rpx;
   filter: drop-shadow(0 0 20px rgba(78, 205, 196, 0.6));
 }
@@ -3032,40 +3038,23 @@ function closeAchievementModal() {
   50% { transform: translateY(-5px); }
 }
 
-@keyframes ai-pulse-ring-dark {
-  0% { box-shadow: 0 14rpx 34rpx rgba(56, 189, 248, 0.3), 0 0 0 0 rgba(64, 224, 255, 0.4); }
-  70% { box-shadow: 0 20rpx 48rpx rgba(56, 189, 248, 0.5), 0 0 0 14px rgba(64, 224, 255, 0); }
-  100% { box-shadow: 0 14rpx 34rpx rgba(56, 189, 248, 0.3), 0 0 0 0 rgba(64, 224, 255, 0); }
-}
-
 .floating-agent {
   position: fixed;
   right: 32rpx;
   bottom: calc(148rpx + env(safe-area-inset-bottom));
   width: 92rpx;
   height: 92rpx;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #22c55e, #38bdf8);
-  box-shadow: 0 14rpx 34rpx rgba(56, 189, 248, 0.28);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 120;
   animation: ai-float-idle-dark 3.5s ease-in-out infinite;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
-              box-shadow 0.25s ease,
-              background 0.25s ease;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   cursor: pointer;
 }
 
 .floating-agent:hover {
   transform: translateY(-8px) scale(1.1);
-  background: linear-gradient(135deg, #34d399, #67e8f9);
-  box-shadow:
-    0 20rpx 48rpx rgba(56, 189, 248, 0.55),
-    0 0 0 6px rgba(64, 224, 255, 0.15),
-    0 0 28px rgba(64, 224, 255, 0.45);
-  animation: ai-pulse-ring-dark 1.5s ease-out infinite;
 }
 
 .floating-agent:hover .floating-agent-main {
@@ -3078,9 +3067,7 @@ function closeAchievementModal() {
 }
 
 .floating-agent-main {
-  color: #051923;
-  font-size: 28rpx;
-  font-weight: 800;
+  font-size: 40rpx;
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -3135,13 +3122,15 @@ function closeAchievementModal() {
 }
 
 .tabbar-icon {
-  font-size: 48rpx;
+  font-size: 40rpx;
   margin-bottom: 8rpx;
-  filter: drop-shadow(0 0 8px rgba(64, 224, 255, 0.3));
+  opacity: 0.6;
+  filter: saturate(0.7) drop-shadow(0 0 8px rgba(64, 224, 255, 0.3));
 }
 
 .tabbar-item.active .tabbar-icon {
-  filter: drop-shadow(0 0 12px rgba(64, 224, 255, 0.8));
+  opacity: 1;
+  filter: saturate(1) drop-shadow(0 0 12px rgba(64, 224, 255, 0.8));
   animation: iconGlow 2s ease-in-out infinite;
 }
 

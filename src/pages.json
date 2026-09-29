@@ -311,6 +311,13 @@
 			]
 		}
 	],
+	"preloadRule": {
+		"pages/index/index": { "network": "all", "packages": ["pages-nonTheme"] },
+		"pages/home/home": { "network": "all", "packages": ["pages-nonTheme"] },
+		"pages/map/map": { "network": "all", "packages": ["pages-nonTheme"] },
+		"pages/shop/shop": { "network": "all", "packages": ["pages-nonTheme"] },
+		"pages/profile/profile": { "network": "all", "packages": ["pages-nonTheme"] }
+	},
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
 		"navigationBarTitleText": "分投侠",

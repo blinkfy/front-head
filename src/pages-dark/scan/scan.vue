@@ -3,14 +3,14 @@
     <view class="light-eco-decor" aria-hidden="true">
       <text class="eco-symbol eco-leaf-one">🌿</text>
       <text class="eco-symbol eco-leaf-two">🍃</text>
-      <text class="eco-symbol eco-recycle">♻️</text>
+      <ManifestIcon class="eco-symbol eco-recycle" id="recycling_contribution" />
     </view>
     <view class="scan-topbar">
       <view class="back-btn" @click="goBack" aria-label="返回">
-        <text class="back-icon">‹</text>
+        <ManifestIcon class="back-icon" id="back" />
       </view>
       <view class="topbar-brand">
-        <image class="brand-image" src="/static/colorful-bin.png" mode="aspectFit" />
+        <image class="brand-image" :src="getManifestIconPath('colorful_bin')" mode="aspectFit" />
         <view class="brand-copy">
           <text class="brand-title">智能设备连接</text>
           <text class="brand-subtitle">分投侠设备服务</text>
@@ -27,11 +27,11 @@
         <view class="device-visual" :class="{ connected, loading, error: !connected && !loading }">
           <view class="visual-ring ring-one"></view>
           <view class="visual-ring ring-two"></view>
-          <image class="device-visual-image" src="/static/colorful-bin.png" mode="aspectFit" />
+          <image class="device-visual-image" :src="getManifestIconPath('colorful_bin')" mode="aspectFit" />
           <view class="visual-status-mark">
             <text v-if="loading">···</text>
-            <text v-else-if="connected">✓</text>
-            <text v-else>!</text>
+            <ManifestIcon v-else-if="connected" id="confirm" />
+            <ManifestIcon v-else id="dark_alert" />
           </view>
         </view>
         <text class="overview-title">{{ connected ? (deviceMode === 'bin' ? '连接后的每一投，都算数' : '设备已连接') : loading ? '正在验证设备' : '等待设备连接' }}</text>
@@ -46,7 +46,7 @@
       </view>
 
       <view v-if="connected && deviceMode === 'bin'" class="session-guide">
-        <view class="guide-heading"><text class="guide-leaf">♻</text><text>让每次投放都有回响</text></view>
+        <view class="guide-heading"><ManifestIcon class="guide-leaf" id="recycling_contribution" /><text>让每次投放都有回响</text></view>
         <view class="guide-step">
           <text class="guide-number">01</text>
           <view class="guide-copy"><text class="guide-title">跟随垃圾桶提示投放</text><text class="guide-description">开门、识别等操作，请以设备提示为准。</text></view>
@@ -134,6 +134,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { onShow, onHide } from '@dcloudio/uni-app'
 import BinSessionPanel from '@/components/BinSessionPanel.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { getDeviceAPI, testDeviceAPI } from '@/utils/device-api-loader.js'
 import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr.js'
 
@@ -1236,8 +1238,9 @@ function goBack() {
   position: absolute;
   top: 60rpx;
   left: 40rpx;
-  width: 90rpx;
-  height: 90rpx;
+  box-sizing: border-box;
+  width: 88rpx;
+  height: 88rpx;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(20px);
   border-radius: 50%;
@@ -1911,8 +1914,8 @@ page {
 
 .scan-topbar .back-btn {
   position: static;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -2643,13 +2646,13 @@ button.action-btn {
   .scan-topbar {
     min-height: 70px;
     padding: max(14px, env(safe-area-inset-top)) 0 8px;
-    grid-template-columns: 40px minmax(0, 1fr) 34px;
+    grid-template-columns: 44px minmax(0, 1fr) 34px;
     gap: 9px;
   }
 
   .scan-topbar .back-btn {
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    height: 44px;
     border-radius: 11px;
   }
 
@@ -3127,15 +3130,15 @@ button.action-btn {
   min-height: 64px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
 }
 
 .scan-topbar .back-btn {
   position: static;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3619,13 +3622,13 @@ button.action-btn {
 
   .scan-topbar {
     min-height: 56px;
-    grid-template-columns: 38px minmax(0, 1fr) auto;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
     gap: 9px;
   }
 
   .scan-topbar .back-btn {
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    height: 44px;
   }
 
   .brand-image { width: 32px; height: 32px; }

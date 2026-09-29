@@ -15,11 +15,6 @@
       <view v-if="!isDarkTheme" class="bg-circle circle-green"></view>
     </view>
 
-    <!-- 返回按钮 -->
-    <view class="back-btn" @click="goBack">
-      <text class="back-icon">←</text>
-    </view>
-
     <!-- 主内容 -->
     <view class="content-wrapper">
       <!-- 应用信息卡片 -->
@@ -29,6 +24,11 @@
         <text class="app-slogan">智能垃圾分类助手</text>
         <text class="app-version">Version {{ currentVersion }}</text>
         <text class="app-slogan">让垃圾分类更智能，让环保更简单</text>
+        <view class="version-actions">
+          <view class="check-update" :class="{ checking }" @click="checkLatestVersion(true)">
+            {{ checking ? '检查中…' : '检查更新' }}
+          </view>
+        </view>
 
         <!-- info-card footer: compact update controls (only when update exists) -->
         <view class="info-footer" v-if="hasUpdate">
@@ -43,33 +43,13 @@
       <!-- 功能介绍 -->
       <view class="features-section">
         <text class="section-title">✨ 核心功能</text>
+        <text class="section-intro">从分类查询到智能投放，记录每一步环保行动</text>
         <view class="feature-list">
-          <view class="feature-item">
-            <text class="feature-icon">📸</text>
+          <view v-for="feature in features" :key="feature.name" class="feature-item">
+            <ManifestIcon class="feature-icon" :id="feature.icon" />
             <view class="feature-info">
-              <text class="feature-name">AI智能识别</text>
-              <text class="feature-desc">拍照精确在线识别垃圾类别</text>
-            </view>
-          </view>
-          <view class="feature-item">
-            <text class="feature-icon">🗺️</text>
-            <view class="feature-info">
-              <text class="feature-name">垃圾桶地图</text>
-              <text class="feature-desc">快速定位附近的分类垃圾桶</text>
-            </view>
-          </view>
-          <view class="feature-item">
-            <text class="feature-icon">📚</text>
-            <view class="feature-info">
-              <text class="feature-name">设备连接</text>
-              <text class="feature-desc">连接智能分类设备自动分类</text>
-            </view>
-          </view>
-          <view class="feature-item">
-            <text class="feature-icon">🌱</text>
-            <view class="feature-info">
-              <text class="feature-name">环保积分</text>
-              <text class="feature-desc">记录您的环保贡献和减碳量</text>
+              <text class="feature-name">{{ feature.name }}</text>
+              <text class="feature-desc">{{ feature.desc }}</text>
             </view>
           </view>
         </view>
@@ -80,16 +60,16 @@
         <text class="section-title">🔬 技术支持</text>
         <view class="tech-info">
           <view class="tech-item">
-            <text class="tech-label">AI模型：</text>
-            <text class="tech-value">YOLO11图像识别 + 图神经网络</text>
+            <text class="tech-label">识别方式：</text>
+            <text class="tech-value">图像识别与 AI 对话辅助</text>
           </view>
           <view class="tech-item">
-            <text class="tech-label">框架：</text>
-            <text class="tech-value">uni-app + Vue3 + Python + MySQL + ultralytics</text>
+            <text class="tech-label">客户端：</text>
+            <text class="tech-value">uni-app + Vue 3</text>
           </view>
           <view class="tech-item">
-            <text class="tech-label">数据来源：</text>
-            <text class="tech-value">垃圾分类公开数据集·3万张（在线识别）<br /> 自研高质量数据集 · 1万张 （装置识别）</text>
+            <text class="tech-label">设备反馈：</text>
+            <text class="tech-value">以服务端收到的投放记录为准</text>
           </view>
         </view>
       </view>
@@ -98,7 +78,7 @@
       <view class="developer-section">
         <text class="developer-title">👨‍💻 开发团队</text>
         <text class="developer-name" @click="openProfileWebview">@xvan</text>
-        <text class="developer-year">2025</text>
+        <text class="developer-year">2025–{{ currentYear }}</text>
         <text class="developer-motto">用技术守护绿色地球 🌍</text>
       </view>
 
@@ -116,24 +96,25 @@ import { baseUrl } from '@/api/settings'
 import request from '@/api/index'
 import manifest from '@/manifest.json'
 import { ref, onMounted } from 'vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 // 主题相关
-const isDarkTheme = ref(false)
+const isDarkTheme = ref(uni.getStorageSync('app_theme') === 'dark')
+const currentYear = new Date().getFullYear()
+const features = [
+  { icon: 'camera_scan', name: '拍照识别', desc: '拍照获取垃圾分类建议' },
+  { icon: 'ai_assistant', name: 'AI 环保助手', desc: '通过对话查询分类与环保问题' },
+  { icon: 'device_connect', name: '智能投放', desc: '扫码连接设备，查看已同步的投放与积分' },
+  { icon: 'recognition_history', name: '分类记录', desc: '查看在线识别与设备分类历史' },
+  { icon: 'nearby_map', name: '附近设备', desc: '在地图上寻找附近的分类设施' },
+  { icon: 'store', name: '积分与商城', desc: '积累环保积分，浏览兑换商品' },
+  { icon: 'achievements', name: '挑战与成就', desc: '参与答题挑战，查看成就与排行' },
+  { icon: 'community_home', name: '社区交流', desc: '加入社区，分享环保行动' }
+]
 
 function checkTheme() {
   const theme = uni.getStorageSync('app_theme')
   isDarkTheme.value = theme === 'dark'
-}
-
-function goBack() {
-  const pages = getCurrentPages()
-  if (pages.length > 1) {
-    uni.navigateBack()
-  } else {
-    uni.reLaunch({
-      url: '/pages/home/home'
-    })
-  }
 }
 
 const currentVersion = manifest?.versionName || '1.3.14'
@@ -212,11 +193,12 @@ function compareVersion(a = '0.0.0', b = '0.0.0') {
   return 0
 }
 
-async function checkLatestVersion() {
+async function checkLatestVersion(manual = false) {
+  if (checking.value) return
   checking.value = true
   updateMessage.value = ''
   try {
-    // 后端接口假定为 /api/app/version，返回结构可能为 { code:0, data: { versionName, versionCode, url } }
+    // 版本信息来自现有的 /api/version 接口。
     const res = await request({ url: '/api/version', method: 'GET' })
     // request 返回的可能是 res.data 或直接 data
     const payload = res?.data || res || {}
@@ -225,12 +207,14 @@ async function checkLatestVersion() {
     if (!latest) {
       updateMessage.value = '未从服务器获取到版本信息'
       hasUpdate.value = false
+      if (manual) uni.showToast({ title: '暂时无法获取版本信息', icon: 'none' })
     } else {
       if (compareVersion(latest, currentVersion) <= 0) {
         // 已是最新，隐藏更新控件
         updateMessage.value = ''
         latestUrl.value = ''
         hasUpdate.value = false
+        if (manual) uni.showToast({ title: '已是最新版本', icon: 'none' })
       } else {
         latestUrl.value = download
         updateMessage.value = `发现新版本 ${latest}，点击下载更新`
@@ -251,6 +235,7 @@ async function checkLatestVersion() {
   } catch (e) {
     console.error('checkLatestVersion error', e)
     updateMessage.value = '检查失败，请稍后重试'
+    if (manual) uni.showToast({ title: '检查失败，请稍后重试', icon: 'none' })
   } finally {
     checking.value = false
   }
@@ -495,64 +480,12 @@ onMounted(() => {
   }
 }
 
-/* ===== 返回按钮 ===== */
-.back-btn {
-  position: absolute;
-  top: 20rpx;
-  left: 20rpx;
-  width: 80rpx;
-  height: 80rpx;
-  backdrop-filter: blur(10px);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  transition: all 0.3s ease;
-  cursor: pointer;
-}
-
-/* 浅色模式返回按钮 */
-.about-container .back-btn {
-  background: rgba(16, 185, 129, 0.1);
-  border: 2px solid rgba(16, 185, 129, 0.3);
-}
-
-.about-container .back-btn:active {
-  transform: scale(0.9);
-  background: rgba(16, 185, 129, 0.2);
-}
-
-/* 暗色模式返回按钮 */
-.about-container.dark-theme .back-btn {
-  background: rgba(137, 136, 136, 0.503);
-  border: 2px solid rgba(255, 255, 255, 0.6);
-}
-
-.about-container.dark-theme .back-btn:active {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.back-icon {
-  font-size: 32rpx;
-  font-weight: bold;
-  transition: color 0.3s ease;
-}
-
-/* 浅色模式icon */
-.about-container .back-icon {
-  color: #059669;
-}
-
-/* 暗色模式icon */
-.about-container.dark-theme .back-icon {
-  color: #ffffff;
-}
-
 /* ===== 内容容器 ===== */
 .content-wrapper {
   position: relative;
   z-index: 10;
+  max-width: 900px;
+  margin: 0 auto;
   padding: 20rpx 40rpx 0;
   display: flex;
   flex-direction: column;
@@ -632,6 +565,30 @@ onMounted(() => {
   font-weight: 500;
   margin-bottom: 8rpx;
   transition: color 0.3s ease;
+}
+
+.version-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 18rpx;
+}
+
+.check-update {
+  padding: 12rpx 28rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid rgba(16, 185, 129, 0.24);
+  background: rgba(16, 185, 129, 0.08);
+  color: #047857;
+  font-size: 24rpx;
+  cursor: pointer;
+}
+
+.check-update.checking { opacity: 0.55; }
+
+.about-container.dark-theme .check-update {
+  color: #bbf7d0;
+  border-color: rgba(187, 247, 208, 0.25);
+  background: rgba(16, 185, 129, 0.15);
 }
 
 .about-container.dark-theme .app-slogan {
@@ -758,20 +715,36 @@ onMounted(() => {
   transition: color 0.3s ease;
 }
 
+.section-intro {
+  display: block;
+  margin: -14rpx 0 24rpx;
+  color: #64748b;
+  font-size: 24rpx;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.about-container.dark-theme .section-intro { color: #aeb9d6; }
+
 .about-container.dark-theme .section-title {
   color: #e0e0e0;
 }
 
 .feature-list {
-  display: flex;
-  flex-direction: column;
-  gap: 25rpx;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+}
+
+@media (min-width: 800px) {
+  .feature-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .feature-item {
   display: flex;
-  align-items: center;
-  padding: 20rpx;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 20rpx 16rpx;
   border-radius: 20rpx;
   transition: all 0.3s ease;
   border-left: 6rpx solid;
@@ -790,18 +763,19 @@ onMounted(() => {
 }
 
 .feature-icon {
-  font-size: 40rpx;
-  margin-right: 20rpx;
+  font-size: 34rpx;
+  margin-right: 12rpx;
   flex-shrink: 0;
 }
 
 .feature-info {
   flex: 1;
+  min-width: 0;
 }
 
 .feature-name {
   display: block;
-  font-size: 30rpx;
+  font-size: 27rpx;
   font-weight: 600;
   color: #2d3748;
   margin-bottom: 6rpx;
@@ -814,7 +788,7 @@ onMounted(() => {
 
 .feature-desc {
   display: block;
-  font-size: 26rpx;
+  font-size: 23rpx;
   color: #718096;
   line-height: 1.4;
   transition: color 0.3s ease;

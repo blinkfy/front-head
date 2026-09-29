@@ -15,7 +15,7 @@
         :aria-label="backLabel"
         @tap="emit('back')"
       >
-        <text class="admin-screen-header__back-icon">←</text>
+        <ManifestIcon class="admin-screen-header__back-icon" id="back" :scale="1" />
         <text>{{ backLabel }}</text>
       </view>
     </view>
@@ -24,6 +24,7 @@
 
 <script setup>
 import AdminScreenSwitcher from './AdminScreenSwitcher.vue'
+import ManifestIcon from './ManifestIcon.vue'
 
 const props = defineProps({
   screenKey: {
@@ -86,7 +87,7 @@ const emit = defineEmits(['back', 'screen-action'])
   justify-content: center;
   gap: 5px;
   min-width: 70px;
-  height: var(--admin-screen-control-height);
+  height: 40px;
   padding: 0 11px;
   border: 1px solid rgba(144, 198, 219, 0.3);
   border-radius: var(--admin-screen-control-radius);
@@ -109,6 +110,15 @@ const emit = defineEmits(['back', 'screen-action'])
   color: #9edcf0;
   font-size: 16px;
   line-height: 1;
+}
+
+.admin-screen-header:not(.admin-screen-header--light) .admin-screen-header__back-icon {
+  filter: brightness(0) invert(1);
+}
+
+.admin-screen-header__back-icon :deep(.manifest-icon-back-image) {
+  width: 54rpx;
+  height: 54rpx;
 }
 
 .admin-screen-header--light .admin-screen-header__back {

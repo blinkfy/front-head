@@ -2,9 +2,9 @@
   <view class="contacts-page">
     <view class="contacts-header" :style="{ paddingTop: `${statusBarHeight}px` }">
       <view class="header-row">
-        <view class="icon-button" @click="goBack"><text>‹</text></view>
+        <view class="icon-button" @click="goBack"><ManifestIcon id="back" :scale="1.1" /></view>
         <text class="header-title">联系人</text>
-        <view class="icon-button" @click="refreshAll"><text>↻</text></view>
+      <view class="icon-button" @click="refreshAll"><ManifestIcon class="refresh-contact-icon" id="refresh" :scale="1.1" /></view>
       </view>
       <view class="contact-tabs">
         <view v-for="tab in tabs" :key="tab.key" class="contact-tab"
@@ -29,10 +29,10 @@
                 <text class="contact-username">用户名：{{ friend.username }}</text>
               </view>
             </view>
-            <text class="contact-chevron">›</text>
+            <ManifestIcon class="contact-chevron" id="chevron_right" :scale="1" />
           </view>
         </view>
-        <view v-else class="empty-state"><text class="empty-icon">👥</text><text>还没有联系人，去搜索添加吧</text></view>
+        <view v-else class="empty-state"><ManifestIcon class="empty-icon" id="contacts" :scale="1" /><text>还没有联系人，去搜索添加吧</text></view>
       </template>
 
       <template v-else-if="activeTab === 'requests'">
@@ -97,7 +97,7 @@
             <view v-for="friend in groupContactCandidates" :key="friend.id" class="picker-member" @click="toggleSelectedFriend(friend.id)">
               <image class="picker-avatar" :src="avatarFor(friend)" mode="aspectFill" />
               <text class="picker-name">{{ friend.note || friend.username }}</text>
-              <view class="member-check" :class="{ selected: selectedFriendIds.includes(friend.id) }"><text v-if="selectedFriendIds.includes(friend.id)">✓</text></view>
+              <view class="member-check" :class="{ selected: selectedFriendIds.includes(friend.id) }"><ManifestIcon v-if="selectedFriendIds.includes(friend.id)" id="confirm" :scale="1" /></view>
             </view>
           </view>
           <view v-else class="compact-empty">暂无可邀请的联系人</view>
@@ -112,7 +112,7 @@
               <text class="contact-name">{{ group.name }}</text>
               <text class="contact-subtitle">{{ group.memberCount || 1 }} 位成员{{ group.latestContent ? ` · ${formatGroupMessage(group.latestContent)}` : '' }}</text>
             </view>
-            <text class="contact-chevron">›</text>
+            <ManifestIcon class="contact-chevron" id="chevron_right" :scale="1" />
           </view>
         </view>
         <view v-else class="compact-empty">暂无群聊</view>
@@ -125,8 +125,10 @@
 import * as chatApi from '@/api/chat'
 import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 export default {
+  components: { ManifestIcon },
   data() {
     return {
       statusBarHeight: 20,
@@ -353,7 +355,8 @@ export default {
 }
 
 .header-title { font-size: 34rpx; font-weight: 700; }
-.icon-button { width: 56rpx; height: 56rpx; display: flex; align-items: center; justify-content: center; font-size: 44rpx; color: #365260; }
+.icon-button { width: 80rpx; height: 80rpx; display: flex; align-items: center; justify-content: center; font-size: 44rpx; color: #365260; }
+.refresh-contact-icon { transform: scale(0.72); }
 .contact-tabs { display: flex; padding: 0 18rpx; }
 .contact-tab { position: relative; flex: 1; height: 70rpx; display: flex; align-items: center; justify-content: center; font-size: 26rpx; color: #7a8790; }
 .contact-tab.active { color: #068a68; font-weight: 700; }
