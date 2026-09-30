@@ -80,7 +80,7 @@
 
       <!-- 识别结果区域 -->
       <view v-if="resultImage" class="result-card">
-        <view v-if="classificationUi !== 'recognizing'" class="result-header">
+        <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending" class="result-header">
           <view class="result-title"><ManifestIcon id="accuracy_target" /> 识别结果</view>
           <view class="confidence-badge">
             <text class="confidence-text">{{ resultConfidence }}</text>
@@ -89,7 +89,7 @@
         
         <view class="result-image-wrap">
           <image :src="resultImage" class="result-image" mode="aspectFit" />
-          <view v-if="classificationUi !== 'recognizing' && displayBboxes.length" class="recognition-bbox-layer">
+          <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending && displayBboxes.length" class="recognition-bbox-layer">
             <view
               v-for="(bbox, index) in displayBboxes"
               :key="`bbox-${index}`"
@@ -101,7 +101,7 @@
           </view>
         </view>
 
-        <view v-if="classificationUi !== 'recognizing'" class="result-info">
+        <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending" class="result-info">
           <view class="category-row">
             <view class="category-tag" :class="getCategoryClass(resultCategory)">
               <ManifestIcon class="tag-icon" :id="getCategoryIcon(resultCategory)" />
@@ -381,8 +381,14 @@ const robotFeedbackActive = ref(false)
 const robotPageActive = ref(true)
 const robotEntryReturning = ref(false)
 const robotAtEntry = ref(false)
+const failedPreviewPending = ref(false)
 
 function onRobotReturning() {
+  // Fail 已播放完成，此时再移除失败图片，随后测量入口落点。
+  if (failedPreviewPending.value) {
+    resultImage.value = ''
+    failedPreviewPending.value = false
+  }
   classificationUi.value = 'initial'
   robotEntryReturning.value = true
   robotAtEntry.value = false
@@ -885,6 +891,7 @@ function applyRecognitionResult(res, showSuccessToast = false) {
 function restoreRecognitionTask(task = getRecognitionTask()) {
   if (!task) return
   if (task.status === 'pending') {
+    failedPreviewPending.value = false
     classificationUi.value = 'recognizing'
     robotFeedbackActive.value = true
     robotState.value = 'processing'
@@ -893,6 +900,7 @@ function restoreRecognitionTask(task = getRecognitionTask()) {
     return
   }
   if (task.status === 'succeeded' && task.result) {
+    failedPreviewPending.value = false
     classificationUi.value = 'complete'
     robotFeedbackActive.value = true
     robotState.value = task.result.labels?.length ? 'success' : 'fail'
@@ -902,6 +910,7 @@ function restoreRecognitionTask(task = getRecognitionTask()) {
     return
   }
   if (task.status === 'failed') {
+    failedPreviewPending.value = true
     classificationUi.value = 'complete'
     robotFeedbackActive.value = true
     robotState.value = 'fail'
@@ -1279,6 +1288,7 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 }
 
 async function processImage(filePath) {
+  failedPreviewPending.value = false
   const taskId = beginRecognitionTask('图片处理中...')
   activeRecognitionTaskId = taskId
   classificationUi.value = 'recognizing'
@@ -1376,7 +1386,7 @@ async function processImage(filePath) {
     classificationUi.value = 'complete'
     clearRecognitionTask(taskId)
     resetEnhancedRecognition()
-    resultImage.value = ''
+    failedPreviewPending.value = true
     resultCategory.value = ''
     resultConfidence.value = ''
     resultDesc.value = ''

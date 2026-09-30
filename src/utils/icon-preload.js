@@ -1,5 +1,4 @@
-import manifest from '@/static/manifest.json'
-import { getManifestIconPath } from './manifest-icons.js'
+import { getManifestIconPath, getManifestIcons } from './manifest-icons.js'
 
 const PRIORITY_IDS = ['home', 'map_location', 'store', 'user_profile', 'back', 'help']
 const CONCURRENCY = 2
@@ -43,6 +42,7 @@ function preloadImage(source) {
 export function warmManifestIcons() {
   if (scheduled) return
   scheduled = true
+  const manifest = getManifestIcons()
   const ids = [
     ...PRIORITY_IDS,
     ...manifest.filter(icon => icon.category === '01_core').map(icon => icon.id),

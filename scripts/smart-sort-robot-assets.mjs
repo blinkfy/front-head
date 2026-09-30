@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { ROBOT_MP_PACKAGE_NAME } from '../src/components/smart-sort-robot-mp.mjs'
 import { refineIdleMotion } from '../src/components/smart-sort-robot-idle.mjs'
-import { refineSuccessMotion } from '../src/components/smart-sort-robot-engine.mjs'
+import { refineSuccessMotion, refineFailMotion } from '../src/components/smart-sort-robot-engine.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const modelPath = path.join(root, 'src/static/web/robot_3d/smart_sort_robot_v34_animated.glb')
@@ -14,7 +14,7 @@ const xrRoot = `${ROBOT_MP_PACKAGE_NAME}/static/robot_3d`
 const xrComponentRoot = 'components/smart-sort-xr'
 let bakedPromise
 
-// 保留原 GLB 几何/材质，仅追加并替换三段已调好的动画数据。
+// 保留原 GLB 几何；同步已调好的动画与失败问号的独立材质。
 export async function bakeRobotModel() {
   const source = await fs.readFile(modelPath)
   let json, bin
@@ -31,6 +31,34 @@ export async function bakeRobotModel() {
   const center = new THREE.Box3().setFromObject(gltf.scene).getCenter(new THREE.Vector3()).toArray()
   refineIdleMotion(gltf.animations, gltf.scene)
   refineSuccessMotion(gltf.animations.find(clip => clip.name === 'Success'))
+  refineFailMotion(gltf.animations.find(clip => clip.name === 'Fail'), gltf.scene)
+  // 原符号材质被其它特效共用，只为这两个节点追加材质/mesh引用，保留其它效果。
+  for (const name of ['FX_FailBadge', 'FX_FailQuestion']) {
+    const node = json.nodes.find(item => item.name === name)
+    const material = gltf.scene.getObjectByName(name)?.material
+    if (node?.mesh === undefined || !material) throw new Error(`Robot badge material missing: ${name}`)
+    const mesh = json.meshes[node.mesh]
+    const primitives = mesh.primitives.map((primitive, index) => {
+      const styled = Array.isArray(material) ? material[index] : material
+      const sourceMaterial = json.materials[primitive.material]
+      const next = {
+        ...sourceMaterial,
+        name: `${name}_Readable`,
+        pbrMetallicRoughness: {
+          ...sourceMaterial.pbrMetallicRoughness,
+          baseColorFactor: [...styled.color.toArray(), styled.opacity],
+          metallicFactor: styled.metalness,
+          roughnessFactor: styled.roughness
+        },
+        emissiveFactor: styled.emissive.toArray(),
+        alphaMode: 'OPAQUE'
+      }
+      json.materials.push(next)
+      return { ...primitive, material: json.materials.length - 1 }
+    })
+    json.meshes.push({ ...mesh, primitives })
+    node.mesh = json.meshes.length - 1
+  }
   const reduced = gltf.animations.map(clip => clip.clone())
   refineIdleMotion(reduced, gltf.scene, { reducedMotion: true })
   const reducedIdle = reduced.find(clip => clip.name === 'Idle_Base')
@@ -50,7 +78,7 @@ export async function bakeRobotModel() {
     json.accessors.push(item)
     return json.accessors.length - 1
   }
-  for (const name of ['Idle_Base', 'Idle_Curious', 'Success', 'Idle_Reduced']) {
+  for (const name of ['Idle_Base', 'Idle_Curious', 'Success', 'Fail', 'Idle_Reduced']) {
     const clip = gltf.animations.find(animation => animation.name === name)
     if (!clip) throw new Error(`Robot animation missing: ${name}`)
     const animation = { name, samplers: [], channels: [] }

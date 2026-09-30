@@ -278,7 +278,7 @@
 
             <view class="composer-right">
               <view class="btn-attach" @tap="onPickImage">
-                <ManifestIcon class="attach-icon" id="image_gallery" :scale="1.1" />
+                <ManifestIcon class="attach-icon" id="image_gallery" :scale="1.5" />
               </view>
               <view
                 v-if="isStreaming"
@@ -292,7 +292,7 @@
                 class="btn-send"
                 @tap="onSend"
               >
-                <ManifestIcon class="send-icon" id="submit_action" :scale="1" />
+                <ManifestIcon class="send-icon" id="submit_action" :scale="1.5" />
               </view>
             </view>
           </view>

@@ -26,6 +26,7 @@ import { computed, ref, watch } from 'vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 
 const warnedMissingIds = new Set()
+const warnedFailedSources = new Set()
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -50,7 +51,11 @@ const source = computed(() => {
   return fallbackSource
 })
 
-function handleImageError() {
+function handleImageError(event) {
+  if (source.value && !warnedFailedSources.has(source.value)) {
+    warnedFailedSources.add(source.value)
+    console.warn(`[ManifestIcon] Failed to load "${props.id}" from "${source.value}"`, event?.detail?.errMsg || 'image error')
+  }
   if (source.value && source.value !== fallbackSource) {
     failedSource.value = source.value
   } else {

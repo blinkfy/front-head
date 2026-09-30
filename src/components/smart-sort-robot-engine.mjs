@@ -70,6 +70,124 @@ export function refineSuccessMotion(clip) {
   replace(scale, THREE.VectorKeyframeTrack, scales)
 }
 
+// 失败以清晰的低头、摇头反馈；面部缩放围绕几何中心，避免眼睛和嘴漂移。
+export function refineFailMotion(clip, model) {
+  if (!clip || !model) return
+  model.updateMatrixWorld(true)
+  const nodes = new Map()
+  model.traverse(node => { if (node.name) nodes.set(node.name, node) })
+  const head = nodes.get('HeadRoot'), mouth = nodes.get('Mouth'), frown = nodes.get('FX_FailMouth')
+  if (!head || !mouth || !frown) return
+  // 问号在首页只占几个像素：使用独立的高对比材质，避免发光把白色符号融进黄底。
+  for (const [name, color] of [['FX_FailBadge', 0xeea91f], ['FX_FailQuestion', 0x4b2e08]]) {
+    nodes.get(name)?.traverse(node => {
+      if (!node.isMesh) return
+      const readable = original => {
+        const material = original.clone()
+        material.color.setHex(color)
+        material.emissive.setHex(0x000000)
+        material.metalness = 0
+        material.roughness = 1
+        material.opacity = 1
+        material.transparent = false
+        return material
+      }
+      node.material = Array.isArray(node.material) ? node.material.map(readable) : readable(node.material)
+    })
+  }
+  const smooth = value => value * value * (3 - 2 * value)
+  const curve = (t, keys) => {
+    for (let index = 1; index < keys.length; index++) {
+      if (t <= keys[index][0]) {
+        const [start, from] = keys[index - 1], [end, to] = keys[index]
+        return from + (to - from) * smooth(THREE.MathUtils.clamp((t - start) / (end - start), 0, 1))
+      }
+    }
+    return keys[keys.length - 1][1]
+  }
+  const centers = new Map()
+  const geometryCenter = node => {
+    if (!centers.has(node)) {
+      node.geometry?.computeBoundingBox()
+      centers.set(node, node.geometry?.boundingBox?.getCenter(new THREE.Vector3()) || new THREE.Vector3())
+    }
+    return centers.get(node).clone()
+  }
+  const samples = Math.ceil(clip.duration * 60)
+  const times = Array.from({ length: samples + 1 }, (_, index) => clip.duration * index / samples)
+  const tracks = new Map()
+  const append = (node, property, value) => {
+    const name = `${node.name}.${property}`
+    if (!tracks.has(name)) tracks.set(name, [])
+    tracks.get(name).push(...value.toArray())
+  }
+  const scaledAtCenter = (node, factor) => {
+    const scale = node.scale.clone().multiply(factor)
+    const position = node.position.clone().add(geometryCenter(node).multiply(node.scale.clone().sub(scale)))
+    append(node, 'scale', scale)
+    append(node, 'position', position)
+  }
+  // 嘴角沿 HeadRoot 的变换运动，即使 FXRoot 与 HeadRoot 不在同一层级也能贴合脸部。
+  const parentToFx = new THREE.Matrix4().copy(frown.parent.matrixWorld).invert().multiply(head.parent.matrixWorld)
+  const restHeadToFx = new THREE.Matrix4().copy(frown.parent.matrixWorld).invert().multiply(head.matrixWorld)
+  const mouthWorldCenter = geometryCenter(mouth).applyMatrix4(mouth.matrixWorld)
+  const frownPosition = frown.position.clone()
+  frownPosition.y = mouthWorldCenter.applyMatrix4(frown.parent.matrixWorld.clone().invert()).y
+  const frownInHead = frownPosition.clone().applyMatrix4(restHeadToFx.clone().invert())
+  const restRotationInverse = new THREE.Quaternion().setFromRotationMatrix(restHeadToFx.clone().extractRotation(restHeadToFx)).invert()
+  const radians = THREE.MathUtils.degToRad
+  for (const time of times) {
+    const t = time / clip.duration
+    const expression = curve(t, [[0, 0], [0.20, 1], [0.70, 1], [1, 0]])
+    const yaw = curve(t, [[0, 0], [0.22, -12], [0.43, 12], [0.62, -8], [0.78, 3], [1, 0]])
+    const headRotation = head.quaternion.clone().multiply(new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(radians(6.5 * expression), radians(yaw), radians(yaw * 0.22 - 0.8 * expression), 'YXZ')
+    ))
+    const headPosition = head.position.clone().add(new THREE.Vector3(0, -0.025 * expression, 0))
+    append(head, 'quaternion', headRotation)
+    append(head, 'position', headPosition)
+    for (const name of ['RobotRoot', 'BodyRoot']) {
+      const node = nodes.get(name)
+      if (!node) continue
+      if (name === 'RobotRoot') append(node, 'position', node.position.clone().add(new THREE.Vector3(0, -0.012 * expression, 0)))
+      else append(node, 'quaternion', node.quaternion)
+    }
+    for (const name of ['EyeL', 'EyeR', 'EyeLGlow', 'EyeRGlow']) {
+      const node = nodes.get(name)
+      if (!node) continue
+      scaledAtCenter(node, new THREE.Vector3(1, 1 - 0.35 * expression, 1))
+      append(node, 'quaternion', node.quaternion)
+    }
+    for (const name of ['Mouth', 'MouthGlow']) {
+      const node = nodes.get(name)
+      if (node) scaledAtCenter(node, new THREE.Vector3().setScalar(1 - 0.98 * expression))
+    }
+    const headToFx = parentToFx.clone().multiply(new THREE.Matrix4().compose(headPosition, headRotation, head.scale))
+    append(frown, 'position', frownInHead.clone().applyMatrix4(headToFx))
+    append(frown, 'quaternion', new THREE.Quaternion().setFromRotationMatrix(headToFx.clone().extractRotation(headToFx))
+      .multiply(restRotationInverse).multiply(frown.quaternion))
+    append(frown, 'scale', frown.scale.clone().setScalar(Math.max(0.001, 1.1 * expression)))
+    for (const [name, size, depth] of [['FX_FailBadge', 1.6, 0.79], ['FX_FailQuestion', 1.7, 0.86]]) {
+      const node = nodes.get(name)
+      if (!node) continue
+      append(node, 'position', new THREE.Vector3(1.36, 1.22, depth))
+      append(node, 'scale', new THREE.Vector3().setScalar(Math.max(0.001, size * expression)))
+    }
+    for (const [name, angle] of [['SproutRoot', 12], ['LeafL', 8], ['LeafLHighlight', 8], ['LeafLVeins', 8], ['LeafR', -10], ['LeafRHighlight', -10], ['LeafRVeins', -10]]) {
+      const node = nodes.get(name)
+      if (!node) continue
+      const lagged = curve(Math.max(0, t - 0.05), [[0, 0], [0.20, 1], [0.60, -0.4], [0.95, 0]])
+      append(node, 'quaternion', node.quaternion.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), radians(angle * lagged))))
+    }
+  }
+  const replaced = new Set(tracks.keys())
+  clip.tracks = clip.tracks.filter(track => !replaced.has(track.name))
+  for (const [name, values] of tracks) {
+    const Track = name.endsWith('.quaternion') ? THREE.QuaternionKeyframeTrack : THREE.VectorKeyframeTrack
+    clip.tracks.push(new Track(name, times, values))
+  }
+}
+
 function disposeModel(root) {
   const materials = new Set()
   const textures = new Set()
@@ -290,6 +408,7 @@ export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active
     scene.add(holder)
     refineIdleMotion(gltf.animations, model, { reducedMotion })
     refineSuccessMotion(gltf.animations.find(clip => clip.name === 'Success'))
+    refineFailMotion(gltf.animations.find(clip => clip.name === 'Fail'), model)
     mixer = new THREE.AnimationMixer(model)
     actions = new Map(gltf.animations.map(clip => [clip.name, mixer.clipAction(clip)]))
     mixer.addEventListener('finished', finished)

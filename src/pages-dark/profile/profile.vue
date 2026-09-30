@@ -151,7 +151,10 @@
           <view class="stat-info">
             <text class="stat-label">回收贡献</text>
             <text class="stat-value">{{ Math.floor((points || 0) / 8) }}</text>
-            <text class="stat-unit">ITEMS RECYCLED</text>
+            <text class="stat-unit">ECO CONTRIBUTION</text>
+          </view>
+          <view class="info-icon" @click="showContributionInfo">
+            <ManifestIcon class="info-symbol" id="recycling_contribution" />
           </view>
           <view class="progress-bar">
             <view class="progress-fill recycle" style="width: 92%;"></view>
@@ -443,6 +446,41 @@
         <view class="modal-glow-effect"></view>
       </view>
     </view>
+    <view v-if="showContributionModal" class="info-modal-overlay" @click="closeContributionInfo" @touchmove.stop.prevent>
+      <view class="info-modal" @click.stop @touchmove.stop>
+        <view class="info-modal-header">
+          <view class="info-modal-title"><ManifestIcon id="recycling_contribution" /> 回收贡献说明</view>
+          <ManifestIcon class="info-modal-close" id="close" @click="closeContributionInfo" />
+        </view>
+        <view class="info-modal-content">
+          <view class="info-item">
+            <view class="info-icon-wrapper online"><ManifestIcon class="info-emoji" id="eco_points" /></view>
+            <view class="info-text">
+              <text class="info-title">累计环保参与</text>
+              <text class="info-desc">用于展示您在垃圾分类与回收中的环保参与贡献</text>
+            </view>
+          </view>
+          <view class="info-item">
+            <view class="info-icon-wrapper device"><ManifestIcon class="info-emoji" id="reward_gift" /></view>
+            <view class="info-text">
+              <text class="info-title">参与方式</text>
+              <text class="info-desc">在线识别、智能分类投放和参与环保活动，都是支持环保的方式</text>
+            </view>
+          </view>
+          <view class="info-item bonus">
+            <view class="info-icon-wrapper bonus"><ManifestIcon class="info-emoji" id="points_info" /></view>
+            <view class="info-text">
+              <text class="info-title">统计口径</text>
+              <text class="info-desc">这是平台展示的环保参与贡献指标，不代表实际回收次数或重量</text>
+            </view>
+          </view>
+        </view>
+        <view class="info-modal-footer">
+          <text class="info-footer-text">持续参与垃圾分类与回收，积累更多环保贡献</text>
+        </view>
+        <view class="modal-glow-effect"></view>
+      </view>
+    </view>
       </view>
     </scroll-view>
   </view>
@@ -465,6 +503,7 @@ const userInfo = ref({})
 const loading = ref(false)
 const showInfoModal = ref(false) // 控制积分信息弹窗显示
 const showCarbonModal = ref(false) // 控制减碳信息弹窗显示
+const showContributionModal = ref(false) // 控制回收贡献说明弹窗显示
 const isAdmin = ref(false)
 
 // 科学的减碳量计算逻辑
@@ -668,6 +707,14 @@ const showCarbonInfo = () => {
 // 关闭减碳信息弹窗
 const closeCarbonInfo = () => {
   showCarbonModal.value = false
+}
+
+const showContributionInfo = () => {
+  showContributionModal.value = true
+}
+
+const closeContributionInfo = () => {
+  showContributionModal.value = false
 }
 
 // 前往商城

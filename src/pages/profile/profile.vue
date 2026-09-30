@@ -79,7 +79,7 @@
           </view>
         </view>
 
-        <view class="stat-item">
+        <view class="stat-item" @click="showContributionInfo">
           <view class="stat-icon-wrapper orange">
             <ManifestIcon id="recycling_contribution" class="stat-icon" />
           </view>
@@ -286,6 +286,42 @@
         </view>
       </view>
     </view>
+
+    <!-- 回收贡献说明弹窗 -->
+    <view v-if="showContributionModal" class="modal-overlay" @click="closeContributionInfo">
+      <view class="info-modal" @click.stop>
+        <view class="modal-header">
+          <view class="modal-title"><ManifestIcon id="recycling_contribution" /> 回收贡献说明</view>
+          <ManifestIcon id="close" class="modal-close" @click="closeContributionInfo" />
+        </view>
+        <view class="modal-body">
+          <view class="info-item">
+            <view class="info-icon green"><ManifestIcon id="eco_points" /></view>
+            <view class="info-content">
+              <text class="info-title">累计环保参与</text>
+              <text class="info-desc">用于展示您在垃圾分类与回收中的环保参与贡献</text>
+            </view>
+          </view>
+          <view class="info-item">
+            <view class="info-icon orange"><ManifestIcon id="reward_gift" /></view>
+            <view class="info-content">
+              <text class="info-title">参与方式</text>
+              <text class="info-desc">在线识别、智能分类投放和参与环保活动，都是支持环保的方式</text>
+            </view>
+          </view>
+          <view class="info-item">
+            <view class="info-icon blue"><ManifestIcon id="points_info" /></view>
+            <view class="info-content">
+              <text class="info-title">统计口径</text>
+              <text class="info-desc">这是平台展示的环保参与贡献指标，不代表实际回收次数或重量</text>
+            </view>
+          </view>
+        </view>
+        <view class="modal-footer">
+          <text class="footer-tip">持续参与垃圾分类与回收，积累更多环保贡献</text>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -306,6 +342,7 @@ const userInfo = ref({})
 const loading = ref(false)
 const showInfoModal = ref(false)
 const showCarbonModal = ref(false)
+const showContributionModal = ref(false)
 const isAdmin = ref(false)
 
 const calculateCarbonReduction = (points) => {
@@ -531,6 +568,8 @@ const showPointsInfo = () => { showInfoModal.value = true }
 const closePointsInfo = () => { showInfoModal.value = false }
 const showCarbonInfo = () => { showCarbonModal.value = true }
 const closeCarbonInfo = () => { showCarbonModal.value = false }
+const showContributionInfo = () => { showContributionModal.value = true }
+const closeContributionInfo = () => { showContributionModal.value = false }
 const goToShop = () => { closePointsInfo(); uni.redirectTo({ url: '/pages/shop/shop' }) }
 
 function goHistory() { uni.navigateTo({ url: '/pages/history/history' }) }
