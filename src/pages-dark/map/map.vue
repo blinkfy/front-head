@@ -1,5 +1,8 @@
 <template>
   <view class="map-container" :class="tabPageClass">
+    <!-- #ifdef MP-WEIXIN -->
+    <view class="map-motion-layer tab-page-motion" :animation="tabPageAnimation">
+    <!-- #endif -->
     <!-- H5端用div容器，微信小程序端用<map>组件 -->
     <div v-if="isH5" id="container" class="map-canvas tab-page-motion"></div>
     <map v-else
@@ -54,6 +57,9 @@
         </cover-view>
       </cover-view>
     </map>
+    <!-- #ifdef MP-WEIXIN -->
+    </view>
+    <!-- #endif -->
 
     <view v-if="nearbyLocationModalVisible && isH5" class="nearby-location-overlay" @click.self="closeNearbyLocationPicker">
       <view class="nearby-location-panel">
@@ -122,7 +128,7 @@
     </view>
 
     <!-- 右下角新增垃圾桶按钮（非选择模式且非查看模式才显示） -->
-    <view v-if="!selectMode && !viewMode" class="add-btn-container tab-page-motion">
+    <view :animation="tabPageAnimation" v-if="!selectMode && !viewMode" class="add-btn-container tab-page-motion">
       <view class="add-btn" @click="openAddModal">
         <text class="add-btn-icon">+</text>
         <text class="add-btn-text">新增垃圾桶</text>
@@ -189,7 +195,7 @@ import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transi
   如果不想引入 lodash，注释掉上面 import 并在需要时用简单 typeof/Array.isArray 校验
 */
 
-const tabPageClass = useTabPageTransition('pages-dark/map/map')
+const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages-dark/map/map')
 const isH5 = process.env.UNI_PLATFORM === 'h5'
 
 // 位置选择模式
@@ -1417,6 +1423,15 @@ function goProfile() {
   background: linear-gradient(135deg, #0a1a2f 0%, #1a2847 25%, #2d4a6b 50%, #1a2847 75%, #0a1a2f 100%);
   overflow: hidden;
 }
+
+/* #ifdef MP-WEIXIN */
+.map-motion-layer {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  z-index: 2;
+}
+/* #endif */
 
 /* 地图画布样式 */
 .map-canvas {

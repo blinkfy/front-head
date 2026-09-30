@@ -1,7 +1,7 @@
 <template>
   <view class="map-page" :class="tabPageClass">
     <!-- 顶部导航栏 -->
-    <view class="map-header tab-page-motion" :style="{ paddingTop: (statusBarHeight + 10) + 'px' }">
+    <view :animation="tabPageAnimation" class="map-header tab-page-motion" :style="{ paddingTop: (statusBarHeight + 10) + 'px' }">
       <view class="header-decoration">
         <view class="deco-circle c1"></view>
         <view class="deco-circle c2"></view>
@@ -14,7 +14,7 @@
     </view>
 
     <!-- 地图容器 -->
-    <view class="map-container tab-page-motion">
+    <view :animation="tabPageAnimation" class="map-container tab-page-motion">
       <div v-if="isH5" id="container" class="map-canvas"></div>
       <map v-else
         id="select-map"
@@ -216,7 +216,7 @@ import AddTrashBinModal from '../../components/AddTrashBinModal.vue'
 import ManifestIcon from '../../components/ManifestIcon.vue'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 
-const tabPageClass = useTabPageTransition('pages/map/map')
+const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages/map/map')
 const isH5 = process.env.UNI_PLATFORM === 'h5'
 // 位置选择模式
 const selectMode = ref(false)

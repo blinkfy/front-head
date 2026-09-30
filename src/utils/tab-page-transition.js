@@ -1,9 +1,10 @@
-import { ref } from 'vue'
-import { onReady, onShow } from '@dcloudio/uni-app'
+import { getCurrentInstance, ref } from 'vue'
+import { onHide, onReady, onShow, onUnload } from '@dcloudio/uni-app'
 
 const STORAGE_KEY = 'bottomTabTransition'
 const TAB_POSITIONS = { home: 0, map: 1, shop: 2, profile: 3 }
 const TRANSITION_DURATION = 180
+const MP_TRANSITION_DURATION = 200
 
 // #ifdef H5
 const TAB_PAGE_LOADERS = {
@@ -49,7 +50,12 @@ export function getPendingTabTransition(url) {
   if (typeof uni === 'undefined') return null
 
   const transition = uni.getStorageSync(STORAGE_KEY)
-  if (!transition || Date.now() - transition.createdAt > 2000) return null
+  let maxAge = 2000
+  // #ifdef MP-WEIXIN
+  // 首次打开分包可能超过两秒，不能在目标页就绪前丢弃动画。
+  maxAge = 10000
+  // #endif
+  if (!transition || !['left', 'right'].includes(transition.direction) || Date.now() - transition.createdAt > maxAge) return null
   if (url && transition.targetRoute !== normalizeRoute(url)) return null
   return transition
 }
@@ -74,16 +80,30 @@ export function navigateBottomTab(from, to, url, method = 'redirectTo') {
 
 export function useTabPageTransition(pageRoute) {
   const tabPageClass = ref('')
+  const tabPageAnimation = ref(null)
+  const pageInstance = getCurrentInstance()
   let transitionResetTimer = null
-  let transitionStartTimer = null
+  let transitionVersion = 0
   let pageReady = false
   let pendingFirstTransition = null
+
+  const resetTransition = () => {
+    transitionVersion += 1
+    clearTimeout(transitionResetTimer)
+    transitionResetTimer = null
+    pendingFirstTransition = null
+    tabPageClass.value = ''
+    tabPageAnimation.value = null
+  }
+
+  onHide(resetTransition)
+  onUnload(resetTransition)
 
   // #ifdef MP-WEIXIN
   onReady(() => {
     pageReady = true
     if (!pendingFirstTransition) return
-    transitionStartTimer = setTimeout(pendingFirstTransition, 16)
+    pendingFirstTransition()
     pendingFirstTransition = null
   })
   // #endif
@@ -93,31 +113,45 @@ export function useTabPageTransition(pageRoute) {
 
     const currentRoute = pageRoute || getCurrentPages().slice(-1)[0]?.route || ''
     preloadSiblingTabPages(currentRoute)
-    // #ifdef MP-WEIXIN
-    const transition = getPendingTabTransition()
-    // #endif
-    // #ifndef MP-WEIXIN
     const transition = getPendingTabTransition(currentRoute)
-    // #endif
     if (!transition) return
 
     uni.removeStorageSync(STORAGE_KEY)
-    clearTimeout(transitionStartTimer)
-    clearTimeout(transitionResetTimer)
-    pendingFirstTransition = null
-    tabPageClass.value = ''
+    resetTransition()
 
     const startTransition = () => {
-      transitionStartTimer = null
+      // #ifdef MP-WEIXIN
+      // 两个 step 随动画数据一起送到视图层。
+      const offset = uni.upx2px(96) * (transition.direction === 'left' ? 1 : -1)
+      const animation = uni.createAnimation({ duration: MP_TRANSITION_DURATION, timingFunction: 'ease-out' })
+      animation.translateX(offset).opacity(0.88).step({ duration: 0 })
+      animation.translateX(0).opacity(1).step({ duration: MP_TRANSITION_DURATION })
+      tabPageAnimation.value = animation.export()
+
+      // 等小程序 setData 提交后计时；只保留归零帧，异步刷新不会重放初始偏移。
+      const version = transitionVersion
+      pageInstance.proxy.$nextTick(() => {
+        if (version !== transitionVersion) return
+        transitionResetTimer = setTimeout(() => {
+          transitionResetTimer = null
+          if (version !== transitionVersion) return
+          const settled = uni.createAnimation({ duration: 1, timingFunction: 'linear' })
+          settled.translateX(0).opacity(1).step({ duration: 1 })
+          tabPageAnimation.value = settled.export()
+        }, MP_TRANSITION_DURATION + 40)
+      })
+      // #endif
+      // #ifndef MP-WEIXIN
       tabPageClass.value = `tab-page-enter-${transition.direction}`
       transitionResetTimer = setTimeout(() => {
         tabPageClass.value = ''
         transitionResetTimer = null
       }, TRANSITION_DURATION + 40)
+      // #endif
     }
 
     // #ifdef MP-WEIXIN
-    if (pageReady) transitionStartTimer = setTimeout(startTransition, 16)
+    if (pageReady) startTransition()
     else pendingFirstTransition = startTransition
     // #endif
     // #ifndef MP-WEIXIN
@@ -125,5 +159,5 @@ export function useTabPageTransition(pageRoute) {
     // #endif
   })
 
-  return tabPageClass
+  return { tabPageClass, tabPageAnimation }
 }

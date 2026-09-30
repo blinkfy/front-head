@@ -32,18 +32,14 @@ export function extractRecognizedItems(data) {
     : []
 
   for (let i = 0; i < aiItems.length; i += 1) {
-    const itemName = String(
-      (aiItems[i] && (aiItems[i].name || aiItems[i].item || aiItems[i].object)) || ''
-    ).trim()
+    const itemName = recognizedItemName(aiItems[i])
     if (itemName) out.push(itemName)
   }
 
   if (!out.length) {
     const topLevelItems = Array.isArray(data && data.items) ? data.items : []
     for (let i = 0; i < topLevelItems.length; i += 1) {
-      const itemName = String(
-        (topLevelItems[i] && (topLevelItems[i].name || topLevelItems[i].item || topLevelItems[i].object)) || ''
-      ).trim()
+      const itemName = recognizedItemName(topLevelItems[i])
       if (itemName) out.push(itemName)
     }
   }
@@ -51,7 +47,7 @@ export function extractRecognizedItems(data) {
   if (!out.length) {
     const labels = Array.isArray(data && data.labels) ? data.labels : []
     for (let i = 0; i < labels.length; i += 1) {
-      const sourceName = String((labels[i] && labels[i].source_name) || '').trim()
+      const sourceName = recognizedItemName(labels[i] && labels[i].source_name)
       if (sourceName) out.push(sourceName)
     }
   }
@@ -59,11 +55,15 @@ export function extractRecognizedItems(data) {
   return dedupeTextList(out).slice(0, 8)
 }
 
+function recognizedItemName(item) {
+  if (typeof item === 'string') return item.trim();
+  if (!item || typeof item !== 'object') return '';
+  const name = [item.name, item.item, item.object].find((value) => typeof value === 'string' && value.trim());
+  return name ? name.trim() : '';
+}
+
 function getDisposalAdvice(data) {
-  if (!data || !data.aiInsights) return '';
-  return typeof data.aiInsights.disposalAdvice === 'string'
-    ? data.aiInsights.disposalAdvice.trim()
-    : '';
+  return readAdviceField(data, 'disposalAdvice', 'disposal_advice');
 }
 
 function normalizeCategoryName(raw) {
@@ -250,65 +250,121 @@ function getUpcyclingText(data) {
 }
 
 export function buildExpandedUpcyclingText(data) {
-  const aiInsights = data && data.aiInsights ? data.aiInsights : null
-  const aiUpcycling = aiInsights && typeof aiInsights.upcyclingSuggestion === 'string' && aiInsights.upcyclingSuggestion.trim()
-    ? aiInsights.upcyclingSuggestion.trim()
-    : ''
-
-  // 优先使用后端大模型生成的完整结构化描述
-  const expandedFromAI = (aiInsights && typeof aiInsights.expandedUpcycling === 'string' && aiInsights.expandedUpcycling.trim())
-    ? aiInsights.expandedUpcycling.trim()
-    : (typeof data.expandedUpcycling === 'string' && data.expandedUpcycling.trim() ? data.expandedUpcycling.trim() : '')
-
-  if (expandedFromAI) {
-    const disposalAdvice = aiInsights && typeof aiInsights.disposalAdvice === 'string' && aiInsights.disposalAdvice.trim()
-      ? aiInsights.disposalAdvice.trim()
-      : (typeof data.disposalAdvice === 'string' && data.disposalAdvice.trim() ? data.disposalAdvice.trim() : '')
-    if (disposalAdvice) {
-      return `垃圾投放：${disposalAdvice}\n` + expandedFromAI
-    }
-    return expandedFromAI
-  }
-
-  // 无 AI 结构化建议时，回退到从 upcyclingSuggestion 自行构建
-  if (!aiUpcycling) return ''
-  const items = extractRecognizedItems(data).slice(0, 3)
-  const focusItems = items.length ? items.join('、') : '本次识别到的垃圾'
-  const disposalAdvice = aiInsights && typeof aiInsights.disposalAdvice === 'string' && aiInsights.disposalAdvice.trim()
-    ? aiInsights.disposalAdvice.trim()
-    : ''
-
-  const lines = [
-    `回收利用：${aiUpcycling}`,
-    `可执行步骤：先把${focusItems}分开处理，厨余先沥干，可回收物简单清洁后再进入改造环节。`,
-    '改造示例：保留完整容器可做收纳盒或花盆，不适合改造的部分按分类要求直接投放。',
-    '安全提醒：处理时建议戴手套；若出现霉变、油污和异味，优先规范投放，不建议继续改造。'
-  ]
-
-  if (disposalAdvice) {
-    lines.splice(2, 0, `垃圾投放：${disposalAdvice}`)
-  }
-
-  return lines.join('\n')
+  // 接口的建议字段通常是文本；兼容模型偶尔返回数组、对象或 JSON 文本。
+  const disposalAdvice = getDisposalAdvice(data);
+  const expanded = readAdviceField(data, 'expandedUpcycling', 'expanded_upcycling');
+  const upcycling = expanded || readAdviceField(data, 'upcyclingSuggestion', 'upcycling_suggestion');
+  const sections = [];
+  const append = (value, defaultTitle) => {
+    splitUpcyclingSections(value, defaultTitle).forEach((section) => {
+      const duplicate = sections.some((existing) =>
+        existing.title === section.title && existing.content === section.content
+      );
+      if (!duplicate) sections.push(section);
+    });
+  };
+  if (disposalAdvice) append(disposalAdvice, '垃圾投放');
+  if (upcycling) append(upcycling, '回收利用');
+  // 仅整理收到的建议，不再为缺失的步骤/安全提醒拼接通用文案。
+  return sections.map((section) => `${section.title}：${section.content}`).join('\n');
 }
 
-export function splitUpcyclingSections(text) {
-  const lines = String(text || '').split(/\n+/);
+const UPCYCLING_SECTION_TITLES = new Set([
+  '垃圾投放', '分类建议', '投放建议', '处理建议', '分类投放', '投放补充', '投放要点',
+  '回收利用', '再利用建议', '重复利用建议', '变废为宝建议',
+  '可执行步骤', '操作步骤', '改造示例', '安全提醒',
+  '方案名称', '所需材料', '适用前提', '剩余部分处理',
+  '识别判断', '投放前处理', '执行重点', '补充建议'
+]);
+
+const ADVICE_FIELD_TITLES = {
+  disposalAdvice: '垃圾投放', disposal_advice: '垃圾投放',
+  upcyclingSuggestion: '回收利用', upcycling_suggestion: '回收利用',
+  expandedUpcycling: '', expanded_upcycling: '',
+  recycling: '回收利用', reuse: '回收利用',
+  steps: '可执行步骤', examples: '改造示例', example: '改造示例',
+  safety: '安全提醒', safety_reminder: '安全提醒',
+  materials: '所需材料'
+};
+
+function normalizeAdviceText(value, depth = 0) {
+  if (value == null || typeof value === 'boolean') return '';
+  // 防止异常深层对象或循环引用递归失控。
+  if (depth > 6) return '[建议结构过深，未展开]';
+  if (typeof value === 'string') {
+    const text = value.trim();
+    const unfenced = text.replace(/^```(?:json|text|markdown)?\s*\n?([\s\S]*?)\n?```$/i, '$1').trim();
+    const parsed = safeJsonParse(unfenced);
+    if (parsed !== null && (typeof parsed === 'object' || typeof parsed === 'string')) {
+      return normalizeAdviceText(parsed, depth + 1);
+    }
+    return unfenced.replace(/\\r\\n|\\n|\\r/g, '\n').replace(/\r\n?/g, '\n');
+  }
+  if (typeof value === 'number') return String(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeAdviceText(item, depth + 1)).filter(Boolean).join('\n');
+  }
+  if (typeof value !== 'object') return '';
+  const title = typeof value.title === 'string' ? value.title.trim() : '';
+  // 明确的 { title, content } 卡片结构；额外字段仍按原键保留。
+  const parts = [];
+  if (title && value.content != null) {
+    const content = normalizeAdviceText(value.content, depth + 1);
+    if (content) parts.push(`${title}：${content}`);
+  }
+  Object.keys(value).forEach((key) => {
+    if (title && value.content != null && (key === 'title' || key === 'content')) return;
+    const content = normalizeAdviceText(value[key], depth + 1);
+    if (!content) return;
+    const mappedTitle = Object.prototype.hasOwnProperty.call(ADVICE_FIELD_TITLES, key)
+      ? ADVICE_FIELD_TITLES[key] : key;
+    parts.push(mappedTitle ? `${mappedTitle}：${content}` : content);
+  });
+  return parts.join('\n');
+}
+
+function readAdviceField(data, key, alternateKey) {
+  const source = data && typeof data === 'object' ? data : {};
+  const insights = source.aiInsights && typeof source.aiInsights === 'object' ? source.aiInsights : {};
+  const candidates = [insights[key], insights[alternateKey], source[key], source[alternateKey]];
+  for (let i = 0; i < candidates.length; i += 1) {
+    if (typeof candidates[i] !== 'string' && (!candidates[i] || typeof candidates[i] !== 'object')) continue;
+    const text = normalizeAdviceText(candidates[i]);
+    if (text) return text;
+  }
+  return '';
+}
+
+export function splitUpcyclingSections(text, defaultTitle = '补充建议') {
+  const lines = normalizeAdviceText(text).split(/\n+/);
   const sections = [];
+  let current = null;
+
+  const finishSection = () => {
+    if (!current) return;
+    const content = current.lines.join('\n').trim();
+    if (content) sections.push({ title: current.title, content });
+  };
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = String(lines[i] || '').trim();
     if (!line) continue;
-    const match = line.match(/^([^：:]{1,16})[：:]\s*(.+)$/);
-    if (match && match[2]) {
-      sections.push({
-        title: String(match[1] || '').trim(),
-        content: String(match[2] || '').trim()
-      });
-    } else {
-      sections.push({ title: '补充建议', content: line });
+    // 只将已知标题识别为分节；普通编号步骤不会变成独立卡片。
+    const normalized = line.replace(/^#{1,6}\s*/, '').replace(/\*\*|__/g, '')
+      .replace(/^(?:[-*+]\s+|(?:\d+|[一二三四五六七八九十]+)[.、)）]\s*)/, '')
+      .replace(/【([^】]+)】/g, '$1');
+    const match = normalized.match(/^([^：:]{1,16})[：:]\s*(.*)$/);
+    const title = match ? String(match[1] || '').trim() : normalized.trim();
+    if (UPCYCLING_SECTION_TITLES.has(title)) {
+      finishSection();
+      current = { title, lines: match && match[2] ? [match[2].trim()] : [] };
+      continue;
     }
+    if (!current) current = { title: defaultTitle, lines: [] };
+    current.lines.push(line);
   }
+
+  finishSection();
 
   return sections;
 }

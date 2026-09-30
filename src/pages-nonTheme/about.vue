@@ -117,7 +117,7 @@ function checkTheme() {
   isDarkTheme.value = theme === 'dark'
 }
 
-const currentVersion = manifest?.versionName || '1.3.14'
+const currentVersion = manifest?.versionName || '1.3.15'
 
 const checking = ref(false)
 const updateMessage = ref('')

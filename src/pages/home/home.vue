@@ -13,7 +13,7 @@
     </view>
     
     <!-- 顶部绿色背景区域 -->
-    <view class="header-bg tab-page-motion">
+    <view :animation="tabPageAnimation" class="header-bg tab-page-motion">
       <!-- 装饰元素 -->
       <view class="header-deco">
         <view class="deco-leaf leaf-1">🌿</view>
@@ -40,7 +40,7 @@
     </view>
 
     <!-- 主内容区域-->
-    <view class="content-wrapper tab-page-motion">
+    <view :animation="tabPageAnimation" class="content-wrapper tab-page-motion">
       <!-- 设备连接状态卡片-->
       <view v-if="hasConnection" class="device-card" @click="goToDeviceConnection">
         <view class="device-card-content">
@@ -65,12 +65,14 @@
         <view class="tech-wave-3"></view>
         <view class="glass-reflection"></view>
         <view class="upload-content">
-          <view class="upload-icon-wrapper">
-            <ManifestIcon v-if="!isProcessing" id="camera_scan" class="upload-icon" :scale="2.05" />
-            <view v-else class="loading-spinner"></view>
-          </view>
+          <SmartSortRecognitionVisual :show-robot="classificationUi === 'recognizing' || robotFeedbackActive" :state="robotState" :active="robotPageActive" @settled="robotFeedbackActive = false">
+            <view class="upload-icon-wrapper">
+              <ManifestIcon v-if="!isProcessing" id="camera_scan" class="upload-icon" :scale="2.05" />
+              <view v-else class="loading-spinner"></view>
+            </view>
+          </SmartSortRecognitionVisual>
           <text class="upload-title" v-if="!isProcessing">点击拍照识别</text>
-          <text class="upload-title processing" v-else>{{ processStatus }}</text>
+          <text class="upload-title processing" v-else>AI识别中</text>
           <text class="upload-desc" v-if="!isProcessing">支持 JPG、PNG 格式</text>
           <text class="upload-desc processing" v-else>正在分析中...</text>
         </view>
@@ -78,7 +80,7 @@
 
       <!-- 识别结果区域 -->
       <view v-if="resultImage" class="result-card">
-        <view class="result-header">
+        <view v-if="classificationUi !== 'recognizing'" class="result-header">
           <view class="result-title"><ManifestIcon id="accuracy_target" /> 识别结果</view>
           <view class="confidence-badge">
             <text class="confidence-text">{{ resultConfidence }}</text>
@@ -87,7 +89,7 @@
         
         <view class="result-image-wrap">
           <image :src="resultImage" class="result-image" mode="aspectFit" />
-          <view v-if="displayBboxes.length" class="recognition-bbox-layer">
+          <view v-if="classificationUi !== 'recognizing' && displayBboxes.length" class="recognition-bbox-layer">
             <view
               v-for="(bbox, index) in displayBboxes"
               :key="`bbox-${index}`"
@@ -99,7 +101,7 @@
           </view>
         </view>
 
-        <view class="result-info">
+        <view v-if="classificationUi !== 'recognizing'" class="result-info">
           <view class="category-row">
             <view class="category-tag" :class="getCategoryClass(resultCategory)">
               <ManifestIcon class="tag-icon" :id="getCategoryIcon(resultCategory)" />
@@ -159,9 +161,9 @@
       </view>
 
       <!-- 默认欢迎区域 -->
-      <view v-if="!resultImage" class="welcome-section">
-        <view class="tips-card">
-          <ManifestIcon id="smart_sort" class="tips-icon" />
+      <view v-if="classificationUi === 'initial'" class="welcome-section">
+        <view class="tips-card" @click="onAddImage">
+          <SmartSortRobot3D :state="robotState" :active="robotPageActive" />
           <text class="tips-title">开始智能分类</text>
           <text class="tips-desc">上传图片，AI将为您识别垃圾类型</text>
         </view>
@@ -339,6 +341,8 @@ import { resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/devic
 import AppOnboarding from '@/components/AppOnboarding.vue'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import SmartSortRobot3D from '@/components/SmartSortRobot3D.vue'
+import SmartSortRecognitionVisual from '@/components/SmartSortRecognitionVisual.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 import { enqueueAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
@@ -362,7 +366,7 @@ import {
   updateRecognitionTask
 } from '@/utils/recognition-task.mjs'
 
-const tabPageClass = useTabPageTransition('pages/home/home')
+const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages/home/home')
 const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
@@ -370,6 +374,10 @@ const resultDesc = ref('')
 const aiEnabled = ref(false)
 const aiServiceEnabled = ref(false)
 const isProcessing = ref(false)
+const robotState = ref('idle')
+const classificationUi = ref('initial')
+const robotFeedbackActive = ref(false)
+const robotPageActive = ref(true)
 const processStatus = ref('处理中...')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
@@ -430,14 +438,10 @@ function escapeHtml(str) {
 
 function formatSemicolonNewline(text) {
   if (!text) return ''
-  // 先做 HTML 转义
-  const safe = escapeHtml(text)
-  // 使用正则：遇到分号（英文或中文）且后面有非空字符，则替换为 分号 + 换行
-  // 保留分号本身
-  return safe.replace(/；|;(\s*)(?=[^\s])/g, (m) => {
-    // m 可能是 ; 或；，我们要在其后插入 <br>
-    return m + '<br/>'
-  })
+  // 先在原文中整理换行，再逐行转义，避免破坏 HTML 实体。
+  return String(text).replace(/&(?:#\d+|#x[\da-f]+|[a-z][\da-z]*);|([；;])\s*(?=\S)/gi,
+    (match, separator) => separator ? separator + '\n' : match)
+    .split(/\r\n?|\n/).map(escapeHtml).join('<br/>')
 }
 
 // 数字动画函数（兼容小程序：小程序无 requestAnimationFrame，用 setTimeout 模拟）
@@ -738,6 +742,7 @@ onMounted(() => {
 
 onShow(() => {
   pageVisible = true
+  robotPageActive.value = true
   refreshAiServiceState()
   restoreRecognitionTask()
   // 从语音扫描页面返回时自动处理已选图片
@@ -755,11 +760,13 @@ onShow(() => {
 
 onHide(() => {
   pageVisible = false
+  robotPageActive.value = false
   hideRecognitionLoading()
 })
 
 onUnload(() => {
   pageVisible = false
+  robotPageActive.value = false
   hideRecognitionLoading()
   recognitionTaskUnsubscribe?.()
   recognitionTaskUnsubscribe = null
@@ -767,6 +774,7 @@ onUnload(() => {
 
 onBeforeUnmount(() => {
   pageVisible = false
+  robotPageActive.value = false
   hideRecognitionLoading()
   recognitionTaskUnsubscribe?.()
   recognitionTaskUnsubscribe = null
@@ -853,17 +861,26 @@ function applyRecognitionResult(res, showSuccessToast = false) {
 function restoreRecognitionTask(task = getRecognitionTask()) {
   if (!task) return
   if (task.status === 'pending') {
+    classificationUi.value = 'recognizing'
+    robotFeedbackActive.value = true
+    robotState.value = 'processing'
     isProcessing.value = true
     processStatus.value = task.message || '识别中...'
     return
   }
   if (task.status === 'succeeded' && task.result) {
+    classificationUi.value = 'complete'
+    robotFeedbackActive.value = true
+    robotState.value = task.result.labels?.length ? 'success' : 'fail'
     applyRecognitionResult(task.result)
     isProcessing.value = false
     clearRecognitionTask(task.id)
     return
   }
   if (task.status === 'failed') {
+    classificationUi.value = 'complete'
+    robotFeedbackActive.value = true
+    robotState.value = 'fail'
     isProcessing.value = false
     processStatus.value = '处理中...'
     clearRecognitionTask(task.id)
@@ -1240,6 +1257,10 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 async function processImage(filePath) {
   const taskId = beginRecognitionTask('图片处理中...')
   activeRecognitionTaskId = taskId
+  classificationUi.value = 'recognizing'
+  robotFeedbackActive.value = true
+  robotState.value = 'uploading'
+  resultImage.value = filePath
   try {
     isProcessing.value = true
     resetEnhancedRecognition()
@@ -1278,9 +1299,13 @@ async function processImage(filePath) {
     processStatus.value = 'AI识别中...'
     updateRecognitionTask(taskId, processStatus.value)
     showRecognitionLoading('识别中...')
-    const res = await recognizeImage(compressedFile)
+    const recognitionRequest = recognizeImage(compressedFile)
+    robotState.value = 'processing'
+    const res = await recognitionRequest
     completeRecognitionTask(taskId, res)
     if (!pageVisible) return
+    robotState.value = res.labels?.length ? 'success' : 'fail'
+    classificationUi.value = 'complete'
     
     if (res.labels && res.labels.length > 0) {
       const label = res.labels[0]
@@ -1323,6 +1348,8 @@ async function processImage(filePath) {
   } catch (err) {
     failRecognitionTask(taskId, err)
     if (!pageVisible) return
+    robotState.value = 'fail'
+    classificationUi.value = 'complete'
     clearRecognitionTask(taskId)
     resetEnhancedRecognition()
     resultImage.value = ''
@@ -1352,7 +1379,8 @@ function onAddImage() {
     uni.showToast({ title: '正在处理中...', icon: 'none' })
     return
   }
-  
+
+  robotState.value = 'tap'
   uni.chooseImage({
     count: 1,
     sizeType: ['compressed'],
@@ -1362,9 +1390,13 @@ function onAddImage() {
       isProcessing.value = true
       processImage(filePath).catch(() => isProcessing.value = false)
     },
-    fail: () => uni.showToast({ title: '选择取消', icon: 'none' })
+    fail: () => {
+      robotState.value = 'idle'
+      uni.showToast({ title: '选择取消', icon: 'none' })
+    }
   })
 }
+
 function navigateTo(url) {
   uni.navigateTo({ url })
 }

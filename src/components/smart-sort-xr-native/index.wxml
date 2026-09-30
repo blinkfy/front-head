@@ -1,0 +1,13 @@
+<xr-scene render-system="alpha:true" bind:ready="handleReady" bind:tick="handleTick">
+  <xr-assets bind:loaded="handleAssetsLoaded">
+    <xr-asset-load wx:if="{{modelSrc}}" type="gltf" asset-id="smart-sort-model" src="{{modelSrc}}" />
+  </xr-assets>
+  <xr-node position="{{modelOffset}}">
+    <xr-gltf wx:if="{{assetsReady}}" id="robot" model="smart-sort-model" bind:gltf-loaded="handleModelLoaded" />
+  </xr-node>
+  <xr-node node-id="target" position="0 0 0" />
+  <xr-camera id="robot-camera" position="0 0 8" target="target" is-perspective="{{false}}" clear-color="0 0 0 0" near="0.1" far="100" />
+  <xr-light type="ambient" color="1 1 1" intensity="1.25" />
+  <xr-light type="directional" rotation="145 25 0" color="1 1 1" intensity="2.05" />
+  <xr-light type="directional" rotation="155 -45 0" color="0.86 0.96 1" intensity="0.85" />
+</xr-scene>

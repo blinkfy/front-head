@@ -13,7 +13,7 @@
     </view>
     
     <!-- 顶部绿色背景区域 -->
-    <view class="profile-header tab-page-motion">
+    <view :animation="tabPageAnimation" class="profile-header tab-page-motion">
       <view class="header-content">
         <view class="header-top">
           <view class="header-title"><ManifestIcon id="user_profile" /> 个人中心</view>
@@ -26,7 +26,7 @@
     </view>
 
     <!-- 用户信息卡片 -->
-    <view class="user-card tab-page-motion">
+    <view :animation="tabPageAnimation" class="user-card tab-page-motion">
       <view class="user-avatar-section">
         <view class="avatar-wrapper">
           <image class="user-avatar" :src="getAvatarUrl(userInfo.avatar || getManifestIconPath('profile_user'), baseUrl)" mode="aspectFill"></image>
@@ -50,7 +50,7 @@
     </view>
 
     <!-- 统计数据卡片 -->
-    <view class="stats-card tab-page-motion">
+    <view :animation="tabPageAnimation" class="stats-card tab-page-motion">
       <view class="stats-header">
         <view class="stats-title"><ManifestIcon id="recycling_contribution" /> 环保贡献</view>
         <view class="refresh-btn" @click="handleRefresh" :class="{ rotating: loading }">
@@ -97,7 +97,7 @@
     </view>
 
     <!-- 设备连接状态卡片-->
-    <view v-if="hasConnection" class="device-card tab-page-motion">
+    <view :animation="tabPageAnimation" v-if="hasConnection" class="device-card tab-page-motion">
       <view class="device-header">
         <view class="device-title">
           <ManifestIcon id="device_connect" class="device-icon" />
@@ -130,7 +130,7 @@
     </view>
 
     <!-- 功能菜单 -->
-    <view class="menu-section tab-page-motion">
+    <view :animation="tabPageAnimation" class="menu-section tab-page-motion">
       <view class="menu-title">功能服务</view>
       <view class="menu-grid">
         <view class="menu-item" @click="goHistory">
@@ -161,7 +161,7 @@
     </view>
 
     <!-- 管理员功能-->
-    <view v-if="isAdmin" class="admin-section tab-page-motion">
+    <view :animation="tabPageAnimation" v-if="isAdmin" class="admin-section tab-page-motion">
       <view class="menu-title">管理员功能</view>
       <view class="admin-grid">
         <view class="admin-item" @click="goFileManagement"><ManifestIcon id="file_manager" /> 文件管理</view>
@@ -300,7 +300,7 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 
-const tabPageClass = useTabPageTransition('pages/profile/profile')
+const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages/profile/profile')
 const username = ref('')
 const userInfo = ref({})
 const loading = ref(false)

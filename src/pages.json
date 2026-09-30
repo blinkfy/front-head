@@ -309,6 +309,11 @@
 					}
 				}
 			]
+		},
+		{
+			"root": "pages-robot",
+			"name": "pages-robot",
+			"pages": []
 		}
 	],
 	"preloadRule": {

@@ -166,25 +166,7 @@ uni-page-body {
 /* #endif */
 
 /* 底部四个主页面按导航位置执行短时位移，不触发重排。 */
-/* #ifdef MP-WEIXIN */
-.tab-page-enter-left .tab-page-motion {
-  animation: bottom-tab-mp-enter-left 200ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
-}
-
-.tab-page-enter-right .tab-page-motion {
-  animation: bottom-tab-mp-enter-right 200ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
-}
-
-@keyframes bottom-tab-mp-enter-left {
-  from { opacity: 0.82; transform: translateX(96rpx); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes bottom-tab-mp-enter-right {
-  from { opacity: 0.82; transform: translateX(-96rpx); }
-  to { opacity: 1; transform: translateX(0); }
-}
-/* #endif */
+/* 微信小程序的底部换页使用内容节点 animation 属性，底栏保持静止。 */
 
 /* #ifndef MP-WEIXIN */
 .tab-page-enter-left > view {

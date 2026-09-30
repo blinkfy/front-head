@@ -13,7 +13,7 @@
     </view>
     
     <!-- 顶部绿色背景区域 -->
-    <view class="shop-header tab-page-motion">
+    <view :animation="tabPageAnimation" class="shop-header tab-page-motion">
       <view class="header-content">
         <view class="header-title"><ManifestIcon id="store" /> 积分商城</view>
         <text class="header-subtitle">环保积分 · 兑换好礼</text>
@@ -21,7 +21,7 @@
     </view>
 
     <!-- 主内容区域-->
-    <view class="content-wrapper tab-page-motion">
+    <view :animation="tabPageAnimation" class="content-wrapper tab-page-motion">
       <!-- 积分卡片 -->
       <view class="points-card">
         <view class="points-icon-wrapper">
@@ -213,7 +213,7 @@ import {
   orderProductsByRecommendation
 } from '@/utils/shop-recommendation'
 
-const tabPageClass = useTabPageTransition('pages/shop/shop')
+const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages/shop/shop')
 const userPoints = ref(0)
 const loading = ref(false)
 const currentCategory = ref(0)

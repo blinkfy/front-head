@@ -1,15 +1,18 @@
 import { defineConfig, loadEnv } from 'vite'
 import uni from '@dcloudio/vite-plugin-uni'
 import { resolve } from 'path'
+import { pathToFileURL } from 'node:url'
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
+  const { smartSortRobotAssetsPlugin } = await import(pathToFileURL(resolve(process.cwd(), 'scripts/smart-sort-robot-assets.mjs')).href)
   // 加载环境变量
   const env = loadEnv(mode, process.cwd(), '')
 
   return {
     plugins: [
-      uni(),
+      uni({ vueOptions: { template: { compilerOptions: { isCustomElement: tag => tag === 'smart-sort-xr' } } } }),
+      smartSortRobotAssetsPlugin(),
     ],
     resolve: {
       alias: {
