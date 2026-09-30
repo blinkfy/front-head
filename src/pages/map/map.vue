@@ -103,12 +103,14 @@
       </view>
     </view>
 
+    <view v-if="isMapAdmin && !selectMode && !viewMode" class="admin-map-legend">{{ isH5 ? '灰：未通过 · 蓝：普通桶 · 绿：智能桶 · 橙色提示：有报错' : '灰色：未通过审核 · 橙色提示：有报错' }}</view>
     <!-- 底部信息卡（H5 与 小程序/APP 都用，非选择模式且非查看模式才显示） -->
-    <view v-if="selectedMarker && !selectMode && !viewMode" class="info-card">
+    <view v-if="selectedMarker && !selectMode && !viewMode" class="info-card" :class="{ 'admin-info-card': isMapAdmin }">
       <view class="info-header">
         <view class="info-title-wrapper">
           <view class="info-icon" :class="selectedMarker.type === 'smart' ? 'smart' : 'normal'">
             <ManifestIcon v-if="selectedMarker.type === 'smart'" id="device_connect" />
+            <ManifestIcon v-else id="normal_bin_marker" />
           </view>
           <view class="info-title-content">
             <text class="info-title">{{ selectedMarker.title }}</text>
@@ -137,6 +139,7 @@
           <text>报错</text>
         </button>
       </view>
+      <MapBinAdminPanel v-if="isMapAdmin" :bin="selectedMarker" @updated="refreshAdminMarker" />
     </view>
     
     <!-- 位置选择模式：显示选择按钮 (仅H5) -->
@@ -167,12 +170,30 @@
         <button class="location-btn back-btn" @click="handleBack">返回</button>
       </view>
     </view>
-    <!-- 右下角新增垃圾桶按钮（非选择模式且非查看模式才显示） -->
-    <view v-if="!selectMode && !viewMode" class="add-btn-container">
-      <view class="add-btn" @click="openAddModal">
+    <!-- 右下角扫码和新增连体按钮 -->
+    <view
+      v-if="!selectMode && !viewMode"
+      :class="[isH5 ? 'add-btn-container' : 'floating-actions-container', { dragging: isDraggingFloatingActions }]"
+      :style="{ transform: `translate3d(${floatingActionsOffset.x}px, ${floatingActionsOffset.y}px, 0)` }"
+      @touchstart.stop="startFloatingActionsDrag"
+      @touchmove.stop.prevent="moveFloatingActionsDrag"
+      @touchend.stop="endFloatingActionsDrag"
+      @touchcancel.stop="endFloatingActionsDrag"
+    >
+      <view v-if="isH5" class="add-btn" @click.stop="handleFloatingActionClick('add')">
         <ManifestIcon id="add" class="add-btn-icon" :scale="1" />
         <text class="add-btn-text">新增</text>
       </view>
+      <template v-else>
+        <view class="floating-action scan-action" @click.stop="handleFloatingActionClick('scan')">
+          <ManifestIcon id="camera_scan" class="floating-action-icon" :scale="1" />
+          <text class="floating-action-label">扫码</text>
+        </view>
+        <view class="floating-action add-action" @click.stop="handleFloatingActionClick('add')">
+          <ManifestIcon id="add" class="floating-action-icon" :scale="1" />
+          <text class="floating-action-label">新增</text>
+        </view>
+      </template>
     </view>
 
     <!-- 底部导航栏 -->
@@ -208,15 +229,22 @@
 <script setup>
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { ref, onMounted, computed, getCurrentInstance, nextTick } from 'vue'
-import { onReady } from '@dcloudio/uni-app'
+import { onReady, onShow } from '@dcloudio/uni-app'
 import { config } from '../../api/config.js'
 import { mapConfig } from '../../api/map-config.js'
-import { reportDeviceError, getTrashBinList, reverseGeocoder, searchPlaces } from '../../api/map.js'
+import { reportDeviceError, reverseGeocoder, searchPlaces } from '../../api/map.js'
 import AddTrashBinModal from '../../components/AddTrashBinModal.vue'
 import ManifestIcon from '../../components/ManifestIcon.vue'
+import MapBinAdminPanel from '@/components/MapBinAdminPanel.vue'
+import { useMapAdminBins, binMapLabel } from '@/utils/map-admin-bins'
+import { scanAndConnectDevice } from '@/utils/device-qr'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 
+const { isMapAdmin, loadMapBins } = useMapAdminBins()
 const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages/map/map')
+onShow(() => {
+  if (isMapAdmin.value && !selectMode.value && !viewMode.value) loadTrashBinList()
+})
 const isH5 = process.env.UNI_PLATFORM === 'h5'
 // 位置选择模式
 const selectMode = ref(false)
@@ -245,6 +273,10 @@ const userLocation = ref({ latitude: null, longitude: null, addr: '' })
 const userMarker = ref(null)
 // 新增垃圾桶弹窗显示状态
 const showAddModal = ref(false)
+const floatingActionsOffset = ref({ x: 0, y: 0 })
+const floatingActionsDragStart = ref(null)
+const isDraggingFloatingActions = ref(false)
+const suppressFloatingActionClick = ref(false)
 // 垃圾箱点位数据（从后端API获取，不再硬编码）
 const trashPoints = ref([])
 const selectedMarker = ref(null)
@@ -255,18 +287,18 @@ const markers = computed(() => {
     id: p.id,
     latitude: typeof p.latitude === 'number' ? p.latitude : parseFloat(p.latitude),
     longitude: typeof p.longitude === 'number' ? p.longitude : parseFloat(p.longitude),
-    title: p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
-  iconPath: (p.type === 'smart' ? '/static/smart-marker.png' : '/static/normal-marker.png'),
+    title: binMapLabel(p),
+  iconPath: p.adminRecord && !p.review ? '/static/pending-bin-marker.png' : (p.type === 'smart' ? '/static/smart-marker.png' : '/static/normal-marker.png'),
     width: 42,
     height: 46,
     anchor: { x: 0.5, y: 1 },
     callout: {
-      content: p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
+      content: binMapLabel(p),
       color: '#ffffff',
-      bgColor: '#10b981',
+      bgColor: p.adminRecord && !p.review ? '#6b7280' : p.errorReport?.length ? '#c26912' : '#10b981',
       padding: 6,
       borderRadius: 6,
-      display: 'BYCLICK'
+      display: p.adminRecord && p.errorReport?.length ? 'ALWAYS' : 'BYCLICK'
     }
   }));
 
@@ -840,19 +872,21 @@ function initTMap() {
   }
 }
 
-function getH5Icon(type) {
-  const color = type === 'smart' ? '#10b981' : '#6b7280'
+function getH5Icon(type, pending = false, reported = false) {
+  const color = pending ? '#9ca3af' : type === 'smart' ? '#10b981' : '#3b82f6'
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 24 24'>
-    <path d='M12 2c-1.1 0-2 .9-2 2v1H8c-1.1 0-2 .9-2 2v7c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-2V4c0-1.1-.9-2-2-2z' fill='${color}' stroke='#fff' stroke-width='0.5'/>
-    <circle cx='12' cy='15.5' r='1.5' fill='#ffffff'/>
+    <path d='M12 23C10 20 3 13.5 3 9a9 9 0 0 1 18 0c0 4.5-7 11-9 14z' fill='${color}' stroke='#fff' stroke-width='1'/>
+    <circle cx='12' cy='9' r='3.5' fill='#ffffff'/>
+    ${reported ? "<circle cx='18' cy='5' r='4' fill='#c26912' stroke='#fff'/><path d='M18 2.8v2.5m0 1v.8' stroke='#fff' stroke-width='1.3'/>" : ''}
   </svg>`
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg)
 }
 
 function onH5MarkerClicked(index, point) {
   selectedMarker.value = {
+    ...point,
     id: point.id,
-    title: point.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
+    title: binMapLabel(point),
     name: point.name,
     type: point.type,
     latitude: point.latitude,
@@ -864,11 +898,12 @@ function onH5MarkerClicked(index, point) {
 
 function onMarkerTap(e) {
   const markerId = e && (e.markerId || e.markerId === 0 ? e.markerId : e.detail?.markerId);
-  const point = trashPoints.value.find(p => p.id === markerId);
+  const point = trashPoints.value.find(p => String(p.id) === String(markerId));
   if (!point) return;
   selectedMarker.value = {
+    ...point,
     id: point.id,
-    title: point.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
+    title: binMapLabel(point),
     name: point.name,
     type: point.type,
     latitude: point.latitude,
@@ -876,6 +911,13 @@ function onMarkerTap(e) {
     desc: point.description || '',
     imageUrl: point.image
   };
+}
+
+async function refreshAdminMarker(id) {
+  await loadTrashBinList()
+  const point = trashPoints.value.find(p => String(p.id) === String(id))
+  if (point) onH5MarkerClicked(0, point)
+  else closeInfo()
 }
 
 function closeInfo() {
@@ -953,6 +995,7 @@ async function callReport(m, reason = '') {
     const deviceId = m.deviceId || m.id || `${m.latitude},${m.longitude}`
     await reportDeviceError(deviceId, reason)
     uni.showToast({ title: '上报成功，感谢反馈', icon: 'success' })
+    if (isMapAdmin.value) loadTrashBinList()
     selectedMarker.value = null
   } catch (err) {
     const msg = (err && err.msg) ? err.msg : (err && err.message) ? err.message : '上报失败'
@@ -960,8 +1003,67 @@ async function callReport(m, reason = '') {
   }
 }
 
+function startFloatingActionsDrag(event) {
+  const touch = event.touches?.[0]
+  if (!touch) return
+  floatingActionsDragStart.value = {
+    x: touch.clientX,
+    y: touch.clientY,
+    offsetX: floatingActionsOffset.value.x,
+    offsetY: floatingActionsOffset.value.y
+  }
+  isDraggingFloatingActions.value = false
+}
+
+function moveFloatingActionsDrag(event) {
+  if (!floatingActionsDragStart.value) return
+  const touch = event.touches?.[0]
+  if (!touch) return
+
+  const dx = touch.clientX - floatingActionsDragStart.value.x
+  const dy = touch.clientY - floatingActionsDragStart.value.y
+  if (!isDraggingFloatingActions.value && Math.hypot(dx, dy) < 6) return
+
+  isDraggingFloatingActions.value = true
+  const { windowWidth, windowHeight, statusBarHeight = 0, safeAreaInsets } = uni.getSystemInfoSync()
+  const rpx = windowWidth / 750
+  const controlWidth = (isH5 ? 112 : 128) * rpx
+  const controlHeight = (isH5 ? 112 : 224) * rpx
+  const edge = 8
+  const tabbarHeight = 120 * rpx + (safeAreaInsets?.bottom || 0)
+  const defaultLeft = windowWidth - 32 * rpx - controlWidth
+  const defaultTop = windowHeight - 280 * rpx - controlHeight
+  const left = Math.min(windowWidth - controlWidth - edge, Math.max(edge, defaultLeft + floatingActionsDragStart.value.offsetX + dx))
+  const top = Math.min(windowHeight - controlHeight - tabbarHeight, Math.max(statusBarHeight + edge, defaultTop + floatingActionsDragStart.value.offsetY + dy))
+
+  floatingActionsOffset.value = { x: left - defaultLeft, y: top - defaultTop }
+}
+
+function endFloatingActionsDrag() {
+  if (!floatingActionsDragStart.value) return
+  if (isDraggingFloatingActions.value) {
+    suppressFloatingActionClick.value = true
+    setTimeout(() => { suppressFloatingActionClick.value = false }, 350)
+  }
+  floatingActionsDragStart.value = null
+  isDraggingFloatingActions.value = false
+}
+
+function handleFloatingActionClick(action) {
+  if (suppressFloatingActionClick.value) {
+    suppressFloatingActionClick.value = false
+    return
+  }
+  if (action === 'scan') scanDeviceQR()
+  else openAddModal()
+}
+
 function openAddModal() {
   showAddModal.value = true
+}
+
+function scanDeviceQR() {
+  scanAndConnectDevice()
 }
 
 function closeAddModal() {
@@ -969,6 +1071,11 @@ function closeAddModal() {
 }
 
 function onAddSuccess(newTrashBin) {
+  if (isMapAdmin.value) {
+    loadTrashBinList()
+    uni.showToast({ title: '垃圾桶已提交审核', icon: 'success' })
+    return
+  }
   let imageUrl = newTrashBin.image || ''
   if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
     imageUrl = imageUrl.startsWith('/') ? `${config.baseUrl}${imageUrl}` : `${config.baseUrl}/${imageUrl}`
@@ -995,10 +1102,13 @@ function onAddSuccess(newTrashBin) {
       const multi = new window.TMap.MultiMarker({
         id: 'trash' + newPoint.id,
         map: tmapInstance,
+        styles: { bin: new window.TMap.MarkerStyle({
+          width: 36, height: 36, anchor: { x: 18, y: 35 }, src: iconUrl
+        }) },
         geometries: [{
           id: 'trash-geo-' + newPoint.id,
+          styleId: 'bin',
           position: new window.TMap.LatLng(newPoint.latitude, newPoint.longitude),
-          icon: iconUrl,
           title: newPoint.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
           width: 36,
           height: 36
@@ -1022,7 +1132,7 @@ async function loadTrashBinList() {
     let latitude = userLocation.value.latitude || 36.0671
     let longitude = userLocation.value.longitude || 120.3826
     
-    const result = await getTrashBinList({
+    const result = await loadMapBins({
       latitude, longitude, radius: 5000, page: 1, pageSize: 100
     });
 
@@ -1035,6 +1145,7 @@ async function loadTrashBinList() {
           imageUrl = `${config.baseUrl}/static/normal-bin.png`;
         }
         return {
+          ...item,
           id: item.id,
           name: item.name,
           description: item.description,
@@ -1048,7 +1159,8 @@ async function loadTrashBinList() {
       
       if (isH5 && tmapInstance) {
         tmapMarkers.forEach(item => {
-          try { if (item.multiMarker && typeof item.multiMarker.remove === 'function') item.multiMarker.remove(); } catch (e) {}
+          try { if (typeof item.multiMarker?.setMap === 'function') item.multiMarker.setMap(null);
+          else if (typeof item.multiMarker?.remove === 'function') item.multiMarker.remove(['trash-geo-' + item.id]); } catch (e) {}
         });
         tmapMarkers = [];
         initH5Markers()
@@ -1101,15 +1213,18 @@ function initH5Markers() {
   // 正常模式：显示所有垃圾桶标记
   trashPoints.value.forEach((p, i) => {
     try {
-      const iconUrl = getH5Icon(p.type)
+      const iconUrl = getH5Icon(p.type, isMapAdmin.value && p.adminRecord && !p.review, isMapAdmin.value && p.adminRecord && p.errorReport?.length > 0)
       const multi = new window.TMap.MultiMarker({
         id: 'trash' + p.id,
         map: tmapInstance,
+        styles: { bin: new window.TMap.MarkerStyle({
+          width: 36, height: 36, anchor: { x: 18, y: 35 }, src: iconUrl
+        }) },
         geometries: [{
           id: 'trash-geo-' + p.id,
+          styleId: 'bin',
           position: new window.TMap.LatLng(p.latitude, p.longitude),
-          icon: iconUrl,
-          title: p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
+          title: isMapAdmin.value ? binMapLabel(p) : (p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶'),
           width: 36,
           height: 36
         }]
@@ -1521,6 +1636,8 @@ function goProfile() {
   transform: scale(0.98);
 }
 /* 底部信息卡 */
+.admin-map-legend { position: fixed; top: 180rpx; left: 24rpx; z-index: 50; padding: 10rpx 18rpx; border-radius: 12rpx; background: rgba(255,255,255,.92); color: #374151; font-size: 22rpx; pointer-events: none; }
+.info-card.admin-info-card { bottom: calc(140rpx + env(safe-area-inset-bottom)); max-height: 60vh; overflow-y: auto; }
 .info-card {
   position: fixed;
   left: 32rpx;
@@ -1662,45 +1779,101 @@ function goProfile() {
   font-size: 28rpx;
 }
 
-/* 新增按钮 */
+/* 扫码与新增连体悬浮按钮 */
 .add-btn-container {
   position: fixed;
   right: 32rpx;
   bottom: 280rpx;
   z-index: 9999;
+  width: 112rpx;
+  height: 112rpx;
   pointer-events: auto;
+  touch-action: none;
+}
+
+.add-btn-container .add-btn {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.add-btn-container.dragging .add-btn {
+  transition: none;
+}
+
+.floating-actions-container {
+  position: fixed;
+  right: 32rpx;
+  bottom: 280rpx;
+  z-index: 9999;
+  width: 128rpx;
+  height: 224rpx;
+  border-radius: 64rpx;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  touch-action: none;
+  box-shadow: 0 8rpx 24rpx rgba(16, 70, 120, 0.3);
+}
+
+.floating-action {
+  width: 100%;
+  height: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.scan-action {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.88) 0%, rgba(37, 99, 235, 0.88) 100%);
+}
+
+.add-action {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.88) 0%, rgba(5, 150, 105, 0.88) 100%);
+}
+
+.floating-actions-container.dragging .floating-action {
+  transition: none;
+}
+
+.floating-action-icon {
+  font-size: 48rpx;
+}
+
+.floating-action-label {
+  margin-top: 4rpx;
+  color: #ffffff;
+  font-size: 20rpx;
+}
+
+.add-btn-icon {
+  font-size: 48rpx;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.add-btn-text {
+  margin-top: 4rpx;
+  color: #ffffff;
+  font-size: 20rpx;
 }
 
 .add-btn {
-  width: 112rpx;
-  height: 112rpx;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.88) 0%, rgba(5, 150, 105, 0.88) 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   box-shadow: 0 8rpx 24rpx rgba(16, 185, 129, 0.4);
-  transition: all 0.3s ease;
   cursor: pointer;
   pointer-events: auto;
 }
 
-.add-btn:active {
-  transform: scale(0.95);
-}
-
-.add-btn-icon {
-  font-size: 40rpx;
-  color: #ffffff;
-  font-weight: 300;
-  line-height: 1;
-}
-
-.add-btn-text {
-  font-size: 20rpx;
-  color: #ffffff;
-  margin-top: 4rpx;
+.floating-action:active {
+  filter: brightness(0.94);
 }
 
 /* 底部导航 */

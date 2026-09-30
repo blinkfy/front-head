@@ -136,7 +136,8 @@
     </view>
 
     <!-- 统一底部信息卡（H5 与 小程序/APP 都用，非选择模式且非查看模式才显示） -->
-    <view v-if="selectedMarker && !selectMode && !viewMode" class="info-card">
+    <view v-if="isMapAdmin && !selectMode && !viewMode" class="admin-map-legend">{{ isH5 ? '灰：未通过 · 蓝：普通桶 · 绿：智能桶 · 橙色提示：有报错' : '灰色：未通过审核 · 橙色提示：有报错' }}</view>
+    <view v-if="selectedMarker && !selectMode && !viewMode" class="info-card" :class="{ 'admin-info-card': isMapAdmin }">
       <view class="info-header">
         <text class="info-title">{{ selectedMarker.title }}</text>
         <ManifestIcon class="info-close" id="close" @click="closeInfo" />
@@ -150,6 +151,7 @@
         <button class="info-btn" @click="openHistoryImage(selectedMarker)">查看图片</button>
         <button class="info-btn danger" @click="reportErrorMarker(selectedMarker)">报错</button>
       </view>
+      <MapBinAdminPanel v-if="isMapAdmin" :bin="selectedMarker" dark @updated="refreshAdminMarker" />
     </view>
 
     <!-- 新增垃圾桶弹窗 -->
@@ -185,17 +187,24 @@
 <script setup>
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { ref, onMounted, computed, getCurrentInstance } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { config } from '../../api/config.js'
 import { mapConfig } from '../../api/map-config.js'
-import { reportDeviceError, getTrashBinList, reverseGeocoder, searchPlaces } from '../../api/map.js'
+import { reportDeviceError, reverseGeocoder, searchPlaces } from '../../api/map.js'
 import AddTrashBinModal from '../../components/AddTrashBinModal.vue'
 import ManifestIcon from '../../components/ManifestIcon.vue'
+import MapBinAdminPanel from '@/components/MapBinAdminPanel.vue'
+import { useMapAdminBins, binMapLabel } from '@/utils/map-admin-bins'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 /*
   如果不想引入 lodash，注释掉上面 import 并在需要时用简单 typeof/Array.isArray 校验
 */
 
+const { isMapAdmin, loadMapBins } = useMapAdminBins()
 const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages-dark/map/map')
+onShow(() => {
+  if (isMapAdmin.value && !selectMode.value && !viewMode.value) loadTrashBinList()
+})
 const isH5 = process.env.UNI_PLATFORM === 'h5'
 
 // 位置选择模式
@@ -228,18 +237,18 @@ const markers = computed(() => selectMode.value ? [] : trashPoints.value.map(p =
   id: p.id,
   latitude: typeof p.latitude === 'number' ? p.latitude : parseFloat(p.latitude),
   longitude: typeof p.longitude === 'number' ? p.longitude : parseFloat(p.longitude),
-  title: p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶', // 根据类型设置标题
-  iconPath: (p.type === 'smart' ? '/static/smart-marker.png' : '/static/normal-marker.png'),
+  title: binMapLabel(p), // 根据类型设置标题
+  iconPath: p.adminRecord && !p.review ? '/static/pending-bin-marker.png' : (p.type === 'smart' ? '/static/smart-marker.png' : '/static/normal-marker.png'),
   width: 42,
   height: 46,
   anchor: { x: 0.5, y: 1 }, // 设置锚点，避免图标变形
   callout: {
-    content: p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶', // 气泡显示类型
+    content: binMapLabel(p), // 气泡显示类型
     color: '#ffffff',
-    bgColor: '#6a7cfb',
+    bgColor: p.adminRecord && !p.review ? '#6b7280' : p.errorReport?.length ? '#c26912' : '#6a7cfb',
     padding: 6,
     borderRadius: 6,
-    display: 'BYCLICK' // 点击时显示
+    display: p.adminRecord && p.errorReport?.length ? 'ALWAYS' : 'BYCLICK' // 点击时显示
   }
 })))
 
@@ -847,12 +856,13 @@ function initTMap() {
   }
 }
 
-// helper: 生成 H5 使用的 SVG data URL（只修改颜色）
-function getH5Icon(type) {
-  const color = type === 'smart' ? '#2ecc71' : '#ff6b6b' // 智能：绿，普通：红（根据要求仅改颜色）
+// H5 管理员点位：大头针轮廓、审核状态颜色及报错角标
+function getH5Icon(type, pending = false, reported = false) {
+  const color = pending ? '#9ca3af' : type === 'smart' ? '#10b981' : '#3b82f6'
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 24 24'>
-    <path d='M12 2c-1.1 0-2 .9-2 2v1H8c-1.1 0-2 .9-2 2v7c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-2V4c0-1.1-.9-2-2-2z' fill='${color}' stroke='#fff' stroke-width='0.5'/>
-    <circle cx='12' cy='15.5' r='1.5' fill='#ffffff'/>
+    <path d='M12 23C10 20 3 13.5 3 9a9 9 0 0 1 18 0c0 4.5-7 11-9 14z' fill='${color}' stroke='#fff' stroke-width='1'/>
+    <circle cx='12' cy='9' r='3.5' fill='#ffffff'/>
+    ${reported ? "<circle cx='18' cy='5' r='4' fill='#c26912' stroke='#fff'/><path d='M18 2.8v2.5m0 1v.8' stroke='#fff' stroke-width='1.3'/>" : ''}
   </svg>`
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg)
 }
@@ -860,8 +870,9 @@ function getH5Icon(type) {
 // H5 点击时的统一处理：设置 selectedMarker 并显示底部卡片 - 使用新API数据结构
 function onH5MarkerClicked(index, point) {
   selectedMarker.value = {
+    ...point,
     id: point.id,
-    title: point.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
+    title: binMapLabel(point),
     latitude: point.latitude,
     longitude: point.longitude,
     desc: `名称: ${point.name}\n说明: ${point.description || ''}`,
@@ -872,12 +883,13 @@ function onH5MarkerClicked(index, point) {
 // 小程序/APP：点击 marker 的处理（map 组件触发 markertap） - 使用新API数据结构
 function onMarkerTap(e) {
   const markerId = e && (e.markerId || e.markerId === 0 ? e.markerId : e.detail?.markerId);
-  const point = trashPoints.value.find(p => p.id === markerId);
+  const point = trashPoints.value.find(p => String(p.id) === String(markerId));
   if (!point) return;
 
   selectedMarker.value = {
+    ...point,
     id: point.id,
-    title: point.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶', // 显示类型作为标题
+    title: binMapLabel(point), // 显示类型作为标题
     latitude: point.latitude,
     longitude: point.longitude,
     desc: `名称: ${point.name}\n说明: ${point.description || ''}`, // 名称放到详细信息中
@@ -886,6 +898,13 @@ function onMarkerTap(e) {
 }
 
 // 关闭信息卡
+async function refreshAdminMarker(id) {
+  await loadTrashBinList()
+  const point = trashPoints.value.find(p => String(p.id) === String(id))
+  if (point) onH5MarkerClicked(0, point)
+  else closeInfo()
+}
+
 function closeInfo() {
   selectedMarker.value = null
 }
@@ -1134,6 +1153,7 @@ async function callReport(m, reason = '') {
     const deviceId = m.deviceId || m.id || `${m.latitude},${m.longitude}`
     await reportDeviceError(deviceId, reason)
     uni.showToast({ title: '上报成功，感谢反馈', icon: 'success' })
+    if (isMapAdmin.value) loadTrashBinList()
     selectedMarker.value = null
   } catch (err) {
     console.error('report error failed', err)
@@ -1154,6 +1174,11 @@ function closeAddModal() {
 
 // 新增垃圾桶成功回调 - 使用新API数据结构
 function onAddSuccess(newTrashBin) {
+  if (isMapAdmin.value) {
+    loadTrashBinList()
+    uni.showToast({ title: '垃圾桶已提交审核', icon: 'success' })
+    return
+  }
   console.log('新增垃圾桶成功:', newTrashBin)
   
   // 添加到本地数据 - 使用新的API数据结构
@@ -1191,10 +1216,13 @@ function onAddSuccess(newTrashBin) {
       const multi = new window.TMap.MultiMarker({
         id: 'trash' + newPoint.id,
         map: tmapInstance,
+        styles: { bin: new window.TMap.MarkerStyle({
+          width: 36, height: 36, anchor: { x: 18, y: 35 }, src: iconUrl
+        }) },
         geometries: [{
           id: 'trash-geo-' + newPoint.id,
+          styleId: 'bin',
           position: new window.TMap.LatLng(newPoint.latitude, newPoint.longitude),
-          icon: iconUrl,
           title: newPoint.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
           width: 36,
           height: 36
@@ -1252,7 +1280,7 @@ async function loadTrashBinList() {
       longitude=120.3826;
     }
     if (latitude && longitude) {
-      const result = await getTrashBinList({
+      const result = await loadMapBins({
         latitude:latitude,
         longitude: longitude,
         radius: 5000, // 5km半径
@@ -1275,6 +1303,7 @@ async function loadTrashBinList() {
           }
 
           return {
+            ...item,
             id: item.id,
             name: item.name,
             description: item.description,
@@ -1294,8 +1323,10 @@ async function loadTrashBinList() {
           // 清除旧标记
           tmapMarkers.forEach(item => {
             try {
-              if (item.multiMarker && typeof item.multiMarker.remove === 'function') {
-                item.multiMarker.remove();
+              if (typeof item.multiMarker?.setMap === 'function') {
+                item.multiMarker.setMap(null);
+              } else if (typeof item.multiMarker?.remove === 'function') {
+                item.multiMarker.remove(['trash-geo-' + item.id]);
               }
             } catch (e) {
               console.warn('移除旧标记失败:', e);
@@ -1368,16 +1399,19 @@ function initH5Markers() {
   // 正常模式：显示所有垃圾桶标记
   trashPoints.value.forEach((p, i) => {
     try {
-      const iconUrl = getH5Icon(p.type)
+      const iconUrl = getH5Icon(p.type, isMapAdmin.value && p.adminRecord && !p.review, isMapAdmin.value && p.adminRecord && p.errorReport?.length > 0)
 
       const multi = new window.TMap.MultiMarker({
         id: 'trash' + p.id,
         map: tmapInstance,
+        styles: { bin: new window.TMap.MarkerStyle({
+          width: 36, height: 36, anchor: { x: 18, y: 35 }, src: iconUrl
+        }) },
         geometries: [{
           id: 'trash-geo-' + p.id,
+          styleId: 'bin',
           position: new window.TMap.LatLng(p.latitude, p.longitude),
-          icon: iconUrl,
-          title: p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
+          title: isMapAdmin.value ? binMapLabel(p) : (p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶'),
           width: 36,
           height: 36
         }]
@@ -1768,6 +1802,8 @@ function goProfile() {
 }
 
 /* 底部信息卡 - 玻璃拟态设计 */
+.admin-map-legend { position: fixed; top: 180rpx; left: 24rpx; z-index: 50; padding: 10rpx 18rpx; border-radius: 12rpx; background: rgba(255,255,255,.92); color: #374151; font-size: 22rpx; pointer-events: none; }
+.info-card.admin-info-card { bottom: calc(140rpx + env(safe-area-inset-bottom)); max-height: 60vh; overflow-y: auto; }
 .info-card {
   position: fixed;
   left: 50%;

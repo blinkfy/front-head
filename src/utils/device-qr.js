@@ -131,6 +131,65 @@ export function saveMockDeviceConnection(device = MOCK_DEVICE) {
   return connection
 }
 
+export function scanAndConnectDevice(onMockConnected) {
+  let platform, uniPlatform, isH5 = false
+
+  try {
+    const deviceInfo = uni.getDeviceInfo ? uni.getDeviceInfo() : uni.getSystemInfoSync()
+    platform = deviceInfo.platform
+  } catch (e) {
+    platform = uni.getSystemInfoSync().platform
+  }
+
+  try {
+    const appBaseInfo = uni.getAppBaseInfo ? uni.getAppBaseInfo() : uni.getSystemInfoSync()
+    uniPlatform = appBaseInfo.uniPlatform
+  } catch (e) {
+    uniPlatform = 'unknown'
+  }
+
+  isH5 = (
+    uniPlatform === 'web' ||
+    (platform === 'devtools' && typeof window !== 'undefined' && window.location) ||
+    (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.wx && !window.my)
+  )
+
+  const connectDevice = (rawContent) => {
+    const target = resolveDeviceScanTarget(rawContent, '/pages/scan/scan')
+    if (!target.url) {
+      uni.showToast({ title: '设备ID不能为空', icon: 'none' })
+      return
+    }
+    if (target.isMock) {
+      saveMockDeviceConnection({
+        device_id: target.deviceId,
+        device_name: target.deviceName,
+        device_mode: target.deviceMode
+      })
+      onMockConnected?.()
+    }
+    uni.navigateTo({ url: target.url })
+  }
+
+  if (isH5) {
+    uni.showModal({
+      title: '连接设备',
+      content: '请输入设备ID（H5端暂不支持扫码）',
+      editable: true,
+      placeholderText: '请输入设备ID',
+      success: (res) => {
+        if (res.confirm && res.content) connectDevice(res.content)
+      }
+    })
+  } else {
+    uni.scanCode({
+      scanType: ['qrCode'],
+      success: (res) => connectDevice(res.result),
+      fail: () => uni.showToast({ title: '扫码失败', icon: 'none' })
+    })
+  }
+}
+
 export function getMockDeviceConnection() {
   const connection = uni.getStorageSync(MOCK_CONNECTION_KEY)
   return connection && connection.mock ? connection : null

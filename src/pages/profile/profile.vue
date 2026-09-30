@@ -33,7 +33,7 @@
           <view class="avatar-ring"></view>
         </view>
         <view class="user-level">
-          <view class="level-badge-row"><ManifestIcon class="level-icon" id="level_badge" :scale="0.8" /><text class="level-badge">LV.{{ Math.floor((points || 0) / 100) + 1 }}</text></view>
+          <view class="level-badge-row"><ManifestIcon class="level-icon" id="level_badge" :scale="1.5" /><text class="level-badge">LV.{{ Math.floor((points || 0) / 100) + 1 }}</text></view>
           <text class="level-text">环保达人</text>
         </view>
       </view>

@@ -79,7 +79,7 @@
                 class="wheel-canvas wheel-canvas-native"
                 :width="wheelCanvasSize"
                 :height="wheelCanvasSize"
-                :style="{ transform: `rotate(${spinAngle}deg)` }"
+                :style="wheelCanvasStyle"
                 @click="onWheelClick"
               ></canvas>
               <!-- #endif -->
@@ -273,6 +273,15 @@ export default {
     };
   },
   computed: {
+    wheelCanvasStyle() {
+      // APP 的原生画布保持固定，旋转在绘制坐标中完成。
+      // #ifdef APP-PLUS
+      return {};
+      // #endif
+      // #ifndef APP-PLUS
+      return { transform: `rotate(${this.spinAngle}deg)` };
+      // #endif
+    },
     displayPrizes() {
       const prizes = (this.config && this.config.prizes) || [];
       return prizes.filter(prize => Number(prize.level) > 1);
@@ -401,138 +410,137 @@ export default {
     requestDrawWheel() {
       this.$nextTick(() => {
         setTimeout(() => {
-          this.drawLotteryWheel(0);
+          const query = uni.createSelectorQuery().in(this);
+          // 外壳不会旋转；canvas 的旋转外接矩形不能当作画布尺寸。
+          query.select('.wheel-shell').boundingClientRect(rect => {
+            if (!rect || !rect.width) return;
+            const size = Math.max(1, Math.round(rect.width - uni.upx2px(28)));
+            this.wheelCanvasSize = size;
+            this.$nextTick(() => this.drawLotteryWheel(0));
+          }).exec();
         }, 80);
       });
     },
     drawLotteryWheel(rotationDeg = 0) {
       const prizes = (this.config && this.config.prizes) || [];
-      const query = uni.createSelectorQuery().in(this);
-      query.select('#lotteryWheel').boundingClientRect(rect => {
-        const size = Math.round((rect && rect.width) || this.wheelCanvasSize || 280);
-        if (size !== this.wheelCanvasSize) {
-          this.wheelCanvasSize = size;
-          this.$nextTick(() => this.drawLotteryWheel(rotationDeg));
-          return;
-        }
-        const center = size / 2;
-        const outerRadius = center - 6;
-        const segmentRadius = center - 28;
-        const innerRadius = center * 0.23;
-        const ctx = uni.createCanvasContext('lotteryWheel', this);
+      const size = this.wheelCanvasSize || 280;
+      const center = size / 2;
+      const outerRadius = center - 6;
+      const segmentRadius = center - 28;
+      const innerRadius = center * 0.23;
+      const ctx = uni.createCanvasContext('lotteryWheel', this);
 
-        ctx.clearRect(0, 0, size, size);
+      ctx.clearRect(0, 0, size, size);
 
-        if (!prizes.length) {
-          ctx.beginPath();
-          ctx.arc(center, center, segmentRadius, 0, Math.PI * 2);
-          ctx.setFillStyle('#fff7ed');
-          ctx.fill();
-          ctx.setStrokeStyle('#f59e0b');
-          ctx.setLineWidth(4);
-          ctx.stroke();
-          ctx.setFillStyle('#b45309');
-          ctx.setFontSize(16);
-          ctx.setTextAlign('center');
-          ctx.setTextBaseline('middle');
-          ctx.fillText(this.loadError ? '奖品加载失败' : '奖品加载中', center, center);
-          ctx.draw();
-          return;
-        }
-
-        const colors = ['#fff1b8', '#c9f7dc', '#d7ecff', '#ffd7d7', '#eadcff', '#c8fbf1', '#ffe0bd', '#ffd9ea'];
-        const accentColors = ['#f59e0b', '#10b981', '#0ea5e9', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#ec4899'];
-        const segmentAngle = (Math.PI * 2) / prizes.length;
-        const rotation = (Number(rotationDeg) || 0) * Math.PI / 180;
-        const startOffset = -Math.PI / 2 - segmentAngle / 2 + rotation;
-
-        ctx.beginPath();
-        ctx.arc(center, center, outerRadius, 0, Math.PI * 2);
-        ctx.setFillStyle('#f59e0b');
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(center, center, outerRadius - 8, 0, Math.PI * 2);
-        ctx.setFillStyle('#fff7ed');
-        ctx.fill();
-
-        prizes.forEach((prize, index) => {
-          const startAngle = startOffset + index * segmentAngle;
-          const endAngle = startAngle + segmentAngle;
-          const midAngle = startAngle + segmentAngle / 2;
-
-          ctx.beginPath();
-          ctx.moveTo(center, center);
-          ctx.arc(center, center, segmentRadius, startAngle, endAngle);
-          ctx.closePath();
-          ctx.setFillStyle(colors[index % colors.length]);
-          ctx.fill();
-
-          ctx.beginPath();
-          ctx.moveTo(center, center);
-          ctx.arc(center, center, segmentRadius, startAngle, endAngle);
-          ctx.closePath();
-          ctx.setStrokeStyle('rgba(255, 255, 255, 0.96)');
-          ctx.setLineWidth(3);
-          ctx.stroke();
-
-          ctx.beginPath();
-          ctx.moveTo(center, center);
-          ctx.lineTo(center + Math.cos(startAngle) * segmentRadius, center + Math.sin(startAngle) * segmentRadius);
-          ctx.setStrokeStyle('rgba(255, 255, 255, 0.72)');
-          ctx.setLineWidth(2);
-          ctx.stroke();
-
-          ctx.save();
-          const labelRadius = segmentRadius * 0.62;
-          ctx.translate(center + Math.cos(midAngle) * labelRadius, center + Math.sin(midAngle) * labelRadius);
-          ctx.rotate(midAngle + Math.PI / 2);
-          ctx.setTextAlign('center');
-          ctx.setTextBaseline('middle');
-
-          ctx.setFillStyle(accentColors[index % accentColors.length]);
-          ctx.setFontSize(22);
-          ctx.drawImage(getManifestIconPath(this.getPrizeIcon(prize)), -12, -32, 24, 24);
-
-          ctx.setFillStyle('#1f2937');
-          ctx.setFontSize(12);
-          this.drawWheelText(ctx, prize.name || '', 0, 6);
-          ctx.restore();
-        });
-
+      if (!prizes.length) {
         ctx.beginPath();
         ctx.arc(center, center, segmentRadius, 0, Math.PI * 2);
-        ctx.setStrokeStyle('#fbbf24');
-        ctx.setLineWidth(6);
+        ctx.setFillStyle('#fff7ed');
+        ctx.fill();
+        ctx.setStrokeStyle('#f59e0b');
+        ctx.setLineWidth(4);
         ctx.stroke();
+        ctx.setFillStyle('#b45309');
+        ctx.setFontSize(16);
+        ctx.setTextAlign('center');
+        ctx.setTextBaseline('middle');
+        ctx.fillText(this.loadError ? '奖品加载失败' : '奖品加载中', center, center);
+        ctx.draw();
+        return;
+      }
+
+      const colors = ['#fff1b8', '#c9f7dc', '#d7ecff', '#ffd7d7', '#eadcff', '#c8fbf1', '#ffe0bd', '#ffd9ea'];
+      const accentColors = ['#f59e0b', '#10b981', '#0ea5e9', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#ec4899'];
+      const segmentAngle = (Math.PI * 2) / prizes.length;
+      const rotation = (Number(rotationDeg) || 0) * Math.PI / 180;
+      const startOffset = -Math.PI / 2 - segmentAngle / 2 + rotation;
+
+      ctx.beginPath();
+      ctx.arc(center, center, outerRadius, 0, Math.PI * 2);
+      ctx.setFillStyle('#f59e0b');
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(center, center, outerRadius - 8, 0, Math.PI * 2);
+      ctx.setFillStyle('#fff7ed');
+      ctx.fill();
+
+      prizes.forEach((prize, index) => {
+        const startAngle = startOffset + index * segmentAngle;
+        const endAngle = startAngle + segmentAngle;
+        const midAngle = startAngle + segmentAngle / 2;
 
         ctx.beginPath();
-        ctx.arc(center, center, segmentRadius - 8, 0, Math.PI * 2);
-        ctx.setStrokeStyle('rgba(16, 185, 129, 0.38)');
-        ctx.setLineWidth(2);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(center, center, innerRadius + 13, 0, Math.PI * 2);
-        ctx.setFillStyle('#fbbf24');
+        ctx.moveTo(center, center);
+        ctx.arc(center, center, segmentRadius, startAngle, endAngle);
+        ctx.closePath();
+        ctx.setFillStyle(colors[index % colors.length]);
         ctx.fill();
 
         ctx.beginPath();
-        ctx.arc(center, center, innerRadius + 7, 0, Math.PI * 2);
-        ctx.setFillStyle('#ffffff');
-        ctx.fill();
-        ctx.setStrokeStyle('rgba(16, 185, 129, 0.22)');
+        ctx.moveTo(center, center);
+        ctx.arc(center, center, segmentRadius, startAngle, endAngle);
+        ctx.closePath();
+        ctx.setStrokeStyle('rgba(255, 255, 255, 0.96)');
+        ctx.setLineWidth(3);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(center, center);
+        ctx.lineTo(center + Math.cos(startAngle) * segmentRadius, center + Math.sin(startAngle) * segmentRadius);
+        ctx.setStrokeStyle('rgba(255, 255, 255, 0.72)');
         ctx.setLineWidth(2);
         ctx.stroke();
 
-        // #ifdef H5
-        ctx.draw();
-        // #endif
-        // #ifndef H5
-        // 小程序/App 直接显示 Canvas。屏幕外 Canvas 导出临时图片在部分运行环境会得到空白结果。
-        ctx.draw();
-        // #endif
-      }).exec();
+        ctx.save();
+        const labelRadius = segmentRadius * 0.62;
+        ctx.translate(center + Math.cos(midAngle) * labelRadius, center + Math.sin(midAngle) * labelRadius);
+        ctx.rotate(midAngle + Math.PI / 2);
+        ctx.setTextAlign('center');
+        ctx.setTextBaseline('middle');
+
+        ctx.setFillStyle(accentColors[index % accentColors.length]);
+        ctx.setFontSize(22);
+        ctx.drawImage(getManifestIconPath(this.getPrizeIcon(prize)), -12, -32, 24, 24);
+
+        ctx.setFillStyle('#1f2937');
+        ctx.setFontSize(12);
+        this.drawWheelText(ctx, prize.name || '', 0, 6);
+        ctx.restore();
+      });
+
+      ctx.beginPath();
+      ctx.arc(center, center, segmentRadius, 0, Math.PI * 2);
+      ctx.setStrokeStyle('#fbbf24');
+      ctx.setLineWidth(6);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(center, center, segmentRadius - 8, 0, Math.PI * 2);
+      ctx.setStrokeStyle('rgba(16, 185, 129, 0.38)');
+      ctx.setLineWidth(2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(center, center, innerRadius + 13, 0, Math.PI * 2);
+      ctx.setFillStyle('#fbbf24');
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(center, center, innerRadius + 7, 0, Math.PI * 2);
+      ctx.setFillStyle('#ffffff');
+      ctx.fill();
+      ctx.setStrokeStyle('rgba(16, 185, 129, 0.22)');
+      ctx.setLineWidth(2);
+      ctx.stroke();
+
+      // #ifdef H5
+      ctx.draw();
+      // #endif
+      // #ifndef H5
+      // 小程序/App 直接显示 Canvas。屏幕外 Canvas 导出临时图片在部分运行环境会得到空白结果。
+      ctx.draw();
+      // #endif
     },
     drawWheelText(ctx, text, x, y) {
       const safeText = String(text || '');
@@ -665,7 +673,7 @@ export default {
         const easeOut = 1 - Math.pow(1 - progress, 3);
         current = totalAngle * easeOut;
         this.spinAngle = current;
-        // #ifdef H5
+        // #ifdef H5 || APP-PLUS
         this.drawLotteryWheel(current);
         // #endif
         if (progress < 1) {

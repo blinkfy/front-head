@@ -1,34 +1,42 @@
 <template>
-  <view class="recognition-visual" :class="[variant, { 'robot-space': usedRobot }]" aria-hidden="true">
-    <view class="camera-layer" :class="{ visible: !robotMounted || phase === 'fade' }">
+  <view ref="visualHost" class="recognition-visual" :class="[variant, { 'robot-space': usedRobot }]" aria-hidden="true">
+    <view class="camera-layer" :class="{ visible: !robotMounted || ['fade', 'returning', 'parked'].includes(phase) }">
       <slot />
     </view>
-    <SmartSortRobot3D v-if="robotMounted" class="robot-layer" :class="{ outgoing: phase === 'fade' }"
+    <SmartSortRobot3D v-if="robotMounted" class="robot-layer" :class="{ outgoing: phase === 'fade', returning: phase === 'returning', parked: phase === 'parked' }" :style="returnStyle"
       :variant="variant" :state="state" :active="active" @settled="onRobotSettled" />
   </view>
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { getCurrentInstance, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import SmartSortRobot3D from './SmartSortRobot3D.vue'
 
 const props = defineProps({
   showRobot: { type: Boolean, default: false },
   state: { type: String, default: 'idle' },
   active: { type: Boolean, default: true },
-  variant: { type: String, default: 'light' }
+  variant: { type: String, default: 'light' },
+  returnTo: { type: String, default: '' }
 })
-const emit = defineEmits(['settled'])
+const emit = defineEmits(['settled', 'returning'])
+const owner = getCurrentInstance()
+const visualHost = ref(null)
+const returnStyle = ref({})
+let returnVersion = 0
+let destroyed = false
 const robotMounted = ref(false)
 const usedRobot = ref(false)
 const phase = ref('camera')
 let holdTimer = null
 let fadeTimer = null
+let returnTimer = null
 
 function clearTimers() {
   clearTimeout(holdTimer)
   clearTimeout(fadeTimer)
-  holdTimer = fadeTimer = null
+  clearTimeout(returnTimer)
+  holdTimer = fadeTimer = returnTimer = null
 }
 
 function finishFeedback() {
@@ -44,16 +52,84 @@ function beginFade() {
   fadeTimer = setTimeout(finishFeedback, 320)
 }
 
+function queryRect(selector, scope) {
+  return new Promise(resolve => {
+    try {
+      const query = uni.createSelectorQuery().in(scope)
+      query.select(selector).boundingClientRect()
+      query.exec(results => resolve(results?.[0] || null))
+    } catch (_) { resolve(null) }
+  })
+}
+
+async function measureReturnPosition() {
+  // H5 从当前视觉节点向上查落点，避开 uni-view 包装层和缓存的其它页面。
+  // #ifdef H5
+  const element = visualHost.value?.$el || visualHost.value
+  if (element?.getBoundingClientRect) {
+    let scope = element.parentElement
+    let target = null
+    while (scope && !target) {
+      target = scope.querySelector(props.returnTo)
+      scope = scope.parentElement
+    }
+    return [element.getBoundingClientRect(), target?.getBoundingClientRect() || null]
+  }
+  // #endif
+  // APP/小程序逐层找到包含入口的作用域，不能假定直接父级就是页面。
+  const source = await queryRect('.recognition-visual', owner.proxy)
+  let scope = owner.parent
+  while (source && scope) {
+    const target = await queryRect(props.returnTo, scope.proxy)
+    if (target) return [source, target]
+    scope = scope.parent
+  }
+  return [source, null]
+}
+
+function finishReturn() {
+  clearTimers()
+  phase.value = 'parked'
+  // 保留同一个机器人上下文，入口卡片只提供落点占位。
+  emit('settled', { returned: true })
+}
+
+async function returnToEntry() {
+  clearTimers()
+  const version = ++returnVersion
+  phase.value = 'returning'
+  emit('returning')
+  await nextTick()
+  const [source, target] = await measureReturnPosition()
+  if (destroyed || version !== returnVersion || phase.value !== 'returning') return
+  if (!source || !target) {
+    // 无法取得布局时仍恢复入口，交由入口自己的静态/3D 加载机制显示。
+    phase.value = 'camera'
+    robotMounted.value = false
+    emit('settled', { returned: false })
+    return
+  }
+  returnStyle.value = { transform: `translate(${target.left - source.left}px, ${target.top - source.top}px)` }
+  if (!props.active) return finishReturn()
+  // 仅控制落回入口的视觉过渡，不参与上传或识别请求时序。
+  returnTimer = setTimeout(finishReturn, 500)
+}
+
 function onRobotSettled() {
   if (!robotMounted.value || phase.value !== 'robot' || !['success', 'fail'].includes(props.state)) return
+  if (props.state === 'fail' && props.returnTo) return returnToEntry()
   if (!props.active) return finishFeedback()
   phase.value = 'hold'
   if (props.state === 'success') holdTimer = setTimeout(beginFade, 700)
   else beginFade()
 }
 
-watch(() => [props.showRobot, props.state], ([showRobot]) => {
+watch(() => [props.showRobot, props.state], ([showRobot, state]) => {
+  // 回到入口后 Idle/Tap 继续在落点播放；新请求立即把机器人送回顶部。
+  if (showRobot && ['returning', 'parked'].includes(phase.value) && ['idle', 'tap'].includes(state)) return
+  returnVersion++
   clearTimers()
+  returnStyle.value = {}
   if (showRobot) {
     usedRobot.value = true
     robotMounted.value = true
@@ -66,8 +142,17 @@ watch(() => [props.showRobot, props.state], ([showRobot]) => {
 
 watch(() => props.active, active => {
   if (!active && (phase.value === 'hold' || phase.value === 'fade')) finishFeedback()
+  if (!active && phase.value === 'returning') finishReturn()
+  if (active && phase.value === 'parked') {
+    const version = returnVersion
+    nextTick().then(measureReturnPosition).then(([source, target]) => {
+      if (!destroyed && version === returnVersion && phase.value === 'parked' && source && target) {
+        returnStyle.value = { transform: `translate(${target.left - source.left}px, ${target.top - source.top}px)` }
+      }
+    })
+  }
 })
-onBeforeUnmount(clearTimers)
+onBeforeUnmount(() => { destroyed = true; returnVersion++; clearTimers() })
 </script>
 
 <style scoped>
@@ -83,10 +168,13 @@ onBeforeUnmount(clearTimers)
   left: 0;
   opacity: 1;
   transform: scale(1);
-  transition: opacity 320ms ease-in-out, transform 320ms ease-in-out;
+  transition: none;
 }
-.robot-layer.outgoing { opacity: 0; transform: scale(0.94); }
+.robot-layer.returning { transition: transform 500ms cubic-bezier(0.22, 0.7, 0.3, 1.06); }
+.robot-layer.parked { transition: none; }
+.robot-layer.outgoing { opacity: 0; transform: scale(0.94); transition: opacity 320ms ease-in-out, transform 320ms ease-in-out; }
 @media (prefers-reduced-motion: reduce) {
   .robot-layer.outgoing { transform: none; }
+  .robot-layer.returning { transition: none; }
 }
 </style>

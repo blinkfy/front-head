@@ -48,12 +48,12 @@
       </view>
       
       <!-- 上传区域 -->
-      <view class="upload-section">
+      <view class="upload-section" :class="{ 'robot-returning-card': robotEntryReturning || robotAtEntry }">
         
         <view class="upload-container onboarding-target-scan" @click="onAddImage" :class="{ 'processing': isProcessing }">
           <view class="upload-border">
             <view class="upload-inner">
-              <SmartSortRecognitionVisual :show-robot="classificationUi === 'recognizing' || robotFeedbackActive" variant="dark" :state="robotState" :active="robotPageActive" @settled="robotFeedbackActive = false">
+              <SmartSortRecognitionVisual :show-robot="classificationUi === 'recognizing' || robotFeedbackActive || robotAtEntry" return-to=".smart-sort-return-target" variant="dark" :state="robotState" :active="robotPageActive" @returning="onRobotReturning" @settled="onRobotFeedbackSettled">
                 <view class="upload-icon">
                   <ManifestIcon v-if="!isProcessing" id="camera_scan" />
                   <view v-else class="loading-spinner">
@@ -161,7 +161,8 @@
       <!-- 默认提示区域 -->
       <view v-if="classificationUi === 'initial'" class="welcome-section">
         <view class="welcome-card" @click="onAddImage">
-          <SmartSortRobot3D variant="dark" :state="robotState" :active="robotPageActive" />
+          <SmartSortRobot3D v-if="!robotEntryReturning && !robotAtEntry" variant="dark" :state="robotState" :active="robotPageActive" />
+          <view v-else class="smart-sort-return-target dark"></view>
           <text class="welcome-title">开始智能分类</text>
           <text class="welcome-desc">上传图片，AI将为您识别垃圾类型<br/>共同践行绿色环保理念</text>
         </view>
@@ -375,6 +376,29 @@ const robotState = ref('idle')
 const classificationUi = ref('initial')
 const robotFeedbackActive = ref(false)
 const robotPageActive = ref(true)
+const robotEntryReturning = ref(false)
+const robotAtEntry = ref(false)
+
+function onRobotReturning() {
+  classificationUi.value = 'initial'
+  robotEntryReturning.value = true
+  robotAtEntry.value = false
+  robotState.value = 'idle'
+}
+
+function onRobotFeedbackSettled(feedback) {
+  robotEntryReturning.value = false
+  robotAtEntry.value = !!feedback?.returned
+  robotFeedbackActive.value = false
+}
+
+watch(robotState, state => {
+  if (['uploading', 'processing', 'success', 'fail'].includes(state)) {
+    robotEntryReturning.value = false
+    robotAtEntry.value = false
+  }
+})
+
 const processStatus = ref('处理中...')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
@@ -1384,7 +1408,9 @@ function onAddImage() {
     return
   }
 
-  robotState.value = 'tap'
+  // 取消重新选图时不打断尚未结束的失败反馈。
+  const keepFailureFeedback = robotFeedbackActive.value && robotState.value === 'fail'
+  if (!keepFailureFeedback) robotState.value = 'tap'
   console.log('onAddImage 开始选择图片')
   
   // 配置图片选择参数
@@ -1406,7 +1432,7 @@ function onAddImage() {
       })
     },
     fail: err => {
-      robotState.value = 'idle'
+      if (!keepFailureFeedback) robotState.value = 'idle'
       console.log('图片选择失败:', err)
       uni.showToast({
         title: '图片选择取消',
@@ -3306,4 +3332,10 @@ function closeAchievementModal() {
   border-radius: 44rpx;
   box-shadow: 0 8rpx 24rpx rgba(16,185,129,0.35);
 }
+
+/* 失败反馈回到入口时保留落点尺寸，机器人只在顶部组件中维护一份。 */
+.smart-sort-return-target { width: 160rpx; height: 142rpx; margin: 0 auto 16rpx; }
+.smart-sort-return-target.dark { width: 170rpx; height: 170rpx; margin-bottom: 24rpx; }
+.upload-section.robot-returning-card { position: relative; z-index: 3; }
+.upload-section.robot-returning-card .upload-border { transform: none; }
 </style>

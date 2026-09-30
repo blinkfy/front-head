@@ -17,6 +17,7 @@
 <script>
 import { ThemeManager } from '@/utils/theme.js'
 import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
+import { warmManifestIcons } from '@/utils/icon-preload.js'
 
 // 页面映射表
 const PAGE_MAPPINGS = {
@@ -50,6 +51,7 @@ export default {
     
     // 初始化全局消息总线
     initGlobalMessageBus()
+    warmManifestIcons()
     
     // 立即尝试检查主题重定向
     const theme = ThemeManager.getTheme()

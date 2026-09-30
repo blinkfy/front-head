@@ -1886,6 +1886,7 @@ page {
 
 .scan-topbar .back-btn {
   position: static;
+  align-self: center;
   width: 44px;
   height: 44px;
   padding: 0;
@@ -1908,7 +1909,8 @@ page {
 
 .back-icon {
   display: block;
-  margin-top: -2px;
+  margin-top: 0;
+  transform: translate(6px, 6px);
   font-size: 32px;
   line-height: 1;
   font-weight: 300;

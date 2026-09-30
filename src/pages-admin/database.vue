@@ -254,7 +254,7 @@
                         <text class="data-title">{{ getCurrentTableLabel() }}</text>
                         <view class="data-actions" v-if="canEditCurrentTable()">
                             <view class="action-icon-btn" @click="handleAdd">
-                                <ManifestIcon id="add" :scale="1" />
+                                <ManifestIcon id="add" :scale="1.5" />
                             </view>
                         </view>
                     </view>
@@ -440,10 +440,10 @@
                             <!-- 操作按钮 -->
                             <view class="data-item-actions" v-if="canEditCurrentTable()">
                                 <view class="item-action-btn edit" @click="handleEdit(item)">
-                                    <text>编辑</text>
+                                    <ManifestIcon id="post_edit" :scale="1.5" />
                                 </view>
                                 <view class="item-action-btn delete" @click="handleDelete(item)">
-                                    <ManifestIcon id="delete" :scale="1" />
+                                    <ManifestIcon id="delete" :scale="1.5" />
                                 </view>
                             </view>
                         </view>
