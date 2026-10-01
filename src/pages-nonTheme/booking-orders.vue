@@ -138,7 +138,7 @@
 </template>
 
 <script>
-import { getBookingList, cancelBooking } from '@/api/booking.js';
+import { getBookingList, cancelBooking } from '@/pages-nonTheme/api/booking.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 
 export default {

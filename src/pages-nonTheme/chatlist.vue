@@ -98,7 +98,7 @@
 </template>
 
 <script>
-import * as chatApi from '@/api/chat'
+import * as chatApi from '@/pages-nonTheme/api/chat'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
@@ -1081,6 +1081,9 @@ computed: {
 			// 使用在线默认头像服务而不是本地文件
 			return 'https://ui-avatars.com/api/?name=U&background=999999&color=fff&size=100'
 		},
+
+		// 暴露给模板：Options API 中 import 的函数不会自动进入渲染上下文
+		getDisplayName,
 
 		// 获取用户头像 (如果没有则生成)
 		getUserAvatar(user) {

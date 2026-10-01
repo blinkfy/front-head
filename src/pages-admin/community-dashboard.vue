@@ -235,7 +235,7 @@ import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
-import '@/styles/admin-light-theme.css'
+import '@/pages-admin/styles/admin-light-theme.css'
 
 // ─── 工具函数 ──────────────────────────────────────────
 function getStorage(key) {

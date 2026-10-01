@@ -4,8 +4,8 @@
  * 用于处理聊天消息的发送、接收和存储
  */
 
-import request from './index.js'
-import { baseUrl } from './settings.js'
+import request from '@/api/index.js'
+import { baseUrl } from '@/api/settings.js'
 
 // 获取基础URL
 function getBaseUrl() {

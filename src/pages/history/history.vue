@@ -95,7 +95,14 @@
             <!-- 记录内容 -->
             <view class="item-content">
               <view class="item-image">
-                <view class="history-image history-image-ph">
+                <image
+                  v-if="item.hasImage && !thumbFailed[item.id]"
+                  class="history-image"
+                  :src="thumbUrl(item)"
+                  mode="aspectFill"
+                  @error="onThumbError(item.id)"
+                />
+                <view v-else class="history-image history-image-ph">
                   <ManifestIcon id="image_gallery" class="ph-icon" />
                 </view>
                 <view class="source-badge" :class="item.source">
@@ -537,6 +544,16 @@ async function loadDetailImage(item) {
   } catch (_) {
     // 图片加载失败时保持占位图
   }
+}
+
+// 列表缩略图：每行单独请求一张按需缩放的小图，避免列表接口携带大 Base64
+const thumbFailed = ref({})
+function thumbUrl(item) {
+  const token = uni.getStorageSync('token') || ''
+  return `${baseUrl}/api/recognition_history/image/${item.id}?raw=1&w=240&token=${encodeURIComponent(token)}`
+}
+function onThumbError(id) {
+  thumbFailed.value = { ...thumbFailed.value, [id]: true }
 }
 
 // 关闭详情弹窗
@@ -1197,8 +1214,8 @@ function handleBackupNavigation() {
 }
 
 .ph-icon {
-  width: 44rpx;
-  height: 44rpx;
+  /* ManifestIcon 尺寸由 inline style 的 1.8em 决定，这里用 font-size 控制 */
+  font-size: 24rpx;
   opacity: 0.45;
 }
 
@@ -1457,8 +1474,7 @@ function handleBackupNavigation() {
 }
 
 .detail-ph-icon {
-  width: 88rpx;
-  height: 88rpx;
+  font-size: 48rpx;
   opacity: 0.3;
 }
 

@@ -529,7 +529,7 @@
 </template>
 
 <script>
-import * as chatApi from '@/api/chat.js'
+import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { getUserProfile } from '@/api/user.js'
 import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
@@ -540,7 +540,7 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { loadChatHistoryCache, saveChatHistoryCache } from '@/utils/chat-history-cache.js'
 import { getDisplayName } from '@/utils/display-name.js'
 // #ifndef H5
-import { cacheChatOriginalImage, removeCachedChatOriginalImage, restoreCachedChatOriginalImages } from '@/utils/chat-media-cache.js'
+import { cacheChatOriginalImage, removeCachedChatOriginalImage, restoreCachedChatOriginalImages } from '@/pages-nonTheme/utils/chat-media-cache.js'
 // #endif
 
 // 本地存储 key 前缀

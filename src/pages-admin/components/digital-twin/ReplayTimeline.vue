@@ -34,7 +34,7 @@
 
 <script setup>
 import { eventPresentation } from '@/pages-admin/utils/park-replay.js'
-import { displaySourceLabel } from '@/utils/source-display.js'
+import { displaySourceLabel } from '@/pages-admin/utils/source-display.js'
 
 defineProps({
   events: { type: Array, default: () => [] },

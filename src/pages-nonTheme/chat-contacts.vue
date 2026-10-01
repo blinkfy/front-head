@@ -122,7 +122,7 @@
 </template>
 
 <script>
-import * as chatApi from '@/api/chat'
+import * as chatApi from '@/pages-nonTheme/api/chat'
 import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'

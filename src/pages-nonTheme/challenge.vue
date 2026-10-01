@@ -268,7 +268,7 @@
 </template>
 
 <script>
-import { getDailyChallenge, submitChallenge, getChallengeStats, getChallengeLeaderboard, getWeeklyCalendar, getModeQuestions } from '@/api/challenge.js';
+import { getDailyChallenge, submitChallenge, getChallengeStats, getChallengeLeaderboard, getWeeklyCalendar, getModeQuestions } from '@/pages-nonTheme/api/challenge.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';

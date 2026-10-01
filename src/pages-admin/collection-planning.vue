@@ -193,7 +193,7 @@ import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
-import '@/styles/admin-light-theme.css'
+import '@/pages-admin/styles/admin-light-theme.css'
 
 // ─── 常量 ─────────────────────────────────────────────
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)

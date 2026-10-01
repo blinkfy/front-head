@@ -107,7 +107,7 @@ import { mapWasteDisplayName } from '@/pages-admin/config/map-sprite-registry.js
 import StableMapLabel from './StableMapLabel.vue'
 import { normalizeMapPoint, zoneLabel } from '@/pages-admin/utils/park-scenario-visuals.js'
 import { primaryEventEntityIds } from '@/pages-admin/utils/park-replay.js'
-import { displaySourceLabel } from '@/utils/source-display.js'
+import { displaySourceLabel } from '@/pages-admin/utils/source-display.js'
 import { DIGITAL_TWIN_VISUAL_SYSTEM, mapDepthScale, mapMotionProgress, mapPolylineHeading } from '@/config/digital-twin-visual-system.js'
 import { robotTaskScanStartPositionPct } from '@/config/robot-task-shot-config.js'
 import { PARK_ROAD_NETWORK, nearestParkRoadPoint, parkPolylinePoint, parkRoutePolyline, preferredParkRoadPolyline, sampleParkRoadEdge } from '@/pages-admin/utils/park-road-network.js'

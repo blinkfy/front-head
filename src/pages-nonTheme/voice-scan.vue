@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <view class="voice-page" :class="{ 'dark-mode': isDark }">
     <!-- 动态背景 -->
     <view class="bg-effects">
@@ -125,7 +125,7 @@
 </template>
 
 <script>
-import { transcribeAudio, transcribeAudioBlob, transcribeAudioSegments, recognizeByText } from '@/api/voice.js';
+import { transcribeAudio, transcribeAudioBlob, transcribeAudioSegments, recognizeByText } from '@/pages-nonTheme/api/voice.js';
 import { baseUrl } from '@/api/settings.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 

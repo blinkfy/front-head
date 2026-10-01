@@ -3,7 +3,7 @@
  * 接入阿里百炼 DashScope ASR
  */
 import request from '@/api/index.js';
-import { baseUrl } from './settings.js';
+import { baseUrl } from '@/api/settings.js';
 
 export function recognizeByText(text) {
   return request({

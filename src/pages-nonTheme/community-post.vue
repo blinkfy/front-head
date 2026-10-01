@@ -164,12 +164,12 @@
 </template>
 
 <script>
-import { getComments, addComment, togglePostLike, getCommunityPosts, getCommunityPostImages, deleteCommunityPost, deleteCommunityComment } from '@/api/community.js';
+import { getComments, addComment, togglePostLike, getCommunityPosts, getCommunityPostImages, deleteCommunityPost, deleteCommunityComment } from '@/pages-nonTheme/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
-import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage } from '@/utils/community-image.js';
+import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage } from '@/pages-nonTheme/utils/community-image.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import { getDisplayName } from '@/utils/display-name.js';
 function requestJson(url, options = {}) {

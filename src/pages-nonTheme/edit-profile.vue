@@ -254,7 +254,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import * as userApi from '@/api/user.js'
-import { getCommunityTree } from '@/api/community.js'
+import { getCommunityTree } from '@/pages-nonTheme/api/community.js'
 import { compressImageToBase64, getAvatarUrl, validateAvatarSize } from '@/utils/avatar-handler.js'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { baseUrl } from '@/api/settings.js'

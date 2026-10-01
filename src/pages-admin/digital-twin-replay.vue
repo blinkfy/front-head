@@ -209,7 +209,7 @@ import {
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav.js'
 import { redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme.js'
-import '@/styles/admin-light-theme.css'
+import '@/pages-admin/styles/admin-light-theme.css'
 import {
   centerPhaseFromEvent,
   currentTaskId,
@@ -219,7 +219,7 @@ import {
   normalizeReplayBundle
 } from '@/pages-admin/utils/park-replay.js'
 import { blockedReturnLeftRoadRoute, deriveScenarioVisualState, normalizeMapPoint, withVisualGarbageTaskRequest } from '@/pages-admin/utils/park-scenario-visuals.js'
-import { displaySourceLabel } from '@/utils/source-display.js'
+import { displaySourceLabel } from '@/pages-admin/utils/source-display.js'
 import { displayTwinStatus } from '@/pages-admin/utils/digital-twin-status.js'
 import { CENTER_WORKFLOW_TIMINGS } from '@/pages-admin/config/center-workflow.js'
 import { DIGITAL_TWIN_VISUAL_SYSTEM } from '@/config/digital-twin-visual-system.js'

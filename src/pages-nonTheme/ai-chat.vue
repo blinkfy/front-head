@@ -310,7 +310,7 @@ import { baseUrl } from '@/api/settings'
 import MarkdownBody from '@/components/MarkdownBody.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
-import { parseRecognitionSeedSummary } from '@/utils/recognition-seed-display.mjs'
+import { parseRecognitionSeedSummary } from '@/pages-nonTheme/utils/recognition-seed-display.mjs'
 
 // ─── Storage 工具 ────────────────────────────────────────
 function getStorage(key) {

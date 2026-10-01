@@ -203,13 +203,13 @@
 </template>
 
 <script>
-import { getCommunityList, getCommunityTree, getMyCommunity, getCommunityCover, joinCommunity, getCommunityPosts, getCommunityPostImages, getCommunityRanking, togglePostLike, deleteCommunityPost, updatePostVisibility } from '@/api/community.js';
+import { getCommunityList, getCommunityTree, getMyCommunity, getCommunityCover, joinCommunity, getCommunityPosts, getCommunityPostImages, getCommunityRanking, togglePostLike, deleteCommunityPost, updatePostVisibility } from '@/pages-nonTheme/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import { buildH5SpaPath } from '@/utils/h5-route.js';
-import { getCachedCommunityImage, normalizeCommunityImages, normalizeCommunityImageUrl, setCachedCommunityImage } from '@/utils/community-image.js';
+import { getCachedCommunityImage, normalizeCommunityImages, normalizeCommunityImageUrl, setCachedCommunityImage } from '@/pages-nonTheme/utils/community-image.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import { getDisplayName } from '@/utils/display-name.js';
 

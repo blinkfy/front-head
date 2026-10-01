@@ -227,7 +227,7 @@
 </template>
 
 <script>
-import { getWasteTypes, createBooking, getAvailableTimeSlots, estimatePrice } from '@/api/booking.js';
+import { getWasteTypes, createBooking, getAvailableTimeSlots, estimatePrice } from '@/pages-nonTheme/api/booking.js';
 import { getUserProfile, updateUserProfile } from '@/api/user.js';
 import { searchPlaces } from '@/api/map.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';

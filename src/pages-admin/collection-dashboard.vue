@@ -516,7 +516,7 @@ import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
 import RiskAlgorithmWorkbench from '@/pages-admin/components/collection/RiskAlgorithmWorkbench.vue'
-import '@/styles/admin-light-theme.css'
+import '@/pages-admin/styles/admin-light-theme.css'
 
 const databaseStatusRuntime = Object.freeze({
   getStorageSync: key => uni.getStorageSync(key),

@@ -151,7 +151,7 @@ import {
   reportRobotExecution,
   sendRobotDeviceCommand,
   sendRobotTaskAction
-} from '@/api/robot-control.js'
+} from '@/pages-nonTheme/api/robot-control.js'
 
 const sortingRobotAssets = Object.freeze({
   layers: digitalTwinAssetUrl('sorting-robot/layers'),

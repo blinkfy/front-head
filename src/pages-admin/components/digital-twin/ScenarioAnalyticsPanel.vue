@@ -50,7 +50,7 @@
 <script setup>
 import { computed } from 'vue'
 import { scenarioMetricText, zoneLabel } from '@/pages-admin/utils/park-scenario-visuals.js'
-import { displaySourceLabel } from '@/utils/source-display.js'
+import { displaySourceLabel } from '@/pages-admin/utils/source-display.js'
 
 const props = defineProps({
   scenario: { type: String, default: 'baseline' },

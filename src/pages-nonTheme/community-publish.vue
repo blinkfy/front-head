@@ -123,7 +123,7 @@
 </template>
 
 <script>
-import { createPost } from '@/api/community.js';
+import { createPost } from '@/pages-nonTheme/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { compressImageToBase64 } from '@/utils/avatar-handler.js';
 import { baseUrl } from '@/api/settings';

@@ -246,7 +246,7 @@
 </template>
 
 <script>
-import { getLotteryConfig, getLotteryDailyStatus, drawLottery, getLotteryRecords } from '@/api/lottery.js';
+import { getLotteryConfig, getLotteryDailyStatus, drawLottery, getLotteryRecords } from '@/pages-nonTheme/api/lottery.js';
 import { userinfo } from '@/api/user.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
