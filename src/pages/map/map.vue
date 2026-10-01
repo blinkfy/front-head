@@ -141,6 +141,45 @@
       </view>
       <MapBinAdminPanel v-if="isMapAdmin" :bin="selectedMarker" @updated="refreshAdminMarker" />
     </view>
+
+    <!-- 垃圾桶问题上报弹窗 -->
+    <view v-if="showReportModal" class="report-overlay" @click="closeReportModal">
+      <view class="report-dialog" @click.stop>
+        <view class="report-header">
+          <view class="report-heading-icon"><ManifestIcon id="dark_alert" /></view>
+          <view class="report-heading-copy">
+            <text class="report-title">反馈点位问题</text>
+            <text class="report-subtitle">帮助我们及时核实并更新地图信息</text>
+          </view>
+          <ManifestIcon id="close" class="report-close" @click="closeReportModal" />
+        </view>
+        <view class="report-point">
+          <ManifestIcon id="normal_bin_marker" class="report-point-icon" />
+          <view class="report-point-copy">
+            <text class="report-point-label">反馈点位</text>
+            <text class="report-point-name">{{ reportTarget?.title || '垃圾桶点位' }}</text>
+          </view>
+        </view>
+        <view class="report-reason-heading">
+          <text>问题描述</text><text class="report-required">必填</text>
+        </view>
+        <textarea
+          v-model="reportReason"
+          class="report-textarea"
+          maxlength="200"
+          placeholder="例如：点位已迁移、设备损坏或分类信息有误"
+          placeholder-class="report-placeholder"
+          :auto-height="false"
+        />
+        <text class="report-counter">{{ reportReason.length }}/200</text>
+        <view class="report-actions">
+          <view class="report-cancel" @click="closeReportModal">取消</view>
+          <view class="report-submit" :class="{ disabled: !reportReason.trim() || reportSubmitting }" @click="submitReport">
+            {{ reportSubmitting ? '提交中…' : '提交反馈' }}
+          </view>
+        </view>
+      </view>
+    </view>
     
     <!-- 位置选择模式：显示选择按钮 (仅H5) -->
     <view v-if="selectMode && isH5" class="select-location-panel" :style="{ top: (statusBarHeight + 50) + 'px' }">
@@ -175,10 +214,10 @@
       v-if="!selectMode && !viewMode"
       :class="[isH5 ? 'add-btn-container' : 'floating-actions-container', { dragging: isDraggingFloatingActions }]"
       :style="{ transform: `translate3d(${floatingActionsOffset.x}px, ${floatingActionsOffset.y}px, 0)` }"
-      @touchstart.stop="startFloatingActionsDrag"
-      @touchmove.stop.prevent="moveFloatingActionsDrag"
-      @touchend.stop="endFloatingActionsDrag"
-      @touchcancel.stop="endFloatingActionsDrag"
+      @touchstart="startFloatingActionsDrag"
+      @touchmove="moveFloatingActionsDrag"
+      @touchend="endFloatingActionsDrag"
+      @touchcancel="endFloatingActionsDrag"
     >
       <view v-if="isH5" class="add-btn" @click.stop="handleFloatingActionClick('add')">
         <ManifestIcon id="add" class="add-btn-icon" :scale="1" />
@@ -273,6 +312,10 @@ const userLocation = ref({ latitude: null, longitude: null, addr: '' })
 const userMarker = ref(null)
 // 新增垃圾桶弹窗显示状态
 const showAddModal = ref(false)
+const showReportModal = ref(false)
+const reportTarget = ref(null)
+const reportReason = ref('')
+const reportSubmitting = ref(false)
 const floatingActionsOffset = ref({ x: 0, y: 0 })
 const floatingActionsDragStart = ref(null)
 const isDraggingFloatingActions = ref(false)
@@ -970,36 +1013,40 @@ function openHistoryImage(m) {
 
 function reportErrorMarker(m) {
   if (!m) return
-  if (!isH5) {
-    uni.showModal({
-      title: '上报错误',
-      content: `请输入上报 ${m.title} 的错误信息：`,
-      editable: true,
-      success(res) {
-        if (res.confirm && res.content) callReport(m, res.content);
-        else uni.showToast({ title: '上报取消', icon: 'none' });
-      }
-    });
-    return;
-  }
-  const reason = window.prompt(`上报 ${m.title} 的错误信息：`, '');
-  if (reason === null || reason.trim() === '') {
-    uni.showToast({ title: '上报取消', icon: 'none' });
-    return;
-  }
-  callReport(m, reason);
+  reportTarget.value = m
+  reportReason.value = ''
+  showReportModal.value = true
+}
+
+function closeReportModal() {
+  if (reportSubmitting.value) return
+  showReportModal.value = false
+  reportTarget.value = null
+  reportReason.value = ''
+}
+
+function submitReport() {
+  const reason = reportReason.value.trim()
+  if (!reason || reportSubmitting.value || !reportTarget.value) return
+  callReport(reportTarget.value, reason)
 }
 
 async function callReport(m, reason = '') {
+  reportSubmitting.value = true
   try {
     const deviceId = m.deviceId || m.id || `${m.latitude},${m.longitude}`
     await reportDeviceError(deviceId, reason)
     uni.showToast({ title: '上报成功，感谢反馈', icon: 'success' })
     if (isMapAdmin.value) loadTrashBinList()
     selectedMarker.value = null
+    showReportModal.value = false
+    reportTarget.value = null
+    reportReason.value = ''
   } catch (err) {
     const msg = (err && err.msg) ? err.msg : (err && err.message) ? err.message : '上报失败'
     uni.showToast({ title: msg, icon: 'none' })
+  } finally {
+    reportSubmitting.value = false
   }
 }
 
@@ -1025,9 +1072,11 @@ function moveFloatingActionsDrag(event) {
   if (!isDraggingFloatingActions.value && Math.hypot(dx, dy) < 6) return
 
   isDraggingFloatingActions.value = true
+  event.preventDefault?.()
+  event.stopPropagation?.()
   const { windowWidth, windowHeight, statusBarHeight = 0, safeAreaInsets } = uni.getSystemInfoSync()
   const rpx = windowWidth / 750
-  const controlWidth = (isH5 ? 112 : 128) * rpx
+  const controlWidth = (isH5 ? 112 : 116) * rpx
   const controlHeight = (isH5 ? 112 : 224) * rpx
   const edge = 8
   const tabbarHeight = 120 * rpx + (safeAreaInsets?.bottom || 0)
@@ -1806,9 +1855,9 @@ function goProfile() {
   right: 32rpx;
   bottom: 280rpx;
   z-index: 9999;
-  width: 128rpx;
+  width: 116rpx;
   height: 224rpx;
-  border-radius: 64rpx;
+  border-radius: 58rpx;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1828,11 +1877,11 @@ function goProfile() {
 }
 
 .scan-action {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.88) 0%, rgba(37, 99, 235, 0.88) 100%);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.78) 0%, rgba(37, 99, 235, 0.78) 100%);
 }
 
 .add-action {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.88) 0%, rgba(5, 150, 105, 0.88) 100%);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.78) 0%, rgba(5, 150, 105, 0.78) 100%);
 }
 
 .floating-actions-container.dragging .floating-action {
@@ -2124,4 +2173,63 @@ function goProfile() {
   font-size: 28rpx;
   font-weight: 600;
 }
+
+.report-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32rpx;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(8px);
+}
+.report-dialog {
+  width: 620rpx;
+  max-width: calc(100vw - 64rpx);
+  padding: 32rpx;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 24rpx 72rpx rgba(15, 23, 42, 0.24);
+}
+.report-header, .report-point, .report-actions { display: flex; align-items: center; }
+.report-header { gap: 18rpx; margin-bottom: 28rpx; }
+.report-heading-icon {
+  width: 76rpx; height: 76rpx; flex: 0 0 76rpx; border-radius: 22rpx;
+  display: flex; align-items: center; justify-content: center;
+  color: #e65c4f; background: #fff1ef; font-size: 42rpx;
+}
+.report-heading-copy { flex: 1; min-width: 0; }
+.report-title { display: block; color: #172033; font-size: 32rpx; font-weight: 700; }
+.report-subtitle { display: block; margin-top: 6rpx; color: #8490a2; font-size: 22rpx; }
+.report-close { width: 40rpx; height: 40rpx; color: #94a3b8; }
+.report-point {
+  gap: 16rpx; padding: 20rpx; margin-bottom: 28rpx; border-radius: 18rpx;
+  background: #f5f8fb; border: 1rpx solid #e8edf3;
+}
+.report-point-icon { width: 48rpx; height: 48rpx; color: #0eaa78; }
+.report-point-copy { min-width: 0; flex: 1; }
+.report-point-label { display: block; color: #8792a2; font-size: 21rpx; }
+.report-point-name { display: block; margin-top: 4rpx; color: #263244; font-size: 26rpx; font-weight: 600; }
+.report-reason-heading { display: flex; justify-content: space-between; margin-bottom: 12rpx; color: #273449; font-size: 25rpx; font-weight: 600; }
+.report-required { color: #e65c4f; font-size: 21rpx; font-weight: 500; }
+.report-textarea {
+  width: 100%; height: 190rpx; padding: 18rpx 20rpx; box-sizing: border-box;
+  border: 1rpx solid #dce4ed; border-radius: 16rpx; background: #fbfcfe;
+  color: #263244; font-size: 24rpx; line-height: 1.55;
+}
+.report-placeholder { color: #a3adba; font-size: 23rpx; }
+.report-counter { display: block; margin-top: 8rpx; text-align: right; color: #9aa5b3; font-size: 20rpx; }
+.report-actions { gap: 16rpx; margin-top: 28rpx; }
+.report-cancel, .report-submit {
+  height: 82rpx; flex: 1; display: flex; align-items: center; justify-content: center;
+  border-radius: 42rpx; font-size: 26rpx; font-weight: 600;
+}
+.report-cancel { color: #5c6878; background: #f1f4f7; }
+.report-submit { color: #ffffff; background: linear-gradient(135deg, #12b981, #07966e); }
+.report-submit.disabled { opacity: 0.45; }
 </style>

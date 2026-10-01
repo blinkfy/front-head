@@ -21,6 +21,16 @@ export function connectDevice(deviceId, devicetoken,Authorizetoken) {
   })
 }
 
+/** Resolve a WeChat mini-program QR scene for the authenticated user. */
+export function resolveWechatQrScene(scene) {
+  return request({
+    url: '/api/device/wechat-qr/resolve',
+    method: 'POST',
+    data: { scene },
+    needAuth: true
+  })
+}
+
 /**
  * 获取设备状态
  * @param {string} deviceId - 设备ID

@@ -48,7 +48,11 @@ export function warmManifestIcons() {
     ...manifest.filter(icon => icon.category === '01_core').map(icon => icon.id),
     ...manifest.map(icon => icon.id)
   ]
-  const sources = [...new Set(ids.map(getManifestIconPath).filter(Boolean))]
+  let sources = [...new Set(ids.map(getManifestIconPath).filter(Boolean))]
+  // #ifdef MP-WEIXIN
+  // 管理分包尚未加载时不读取其图片；进入数据库页后由 image 正常加载。
+  sources = sources.filter(source => !source.startsWith('/pages-admin/'))
+  // #endif
 
   const start = () => {
     let cursor = 0

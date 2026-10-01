@@ -1,6 +1,6 @@
 <template>
-  <view class="privacy-agreement" :class="{ 'privacy-agreement-dark': dark }">
-    <view class="privacy-consent-row" @tap="toggleConsent">
+  <view class="privacy-agreement" :class="{ 'privacy-agreement-dark': dark, 'privacy-agreement-modal-host': modalOnly }">
+    <view v-if="!modalOnly" class="privacy-consent-row" @tap="toggleConsent">
       <view class="privacy-checkbox" :class="{ checked: modelValue }" aria-label="同意用户协议与隐私保护指引">
         <ManifestIcon v-if="modelValue" class="privacy-checkmark" id="confirm" :scale="1" />
       </view>
@@ -10,11 +10,13 @@
       </view>
     </view>
 
-    <view v-if="showDetails" class="privacy-modal-mask" @tap="closeDetails">
+    <view v-if="visible" class="privacy-modal-mask" @tap="closeDetails">
       <view class="privacy-modal" @tap.stop>
         <view class="privacy-modal-header">
-          <text class="privacy-modal-title">分投侠用户协议与隐私保护说明</text>
-          <ManifestIcon class="privacy-modal-close" id="close" @tap="closeDetails" />
+          <text class="privacy-modal-title">用户协议与隐私说明</text>
+          <view class="privacy-modal-close-hit" @tap="closeDetails">
+            <image class="privacy-modal-close" src="/static/icons/close_32.webp.png" mode="aspectFit" />
+          </view>
         </view>
 
         <scroll-view class="privacy-modal-content" scroll-y>
@@ -26,6 +28,9 @@
             <text class="privacy-section-title">注册账号</text>
             <text class="privacy-section-text">
               注册时填写的用户名和密码，仅用于创建账号、登录和身份验证。
+              <!-- #ifdef MP-WEIXIN -->
+              在微信小程序中，注册会自动绑定当前微信，已有账号首次绑定需确认。账号可自行开启允许其他微信通过密码登录，此类登录会发送官方消息提醒；勾选“记住我”后可自动登录上次账号，主动退出后停止自动登录。
+              <!-- #endif -->
             </text>
           </view>
 
@@ -62,7 +67,6 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
 import ManifestIcon from './ManifestIcon.vue'
 
 const props = defineProps({
@@ -73,22 +77,29 @@ const props = defineProps({
   dark: {
     type: Boolean,
     default: false
+  },
+  modalOnly: {
+    type: Boolean,
+    default: false
+  },
+  visible: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['update:modelValue'])
-const showDetails = ref(false)
+const emit = defineEmits(['update:modelValue', 'open', 'close'])
 
 function toggleConsent() {
   emit('update:modelValue', !props.modelValue)
 }
 
 function openDetails() {
-  showDetails.value = true
+  emit('open')
 }
 
 function closeDetails() {
-  showDetails.value = false
+  emit('close')
 }
 </script>
 
@@ -149,11 +160,24 @@ function closeDetails() {
   font-weight: 600;
 }
 
-.privacy-modal-mask {
+.privacy-agreement-modal-host {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 12000;
-  padding: 40rpx;
+  margin: 0;
+}
+
+.privacy-modal-mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  padding: 32rpx;
   background: rgba(15, 23, 42, 0.46);
   display: flex;
   align-items: center;
@@ -164,8 +188,8 @@ function closeDetails() {
 .privacy-modal {
   width: 100%;
   max-width: 680rpx;
-  max-height: 82vh;
-  padding: 32rpx;
+  max-height: calc(100vh - 64rpx);
+  padding: 24rpx;
   border-radius: 28rpx;
   background: #ffffff;
   box-shadow: 0 24rpx 72rpx rgba(15, 23, 42, 0.2);
@@ -176,32 +200,39 @@ function closeDetails() {
 
 .privacy-modal-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 20rpx;
-  margin-bottom: 22rpx;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
 }
 
 .privacy-modal-title {
   flex: 1;
+  min-width: 0;
   color: #1f2937;
-  font-size: 30rpx;
+  font-size: 27rpx;
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1.35;
+}
+
+.privacy-modal-close-hit {
+  flex: 0 0 64rpx;
+  width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .privacy-modal-close {
-  width: 48rpx;
-  color: #94a3b8;
-  font-size: 42rpx;
-  line-height: 36rpx;
-  text-align: center;
+  width: 34rpx;
+  height: 34rpx;
 }
 
 .privacy-modal-content {
   flex: 1;
   min-height: 0;
-  max-height: 57vh;
+  max-height: 58vh;
 }
 
 .privacy-intro,
@@ -219,8 +250,8 @@ function closeDetails() {
 }
 
 .privacy-section {
-  margin-bottom: 16rpx;
-  padding: 22rpx;
+  margin-bottom: 14rpx;
+  padding: 18rpx;
   border: 1rpx solid #e5ece8;
   border-radius: 18rpx;
   background: #f8fbf9;
@@ -253,8 +284,8 @@ function closeDetails() {
 
 .privacy-modal-action {
   flex: 0 0 auto;
-  margin-top: 22rpx;
-  padding: 22rpx 24rpx;
+  margin-top: 16rpx;
+  padding: 18rpx 24rpx;
   border-radius: 999rpx;
   background: linear-gradient(135deg, #34d399, #059669);
   color: #ffffff;

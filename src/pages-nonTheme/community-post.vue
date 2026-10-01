@@ -29,7 +29,7 @@
           <view class="post-header">
             <image class="post-avatar" :src="getAvatarUrl(post.userAvatar)" mode="aspectFill"></image>
             <view class="post-meta">
-              <text class="post-author">{{ post.username }}</text>
+              <text class="post-author">{{ getDisplayName(post) }}</text>
               <text class="post-time">{{ formatTime(post.createdAt) }}</text>
             </view>
             <view class="post-tag" :class="getTagClass(post.tag)">
@@ -99,7 +99,7 @@
               <view class="comment-content">
                 <view class="comment-header">
                   <view class="comment-meta-left">
-                    <text class="comment-author">{{ comment.username }}</text>
+                    <text class="comment-author">{{ getDisplayName(comment) }}</text>
                     <text class="comment-time">{{ formatTime(comment.createdAt) }}</text>
                   </view>
                   <view v-if="isAdmin" class="comment-admin-delete" @click.stop="confirmDeleteComment(comment)">删除</view>
@@ -171,6 +171,7 @@ import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage } from '@/utils/community-image.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
+import { getDisplayName } from '@/utils/display-name.js';
 function requestJson(url, options = {}) {
   return new Promise((resolve, reject) => {
     uni.request({
@@ -276,6 +277,7 @@ export default {
     this.checkAdmin();
   },
   methods: {
+    getDisplayName,
     extractData(res) {
       return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
     },

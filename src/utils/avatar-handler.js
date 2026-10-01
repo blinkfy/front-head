@@ -11,7 +11,7 @@
  * @param {number} quality - 压缩质量，0-1，默认 0.8
  * @returns {Promise<string>} Base64 字符串
  */
-export async function compressImageToBase64(filePath, maxWidth = 64, maxHeight = 64, quality = 0.8) {
+export async function compressImageToBase64(filePath, maxWidth = 64, maxHeight = 64, quality = 0.8, canvasOptions = {}) {
   return new Promise((resolve, reject) => {
     // 获取图片信息
     uni.getImageInfo({
@@ -23,7 +23,7 @@ export async function compressImageToBase64(filePath, maxWidth = 64, maxHeight =
           handleH5Image(filePath, imageInfo, maxWidth, maxHeight, quality, resolve, reject)
         } else {
           // 小程序/APP 环境
-          handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, reject)
+          handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, reject, canvasOptions)
         }
       },
       fail: (err) => {
@@ -97,8 +97,9 @@ function handleH5Image(filePath, imageInfo, maxWidth, maxHeight, quality, resolv
 /**
  * 小程序/APP 环境图片处理
  */
-function handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, reject) {
-  const canvas = uni.createCanvasContext('avatar-canvas')
+function handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, reject, options = {}) {
+  const canvasId = options.canvasId || 'avatar-canvas'
+  const canvas = uni.createCanvasContext(canvasId, options.context)
   const originWidth = imageInfo.width
   const originHeight = imageInfo.height
 
@@ -127,7 +128,8 @@ function handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, re
   canvas.draw(false, () => {
     uni.canvasToTempFilePath(
       {
-        canvasId: 'avatar-canvas',
+        canvasId,
+        ...(options.canvasId ? { width: maxWidth, height: maxHeight, destWidth: maxWidth, destHeight: maxHeight, fileType: 'png' } : {}),
         success: (res) => {
           const tempFilePath = res.tempFilePath
           
@@ -156,7 +158,8 @@ function handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, re
           console.error('Canvas 转换失败:', err)
           reject(err)
         }
-      }
+      },
+      options.context
     )
   })
 }

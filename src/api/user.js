@@ -1,20 +1,61 @@
 import request from './index'
+// #ifdef MP-WEIXIN
+import { getWechatLoginCode, createWechatPasswordLoginFlow } from '@/utils/wechat-login.mjs'
+// #endif
 
-export function register(data) {
+export async function register(data) {
+  let url = '/api/register'
+  let payload = data
+  // #ifdef MP-WEIXIN
+  url = '/api/wechat/register'
+  payload = { ...data, wechatCode: await getWechatLoginCode(uni) }
+  // #endif
+  const requestOptions = { url, method: 'POST', data: payload }
+  // #ifdef H5
+  requestOptions.header = { 'X-Client-Platform': 'h5' }
+  // #endif
+  return request(requestOptions)
+}
+
+export async function login(data, options = {}) {
+  // #ifdef MP-WEIXIN
+  return createWechatPasswordLoginFlow({
+    runtime: uni,
+    previewMerge: data => request({ url: '/api/account-merge/preview', method: 'POST', data, silent: true }),
+    commitMerge: data => request({ url: '/api/account-merge/commit', method: 'POST', data, silent: true }),
+    chooseMerge: options.chooseMerge,
+    login: payload => request({ url: '/api/wechat/password-login', method: 'POST', data: payload, silent: true })
+  })(data, options.isActive)
+  // #endif
+  // #ifndef MP-WEIXIN
+  return request({ url: '/api/login', method: 'POST', data })
+  // #endif
+}
+
+// #ifdef MP-WEIXIN
+export function wechatLogin(data) {
+  return request({ url: '/api/wechat/login', method: 'POST', data, silent: true })
+}
+
+export function bindWechat(data, token) {
+  // Keep the explicit binding endpoint available to existing callers.
   return request({
-    url: '/api/register',
-    method: 'POST',
-    data
+    url: '/api/wechat/bind', method: 'POST', data, silent: true,
+    header: { Authorization: `Bearer ${token}` }
   })
 }
 
-export function login(data) {
+export function getWechatLoginSettings() {
+  return request({ url: '/api/wechat/login-settings', needAuth: true, silent: true })
+}
+
+export function updateWechatLoginSettings(allowOtherWechatLogin) {
   return request({
-    url: '/api/login',
-    method: 'POST',
-    data
+    url: '/api/wechat/login-settings', method: 'PUT', needAuth: true, silent: true,
+    data: { allowOtherWechatLogin }
   })
 }
+// #endif
 
 export function logout() {
   return request({
@@ -65,18 +106,10 @@ export function userinfo(avatar="true") {
  */
 export function updateUserProfile(data) {
   const token = uni.getStorageSync('token')
-  const payload = {
-    username: data.username,
-    avatar: data.avatar,
-    bio: data.bio,
-    phone: data.phone,
-    email: data.email,
-    location: data.location
+  const payload = {}
+  for (const field of ['username', 'nickname', 'avatar', 'bio', 'phone', 'email', 'location', 'provinceCode', 'cityCode', 'districtCode', 'communityCode']) {
+    if (data[field] !== undefined) payload[field] = data[field]
   }
-  if (data.provinceCode !== undefined) payload.provinceCode = data.provinceCode
-  if (data.cityCode !== undefined) payload.cityCode = data.cityCode
-  if (data.districtCode !== undefined) payload.districtCode = data.districtCode
-  if (data.communityCode !== undefined) payload.communityCode = data.communityCode
   return request({
     url: '/api/profile',
     method: 'PUT',

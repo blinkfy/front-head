@@ -88,9 +88,9 @@
 
       <!-- 用户信息 -->
       <view class="user-info">
-        <text class="username-display">{{ userInfo.username || username }}</text>
+        <text class="username-display">{{ userInfo.nickname || (userInfo.username || username).toUpperCase() }}</text>
         <text class="user-id">ECO ID: {{ (userInfo.username || username).toUpperCase() }}</text>
-        <view class="access-level"><ManifestIcon class="level-icon" id="level_badge" :scale="0.8" />环保达人 · LEVEL {{ Math.floor((points || 0) / 100) + 1 }}</view>
+        <view class="access-level"><ManifestIcon class="level-icon" id="level_badge" :scale="1" />环保达人 · LEVEL {{ Math.floor((points || 0) / 100) + 1 }}</view>
         <view class="eco-badges">
           <view class="badge" v-if="(points || 0) >= 100"><ManifestIcon id="classification_expert" /> 分类专家</view>
           <view class="badge" v-if="(points || 0) >= 300"><ManifestIcon id="recycling_king" /> 回收王者</view>
@@ -278,7 +278,7 @@
         <view class="admin-btn" @click="goFileManagement"><ManifestIcon id="file_manager" /> 文件管理</view>
         <view class="admin-btn" @click="go2048"><ManifestIcon id="admin_2048" /> 2048后台</view>
         <view class="admin-btn" @click="goDbMonitor"><ManifestIcon id="database" /> 数据库管理</view>
-        <view class="admin-btn" @click="goAdminAISettings"><ManifestIcon id="ai_settings" /> AI设置</view>
+        <view class="admin-btn" @click="goAdminAISettings"><ManifestIcon id="ai_settings" /> 服务设置</view>
         <view class="admin-btn" @click="goDigitalTwin"><ManifestIcon id="digital_twin" /> 数字孪生</view>
         <view class="admin-btn" @click="goCollectionDashboard"><ManifestIcon id="cleanup_dashboard" /> 清运仪表板</view>
         <view class="admin-btn" @click="goCollectionPlanning"><ManifestIcon id="cleanup_plan" /> 清运规划</view>
@@ -1368,6 +1368,7 @@ body {
 .access-level {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6rpx;
   color: #00ff88;
   font-size: 24rpx;
@@ -1376,7 +1377,7 @@ body {
   margin-bottom: 15rpx;
 }
 
-.level-icon { font-size: 22rpx; }
+.level-icon { font-size: 34rpx; }
 
 .eco-badges {
   display: flex;
@@ -2410,7 +2411,7 @@ body {
   }
 
   .admin-btn {
-    flex: 1 1 100%;
+    flex: 1 1 calc(50% - 7rpx);
     min-width: 0;
   }
 }

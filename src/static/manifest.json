@@ -45,8 +45,8 @@
     "id": "camera_scan",
     "zh_name": "拍照识别",
     "category": "01_core",
-    "recommended_size": 64,
-    "file": "icons/camera_scan_64.webp.png"
+    "recommended_size": 128,
+    "file": "icons/camera_scan_128.webp.png"
   },
   {
     "id": "cancel",
@@ -94,15 +94,15 @@
     "id": "home",
     "zh_name": "首页",
     "category": "01_core",
-    "recommended_size": 32,
-    "file": "icons/home_32.webp.png"
+    "recommended_size": 128,
+    "file": "icons/home_128.webp.png"
   },
   {
     "id": "map_location",
     "zh_name": "地图",
     "category": "01_core",
-    "recommended_size": 32,
-    "file": "icons/map_location_32.webp.png"
+    "recommended_size": 128,
+    "file": "icons/map_location_128.webp.png"
   },
   {
     "id": "more",
@@ -150,15 +150,15 @@
     "id": "store",
     "zh_name": "商城",
     "category": "01_core",
-    "recommended_size": 32,
-    "file": "icons/store_32.webp.png"
+    "recommended_size": 128,
+    "file": "icons/store_128.webp.png"
   },
   {
     "id": "user_profile",
     "zh_name": "我的",
     "category": "01_core",
-    "recommended_size": 32,
-    "file": "icons/user_profile_32.webp.png"
+    "recommended_size": 128,
+    "file": "icons/user_profile_128.webp.png"
   },
   {
     "id": "voice_recognition",
@@ -514,8 +514,8 @@
     "id": "restore",
     "zh_name": "恢复",
     "category": "03_common_actions",
-    "recommended_size": 32,
-    "file": "icons/restore_32.webp.png"
+    "recommended_size": 128,
+    "file": "icons/restore_128.webp.png"
   },
   {
     "id": "shield_captcha",
@@ -767,7 +767,7 @@
     "zh_name": "个人头像",
     "category": "03_profile_shop",
     "recommended_size": 64,
-    "file": "icons/profile_user_64.webp.png"
+    "file": "person.webp.png"
   },
   {
     "id": "ranking",
@@ -1176,6 +1176,20 @@
     "file": "icons/user_table_32.webp.png"
   },
   {
+    "id": "rank_first",
+    "zh_name": "第一名",
+    "category": "06_challenge",
+    "recommended_size": 48,
+    "file": "icons/rank_first_48.webp.png"
+  },
+  {
+    "id": "rank_second",
+    "zh_name": "第二名",
+    "category": "06_challenge",
+    "recommended_size": 48,
+    "file": "icons/rank_second_48.webp.png"
+  },
+  {
     "id": "rank_second",
     "zh_name": "第二名",
     "category": "06_challenge",
@@ -1216,5 +1230,19 @@
     "category": "01_core",
     "recommended_size": 64,
     "file": "icons/colorful-bin.webp.png"
+  },
+  {
+    "id": "wechat",
+    "zh_name": "微信",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/wechat.webp.png"
+  },
+  {
+    "id": "mp-weixin",
+    "zh_name": "小程序微信",
+    "category": "01_core",
+    "recommended_size": 64,
+    "file": "icons/mp-weixin.webp.png"
   }
 ]

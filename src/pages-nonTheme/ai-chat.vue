@@ -206,10 +206,10 @@
                   v-show="!isReasoningCollapsed('__stream__')"
                   class="reasoning-body"
                 >
-                  <MarkdownBody variant="reasoning" :markdown="streamingReasoning" />
+                  <MarkdownBody variant="reasoning" :markdown="streamingReasoning" :streaming="true" />
                 </view>
               </view>
-              <MarkdownBody :markdown="streamingText" />
+              <MarkdownBody :markdown="streamingText" :streaming="true" />
               <view class="typing-dots">
                 <view class="typing-dot"></view>
                 <view class="typing-dot"></view>

@@ -43,6 +43,20 @@
                     </view>
                     <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
                 </view>
+                <!-- #ifdef MP-WEIXIN -->
+                <view class="setting-item" :class="{ 'wechat-setting-disabled': wechatSettingsLoaded && !wechatCanManage }" @click="toggleWechatSharing">
+                    <view class="item-left">
+                        <ManifestIcon class="item-icon" id="password" />
+                        <view class="item-info">
+                            <text class="item-title">允许其他微信登录</text>
+                            <text class="item-desc">{{ wechatSettingsDescription }}</text>
+                        </view>
+                    </view>
+                    <view class="toggle-switch" :class="{ active: allowOtherWechatLogin }">
+                        <view class="toggle-dot"></view>
+                    </view>
+                </view>
+                <!-- #endif -->
             </view>
 
             <!-- 显示设置 -->
@@ -145,6 +159,52 @@
 import { ref, onMounted } from 'vue'
 import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+// #ifdef MP-WEIXIN
+import { computed } from 'vue'
+import { getWechatLoginSettings, updateWechatLoginSettings } from '@/api/user'
+
+const allowOtherWechatLogin = ref(false)
+const wechatCanManage = ref(false)
+const wechatSettingsLoaded = ref(false)
+const wechatSettingsBusy = ref(false)
+const wechatSettingsDescription = computed(() => {
+    if (wechatSettingsBusy.value) return '正在同步登录权限…'
+    if (!wechatSettingsLoaded.value) return '点击获取微信登录设置'
+    if (!wechatCanManage.value) return '仅绑定的微信可修改此项，请使用主微信登录'
+    return allowOtherWechatLogin.value ? '已开启；可通过密码在其他微信登录，每次登录发送官方提醒' : '已关闭；其他微信无法登录此账号'
+})
+
+async function loadWechatSettings() {
+    if (wechatSettingsBusy.value || !uni.getStorageSync('token')) return
+    wechatSettingsBusy.value = true
+    try {
+        const result = await getWechatLoginSettings()
+        allowOtherWechatLogin.value = result.data.allowOtherWechatLogin
+        wechatCanManage.value = result.data.canManage
+        wechatSettingsLoaded.value = true
+    } catch (error) {
+        uni.showToast({ title: error.msg || '微信登录设置获取失败，请点击重试', icon: 'none' })
+    } finally {
+        wechatSettingsBusy.value = false
+    }
+}
+
+async function toggleWechatSharing() {
+    if (wechatSettingsBusy.value) return
+    if (!wechatSettingsLoaded.value) return loadWechatSettings()
+    if (!wechatCanManage.value) return uni.showToast({ title: '请使用此账号绑定的微信登录后修改', icon: 'none' })
+    wechatSettingsBusy.value = true
+    try {
+        const result = await updateWechatLoginSettings(!allowOtherWechatLogin.value)
+        allowOtherWechatLogin.value = result.data.allowOtherWechatLogin
+        uni.showToast({ title: '登录权限已更新', icon: 'success' })
+    } catch (error) {
+        uni.showToast({ title: error.msg || '更新失败，请重试', icon: 'none' })
+    } finally {
+        wechatSettingsBusy.value = false
+    }
+}
+// #endif
 
 const isDarkTheme = ref(ThemeManager.getTheme() === 'dark')
 const showConfirmModal = ref(false)
@@ -251,6 +311,10 @@ function handleConfirm() {
             uni.removeStorageSync('token')
             uni.removeStorageSync('isAdmin')
             uni.setStorageSync('autoLogin', false)
+            // #ifdef MP-WEIXIN
+            uni.removeStorageSync('wechat_shared_session')
+            uni.removeStorageSync('wechat_last_login')
+            // #endif
             uni.removeStorageSync('connection')
             uni.removeStorageSync('device')
             uni.removeStorageSync('userpoints')
@@ -271,10 +335,14 @@ function handleConfirm() {
 
 onMounted(() => {
     checkTheme()
+    // #ifdef MP-WEIXIN
+    loadWechatSettings()
+    // #endif
 })
 </script>
 
 <style scoped>
+.wechat-setting-disabled { opacity: 0.65; }
 .settings-container {
     min-height: 100vh;
     background: linear-gradient(180deg, #f0fdf4 0%, #f5f7fa 30%, #f0f9ff 70%, #f5f7fa 100%);
@@ -490,9 +558,10 @@ onMounted(() => {
     justify-content: center;
     gap: 15rpx;
     padding: 20rpx 30rpx;
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    background: linear-gradient(135deg, #fff0ed 0%, #ffe4e1 100%);
+    border: 1rpx solid #f9d2ce;
     border-radius: 12rpx;
-    box-shadow: 0 4rpx 12rpx rgba(239, 68, 68, 0.2);
+    box-shadow: 0 4rpx 12rpx rgba(193, 92, 91, 0.1);
     transition: all 0.3s ease;
 }
 
@@ -508,7 +577,7 @@ onMounted(() => {
 .logout-text {
     font-size: 28rpx;
     font-weight: 600;
-    color: #fff;
+    color: #b95658;
 }
 
 /* 返回按钮 */

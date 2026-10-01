@@ -1,3 +1,6 @@
+import { getDeviceQrScanContent, resolveDeviceQrPathTarget } from './device-qr-entry.mjs'
+export { getDeviceQrScanContent } from './device-qr-entry.mjs'
+
 export const MOCK_DEVICE = Object.freeze({
   device_id: 'FTX-MOCK-ROBOT-001',
   device_name: '分投侠演示机器人',
@@ -59,6 +62,9 @@ export function resolveDeviceScanTarget(rawContent, scanPage = '/pages/scan/scan
   }
 
   if (directPath) {
+    const sceneTarget = resolveDeviceQrPathTarget(directPath, scanPage)
+    if (sceneTarget) return sceneTarget
+
     const queryText = directPath.includes('?') ? directPath.split('?').slice(1).join('?') : ''
     const params = parseDeviceQrParams(queryText)
     const deviceMode = normalizeDeviceMode(params.device_mode || params.deviceMode || (directPath.includes('robot-control') ? 'robot' : 'bin'))
@@ -157,7 +163,7 @@ export function scanAndConnectDevice(onMockConnected) {
   const connectDevice = (rawContent) => {
     const target = resolveDeviceScanTarget(rawContent, '/pages/scan/scan')
     if (!target.url) {
-      uni.showToast({ title: '设备ID不能为空', icon: 'none' })
+      uni.showToast({ title: target.invalidScene ? '二维码已过期或异常，请重新扫码' : '设备ID不能为空', icon: 'none' })
       return
     }
     if (target.isMock) {
@@ -182,11 +188,19 @@ export function scanAndConnectDevice(onMockConnected) {
       }
     })
   } else {
+    // #ifdef MP-WEIXIN
     uni.scanCode({
-      scanType: ['qrCode'],
-      success: (res) => connectDevice(res.result),
+      success: (res) => connectDevice(getDeviceQrScanContent(res)),
       fail: () => uni.showToast({ title: '扫码失败', icon: 'none' })
     })
+    // #endif
+    // #ifndef MP-WEIXIN
+    uni.scanCode({
+      scanType: ['qrCode'],
+      success: (res) => connectDevice(getDeviceQrScanContent(res)),
+      fail: () => uni.showToast({ title: '扫码失败', icon: 'none' })
+    })
+    // #endif
   }
 }
 

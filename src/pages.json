@@ -207,7 +207,7 @@
 			"pages": [
 				{
 					"path": "admin-ai-settings",
-					"style": { "navigationStyle": "custom" }
+					"style": { "navigationStyle": "custom", "navigationBarTitleText": "服务设置" }
 				},
 				{
 					"path": "collection-dashboard",

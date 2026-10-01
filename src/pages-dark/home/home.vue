@@ -1,5 +1,5 @@
 <template>
-  <view class="home-bg" :class="tabPageClass">
+  <view class="home-bg" :class="[tabPageClass, { 'waste-guide-open': showGuideModal }]">
     <!-- 自定义状态栏 -->
     <view class="custom-statusbar"></view>
     
@@ -271,25 +271,8 @@
     </view>
     
     <!-- 自定义分类指南弹窗-->
-    <view v-if="showGuideModal && currentGuide.title" class="guide-modal-overlay" @click="closeGuideModal">
-      <view class="guide-modal" @click.stop="">
-        <view class="modal-header">
-        <ManifestIcon class="modal-icon" :id="currentGuide.icon || 'help'" />
-          <text class="modal-title">{{ currentGuide.title || '未知分类' }}</text>
-          <ManifestIcon class="modal-close" id="close" @click="closeGuideModal" />
-        </view>
-        <view class="modal-content">
-          <text class="modal-text">{{ currentGuide.content || '暂无相关信息' }}</text>
-        </view>
-        <view class="modal-footer">
-          <view class="modal-btn" @click="closeGuideModal">
-            <text class="btn-text">我知道了</text>
-          </view>
-        </view>
-        <view class="modal-glow"></view>
-      </view>
-    </view>
-    
+    <WasteCategoryModal :visible="showGuideModal" :category="currentGuide.type" dark @close="closeGuideModal" />
+
     <AchievementUnlockModal :visible="showAchievementModal" :items="achievementModalItems" dark @close="closeAchievementModal" />
 
     <AppOnboarding
@@ -335,10 +318,12 @@ import { onPageScroll, onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
-import { resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr'
+import { resolveDeviceScanTarget, saveMockDeviceConnection, getDeviceQrScanContent } from '@/utils/device-qr'
 import AppOnboarding from '@/components/AppOnboarding.vue'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import WasteCategoryModal from '@/components/WasteCategoryModal.vue'
+import { wasteCategoryGuides } from '@/utils/waste-category-guides'
 import SmartSortRobot3D from '@/components/SmartSortRobot3D.vue'
 import SmartSortRecognitionVisual from '@/components/SmartSortRecognitionVisual.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
@@ -1546,9 +1531,11 @@ function scanDeviceQR() {
   } else {
     // 小程序端使用扫码功能
     uni.scanCode({
+      // #ifndef MP-WEIXIN
       scanType: ['qrCode'],
+      // #endif
       success: function(res) {
-        connectDevice(res.result)
+        connectDevice(getDeviceQrScanContent(res))
       },
       fail: function(err) {
         console.log('扫码失败:', err)
@@ -1565,7 +1552,7 @@ function connectDevice(rawContent) {
   const target = resolveDeviceScanTarget(rawContent, '/pages-dark/scan/scan')
   if (!target.url) {
     uni.showToast({
-      title: '设备ID不能为空',
+      title: target.invalidScene ? '二维码已过期或异常，请重新扫码' : '设备ID不能为空',
       icon: 'none'
     })
     return
@@ -1578,56 +1565,20 @@ function connectDevice(rawContent) {
     })
     checkDeviceConnection()
   }
-  console.log('Connecting to device route:', target.url)
+  console.log('Connecting to device route:', target.url.split('?')[0])
   uni.navigateTo({ url: target.url })
 }
 
 function showGuideDetail(type) {
-  if (!type) return
-
-  const guides = {
-    recyclable: {
-      icon: 'bin_recyclable',
-      title: '可回收垃圾',
-      content: '包括废纸、塑料、玻璃、金属和布料等。可回收物经过分类处理后可再利用，能减少污染并节约资源。'
-    },
-    harmful: {
-      icon: 'bin_hazardous',
-      title: '有害垃圾',
-      content: '包括废电池、废灯管、废药品、废油漆及其容器等，需投放到有害垃圾回收点进行专门处理。'
-    },
-    kitchen: {
-      icon: 'bin_kitchen',
-      title: '厨余垃圾',
-      content: '包括剩菜剩饭、果皮果核、骨头、菜叶等厨余废弃物，可通过堆肥等方式资源化处理。'
-    },
-    other: {
-      icon: 'bin_other',
-      title: '其他垃圾',
-      content: '包括砖瓦陶瓷、卫生纸、尘土等难以回收利用的废弃物，一般采用卫生填埋等方式处理。'
-    }
-  }
-
-  const guide = guides[type]
-  if (guide) {
-    currentGuide.value = { ...guide }
-    showGuideModal.value = true
-  } else {
-    currentGuide.value = {
-      icon: 'help',
-      title: '信息缺失',
-      content: '抱歉，该分类的详细信息暂时无法显示，请稍后重试。'
-    }
-    showGuideModal.value = true
-  }
+  const guide = wasteCategoryGuides[type]
+  if (!guide) return
+  currentGuide.value = { type }
+  showGuideModal.value = true
 }
 
 function closeGuideModal() {
   showGuideModal.value = false
-  // 延时清理，避免动画过程中数据闪烁
-  setTimeout(() => {
-    currentGuide.value = {}
-  }, 300)
+  currentGuide.value = {}
 }
 
 function showAchievementUnlockModal(items) {
@@ -2879,6 +2830,12 @@ function closeAchievementModal() {
 }
 
 .modal-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  padding: 0 60rpx;
+  box-sizing: border-box;
   background: linear-gradient(135deg, #40e0ff 0%, #4ecdc4 50%, #44a08d 100%);
   border-radius: 50rpx;
   padding: 20rpx 60rpx;
@@ -3348,4 +3305,13 @@ function closeAchievementModal() {
 .smart-sort-return-target.dark { width: 170rpx; height: 170rpx; margin-bottom: 24rpx; }
 .upload-section.robot-returning-card { position: relative; z-index: 3; }
 .upload-section.robot-returning-card .upload-border { transform: none; }
+
+.waste-guide-open .header-bg,
+.waste-guide-open .content,
+.waste-guide-open .main-content,
+.waste-guide-open .home-container,
+.waste-guide-open .tabbar,
+.waste-guide-open .floating-agent,
+.waste-guide-open .bg-decoration,
+.waste-guide-open .tech-bg { filter: blur(5px); pointer-events: none; }
 </style>

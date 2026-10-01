@@ -14,6 +14,11 @@
     
     <!-- 顶部绿色背景区域 -->
     <view :animation="tabPageAnimation" class="shop-header tab-page-motion">
+      <view class="header-decoration">
+        <view class="deco-circle c1"></view>
+        <view class="deco-circle c2"></view>
+        <view class="deco-circle c3"></view>
+      </view>
       <view class="header-content">
         <view class="header-title"><ManifestIcon id="store" /> 积分商城</view>
         <text class="header-subtitle">环保积分 · 兑换好礼</text>
@@ -119,7 +124,7 @@
       <view class="detail-modal" @click.stop="">
         <view class="modal-header">
           <image :src="selectedProduct.image" class="modal-image" mode="aspectFill" />
-          <ManifestIcon id="close" class="modal-close" @click="closeProductDetail" />
+          <ManifestIcon id="close" class="modal-close" :scale="1.4" @click="closeProductDetail" />
         </view>
         
         <view class="modal-body">
@@ -744,9 +749,47 @@ const goProfile = () => {
 /* 顶部绿色背景 */
 .shop-header {
   background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
-  padding: 40rpx 32rpx 80rpx;
+  padding: 32rpx 32rpx 64rpx;
   position: relative;
+  overflow: hidden;
   z-index: 1;
+}
+
+.shop-header .header-decoration {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.shop-header .deco-circle {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.shop-header .deco-circle.c1 {
+  width: 200rpx;
+  height: 200rpx;
+  top: -80rpx;
+  right: -60rpx;
+}
+
+.shop-header .deco-circle.c2 {
+  width: 120rpx;
+  height: 120rpx;
+  bottom: -40rpx;
+  left: 20%;
+}
+
+.shop-header .deco-circle.c3 {
+  width: 80rpx;
+  height: 80rpx;
+  top: 20%;
+  right: 25%;
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .shop-header::after {

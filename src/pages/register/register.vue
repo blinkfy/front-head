@@ -1,5 +1,14 @@
 <template>
-  <view class="register-page">
+  <!-- #ifdef H5 -->
+  <H5WechatRegistrationGuide
+    v-if="!webRegistrationAllowed"
+    :dark="false"
+    :checking="webRegistrationLoading"
+    :policy-error="webRegistrationError"
+    @login="goLogin"
+  />
+  <!-- #endif -->
+  <view class="register-page" v-if="webRegistrationAllowed">
     <!-- 顶部绿色背景区域 -->
     <view class="header-bg">
       <!-- 装饰圆圈 -->
@@ -11,7 +20,7 @@
       <view class="header-content">
         <view class="header-top">
           <view class="back-btn" @click="goLogin">
-            <ManifestIcon class="back-icon" id="back" :scale="1" />
+            <image class="back-icon" src="/static/icons/chevron_left_32.webp.png" mode="aspectFit" />
           </view>
         </view>
         
@@ -51,7 +60,7 @@
           <!-- 用户名输入 -->
           <view class="input-group">
             <view class="input-label">
-              <ManifestIcon class="label-icon" id="user_profile" />
+              <image class="label-icon" src="/static/icons/user_profile_128.webp.png" mode="aspectFit" />
               <text class="label-text">用户名</text>
             </view>
             <view class="input-wrap">
@@ -71,7 +80,7 @@
           <!-- 密码输入 -->
           <view class="input-group">
             <view class="input-label">
-              <ManifestIcon class="label-icon" id="password" />
+              <image class="label-icon" src="/static/icons/password_128.webp.png" mode="aspectFit" />
               <text class="label-text">密码</text>
             </view>
             <view class="input-wrap">
@@ -87,7 +96,7 @@
                 @keyup="handleKeyup"
               />
               <view class="pwd-toggle" @click="togglePassword">
-              <ManifestIcon class="toggle-icon" :id="showPwd ? 'visibility_off' : 'visibility'" />
+                <image class="toggle-icon" :src="showPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
               </view>
             </view>
             <text class="input-hint">密码需包含大小写字母、数字、特殊字符中至少两种</text>
@@ -96,7 +105,7 @@
           <!-- 确认密码 -->
           <view class="input-group">
             <view class="input-label">
-              <ManifestIcon class="label-icon" id="password" />
+              <image class="label-icon" src="/static/icons/password_128.webp.png" mode="aspectFit" />
               <text class="label-text">确认密码</text>
             </view>
             <view class="input-wrap">
@@ -112,7 +121,7 @@
                 @keyup="handleKeyup"
               />
               <view class="pwd-toggle" @click="toggleConfirmPassword">
-              <ManifestIcon class="toggle-icon" :id="showConfirmPwd ? 'visibility_off' : 'visibility'" />
+                <image class="toggle-icon" :src="showConfirmPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
               </view>
             </view>
           </view>
@@ -120,7 +129,7 @@
           <!-- 验证码 -->
           <view class="input-group captcha-group">
             <view class="input-label">
-              <ManifestIcon class="label-icon" id="shield_captcha" />
+              <image class="label-icon" src="/static/icons/shield_captcha_32.webp.png" mode="aspectFit" />
               <text class="label-text">验证码</text>
             </view>
             <captcha-box v-model="captchaInput" ref="captchaRef" @confirm="handleEnterKey" />
@@ -128,7 +137,7 @@
           </view>
 
           <!-- #ifdef APP-PLUS || MP-WEIXIN -->
-          <registration-privacy-agreement v-model="privacyAccepted" />
+          <registration-privacy-agreement v-model="privacyAccepted" @open="showPrivacyDetails = true" />
           <!-- #endif -->
           
           <!-- 注册按钮 -->
@@ -157,16 +166,34 @@
         <text class="footer-text">🌿 加入我们，一起为环保贡献力量</text>
       </view>
     </view>
+    <!-- Keep the agreement modal outside the blurred form card so fixed positioning covers the screen. -->
+    <!-- #ifdef APP-PLUS || MP-WEIXIN -->
+    <registration-privacy-agreement
+      v-if="showPrivacyDetails"
+      modal-only
+      :visible="showPrivacyDetails"
+      @close="showPrivacyDetails = false"
+    />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
+// #ifdef MP-WEIXIN
+import { rememberWechatLogin } from '@/utils/wechat-login.mjs'
+import { markWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
+// #endif
 import { ref, onMounted } from 'vue'
 import { register } from '@/api/user'
+// #ifdef H5
+import { onShow } from '@dcloudio/uni-app'
+import H5WechatRegistrationGuide from '@/components/H5WechatRegistrationGuide.vue'
+import { useH5RegistrationPolicy } from '@/utils/use-h5-registration-policy'
+// #endif
 import CaptchaBox from '@/components/CaptchaBox.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 // #ifdef APP-PLUS || MP-WEIXIN
 import RegistrationPrivacyAgreement from '@/components/RegistrationPrivacyAgreement.vue'
-import ManifestIcon from '@/components/ManifestIcon.vue'
 // #endif
 
 // 表单字段
@@ -180,12 +207,25 @@ const passwordKey = ref(0)
 const confirmPasswordKey = ref(0)
 // #ifdef APP-PLUS || MP-WEIXIN
 const privacyAccepted = ref(false)
+const showPrivacyDetails = ref(false)
 // #endif
 
 // 验证码相关
 const captchaInput = ref('')
 const captchaHint = ref('')
 const captchaRef = ref(null)
+
+const webRegistrationAllowed = ref(true)
+const webRegistrationLoading = ref(false)
+const webRegistrationError = ref('')
+let refreshH5RegistrationPolicy = null
+// #ifdef H5
+refreshH5RegistrationPolicy = useH5RegistrationPolicy({
+  allowed: webRegistrationAllowed,
+  loading: webRegistrationLoading,
+  error: webRegistrationError
+})
+// #endif
 
 // 点击处理函数
 function handleRegisterClick() {
@@ -194,6 +234,10 @@ function handleRegisterClick() {
 
 // 注册提交
 function onRegister() {
+  if (isLoading.value) return
+  // #ifdef H5
+  if (!webRegistrationAllowed.value || webRegistrationLoading.value) return
+  // #endif
   if (!username.value){ 
     captchaHint.value = '请输入用户名'
     uni.showToast({ title: '请输入用户名', icon: 'none' })
@@ -251,17 +295,26 @@ function onRegister() {
   
   register({ username: username.value, password: password.value }).then(res => {
     uni.showToast({ title: '注册成功', icon: 'success' })
-    uni.setStorageSync('autoLogin', true)
-    uni.setStorageSync('savedUser', {
-      username: username.value,
-      password: password.value
-    })
+    let wechatRegistration = false
+    // #ifdef MP-WEIXIN
+    wechatRegistration = true
+    markWechatProfileCompletion(uni, username.value)
+    rememberWechatLogin(uni)
+    // #endif
+    if (!wechatRegistration) {
+      uni.setStorageSync('autoLogin', true)
+      uni.setStorageSync('savedUser', {
+        username: username.value,
+        password: password.value
+      })
+    }
     setTimeout(() => {
       isLoading.value = false
-      uni.redirectTo({ url: '/pages/index/index' })
+      const loginUrl = '/pages/index/index' + (wechatRegistration ? `?username=${encodeURIComponent(username.value)}` : '')
+      uni.redirectTo({ url: loginUrl })
     }, 1200)
   }).catch(err => {
-    uni.showToast({ title: '注册失败: ' + err.msg, icon: 'none' })
+    uni.showToast({ title: '注册失败: ' + (err.msg || err.message || '请重试'), icon: 'none' })
     console.error('注册失败:', err)
     isLoading.value = false
     captchaRef.value && typeof captchaRef.value.refresh === 'function' && captchaRef.value.refresh()
@@ -300,7 +353,15 @@ function handleKeyup(event) {
   }
 }
 
+// #ifdef H5
+onShow(() => {
+  void refreshH5RegistrationPolicy()
+})
+// #endif
 onMounted(() => {
+  // #ifdef H5
+  void refreshH5RegistrationPolicy()
+  // #endif
   // captcha component will initialize itself
   
   // 注册按钮鼠标光感追踪
@@ -390,9 +451,9 @@ onMounted(() => {
 }
 
 .back-icon {
-  color: #ffffff;
-  font-size: 40rpx;
-  font-weight: bold;
+  width: 48rpx;
+  height: 48rpx;
+  filter: brightness(0) invert(1);
 }
 
 .header-main {
@@ -416,9 +477,15 @@ onMounted(() => {
 }
 
 .logo-image {
-  width: 80rpx;
-  height: 80rpx;
+  width: 92rpx;
+  height: 92rpx;
   border-radius: 50%;
+  animation: registerMascotFloat 3s ease-in-out infinite;
+}
+
+@keyframes registerMascotFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-6rpx) scale(1.04); }
 }
 
 .header-text {
@@ -562,7 +629,8 @@ onMounted(() => {
 }
 
 .label-icon {
-  font-size: 28rpx;
+  width: 32rpx;
+  height: 32rpx;
   margin-right: 8rpx;
 }
 
@@ -647,8 +715,8 @@ onMounted(() => {
 }
 
 .toggle-icon {
-  font-size: 32rpx;
-  color: #9ca3af;
+  width: 40rpx;
+  height: 40rpx;
 }
 
 .input-hint {

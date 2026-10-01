@@ -54,7 +54,7 @@
 				<!-- 用户信息 -->
 				<view class="user-info">
 					<view class="user-name-row">
-						<text class="user-name">{{ user.note || user.username }}</text>
+						<text class="user-name">{{ user.note || getDisplayName(user) }}</text>
 						<text class="last-time">{{ formatTime(user.latestContent?.sendTime) }}</text>
 					</view>
 					<view class="last-message-row">
@@ -105,6 +105,7 @@ import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
+import { getDisplayName } from '@/utils/display-name.js'
 export default {
 	components: { ManifestIcon },
 	data() {
@@ -150,9 +151,10 @@ computed: {
 			if (!this.searchKeyword) return list
 			const keyword = this.searchKeyword.toLowerCase()
 			return list.filter(user => {
-				const name = (user.username || '').toLowerCase()
+				const name = getDisplayName(user, '').toLowerCase()
+				const username = (user.username || '').toLowerCase()
 				const note = (user.note || '').toLowerCase()
-				return name.includes(keyword) || note.includes(keyword)
+				return name.includes(keyword) || username.includes(keyword) || note.includes(keyword)
 			})
 		},
 
@@ -533,7 +535,7 @@ computed: {
 						
 						// 如果有新消息，发送系统通知
 						if ((isNewMessage || messageChanged) && newUser.latestContent) {
-							const senderName = newUser.note || newUser.username || '用户'
+							const senderName = newUser.note || getDisplayName(newUser)
 							const msgContent = newUser.latestContent.content || '[消息]'
 							
 							triggerMessageNotification({
@@ -556,6 +558,7 @@ computed: {
 							unreadCount: newUser.unreadCount,
 							avatar: newUser.avatar,
 							username: newUser.username,
+								nickname: newUser.nickname || existingUser.nickname,
 							note: newUser.note,
 							top: newUser.top
 						})
@@ -851,7 +854,7 @@ computed: {
 			this.markLocalChatRead(user.otherId)
 			if (user.conversationType === 'group' && user.groupId) {
 				uni.navigateTo({
-					url: `/pages-nonTheme/chat?conversationType=group&groupId=${encodeURIComponent(user.groupId)}&chatId=${encodeURIComponent(user.otherId)}&title=${encodeURIComponent(user.username)}&avatar=${encodeURIComponent(user.avatar || '')}`
+					url: `/pages-nonTheme/chat?conversationType=group&groupId=${encodeURIComponent(user.groupId)}&chatId=${encodeURIComponent(user.otherId)}&title=${encodeURIComponent(user.note || getDisplayName(user))}&avatar=${encodeURIComponent(user.avatar || '')}`
 				})
 				return
 			}
@@ -860,7 +863,7 @@ computed: {
 			})
 
 			uni.navigateTo({
-				url: `/pages-nonTheme/chat?chatId=${user.otherId}&title=${encodeURIComponent(user.username)}&userId=${user.otherId}&avatar=${encodeURIComponent(user.avatar || '')}`
+				url: `/pages-nonTheme/chat?chatId=${user.otherId}&title=${encodeURIComponent(user.note || getDisplayName(user))}&userId=${user.otherId}&avatar=${encodeURIComponent(user.avatar || '')}`
 			})
 		},
 
@@ -1081,7 +1084,7 @@ computed: {
 
 		// 获取用户头像 (如果没有则生成)
 		getUserAvatar(user) {
-			const username = user.note || user.username || '用户'
+			const username = user.note || getDisplayName(user)
 			if (user.isAi || user.otherId === 'ai' || (username && (username.includes('AI') || username.includes('ai') || username.includes('智能') || username.includes('助手')))) {
 				return getManifestIconPath('ai_assistant')
 			}

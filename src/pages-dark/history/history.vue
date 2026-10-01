@@ -92,7 +92,9 @@
             <!-- 记录内容 -->
             <view class="item-content">
               <view class="item-image">
-                <image :src="item.image" mode="aspectFill" class="history-image" />
+                <view class="history-image history-image-ph">
+                  <ManifestIcon id="image_gallery" class="ph-icon" />
+                </view>
                 <view class="source-badge" :class="item.source">
                   <text class="source-text">{{ getSourceLabel(item.source) }}</text>
                 </view>
@@ -142,9 +144,12 @@
           <ManifestIcon class="close-icon" id="close" />
         </view>
         
-        <!-- 图片区域 -->
+        <!-- 图片区域（按需加载，未就绪时显示占位） -->
         <view class="detail-image-section">
-          <image :src="detailItem.image" mode="aspectFit" class="detail-image" />
+          <image v-if="detailItem.image" :src="detailItem.image" mode="aspectFit" class="detail-image" />
+          <view v-else class="detail-image detail-image-ph">
+            <ManifestIcon id="image_gallery" class="detail-ph-icon" />
+          </view>
         </view>
         
         <!-- 信息区域 -->
@@ -184,7 +189,8 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
-import { getRecognitionHistory, deleteHistoryRecord, batchDeleteHistoryRecords } from '@/api/history'
+import { getRecognitionHistory, deleteHistoryRecord, batchDeleteHistoryRecords, getHistoryImage } from '@/api/history'
+import { baseUrl } from '@/api/settings'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 
 // 页面参数接收
@@ -460,10 +466,30 @@ async function deleteItem(id) {
   }
 }
 
-// 查看详情
+// 查看详情（图片存数据库，点开时按需取单条，避免列表批量读取 Base64）
 function viewDetail(item) {
-  detailItem.value = { ...item }
+  detailItem.value = { ...item, image: '' }
   detailVisible.value = true
+  loadDetailImage(item)
+}
+
+// 按需加载详情图片；快速切换时以 id 校验防止旧请求覆盖新详情
+async function loadDetailImage(item) {
+  if (!item.hasImage) return
+  try {
+    const res = await getHistoryImage(item.id)
+    if (
+      detailVisible.value &&
+      detailItem.value.id === item.id &&
+      res.code === 0 &&
+      res.data && res.data.image
+    ) {
+      const img = res.data.image
+      detailItem.value.image = img.startsWith('data:') ? img : baseUrl + img
+    }
+  } catch (_) {
+    // 图片加载失败时保持占位图
+  }
 }
 
 // 关闭详情弹窗
@@ -960,6 +986,20 @@ function handleBackupNavigation() {
   object-fit: cover;
 }
 
+/* 列表缩略占位图：图片存数据库，列表不读取，点开详情再取 */
+.history-image-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ph-icon {
+  width: 44rpx;
+  height: 44rpx;
+  opacity: 0.4;
+}
+
 .source-badge {
   position: absolute;
   top: -8rpx;
@@ -1160,6 +1200,22 @@ function handleBackupNavigation() {
   max-width: 100%;
   max-height: 500rpx;
   border-radius: 16rpx;
+}
+
+/* 详情图片未加载完成时的占位 */
+.detail-image-ph {
+  width: 320rpx;
+  height: 320rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.detail-ph-icon {
+  width: 88rpx;
+  height: 88rpx;
+  opacity: 0.3;
 }
 
 /* 信息区域 */

@@ -23,7 +23,7 @@
           <view v-for="friend in friends" :key="friend.id" class="contact-row" @click="openDirectChat(friend)">
             <image class="contact-avatar" :src="avatarFor(friend)" mode="aspectFill" />
             <view class="contact-copy">
-              <text class="contact-name">{{ friend.note || friend.username }}</text>
+              <text class="contact-name">{{ friend.note || getDisplayName(friend) }}</text>
               <view class="contact-meta">
                 <text class="relationship-tag" :class="relationshipClass(friend.relationship)">{{ relationshipLabel(friend.relationship) }}</text>
                 <text class="contact-username">用户名：{{ friend.username }}</text>
@@ -41,7 +41,7 @@
           <view v-for="request in incomingRequests" :key="request.id" class="request-row">
             <image class="contact-avatar" :src="avatarFor(request.user)" mode="aspectFill" />
             <view class="contact-copy">
-              <text class="contact-name">{{ request.user?.username || '用户' }}</text>
+              <text class="contact-name">{{ getDisplayName(request.user) }}</text>
               <text class="contact-subtitle">{{ request.message || '请求添加你为好友' }}</text>
             </view>
             <view v-if="request.status === 'pending'" class="request-actions">
@@ -58,7 +58,7 @@
           <view v-for="request in outgoingRequests" :key="request.id" class="request-row">
             <image class="contact-avatar" :src="avatarFor(request.user)" mode="aspectFill" />
             <view class="contact-copy">
-              <text class="contact-name">{{ request.user?.username || '用户' }}</text>
+              <text class="contact-name">{{ getDisplayName(request.user) }}</text>
               <text class="contact-subtitle">{{ request.message || '好友申请' }}</text>
             </view>
             <text class="request-status">{{ requestStatusLabel(request.status) }}</text>
@@ -76,7 +76,7 @@
           <view v-for="user in searchResults" :key="user.id" class="request-row">
             <image class="contact-avatar" :src="avatarFor(user)" mode="aspectFill" />
             <view class="contact-copy">
-              <text class="contact-name">{{ user.username }}</text>
+              <text class="contact-name">{{ getDisplayName(user) }}</text>
               <text class="contact-subtitle">{{ user.bio || `ID: ${user.id}` }}</text>
             </view>
             <text v-if="user.isFriend" class="request-status">已是好友</text>
@@ -96,7 +96,7 @@
           <view v-if="groupContactCandidates.length" class="member-picker">
             <view v-for="friend in groupContactCandidates" :key="friend.id" class="picker-member" @click="toggleSelectedFriend(friend.id)">
               <image class="picker-avatar" :src="avatarFor(friend)" mode="aspectFill" />
-              <text class="picker-name">{{ friend.note || friend.username }}</text>
+              <text class="picker-name">{{ friend.note || getDisplayName(friend) }}</text>
               <view class="member-check" :class="{ selected: selectedFriendIds.includes(friend.id) }"><ManifestIcon v-if="selectedFriendIds.includes(friend.id)" id="confirm" :scale="1" /></view>
             </view>
           </view>
@@ -126,6 +126,7 @@ import * as chatApi from '@/api/chat'
 import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { getDisplayName } from '@/utils/display-name.js'
 
 export default {
   components: { ManifestIcon },
@@ -173,6 +174,7 @@ export default {
     })
   },
   methods: {
+    getDisplayName,
     async ensureAiAvailable() {
       try {
         const response = await new Promise((resolve, reject) => {
@@ -242,7 +244,7 @@ export default {
     },
     requestFriend(user) {
       uni.showModal({
-        title: `添加 ${user.username}`,
+        title: `添加 ${getDisplayName(user)}`,
         editable: true,
         placeholderText: '输入申请说明（可选）',
         success: async (result) => {
@@ -296,7 +298,7 @@ export default {
     },
     openDirectChat(friend) {
       uni.navigateTo({
-        url: `/pages-nonTheme/chat?chatId=${friend.id}&userId=${friend.id}&title=${encodeURIComponent(friend.note || friend.username)}&avatar=${encodeURIComponent(friend.avatar || '')}`
+        url: `/pages-nonTheme/chat?chatId=${friend.id}&userId=${friend.id}&title=${encodeURIComponent(friend.note || getDisplayName(friend))}&avatar=${encodeURIComponent(friend.avatar || '')}`
       })
     },
     openGroupChat(group) {
@@ -321,7 +323,7 @@ export default {
     avatarFor(item) {
       const avatar = item?.avatar || ''
       if (avatar && typeof avatar === 'string' && !avatar.includes('default-avatar')) return getAvatarUrl(avatar, baseUrl)
-      const name = item?.name || item?.note || item?.username || '群'
+      const name = item?.name || item?.note || getDisplayName(item, '群')
       return `https://ui-avatars.com/api/?name=${encodeURIComponent(name.slice(0, 1))}&background=0f9d74&color=fff&size=120`
     },
     goBack() {

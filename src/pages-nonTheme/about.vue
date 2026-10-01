@@ -19,7 +19,7 @@
     <view class="content-wrapper">
       <!-- 应用信息卡片 -->
       <view class="info-card">
-        <image class="app-icon" src="/static/Icon.webp.png" mode="aspectFill" @click="downloadAPK('')"></image>
+        <image class="app-icon" :src="appIconSource" mode="aspectFill" @click="downloadAPK('')"></image>
         <text class="app-name">分投侠</text>
         <text class="app-slogan">智能垃圾分类助手</text>
         <text class="app-version">Version {{ currentVersion }}</text>
@@ -98,6 +98,11 @@ import manifest from '@/manifest.json'
 import { ref, onMounted } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 
+let appIconSource = '/static/Icon.webp.png'
+// #ifdef MP-WEIXIN
+appIconSource = '/pages-nonTheme/static/Icon.webp.png'
+// #endif
+
 // 主题相关
 const isDarkTheme = ref(uni.getStorageSync('app_theme') === 'dark')
 const currentYear = new Date().getFullYear()
@@ -117,7 +122,7 @@ function checkTheme() {
   isDarkTheme.value = theme === 'dark'
 }
 
-const currentVersion = manifest?.versionName || '1.3.15'
+const currentVersion = manifest?.versionName || '1.4.1'
 
 const checking = ref(false)
 const updateMessage = ref('')

@@ -17,6 +17,8 @@ import random
 import vlc
 import torch
 import gc
+import io
+import os
 import numpy as np
 import pyrealsense2 as rs
 import hashlib
@@ -29,7 +31,7 @@ from ultralytics import YOLO
 from PyQt5.QtCore import QUrl,Qt,pyqtSignal,QTime,QThread,QSize,QFileInfo,QDateTime,QEvent,QTimer,QMutex,QObject
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent, QMediaPlaylist
-from PyQt5.QtWidgets import QApplication, QWidget,QPushButton,QVBoxLayout,QHBoxLayout,QLabel,QMainWindow, QTableView, QAbstractItemView,QAction,QSplitter,QHeaderView,QTabWidget,QTableWidget,QScrollArea,QSpinBox,QDoubleSpinBox,QGroupBox,QToolButton,QGridLayout,QSlider,QTableWidgetItem,QStyledItemDelegate,QStyleOptionViewItem,QAbstractItemView,QStyle,QMessageBox,QFrame
+from PyQt5.QtWidgets import QApplication, QWidget,QPushButton,QVBoxLayout,QHBoxLayout,QLabel,QMainWindow, QTableView, QAbstractItemView,QAction,QSplitter,QHeaderView,QTabWidget,QTableWidget,QScrollArea,QSpinBox,QDoubleSpinBox,QGroupBox,QToolButton,QGridLayout,QSlider,QTableWidgetItem,QStyledItemDelegate,QStyleOptionViewItem,QAbstractItemView,QStyle,QMessageBox,QFrame,QStackedWidget
 from PyQt5.QtGui import QImage, QKeyEvent, QMouseEvent, QPixmap,QIcon,QStandardItem, QStandardItemModel,QFont,QGuiApplication,QPalette,QColor, QBrush
 if not JETSON:
     COMPUTERTEST=True
@@ -46,6 +48,9 @@ else:
 DEFAULT_SERVER = "https://wehvspwpvibt.sealosbja.site"
 DEFAULT_FRONTEND = "http://192.168.10.206:5173/"
 QR_FILENAME = "device_qr.png"
+WECHAT_QR_ENV_VERSION = os.environ.get("WECHAT_QR_ENV_VERSION", "release").strip().lower()
+if WECHAT_QR_ENV_VERSION not in ("release", "trial", "develop"):
+    WECHAT_QR_ENV_VERSION = "release"
 DEVICE_ID = 1  # 固定使用垃圾桶ID=1作为设备ID
 
 def generate_device_token():
@@ -142,6 +147,7 @@ class HoverTableView(QTableView):
     
 class MainWindow(QMainWindow):
     my_signal = pyqtSignal() #自定义信号
+    qr_update_signal = pyqtSignal(str, object, object, str)
     def __init__(self):
         super(MainWindow,self).__init__()
         self.setWindowTitle('垃圾分类')
@@ -167,6 +173,8 @@ class MainWindow(QMainWindow):
         self.server = DEFAULT_SERVER.rstrip("/")
         self.frontend = DEFAULT_FRONTEND.rstrip("/")
         self._current_token = None
+        self._qr_token_lock = threading.Lock()
+        self.qr_update_signal.connect(self.apply_qr_update)
         self.device_status = None
         self.last_message = None
         self.current_user = None
@@ -358,16 +366,49 @@ class MainWindow(QMainWindow):
         self.status_v_layout.addWidget(self.clear_bt)
         
         # 添加二维码显示
-        self.qr_label = QLabel('扫码连接', self)
+        self.qr_label = QLabel('设备连接二维码', self)
         self.qr_label.setAlignment(Qt.AlignCenter)
         self.qr_label.setStyleSheet("font-weight: bold; margin: 10px 0; color: #333;")
         self.status_v_layout.addWidget(self.qr_label)
-        
-        self.qr_image_label = QLabel(self)
+
+        self.qr_switch_widget = QWidget(self)
+        self.qr_switch_layout = QHBoxLayout(self.qr_switch_widget)
+        self.qr_switch_layout.setContentsMargins(0, 0, 0, 0)
+        self.qr_app_button = QPushButton('普通 APP', self)
+        self.qr_app_button.setCheckable(True)
+        self.qr_app_button.setChecked(True)
+        self.qr_wechat_button = QPushButton('微信小程序', self)
+        self.qr_wechat_button.setCheckable(True)
+        self.qr_app_button.clicked.connect(self.show_app_qr)
+        self.qr_wechat_button.clicked.connect(self.show_wechat_qr)
+        self.qr_switch_layout.addWidget(self.qr_app_button)
+        self.qr_switch_layout.addWidget(self.qr_wechat_button)
+        self.status_v_layout.addWidget(self.qr_switch_widget)
+
+        self.qr_stack = QStackedWidget(self)
+        self.qr_stack.setFixedSize(204, 204)
+        self.qr_image_label = QLabel('生成中', self)
         self.qr_image_label.setFixedSize(200, 200)
         self.qr_image_label.setAlignment(Qt.AlignCenter)
         self.qr_image_label.setStyleSheet("border: 2px solid #ddd; background: white;")
-        self.status_v_layout.addWidget(self.qr_image_label)
+        self.qr_stack.addWidget(self.qr_image_label)
+        self.wechat_qr_image_label = QLabel('生成中', self)
+        self.wechat_qr_image_label.setFixedSize(200, 200)
+        self.wechat_qr_image_label.setAlignment(Qt.AlignCenter)
+        self.wechat_qr_image_label.setStyleSheet("border: 2px solid #ddd; background: white;")
+        self.qr_stack.addWidget(self.wechat_qr_image_label)
+        self.status_v_layout.addWidget(self.qr_stack, alignment=Qt.AlignCenter)
+        self._qr_user_selected = False
+
+        self.qr_status_label = QLabel('微信小程序码生成中；普通 APP 码可用。', self)
+        self.qr_status_label.setWordWrap(True)
+        self.qr_status_label.setAlignment(Qt.AlignCenter)
+        self.qr_status_label.setStyleSheet("font-size: 9pt; color: #666; margin: 3px 0;")
+        self.status_v_layout.addWidget(self.qr_status_label)
+        self.retry_wechat_qr_button = QPushButton('重试微信小程序码', self)
+        self.retry_wechat_qr_button.clicked.connect(self.retry_wechat_qr)
+        self.retry_wechat_qr_button.hide()
+        self.status_v_layout.addWidget(self.retry_wechat_qr_button)
         
         # 添加用户状态显示
         self.user_status_label = QLabel('无用户连接', self)
@@ -1261,8 +1302,6 @@ class MainWindow(QMainWindow):
         try:
             # 生成初始token并上线
             self.send_online()
-            # 生成并显示二维码
-            self.generate_and_display_qr()
             # 启动token和状态轮询
             self.start_token_polling()
             self.start_message_polling()
@@ -1270,61 +1309,195 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"[设备] 初始化失败: {e}")
     
-    def generate_and_display_qr(self):
-        """生成并显示二维码"""
+    def _is_current_qr_token(self, token):
+        with self._qr_token_lock:
+            return token == self._current_token
+
+    def show_app_qr(self):
+        self._qr_user_selected = True
+        self.qr_stack.setCurrentWidget(self.qr_image_label)
+        self.qr_app_button.setChecked(True)
+        self.qr_wechat_button.setChecked(False)
+
+    def show_wechat_qr(self):
+        self._qr_user_selected = True
+        self.qr_stack.setCurrentWidget(self.wechat_qr_image_label)
+        self.qr_app_button.setChecked(False)
+        self.qr_wechat_button.setChecked(True)
+
+    def apply_qr_update(self, token, app_png, wechat_png, message):
+        """在 Qt 主线程显示当前 token 对应的二维码结果。"""
+        if not self._is_current_qr_token(token):
+            return
+        if app_png is not None:
+            self._qr_user_selected = False
+            self.qr_stack.setCurrentWidget(self.qr_image_label)
+            self.qr_app_button.setChecked(True)
+            self.qr_wechat_button.setChecked(False)
+            self.wechat_qr_image_label.clear()
+            self.wechat_qr_image_label.setText('生成中')
+            app_pixmap = QPixmap()
+            if app_pixmap.loadFromData(app_png):
+                self.qr_image_label.setPixmap(app_pixmap.scaled(190, 190, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            else:
+                self.qr_image_label.setText('普通 APP 码加载失败')
+                message = '普通 APP 码图片无效；请使用微信小程序码（若已就绪）。'
+        if wechat_png is not None:
+            if wechat_png:
+                wechat_pixmap = QPixmap()
+                if wechat_pixmap.loadFromData(wechat_png):
+                    self.wechat_qr_image_label.setPixmap(wechat_pixmap.scaled(190, 190, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    if not self._qr_user_selected:
+                        self.qr_stack.setCurrentWidget(self.wechat_qr_image_label)
+                        self.qr_app_button.setChecked(False)
+                        self.qr_wechat_button.setChecked(True)
+                else:
+                    self.wechat_qr_image_label.clear()
+                    self.wechat_qr_image_label.setText('微信码图片无效')
+                    message = '微信小程序码图片无效；请使用普通 APP 码扫码。'
+                    self._qr_user_selected = False
+                    self.qr_stack.setCurrentWidget(self.qr_image_label)
+                    self.qr_app_button.setChecked(True)
+                    self.qr_wechat_button.setChecked(False)
+            else:
+                self.wechat_qr_image_label.clear()
+                self.wechat_qr_image_label.setText('生成中' if '生成中' in message else '不可用')
+                self._qr_user_selected = False
+                self.qr_stack.setCurrentWidget(self.qr_image_label)
+                self.qr_app_button.setChecked(True)
+                self.qr_wechat_button.setChecked(False)
+        failed = '失败' in message or '不可用' in message or '无效' in message
+        color = '#b42318' if failed else '#666'
+        self.qr_status_label.setStyleSheet(f"font-size: 9pt; color: {color}; margin: 3px 0;")
+        self.qr_status_label.setText(message)
+        self.retry_wechat_qr_button.setVisible(failed)
+
+    def generate_and_display_qr(self, token=None):
+        """生成普通 APP 连接码；图片写盘和 Qt 更新分别保持兼容及线程安全。"""
         try:
-            # 生成token（如果没有的话）
-            if not self._current_token:
-                self._current_token = generate_device_token()
+            if token is None:
+                with self._qr_token_lock:
+                    token = self._current_token
+            if not token:
+                token = generate_device_token()
+                with self._qr_token_lock:
+                    self._current_token = token
+
+            scan_url = f"{self.frontend}/#/pages/scan/scan?device_id={self.device_id}&token={token}"
             
-            # 生成二维码内容
-            scan_url = f"{self.frontend}/#/pages/scan/scan?device_id={self.device_id}&token={self._current_token}"
-            
-            # 生成二维码图片
             qr = qrcode.QRCode(version=1, box_size=10, border=5)
             qr.add_data(scan_url)
             qr.make(fit=True)
-            
-            # 创建二维码图片
             img = qr.make_image(fill_color="black", back_color="white")
             img = img.resize((190, 190))
-            
-            # 转换为QPixmap并显示
-            img.save(QR_FILENAME)
-            pixmap = QPixmap(QR_FILENAME)
-            self.qr_image_label.setPixmap(pixmap)
-            
-            print(f"[二维码] 已生成: {scan_url}")
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            app_png = buffer.getvalue()
+            with self._qr_token_lock:
+                if token != self._current_token:
+                    return None
+                with open(QR_FILENAME, "wb") as qr_file:
+                    qr_file.write(app_png)
+            self.qr_update_signal.emit(token, app_png, b'', '微信小程序码生成中；普通 APP 码可用。')
+            return app_png
         except Exception as e:
             print(f"[二维码] 生成失败: {e}")
-            # 显示错误信息
-            self.qr_image_label.setText("二维码生成失败")
+            self.qr_update_signal.emit(token or '', None, None, f"普通 APP 二维码生成失败：{e}")
+            return None
+
+    def request_wechat_qr(self, token):
+        """在网络工作线程请求后端二进制微信码；旧 token 的返回会被丢弃。"""
+        if not self._is_current_qr_token(token):
+            return
+        try:
+            response = requests.post(
+                f"{self.server}/api/device/{self.device_id}/wechat-qrcode",
+                json={'token': token, 'env_version': WECHAT_QR_ENV_VERSION},
+                timeout=30,
+            )
+            content_type = response.headers.get('Content-Type', '').split(';', 1)[0].strip().lower()
+            if response.status_code != 200 or content_type not in ('image/jpeg', 'image/png'):
+                try:
+                    body = response.json()
+                except ValueError:
+                    body = {}
+                raise RuntimeError(body.get('msg') or f"HTTP {response.status_code}")
+            if not response.content:
+                raise RuntimeError('后端返回了空图片')
+            if self._is_current_qr_token(token):
+                self.qr_update_signal.emit(token, None, response.content, '微信小程序码已就绪。')
+        except Exception as e:
+            if self._is_current_qr_token(token):
+                message = str(e)[:180]
+                self.qr_update_signal.emit(
+                    token, None, b'',
+                    f"微信小程序码生成失败：{message}。请使用普通 APP 码扫码。",
+                )
+
+    def retry_wechat_qr(self):
+        """重新请求当前 token 的小程序码，不在 Qt 线程执行网络请求。"""
+        with self._qr_token_lock:
+            token = self._current_token
+        if not token:
+            self.qr_status_label.setText('设备 token 尚未准备好；普通 APP 码可用。')
+            return
+        self._qr_user_selected = False
+        self.qr_stack.setCurrentWidget(self.qr_image_label)
+        self.qr_app_button.setChecked(True)
+        self.qr_wechat_button.setChecked(False)
+        self.wechat_qr_image_label.clear()
+        self.wechat_qr_image_label.setText('生成中')
+        self.qr_status_label.setStyleSheet("font-size: 9pt; color: #666; margin: 3px 0;")
+        self.qr_status_label.setText('微信小程序码生成中；普通 APP 码可用。')
+        self.retry_wechat_qr_button.hide()
+        thread = threading.Thread(target=self.request_wechat_qr, args=(token,), daemon=True)
+        thread.start()
     
     def send_online(self):
         """发送设备上线信号"""
-        try:
-            # 生成新token
-            token = generate_device_token()
-            expires_at = int(time.time() + 5 * 60)  # 5分钟后过期
-            
-            # 保存当前token
+        token = generate_device_token()
+        with self._qr_token_lock:
             self._current_token = token
-            
-            url = f"{self.server}/api/device/{self.device_id}/online"
-            payload = {
-                'device_id': self.device_id,
-                'timestamp': int(time.time()),
-                'token': token,
-                'token_expires_at': expires_at * 1000
-            }
-            
-            response = requests.post(url, json=payload, timeout=10)
-            if response.status_code == 200:
+        self.generate_and_display_qr(token)
+
+        def register_and_fetch():
+            try:
+                expires_at = int(time.time() + 5 * 60)
+                response = requests.post(
+                    f"{self.server}/api/device/{self.device_id}/online",
+                    json={
+                        'device_id': self.device_id,
+                        'timestamp': int(time.time()),
+                        'token': token,
+                        'token_expires_at': expires_at * 1000,
+                    },
+                    timeout=10,
+                )
+                try:
+                    body = response.json() if response.content else {}
+                except ValueError:
+                    body = {}
+                if response.status_code != 200 or body.get('code') != 0:
+                    if self._is_current_qr_token(token):
+                        error = body.get('msg') or f"HTTP {response.status_code}"
+                        self.qr_update_signal.emit(token, None, b'', f"设备上线失败：{error}；普通 APP 码仍可用。")
+                    return
+                accepted_token = str(((body.get('data') or {}).get('token') or token)).strip()
+                with self._qr_token_lock:
+                    if self._current_token != token:
+                        return
+                    self._current_token = accepted_token
+                if accepted_token != token:
+                    self.generate_and_display_qr(accepted_token)
+                self.request_wechat_qr(accepted_token)
                 print("[设备] 上线信号发送成功")
-            else:
-                print(f"[设备] 上线信号发送失败: {response.status_code}")
-        except Exception as e:
-            print(f"[设备] 发送上线信号失败: {e}")
+            except Exception as e:
+                if self._is_current_qr_token(token):
+                    self.qr_update_signal.emit(token, None, b'', f"设备上线失败：{e}；普通 APP 码仍可用。")
+
+        thread = threading.Thread(target=register_and_fetch, daemon=True)
+        thread.start()
+        return thread
     
     def start_token_polling(self):
         """启动token轮询线程"""
@@ -1336,7 +1509,7 @@ class MainWindow(QMainWindow):
                     new_token = generate_device_token()
                     expires_at = int(time.time() + 5 * 60)  # 5分钟后过期
                     
-                    url = f"{self.server}/api/device/{self.device_id}/token/sync"
+                    url = f"{self.server}/api/device/{self.device_id}/token"
                     payload = {
                         'device_id': self.device_id,
                         'token': new_token,
@@ -1344,13 +1517,20 @@ class MainWindow(QMainWindow):
                     }
                     
                     response = requests.post(url, json=payload, timeout=10)
-                    if response.status_code == 200:
-                        self._current_token = new_token
-                        # 更新二维码
-                        self.generate_and_display_qr()
+                    try:
+                        body = response.json() if response.content else {}
+                    except ValueError:
+                        body = {}
+                    if response.status_code == 200 and body.get('code') == 0:
+                        accepted_token = str(((body.get('data') or {}).get('token') or new_token)).strip()
+                        with self._qr_token_lock:
+                            self._current_token = accepted_token
+                        # 只发 Qt 信号；网络、图片生成均留在线程中。
+                        self.generate_and_display_qr(accepted_token)
+                        self.request_wechat_qr(accepted_token)
                         print("[Token] 更新成功")
                     else:
-                        print(f"[Token] 更新失败: {response.status_code}")
+                        print(f"[Token] 更新失败: {response.status_code} {body.get('msg', '')}")
                 except Exception as e:
                     print(f"[Token] 轮询失败: {e}")
         

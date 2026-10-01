@@ -1,5 +1,5 @@
 <template>
-  <view class="home-page" :class="tabPageClass">
+  <view class="home-page" :class="[tabPageClass, { 'waste-guide-open': showGuideModal }]">
     <!-- 背景装饰 -->
     <view class="bg-decoration">
       <view class="bg-circle circle-1"></view>
@@ -278,21 +278,7 @@
     </view>
 
     <!-- 分类指南弹窗 -->
-    <view v-if="showGuideModal && currentGuide.title" class="modal-overlay" @click="closeGuideModal">
-      <view class="modal-content" @click.stop="">
-        <view class="modal-header" :class="currentGuide.type">
-          <ManifestIcon class="modal-icon" :id="currentGuide.icon" />
-          <text class="modal-title">{{ currentGuide.title }}</text>
-          <ManifestIcon id="close" class="modal-close" @click="closeGuideModal" />
-        </view>
-        <view class="modal-body">
-          <text class="modal-text">{{ currentGuide.content }}</text>
-        </view>
-        <view class="modal-footer">
-          <button class="modal-btn" @click="closeGuideModal">我知道了</button>
-        </view>
-      </view>
-    </view>
+    <WasteCategoryModal :visible="showGuideModal" :category="currentGuide.type" @close="closeGuideModal" />
 
     <AchievementUnlockModal :visible="showAchievementModal" :items="achievementModalItems" @close="closeAchievementModal" />
 
@@ -342,6 +328,8 @@ import { scanAndConnectDevice } from '@/utils/device-qr'
 import AppOnboarding from '@/components/AppOnboarding.vue'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import WasteCategoryModal from '@/components/WasteCategoryModal.vue'
+import { wasteCategoryGuides } from '@/utils/waste-category-guides'
 import SmartSortRobot3D from '@/components/SmartSortRobot3D.vue'
 import SmartSortRecognitionVisual from '@/components/SmartSortRecognitionVisual.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
@@ -1481,45 +1469,15 @@ function scanDeviceQR() {
 }
 
 function showGuideDetail(type) {
-  if (!type) return
-  
-  const guides = {
-    recyclable: {
-      type: 'recyclable',
-      icon: 'bin_recyclable',
-      title: '可回收垃圾',
-      content: '包括废纸、塑料、玻璃、金属和布料五大类。这些垃圾可以通过综合处理回收利用，减少污染，节省资源。正确分类投放可以大大提高回收效率，为环保事业贡献力量。'
-    },
-    harmful: {
-      type: 'harmful',
-      icon: 'bin_hazardous',
-      title: '有害垃圾',
-      content: '包括废电池、废灯管、废药品、废油漆及其容器等。这些垃圾含有有毒有害物质，需要特殊处理，避免对环境和人体造成危害。请务必投放到专门的有害垃圾收集点。'
-    },
-    kitchen: {
-      type: 'kitchen',
-      icon: 'bin_kitchen',
-      title: '厨余垃圾',
-      content: '包括剩菜剩饭、骨头、菜根菜叶、果皮等食品类废物。这些有机垃圾可以通过生物技术就地处理堆肥，转化为有机肥料，实现资源循环利用。'
-    },
-    other: {
-      type: 'other',
-      icon: 'bin_other',
-      title: '其他垃圾',
-      content: '包括除上述几类垃圾之外的砖瓦陶瓷、渣土、卫生间废纸、纸巾等难以回收的废弃物。这些垃圾通常采用卫生填埋等方式进行无害化处理。'
-    }
-  }
-  
-  const guide = guides[type]
-  if (guide) {
-    currentGuide.value = { ...guide }
-    showGuideModal.value = true
-  }
+  const guide = wasteCategoryGuides[type]
+  if (!guide) return
+  currentGuide.value = { type }
+  showGuideModal.value = true
 }
 
 function closeGuideModal() {
   showGuideModal.value = false
-  setTimeout(() => currentGuide.value = {}, 300)
+  currentGuide.value = {}
 }
 
 // 成就解锁弹窗
@@ -3373,8 +3331,14 @@ function closeAchievementModal() {
 }
 
 .modal-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   height: 88rpx;
+  padding: 0;
+  line-height: 88rpx;
+  box-sizing: border-box;
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #ffffff;
   font-size: 28rpx;
@@ -3855,6 +3819,31 @@ function closeAchievementModal() {
 .upload-card.robot-returning-card::after,
 .upload-card.robot-returning-card .tech-wave-2,
 .upload-card.robot-returning-card .tech-wave-3 { visibility: hidden; }
+
+.waste-guide-open .header-bg,
+.waste-guide-open .content-wrapper,
+.waste-guide-open .main-content,
+.waste-guide-open .home-container,
+.waste-guide-open .tabbar,
+.waste-guide-open .floating-agent,
+.waste-guide-open .bg-decoration,
+.waste-guide-open .tech-bg { filter: blur(5px); pointer-events: none; }
+
+@media (max-width: 768px) {
+  .header-bg { padding-bottom: 80rpx; }
+  .upload-card { padding: 36rpx 40rpx; margin-bottom: 20rpx; }
+  .tips-card { padding: 25rpx 40rpx 16rpx; margin-bottom: 20rpx; }
+  .welcome-section, .guide-section { margin-bottom: 20rpx; }
+  .section-title { margin-bottom: 8rpx; }
+  .guide-item { padding: 18rpx; }
+}
+
+@media (max-width: 420px) {
+  .quick-actions { gap: 14rpx; padding: 20rpx 16rpx; }
+  .quick-actions-header { margin-bottom: -12rpx; }
+  .action-item.featured { min-height: 104rpx; padding: 14rpx 12rpx; }
+  .action-item.compact { min-height: 112rpx; padding: 12rpx 4rpx; }
+}
 </style>
 
 

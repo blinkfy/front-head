@@ -54,7 +54,7 @@
               <view class="medal-glow"></view>
             </view>
             <view class="top-user-info">
-              <text class="top-username">{{ user.username }}</text>
+              <text class="top-username">{{ getDisplayName(user) }}</text>
               <text class="top-points">{{ user.monthly_points }}分</text>
               <text class="top-total">总积分 {{ user.total_points }}</text>
             </view>
@@ -79,9 +79,9 @@
             </view>
             <view class="user-cell">
               <view class="user-avatar">
-                <text class="avatar-text">{{ user.username.charAt(0) }}</text>
+                <text class="avatar-text">{{ getDisplayName(user).charAt(0) }}</text>
               </view>
-              <text class="username">{{ user.username }}</text>
+              <text class="username">{{ getDisplayName(user) }}</text>
             </view>
             <view class="total-cell">
               <text class="total-number">{{ user.total_points }}</text>
@@ -128,6 +128,7 @@
 import { ref, onMounted } from 'vue'
 import { getRanking } from '@/api/ranking'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { getDisplayName } from '@/utils/display-name.js'
 
 const rankingData = ref(null)
 const loading = ref(false)

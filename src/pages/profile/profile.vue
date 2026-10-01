@@ -39,7 +39,7 @@
       </view>
       
       <view class="user-info">
-        <text class="username">{{ userInfo.username || username }}</text>
+        <text class="username">{{ userInfo.nickname || (userInfo.username || username).toUpperCase() }}</text>
         <text class="user-id">ID: {{ (userInfo.username || username).toUpperCase() }}</text>
         <view class="user-badges">
           <view class="badge" v-if="(points || 0) >= 100"><ManifestIcon id="classification_expert" /> 分类专家</view>
@@ -167,7 +167,7 @@
         <view class="admin-item" @click="goFileManagement"><ManifestIcon id="file_manager" /> 文件管理</view>
         <view class="admin-item" @click="go2048"><ManifestIcon id="admin_2048" /> 2048后台</view>
         <view class="admin-item" @click="goDbMonitor"><ManifestIcon id="database" /> 数据库</view>
-        <view class="admin-item" @click="goAdminAISettings"><ManifestIcon id="ai_settings" /> AI设置</view>
+        <view class="admin-item" @click="goAdminAISettings"><ManifestIcon id="ai_settings" /> 服务设置</view>
         <view class="admin-item" @click="goDigitalTwin"><ManifestIcon id="digital_twin" /> 数字孪生</view>
         <view class="admin-item" @click="goCollectionDashboard"><ManifestIcon id="cleanup_dashboard" /> 清运仪表板</view>
         <view class="admin-item" @click="goCollectionPlanning"><ManifestIcon id="cleanup_plan" /> 清运规划</view>

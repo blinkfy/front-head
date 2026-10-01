@@ -1,7 +1,7 @@
 <template>
   <view :class="['edit-profile-container', { 'dark-theme': isDarkTheme }]">
     <!-- 隐藏的 Canvas 用于头像处理 -->
-    <canvas id="avatar-canvas" style="display: none;"></canvas>
+    <canvas id="avatar-canvas" class="avatar-canvas"></canvas>
 
     <!-- 背景 -->
     <view class="bg-effects">
@@ -20,16 +20,32 @@
 
     <!-- 内容 -->
     <view class="edit-content">
+    <!-- #ifdef MP-WEIXIN -->
+    <form class="edit-form" @submit="onFormSubmit">
+    <!-- #endif -->
       <!-- 头像编辑 -->
       <view class="avatar-section">
         <view class="section-label">头像</view>
-        <view class="avatar-wrapper">
-          <image :src="getAvatarUrl(formData.avatar || userInfo.avatar || getManifestIconPath('profile_user'), baseUrl)" class="avatar-image" mode="aspectFill"></image>
-          <view class="avatar-overlay" @click="uploadAvatar">
+        <!-- #ifdef MP-WEIXIN -->
+        <button class="avatar-trigger" :open-type="supportsAvatar ? 'chooseAvatar' : ''" hover-class="avatar-trigger-hover" @chooseavatar="onChooseAvatar" @click="onAvatarTriggerClick">
+          <view class="avatar-wrapper">
+            <image :src="avatarPreview" class="avatar-image" mode="aspectFill"></image>
+            <view class="avatar-overlay">
+              <ManifestIcon class="overlay-icon" id="camera_scan" />
+              <text class="overlay-text">更换头像</text>
+            </view>
+          </view>
+        </button>
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
+        <view class="avatar-wrapper" @click="uploadAvatar">
+          <image :src="avatarPreview" class="avatar-image" mode="aspectFill"></image>
+          <view class="avatar-overlay">
             <ManifestIcon class="overlay-icon" id="camera_scan" />
             <text class="overlay-text">更换头像</text>
           </view>
         </view>
+        <!-- #endif -->
       </view>
 
       <!-- 表单区域 -->
@@ -49,6 +65,13 @@
             @input="onUsernameInput"
           />
           <view class="input-hint">{{ formData.username?.length || 0 }}/20</view>
+        </view>
+
+        <!-- 昵称 -->
+        <view class="form-group">
+          <view class="form-label"><text class="label-text">昵称</text></view>
+          <input v-model="formData.nickname" :type="supportsNickname ? 'nickname' : 'text'" name="nickname" placeholder="填写展示昵称" maxlength="32" class="form-input" />
+          <view class="input-hint">昵称用于展示，不改变登录用户名；最多32个字符</view>
         </view>
 
         <!-- 个人简介 -->
@@ -120,28 +143,40 @@
           <view class="form-label">
             <text class="label-text">所属社区</text>
           </view>
-          <picker mode="selector" :range="provinceOptions" range-key="name" :value="provinceIndex" @change="onProvinceChange">
-            <view class="form-input picker-field">{{ selectedProvinceName || '请选择省份' }}</view>
-          </picker>
-          <picker mode="selector" :range="cityOptions" range-key="name" :value="cityIndex" @change="onCityChange">
-            <view class="form-input picker-field">{{ selectedCityName || '请选择城市' }}</view>
-          </picker>
-          <picker mode="selector" :range="districtOptions" range-key="name" :value="districtIndex" @change="onDistrictChange">
-            <view class="form-input picker-field">{{ selectedDistrictName || '请选择区县' }}</view>
-          </picker>
-          <picker mode="selector" :range="communityOptions" range-key="name" :value="communityIndex" @change="onCommunityChange">
-            <view class="form-input picker-field">{{ selectedCommunityName || '请选择社区' }}</view>
-          </picker>
+          <view class="community-grid">
+            <picker class="picker-cell" mode="selector" :range="provinceOptions" range-key="name" :value="provinceIndex" @change="onProvinceChange">
+              <view class="form-input picker-field">{{ selectedProvinceName || '请选择省份' }}</view>
+            </picker>
+            <picker class="picker-cell" mode="selector" :range="cityOptions" range-key="name" :value="cityIndex" @change="onCityChange">
+              <view class="form-input picker-field">{{ selectedCityName || '请选择城市' }}</view>
+            </picker>
+            <picker class="picker-cell" mode="selector" :range="districtOptions" range-key="name" :value="districtIndex" @change="onDistrictChange">
+              <view class="form-input picker-field">{{ selectedDistrictName || '请选择区县' }}</view>
+            </picker>
+            <picker class="picker-cell" mode="selector" :range="communityOptions" range-key="name" :value="communityIndex" @change="onCommunityChange">
+              <view class="form-input picker-field">{{ selectedCommunityName || '请选择社区' }}</view>
+            </picker>
+          </view>
         </view>
       </view>
 
       <view class="action-buttons">
         <view class="btn-cancel" @click="goBack">取消</view>
+        <!-- #ifdef MP-WEIXIN -->
+        <button class="btn-save" form-type="submit" :disabled="isSaving">
+          <text>{{ isSaving ? '保存中...' : '保存修改' }}</text>
+        </button>
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
         <view class="btn-save" @click="saveProfile" :class="{ loading: isSaving }">
           <text v-if="!isSaving">保存修改</text>
           <text v-else>保存中...</text>
         </view>
+        <!-- #endif -->
       </view>
+    <!-- #ifdef MP-WEIXIN -->
+    </form>
+    <!-- #endif -->
     </view>
 
     <!-- H5 地图选点弹窗 -->
@@ -217,7 +252,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import * as userApi from '@/api/user.js'
 import { getCommunityTree } from '@/api/community.js'
 import { compressImageToBase64, getAvatarUrl, validateAvatarSize } from '@/utils/avatar-handler.js'
@@ -225,6 +260,7 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { baseUrl } from '@/api/settings.js'
 import { searchPlaces } from '@/api/map.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { nicknameError } from '@/utils/wechat-profile.mjs'
 
 const isDarkTheme = ref(false)
 const userInfo = ref({})
@@ -245,6 +281,9 @@ const selectedDistrictName = ref('')
 const selectedCommunityName = ref('')
 const communitySelectionActive = ref(false)
 
+const supportsAvatar = typeof uni.canIUse === 'function' && uni.canIUse('button.open-type.chooseAvatar')
+const supportsNickname = typeof uni.canIUse === 'function' && uni.canIUse('input.type.nickname')
+
 // H5 地图选点
 const showMapPicker = ref(false)
 const mapSearchQuery = ref('')
@@ -264,6 +303,7 @@ const nearbyLocation = ref(null)
 
 const formData = reactive({
   username: '',
+  nickname: '',
   avatar: '',
   bio: '',
   phone: '',
@@ -416,48 +456,29 @@ function onUsernameInput() {
   formData.username = formData.username.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '')
 }
 
+const avatarPreview = computed(() => getAvatarUrl(formData.avatar || userInfo.value.avatar || getManifestIconPath('profile_user'), baseUrl))
+
+function onAvatarTriggerClick() {
+  if (!supportsAvatar) uploadAvatar()
+}
+
+function onChooseAvatar(event) {
+  const avatarUrl = event?.detail?.avatarUrl
+  if (avatarUrl) processAvatar(avatarUrl)
+}
+
+function onFormSubmit(event) {
+  const checked = event?.detail?.value?.nickname
+  if (typeof checked === 'string') formData.nickname = checked
+  saveProfile()
+}
+
 function uploadAvatar() {
   uni.chooseImage({
     count: 1,
     sizeType: ['compressed'],
     sourceType: ['album', 'camera'],
-    success: async (res) => {
-      const tempFilePath = res.tempFilePaths[0]
-      
-      try {
-        uni.showLoading({ title: '压缩头像中...' })
-        
-        // 压缩图片到 64x64 并转换为 Base64
-        const base64Avatar = await compressImageToBase64(tempFilePath, 64, 64, 0.8)
-        
-        // 验证头像大小
-        const validation = validateAvatarSize(base64Avatar)
-        if (!validation.isValid) {
-          uni.hideLoading()
-          uni.showToast({
-            title: validation.message,
-            icon: 'none'
-          })
-          return
-        }
-        
-        // 更新表单数据
-        formData.avatar = base64Avatar
-        
-        uni.hideLoading()
-        uni.showToast({
-          title: `头像已更新 (${Math.round(validation.size / 1024)}KB)`,
-          icon: 'success'
-        })
-      } catch (error) {
-        uni.hideLoading()
-        console.error('头像处理失败:', error)
-        uni.showToast({
-          title: '头像处理失败，请重试',
-          icon: 'none'
-        })
-      }
-    },
+    success: (res) => { void processAvatar(res.tempFilePaths[0]) },
     fail: () => {
       uni.showToast({
         title: '选择图片失败',
@@ -465,6 +486,42 @@ function uploadAvatar() {
       })
     }
   })
+}
+
+async function processAvatar(tempFilePath) {
+  try {
+    uni.showLoading({ title: '压缩头像中...' })
+
+    // 压缩图片到 64x64 并转换为 Base64
+    const base64Avatar = await compressImageToBase64(tempFilePath, 64, 64, 0.8)
+
+    // 验证头像大小
+    const validation = validateAvatarSize(base64Avatar)
+    if (!validation.isValid) {
+      uni.hideLoading()
+      uni.showToast({
+        title: validation.message,
+        icon: 'none'
+      })
+      return
+    }
+
+    // 更新表单数据
+    formData.avatar = base64Avatar
+
+    uni.hideLoading()
+    uni.showToast({
+      title: `头像已更新 (${Math.round(validation.size / 1024)}KB)`,
+      icon: 'success'
+    })
+  } catch (error) {
+    uni.hideLoading()
+    console.error('头像处理失败:', error)
+    uni.showToast({
+      title: '头像处理失败，请重试',
+      icon: 'none'
+    })
+  }
 }
 
 function formatLocationResult(res) {
@@ -871,6 +928,7 @@ function confirmMapLocation() {
 }
 
 async function saveProfile() {
+  if (isSaving.value) return
   // 验证必填项
   if (!formData.username || formData.username.trim() === '') {
     uni.showToast({
@@ -888,6 +946,11 @@ async function saveProfile() {
     return
   }
 
+  const nicknameValidation = nicknameError(formData.nickname)
+  if (nicknameValidation) {
+    uni.showToast({ title: nicknameValidation, icon: 'none' })
+    return
+  }
   isSaving.value = true
 
   try {
@@ -900,6 +963,7 @@ async function saveProfile() {
       email: formData.email,
       location: formData.location
     }
+    payload.nickname = formData.nickname.trim()
     if (provinceOptions.value.length && communitySelectionActive.value) {
       payload.provinceCode = formData.provinceCode
       payload.cityCode = formData.cityCode
@@ -915,6 +979,7 @@ async function saveProfile() {
       avatar: formData.avatar || userInfo.value.avatar
     }
     
+    updatedUserInfo.nickname = formData.nickname.trim()
     // 保存到本地存储
     uni.setStorageSync('userInfo', updatedUserInfo)
     userInfo.value = updatedUserInfo
@@ -948,6 +1013,7 @@ function loadUserInfo() {
       
       // 更新表单数据
       formData.username = data.username || ''
+      formData.nickname = data.nickname || ''
       formData.avatar = data.avatar || ''
       formData.bio = data.bio || ''
       formData.phone = data.phone || ''
@@ -1135,6 +1201,37 @@ onMounted(() => {
   font-weight: 500;
 }
 
+/* 头像画布：离屏渲染，避免小程序 canvas 在 display:none 下绘制失效 */
+.avatar-canvas {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 128px;
+  height: 128px;
+  pointer-events: none;
+}
+
+/* 小程序头像按钮：重置 button 默认样式，外观与 H5 的 .avatar-wrapper 对齐 */
+.avatar-trigger {
+  display: block;
+  width: 180rpx;
+  height: 180rpx;
+  margin: 0 auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  line-height: 1;
+  overflow: visible;
+}
+
+.avatar-trigger::after {
+  border: none;
+}
+
+.avatar-trigger-hover .avatar-overlay {
+  opacity: 1;
+}
+
 /* 表单区域 */
 .form-section {
   background: rgba(255, 255, 255, 0.95);
@@ -1228,14 +1325,25 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
-.picker-field {
+.community-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.picker-cell {
+  width: 49%;
   margin-bottom: 12rpx;
+}
+
+.picker-field {
+  margin-bottom: 0;
   display: flex;
   align-items: center;
 }
 
 .form-textarea {
-  min-height: 60rpx;
+  height: 160rpx;
   resize: vertical;
   font-family: inherit;
 }
@@ -1334,6 +1442,20 @@ onMounted(() => {
 .btn-save.loading {
   opacity: 0.8;
 }
+
+/* #ifdef MP-WEIXIN */
+/* 小程序端保存按钮改用原生 button 以触发表单提交，需重置其默认样式 */
+.btn-save {
+  display: block;
+  margin: 0;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.btn-save::after {
+  border: none;
+}
+/* #endif */
 
 /* ===== H5 地图选点弹窗 ===== */
 .map-picker-overlay {

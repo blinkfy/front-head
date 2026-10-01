@@ -154,6 +154,45 @@
       <MapBinAdminPanel v-if="isMapAdmin" :bin="selectedMarker" dark @updated="refreshAdminMarker" />
     </view>
 
+    <!-- 垃圾桶问题上报弹窗 -->
+    <view v-if="showReportModal" class="report-overlay" @click="closeReportModal">
+      <view class="report-dialog" @click.stop>
+        <view class="report-header">
+          <view class="report-heading-icon"><ManifestIcon id="dark_alert" /></view>
+          <view class="report-heading-copy">
+            <text class="report-title">反馈点位问题</text>
+            <text class="report-subtitle">帮助我们及时核实并更新地图信息</text>
+          </view>
+          <ManifestIcon id="close" class="report-close" @click="closeReportModal" />
+        </view>
+        <view class="report-point">
+          <ManifestIcon id="normal_bin_marker" class="report-point-icon" />
+          <view class="report-point-copy">
+            <text class="report-point-label">反馈点位</text>
+            <text class="report-point-name">{{ reportTarget?.title || '垃圾桶点位' }}</text>
+          </view>
+        </view>
+        <view class="report-reason-heading">
+          <text>问题描述</text><text class="report-required">必填</text>
+        </view>
+        <textarea
+          v-model="reportReason"
+          class="report-textarea"
+          maxlength="200"
+          placeholder="例如：点位已迁移、设备损坏或分类信息有误"
+          placeholder-class="report-placeholder"
+          :auto-height="false"
+        />
+        <text class="report-counter">{{ reportReason.length }}/200</text>
+        <view class="report-actions">
+          <view class="report-cancel" @click="closeReportModal">取消</view>
+          <view class="report-submit" :class="{ disabled: !reportReason.trim() || reportSubmitting }" @click="submitReport">
+            {{ reportSubmitting ? '提交中…' : '提交反馈' }}
+          </view>
+        </view>
+      </view>
+    </view>
+
     <!-- 新增垃圾桶弹窗 -->
     <AddTrashBinModal
       :visible="showAddModal"
@@ -228,6 +267,10 @@ const userMarker = ref(null)
 
 // 新增垃圾桶弹窗显示状态
 const showAddModal = ref(false)
+const showReportModal = ref(false)
+const reportTarget = ref(null)
+const reportReason = ref('')
+const reportSubmitting = ref(false)
 
 // 垃圾箱点位数据（从后端API获取，不再硬编码）
 const trashPoints = ref([])
@@ -1116,38 +1159,26 @@ function performDelete(m) {
 // 用户上报垃圾桶信息错误（报错按钮）
 function reportErrorMarker(m) {
   if (!m) return
-  // H5 提示输入原因
-  const reason = isH5
-    ? window.prompt(`上报 ${m.title} 的错误信息，请具体描述：`, '')
-    : '';
+  reportTarget.value = m
+  reportReason.value = ''
+  showReportModal.value = true
+}
 
-  if (!isH5) {
-    // 小程序/APP 使用输入框获取原因
-    uni.showModal({
-      title: '上报错误',
-      content: `请输入上报 ${m.title} 的错误信息：`,
-      editable: true,
-      success(res) {
-        if (res.confirm && res.content) {
-          callReport(m, res.content);
-        } else {
-          uni.showToast({ title: '上报取消或未填写原因', icon: 'none' });
-        }
-      }
-    });
-    return;
-  }
+function closeReportModal() {
+  if (reportSubmitting.value) return
+  showReportModal.value = false
+  reportTarget.value = null
+  reportReason.value = ''
+}
 
-  if (reason === null || reason.trim() === '') {
-    // 用户取消或未填写原因
-    uni.showToast({ title: '上报取消或未填写原因', icon: 'none' });
-    return;
-  }
-
-  callReport(m, reason);
+function submitReport() {
+  const reason = reportReason.value.trim()
+  if (!reason || reportSubmitting.value || !reportTarget.value) return
+  callReport(reportTarget.value, reason)
 }
 
 async function callReport(m, reason = '') {
+  reportSubmitting.value = true
   try {
     // 优先使用 deviceId 字段，否则发送经纬度作为标识
     const deviceId = m.deviceId || m.id || `${m.latitude},${m.longitude}`
@@ -1155,10 +1186,15 @@ async function callReport(m, reason = '') {
     uni.showToast({ title: '上报成功，感谢反馈', icon: 'success' })
     if (isMapAdmin.value) loadTrashBinList()
     selectedMarker.value = null
+    showReportModal.value = false
+    reportTarget.value = null
+    reportReason.value = ''
   } catch (err) {
     console.error('report error failed', err)
     const msg = (err && err.msg) ? err.msg : (err && err.message) ? err.message : '上报失败'
     uni.showToast({ title: msg, icon: 'none' })
+  } finally {
+    reportSubmitting.value = false
   }
 }
 
@@ -2275,4 +2311,47 @@ function goProfile() {
   font-size: 28rpx;
   font-weight: 600;
 }
+.report-overlay {
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 12000; display: flex; align-items: center; justify-content: center;
+  padding: 32rpx; background: rgba(2, 8, 23, 0.76); backdrop-filter: blur(10px);
+}
+.report-dialog {
+  width: 620rpx; max-width: calc(100vw - 64rpx); padding: 32rpx; border-radius: 28rpx;
+  background: linear-gradient(145deg, #10243c, #091626); border: 1rpx solid rgba(148, 190, 220, 0.18);
+  box-shadow: 0 24rpx 72rpx rgba(0, 0, 0, 0.5);
+}
+.report-header, .report-point, .report-actions { display: flex; align-items: center; }
+.report-header { gap: 18rpx; margin-bottom: 28rpx; }
+.report-heading-icon {
+  width: 76rpx; height: 76rpx; flex: 0 0 76rpx; border-radius: 22rpx; display: flex;
+  align-items: center; justify-content: center; color: #ff8585; background: rgba(255, 100, 100, 0.14); font-size: 42rpx;
+}
+.report-heading-copy { flex: 1; min-width: 0; }
+.report-title { display: block; color: #f1f8ff; font-size: 32rpx; font-weight: 700; }
+.report-subtitle { display: block; margin-top: 6rpx; color: #8ca5ba; font-size: 22rpx; }
+.report-close { width: 40rpx; height: 40rpx; color: #7f98ad; }
+.report-point {
+  gap: 16rpx; padding: 20rpx; margin-bottom: 28rpx; border-radius: 18rpx;
+  background: rgba(64, 224, 255, 0.07); border: 1rpx solid rgba(64, 224, 255, 0.14);
+}
+.report-point-icon { width: 48rpx; height: 48rpx; color: #58e2c2; }
+.report-point-copy { min-width: 0; flex: 1; }
+.report-point-label { display: block; color: #8ca5ba; font-size: 21rpx; }
+.report-point-name { display: block; margin-top: 4rpx; color: #e5f4ff; font-size: 26rpx; font-weight: 600; }
+.report-reason-heading { display: flex; justify-content: space-between; margin-bottom: 12rpx; color: #dcebf6; font-size: 25rpx; font-weight: 600; }
+.report-required { color: #ff8585; font-size: 21rpx; font-weight: 500; }
+.report-textarea {
+  width: 100%; height: 190rpx; padding: 18rpx 20rpx; box-sizing: border-box; border: 1rpx solid rgba(143, 180, 204, 0.2);
+  border-radius: 16rpx; background: rgba(2, 12, 24, 0.6); color: #e5f4ff; font-size: 24rpx; line-height: 1.55;
+}
+.report-placeholder { color: #71889c; font-size: 23rpx; }
+.report-counter { display: block; margin-top: 8rpx; text-align: right; color: #70889d; font-size: 20rpx; }
+.report-actions { gap: 16rpx; margin-top: 28rpx; }
+.report-cancel, .report-submit {
+  height: 82rpx; flex: 1; display: flex; align-items: center; justify-content: center;
+  border-radius: 42rpx; font-size: 26rpx; font-weight: 600;
+}
+.report-cancel { color: #b8cada; background: rgba(135, 165, 190, 0.12); }
+.report-submit { color: #062032; background: linear-gradient(135deg, #5be6d2, #55c8f0); }
+.report-submit.disabled { opacity: 0.42; }
 </style>

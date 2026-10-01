@@ -18,6 +18,7 @@
 import { ThemeManager } from '@/utils/theme.js'
 import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
 import { warmManifestIcons } from '@/utils/icon-preload.js'
+import { appendPageQuery } from '@/utils/device-qr-entry.mjs'
 
 // 页面映射表
 const PAGE_MAPPINGS = {
@@ -68,9 +69,15 @@ export default {
         
         if (currentRoute.startsWith('pages/') && !currentRoute.startsWith('pages-dark/')) {
           const targetPath = PAGE_MAPPINGS[currentRoute] || currentRoute.replace('pages/', 'pages-dark/')
+          const launchQuery = {
+            ...(options?.query || {}),
+            ...(currentPage.options || {}),
+            ...(currentPage.$page?.options || {})
+          }
+          const targetUrl = appendPageQuery('/' + targetPath, launchQuery)
           console.log('onLaunch: Redirecting to', '/' + targetPath)
           setTimeout(() => {
-            uni.reLaunch({ url: '/' + targetPath })
+            uni.reLaunch({ url: targetUrl })
           }, 100)
         }
       }

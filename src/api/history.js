@@ -1,4 +1,20 @@
 import request from './index.js'
+
+/**
+ * 获取单条历史记录的图片（点开详情时按需加载）
+ * @param {number|string} id - 历史记录ID
+ * @returns {Promise} API响应，data.image 为 data URL 或服务端相对路径（/files/download/...）
+ */
+export async function getHistoryImage(id) {
+  return await request({
+    url: `/api/recognition_history/image/${id}`,
+    method: 'GET',
+    header: {
+      'Authorization': `Bearer ${uni.getStorageSync('token')}`
+    }
+  })
+}
+
 /**
  * 获取用户识别历史记录
  * @param {Object} params - 查询参数

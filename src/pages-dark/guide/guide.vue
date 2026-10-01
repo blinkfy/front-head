@@ -218,21 +218,21 @@
           </view>
         </view>
         <view class="fd-item community" @click="navigateTo('/pages-dark/community/community')">
-          <view class="fd-icon">🤝</view>
+          <view class="fd-icon"><ManifestIcon id="community_home" /></view>
           <view class="fd-info">
             <text class="fd-name">绿色先行社区</text>
             <text class="fd-desc">与邻里分享心得，共同助力碳中和</text>
           </view>
         </view>
         <view class="fd-item booking" @click="navigateTo('/pages-dark/booking/booking')">
-          <view class="fd-icon">📦</view>
+          <view class="fd-icon"><ManifestIcon id="recycling_booking" /></view>
           <view class="fd-info">
             <text class="fd-name">上门预约服务</text>
             <text class="fd-desc">大件垃圾处理难？一键预约专业上门</text>
           </view>
         </view>
         <view class="fd-item shop" @click="navigateTo('/pages-dark/shop/shop')">
-          <view class="fd-icon">🎁</view>
+          <view class="fd-icon"><ManifestIcon id="redeem_gift" /></view>
           <view class="fd-info">
             <text class="fd-name">积分权益商城</text>
             <text class="fd-desc">分类产生价值，积分兑换精选好礼</text>

@@ -85,6 +85,7 @@
           </view>
           <BinSessionPanel
             v-if="deviceMode === 'bin'"
+            style="display: block; width: 100%; min-width: 0; align-self: stretch; box-sizing: border-box;"
             :device-id="deviceId"
             :active="pageVisible"
             :dark="false"
@@ -132,12 +133,14 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { onShow, onHide } from '@dcloudio/uni-app'
+import { onLoad, onShow, onHide } from '@dcloudio/uni-app'
 import BinSessionPanel from '@/components/BinSessionPanel.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { getDeviceAPI, testDeviceAPI } from '@/utils/device-api-loader.js'
-import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection } from '@/utils/device-qr.js'
+import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection, getDeviceQrScanContent } from '@/utils/device-qr.js'
+import { resolveWechatQrScene } from '@/api/device.js'
+import { appendPageQuery, clearPendingDeviceQrScene, isValidDeviceQrScene, normalizeDeviceQrScene, savePendingDeviceQrScene } from '@/utils/device-qr-entry.mjs'
 
 // 使用安全的API加载器
 let deviceAPI = null
@@ -175,6 +178,14 @@ const connectedDevices = ref([])
 const deviceCheckTimer = ref(null)
 const pageVisible = ref(true)
 const sessionSyncState = ref('pending')
+const routeScene = ref('')
+const activeScene = ref('')
+const connectionError = ref(null)
+let pageActive = true
+onLoad(options => {
+  routeScene.value = String(options?.scene || '')
+  if (isValidDeviceQrScene(routeScene.value)) savePendingDeviceQrScene(uni, routeScene.value)
+})
 onShow(() => { pageVisible.value = true })
 onHide(() => { pageVisible.value = false })
 
@@ -192,6 +203,7 @@ function getPageParams() {
   let deviceNameParam = ''
   let deviceModeParam = 'bin'
   let tokenParam = ''
+  let sceneParam = ''
   
   // 首先输出所有可能的调试信息
   console.log('=== 开始获取页面参数 ===')
@@ -219,6 +231,7 @@ function getPageParams() {
       deviceNameParam = urlParams.device_name ? decodeURIComponent(urlParams.device_name) : ''
       deviceModeParam = normalizeDeviceMode(urlParams.device_mode || urlParams.deviceMode)
       tokenParam = urlParams.token || ''
+      sceneParam = routeScene.value || urlParams.scene || ''
     } else {
       // 小程序/APP端：从页面参数获取
       let pageParams = {}
@@ -453,6 +466,7 @@ function getPageParams() {
         }
       }
       tokenParam = pageParams.token || ''
+      sceneParam = routeScene.value || pageParams.scene || ''
     }
   } catch (error) {
     console.warn('获取页面参数失败:', error)
@@ -462,7 +476,8 @@ function getPageParams() {
     deviceId: deviceIdParam,
     deviceName: deviceNameParam,
     deviceMode: deviceModeParam,
-    token: tokenParam
+    token: tokenParam,
+    scene: sceneParam
   }
   
   console.log('=== 页面参数获取完成 ===')
@@ -574,6 +589,7 @@ function getOrbStyle(index) {
 }
 
 onMounted(async () => {
+  pageActive = true
   // 首先初始化设备API模块
   console.log('开始初始化设备API模块...')
   const apiInitialized = initDeviceAPI()
@@ -679,6 +695,11 @@ onMounted(async () => {
     isH5: isH5.value
   })
   
+  if (params.scene) {
+    await resolveSceneAndConnect(params.scene)
+    return
+  }
+
   if(deviceName.value) {
     connected.value = true
   } else if (deviceId.value && token.value) {
@@ -707,10 +728,103 @@ onMounted(async () => {
   }
 })
 
+function isUnauthorizedDeviceError(error) {
+  const code = Number(error?.code || error?.data?.code)
+  const statusCode = Number(error?.statusCode || error?.data?.statusCode)
+  const message = String(error?.msg || error?.message || error?.error || '').toLowerCase()
+  return code === 401 || statusCode === 401 || message.includes('unauthorized') || message.includes('请重新登录') || message.includes('未登录')
+}
+
+function redirectToLoginWithScene(scene) {
+  let dark = uni.getStorageSync('app_theme') === 'dark'
+  try {
+    const pages = getCurrentPages()
+    dark = String(pages[pages.length - 1]?.route || '').startsWith('pages-dark/') || dark
+  } catch (error) {
+    // Use the stored theme when page stack details are unavailable.
+  }
+  const loginPath = dark ? '/pages-dark/index/index' : '/pages/index/index'
+  uni.reLaunch({ url: appendPageQuery(loginPath, { scene }) })
+}
+
+async function resolveSceneAndConnect(sceneValue) {
+  const scene = normalizeDeviceQrScene(sceneValue)
+  if (!scene) {
+    clearPendingDeviceQrScene(uni)
+    errorMessage.value = '二维码已过期或异常，请重新扫码'
+    isTokenError.value = true
+    return false
+  }
+
+  savePendingDeviceQrScene(uni, scene)
+  if (!uni.getStorageSync('token')) {
+    errorMessage.value = '请先登录，登录后将继续连接设备'
+    isTokenError.value = true
+    uni.showToast({ title: '请先登录', icon: 'none' })
+    redirectToLoginWithScene(scene)
+    return false
+  }
+
+  loading.value = true
+  errorMessage.value = ''
+  activeScene.value = scene
+  try {
+    const result = await resolveWechatQrScene(scene)
+    if (!pageActive) return false
+    const resolvedDevice = result?.data || {}
+    if (result?.code !== 0 || !resolvedDevice.device_id || !resolvedDevice.token) {
+      throw new Error(result?.msg || '二维码已过期或异常')
+    }
+
+    deviceId.value = String(resolvedDevice.device_id)
+    deviceName.value = ''
+    deviceMode.value = normalizeDeviceMode(resolvedDevice.device_mode)
+    token.value = String(resolvedDevice.token)
+    connectionError.value = null
+    const didConnect = await attemptConnection()
+    if (!pageActive) return false
+    if (didConnect && connected.value) {
+      if (!deviceName.value) deviceName.value = String(resolvedDevice.device_name || '')
+      clearPendingDeviceQrScene(uni)
+      isTokenError.value = false
+      return true
+    }
+    if (isUnauthorizedDeviceError(connectionError.value) || !uni.getStorageSync('token')) {
+      savePendingDeviceQrScene(uni, scene)
+      return false
+    }
+    clearPendingDeviceQrScene(uni)
+    errorMessage.value = '二维码已过期或连接异常，请重新扫码'
+    isTokenError.value = true
+    uni.showToast({ title: errorMessage.value, icon: 'none' })
+    return false
+  } catch (error) {
+    if (!pageActive) return false
+    if (isUnauthorizedDeviceError(error) || !uni.getStorageSync('token')) {
+      savePendingDeviceQrScene(uni, scene)
+      return false
+    }
+    clearPendingDeviceQrScene(uni)
+    deviceId.value = ''
+    deviceName.value = ''
+    token.value = ''
+    connected.value = false
+    errorMessage.value = '二维码已过期或连接异常，请重新扫码'
+    isTokenError.value = true
+    uni.showToast({ title: errorMessage.value, icon: 'none' })
+    return false
+  } finally {
+    activeScene.value = ''
+    loading.value = false
+  }
+}
+
 async function attemptConnection() {
+  if (loading.value && !activeScene.value) return false
   loading.value = true
   connected.value = false
   errorMessage.value = ''
+  connectionError.value = null
   
   try {
     // 确保API已初始化
@@ -751,11 +865,17 @@ async function attemptConnection() {
           })
         }, 600)
       }
+      return true
     } else {
       throw new Error(result?.message || '连接失败')
     }
   } catch (error) {
+    connectionError.value = error
     console.error('设备连接失败:', error)
+    if (activeScene.value && (isUnauthorizedDeviceError(error) || !uni.getStorageSync('token'))) {
+      savePendingDeviceQrScene(uni, activeScene.value)
+      return false
+    }
     
     // 安全地提取错误信息
     let errorMsg = '网络连接异常，请重试'
@@ -776,6 +896,11 @@ async function attemptConnection() {
     isTokenError.value = errorText.includes('token') || errorText.includes('令牌') || errorText.includes('过期')
     
     if (!uni.getStorageSync('token')) {
+      if (activeScene.value) {
+        savePendingDeviceQrScene(uni, activeScene.value)
+        redirectToLoginWithScene(activeScene.value)
+        return false
+      }
       uni.showToast({
         title: '请先登录',
         icon: 'none',
@@ -971,6 +1096,17 @@ async function endConnection() {
 
 function handleDeviceScanContent(rawContent) {
   const target = resolveDeviceScanTarget(rawContent, '/pages/scan/scan')
+  if (target.invalidScene) {
+    errorMessage.value = '二维码已过期或异常，请重新扫码'
+    isTokenError.value = true
+    uni.showToast({ title: errorMessage.value, icon: 'none' })
+    return
+  }
+  if (target.scene) {
+    savePendingDeviceQrScene(uni, target.scene)
+    uni.redirectTo({ url: target.url })
+    return
+  }
   if (!target.url || !target.deviceId) {
     uni.showToast({ title: '二维码不正确', icon: 'none' })
     return
@@ -1049,9 +1185,11 @@ function startScan() {
   } else {
     // 小程序/APP端使用扫码功能
     uni.scanCode({
+      // #ifndef MP-WEIXIN
       scanType: ['qrCode'],
+      // #endif
       success: function(res) {
-        handleDeviceScanContent(res.result)
+        handleDeviceScanContent(getDeviceQrScanContent(res))
       },
       fail: function(err) {
         console.log('扫码失败:', err)
@@ -1066,6 +1204,7 @@ function startScan() {
 
 // 组件卸载时清理定时器
 onUnmounted(() => {
+  pageActive = false
   stopDeviceCheckTimer()
 })
 

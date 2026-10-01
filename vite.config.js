@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 // https://vitejs.dev/config/
 export default defineConfig(async ({ mode }) => {
   const { smartSortRobotAssetsPlugin } = await import(pathToFileURL(resolve(process.cwd(), 'scripts/smart-sort-robot-assets.mjs')).href)
+  const { mpMainPackageAssetsPlugin } = await import(pathToFileURL(resolve(process.cwd(), 'scripts/mp-main-package-assets.mjs')).href)
   // 加载环境变量
   const env = loadEnv(mode, process.cwd(), '')
 
@@ -13,6 +14,7 @@ export default defineConfig(async ({ mode }) => {
     plugins: [
       uni({ vueOptions: { template: { compilerOptions: { isCustomElement: tag => tag === 'smart-sort-xr' } } } }),
       smartSortRobotAssetsPlugin(),
+      mpMainPackageAssetsPlugin(),
     ],
     resolve: {
       alias: {

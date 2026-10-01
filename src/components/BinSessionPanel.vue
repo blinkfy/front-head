@@ -305,7 +305,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.bin-session { --ink: #173c32; --muted: #768d85; --line: #e2eee8; --soft: #f3faf6; --surface: #fff; width: 100%; color: var(--ink); }
+.bin-session { --ink: #173c32; --muted: #768d85; --line: #e2eee8; --soft: #f3faf6; --surface: #fff; display: block; width: 100%; min-width: 0; align-self: stretch; box-sizing: border-box; color: var(--ink); }
 .bin-session.dark { --ink: #e6f6ef; --muted: #95b7a7; --line: #28483c; --soft: #18372b; --surface: #11291f; }
 .feedback-heading, .sync-badge, .result-main, .result-details, .recent-heading, .recent-row, .feedback-footer { display: flex; align-items: center; }
 .feedback-heading { justify-content: space-between; }

@@ -6,8 +6,8 @@
       <section class="topbar">
         <div class="topbar-title-group">
           <view class="page-badge">Admin</view>
-          <div class="title">AI 服务设置</div>
-          <div class="sub">管理员可控制 AI 服务开关、识别模式（YOLO/AI）和模型参数</div>
+          <div class="title">服务设置</div>
+          <div class="sub">管理员可管理网页注册、AI 服务、识别模式和模型参数</div>
         </div>
         <div class="topbar-actions">
           <button class="btn icon-btn" @click="goBack" type="button">
@@ -40,6 +40,23 @@
           </view>
         </div>
         <div class="card-b">
+
+          <!-- 网页注册开关 -->
+          <div class="row">
+            <div class="row-label-group">
+              <view class="row-dot dot-green"></view>
+              <div>
+                <div class="label">允许网页端注册</div>
+                <div class="desc">开启后 H5 显示账号注册表单；关闭后显示微信扫码引导，APP 与小程序不受影响</div>
+              </div>
+            </div>
+            <view class="switch-row">
+              <switch :checked="form.allowWebRegistration" @change="form.allowWebRegistration = $event.detail.value" color="#17b27a" />
+              <text class="switch-label" :class="form.allowWebRegistration ? 'sw-on' : 'sw-off'">{{ form.allowWebRegistration ? '启用' : '关闭' }}</text>
+            </view>
+          </div>
+
+          <view class="divider"></view>
 
           <!-- AI 服务开关 -->
           <div class="row">
@@ -197,6 +214,7 @@ const statusText = ref('')
 const statusCls = ref('')
 
 const DEFAULT_FORM = {
+  allowWebRegistration: false,
   aiEnabled: true,
   detectorMode: 'yolo',
   model: 'qwen3.5-flash',
@@ -253,6 +271,7 @@ function normalizeRecommendAlgorithm(input) {
 }
 
 function applyData(data) {
+  form.allowWebRegistration = !!data.allowWebRegistration
   form.aiEnabled = !!data.aiEnabled
   form.detectorMode = data.detectorMode === 'ai' ? 'ai' : 'yolo'
   form.model = data.model || 'qwen3.5-flash'
@@ -308,6 +327,7 @@ function saveSettings() {
   loading.value = true
   setStatus('保存中...')
   const payload = {
+    allowWebRegistration: form.allowWebRegistration,
     aiEnabled: form.aiEnabled,
     detectorMode: form.detectorMode,
     model: (form.model || '').trim() || 'qwen3.5-flash',

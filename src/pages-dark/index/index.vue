@@ -77,7 +77,6 @@
           <captcha-box v-model="captchaInput" ref="captchaRef" @confirm="handleEnterKey" />
           <text class="hint" v-if="captchaHint">{{ captchaHint }}</text>
         </view>
-        
         <view class="options-row">
           <view class="remember-me" @click="toggleRememberMe">
             <view class="tech-checkbox" :class="{ 'checked': rememberMe }">
@@ -87,10 +86,11 @@
           </view>
         </view>
         
+
         <button type="submit" class="login-btn" @click="onLogin(false)" :disabled="isLoading">
           <view class="btn-content" v-if="!isLoading">
             <ManifestIcon class="btn-icon" id="submit_action" :scale="1.2" />
-            <text class="btn-text">登录系统</text>
+            <text class="btn-text">{{ wechatBindPending ? '登录并绑定微信' : '登录系统' }}</text>
           </view>
           <view class="loading-content" v-else>
             <view class="loading-spinner"></view>
@@ -104,13 +104,30 @@
           <text class="register-link" @click="onRegister">立即注册</text>
         </view>
       </form>
+        <!-- #ifdef MP-WEIXIN -->
+        <WechatLoginEntry :pending="wechatBindPending" :loading="isLoading" :dark="true" @login="onWechatLogin" />
+        <!-- #endif -->
     </view>
+    <!-- #ifdef MP-WEIXIN -->
+    <WechatProfileCompletion v-if="profileCompletionVisible" :user="profileCompletionUser" :dark="true" @done="finishProfileCompletion" />
+    <AccountMergeChoice v-if="mergePreview" :preview="mergePreview" :dark="true" @choose="finishMergeChoice" @cancel="finishMergeChoice(null)" />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { login, userinfo } from '@/api/user'
+import { buildDeviceQrScanUrl, getPendingDeviceQrScene } from '@/utils/device-qr-entry.mjs'
+// #ifdef MP-WEIXIN
+import { onLoad, onUnload } from '@dcloudio/uni-app'
+import { wechatLogin } from '@/api/user'
+import { createWechatLoginFlow, rememberWechatLogin, shouldAutoWechatLogin } from '@/utils/wechat-login.mjs'
+import WechatLoginEntry from '@/components/WechatLoginEntry.vue'
+import WechatProfileCompletion from '@/components/WechatProfileCompletion.vue'
+import AccountMergeChoice from '@/components/AccountMergeChoice.vue'
+import { consumeWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
+// #endif
 import { checkDB } from '@/api/health'
 import CaptchaBox from '@/components/CaptchaBox-black.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
@@ -120,6 +137,57 @@ const password = ref('')
 const showPwd = ref(false)
 const rememberMe = ref(true)
 const isLoading = ref(false)
+const wechatBindPending = ref(false)
+// #ifdef MP-WEIXIN
+const wechatFlow = createWechatLoginFlow({ runtime: uni, login: wechatLogin })
+wechatBindPending.value = wechatFlow.isPending()
+let wechatPageActive = true
+const profileCompletionVisible = ref(false)
+const profileCompletionUser = ref({})
+let resolveProfileCompletion = null
+function finishProfileCompletion() {
+  profileCompletionVisible.value = false
+  const resolve = resolveProfileCompletion
+  resolveProfileCompletion = null
+  if (resolve) resolve()
+}
+const mergePreview = ref(null)
+let resolveMergeChoice = null
+function chooseMerge(preview) {
+  mergePreview.value = preview
+  return new Promise(resolve => { resolveMergeChoice = resolve })
+}
+function finishMergeChoice(choice) {
+  mergePreview.value = null
+  const resolve = resolveMergeChoice
+  resolveMergeChoice = null
+  if (resolve) resolve(choice)
+}
+onUnload(() => { wechatPageActive = false; finishProfileCompletion(); finishMergeChoice(null) })
+onLoad(options => {
+  if (options?.username) username.value = options.username
+})
+
+async function onWechatLogin(isauto = false) {
+  if (isLoading.value || profileCompletionVisible.value) return
+  isLoading.value = true
+  try {
+    const result = await wechatFlow.begin(isauto === true)
+    if (!wechatPageActive) return
+    wechatBindPending.value = wechatFlow.isPending()
+    if (result.data?.needBind) {
+      isLoading.value = false
+      return
+    }
+    await completeLogin(result, isauto === true, true)
+  } catch (error) {
+    isLoading.value = false
+    if (!wechatPageActive) return
+    uni.showToast({ title: error.msg || error.message || '微信登录失败，请重试', icon: 'none' })
+  }
+}
+
+// #endif
 const passwordKey = ref(0) // 用于强制重新渲染密码输入框
 
 // 登录失败次数与验证码相关
@@ -148,12 +216,18 @@ const getParticleStyle = (index) => {
 
 // 页面加载时检查是否有保存的登录信息
 onMounted(() => {
+  // #ifdef MP-WEIXIN
+  if (shouldAutoWechatLogin(uni)) {
+    onWechatLogin(true)
+    return
+  }
+  // #endif
   if (rememberMe.value) {
     const savedUser = uni.getStorageSync('savedUser')
-    if (savedUser) {
+    if (savedUser && !wechatBindPending.value) {
       username.value = savedUser.username
       password.value = savedUser.password
-      if(uni.getStorageSync('autoLogin')) {
+      if(uni.getStorageSync('autoLogin') && !wechatBindPending.value) {
         onLogin(true)
       }
     }
@@ -186,7 +260,85 @@ function handleKeyup(event) {
   }
 }
 
+async function completeLogin(res, isauto, isWechat = false) {
+  // 登录成功,重置失败计数和验证码
+  loginFailCount.value = 0
+  showCaptcha.value = false
+  captchaInput.value = ''
+  captchaHint.value = ''
+
+  uni.setStorageSync('token', res.token)
+  uni.removeStorageSync('guestMode')
+  try {
+    const adminFlag = res.isAdmin === true
+    if (adminFlag) {
+      uni.setStorageSync('isAdmin', true)
+    } else {
+      uni.removeStorageSync('isAdmin')
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  let loggedInUser = null
+  // 获取并保存完整的用户信息
+  try {
+    const userInfoRes = await userinfo("false")
+    if (userInfoRes && userInfoRes.data) {
+      loggedInUser = userInfoRes.data
+      uni.setStorageSync('userInfo', userInfoRes.data)
+      console.log('用户信息已保存:', userInfoRes.data)
+    }
+  } catch (e) {
+    console.error('获取用户信息失败:', e)
+  }
+
+  uni.showToast({ title: isauto ? '自动登录' : '登录成功', icon: 'success' })
+  // 如果勾选了"记住我"，则保存用户名和密码
+  let wechatSession = isWechat
+  // #ifdef MP-WEIXIN
+  wechatSession = true
+  rememberWechatLogin(uni, res, rememberMe.value)
+  // #endif
+  if (wechatSession) {
+    uni.removeStorageSync('savedUser')
+    uni.setStorageSync('autoLogin', rememberMe.value)
+  } else if (rememberMe.value) {
+    uni.setStorageSync('savedUser', {
+      username: username.value,
+      password: password.value
+    })
+    uni.setStorageSync('autoLogin', true)
+  } else {
+    // 如果没有勾选"记住我"，则清除保存的信息
+    uni.removeStorageSync('savedUser')
+  }
+  // #ifdef MP-WEIXIN
+  const registeredUser = loggedInUser
+  if (res.wechatLoginMode !== 'shared' && consumeWechatProfileCompletion(uni, registeredUser)) {
+    isLoading.value = false
+    profileCompletionUser.value = registeredUser
+    profileCompletionVisible.value = true
+    await new Promise(resolve => { resolveProfileCompletion = resolve })
+  }
+  if (!wechatPageActive) return
+  // #endif
+  setTimeout(() => {
+    // #ifdef MP-WEIXIN
+    if (!wechatPageActive) return
+    // #endif
+    isLoading.value = false
+    const pendingScene = getPendingDeviceQrScene(uni)
+    const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, true) : ''
+    uni.reLaunch({ url: pendingUrl || '/pages-dark/home/home' })
+  }, 1000)
+}
+
 function onLogin(isauto) {
+  if (isLoading.value) return
+  // #ifdef MP-WEIXIN
+  if (profileCompletionVisible.value) return
+  // #endif
   if (!username.value) return uni.showToast({ title: '请输入用户名', icon: 'none' })
   if (!password.value) return uni.showToast({ title: '请输入密码', icon: 'none' })
   
@@ -202,54 +354,26 @@ function onLogin(isauto) {
   
   isLoading.value = true
   
-  login({ username: username.value, password: password.value }).then(async res => {
-    // 登录成功,重置失败计数和验证码
-    loginFailCount.value = 0
-    showCaptcha.value = false
-    captchaInput.value = ''
-    captchaHint.value = ''
-    
-    uni.setStorageSync('token', res.token)
-    try {
-      const adminFlag = res.isAdmin === true
-      if (adminFlag) {
-        uni.setStorageSync('isAdmin', true)
-      } else {
-        uni.removeStorageSync('isAdmin')
-      }
-    } catch (e) {
-      // ignore
-    }
-    
-    // 获取并保存完整的用户信息
-    try {
-      const userInfoRes = await userinfo("false")
-      if (userInfoRes && userInfoRes.data) {
-        uni.setStorageSync('userInfo', userInfoRes.data)
-        console.log('用户信息已保存:', userInfoRes.data)
-      }
-    } catch (e) {
-      console.error('获取用户信息失败:', e)
-    }
-    
-    uni.showToast({ title: isauto ? '自动登录' : '登录成功', icon: 'success' })
-    // 如果勾选了"记住我"，则保存用户名和密码
-    if (rememberMe.value) {
-      uni.setStorageSync('savedUser', {
-        username: username.value,
-        password: password.value
-      })
-      uni.setStorageSync('autoLogin', true)
-    } else {
-      // 如果没有勾选"记住我"，则清除保存的信息
-      uni.removeStorageSync('savedUser')
-    }
-    setTimeout(() => {
-      isLoading.value = false
-      uni.reLaunch({ url: '/pages-dark/home/home' })
-    }, 1000)
+  const loginOptions = {}
+  // #ifdef MP-WEIXIN
+  loginOptions.isActive = () => wechatPageActive
+  loginOptions.chooseMerge = chooseMerge
+  // #endif
+  login({ username: username.value, password: password.value }, loginOptions).then(async res => {
+    // #ifdef MP-WEIXIN
+    if (!wechatPageActive) return
+    // The server has verified and bound WeChat before returning this token.
+    wechatFlow.cancel()
+    wechatBindPending.value = false
+    // #endif
+    await completeLogin(res, isauto)
   }).catch(err => {
     isLoading.value = false
+    if (err?.handled) return
+    if (err?.reason) {
+      uni.showToast({ title: err.msg || err.message, icon: 'none' })
+      return
+    }
     
     // 登录失败，增加失败计数
     console.log(err)
@@ -280,7 +404,11 @@ function onLogin(isauto) {
     }
 
     // 如果后端返回特定错误码 2，尝试确认 db 状态，若 db 离线则以游客模式跳过登录
-    if (err && err.code === 2) {
+    let canEnterGuest = true
+    // #ifdef MP-WEIXIN
+    canEnterGuest = false
+    // #endif
+    if (err && err.code === 2 && canEnterGuest) {
       checkDB().then(dbRes => {
         if (dbRes && dbRes.data && dbRes.data.online === false) {
           // 明确 db 离线，进入游客模式
@@ -299,6 +427,9 @@ function onLogin(isauto) {
   })
 }
 function onRegister() {
+  // #ifdef MP-WEIXIN
+  if (isLoading.value) return
+  // #endif
   uni.navigateTo({ url: '/pages-dark/register/register' })
 }
 </script>

@@ -1,5 +1,14 @@
 <template> 
-  <view class="register-bg">
+  <!-- #ifdef H5 -->
+  <H5WechatRegistrationGuide
+    v-if="!webRegistrationAllowed"
+    :dark="true"
+    :checking="webRegistrationLoading"
+    :policy-error="webRegistrationError"
+    @login="goLogin"
+  />
+  <!-- #endif -->
+  <view class="register-bg" v-if="webRegistrationAllowed" :class="{ 'privacy-open': showPrivacyDetails }">
     <!-- 科技背景动效 -->
     <view class="tech-bg">
       <view class="tech-grid"></view>
@@ -17,6 +26,9 @@
     <view class="register-card">
       <!-- 头部区域 -->
       <view class="register-header">
+        <view class="register-back" @click="goLogin">
+          <image class="register-back-icon" src="/static/icons/chevron_left_32.webp.png" mode="aspectFit" />
+        </view>
         <view class="app-logo">
           <image src="/static/person.webp.png" class="logo-image" mode="aspectFit" />
           <view class="logo-rings">
@@ -65,7 +77,7 @@
               @keyup="handleKeyup"
             />
             <view class="pwd-toggle" @click="togglePassword">
-              <ManifestIcon :id="showPwd ? 'visibility_off' : 'visibility'" />
+              <image class="toggle-icon" :src="showPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
             </view>
           </view>
         </view>
@@ -85,7 +97,7 @@
               @keyup="handleKeyup"
             />
             <view class="pwd-toggle" @click="toggleConfirmPassword">
-              <ManifestIcon :id="showConfirmPwd ? 'visibility_off' : 'visibility'" />
+              <image class="toggle-icon" :src="showConfirmPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
             </view>
           </view>
         </view>
@@ -98,7 +110,7 @@
         </view>
 
         <!-- #ifdef APP-PLUS || MP-WEIXIN -->
-        <registration-privacy-agreement v-model="privacyAccepted" dark />
+        <registration-privacy-agreement v-model="privacyAccepted" dark @open="showPrivacyDetails = true" />
         <!-- #endif -->
 
         <button class="register-btn" type="button" :disabled="isLoading" @click="handleRegisterClick">
@@ -119,12 +131,31 @@
         </view>
       </form>
     </view>
+    <!-- Keep the fixed agreement dialog outside the card's clipped visual layers. -->
+    <!-- #ifdef APP-PLUS || MP-WEIXIN -->
+    <registration-privacy-agreement
+      v-if="showPrivacyDetails"
+      modal-only
+      :visible="showPrivacyDetails"
+      dark
+      @close="showPrivacyDetails = false"
+    />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
+// #ifdef MP-WEIXIN
+import { rememberWechatLogin } from '@/utils/wechat-login.mjs'
+import { markWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
+// #endif
 import { ref, onMounted } from 'vue'
 import { register } from '@/api/user'
+// #ifdef H5
+import { onShow } from '@dcloudio/uni-app'
+import H5WechatRegistrationGuide from '@/components/H5WechatRegistrationGuide.vue'
+import { useH5RegistrationPolicy } from '@/utils/use-h5-registration-policy'
+// #endif
 import CaptchaBox from '@/components/CaptchaBox-black.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 // #ifdef APP-PLUS || MP-WEIXIN
@@ -142,12 +173,25 @@ const passwordKey = ref(0) // 用于强制重新渲染密码输入框
 const confirmPasswordKey = ref(0) // 用于强制重新渲染确认密码输入框
 // #ifdef APP-PLUS || MP-WEIXIN
 const privacyAccepted = ref(false)
+const showPrivacyDetails = ref(false)
 // #endif
 
 // 验证码相关
 const captchaInput = ref('')
 const captchaHint = ref('')
 const captchaRef = ref(null)
+
+const webRegistrationAllowed = ref(true)
+const webRegistrationLoading = ref(false)
+const webRegistrationError = ref('')
+let refreshH5RegistrationPolicy = null
+// #ifdef H5
+refreshH5RegistrationPolicy = useH5RegistrationPolicy({
+  allowed: webRegistrationAllowed,
+  loading: webRegistrationLoading,
+  error: webRegistrationError
+})
+// #endif
 
 // 生成粒子动画样式
 const getParticleStyle = (index) => {
@@ -175,6 +219,10 @@ function handleRegisterClick() {
 
 // 注册提交
 function onRegister() {
+  if (isLoading.value) return
+  // #ifdef H5
+  if (!webRegistrationAllowed.value || webRegistrationLoading.value) return
+  // #endif
   if (!username.value){ 
     captchaHint.value = '请输入用户名'
     uni.showToast({ title: '请输入用户名', icon: 'none' })
@@ -234,17 +282,26 @@ function onRegister() {
   
   register({ username: username.value, password: password.value }).then(res => {
     uni.showToast({ title: '注册成功', icon: 'success' })
-    uni.setStorageSync('autoLogin', true)
-    uni.setStorageSync('savedUser', {
-      username: username.value,
-      password: password.value
-    })
+    let wechatRegistration = false
+    // #ifdef MP-WEIXIN
+    wechatRegistration = true
+    markWechatProfileCompletion(uni, username.value)
+    rememberWechatLogin(uni)
+    // #endif
+    if (!wechatRegistration) {
+      uni.setStorageSync('autoLogin', true)
+      uni.setStorageSync('savedUser', {
+        username: username.value,
+        password: password.value
+      })
+    }
     setTimeout(() => {
       isLoading.value = false
-      uni.redirectTo({ url: '/pages-dark/index/index' })
+      const loginUrl = '/pages-dark/index/index' + (wechatRegistration ? `?username=${encodeURIComponent(username.value)}` : '')
+      uni.redirectTo({ url: loginUrl })
     }, 1200)
   }).catch(err => {
-    uni.showToast({ title: '注册失败: ' + err.msg, icon: 'none' })
+    uni.showToast({ title: '注册失败: ' + (err.msg || err.message || '请重试'), icon: 'none' })
     console.error('注册失败:', err)
     isLoading.value = false
     captchaRef.value && typeof captchaRef.value.refresh === 'function' && captchaRef.value.refresh()
@@ -286,7 +343,15 @@ function handleKeyup(event) {
 }
 
 // 页面加载时先生成一次
+// #ifdef H5
+onShow(() => {
+  void refreshH5RegistrationPolicy()
+})
+// #endif
 onMounted(() => {
+  // #ifdef H5
+  void refreshH5RegistrationPolicy()
+  // #endif
   // captcha component will initialize itself
 })
 </script>
@@ -302,6 +367,10 @@ onMounted(() => {
   padding: 40rpx;
   position: relative;
   overflow: hidden;
+}
+
+.register-bg.privacy-open {
+  overflow: visible;
 }
 
 /* 科技背景元素 */
@@ -439,6 +508,23 @@ onMounted(() => {
   position: relative;
 }
 
+.register-back {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: 0;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid rgba(64, 224, 255, 0.24);
+  border-radius: 50%;
+  background: rgba(64, 224, 255, 0.08);
+}
+
+.register-back-icon { width: 44rpx; height: 44rpx; }
+
 .app-logo {
   position: relative;
   display: inline-block;
@@ -446,8 +532,8 @@ onMounted(() => {
 }
 
 .logo-image {
-  width: 100rpx;
-  height: 100rpx;
+  width: 112rpx;
+  height: 112rpx;
   display: block;
   border-radius: 50%;
   filter: drop-shadow(0 0 30rpx rgba(64, 224, 255, 0.6));
@@ -655,6 +741,8 @@ onMounted(() => {
   z-index: 3;
   padding: 10rpx;
 }
+
+.toggle-icon { width: 40rpx; height: 40rpx; opacity: 0.9; }
 
 .pwd-toggle:active {
   color: #40e0ff;

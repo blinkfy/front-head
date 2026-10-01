@@ -72,7 +72,7 @@
           <text class="section-sub">季度环保优秀小区评选中</text>
           <view class="ranking-cards">
             <view v-for="(item, index) in communityRanking.slice(0, 3)" :key="item.id" class="ranking-card" :class="`rank-${index + 1}`">
-              <ManifestIcon v-if="index === 0" class="rank-medal" id="community_rank" />
+              <ManifestIcon v-if="index === 0" class="rank-medal" id="rank_first" />
               <ManifestIcon v-else-if="index === 1" class="rank-medal" id="rank_second" />
               <ManifestIcon v-else-if="index === 2" class="rank-medal" id="rank_third" />
               <text class="rank-name">{{ item.name }}</text>
@@ -116,7 +116,7 @@
             <view class="post-header">
               <image class="post-avatar" :src="getAvatarUrl(post.userAvatar)" mode="aspectFill"></image>
               <view class="post-meta">
-                <text class="post-author">{{ post.username }}</text>
+                <text class="post-author">{{ getDisplayName(post) }}</text>
                 <text class="post-time">{{ formatTime(post.createdAt) }}</text>
               </view>
               <view class="post-tag" :class="getTagClass(post.tag)">
@@ -211,6 +211,7 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import { buildH5SpaPath } from '@/utils/h5-route.js';
 import { getCachedCommunityImage, normalizeCommunityImages, normalizeCommunityImageUrl, setCachedCommunityImage } from '@/utils/community-image.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
+import { getDisplayName } from '@/utils/display-name.js';
 
 export default {
   components: { ManifestIcon },
@@ -241,6 +242,7 @@ export default {
     if (this.myCommunity) this.loadPosts();
   },
   methods: {
+    getDisplayName,
     extractData(res) {
       return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
     },

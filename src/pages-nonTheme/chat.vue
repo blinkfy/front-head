@@ -538,6 +538,7 @@ import ChatMarkdown from '@/components/ChatMarkdown.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { loadChatHistoryCache, saveChatHistoryCache } from '@/utils/chat-history-cache.js'
+import { getDisplayName } from '@/utils/display-name.js'
 // #ifndef H5
 import { cacheChatOriginalImage, removeCachedChatOriginalImage, restoreCachedChatOriginalImages } from '@/utils/chat-media-cache.js'
 // #endif
@@ -769,7 +770,7 @@ export default {
         // 当前用户头像 (计算属性，避免重复调用)
         userAvatarUrl() {
             const userInfo = uni.getStorageSync('userInfo')
-            const username = userInfo?.username || userInfo?.nickname || '用户'
+            const username = getDisplayName(userInfo)
             
             // 检查是否有有效的真实头像
             if (this.userAvatar && 
@@ -1667,7 +1668,9 @@ export default {
                 isSelf: isSelf,
                 isAi: !!serverMsg.isAi,
                 senderId: serverMsg.senderId,
-                senderName: serverMsg.isAi ? 'AI 环保助手' : (serverMsg.Sender?.username || serverMsg.sender?.username || ''),
+                senderName: serverMsg.isAi ? 'AI 环保助手' : getDisplayName(serverMsg.Sender || serverMsg.sender, ''),
+                senderUsername: serverMsg.Sender?.username || serverMsg.sender?.username || '',
+                senderNickname: serverMsg.Sender?.nickname || serverMsg.sender?.nickname || '',
                 senderAvatar: serverMsg.isAi ? '' : (serverMsg.Sender?.avatar || serverMsg.sender?.avatar || ''),
                 timestamp: new Date(serverMsg.sendTime || serverMsg.createTime || serverMsg.timestamp).getTime() || Date.now(),
                 status: 'sent',
@@ -3823,7 +3826,7 @@ export default {
         },
 
         getGroupMemberName(member) {
-            return member?.alias || member?.User?.username || `成员 ${member?.userId || ''}`
+            return member?.alias || getDisplayName(member?.User, `成员 ${member?.userId || ''}`)
         },
 
         getGroupMemberAvatar(member) {
@@ -3856,7 +3859,7 @@ export default {
                     return
                 }
                 uni.showActionSheet({
-                    itemList: candidates.map((friend) => friend.note || friend.username),
+                    itemList: candidates.map((friend) => friend.note || getDisplayName(friend)),
                     success: async (result) => {
                         const selected = candidates[result.tapIndex]
                         if (!selected) return
@@ -4872,7 +4875,7 @@ export default {
                     ? members.find(member => String(member.userId) === String(msg.senderId))
                     : null
                 if (!member && msg?.senderId == null && msg?.senderName) {
-                    const matches = members.filter(member => member.User?.username === msg.senderName)
+                    const matches = members.filter(member => member.User?.username === (msg.senderUsername || msg.senderName))
                     if (matches.length === 1) member = matches[0]
                 }
                 if (member) return this.getGroupMemberAvatar(member)
@@ -4886,7 +4889,7 @@ export default {
 
         getMessageSenderName(msg) {
             if (msg?.isAi) return 'AI 环保助手'
-            return msg?.senderName || this.chatTitle || '群成员'
+            return msg?.senderName || getDisplayName({ nickname: msg?.senderNickname, username: msg?.senderUsername }, this.chatTitle || '群成员')
         },
 
         // ==================== 已移至 computed 的方法（用于向后兼容） ====================
@@ -4895,7 +4898,7 @@ export default {
         _getUserAvatarOld() {
             // 获取用户信息
             const userInfo = uni.getStorageSync('userInfo')
-            const username = userInfo?.username || userInfo?.nickname || '用户'
+            const username = getDisplayName(userInfo)
             
             // 检查是否有有效的真实头像
             if (this.userAvatar && 
