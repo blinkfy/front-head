@@ -14,6 +14,9 @@ export async function register(data) {
   // #ifdef H5
   requestOptions.header = { 'X-Client-Platform': 'h5' }
   // #endif
+  // #ifdef APP-PLUS
+  requestOptions.header = { 'X-Client-Platform': 'app' }
+  // #endif
   return request(requestOptions)
 }
 

@@ -1,114 +1,214 @@
 <template>
-  <main class="wechat-register-guide" :class="{ 'guide-dark': dark }">
-    <header class="guide-header">
-      <span class="header-orb orb-one" aria-hidden="true"></span>
-      <span class="header-orb orb-two" aria-hidden="true"></span>
-      <span class="header-orb orb-three" aria-hidden="true"></span>
-      <div class="guide-brand">
-        <div class="brand-logo"><img class="brand-mascot" src="/static/person.webp.png" alt="分投侠" /></div>
-        <span class="brand-welcome">欢迎加入</span>
-        <strong class="brand-name">分投侠</strong>
-        <span class="brand-slogan">开启您的环保之旅</span>
-      </div>
-    </header>
+  <view class="wechat-register-guide" :class="{ 'guide-dark': dark }">
+    <view class="guide-header">
+      <view class="header-orb orb-one" aria-hidden="true"></view>
+      <view class="header-orb orb-two" aria-hidden="true"></view>
+      <view class="header-orb orb-three" aria-hidden="true"></view>
+      <view class="guide-brand">
+        <view class="brand-logo"><image mode="aspectFit" class="brand-mascot" src="/static/person.webp.png" alt="分投侠" /></view>
+        <text class="brand-welcome">欢迎加入</text>
+        <text class="brand-name">分投侠</text>
+        <text class="brand-slogan">开启您的环保之旅</text>
+      </view>
+    </view>
 
-    <div class="guide-scene">
-      <div class="panel-orb-layer" aria-hidden="true">
-        <span class="panel-orb panel-blue"></span>
-        <span class="panel-orb panel-orange"></span>
-        <span class="panel-orb panel-green"></span>
-      </div>
-      <section class="guide-panel" aria-labelledby="registration-guide-title">
-      <div class="guide-code-column">
-        <div class="code-halo">
-          <span class="guide-leaf leaf-one" aria-hidden="true"></span>
-          <span class="guide-leaf leaf-two" aria-hidden="true"></span>
-          <div class="code-disc" :aria-busy="checking || qrState === 'loading'">
-            <img v-if="qrSource" :key="qrSource" class="registration-code" :class="{ 'code-ready': qrState === 'ready' }"
+    <view class="guide-scene">
+      <view class="panel-orb-layer" aria-hidden="true">
+        <view class="panel-orb panel-blue"></view>
+        <view class="panel-orb panel-orange"></view>
+        <view class="panel-orb panel-green"></view>
+      </view>
+      <view class="guide-panel" aria-labelledby="registration-guide-title">
+      <view class="guide-code-column">
+        <view class="code-halo">
+          <view class="guide-leaf leaf-one" aria-hidden="true"></view>
+          <view class="guide-leaf leaf-two" aria-hidden="true"></view>
+          <view class="code-disc" :aria-busy="checking || qrState === 'loading'">
+            <image mode="aspectFit" v-if="qrSource" :key="qrSource" class="registration-code" :class="{ 'code-ready': qrState === 'ready' }"
               :src="qrSource" alt="分投侠微信小程序注册入口码" @load="qrState = 'ready'" @error="qrState = 'error'" />
-            <div v-if="checking || qrState !== 'ready'" class="code-placeholder" role="status">
-              <span v-if="checking || qrState === 'loading'" class="code-spinner" aria-hidden="true"></span>
+            <view v-if="checking || qrState !== 'ready'" class="code-placeholder" role="status">
+              <view v-if="checking || qrState === 'loading'" class="code-spinner" aria-hidden="true"></view>
+              <!-- #ifdef H5 -->
               <svg v-else class="code-error-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true">
                 <path d="M4 11V4h7M21 4h7v7M28 21v7h-7M11 28H4v-7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
                 <path d="m12 12 8 8m0-8-8 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
               </svg>
-              <span>{{ checking ? '正在读取注册方式…' : qrState === 'loading' ? '小程序码加载中…' : '小程序码暂时不可用' }}</span>
+              <!-- #endif -->
+              <!-- #ifdef APP-PLUS -->
+              <ManifestIcon v-else id="help" :scale="2.9" />
+              <!-- #endif -->
+              <text>{{ checking ? '正在读取注册方式…' : qrState === 'loading' ? '小程序码加载中…' : (sessionMessage || '小程序码暂时不可用') }}</text>
               <button v-if="!checking && qrState === 'error'" class="code-retry" type="button" @click="loadCode">重新加载</button>
-            </div>
-          </div>
-        </div>
-        <p class="code-caption">扫码后将在小程序内完成注册</p>
-      </div>
+            </view>
+          </view>
+        </view>
+        <view class="code-caption">{{ relay && sessionStatus !== 'manual' ? '扫码确认后本页自动登录' : '扫码后将在小程序内完成注册' }}<text v-if="sessionReference"> · 确认码 {{ sessionReference }}</text></view>
+      </view>
 
-      <div class="guide-info-column">
-        <h1 class="guide-title" id="registration-guide-title">请先通过微信完成注册 <span class="title-leaf" aria-hidden="true">🌿</span></h1>
-        <p class="guide-description">网页端暂不直接创建账号，新用户请先扫码进入“分投侠”小程序完成身份绑定与注册。</p>
+      <view class="guide-info-column">
+        <view class="guide-title" id="registration-guide-title">请先通过微信完成注册 <text class="title-leaf" aria-hidden="true">🌿</text></view>
+        <view class="guide-description">{{ clientLabel }}暂不直接创建账号，新用户请先扫码进入“分投侠”小程序完成身份绑定与注册。</view>
 
-        <ol class="registration-steps" aria-label="注册流程">
-          <li v-for="step in steps" :key="step.number" class="registration-step">
-            <div class="step-visual" aria-hidden="true">
-              <div class="step-icon" :class="'step-' + step.number">
+        <view class="registration-steps" aria-label="注册流程">
+          <view v-for="step in steps" :key="step.number" class="registration-step">
+            <view class="step-visual" aria-hidden="true">
+              <view class="step-icon" :class="'step-' + step.number">
                 <ManifestIcon v-if="step.number <= 2" :id="step.number === 1 ? 'wechat' : 'mp-weixin'" :scale="2.9" />
-                <svg v-else-if="step.number === 3" class="step-icon-svg" viewBox="0 0 48 48">
+                <!-- #ifdef H5 -->
+              <svg v-else-if="step.number === 3" class="step-icon-svg" viewBox="0 0 48 48">
                   <circle cx="24" cy="15" r="9" fill="#ffb34c" /><path d="M8 41v-6c0-7 7-11 16-11s16 4 16 11v6Z" fill="#ffa033" />
                 </svg>
-                <svg v-else class="step-icon-svg" viewBox="0 0 48 48" fill="none">
+              <!-- #endif -->
+              <!-- #ifdef APP-PLUS -->
+              <ManifestIcon v-else-if="step.number === 3" id="user_profile" :scale="2.9" />
+              <!-- #endif -->
+                <!-- #ifdef H5 -->
+              <svg v-else class="step-icon-svg" viewBox="0 0 48 48" fill="none">
                   <circle cx="24" cy="24" r="19" fill="#00b88a" /><path d="m15 24 6 6 13-13" stroke="white" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
-              </div>
-              <span class="step-number">{{ step.number }}</span>
-            </div>
-            <div class="step-copy">
-              <h2 class="step-title">{{ step.title }}</h2>
-              <p class="step-description">{{ step.description }}</p>
-            </div>
-          </li>
-        </ol>
+              <!-- #endif -->
+              <!-- #ifdef APP-PLUS -->
+              <ManifestIcon v-else id="dark_success" :scale="2.9" />
+              <!-- #endif -->
+              </view>
+              <text class="step-number">{{ step.number }}</text>
+            </view>
+            <view class="step-copy">
+              <view class="step-title">{{ sessionStatus === 'manual' && step.number === 4 ? '返回网页登录' : step.title }}</view>
+              <view class="step-description">{{ sessionStatus === 'manual' && step.number === 4 ? '注册完成后，使用账号密码登录网页' : step.description }}</view>
+            </view>
+          </view>
+        </view>
 
-        <div class="scan-notice" role="status">
-          <span class="notice-icon" aria-hidden="true">
-            <svg class="notice-icon-svg" viewBox="0 0 32 32" fill="none"><path d="M4 11V4h7M21 4h7v7M28 21v7h-7M11 28H4v-7M4 16h24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" /></svg>
-          </span>
-          <div>
-            <strong class="scan-headline desktop-scan-copy">请使用微信扫描左侧小程序码</strong>
-            <strong class="scan-headline mobile-scan-copy">请使用微信识别上方小程序码</strong>
-            <p class="scan-caption">{{ policyError || (qrState === 'error' ? '小程序码加载失败，请重新加载后扫码。' : '扫码后在小程序内完成注册，再返回网页登录。') }}</p>
-          </div>
-        </div>
-        <button class="guide-login" type="button" @click="$emit('login')">
-          <span>已有账号？</span><strong class="login-action">立即登录</strong><svg class="guide-login-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <view class="scan-notice" role="status">
+          <view class="notice-icon" aria-hidden="true">
+            <!-- #ifdef H5 -->
+              <svg class="notice-icon-svg" viewBox="0 0 32 32" fill="none"><path d="M4 11V4h7M21 4h7v7M28 21v7h-7M11 28H4v-7M4 16h24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" /></svg>
+              <!-- #endif -->
+              <!-- #ifdef APP-PLUS -->
+              <ManifestIcon id="camera_scan" :scale="2.3" />
+              <!-- #endif -->
+          </view>
+          <view>
+            <text class="scan-headline desktop-scan-copy">请使用微信扫描左侧小程序码</text>
+            <text class="scan-headline mobile-scan-copy">请使用微信识别上方小程序码</text>
+            <view class="scan-caption">{{ policyError || sessionMessage || (qrState === 'error' ? '小程序码加载失败，请重新加载后扫码。' : `扫码后在小程序内完成注册，再返回${returnLoginLabel}登录。`) }}</view>
+            <!-- #ifdef H5 -->
+            <view class="scan-caption">若小程序未出现网页登录确认，注册后可点击下方“立即登录”使用账号密码登录。</view>
+            <!-- #endif -->
+          </view>
+        </view>
+        <!-- #ifdef H5 -->
+        <button v-if="['expired', 'consumed', 'cancelled', 'uncertain', 'error'].includes(sessionStatus) && qrState !== 'error'" class="code-retry" @click="loadCode">刷新二维码</button>
+        <!-- #endif -->
+        <button class="guide-login" type="button" @click="goLogin">
+          <text>已有账号？</text><text class="login-action">立即登录</text><!-- #ifdef H5 -->
+              <svg class="guide-login-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              <!-- #endif -->
+              <!-- #ifdef APP-PLUS -->
+              <ManifestIcon id="chevron_right" :scale=".9" />
+              <!-- #endif -->
         </button>
-      </div>
-      <footer class="guide-footer panel-footer">🌿 加入我们，一起为环保贡献力量</footer>
-      </section>
-    </div>
-    <footer class="guide-footer desktop-footer">🌿 加入我们，一起为环保贡献力量</footer>
-  </main>
+      </view>
+      <view class="guide-footer panel-footer">🌿 加入我们，一起为环保贡献力量</view>
+      </view>
+    </view>
+    <view class="guide-footer desktop-footer">🌿 加入我们，一起为环保贡献力量</view>
+  </view>
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { baseUrl } from '@/api/settings.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+// #ifdef H5
+import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
+import { registrationApi } from '@/utils/registration-relay.js'
+import { createH5RegistrationRelay, commitRegistrationLogin } from '@/utils/registration-relay.mjs'
+// #endif
 
 const props = defineProps({ dark: Boolean, checking: Boolean, policyError: { type: String, default: '' } })
-defineEmits(['login'])
+const emit = defineEmits(['login'])
 const qrSource = ref('')
 const qrState = ref('loading')
+const sessionStatus = ref('')
+const sessionMessage = ref('')
+const sessionReference = ref('')
 let attempt = 0
+let clientLabel = '网页端'
+let returnLoginLabel = '网页'
+let sessionCaption = '扫码后在小程序内完成注册，再返回APP登录。'
+let relay = null
+// #ifdef APP-PLUS
+clientLabel = 'APP端'
+returnLoginLabel = 'APP'
+// #endif
+// #ifdef H5
+sessionCaption = '扫码后完成小程序注册或登录，并确认登录此网页，本页将自动登录。'
+const statusMessages = {
+  waiting: '等待微信扫码…',
+  scanned: '已扫码，请在小程序中继续',
+  authorized: '注册或登录完成，正在登录…',
+  consuming: '注册或登录完成，正在登录…', complete: '登录成功，正在进入首页…',
+  expired: '已过期，请刷新二维码', consumed: '本次登录凭证已领取，请刷新二维码重新扫码。',
+  cancelled: '本次扫码已取消，请刷新二维码。', loading: '正在创建本页专属二维码…'
+}
+relay = createH5RegistrationRelay({ api: registrationApi,
+  onUnsupported() { sessionReference.value = ''; qrSource.value = `${registrationApi.fixedQrUrl()}?v=${++attempt}`; qrState.value = 'loading' },
+  onState: state => {
+    sessionReference.value = state.session?.sessionId?.slice(-6) || ''
+    sessionStatus.value = state.status
+    sessionMessage.value = state.message || statusMessages[state.status] || sessionCaption
+    if (state.status === 'loading') { qrSource.value = ''; qrState.value = 'loading' }
+    if (state.session && !['expired', 'consumed', 'cancelled', 'uncertain'].includes(state.status)) {
+      const source = registrationApi.qrUrl(state.session)
+      if (qrSource.value !== source) { qrSource.value = source; qrState.value = 'loading' }
+    }
+    if (['expired', 'consumed', 'cancelled', 'uncertain'].includes(state.status) || (state.status === 'error' && !state.session)) {
+      qrSource.value = ''; qrState.value = 'error'
+    }
+  },
+  onLogin: result => {
+    commitRegistrationLogin(uni, result)
+    uni.showToast({ title: '登录成功', icon: 'success' })
+    uni.reLaunch({ url: props.dark ? '/pages-dark/home/home' : '/pages/home/home' })
+  }
+})
+const handleVisibility = () => {
+  if (document.hidden) relay.pause()
+  else if (!props.checking) relay.resume()
+}
+onShow(() => { if (!props.checking && !document.hidden) relay.resume() })
+onHide(() => relay.pause())
+onUnload(() => relay.stop())
+onMounted(() => document.addEventListener('visibilitychange', handleVisibility))
+onBeforeUnmount(() => { document.removeEventListener('visibilitychange', handleVisibility); relay.stop() })
+// #endif
 const steps = [
   { number: 1, title: '微信扫码', description: '使用微信扫描上方小程序码' },
   { number: 2, title: '进入小程序', description: '打开“分投侠”微信小程序' },
   { number: 3, title: '绑定微信并设置账号密码', description: '完成身份绑定并设置登录密码' },
-  { number: 4, title: '返回网页登录', description: '注册完成后，即可使用账号登录网页版 / APP' }
+  { number: 4, title: `返回${returnLoginLabel}登录`, description: '注册完成后，即可使用账号登录网页版 / APP' }
 ]
+// #ifdef H5
+steps[3] = { number: 4, title: '确认网页登录', description: '确认当前账号后，本页自动登录' }
+// #endif
 function loadCode() {
   if (props.checking) return
+  if (relay) { void relay.refresh(); return }
   qrState.value = 'loading'
   qrSource.value = `${baseUrl.replace(/\/$/, '')}/api/registration/wechat-qrcode?v=${++attempt}`
 }
-onMounted(() => { if (!props.checking) loadCode() })
-watch(() => props.checking, checking => { if (!checking) loadCode() })
+function goLogin() { if (relay) relay.stop(); emit('login') }
+function beginCode() {
+  if (relay) { if (!document.hidden) relay.resume() }
+  else loadCode()
+}
+onMounted(() => { if (!props.checking) beginCode() })
+watch(() => props.checking, checking => {
+  if (checking) { if (relay) relay.pause() }
+  else beginCode()
+})
 </script>
 
 <style scoped>
@@ -164,4 +264,6 @@ watch(() => props.checking, checking => { if (!checking) loadCode() })
 @media (max-width: 360px) { .guide-panel { padding-left: 14px; padding-right: 14px; width: calc(100% - 28px); }.registration-step { gap: 6px; padding: 8px 7px; }.step-visual { flex-basis: 34px; width: 34px; height: 34px; }.step-icon { width: 34px; height: 34px; }.step-icon-svg { width: 25px; height: 25px; }.step-title { font-size: 12px; }.guide-description { font-size: 13px; } }
 @media (max-width: 760px) { .step-icon { font-size: 10px; }.desktop-footer { display: none; }.panel-footer { display: block; margin-top: -14px; padding: 4px 0 0; } }
 @media (prefers-reduced-motion: reduce) { .guide-header, .guide-brand, .brand-logo, .header-orb, .guide-panel, .code-halo::before, .guide-leaf, .registration-step, .scan-notice, .guide-login, .guide-login-icon, .code-spinner { animation: none !important; }.registration-code, .guide-login { transition: none; } }
+.brand-name, .scan-headline { font-weight: 700; }
+.guide-login::after, .code-retry::after { border: 0; }
 </style>

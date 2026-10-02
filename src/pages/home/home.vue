@@ -1,5 +1,5 @@
 <template>
-  <view class="home-page" :class="[tabPageClass, { 'waste-guide-open': showGuideModal }]">
+  <view class="home-page" :class="[tabPageClass, { 'waste-guide-open': showGuideModal }]" :style="homeAdaptiveStyle">
     <!-- 背景装饰 -->
     <view class="bg-decoration">
       <view class="bg-circle circle-1"></view>
@@ -320,7 +320,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
-import { onPageScroll, onShow, onHide, onUnload } from '@dcloudio/uni-app'
+import { onPageScroll, onShow, onHide, onUnload, onResize } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
@@ -360,6 +360,7 @@ const resultImage = ref('')
 const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
+const homeAdaptiveStyle = ref({})
 const aiEnabled = ref(false)
 const aiServiceEnabled = ref(false)
 const isProcessing = ref(false)
@@ -417,6 +418,44 @@ let activeRecognitionTaskId = ''
 let recognitionTaskUnsubscribe = null
 let pageVisible = true
 let recognitionLoadingVisible = false
+
+function updateHomeAdaptiveStyle(size = {}) {
+  let windowInfo = size?.size || size || {}
+  if (!windowInfo.windowWidth || !windowInfo.windowHeight) {
+    try {
+      windowInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
+    } catch (error) {
+      windowInfo = {}
+    }
+  }
+  const width = Number(windowInfo.windowWidth || windowInfo.screenWidth || 390)
+  const height = Number(windowInfo.windowHeight || windowInfo.screenHeight || 844)
+  // rpx 会随屏幕宽度一起缩放，所以按视口高宽比计算，避免同一比例的高分辨率机型把卡片再次拉高。
+  const aspectRatio = height / width
+  const minAspectRatio = 852 / 393
+  const maxAspectRatio = 980 / 390
+  const progress = Math.max(0, Math.min(1, (aspectRatio - minAspectRatio) / (maxAspectRatio - minAspectRatio)))
+  const sizeRpx = (min, max) => `${(min + (max - min) * progress).toFixed(2)}rpx`
+
+  homeAdaptiveStyle.value = {
+    '--home-header-bottom': sizeRpx(80, 120),
+    '--home-upload-padding-y': sizeRpx(36, 60),
+    '--home-content-gap': sizeRpx(20, 24),
+    '--home-tips-padding-top': sizeRpx(25, 32),
+    '--home-tips-padding-bottom': sizeRpx(16, 32),
+    '--home-section-title-gap': sizeRpx(8, 20),
+    '--home-guide-padding': sizeRpx(18, 20),
+    '--home-quick-gap': sizeRpx(14, 20),
+    '--home-quick-padding-y': sizeRpx(20, 26),
+    '--home-quick-header-margin': sizeRpx(-12, 0),
+    '--home-featured-height': sizeRpx(104, 136),
+    '--home-featured-padding-y': sizeRpx(14, 24),
+    '--home-compact-height': sizeRpx(112, 132),
+    '--home-compact-padding-y': sizeRpx(12, 16)
+  }
+}
+
+onResize((event) => updateHomeAdaptiveStyle(event?.size || event))
 
 async function refreshAiServiceState() {
   try {
@@ -648,6 +687,7 @@ const compressionConfig = {
 }
 
 onMounted(() => {
+  updateHomeAdaptiveStyle()
   recognitionTaskUnsubscribe = subscribeRecognitionTask((task) => {
     if (!pageVisible || !task || task.id === activeRecognitionTaskId) return
     restoreRecognitionTask(task)
@@ -755,10 +795,12 @@ onMounted(() => {
 
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', queueRefreshDisplayBboxes)
+    window.addEventListener('resize', updateHomeAdaptiveStyle)
   }
 })
 
 onShow(() => {
+  updateHomeAdaptiveStyle()
   pageVisible = true
   robotPageActive.value = true
   refreshAiServiceState()
@@ -808,6 +850,7 @@ onBeforeUnmount(() => {
   }
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', queueRefreshDisplayBboxes)
+    window.removeEventListener('resize', updateHomeAdaptiveStyle)
   }
 })
 
@@ -3540,7 +3583,7 @@ function closeAchievementModal() {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .quick-actions {
     gap: 14rpx;
     padding: 20rpx 16rpx;
@@ -3830,19 +3873,34 @@ function closeAchievementModal() {
 .waste-guide-open .tech-bg { filter: blur(5px); pointer-events: none; }
 
 @media (max-width: 768px) {
-  .header-bg { padding-bottom: 80rpx; }
-  .upload-card { padding: 36rpx 40rpx; margin-bottom: 20rpx; }
-  .tips-card { padding: 25rpx 40rpx 16rpx; margin-bottom: 20rpx; }
-  .welcome-section, .guide-section { margin-bottom: 20rpx; }
-  .section-title { margin-bottom: 8rpx; }
-  .guide-item { padding: 18rpx; }
+  .header-bg { padding-bottom: var(--home-header-bottom, 80rpx); }
+  .upload-card {
+    padding: var(--home-upload-padding-y, 36rpx) 40rpx;
+    margin-bottom: var(--home-content-gap, 20rpx);
+  }
+  .tips-card {
+    padding: var(--home-tips-padding-top, 25rpx) 40rpx var(--home-tips-padding-bottom, 16rpx);
+    margin-bottom: var(--home-content-gap, 20rpx);
+  }
+  .welcome-section, .guide-section { margin-bottom: var(--home-content-gap, 20rpx); }
+  .section-title { margin-bottom: var(--home-section-title-gap, 8rpx); }
+  .guide-item { padding: var(--home-guide-padding, 18rpx); }
 }
 
-@media (max-width: 420px) {
-  .quick-actions { gap: 14rpx; padding: 20rpx 16rpx; }
-  .quick-actions-header { margin-bottom: -12rpx; }
-  .action-item.featured { min-height: 104rpx; padding: 14rpx 12rpx; }
-  .action-item.compact { min-height: 112rpx; padding: 12rpx 4rpx; }
+@media (max-width: 480px) {
+  .quick-actions {
+    gap: var(--home-quick-gap, 14rpx);
+    padding: var(--home-quick-padding-y, 20rpx) 16rpx;
+  }
+  .quick-actions-header { margin-bottom: var(--home-quick-header-margin, -12rpx); }
+  .action-item.featured {
+    min-height: var(--home-featured-height, 104rpx);
+    padding: var(--home-featured-padding-y, 14rpx) 12rpx;
+  }
+  .action-item.compact {
+    min-height: var(--home-compact-height, 112rpx);
+    padding: var(--home-compact-padding-y, 12rpx) 4rpx;
+  }
 }
 </style>
 

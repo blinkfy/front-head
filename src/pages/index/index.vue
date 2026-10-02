@@ -1,4 +1,12 @@
 <template>
+  <!-- #ifdef H5 -->
+  <H5LoginShell ref="captchaRef" :dark="false"
+    v-model:username="username" v-model:password="password" v-model:show-password="showPwd"
+    v-model:remember-me="rememberMe" v-model:captcha-input="captchaInput"
+    :loading="isLoading" :show-captcha="showCaptcha" :captcha-hint="captchaHint"
+    @login="onLogin(false)" @qr-login="onQrLogin" />
+  <!-- #endif -->
+  <!-- #ifndef H5 -->
   <view class="login-page">
     <!-- #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ -->
     <!-- 小程序/App端：使用组件启动页 -->
@@ -163,23 +171,36 @@
       </view>
     </view>
     <!-- #ifdef MP-WEIXIN -->
+    <view v-if="registrationPending" class="registration-relay-notice">
+      <text>完成小程序登录后，请确认登录刚才扫码的网页。</text>
+      <view class="registration-relay-actions">
+        <button size="mini" @click="retryWebRegistration">重试网页登录</button>
+        <button size="mini" @click="cancelWebRegistration">取消网页登录</button>
+      </view>
+    </view>
     <WechatProfileCompletion v-if="profileCompletionVisible" :user="profileCompletionUser" :dark="false" @done="finishProfileCompletion" />
     <AccountMergeChoice v-if="mergePreview" :preview="mergePreview" @choose="finishMergeChoice" @cancel="finishMergeChoice(null)" />
     <!-- #endif -->
   </view>
+  <!-- #endif -->
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+// #ifdef H5
+import H5LoginShell from '@/components/H5LoginShell.vue'
+import { commitRegistrationLogin } from '@/utils/registration-relay.mjs'
+// #endif
 import { login,userinfo } from '@/api/user'
 // #ifdef MP-WEIXIN
-import { onLoad, onUnload } from '@dcloudio/uni-app'
+import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { wechatLogin } from '@/api/user'
 import { createWechatLoginFlow, rememberWechatLogin, shouldAutoWechatLogin } from '@/utils/wechat-login.mjs'
 import WechatLoginEntry from '@/components/WechatLoginEntry.vue'
 import WechatProfileCompletion from '@/components/WechatProfileCompletion.vue'
 import AccountMergeChoice from '@/components/AccountMergeChoice.vue'
 import { consumeWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
+import { captureRegistrationEntry, confirmRegistrationLogin, miniRegistrationRelay } from '@/utils/registration-relay.js'
 // #endif
 import { checkDB } from '@/api/health'
 import { ThemeManager } from '@/utils/theme.js'
@@ -198,6 +219,16 @@ const wechatBindPending = ref(false)
 const wechatFlow = createWechatLoginFlow({ runtime: uni, login: wechatLogin })
 wechatBindPending.value = wechatFlow.isPending()
 let wechatPageActive = true
+const registrationPending = ref(Boolean(miniRegistrationRelay.getPending()))
+onShow(() => { registrationPending.value = Boolean(miniRegistrationRelay.getPending()) })
+async function retryWebRegistration() {
+  await confirmRegistrationLogin(uni.getStorageSync('token'), uni.getStorageSync('userInfo')?.username || username.value, () => wechatPageActive)
+  registrationPending.value = Boolean(miniRegistrationRelay.getPending())
+}
+function cancelWebRegistration() {
+  void miniRegistrationRelay.cancel()
+  registrationPending.value = false
+}
 const profileCompletionVisible = ref(false)
 const profileCompletionUser = ref({})
 let resolveProfileCompletion = null
@@ -221,6 +252,8 @@ function finishMergeChoice(choice) {
 }
 onUnload(() => { wechatPageActive = false; finishProfileCompletion(); finishMergeChoice(null) })
 onLoad(options => {
+  captureRegistrationEntry(options)
+  registrationPending.value = Boolean(miniRegistrationRelay.getPending())
   if (options?.username) username.value = options.username
 })
 
@@ -295,7 +328,7 @@ onMounted(() => {
 function checkAutoLogin() {
   // 原有的登录信息检查
   // #ifdef MP-WEIXIN
-  if (shouldAutoWechatLogin(uni)) {
+  if (shouldAutoWechatLogin(uni) || (miniRegistrationRelay.getPending() && uni.getStorageSync('token'))) {
     onWechatLogin(true)
     return
   }
@@ -351,6 +384,19 @@ function handleKeyup(event) {
     handleEnterKey()
   }
 }
+
+// #ifdef H5
+function onQrLogin(result) {
+  if (isLoading.value) return
+  isLoading.value = true
+  commitRegistrationLogin(uni, result)
+  uni.setStorageSync('autoLogin', rememberMe.value)
+  uni.showToast({ title: '登录成功', icon: 'success' })
+  const pendingScene = getPendingDeviceQrScene(uni)
+  const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, false) : ''
+  uni.reLaunch({ url: pendingUrl || '/pages/home/home' })
+}
+// #endif
 
 async function completeLogin(res, isauto, isWechat = false) {
   loginFailCount.value = 0
@@ -410,6 +456,8 @@ async function completeLogin(res, isauto, isWechat = false) {
     profileCompletionVisible.value = true
     await new Promise(resolve => { resolveProfileCompletion = resolve })
   }
+  if (!wechatPageActive) return
+  await confirmRegistrationLogin(res.token, loggedInUser?.username || username.value, () => wechatPageActive)
   if (!wechatPageActive) return
   // #endif
   setTimeout(() => {
@@ -516,6 +564,8 @@ function onRegister() {
 </script>
 
 <style scoped>
+.registration-relay-notice { position: relative; margin: 20rpx; padding: 20rpx; border-radius: 16rpx; background: rgba(128, 188, 155, .18); text-align: center; font-size: 26rpx; }
+.registration-relay-actions { display: flex; justify-content: center; gap: 16rpx; margin-top: 16rpx; }
 .login-page {
   min-height: 100vh;
   background: #ffffff;

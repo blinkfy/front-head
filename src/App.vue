@@ -19,6 +19,9 @@ import { ThemeManager } from '@/utils/theme.js'
 import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
 import { warmManifestIcons } from '@/utils/icon-preload.js'
 import { appendPageQuery } from '@/utils/device-qr-entry.mjs'
+// #ifdef MP-WEIXIN
+import { captureRegistrationEntry, offerRegistrationRetry } from '@/utils/registration-relay.js'
+// #endif
 
 // 页面映射表
 const PAGE_MAPPINGS = {
@@ -49,6 +52,9 @@ export default {
 // #endif
   onLaunch: function (options) {
     console.log('App Launch')
+    // #ifdef MP-WEIXIN
+    captureRegistrationEntry(options)
+    // #endif
     
     // 初始化全局消息总线
     initGlobalMessageBus()
@@ -87,7 +93,11 @@ export default {
     this.startLoading()
     // #endif
   },
-  onShow: function () {
+  onShow: function (options) {
+    // #ifdef MP-WEIXIN
+    captureRegistrationEntry(options)
+    void offerRegistrationRetry()
+    // #endif
     console.log('App Show')
   },
   onHide: function () {

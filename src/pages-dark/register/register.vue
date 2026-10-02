@@ -1,5 +1,5 @@
 <template> 
-  <!-- #ifdef H5 -->
+  <!-- #ifdef H5 || APP-PLUS -->
   <H5WechatRegistrationGuide
     v-if="!webRegistrationAllowed"
     :dark="true"
@@ -26,7 +26,7 @@
     <view class="register-card">
       <!-- 头部区域 -->
       <view class="register-header">
-        <view class="register-back" @click="goLogin">
+        <view class="register-back" @click="goBack">
           <image class="register-back-icon" src="/static/icons/chevron_left_32.webp.png" mode="aspectFit" />
         </view>
         <view class="app-logo">
@@ -148,10 +148,12 @@
 // #ifdef MP-WEIXIN
 import { rememberWechatLogin } from '@/utils/wechat-login.mjs'
 import { markWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
+import { onLoad } from '@dcloudio/uni-app'
+import { captureRegistrationEntry, miniRegistrationRelay } from '@/utils/registration-relay.js'
 // #endif
 import { ref, onMounted } from 'vue'
 import { register } from '@/api/user'
-// #ifdef H5
+// #ifdef H5 || APP-PLUS
 import { onShow } from '@dcloudio/uni-app'
 import H5WechatRegistrationGuide from '@/components/H5WechatRegistrationGuide.vue'
 import { useH5RegistrationPolicy } from '@/utils/use-h5-registration-policy'
@@ -160,6 +162,16 @@ import CaptchaBox from '@/components/CaptchaBox-black.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 // #ifdef APP-PLUS || MP-WEIXIN
 import RegistrationPrivacyAgreement from '@/components/RegistrationPrivacyAgreement.vue'
+// #endif
+
+// #ifdef MP-WEIXIN
+onLoad(options => {
+  captureRegistrationEntry(options)
+  // Existing sessions still need a fresh WeChat login before authorizing the webpage.
+  if (miniRegistrationRelay.getPending() && uni.getStorageSync('token')) {
+    uni.redirectTo({ url: '/pages-dark/index/index?webRegistration=1' })
+  }
+})
 // #endif
 
 // 表单字段
@@ -185,7 +197,7 @@ const webRegistrationAllowed = ref(true)
 const webRegistrationLoading = ref(false)
 const webRegistrationError = ref('')
 let refreshH5RegistrationPolicy = null
-// #ifdef H5
+// #ifdef H5 || APP-PLUS
 refreshH5RegistrationPolicy = useH5RegistrationPolicy({
   allowed: webRegistrationAllowed,
   loading: webRegistrationLoading,
@@ -220,7 +232,7 @@ function handleRegisterClick() {
 // 注册提交
 function onRegister() {
   if (isLoading.value) return
-  // #ifdef H5
+  // #ifdef H5 || APP-PLUS
   if (!webRegistrationAllowed.value || webRegistrationLoading.value) return
   // #endif
   if (!username.value){ 
@@ -308,6 +320,13 @@ function onRegister() {
   })
 }
 
+function goBack() {
+  // #ifdef MP-WEIXIN
+  void miniRegistrationRelay.cancel()
+  // #endif
+  goLogin()
+}
+
 function goLogin() {
   uni.redirectTo({ url: '/pages-dark/index/index' })
 }
@@ -343,13 +362,13 @@ function handleKeyup(event) {
 }
 
 // 页面加载时先生成一次
-// #ifdef H5
+// #ifdef H5 || APP-PLUS
 onShow(() => {
   void refreshH5RegistrationPolicy()
 })
 // #endif
 onMounted(() => {
-  // #ifdef H5
+  // #ifdef H5 || APP-PLUS
   void refreshH5RegistrationPolicy()
   // #endif
   // captcha component will initialize itself

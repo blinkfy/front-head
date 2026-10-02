@@ -46,8 +46,8 @@
             <div class="row-label-group">
               <view class="row-dot dot-green"></view>
               <div>
-                <div class="label">允许网页端注册</div>
-                <div class="desc">开启后 H5 显示账号注册表单；关闭后显示微信扫码引导，APP 与小程序不受影响</div>
+                <div class="label">允许网页端 / APP 注册</div>
+                <div class="desc">开启后 H5 与 APP 显示账号注册表单；关闭后显示微信扫码引导，小程序不受影响</div>
               </div>
             </div>
             <view class="switch-row">

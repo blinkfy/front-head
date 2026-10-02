@@ -102,7 +102,12 @@ onShow(() => {
   else startScroll()
 })
 onBeforeUnmount(() => { version++; clearMeasurement(); stopScroll() })
-const exampleUrl = file => `${baseUrl.replace(/\/$/, '')}/waste_examples/${file}`
+const exampleUrl = file => {
+  // #ifdef APP-PLUS
+  return `/static/app/waste-examples/${file}`
+  // #endif
+  return `${baseUrl.replace(/\/$/, '')}/waste_examples/${file}`
+}
 </script>
 
 <style scoped>

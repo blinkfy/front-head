@@ -411,7 +411,7 @@ async function testThemeSourceGuards() {
     const registration = (await readFile(new URL(`../src/${theme}/register/register.vue`, import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
 
     await scenario(`${theme} page auto-login checks the shared preference before saved-password login`, () => {
-      const preferenceCheck = page.indexOf('if (shouldAutoWechatLogin(uni))')
+      const preferenceCheck = page.indexOf('shouldAutoWechatLogin(uni)')
       const beginAutoLogin = page.indexOf('onWechatLogin(true)', preferenceCheck)
       const savedPasswordCheck = page.indexOf("getStorageSync('savedUser')", preferenceCheck)
       assert.ok(preferenceCheck >= 0 && beginAutoLogin > preferenceCheck && savedPasswordCheck > beginAutoLogin)
