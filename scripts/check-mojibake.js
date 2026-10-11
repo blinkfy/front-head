@@ -96,6 +96,8 @@ function walk(dir, rel = '') {
     if (!isTextFile(nextRel)) continue;
 
     const normalized = nextRel.split(path.sep).join('/');
+    // HLS .ts segments are MPEG-TS binary assets, not TypeScript source.
+    if (normalized.startsWith('public/official/video/') && path.extname(normalized).toLowerCase() === '.ts') continue;
     if (IGNORE_FILES.has(normalized)) continue;
     out.push(nextRel);
   }

@@ -72,7 +72,7 @@
     ></view>
 
     <!-- ===== 主聊天区 ===== -->
-    <view class="chat-panel">
+    <view class="chat-panel" :style="{ '--composer-overlay-height': `${composerOverlayHeight}px` }">
 
       <!-- 头部 -->
       <view class="chat-header">
@@ -151,9 +151,7 @@
               <MarkdownBody v-if="msg.role !== 'user' && !recognitionSeedSummaries[idx]" :markdown="msg.content || 'AI 暂未返回内容。'" />
               <!-- #endif -->
               <!-- #ifndef H5 -->
-              <text v-if="msg.role !== 'user' && !recognitionSeedSummaries[idx]" class="msg-body assistant-text">
-                {{ getDisplayMessageText(msg) }}
-              </text>
+              <MarkdownBody v-if="msg.role !== 'user' && !recognitionSeedSummaries[idx]" :markdown="msg.content || 'AI 暂未返回内容。'" :native-renderer="true" />
               <!-- #endif -->
               <view v-if="recognitionSeedSummaries[idx]" class="seed-summary">
                 <text class="seed-summary-title">本次识别概览</text>
@@ -277,9 +275,7 @@
             </view>
 
             <view class="composer-right">
-              <view class="btn-attach" @tap="onPickImage">
-                <ManifestIcon class="attach-icon" id="image_gallery" :scale="1.5" />
-              </view>
+              <ManifestIcon class="attach-icon" id="image_gallery" :scale="2.1" role="button" aria-label="添加图片" @click="onPickImage" />
               <view
                 v-if="isStreaming"
                 class="btn-stop"
@@ -287,13 +283,7 @@
               >
                 <text class="stop-text">停止</text>
               </view>
-              <view
-                v-else
-                class="btn-send"
-                @tap="onSend"
-              >
-                <ManifestIcon class="send-icon" id="submit_action" :scale="1.5" />
-              </view>
+              <ManifestIcon v-else class="send-icon" id="submit_action" :scale="2.1" role="button" aria-label="发送消息" @click="onSend" />
             </view>
           </view>
         </view>
@@ -375,6 +365,7 @@ const streamingReasoning = ref('')   // 流式推理内容
 const messagesScrollTop = ref(0)
 const shouldAutoFollowMessages = ref(true)
 const messagesViewportHeight = ref(0)
+const composerOverlayHeight = ref(96)
 const historyDrawerOpen = ref(false)
 const pickedImageDataUrl = ref('')
 const pickedImageName    = ref('')
@@ -1598,6 +1589,18 @@ function onStop() {
 let onStorageHandler = null
 let drawerMediaQuery = null
 let onDrawerMediaChange = null
+let composerResizeObserver = null
+let onComposerWindowResize = null
+
+function updateComposerOverlayHeight() {
+  // #ifdef H5
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const composer = document.querySelector('.chat-panel .composer')
+  composerOverlayHeight.value = window.innerWidth >= 1025 && composer
+    ? Math.ceil(composer.getBoundingClientRect().height)
+    : 0
+  // #endif
+}
 
 onMounted(async () => {
   initSystemInfo()
@@ -1661,6 +1664,17 @@ onMounted(async () => {
   nextTick(() => {
     measureMessagesViewport()
     scrollMessagesToBottom(true)
+    // #ifdef H5
+    updateComposerOverlayHeight()
+    const composer = document.querySelector('.chat-panel .composer')
+    if (composer && typeof ResizeObserver !== 'undefined') {
+      composerResizeObserver = new ResizeObserver(updateComposerOverlayHeight)
+      composerResizeObserver.observe(composer)
+    } else if (typeof window !== 'undefined') {
+      onComposerWindowResize = updateComposerOverlayHeight
+      window.addEventListener('resize', onComposerWindowResize)
+    }
+    // #endif
   })
 })
 
@@ -1671,6 +1685,14 @@ onBeforeUnmount(() => {
     wsSocket = null
   }
   // #ifdef H5
+  if (composerResizeObserver) {
+    composerResizeObserver.disconnect()
+    composerResizeObserver = null
+  }
+  if (onComposerWindowResize) {
+    window.removeEventListener('resize', onComposerWindowResize)
+    onComposerWindowResize = null
+  }
   if (onStorageHandler) window.removeEventListener('storage', onStorageHandler)
   if (drawerMediaQuery && onDrawerMediaChange) {
     if (drawerMediaQuery.removeEventListener) drawerMediaQuery.removeEventListener('change', onDrawerMediaChange)
@@ -2623,51 +2645,19 @@ page {
   color: var(--btn-think-active-text);
 }
 
-/* 附件按钮 */
-.shell .btn-attach {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-light);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.shell .btn-attach:active {
-  background: var(--border-light);
-  transform: scale(0.95);
-}
-
-.shell .attach-icon {
-  font-size: 16px;
-}
-
-/* 发送按钮 */
-.shell .btn-send {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.shell .btn-send:active {
-  background: var(--accent-hover);
-  transform: scale(0.95);
-}
-
+/* 图标本身作为操作按钮，避免外层再套一个按钮底板 */
+.shell .attach-icon,
 .shell .send-icon {
-  font-size: 16px;
-  color: #fff;
-  font-weight: 600;
+  display: block;
+  font-size: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.shell .attach-icon:active,
+.shell .send-icon:active {
+  transform: scale(0.94);
 }
 
 /* 停止按钮 */
@@ -3264,45 +3254,6 @@ page {
 }
 .shell .deep-think-text { white-space: nowrap; }
 
-/* 附件按钮 */
-.shell .btn-attach {
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  flex-shrink: 0;
-}
-.shell .btn-attach:active {
-  background: var(--border-light);
-  transform: scale(0.95);
-}
-.shell .attach-icon { font-size: 15px; }
-
-/* 发送按钮 */
-.shell .btn-send {
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  flex-shrink: 0;
-}
-.shell .btn-send:active {
-  background: var(--accent-hover);
-  transform: scale(0.95);
-}
-.shell .send-icon { font-size: 15px; color: #fff; font-weight: 700; }
-
 /* 停止按钮 */
 .shell .btn-stop {
   padding: 5px 12px;
@@ -3447,7 +3398,6 @@ page {
   .shell .composer-left { flex-shrink: 0; }
   .shell .deep-think-btn { padding: 5px 8px; max-width: 130px; }
   .shell .deep-think-btn { flex-shrink: 0; }
-  .shell .btn-send, .shell .btn-attach { width: 30px; height: 30px; border-radius: 7px; flex-shrink: 0; }
   .shell .composer-right { flex-shrink: 0; }
   .shell .suggestion-pill { padding: 5px 10px; font-size: 10px; }
   .shell .image-pending { padding: 8px 10px; border-radius: 10px; }
@@ -3562,12 +3512,6 @@ page {
   border-radius: 999px;
   padding: 6px 11px;
 }
-.shell .btn-attach,
-.shell .btn-send {
-  width: 34px;
-  height: 34px;
-  border-radius: 12px;
-}
 .shell .composer-suggestions {
   max-width: 780px;
 }
@@ -3623,14 +3567,94 @@ page {
   line-height: 1.45;
 }
 
-@media (min-width: 981px) {
-  .shell .messages {
-    padding-top: 24px;
-    padding-bottom: 18px;
+@media (min-width: 1025px) {
+  .shell .sidebar {
+    width: 240px;
+    flex-basis: 240px;
   }
+  .shell .brand-title,
+  .shell .chat-title { font-size: 14px; }
+  .shell .sidebar-h1 { font-size: 17px; }
+  .shell .conversation-title,
+  .shell .new-chat-btn,
+  .shell .header-actions .btn.ghost { font-size: 12px; }
+  .shell .chat-header-subtitle { font-size: 11px; line-height: 1.3; }
+  .shell .new-chat-btn { padding: 8px 14px; }
+  .shell .conversation-item { padding-top: 8px; padding-bottom: 8px; }
+  .shell .conversation-meta { margin-top: 2px; }
+  .shell .header-actions .btn.ghost { padding: 7px 12px; }
+  .shell .messages {
+    min-height: 0;
+    padding-top: 24px;
+    padding-bottom: var(--composer-overlay-height, 96px);
+  }
+  .shell .messages > .message-row:last-child { margin-bottom: 0; }
+  .shell .message-row,
+  .shell .composer-suggestions,
+  .shell .image-pending,
+  .shell .inline-suggestions {
+    max-width: 740px;
+  }
+  .shell .composer-card { max-width: 700px; }
+  .shell .message-row { margin-bottom: 18px; }
+  .shell .message-meta { margin-bottom: 5px; }
+  .shell .msg { line-height: 1.65; }
+  .shell .msg.user { padding: 10px 14px; }
+  .shell .msg.assistant {
+    padding: 2px 0;
+    background: transparent;
+    border-color: transparent;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .shell .msg { font-size: 13px; }
+  .shell .msg :deep(.md-body),
+  .shell .msg :deep(.md-text) {
+    font-size: 13px;
+    line-height: 1.65;
+  }
+  .shell .message-meta { font-size: 10px; }
+  .shell .composer-card { padding: 6px 10px 5px; }
+  .shell .prompt-textarea {
+    min-height: 30px;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 1px 5px 3px;
+  }
+  .shell .composer-toolbar { padding-top: 3px; margin-top: 0; }
+  .shell .composer-left,
+  .shell .composer-right { gap: 6px; }
+  .shell .deep-think-btn { gap: 4px; padding: 3px 9px; font-size: 11px; }
+  .shell .deep-think-icon-char { width: 16px; height: 16px; font-size: 10px; }
+  .shell .attach-icon,
+  .shell .send-icon { font-size: 16px; }
+  .shell .btn-stop { padding: 3px 10px; }
+  .shell .stop-text { font-size: 11px; }
   .shell .composer {
-    padding-left: 32px;
-    padding-right: 32px;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    padding: 0 32px calc(16px + env(safe-area-inset-bottom));
+    background: transparent;
+    border-top-color: transparent;
+    pointer-events: none;
+  }
+  .shell .composer-card,
+  .shell .image-pending {
+    pointer-events: auto;
+  }
+  .shell.dark-theme .composer {
+    background: transparent;
+    border-top-color: transparent;
+  }
+  .shell .composer-card {
+    border-radius: 20px;
+    box-shadow: 0 12px 36px rgba(17, 24, 39, 0.12);
+  }
+  .shell.dark-theme .composer-card {
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
   }
 }
 
@@ -3727,12 +3751,6 @@ page {
     padding: 6px 10px;
     font-size: 11px;
   }
-  .shell .btn-attach,
-  .shell .btn-send {
-    width: 32px;
-    height: 32px;
-    border-radius: 11px;
-  }
   .shell .composer-suggestions {
     max-width: 100%;
     order: -1;
@@ -3789,7 +3807,6 @@ page {
 /* #endif */
 
 /* ─── 深色主题覆盖 ─── */
-.shell.dark-theme .btn-attach { background: #333333; border-color: #3F3F46; }
 .shell.dark-theme .btn-stop { background: #333333; border-color: #52525B; }
 .shell.dark-theme .suggestion-pill { background: #262626; border-color: #3F3F46; }
 .shell.dark-theme .conversation-item:hover { background: #333333; }

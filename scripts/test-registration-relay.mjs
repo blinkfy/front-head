@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createH5RegistrationRelay, createMiniRegistrationRelay, createRegistrationApi,
-  normalizeRegistrationScene, commitRegistrationLogin } from '../src/utils/registration-relay.mjs'
+  normalizeRegistrationScene, commitRegistrationLogin, createRegistrationDialogs } from '../src/utils/registration-relay.mjs'
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
@@ -139,9 +139,59 @@ test('authorization error preserves independently retryable intent without repea
 })
 
 test('explicit rejection cancels scanned intent with a fresh WeChat code', async () => {
-  const state = mini({ confirm: async () => false }); state.controller.capture(id)
+  const dialogs = createRegistrationDialogs({ showModal: options => {
+    options.success({ confirm: false, cancel: true })
+  } })
+  const state = mini({ confirm: dialogs.confirm }); state.controller.capture(id)
   await state.controller.authorize('token'); assert.equal(state.controller.getPending(), null)
   assert.equal(state.authorizations.length, 0); assert.deepEqual(state.cancellations[0], [id, 'new-code-2'])
+})
+
+test('native registration dialogs keep button labels within WeChat limits and confirm', async () => {
+  const shown = []
+  const dialogs = createRegistrationDialogs({ showModal: options => {
+    shown.push(options)
+    const labels = [options.confirmText, options.cancelText].filter(Boolean)
+    if (labels.some(label => Array.from(label).length > 4)) {
+      options.fail({ errMsg: 'showModal:fail confirmText length out of range' })
+    } else {
+      options.success({ confirm: true, cancel: false })
+    }
+  } })
+  assert.equal(await dialogs.confirm('最终账号', id), true)
+  assert.equal(await dialogs.retry(), true)
+  assert.equal(shown.length, 2)
+  for (const options of shown) {
+    assert.ok(Array.from(options.confirmText).length <= 4)
+    assert.ok(Array.from(options.cancelText).length <= 4)
+  }
+})
+
+test('native confirmation failure preserves scanned intent for retry without cancelScan', async () => {
+  let modalCalls = 0
+  const dialogs = createRegistrationDialogs({ showModal: options => {
+    modalCalls++
+    if (modalCalls === 1) options.fail({ errMsg: 'showModal:fail' })
+    else options.success({ confirm: true, cancel: false })
+  } })
+  const state = mini({ confirm: dialogs.confirm })
+  state.controller.capture(id)
+  assert.equal(await state.controller.authorize('first-token', '最终账号'), false)
+  assert.ok(state.controller.getPending())
+  assert.equal(state.cancellations.length, 0)
+  assert.equal(state.errors[0]?.reason, 'REGISTRATION_CONFIRM_FAILED')
+
+  assert.equal(await state.controller.authorize('retry-token', '最终账号'), true)
+  assert.equal(state.controller.getPending(), null)
+  assert.equal(state.cancellations.length, 0)
+  assert.deepEqual(state.authorizations, [[id, 'new-code-2', 'retry-token']])
+})
+
+test('native retry dialog failure rejects with a retryable confirmation error', async () => {
+  const dialogs = createRegistrationDialogs({ showModal: options =>
+    options.fail({ errMsg: 'showModal:fail' })
+  })
+  await assert.rejects(dialogs.retry(), error => error.reason === 'REGISTRATION_CONFIRM_FAILED')
 })
 
 test('leaving MP login suppresses authorization and expired intent clears', async () => {

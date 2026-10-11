@@ -183,6 +183,9 @@
     <!-- #endif -->
   </view>
   <!-- #endif -->
+  <!-- #ifdef H5 || APP-PLUS -->
+  <WechatBindingReminder v-if="bindingReminderVisible" :dark="false" @close="dismissBindingReminder" />
+  <!-- #endif -->
 </template>
 
 <script setup>
@@ -190,8 +193,14 @@ import { ref, onMounted } from 'vue'
 // #ifdef H5
 import H5LoginShell from '@/components/H5LoginShell.vue'
 import { commitRegistrationLogin } from '@/utils/registration-relay.mjs'
+import { registrationRuntime } from '@/utils/registration-relay.js'
 // #endif
 import { login,userinfo } from '@/api/user'
+// #ifdef H5 || APP-PLUS
+import WechatBindingReminder from '@/components/WechatBindingReminder.vue'
+import { useWechatBindingReminder } from '@/utils/use-wechat-binding-reminder.js'
+const { visible: bindingReminderVisible, dismiss: dismissBindingReminder, remindIfUnbound } = useWechatBindingReminder()
+// #endif
 // #ifdef MP-WEIXIN
 import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { wechatLogin } from '@/api/user'
@@ -386,13 +395,14 @@ function handleKeyup(event) {
 }
 
 // #ifdef H5
-function onQrLogin(result) {
+async function onQrLogin(result) {
   if (isLoading.value) return
   isLoading.value = true
-  commitRegistrationLogin(uni, result)
+  commitRegistrationLogin(registrationRuntime, result)
   uni.setStorageSync('autoLogin', rememberMe.value)
+  if (!(await remindIfUnbound())) return
   uni.showToast({ title: '登录成功', icon: 'success' })
-  const pendingScene = getPendingDeviceQrScene(uni)
+  const pendingScene = getPendingDeviceQrScene(registrationRuntime)
   const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, false) : ''
   uni.reLaunch({ url: pendingUrl || '/pages/home/home' })
 }
@@ -448,6 +458,9 @@ async function completeLogin(res, isauto, isWechat = false) {
   } else {
     uni.removeStorageSync('savedUser')
   }
+  // #ifdef H5 || APP-PLUS
+  if (!(await remindIfUnbound())) return
+  // #endif
   // #ifdef MP-WEIXIN
   const registeredUser = loggedInUser
   if (res.wechatLoginMode !== 'shared' && consumeWechatProfileCompletion(uni, registeredUser)) {

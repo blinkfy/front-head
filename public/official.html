@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>分投侠 - 智能垃圾分类助手</title>
+  <meta name="description" content="分投侠支持 Android APP、微信小程序与网页版，提供 AI 垃圾识别、垃圾分类指南、环保社区、积分活动及设备连接相关功能。官网提供 Android 公测下载、小程序码和网页入口。">
+  <meta name="theme-color" content="#00a77e">
+  <link rel="icon" href="./static/person.webp.png" type="image/png">
+  <link rel="stylesheet" href="./official/site.css">
+  <link rel="stylesheet" href="./official/journal.css">
+  <script src="./official/site-config.js" defer></script>
+  <script src="./official/site.js" defer></script>
+</head>
+<body class="official-page">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#home" aria-label="分投侠官网首页"><img src="./static/person.webp.png" width="44" height="44" alt="分投侠 mascot"><span>分投侠</span></a>
+      <nav class="desktop-nav" aria-label="主导航"><a href="#home">首页</a><a href="#platforms">三端入口</a><a href="#features">核心功能</a><a href="#showcase">应用展示</a><a href="#about">关于我们</a></nav>
+      <div class="header-actions">
+        <a class="login-link" href="./index.html#/pages/index/index">登录 <span aria-hidden="true">↗</span></a>
+        <details class="mobile-nav"><summary>菜单</summary><nav aria-label="移动端导航"><a href="#home">首页</a><a href="#platforms">三端入口</a><a href="#features">核心功能</a><a href="#showcase">应用展示</a><a href="#about">关于我们</a><a href="#download">APP 公测下载</a></nav></details>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="home" aria-labelledby="hero-title">
+      <div class="container hero-layout">
+        <div class="hero-copy">
+          <h1 class="notebook-title" id="hero-title">分投侠<svg viewBox="0 0 440 30" aria-hidden="true"><path d="M5 20 Q150 1 286 14 T435 8 M26 27 Q214 7 376 21"/></svg></h1>
+          <p class="hero-slogan">智能垃圾分类 · <span>绿色环保生活</span></p>
+          <p class="hero-description">分投侠支持 Android APP、微信小程序与网页版，面向日常垃圾分类与环保互动。拍照或上传图片，了解分类建议；查阅知识、分享经验、参与积分活动。</p>
+          <div class="hero-buttons"><a class="button button-primary" data-download hidden rel="noopener noreferrer" target="_blank">下载 Android 公测版</a><a class="button button-light" href="#platforms">三端入口</a></div>
+          <p class="release-inline"><span class="status-dot" aria-hidden="true"></span><span data-config="releaseStatus">Android 公测版 · 已开放下载</span></p>
+        </div>
+        <div class="hero-media">
+          <img class="hero-landscape" src="./official/landscape.png" alt="" width="2172" height="724">
+          <figure class="phone hero-phone"><a class="phone-preview" href="./official/screenshots/native-home.jpg" target="_blank" rel="noopener noreferrer" aria-label="查看完整小程序首页截图"><img src="./official/screenshots/native-home.jpg" alt="分投侠微信小程序真实首页，包含 AI 垃圾识别及环保功能入口" width="1088" height="2400" fetchpriority="high"></a><figcaption>APP · 首页</figcaption></figure>
+          <figure class="phone secondary-phone"><a class="phone-preview" href="./official/screenshots/native-recognition.jpg" target="_blank" rel="noopener noreferrer" aria-label="查看完整小程序识别结果长截图"><img src="./official/screenshots/native-recognition.jpg" alt="分投侠微信小程序真实图片识别结果与类别说明" width="1088" height="4119"></a><figcaption>小程序 · 识别结果</figcaption></figure>
+          <img class="hero-companion" src="./static/person.webp.png" alt="分投侠环保 mascot" width="140" height="140">
+          <div class="handwritten hero-annotation" aria-hidden="true">拍一张，分一分<svg viewBox="0 0 110 52"><path d="M5 8 Q22 60 92 20 M76 16 L96 18 L87 37"/></svg></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="platform-section container" id="platforms" aria-labelledby="platforms-title">
+      <div class="platform-heading"><p class="section-label">三端入口</p><h2 id="platforms-title">三种入口，<br class="mobile-break">同一个绿色目标。</h2><p>选择适合你的方式，开始日常分类与环保互动。</p></div>
+      <div class="platform-grid">
+        <article class="platform-option" aria-labelledby="android-title">
+          <div class="platform-marker" aria-hidden="true"><span>01</span><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></svg></div>
+          <p class="platform-label">Android APP</p><h3 id="android-title">Android 公测版</h3>
+          <p class="platform-status"><span class="status-dot" aria-hidden="true"></span>已开放下载</p>
+          <p class="platform-description">下载公测版，在手机上体验分投侠。<br>尚未上架应用商店。</p>
+          <a class="button button-primary" data-download hidden rel="noopener noreferrer" target="_blank">下载 Android 公测版</a>
+        </article>
+        <article class="platform-option mini-program-option" id="mini-program" aria-labelledby="mini-program-title">
+          <div class="platform-marker" aria-hidden="true"><span>02</span><svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5M7 7h4v4H7zM14 7h3M7 14v3h4M14 14h3v3h-3z"/></svg></div>
+          <p class="platform-label">微信小程序</p><h3 id="mini-program-title">微信扫一扫，即可开始。</h3>
+          <p class="platform-description">扫码打开分投侠，新用户可按小程序内的流程完成注册。</p>
+          <div class="mini-program-access"><a class="mini-program-code" href="./official/mini-program.jpg" target="_blank" rel="noopener noreferrer" aria-label="查看完整分投侠微信小程序码"><img src="./official/mini-program.jpg" alt="分投侠微信小程序码，使用微信扫一扫打开" width="258" height="258" loading="lazy"></a><div><a class="platform-text-link" href="./official/mini-program.jpg" target="_blank" rel="noopener noreferrer">查看小程序码</a><a class="platform-text-link" href="./official/mini-program.jpg" download="分投侠小程序码.jpg">保存小程序码</a><p>手机上可保存图片，<br>再使用微信识别。</p></div></div>
+        </article>
+        <article class="platform-option" aria-labelledby="web-title">
+          <div class="platform-marker" aria-hidden="true"><span>03</span><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20M6 6.5h.01M9 6.5h.01"/></svg></div>
+          <p class="platform-label">网页版</p><h3 id="web-title">在浏览器中使用。</h3>
+          <p class="platform-description">在浏览器里打开分投侠，登录后使用更多功能。</p>
+          <a class="button button-light" data-web href="./index.html#/pages/home/home">打开网页版</a>
+          <p class="platform-register-note">新用户注册请在微信小程序完成。</p>
+        </article>
+      </div>
+      <p class="platform-footnote">各端界面与可用功能以当前版本为准；设备功能需要对应设备支持。</p>
+    </section>
+
+    <section class="category-section container" aria-labelledby="category-title">
+      <div class="category-intro"><h2 id="category-title">四类垃圾，各归其位</h2><p>点击分类名称，看看常见物品。</p></div>
+      <div class="category-index">
+        <details class="category-item recyclable" name="waste-guide" open><summary><span class="category-specimen"><img src="./official/categories/05_plastic_bottle.webp" alt="" width="64" height="64"><span class="category-dot" aria-hidden="true">01</span></span><span>可回收物</span><span class="category-toggle" aria-hidden="true">＋</span></summary><p>纸箱、塑料饮料瓶等。保持清洁干燥，让资源回到循环里。</p></details>
+        <details class="category-item hazardous" name="waste-guide"><summary><span class="category-specimen"><img src="./official/categories/02_button_battery.webp" alt="" width="64" height="64"><span class="category-dot" aria-hidden="true">02</span></span><span>有害垃圾</span><span class="category-toggle" aria-hidden="true">＋</span></summary><p>纽扣电池、过期药品等。注意包装，按当地要求交到对应收集点。</p></details>
+        <details class="category-item kitchen" name="waste-guide"><summary><span class="category-specimen"><img src="./official/categories/04_banana_peel.webp" alt="" width="64" height="64"><span class="category-dot" aria-hidden="true">03</span></span><span>厨余垃圾</span><span class="category-toggle" aria-hidden="true">＋</span></summary><p>香蕉皮、蛋壳等。沥去水分，按当地要求规范投放。</p></details>
+        <details class="category-item residual" name="waste-guide"><summary><span class="category-specimen"><img src="./official/categories/01_used_tissue.webp" alt="" width="64" height="64"><span class="category-dot" aria-hidden="true">04</span></span><span>其他垃圾</span><span class="category-toggle" aria-hidden="true">＋</span></summary><p>用过的纸巾、一次性纸杯等。无法归入其他三类的生活垃圾，应规范投放。</p></details>
+      </div>
+    </section>
+
+    <section class="section container" id="features" aria-labelledby="features-title">
+      <div class="feature-layout">
+      <div class="feature-lead"><p class="section-label">核心功能</p><h2 class="chapter-title" id="features-title">从一张照片，<br>到一次绿色行动。</h2><p>看懂分类，分享经验，<br>让环保融入日常。</p><span class="handwritten feature-margin" aria-hidden="true">从知道，到做到。<svg viewBox="0 0 140 65"><path d="M5 8 Q45 75 122 32 M102 26 L126 29 L119 51"/></svg></span></div>
+      <div class="feature-grid">
+        <article class="feature-card"><span class="feature-icon" aria-hidden="true">01</span><h3>AI 垃圾识别</h3><p>拍摄或上传垃圾图片，由 AI 辅助识别垃圾类别，查看识别结果与分类信息。</p></article>
+        <article class="feature-card"><span class="feature-icon" aria-hidden="true">02</span><h3>垃圾分类指南</h3><p>了解可回收物、有害垃圾、厨余垃圾、其他垃圾，查看常见物品与投放说明。</p></article>
+        <article class="feature-card"><span class="feature-icon" aria-hidden="true">03</span><h3>环保社区</h3><p>浏览与发布环保帖子，通过评论、点赞等互动分享分类经验和绿色生活内容。</p></article>
+        <article class="feature-card"><span class="feature-icon" aria-hidden="true">04</span><h3>积分与活动</h3><p>参与垃圾分类挑战、积分抽奖与积分商城，在现有活动规则下参与环保互动。</p></article>
+        <article class="feature-card device-card"><div><span class="feature-icon" aria-hidden="true">05</span><h3>智能回收与设备连接</h3><p>查看附近垃圾桶、连接支持的环保设备，并查看投放记录。设备功能需接入对应设备后使用，以实际可用设备为准。</p></div></article>
+      </div>
+      </div>
+      <p class="section-note">AI 结果用于辅助判断，实际投放请结合物品情况与当地垃圾分类要求。</p>
+    </section>
+
+    <section class="showcase-section" id="showcase" aria-labelledby="showcase-title">
+      <div class="container">
+        <div class="section-heading"><div><p class="section-label">应用展示</p><h2 id="showcase-title">从真实界面，了解分投侠。</h2></div><p>以下为微信小程序真实界面。<br>APP、网页版的界面与功能以各端当前版本为准。</p></div>
+        <p class="gallery-hint">左右滑动，查看更多真实界面 <span aria-hidden="true">↔</span></p>
+        <div class="screenshot-grid">
+          <figure class="screenshot-card"><div class="screen-frame"><a class="screen-preview" href="./official/screenshots/native-home.jpg" target="_blank" rel="noopener noreferrer" aria-label="查看完整首页截图"><img src="./official/screenshots/native-home.jpg" width="1088" height="2400" alt="真实首页：AI 识别与环保功能入口" loading="lazy"></a></div><figcaption><span>01 / 日常分类</span><h3>应用首页</h3><p>从拍摄、上传图片开始，了解身边的垃圾。</p></figcaption></figure>
+          <figure class="screenshot-card"><div class="screen-frame"><a class="screen-preview" href="./official/screenshots/native-recognition.jpg" target="_blank" rel="noopener noreferrer" aria-label="查看完整识别结果长截图"><img src="./official/screenshots/native-recognition.jpg" width="1088" height="4119" alt="真实识别结果：分类、置信度与处理建议" loading="lazy"></a></div><figcaption><span>02 / 分类建议</span><h3>AI 识别结果</h3><p>查看垃圾类别与建议，长截图可点击完整查看。</p></figcaption></figure>
+          <figure class="screenshot-card"><div class="screen-frame"><a class="screen-preview" href="./official/screenshots/native-map.jpg" target="_blank" rel="noopener noreferrer" aria-label="查看完整附近设施截图"><img src="./official/screenshots/native-map.jpg" width="1088" height="2400" alt="真实地图：附近垃圾分类设施点位" loading="lazy"></a></div><figcaption><span>03 / 附近设施</span><h3>分类设施地图</h3><p>了解身边的投放点，连接实际环保场景。</p></figcaption></figure>
+          <figure class="screenshot-card"><div class="screen-frame"><a class="screen-preview" href="./official/screenshots/native-shop.jpg" target="_blank" rel="noopener noreferrer" aria-label="查看完整积分商城截图"><img src="./official/screenshots/native-shop.jpg" width="1088" height="2400" alt="真实积分商城：环保积分与兑换商品" loading="lazy"></a></div><figcaption><span>04 / 环保互动</span><h3>积分商城</h3><p>浏览积分兑换商品，让环保行动延续下去。</p></figcaption></figure>
+        </div>
+        <figure class="promo-film" data-promo-section hidden>
+          <div class="film-player"><video data-promo-video playsinline preload="none" poster="./official/video/cover.webp" aria-label="分投侠应用功能宣传片"></video><button type="button" class="film-play button button-primary" data-promo-play>播放宣传片</button></div>
+          <figcaption><p class="section-label">应用宣传片</p><h3>看看分投侠<br>如何走进日常。</h3><p>从图片识别到环保互动，看看分投侠如何融入日常分类。支持播放、暂停和全屏观看。</p><p class="video-error" data-video-error hidden>视频暂时无法播放，可刷新页面或稍后重试。</p></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section container" aria-labelledby="steps-title">
+      <div class="section-heading"><div><p class="section-label">使用流程</p><h2 id="steps-title">绿色行动，从这里开始。</h2></div><p class="handwritten">一步一步，分得更明白。</p></div>
+      <ol class="steps"><li><span>01</span><h3>打开分投侠</h3><p>进入应用首页</p></li><li><span>02</span><h3>拍照或上传</h3><p>选择需要分类的垃圾图片</p></li><li><span>03</span><h3>AI 辅助识别</h3><p>查看类别与分类建议</p></li><li><span>04</span><h3>参与绿色行动</h3><p>分享经验，参与挑战与积分活动</p></li></ol>
+    </section>
+
+    <section class="download-section" id="download" aria-labelledby="download-title">
+      <div class="container download-card"><div class="download-heading"><p class="section-label">APP 公测下载</p><h2 id="download-title">让环保，<br>成为日常。</h2></div><div class="download-copy"><p class="download-status" data-config="releaseStatus">Android 公测版 · 已开放下载</p><p data-config="releaseNote">Android 版本尚未上架应用商店，欢迎下载公测版体验。</p><a class="button button-primary" data-download hidden rel="noopener noreferrer" target="_blank">下载 Android 公测版</a><div class="download-links"><a class="text-link" href="#mini-program">扫码打开小程序</a><a class="text-link" data-web href="./index.html#/pages/home/home">打开网页版</a></div></div><img src="./static/person.webp.png" alt="分投侠环保 mascot" width="210" height="210" loading="lazy"></div>
+    </section>
+
+    <section class="section container about-section" id="about" aria-labelledby="about-title">
+      <div class="about-copy"><p class="section-label">关于分投侠</p><h2 id="about-title">分类更简单，<br>绿色更日常。</h2><p>分投侠把图片识别、分类知识和环保互动带到你的日常。遇到不确定的垃圾，拍照或上传图片获取分类建议；也可以查阅知识、分享经验，参与绿色行动。</p><p>无论选择 Android APP、微信小程序还是网页版，都可以从适合自己的入口认识分投侠。</p><svg class="about-branch" viewBox="0 0 460 35" aria-hidden="true"><path d="M2 25 Q95 2 215 20 T455 15 M18 21 Q4 4 8 2 Q24 6 25 19 M436 17 Q438 1 450 2 Q453 13 436 17"/></svg><div class="about-service-details"><p><a data-developer-link href="https://github.com/blinkfy" target="_blank" rel="noopener noreferrer" aria-label="打开分投侠开发者 GitHub 主页">开发者 GitHub</a></p><p data-optional="legalEntity" hidden>运营主体：<span data-config="legalEntity"></span></p><p data-optional="contactEmail" hidden>联系邮箱：<span data-config="contactEmail"></span></p><p data-optional="contactDetails" hidden>联系方式：<span data-config="contactDetails"></span></p><p data-optional="icp" hidden><span data-config="icp"></span><a data-icp-link hidden rel="noopener noreferrer" target="_blank"></a></p></div></div>
+      <aside class="about-access" aria-labelledby="about-access-title"><h3 id="about-access-title">使用分投侠</h3><nav class="about-links" aria-label="使用入口"><a href="#download"><span class="about-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></svg></span><span><strong>APP 公测下载</strong><small>Android 公测已开放</small></span><svg class="about-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 5l7 7-7 7"/></svg></a><a href="#mini-program"><span class="about-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5M7 7h4v4H7zM14 7h3M7 14v3h4M14 14h3v3h-3z"/></svg></span><span><strong>微信小程序</strong><small>微信扫一扫，或保存小程序码识别</small></span><svg class="about-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 5l7 7-7 7"/></svg></a><a data-web href="./index.html#/pages/home/home"><span class="about-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20M6 6.5h.01M9 6.5h.01"/></svg></span><span><strong>打开网页版</strong><small>在浏览器中开始，部分功能需登录</small></span><svg class="about-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 5l7 7-7 7"/></svg></a></nav><div class="about-policies"><p>使用前，了解服务与隐私说明。</p><a href="./user-agreement.html">用户协议</a><span aria-hidden="true"> / </span><a href="./privacy.html">隐私政策</a></div></aside>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="container footer-inner"><div><a class="brand" href="#home"><img src="./static/person.webp.png" width="32" height="32" alt=""><span>分投侠</span></a><p>智能垃圾分类 · 绿色环保生活</p></div><nav aria-label="页脚导航"><a href="#platforms">三端入口</a><a href="#features">核心功能</a><a href="./user-agreement.html">用户协议</a><a href="./privacy.html">隐私政策</a></nav></div></footer>
+</body>
+</html>

@@ -2,8 +2,8 @@
     "name" : "分投侠",
     "appid" : "__UNI__0B093BC",
     "description" : "",
-    "versionName" : "1.4.2",
-    "versionCode" : 104,
+    "versionName" : "1.4.3",
+    "versionCode" : 105,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -51,6 +51,7 @@
                 "privacyDescription" : {
                     "NSCameraUsageDescription" : "用于上传需要识别分类的照片",
                     "NSPhotoLibraryUsageDescription" : "用于上传需要识别分类的照片",
+                    "NSPhotoLibraryAddUsageDescription" : "用于保存分投侠小程序二维码到相册",
                     "NSLocationWhenInUseUsageDescription" : "用于寻找附近智能垃圾分类装置",
                     "NSMicrophoneUsageDescription" : "用于发送语音消息"
                 }

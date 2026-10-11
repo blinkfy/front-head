@@ -24,8 +24,8 @@
           <view class="guide-leaf leaf-one" aria-hidden="true"></view>
           <view class="guide-leaf leaf-two" aria-hidden="true"></view>
           <view class="code-disc" :aria-busy="checking || qrState === 'loading'">
-            <image mode="aspectFit" v-if="qrSource" :key="qrSource" class="registration-code" :class="{ 'code-ready': qrState === 'ready' }"
-              :src="qrSource" alt="分投侠微信小程序注册入口码" @load="qrState = 'ready'" @error="qrState = 'error'" />
+            <image mode="aspectFit" v-if="qrSource" :key="qrSource" class="registration-code qr-saveable-target" :class="{ 'code-ready': qrState === 'ready' }"
+              :src="qrSource" alt="分投侠微信小程序注册入口码" @load="qrState = 'ready'" @error="qrState = 'error'" @longpress="openQrMenu" @contextmenu="suppressQrContextMenu" />
             <view v-if="checking || qrState !== 'ready'" class="code-placeholder" role="status">
               <view v-if="checking || qrState === 'loading'" class="code-spinner" aria-hidden="true"></view>
               <!-- #ifdef H5 -->
@@ -115,15 +115,18 @@
     </view>
     <view class="guide-footer desktop-footer">🌿 加入我们，一起为环保贡献力量</view>
   </view>
+  <WechatQrDownloadMenu :menu="qrMenu" :dark="dark" @close="closeQrMenu" @download="downloadQr" />
 </template>
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { baseUrl } from '@/api/settings.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { useWechatQrSave } from '@/utils/use-wechat-qr-save.js'
+import WechatQrDownloadMenu from '@/components/WechatQrDownloadMenu.vue'
 // #ifdef H5
 import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
-import { registrationApi } from '@/utils/registration-relay.js'
+import { registrationApi, registrationRuntime } from '@/utils/registration-relay.js'
 import { createH5RegistrationRelay, commitRegistrationLogin } from '@/utils/registration-relay.mjs'
 // #endif
 
@@ -131,6 +134,7 @@ const props = defineProps({ dark: Boolean, checking: Boolean, policyError: { typ
 const emit = defineEmits(['login'])
 const qrSource = ref('')
 const qrState = ref('loading')
+const { qrMenu, openQrMenu, closeQrMenu, downloadQr, suppressQrContextMenu } = useWechatQrSave(qrSource, () => props.checking || qrState.value !== 'ready')
 const sessionStatus = ref('')
 const sessionMessage = ref('')
 const sessionReference = ref('')
@@ -169,7 +173,7 @@ relay = createH5RegistrationRelay({ api: registrationApi,
     }
   },
   onLogin: result => {
-    commitRegistrationLogin(uni, result)
+    commitRegistrationLogin(registrationRuntime, result)
     uni.showToast({ title: '登录成功', icon: 'success' })
     uni.reLaunch({ url: props.dark ? '/pages-dark/home/home' : '/pages/home/home' })
   }

@@ -1,16 +1,22 @@
 import { baseUrl } from '@/api/settings.js'
 import { getWechatLoginCode } from '@/utils/wechat-login.mjs'
-import { createRegistrationApi, createMiniRegistrationRelay } from './registration-relay.mjs'
+import { createRegistrationApi, createMiniRegistrationRelay, createRegistrationDialogs } from './registration-relay.mjs'
 
-export const registrationApi = createRegistrationApi({ runtime: uni, baseUrl })
-const modal = options => new Promise(resolve => uni.showModal({ ...options,
-  success: answer => resolve(answer.confirm), fail: () => resolve(false) }))
+// H5 production only includes APIs referenced as uni.<method>; passing the
+// namespace itself to a helper does not retain request/storage implementations.
+export const registrationRuntime = {
+  request: options => uni.request(options),
+  showModal: options => uni.showModal(options),
+  getStorageSync: key => uni.getStorageSync(key),
+  setStorageSync: (key, value) => uni.setStorageSync(key, value),
+  removeStorageSync: key => uni.removeStorageSync(key)
+}
+export const registrationApi = createRegistrationApi({ runtime: registrationRuntime, baseUrl })
+const dialogs = createRegistrationDialogs(registrationRuntime)
 export const miniRegistrationRelay = createMiniRegistrationRelay({
   api: registrationApi,
   getCode: () => getWechatLoginCode(uni),
-  confirm: (account, sessionId) => modal({ title: '确认登录网页',
-    content: `是否使用当前账号${account ? '“' + account + '”' : ''}登录刚才扫码的分投侠网页（${sessionId.slice(-6)}）？请仅确认您本人打开的网页。`,
-    confirmText: '确认登录', cancelText: '取消网页登录' }),
+  confirm: dialogs.confirm,
   onError: error => uni.showToast({ title: error.msg || error.message || '网页登录未完成，可单独重试', icon: 'none', duration: 3000 })
 })
 
@@ -39,8 +45,9 @@ export async function offerRegistrationRetry(account = '') {
   if (retryPromptRunning || !retryToken || retryToken !== uni.getStorageSync('token') || !miniRegistrationRelay.getPending()) return
   retryPromptRunning = true
   try {
-    const retry = await modal({ title: '网页登录未完成', content: '您已在小程序登录成功。可单独重试网页登录，或继续使用小程序。',
-      confirmText: '重试网页登录', cancelText: '继续小程序' })
+    const retry = await dialogs.retry()
     if (retry && retryToken === uni.getStorageSync('token')) void confirmRegistrationLogin(retryToken, account)
+  } catch (error) {
+    uni.showToast({ title: error.message || '确认窗口未能打开，请重试网页登录', icon: 'none', duration: 3000 })
   } finally { retryPromptRunning = false }
 }

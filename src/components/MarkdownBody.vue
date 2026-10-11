@@ -4,21 +4,19 @@
   <!-- #endif -->
   <!-- #ifndef H5 -->
   <view :class="['md-body', variant ? `md-body--${variant}` : '']">
-    <!-- #ifdef APP-PLUS -->
     <ChatMarkdown
-      v-if="streaming"
-      class="md-stream"
+      v-if="useNativeRenderer"
+      class="md-native"
       :markdown="markdown"
     />
-    <!-- #endif -->
     <mp-html
-      v-if="mpHtmlReady && !useNativeStream"
+      v-if="mpHtmlReady && !useNativeRenderer"
       :content="renderedHtml"
       :selectable="false"
       :lazy-load="true"
       :preview-img="false"
     />
-    <text v-else-if="!useNativeStream" class="md-text">{{ plainText }}</text>
+    <text v-else-if="!useNativeRenderer" class="md-text">{{ plainText }}</text>
   </view>
   <!-- #endif -->
 </template>
@@ -26,7 +24,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { renderMarkdown } from '@/utils/renderMarkdown'
-// #ifdef APP-PLUS
+// #ifndef H5
 import ChatMarkdown from '@/components/ChatMarkdown.vue'
 // #endif
 
@@ -42,19 +40,15 @@ const props = defineProps({
   streaming: {
     type: Boolean,
     default: false
+  },
+  nativeRenderer: {
+    type: Boolean,
+    default: false
   }
 })
 
-// APP streaming uses the same reactive view/text renderer as group-chat @AI.
-// Keep completed messages and other platforms on their existing renderer.
-const useNativeStream = computed(() => {
-  // #ifdef APP-PLUS
-  return props.streaming
-  // #endif
-  // #ifndef APP-PLUS
-  return false
-  // #endif
-})
+// Native streaming and explicitly selected completed messages use the view-based Markdown renderer.
+const useNativeRenderer = computed(() => props.streaming || props.nativeRenderer)
 
 const renderedHtml = computed(() => renderMarkdown(props.markdown || ''))
 
@@ -229,7 +223,7 @@ const plainText = computed(() => {
 }
 
 /* #ifdef APP-PLUS */
-.md-stream {
+.md-native {
   font-size: inherit;
   line-height: inherit;
   color: inherit;

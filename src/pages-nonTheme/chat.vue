@@ -269,37 +269,37 @@
                 <view class="more-grid">
                     <view class="more-item" @click="chooseImage">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #43cea2, #185a9d);">
-                            <ManifestIcon class="more-icon" id="image_gallery" :scale="1.1" />
+                            <ManifestIcon class="more-icon" id="image_gallery" :scale="1.5" />
                         </view>
                         <text class="more-text">图片</text>
                     </view>
                     <view class="more-item" @click="shootPhoto">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #667eea, #764ba2);">
-                            <ManifestIcon class="more-icon" id="camera_scan" />
+                            <ManifestIcon class="more-icon" id="camera_scan" :scale="1.5" />
                         </view>
                         <text class="more-text">拍照</text>
                     </view>
                     <view class="more-item" @click="chooseVideo">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
-                            <ManifestIcon class="more-icon" id="video" :scale="1.1" />
+                            <ManifestIcon class="more-icon" id="video" :scale="1.5" />
                         </view>
                         <text class="more-text">视频</text>
                     </view>
                     <view class="more-item" @click="recordVideo">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
-                            <ManifestIcon class="more-icon" id="video" :scale="1.1" />
+                            <ManifestIcon class="more-icon" id="video" :scale="1.5" />
                         </view>
                         <text class="more-text">录像</text>
                     </view>
                     <view class="more-item" @click="chooseFile">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #fa709a, #fee140);">
-                            <ManifestIcon class="more-icon" id="file_document" :scale="1.1" />
+                            <ManifestIcon class="more-icon" id="file_document" :scale="1.5" />
                         </view>
                         <text class="more-text">文件</text>
                     </view>
                     <view class="more-item" @click="sendLocation">
                         <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #a8edea, #fed6e3);">
-                            <ManifestIcon class="more-icon" id="map_location" />
+                            <ManifestIcon class="more-icon" id="map_location" :scale="1.5" />
                         </view>
                         <text class="more-text">位置</text>
                     </view>

@@ -13,7 +13,7 @@
     <view class="tour-card" :class="{ 'is-visible': cardVisible }" :style="cardStyle" @touchmove.stop.prevent @wheel.stop.prevent>
       <view class="tour-top">
         <view class="step-badge">{{ currentIndex + 1 }} / {{ visibleSteps.length }}</view>
-        <ManifestIcon class="close-btn" id="close" :scale="1" @click="dismiss" />
+        <button class="close-btn" type="button" aria-label="关闭新用户引导" @click="dismiss">×</button>
       </view>
 
       <view class="tip-image-box" v-if="displayedStep.tipImage">
@@ -443,13 +443,25 @@ onBeforeUnmount(() => {
 .close-btn {
   width: 56rpx;
   height: 56rpx;
-  line-height: 52rpx;
-  text-align: center;
+  flex: 0 0 56rpx;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(220, 255, 244, 0.38);
   border-radius: 50%;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.14);
-  font-size: 44rpx;
+  color: #d6fff1;
+  background: rgba(220, 255, 244, 0.17);
+  font-family: Arial, sans-serif;
+  font-size: 40rpx;
+  font-weight: 400;
+  line-height: 1;
   text-shadow: none;
+}
+
+.close-btn::after {
+  border: 0;
 }
 
 .tour-title {

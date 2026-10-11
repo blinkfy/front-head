@@ -46,7 +46,7 @@
                 <!-- #ifdef MP-WEIXIN -->
                 <view class="setting-item" :class="{ 'wechat-setting-disabled': wechatSettingsLoaded && !wechatCanManage }" @click="toggleWechatSharing">
                     <view class="item-left">
-                        <ManifestIcon class="item-icon" id="password" />
+                        <ManifestIcon class="item-icon" id="account_management" />
                         <view class="item-info">
                             <text class="item-title">允许其他微信登录</text>
                             <text class="item-desc">{{ wechatSettingsDescription }}</text>

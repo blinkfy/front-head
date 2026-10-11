@@ -27,7 +27,7 @@
               <view class="register-entry"><text>还没有账号？</text><button type="button" @click="selectWechat">{{ wide ? '扫码注册 ›' : '切换到微信扫码注册' }}</button></view>
             </form>
           </view>
-          <view v-if="wide || mode === 'wechat'" ref="qrColumn" class="wechat-column">
+          <view v-if="wide || mode === 'wechat'" ref="qrColumn" class="wechat-column" :class="{ 'wechat-column-highlight': qrAttention }">
             <H5WechatLoginPanel ref="qrPanel" :dark="dark" :disabled="loading" @busy="qrBusy = $event" @login="emit('qrLogin', $event)" />
           </view>
         </view>
@@ -48,11 +48,12 @@ const props = defineProps({ dark: Boolean, username: String, password: String, s
 const emit = defineEmits(['update:username', 'update:password', 'update:showPassword', 'update:rememberMe', 'update:captchaInput', 'login', 'qrLogin'])
 const usernameModel = computed({ get: () => props.username, set: value => emit('update:username', value) })
 const passwordModel = computed({ get: () => props.password, set: value => emit('update:password', value) })
-const mode = ref('account'), qrBusy = ref(false), captcha = ref(null), qrPanel = ref(null), qrColumn = ref(null)
+const mode = ref('account'), qrBusy = ref(false), qrAttention = ref(false), captcha = ref(null), qrPanel = ref(null), qrColumn = ref(null)
 const media = typeof window !== 'undefined' ? window.matchMedia('(min-width: 901px)') : null
 const wide = ref(media?.matches || false)
 const mascotMotion = ref('enter'), mascotDelay = ref(.2), motionPaused = ref(false)
 const idleMotions = ['bounce', 'sway', 'turn']
+let qrAttentionTimer = null
 function nextMascotMotion() {
   const choices = idleMotions.filter(value => value !== mascotMotion.value)
   mascotDelay.value = 2.5 + Math.random() * 3
@@ -68,8 +69,15 @@ function submitAccount() {
   nextTick(() => { if (!props.loading) qrPanel.value?.resume() })
 }
 async function selectWechat() {
-  if (props.loading || qrBusy.value) return
+  if (props.loading || qrBusy.value) {
+    uni.showToast({ title: props.loading ? '正在登录，请稍候' : '正在完成登录，请稍候', icon: 'none' })
+    return
+  }
   mode.value = 'wechat'
+  qrAttention.value = true
+  clearTimeout(qrAttentionTimer)
+  qrAttentionTimer = setTimeout(() => { qrAttention.value = false; qrAttentionTimer = null }, 2200)
+  uni.showToast({ title: '请扫描右侧二维码完成注册', icon: 'none', duration: 1800 })
   await nextTick()
   const element = qrColumn.value?.$el || qrColumn.value
   element?.scrollIntoView?.({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' })
@@ -81,6 +89,7 @@ onMounted(() => {
   document.addEventListener('visibilitychange', syncMotionVisibility)
 })
 onBeforeUnmount(() => {
+  clearTimeout(qrAttentionTimer)
   media?.removeEventListener('change', resize)
   document.removeEventListener('visibilitychange', syncMotionVisibility)
 })
@@ -90,7 +99,7 @@ defineExpose({ validate: () => captcha.value?.validate() || false, refresh: () =
 <style scoped>
 .h5-login-shell { --ink: #18213a; --muted: #8793a8; --surface: #fff; --card: #ffffffb8; --input: #f7f8fb; --border: #d6dfeb; --green: #00a67b; min-height: 100vh; background: radial-gradient(ellipse at 0 65%, #e3f7ff, transparent 45%), radial-gradient(ellipse at 100% 80%, #effbed, transparent 42%), var(--surface); color: var(--ink); overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; }
 .shell-dark { --ink: #edf5f4; --muted: #a6b8bc; --surface: #101e28; --card: #142831de; --input: #1c303b; --border: #34505a; --green: #62ddb5; background: radial-gradient(ellipse at 0 65%, #173544, transparent 45%), radial-gradient(ellipse at 100% 80%, #193831, transparent 42%), var(--surface); }
-.login-hero { height: 132px; position: relative; background: radial-gradient(ellipse at 40% 15%, #40dcb7a6, transparent 52%), linear-gradient(120deg, #03b98b, #008262); overflow: hidden; }.hero-orb { position: absolute; border: 1px solid #ffffff38; border-radius: 50%; background: #ffffff15; }.orb-left { width: 200px; height: 200px; top: 54px; left: -32px; }.orb-right { width: 280px; height: 280px; top: -112px; right: 8%; }.orb-small { width: 64px; height: 64px; top: 29px; right: 21%; }
+.login-hero { height: 132px; position: relative; background: radial-gradient(ellipse at 40% 15%, #40dcb7a6, transparent 52%), linear-gradient(120deg, #03b98b, #008262); overflow: hidden; }.login-hero::after { content: ''; position: absolute; top: -35%; left: -45%; width: 34%; height: 170%; pointer-events: none; transform: skewX(-22deg); background: linear-gradient(90deg, transparent, #ffffff12, transparent); animation: hero-glint 19s ease-in-out infinite; }.hero-orb { position: absolute; border: 1px solid #ffffff38; border-radius: 50%; background: #ffffff15; animation: hero-orb-drift 18s ease-in-out infinite; }.orb-left { width: 200px; height: 200px; top: 54px; left: -32px; animation-delay: -6s; }.orb-right { width: 280px; height: 280px; top: -112px; right: 8%; animation-duration: 23s; }.orb-small { width: 64px; height: 64px; top: 29px; right: 21%; animation-delay: -11s; animation-duration: 16s; }
 .hero-brand { display: flex; justify-content: center; align-items: center; gap: 14px; position: relative; color: #fff; padding-top: 25px; }.brand-logo { width: 64px; height: 64px; display: grid; place-items: center; border: 1px solid #ffffff80; border-radius: 17px; background: #ffffff24; box-shadow: inset 0 0 22px #ffffff18; }.brand-mascot { width: 58px; height: 58px; }.brand-copy { display: flex; flex-direction: column; }.brand-name { font-size: 25px; font-weight: 700; }.brand-slogan { font-size: 14px; margin-top: 5px; }
 .mascot-motion { display: flex; transform-origin: center bottom; animation-fill-mode: both; animation-timing-function: ease-in-out; }.mascot-enter { animation-name: mascot-enter; animation-duration: .85s; }.mascot-bounce { animation-name: mascot-bounce; animation-duration: 1.25s; }.mascot-sway { animation-name: mascot-sway; animation-duration: 1.5s; }.mascot-turn { animation-name: mascot-turn; animation-duration: 1.4s; }.motion-paused { animation-play-state: paused; }
 @keyframes mascot-enter { 0% { opacity: 0; transform: translateY(-22px) scale(.3); } 45% { opacity: 1; transform: translateY(-7px) scale(1.12) rotate(-7deg); } 65% { transform: translateY(3px) scale(.96) rotate(5deg); } 85% { transform: translateY(-2px) scale(1.03); } 100% { transform: none; } }
@@ -101,11 +110,17 @@ defineExpose({ validate: () => captcha.value?.validate() || false, refresh: () =
 .account-heading { display: flex; align-items: center; gap: 17px; }.account-icon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: #e6fbf3; }.account-title { display: block; font-size: 23px; font-weight: 700; }.account-description { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; }.account-form { display: block; margin-top: 39px; }.account-input { display: flex; align-items: center; gap: 13px; min-height: 53px; margin-bottom: 18px; padding: 0 15px; background: var(--input); border: 1px solid var(--border); border-radius: 12px; box-sizing: border-box; }.account-input:focus-within { border-color: #32bd9b; box-shadow: 0 0 0 3px #06b78912; }.account-input input { flex: 1; min-width: 0; font-size: 17px; color: var(--ink); height: 51px; }.account-input input::placeholder { color: var(--muted); }.eye-toggle { display: grid; place-items: center; padding: 0; margin: 0; background: transparent; border: 0; line-height: 1; }.eye-toggle::after { border: 0; }
 .account-options { margin: 4px 0 22px; }.remember-toggle { display: inline-flex; gap: 10px; align-items: center; border: 0; background: transparent; margin: 0; padding: 0; font-size: 15px; color: var(--ink); line-height: 1.6; }.remember-toggle::after { border: 0; }.remember-check { width: 21px; height: 21px; border-radius: 5px; border: 1px solid var(--border); display: grid; place-items: center; box-sizing: border-box; }.remember-check.checked { color: #fff; background: linear-gradient(130deg, #23d1a0, #00a578); border-color: #08b48a; }
 .account-submit { width: 100%; min-height: 54px; border: 0; border-radius: 999px; display: flex; align-items: center; justify-content: center; gap: 9px; background: linear-gradient(110deg, #3ed8a9, #00a77e); color: #fff; font-size: 19px; font-weight: 600; box-shadow: 0 8px 20px #04b48738; }.account-submit::after { border: 0; }.account-submit[disabled] { opacity: .6; color: #fff; background: #1da786; }.account-caption { display: block; text-align: center; font-size: 13px; color: var(--muted); margin-top: 20px; }.register-entry { margin-top: 43px; padding-top: 25px; border-top: 1px solid #e2e9ef; display: flex; justify-content: center; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }.register-entry button { padding: 0; margin: 0; line-height: 1.6; font-size: inherit; color: var(--green); background: transparent; border: 0; font-weight: 600; }.register-entry button::after { border: 0; }.captcha-section { font-size: 13px; margin-bottom: 15px; }.captcha-hint { display: block; color: #db5966; margin-top: 6px; }
-.mobile-tabs, .mobile-hint { display: none; }.login-footer { position: relative; z-index: 1; display: block; text-align: center; font-size: 13px; color: var(--muted); margin-top: 22px; }.stage-orb { position: absolute; border-radius: 50%; pointer-events: none; }.stage-blue { width: 180px; height: 180px; background: #e1ebff; right: -40px; top: -20px; }.stage-green { width: 160px; height: 160px; background: linear-gradient(135deg, #6ee7b7, #34d399, #10b981); opacity: .5; left: 34px; bottom: -12px; }.stage-yellow { width: 210px; height: 210px; background: #faffdc; right: -70px; top: 55%; }
+.mobile-tabs, .mobile-hint { display: none; }.login-footer { position: relative; z-index: 1; display: block; text-align: center; font-size: 13px; color: var(--muted); margin-top: 22px; }.stage-orb { position: absolute; border-radius: 50%; pointer-events: none; animation: stage-orb-drift 17s ease-in-out infinite; }.stage-blue { width: 180px; height: 180px; background: #e1ebff; right: -40px; top: -20px; animation-delay: -7s; }.stage-green { width: 160px; height: 160px; background: linear-gradient(135deg, #6ee7b7, #34d399, #10b981); opacity: .5; left: 34px; bottom: -12px; animation-duration: 21s; }.stage-yellow { width: 210px; height: 210px; background: #faffdc; right: -70px; top: 55%; animation-delay: -12s; animation-duration: 19s; }
 .saturn-ring { position: absolute; top: 50%; left: 50%; width: 260%; height: 29%; border-radius: 50%; transform: translate(-50%, -50%) rotate(17deg) scaleY(.38); background: linear-gradient(90deg, transparent, #34d39966 25%, #6ee7b7b3 45%, #34d39999 70%, transparent); }.saturn-ring::before { content: ''; position: absolute; inset: 25% 15%; border-radius: 50%; background: #a7f3d044; }.stage-blue .saturn-ring { background: linear-gradient(90deg, transparent, #93c5fd66, #60a5fa88, transparent); transform: translate(-50%, -50%) rotate(-17deg) scaleY(.38); }.stage-yellow .saturn-ring { background: linear-gradient(90deg, transparent, #fcd34d44, #fbbf2466, transparent); }
 .shell-dark .login-glass { border-color: #5fa58e4d; background: linear-gradient(180deg, #225f4d55, transparent 100px), var(--card); box-shadow: 0 18px 48px #0003; }.shell-dark .wechat-column, .shell-dark .register-entry { border-color: #31515a; }.shell-dark .account-icon { background: #20483d; }.shell-dark .stage-orb { opacity: .16; }
 .submit-spinner { width: 17px; height: 17px; border: 2px solid #ffffff60; border-top-color: white; border-radius: 50%; animation: submit-spin 900ms linear infinite; }@keyframes submit-spin { to { transform: rotate(360deg); } }
+.stage-orb .saturn-ring { animation: ring-breathe 8s ease-in-out infinite; }
+@keyframes hero-orb-drift { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(8px, -11px, 0); } }
+@keyframes stage-orb-drift { 0%, 100% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(0, -9px, 0) scale(1.035); } }
+@keyframes ring-breathe { 0%, 100% { opacity: .72; } 50% { opacity: 1; } }
+@keyframes hero-glint { 0%, 68%, 100% { transform: skewX(-22deg) translate3d(0, 0, 0); opacity: 0; } 74% { opacity: 1; } 92% { transform: skewX(-22deg) translate3d(490%, 0, 0); opacity: 0; } }
+.wechat-column-highlight { border-radius: 20px; animation: qr-column-attention 1.1s ease-in-out 2; }@keyframes qr-column-attention { 0%, 100% { box-shadow: 0 0 0 0 #00a77c00; } 45% { box-shadow: 0 0 0 5px #00a77c20, 0 0 24px #00a77c24; } }
 @media (max-width: 1100px) and (min-width: 901px) { .login-glass { width: calc(100% - 50px); padding: 28px 20px 24px; }.login-columns { gap: 23px; }.account-column { padding-left: 5px; padding-right: 5px; }.wechat-column { padding-left: 23px; } }
 @media (max-width: 900px) { .login-hero { height: 212px; }.hero-brand { flex-direction: column; gap: 0; padding-top: 25px; }.brand-copy { align-items: center; }.brand-name { font-size: 29px; margin-top: 8px; }.brand-slogan { font-size: 15px; }.brand-logo { width: 68px; height: 68px; }.brand-mascot { width: 61px; height: 61px; }.login-stage { margin-top: -26px; }.login-glass { width: calc(100% - 30px); max-width: 540px; padding: 22px 20px 25px; border-radius: 24px; }.login-columns { display: block; }.account-column { padding: 0; }.account-heading { display: none; }.account-form { margin-top: 0; }.wechat-column { padding: 0; border: 0; }.mobile-tabs { display: flex; padding: 5px; border-radius: 999px; background: #e9faf4; margin-bottom: 15px; }.mobile-tabs button { flex: 1; padding: 9px 0; margin: 0; border: 0; background: transparent; color: var(--ink); font-size: 16px; line-height: 1.7; border-radius: 999px; }.mobile-tabs button::after { border: 0; }.mobile-tabs button.selected { color: #fff; background: linear-gradient(110deg, #21cfa0, #00a577); box-shadow: 0 4px 12px #13b88b24; }.mobile-hint { display: block; text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 23px; line-height: 1.6; }.account-input { min-height: 51px; margin-bottom: 17px; border-radius: 13px; padding: 0 12px; gap: 9px; }.account-input input { font-size: 16px; height: 49px; }.account-options { margin: 3px 0 22px; }.remember-toggle { font-size: 15px; }.account-submit { min-height: 49px; font-size: 18px; }.account-caption { display: none; }.register-entry { border: 0; margin-top: 24px; padding-top: 0; font-size: 13px; }.login-footer { font-size: 12px; margin-top: 29px; padding: 0 15px; }.stage-green { left: 16px; bottom: -38px; width: 140px; height: 140px; }.shell-dark .mobile-tabs { background: #21453d; } }
-@media (prefers-reduced-motion: reduce) { .submit-spinner, .mascot-motion { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .submit-spinner, .mascot-motion, .wechat-column-highlight, .hero-orb, .stage-orb, .login-hero::after { animation: none; } }
 </style>

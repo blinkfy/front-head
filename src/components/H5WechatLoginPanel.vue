@@ -7,7 +7,7 @@
     <view class="qr-halo">
       <view class="qr-leaf leaf-left"></view><view class="qr-leaf leaf-right"></view>
       <view class="qr-disc" :aria-busy="qrState === 'loading'">
-        <image v-if="qrSource" class="qr-image" :class="{ ready: qrState === 'ready' }" :src="qrSource" mode="aspectFit" @load="qrState = 'ready'" @error="qrState = 'error'" />
+        <image v-if="qrSource" class="qr-image qr-saveable-target" :class="{ ready: qrState === 'ready' }" :src="qrSource" mode="aspectFit" @load="qrState = 'ready'" @error="qrState = 'error'" @longpress="openQrMenu" @contextmenu="suppressQrContextMenu" />
         <view v-if="qrState !== 'ready' || terminal" class="qr-placeholder" role="status">
           <view v-if="qrState === 'loading' && !terminal" class="qr-spinner"></view>
           <ManifestIcon v-else id="camera_scan" :scale="2.6" />
@@ -28,12 +28,15 @@
     <text class="version-hint">若小程序未出现网页登录确认，完成注册后可用账号密码登录。</text>
     <button class="qr-refresh" :disabled="status === 'loading' || status === 'consuming' || disabled" @click="refresh">↻　刷新二维码</button>
   </view>
+  <WechatQrDownloadMenu :menu="qrMenu" :dark="dark" @close="closeQrMenu" @download="downloadQr" />
 </template>
 
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { useWechatQrSave } from '@/utils/use-wechat-qr-save.js'
+import WechatQrDownloadMenu from '@/components/WechatQrDownloadMenu.vue'
 import { registrationApi } from '@/utils/registration-relay.js'
 import { createH5RegistrationRelay } from '@/utils/registration-relay.mjs'
 
@@ -41,6 +44,7 @@ const props = defineProps({ dark: Boolean, disabled: Boolean })
 const emit = defineEmits(['login', 'busy'])
 const qrSource = ref(''), qrState = ref('loading'), status = ref('loading'), message = ref('正在创建专属二维码…'), reference = ref('')
 const terminal = computed(() => ['expired', 'consumed', 'uncertain', 'cancelled'].includes(status.value))
+const { qrMenu, openQrMenu, closeQrMenu, downloadQr, suppressQrContextMenu } = useWechatQrSave(qrSource, () => qrState.value !== 'ready' || terminal.value || props.disabled)
 const messages = { loading: '正在创建专属二维码…', waiting: '等待微信扫码…', scanned: '已扫码，请在小程序中继续',
   authorized: '已确认，正在登录…', consuming: '正在登录…', complete: '登录成功，正在进入首页…',
   expired: '已过期，请刷新二维码', consumed: '登录结果已领取，请重新扫码', cancelled: '本次扫码已取消' }
@@ -86,14 +90,17 @@ defineExpose({ pause, resume })
 .wechat-login-panel { --ink: #172039; --muted: #8793a8; --green: #00a77c; color: var(--ink); width: 100%; }
 .panel-dark { --ink: #edf6f4; --muted: #a4b7bc; --green: #65dfba; }
 .panel-heading { display: flex; gap: 15px; align-items: flex-start; }.heading-icon { flex: 0 0 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: #e5fbf1; }.panel-title { display: block; font-size: 23px; font-weight: 700; line-height: 1.45; }.panel-description { display: block; margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.65; }
-.qr-halo { position: relative; width: 250px; height: 250px; display: grid; place-items: center; border-radius: 50%; margin: 17px auto 12px; background: radial-gradient(circle, transparent 57%, #def9ee80 58%, #ebfbf480 70%, transparent 71%); }.qr-disc { position: relative; width: 82%; height: 82%; border-radius: 50%; background: #fff; overflow: hidden; }.qr-image { width: 100%; height: 100%; opacity: 0; transition: opacity 200ms; }.qr-image.ready { opacity: 1; }.qr-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 13px; background: #ffffffed; color: #668b80; font-size: 12px; text-align: center; }.qr-spinner { width: 24px; height: 24px; border: 3px solid #ddf6eb; border-top-color: #00ae80; border-radius: 50%; animation: qr-spin 900ms linear infinite; }
-.qr-leaf { position: absolute; width: 29px; height: 15px; border-radius: 2px 90% 2px 90%; background: linear-gradient(130deg, #d0ec8c, #7acc80); }.leaf-left { left: 2px; top: 29px; transform: rotate(24deg); }.leaf-right { right: 0; bottom: 40px; transform: rotate(-55deg); }
+.qr-halo { position: relative; width: 250px; height: 250px; display: grid; place-items: center; border-radius: 50%; margin: 17px auto 12px; background: radial-gradient(circle, transparent 57%, #def9ee80 58%, #ebfbf480 70%, transparent 71%); }.qr-halo::before { content: ''; position: absolute; inset: 16px; border: 1px solid #83d9ad24; border-radius: 50%; pointer-events: none; animation: halo-breathe 6s ease-in-out infinite; }.qr-disc { position: relative; width: 82%; height: 82%; border-radius: 50%; background: #fff; overflow: hidden; }.qr-image { width: 100%; height: 100%; opacity: 0; transition: opacity 200ms; }.qr-image.ready { opacity: 1; }.qr-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 13px; background: #ffffffed; color: #668b80; font-size: 12px; text-align: center; }.qr-spinner { width: 24px; height: 24px; border: 3px solid #ddf6eb; border-top-color: #00ae80; border-radius: 50%; animation: qr-spin 900ms linear infinite; }
+.qr-leaf { position: absolute; width: 29px; height: 15px; border-radius: 2px 90% 2px 90%; background: linear-gradient(130deg, #d0ec8c, #7acc80); }.leaf-left { left: 2px; top: 29px; transform: rotate(24deg); animation: leaf-drift-left 5.5s ease-in-out infinite; }.leaf-right { right: 0; bottom: 40px; transform: rotate(-55deg); animation: leaf-drift-right 6.4s ease-in-out infinite; }
 .scan-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 4px 0 20px; }.scan-step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; text-align: center; }.scan-step:not(:last-child)::after { content: ''; position: absolute; left: 76%; top: 20px; width: 60%; border-top: 1px dashed #d5e9e2; }.step-number { width: 21px; height: 21px; display: grid; place-items: center; border-radius: 50%; background: #04b583; color: #fff; font-size: 13px; }.step-title { font-size: 13px; font-weight: 600; }.step-description { color: var(--muted); font-size: 11px; line-height: 1.55; }
 .scan-status { display: flex; align-items: center; gap: 14px; min-height: 68px; padding: 8px 15px; border-radius: 21px; background: #e6faf3; box-sizing: border-box; }.status-icon { flex: 0 0 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: #fff9; }.status-title { display: block; color: var(--green); font-size: 15px; font-weight: 600; line-height: 1.4; }.status-detail { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.5; }
 .qr-refresh { display: block; width: 100%; margin-top: 10px; border: 1px solid #55cbb0; border-radius: 999px; color: var(--green); background: transparent; min-height: 39px; line-height: 39px; font-size: 15px; }.qr-refresh::after { border: 0; }.qr-refresh[disabled] { opacity: .5; background: transparent; color: var(--muted); }
 .version-hint { display: block; margin: 9px 2px 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
 .panel-dark .heading-icon { background: #214d40; }.panel-dark .scan-status { background: #193d34; }.panel-dark .status-icon { background: #31594e; }.panel-dark .scan-step::after { border-color: #3a6358; }
 @keyframes qr-spin { to { transform: rotate(360deg); } }
+@keyframes leaf-drift-left { 0%, 100% { transform: translate3d(0, 0, 0) rotate(24deg); } 50% { transform: translate3d(5px, -7px, 0) rotate(40deg); } }
+@keyframes leaf-drift-right { 0%, 100% { transform: translate3d(0, 0, 0) rotate(-55deg); } 50% { transform: translate3d(-6px, 5px, 0) rotate(-38deg); } }
+@keyframes halo-breathe { 0%, 100% { opacity: .38; transform: scale(.98); } 50% { opacity: .85; transform: scale(1.02); } }
 @media (max-width: 900px) { .panel-heading { display: none; }.qr-halo { width: 225px; height: 225px; margin-top: 5px; }.scan-steps { gap: 8px; }.step-title { font-size: 12px; }.step-description { font-size: 10px; }.scan-status { padding: 10px; gap: 10px; }.status-title { font-size: 13px; }.status-detail { font-size: 11px; } }
-@media (prefers-reduced-motion: reduce) { .qr-spinner { animation: none; }.qr-image { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .qr-spinner, .qr-leaf, .qr-halo::before { animation: none; }.qr-image { transition: none; } }
 </style>

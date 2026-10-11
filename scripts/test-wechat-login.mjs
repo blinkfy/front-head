@@ -323,7 +323,7 @@ async function testApiBranches() {
     const body = extractAsyncFunction(source, 'register')
     assert.ok(/let url = '\/api\/register'/.test(body))
     assert.ok(/let payload = data/.test(body))
-    assert.ok(/#ifdef MP-WEIXIN[\s\S]*url = '\/api\/wechat\/register'[\s\S]*payload = \{ \.\.\.data, wechatCode: await getWechatLoginCode\(uni\) \}[\s\S]*#endif/.test(body))
+    assert.ok(/#ifdef MP-WEIXIN[\s\S]*url = '\/api\/wechat\/register'[\s\S]*payload = \{ \.\.\.data, nickname: data\.username, wechatCode: await getWechatLoginCode\(uni\) \}[\s\S]*#endif/.test(body))
     assert.ok(/const requestOptions = \{ url, method: 'POST', data: payload \}/.test(body))
     assert.ok(/#ifdef H5[\s\S]*requestOptions.header = \{ 'X-Client-Platform': 'h5' \}/.test(body))
     assert.ok(/return request\(requestOptions\)/.test(body))

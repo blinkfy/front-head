@@ -51,10 +51,11 @@
           <view class="input-wrapper-simple">
             <input
               v-model="username"
+              @blur="username = $event.detail.value"
               placeholder="请输入用户名"
               maxlength="20"
               class="form-input-simple"
-              type="text"
+              :type="usernameInputType"
               @confirm="handleEnterKey"
               @keyup.enter="handleEnterKey"
               @keyup="handleKeyup"
@@ -176,6 +177,10 @@ onLoad(options => {
 
 // 表单字段
 const username = ref('')
+let usernameInputType = 'text'
+// #ifdef MP-WEIXIN
+usernameInputType = typeof uni.canIUse === 'function' && uni.canIUse('input.type.nickname') ? 'nickname' : 'text'
+// #endif
 const password = ref('')
 const confirmPwd = ref('')
 const showPwd = ref(false)

@@ -8,7 +8,7 @@ export async function register(data) {
   let payload = data
   // #ifdef MP-WEIXIN
   url = '/api/wechat/register'
-  payload = { ...data, wechatCode: await getWechatLoginCode(uni) }
+  payload = { ...data, nickname: data.username, wechatCode: await getWechatLoginCode(uni) }
   // #endif
   const requestOptions = { url, method: 'POST', data: payload }
   // #ifdef H5
@@ -48,10 +48,14 @@ export function bindWechat(data, token) {
   })
 }
 
+// #endif
+
+// Binding status is also used by the H5/App login reminder.
 export function getWechatLoginSettings() {
   return request({ url: '/api/wechat/login-settings', needAuth: true, silent: true })
 }
 
+// #ifdef MP-WEIXIN
 export function updateWechatLoginSettings(allowOtherWechatLogin) {
   return request({
     url: '/api/wechat/login-settings', method: 'PUT', needAuth: true, silent: true,

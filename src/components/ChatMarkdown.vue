@@ -57,13 +57,13 @@ const renderedHtml = computed(() => renderMarkdown(props.markdown || ''))
             <!-- 表头 -->
             <view v-if="block.header" class="chat-markdown-table-row header-row">
               <text v-for="(cell, cellIndex) in block.header" :key="cellIndex" class="chat-markdown-table-cell header-cell">
-                {{ cell }}
+                <text v-for="(token, tokenIndex) in cell" :key="tokenIndex" :class="[`chat-markdown-inline-${token.type}`]">{{ token.text }}</text>
               </text>
             </view>
             <!-- 表体 -->
             <view v-for="(row, rowIndex) in block.rows" :key="rowIndex" class="chat-markdown-table-row">
               <text v-for="(cell, cellIndex) in row" :key="cellIndex" class="chat-markdown-table-cell">
-                {{ cell }}
+                <text v-for="(token, tokenIndex) in cell" :key="tokenIndex" :class="[`chat-markdown-inline-${token.type}`]">{{ token.text }}</text>
               </text>
             </view>
           </view>
@@ -115,15 +115,22 @@ function flushParagraph(blocks, lines) {
 
 function isTableSeparator(line) {
   const trimmed = line.trim()
-  if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) return false
-  const cells = trimmed.split('|').slice(1, -1)
+  if (!trimmed.includes('|')) return false
+  const cells = splitTableCells(trimmed)
   return cells.length > 0 && cells.every(cell => /^\s*:?-+:?\s*$/.test(cell))
+}
+
+function splitTableCells(line) {
+  let row = line.trim()
+  if (row.startsWith('|')) row = row.slice(1)
+  if (row.endsWith('|')) row = row.slice(0, -1)
+  return row.split('|').map(cell => cell.trim())
 }
 
 function parseTableRow(line) {
   const trimmed = line.trim()
-  if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) return null
-  return trimmed.split('|').slice(1, -1).map(cell => cell.trim())
+  if (!trimmed.includes('|')) return null
+  return splitTableCells(trimmed)
 }
 
 function parseMarkdown(markdown) {
@@ -154,7 +161,7 @@ function parseMarkdown(markdown) {
       continue
     }
 
-    const heading = line.match(/^\s{0,3}(#{1,3})\s+(.+?)\s*#*\s*$/)
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/)
     if (heading) {
       flushParagraph(blocks, paragraph)
       blocks.push({ type: 'heading', level: heading[1].length, tokens: inlineTokens(heading[2]) })
@@ -211,7 +218,7 @@ function parseMarkdown(markdown) {
         index += 1
       }
       index -= 1
-      blocks.push({ type: 'table', header, rows })
+      blocks.push({ type: 'table', header: header.map(inlineTokens), rows: rows.map(row => row.map(inlineTokens)) })
       continue
     }
 
@@ -387,6 +394,8 @@ export default {
   flex: 1;
   min-width: 100rpx;
   padding: 12rpx 14rpx;
+  font-size: 28rpx;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
 }

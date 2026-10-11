@@ -158,6 +158,31 @@ export function commitRegistrationLogin(runtime, result) {
   runtime.setStorageSync('autoLogin', true)
 }
 
+// A native dialog failure is not a user cancellation. Keep the scanned session
+// available for retry; only an explicit cancel result may revoke it.
+export function createRegistrationDialogs(runtime) {
+  const show = options => new Promise((resolve, reject) => runtime.showModal({
+    ...options,
+    success: answer => {
+      if (answer?.confirm === true) resolve(true)
+      else if (answer?.cancel === true) resolve(false)
+      else reject(failed(answer))
+    },
+    fail: error => reject(failed(error))
+  }))
+  const failed = cause => Object.assign(new Error('确认窗口未能打开，请重试网页登录'), {
+    reason: 'REGISTRATION_CONFIRM_FAILED', cause
+  })
+  return {
+    confirm: (account, sessionId) => show({ title: '确认登录网页',
+      content: `是否使用当前账号${account ? '“' + account + '”' : ''}登录刚才扫码的分投侠网页（${sessionId.slice(-6)}）？请仅确认您本人打开的网页。`,
+      confirmText: '确认登录', cancelText: '暂不登录' }),
+    retry: () => show({ title: '网页登录未完成',
+      content: '您已在小程序登录成功。可单独重试网页登录，或继续使用小程序。',
+      confirmText: '重试登录', cancelText: '继续使用' })
+  }
+}
+
 // Only the session ID/expiry/verification flag live in module memory. No login code is retained.
 export function createMiniRegistrationRelay({ api, getCode, confirm, onError, now = Date.now }) {
   let pending = null, scanTask = null, scanIntent = null, scanRequest = null, authorizationTask = null
