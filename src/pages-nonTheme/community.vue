@@ -18,8 +18,8 @@
           <view class="title-icon-pill"><ManifestIcon id="community_home" /></view>
           <text class="nav-title">环保社区</text>
         </view>
-        <view class="nav-right" v-if="myCommunity">
-          <view class="action-icon-btn" @click="goToPublish">
+        <view class="nav-right">
+          <view v-if="myCommunity" class="action-icon-btn" @click="goToPublish">
             <ManifestIcon class="nav-action-icon" id="post_edit" />
           </view>
         </view>
@@ -738,6 +738,8 @@ export default {
 .dark-mode .navbar .nav-right .nav-action-icon {
   filter: saturate(1.2) brightness(1.08) drop-shadow(0 0 4rpx rgba(255, 255, 255, 0.4));
 }
+.nav-left, .nav-right { flex: 0 0 80rpx; }
+.nav-right { display: flex; justify-content: flex-end; }
 .nav-title-wrap {
   display: flex; align-items: center; gap: 12rpx;
   flex: 1; justify-content: center;
@@ -776,7 +778,14 @@ export default {
   height: calc(100vh - 180rpx);
   height: calc(100vh - max(env(safe-area-inset-top), 44rpx) - 136rpx);
 }
-.content-wrapper { padding: 32rpx; padding-bottom: 160rpx; }
+.content-wrapper {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 32rpx;
+  padding-bottom: 160rpx;
+  box-sizing: border-box;
+}
 
 /* ===== 我的社区卡片 ===== */
 .my-community-card {

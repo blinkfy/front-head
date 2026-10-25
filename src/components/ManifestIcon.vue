@@ -30,7 +30,8 @@ const warnedFailedSources = new Set()
 
 const props = defineProps({
   id: { type: String, required: true },
-  scale: { type: Number, default: 1.8 }
+  scale: { type: Number, default: 1.8 },
+  size: { type: String, default: '' }
 })
 const emit = defineEmits(['click'])
 
@@ -39,7 +40,9 @@ const failedSource = ref('')
 const placeholderOnly = ref(false)
 const iconStyle = computed(() => props.id === 'back'
   ? { width: '80rpx', height: '80rpx', padding: '0', boxSizing: 'border-box' }
-  : { width: `${props.scale}em`, height: `${props.scale}em` })
+  : props.size
+    ? { width: props.size, height: props.size }
+    : { width: `${props.scale}em`, height: `${props.scale}em` })
 const source = computed(() => {
   const requestedSource = getManifestIconPath(props.id)
   if (requestedSource) return requestedSource === failedSource.value ? fallbackSource : requestedSource

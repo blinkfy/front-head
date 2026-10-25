@@ -358,6 +358,8 @@ export default {
 }
 .cancel-text { color: #6b7280; font-size: 28rpx; font-weight: 500; }
 .dark-mode .cancel-text { color: rgba(255, 255, 255, 0.7); }
+.nav-left, .nav-right { flex: 0 0 120rpx; box-sizing: border-box; }
+.nav-right { display: flex; align-items: center; justify-content: flex-end; }
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
   width: 56rpx; height: 56rpx;
@@ -383,7 +385,15 @@ export default {
 .publish-btn.disabled text { color: #fff; opacity: 0.8; }
 
 /* ===== 主内容区 ===== */
-.content-wrapper { position: relative; z-index: 10; padding: 32rpx; }
+.content-wrapper {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32rpx;
+  box-sizing: border-box;
+}
 
 /* ===== 区块 ===== */
 .section { margin-bottom: 40rpx; }

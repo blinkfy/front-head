@@ -72,9 +72,9 @@
             </view>
           </SmartSortRecognitionVisual>
           <text class="upload-title" v-if="!isProcessing">点击拍照识别</text>
-          <text class="upload-title processing" v-else>AI识别中</text>
+          <text class="upload-title processing" v-else>识别/排队中</text>
           <text class="upload-desc" v-if="!isProcessing">支持 JPG、PNG 格式</text>
-          <text class="upload-desc processing" v-else>正在分析中...</text>
+          <text class="upload-desc processing" v-else>{{ processStatus }}</text>
         </view>
       </view>
 
@@ -322,6 +322,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { onPageScroll, onShow, onHide, onUnload, onResize } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
+import { getRecognitionCompressionDecision, getRecognitionImageSize, isSmallerRecognitionImage, shouldUseCompressedRecognitionImage } from '@/utils/recognition-image.mjs'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { scanAndConnectDevice } from '@/utils/device-qr'
@@ -682,8 +683,8 @@ watch([showAppOnboarding, onboardingAutoScrolling], ([visible, autoScrolling]) =
 }, { immediate: true })
 
 const compressionConfig = {
-  h5: { quality: 0.99, maxWidth: 800, maxHeight: 800 },
-  miniProgram: { quality: 100, maxSize: 800 }
+  h5: { quality: 0.82, maxWidth: 800, maxHeight: 800 },
+  miniProgram: { quality: 80, maxSize: 800 }
 }
 
 onMounted(() => {
@@ -1243,9 +1244,10 @@ function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
         const originalWidth = width
         const originalHeight = height
         
-        if (width > maxWidth) {
-          height = (height * maxWidth) / width
-          width = maxWidth
+        if (Math.max(width, height) > maxWidth) {
+          const scale = maxWidth / Math.max(width, height)
+          width = Math.round(width * scale)
+          height = Math.round(height * scale)
         }
         
         canvas.width = width
@@ -1318,7 +1320,7 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
   })
 }
 
-async function processImage(filePath) {
+async function processImage(filePath, selectedFile = null) {
   failedPreviewPending.value = false
   const taskId = beginRecognitionTask('图片处理中...')
   activeRecognitionTaskId = taskId
@@ -1332,38 +1334,50 @@ async function processImage(filePath) {
     processStatus.value = '图片处理中...'
     showRecognitionLoading('处理中...')
     
-    let compressedFile = filePath
+    const originalSize = await getRecognitionImageSize(filePath, selectedFile?.size)
+    const originalFile = isH5Platform.value && typeof File !== 'undefined' && selectedFile instanceof File
+      ? selectedFile : filePath
+    const { shouldCompress, needsJpegConversion } = await getRecognitionCompressionDecision(
+      filePath, originalSize, isH5Platform.value && typeof originalFile !== 'string' ? originalFile.type : ''
+    )
+    let compressedFile = originalFile
     let compressedBlob = null
     
     try {
-      if (isH5Platform.value) {
+      if (isH5Platform.value && (shouldCompress || needsJpegConversion)) {
         processStatus.value = '正在压缩...'
         updateRecognitionTask(taskId, processStatus.value)
         const { quality, maxWidth } = compressionConfig.h5
-        compressedBlob = await compressImage(filePath, quality, maxWidth)
-        const timestamp = Date.now()
-        const randomId = Math.random().toString(36).substring(2, 8)
-        compressedFile = new File([compressedBlob], `compressed_${timestamp}_${randomId}.jpg`, { type: 'image/jpeg' })
-      } else {
+        const candidate = await compressImage(filePath, quality, maxWidth)
+        if (shouldUseCompressedRecognitionImage(originalSize, candidate.size, needsJpegConversion)) {
+          compressedBlob = candidate
+          const timestamp = Date.now()
+          const randomId = Math.random().toString(36).substring(2, 8)
+          compressedFile = new File([candidate], `compressed_${timestamp}_${randomId}.jpg`, { type: 'image/jpeg' })
+        }
+      } else if (shouldCompress) {
         processStatus.value = '正在优化...'
         updateRecognitionTask(taskId, processStatus.value)
         const { quality, maxSize } = compressionConfig.miniProgram
-        compressedFile = await compressImageMiniProgram(filePath, quality, maxSize)
+        const candidate = await compressImageMiniProgram(filePath, quality, maxSize)
+        const candidateSize = candidate === filePath ? 0 : await getRecognitionImageSize(candidate)
+        if (isSmallerRecognitionImage(originalSize, candidateSize)) compressedFile = candidate
       }
     } catch (compressError) {
       console.warn('图片压缩失败，使用原图:', compressError)
-      compressedFile = filePath
+      compressedFile = originalFile
+      compressedBlob = null
     }
     
     if (isH5Platform.value && compressedBlob) {
       resultImage.value = URL.createObjectURL(compressedBlob)
     } else {
-      resultImage.value = compressedFile
+      resultImage.value = typeof compressedFile === 'string' ? compressedFile : filePath
     }
     
-    processStatus.value = 'AI识别中...'
+    processStatus.value = '业务繁忙时会自动排队，本地模型首次加载需等待，请耐心等待'
     updateRecognitionTask(taskId, processStatus.value)
-    showRecognitionLoading('识别中...')
+    showRecognitionLoading('识别/排队中')
     const recognitionRequest = recognizeImage(compressedFile)
     robotState.value = 'processing'
     const res = await recognitionRequest
@@ -1455,7 +1469,7 @@ function onAddImage() {
     success: (chooseRes) => {
       const filePath = chooseRes.tempFilePaths[0]
       isProcessing.value = true
-      processImage(filePath).catch(() => isProcessing.value = false)
+      processImage(filePath, chooseRes.tempFiles?.[0]).catch(() => isProcessing.value = false)
     },
     fail: () => {
       if (!keepFailureFeedback) robotState.value = 'idle'

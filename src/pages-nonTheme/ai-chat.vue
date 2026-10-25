@@ -109,7 +109,7 @@
         </view>
         <view
           v-for="(msg, idx) in messageList"
-          :key="`${msg.createdAt || idx}_${idx}`"
+          :key="getMessageKey(msg.id)"
           :class="['message-row', msg.role === 'user' ? 'from-user' : 'from-assistant']"
         >
           <image v-if="msg.role !== 'user'" class="avatar assistant-avatar" :src="getManifestIconPath('ai_assistant')" mode="aspectFit" />
@@ -130,21 +130,21 @@
               <text v-if="msg.role === 'user'" class="msg-body">{{ msg.content }}</text>
               <!-- 深度思考推理区：DeepSeek风格，可折叠，置于正文上方 -->
               <view
-                v-if="msg.reasoning && (isDeepThinking || !isStreaming)"
+                v-if="msg.role === 'assistant' && msg.reasoning"
                 class="reasoning-block"
               >
                 <view
                   class="reasoning-header"
-                  @tap="toggleReasoning(idx)"
+                  @tap.stop="toggleReasoning(msg.id)"
                 >
                   <text class="reasoning-label">思考过程</text>
-                  <ManifestIcon class="reasoning-chevron" :class="isReasoningCollapsed(idx) ? 'collapsed' : ''" id="chevron_down" :scale="1" />
+                  <ManifestIcon class="reasoning-chevron" :class="isReasoningCollapsed(msg.id) ? 'collapsed' : ''" id="chevron_down" :scale="1" />
                 </view>
                 <view
-                  v-show="!isReasoningCollapsed(idx)"
+                  v-if="!isReasoningCollapsed(msg.id)"
                   class="reasoning-body"
                 >
-                  <MarkdownBody variant="reasoning" :markdown="msg.reasoning" />
+                  <MarkdownBody variant="reasoning" :markdown="msg.reasoning" :native-renderer="true" />
                 </view>
               </view>
               <!-- #ifdef H5 -->
@@ -195,13 +195,13 @@
               >
                 <view
                   class="reasoning-header"
-                  @tap="toggleReasoning('__stream__')"
+                  @tap.stop="toggleReasoning(streamingMessageId)"
                 >
                   <text class="reasoning-label">思考过程</text>
-                  <ManifestIcon class="reasoning-chevron" :class="isReasoningCollapsed('__stream__') ? 'collapsed' : ''" id="chevron_down" :scale="1" />
+                  <ManifestIcon class="reasoning-chevron" :class="isReasoningCollapsed(streamingMessageId) ? 'collapsed' : ''" id="chevron_down" :scale="1" />
                 </view>
                 <view
-                  v-show="!isReasoningCollapsed('__stream__')"
+                  v-if="!isReasoningCollapsed(streamingMessageId)"
                   class="reasoning-body"
                 >
                   <MarkdownBody variant="reasoning" :markdown="streamingReasoning" :streaming="true" />
@@ -362,6 +362,7 @@ const editingTitle = ref('')          // 当前行内重命名的输入文本
 const isStreaming   = ref(false)
 const streamingText = ref('')
 const streamingReasoning = ref('')   // 流式推理内容
+const streamingMessageId = ref('')
 const messagesScrollTop = ref(0)
 const shouldAutoFollowMessages = ref(true)
 const messagesViewportHeight = ref(0)
@@ -371,7 +372,7 @@ const pickedImageDataUrl = ref('')
 const pickedImageName    = ref('')
 const isDeepThinking = ref(false)    // DeepSeek风格：深度思考开关
 const isNarrowScreen = ref(false)    // 超小屏（≤480px）标识
-const reasoningCollapsed = ref({})   // reasoning-block 折叠状态，key=消息index
+const reasoningCollapsed = ref({})   // 折叠状态按会话ID和稳定消息ID隔离
 const expandedSeedSummaries = ref({})
 const recognitionSeedSummaries = computed(() =>
   messageList.value.map((message, index) => parseRecognitionSeedSummary(message, index))
@@ -486,6 +487,12 @@ function safeJsonParse(str) {
 function createSessionId() {
   return `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
 }
+function createMessageId() {
+  return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+}
+function getMessageKey(messageId) {
+  return JSON.stringify([activeSessionId.value, String(messageId)])
+}
 function normalizeSessionId(value) {
   if (value === undefined || value === null) return ''
   return String(value).trim().slice(0, 64)
@@ -532,15 +539,15 @@ function toggleDeepThinking() {
   isDeepThinking.value = !isDeepThinking.value
 }
 // ─── 推理区折叠 ──────────────────────────────────────────
-function toggleReasoning(msgIndex) {
-  const key = String(msgIndex)
+function toggleReasoning(messageId) {
+  const key = getMessageKey(messageId)
   reasoningCollapsed.value = {
     ...reasoningCollapsed.value,
     [key]: !reasoningCollapsed.value[key]
   }
 }
-function isReasoningCollapsed(msgIndex) {
-  return !!reasoningCollapsed.value[String(msgIndex)]
+function isReasoningCollapsed(messageId) {
+  return !!reasoningCollapsed.value[getMessageKey(messageId)]
 }
 function buildAuthHeaders(withJson) {
   const token = getStorage('token') || ''
@@ -657,10 +664,10 @@ function refreshConversationMeta(conversation) {
   while (itemMatch && itemSet.size < 2) { itemSet.add(itemMatch[1]); itemMatch = itemRegex.exec(textPool) }
 
   const categories = []
-  if (textPool.includes('厨余垃圾')) categories.push('厨余垃圾')
-  if (textPool.includes('可回收'))   categories.push('可回收垃圾')
+  if (textPool.includes('厨余垃圾') || textPool.includes('湿垃圾')) categories.push('厨余垃圾')
+  if (textPool.includes('可回收'))   categories.push('可回收物')
   if (textPool.includes('有害垃圾')) categories.push('有害垃圾')
-  if (textPool.includes('其他垃圾')) categories.push('其他垃圾')
+  if (textPool.includes('其他垃圾') || textPool.includes('干垃圾')) categories.push('其他垃圾')
 
   let smartSummary = ''
   const items = Array.from(itemSet)
@@ -831,9 +838,10 @@ function setActiveSession(sessionId) {
     scrollMessagesToBottom(true)
   })
 }
-function pushMessageToActive(role, content, imageBase64, createdAt, reasoning, localImagePath) {
+function pushMessageToActive(role, content, imageBase64, createdAt, reasoning, localImagePath, messageId) {
   const conversation = ensureConversation(activeSessionId.value)
   const msg = {
+    id: messageId || createMessageId(),
     role: role === 'assistant' ? 'assistant' : 'user',
     content: String(content || ''),
     imageBase64: typeof imageBase64 === 'string' ? imageBase64 : '',
@@ -855,6 +863,7 @@ function ensureWelcomeMessageIfEmpty() {
   const conversation = ensureConversation(activeSessionId.value)
   if (conversation.messages.length) return
   conversation.messages.push({
+    id: createMessageId(),
     role: 'assistant',
     content: '我已准备好继续分析。你可以直接问：分类依据、投放顺序、或更详细的变废为宝执行方案。',
     imageBase64: '',
@@ -1104,6 +1113,7 @@ async function loadHistoryItems() {
 }
 function hydrateConversations(historyData) {
   conversationMap = new Map()
+  reasoningCollapsed.value = {}
   const list = historyData && Array.isArray(historyData.items) ? historyData.items : []
   const sessionMetas = (historyData && historyData.sessionMetas) || {}
 
@@ -1120,8 +1130,10 @@ function hydrateConversations(historyData) {
     const content = String(item.content || '').trim()
     if (!content) continue
     conversation.messages.push({
+      id: item.id ?? createMessageId(),
       role: item.role === 'assistant' ? 'assistant' : 'user',
       content,
+      reasoning: item.role === 'assistant' ? String(item.reasoning || '') : '',
       imageBase64: '',
       createdAt: item.createdAt || new Date().toISOString()
     })
@@ -1192,6 +1204,7 @@ function maybeStartFromFreshSeed() {
   const conversation = ensureConversation(newSessionId)
   if (seedUserText || seedImage) {
     conversation.messages.push({
+      id: createMessageId(),
       role: 'user', content: seedUserText || '请继续分析这张图片。',
       imageBase64: seedImage, createdAt: createdAt || new Date().toISOString(),
       _pendingPersist: true
@@ -1199,6 +1212,7 @@ function maybeStartFromFreshSeed() {
   }
   if (seedText) {
     conversation.messages.push({
+      id: createMessageId(),
       role: 'assistant', content: seedText, imageBase64: '',
       createdAt: createdAt || new Date().toISOString(),
       _pendingPersist: true
@@ -1481,6 +1495,7 @@ function extractPendingPersistMessages() {
     .map(item => ({
       role: item.role,
       content: item.content,
+      reasoning: item.role === 'assistant' ? item.reasoning : undefined,
       hasImage: !!item.imageBase64
     }))
     .filter(item => String(item.content || '').trim())
@@ -1506,6 +1521,7 @@ async function onSend() {
     uni.showToast({ title: '请先输入问题或选择图片', icon: 'none' })
     return
   }
+  streamingMessageId.value = createMessageId()
   // 小程序端在发送前立即设置状态，防止重复点击
   // #ifndef H5
   isStreaming.value = true
@@ -1556,7 +1572,7 @@ async function onSend() {
       enableThinking: isDeepThinking.value
     })
     markPendingPersistMessagesSaved()
-    pushMessageToActive('assistant', streamed.content || 'AI 暂未返回内容。', '', new Date().toISOString(), streamed.reasoning || '')
+    pushMessageToActive('assistant', streamed.content || 'AI 暂未返回内容。', '', new Date().toISOString(), streamed.reasoning || '', '', streamingMessageId.value)
   } catch (err) {
     const failedText = err && err.name === 'AbortError'
       ? '已停止当前回答。'

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
+import { fileURLToPath } from 'node:url'
 import {
   appendPageQuery,
   buildDeviceQrScanUrl,
@@ -14,17 +15,18 @@ import {
   resolveDeviceQrPathTarget,
   savePendingDeviceQrScene
 } from '../src/utils/device-qr-entry.mjs'
-import { resolveDeviceScanTarget } from '../src/utils/device-qr.js'
+import { getDeviceQrScanContent as getDeviceScanContent, normalizeDeviceMode, resolveDeviceScanTarget } from '../src/utils/device-qr.js'
 
 const scene = '0123456789abcdef0123456789abcdef'
 const path = `/pages/scan/scan?scene=${scene}`
+const hookFile = new URL('../src/utils/use-device-scan-page.js', import.meta.url)
+const hookSource = await readFile(hookFile, 'utf8')
 
 const scannerSources = await Promise.all([
-  'src/utils/device-qr.js',
-  'src/pages/scan/scan.vue',
-  'src/pages-dark/scan/scan.vue',
-  'src/pages-dark/home/home.vue'
-].map(async file => [file, await readFile(file, 'utf8')]))
+  ['src/utils/device-qr.js', await readFile(new URL('../src/utils/device-qr.js', import.meta.url), 'utf8')],
+  ['src/utils/use-device-scan-page.js', hookSource],
+  ['src/pages-dark/home/home.vue', await readFile(new URL('../src/pages-dark/home/home.vue', import.meta.url), 'utf8')]
+])
 for (const [file, scannerSource] of scannerSources) {
   assert.doesNotMatch(scannerSource, /wxCode/, `${file}: scanType must not use unsupported wxCode`)
   if (file === 'src/utils/device-qr.js') {
@@ -95,125 +97,185 @@ savePendingDeviceQrScene(storage, scene, 3000)
 clearPendingDeviceQrScene(storage)
 assert.equal(getPendingDeviceQrScene(storage, 3000), '')
 
-function extractFunction(source, name) {
-  const match = source.match(new RegExp(`(?:async )?function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))
-  assert.ok(match, `${name} should be present in both scan pages`)
-  return match[0]
-}
-
-function createScanPageHarness(source, dark, overrides = {}) {
-  const calls = { resolve: [], connect: 0, login: [], toast: [] }
-  const values = new Map()
+function createScanPageHarness(dark, overrides = {}) {
+  const calls = { resolve: [], connect: [], disconnect: [], connectedDevices: 0, login: [], navigate: [], redirect: [], back: [], toast: [], modals: [], scans: [] }
+  const values = new Map([['app_theme', dark ? 'dark' : 'light']])
   if (overrides.authToken) values.set('token', overrides.authToken)
-  values.set('app_theme', dark ? 'dark' : 'light')
+  const lifecycle = { load: [], show: [], hide: [], mounted: [], unmounted: [] }
+  const timers = { nextId: 0, intervals: new Map(), timeouts: new Map(), clearedIntervals: [] }
+  let page
+  let currentDeviceId = ''
+  const deviceAPI = {
+    isValid: true,
+    error: null,
+    connectDevice: async (deviceId, token, authToken) => {
+      calls.connect.push({ deviceId, token, authToken })
+      currentDeviceId = String(deviceId)
+      return overrides.connect
+        ? overrides.connect({ deviceId, token, authToken, page })
+        : { code: 0, data: { device_name: 'connect response name' } }
+    },
+    disconnectDevice: async (...args) => {
+      calls.disconnect.push(args)
+      return { code: 0 }
+    },
+    getConnectedDevices: async () => {
+      calls.connectedDevices += 1
+      return { code: 0, data: currentDeviceId ? [{ device_id: currentDeviceId }] : [] }
+    }
+  }
   const runtime = {
     getStorageSync: key => values.get(key),
     setStorageSync: (key, value) => values.set(key, value),
     removeStorageSync: key => values.delete(key),
+    getDeviceInfo: () => overrides.deviceInfo || { platform: 'android' },
+    getAppBaseInfo: () => ({ uniPlatform: overrides.uniPlatform || 'app' }),
+    getSystemInfoSync: () => ({ platform: 'android', uniPlatform: 'app' }),
     showToast: value => calls.toast.push(value),
-    reLaunch: value => calls.login.push(value)
+    reLaunch: value => calls.login.push(value),
+    navigateTo: value => calls.navigate.push(value),
+    redirectTo: value => calls.redirect.push(value),
+    navigateBack: () => calls.back.push(true),
+    showModal: value => calls.modals.push(value),
+    scanCode: value => calls.scans.push(value)
+  }
+  const callbacks = {
+    onLoad: callback => lifecycle.load.push(callback),
+    onShow: callback => lifecycle.show.push(callback),
+    onHide: callback => lifecycle.hide.push(callback),
+    onMounted: callback => lifecycle.mounted.push(callback),
+    onUnmounted: callback => lifecycle.unmounted.push(callback)
+  }
+  const timerApi = {
+    setInterval: (callback, delay) => {
+      const id = ++timers.nextId
+      timers.intervals.set(id, { callback, delay })
+      return id
+    },
+    clearInterval: id => {
+      timers.clearedIntervals.push(id)
+      timers.intervals.delete(id)
+    },
+    setTimeout: (callback, delay) => {
+      const id = ++timers.nextId
+      timers.timeouts.set(id, { callback, delay })
+      return id
+    },
+    clearTimeout: id => timers.timeouts.delete(id)
   }
   const context = vm.createContext({
-    uni: runtime,
-    getCurrentPages: () => [{ route: dark ? 'pages-dark/scan/scan' : 'pages/scan/scan' }],
+    ...callbacks,
+    ...timerApi,
+    ref: value => ({ value }),
+    getDeviceAPI: () => deviceAPI,
+    testDeviceAPI: () => true,
+    normalizeDeviceMode,
+    resolveDeviceScanTarget,
+    getDeviceQrScanContent: getDeviceScanContent,
+    saveMockDeviceConnection: value => ({ ...value, id: value.device_id }),
+    resolveWechatQrScene: async value => {
+      calls.resolve.push(value)
+      return overrides.resolve ? overrides.resolve(value) : { code: 0, data: { device_id: 'device-1', token: 'device-token', device_name: 'resolved name', device_mode: 'bin' } }
+    },
+    appendPageQuery,
+    clearPendingDeviceQrScene,
+    isValidDeviceQrScene,
     normalizeDeviceQrScene,
     savePendingDeviceQrScene,
-    getPendingDeviceQrScene,
-    clearPendingDeviceQrScene,
-    appendPageQuery,
-    normalizeDeviceMode: value => String(value || '').toLowerCase() === 'robot' ? 'robot' : 'bin',
-    isValidDeviceQrScene,
-    resolveWechatQrScene: async scene => {
-      calls.resolve.push(scene)
-      return overrides.resolve ? overrides.resolve(scene) : { code: 0, data: { device_id: 'device-1', token: 'device-token', device_name: 'resolved name', device_mode: 'bin' } }
+    uni: runtime,
+    getCurrentPages: () => {
+      const route = overrides.route || (dark ? 'pages-dark/scan/scan' : 'pages/scan/scan')
+      const count = overrides.pageCount || 1
+      return Array.from({ length: count }, (_, index) => ({
+        route: index === count - 1 ? route : 'pages/home/home',
+        options: index === count - 1 ? (overrides.pageOptions || {}) : {}
+      }))
     },
-    attemptConnection: async () => {
-      calls.connect++
-      return overrides.connect ? overrides.connect(context) : false
-    },
-    deviceId: { value: '' },
-    deviceName: { value: '' },
-    deviceMode: { value: 'bin' },
-    token: { value: '' },
-    loading: { value: false },
-    connected: { value: false },
-    errorMessage: { value: '' },
-    isTokenError: { value: false },
-    activeScene: { value: '' },
-    connectionError: { value: null },
-    pageActive: true
+    console: { log() {}, warn() {}, error() {} }
   })
-  const functions = [
-    'isUnauthorizedDeviceError',
-    'redirectToLoginWithScene',
-    'resolveSceneAndConnect'
-  ].map(name => extractFunction(source, name)).join('\n')
-  vm.runInContext(functions, context)
+  const executableSource = hookSource
+    .replace(/^import[^\r\n]*\r?\n/gm, '')
+    .replace(/^export\s+/gm, '')
+  vm.runInContext(`${executableSource}\nglobalThis.__useDeviceScanPage = useDeviceScanPage;`, context, {
+    filename: fileURLToPath(hookFile)
+  })
+  page = context.__useDeviceScanPage({ dark })
+
   return {
-    calls,
-    values,
-    context,
-    run: scene => vm.runInContext(`resolveSceneAndConnect(${JSON.stringify(scene)})`, context)
+    page, calls, values, lifecycle, timers, runtime, deviceAPI,
+    load: options => lifecycle.load.forEach(callback => callback(options)),
+    show: () => lifecycle.show.forEach(callback => callback()),
+    hide: () => lifecycle.hide.forEach(callback => callback()),
+    mount: async () => { for (const callback of lifecycle.mounted) await callback() },
+    unmount: () => lifecycle.unmounted.forEach(callback => callback()),
+    fireTimeout: delay => {
+      const entry = [...timers.timeouts.entries()].find(([, timer]) => timer.delay === delay)
+      assert.ok(entry, `expected a ${delay}ms timeout`)
+      timers.timeouts.delete(entry[0])
+      return entry[1].callback()
+    }
   }
 }
 
-for (const [theme, dark] of [['pages', false], ['pages-dark', true]]) {
-  const source = await readFile(new URL(`../src/${theme}/scan/scan.vue`, import.meta.url), 'utf8')
+async function settleAsync() {
+  for (let index = 0; index < 8; index += 1) await Promise.resolve()
+}
 
-  const unauthenticated = createScanPageHarness(source, dark)
-  await unauthenticated.run(scene)
-  assert.equal(unauthenticated.calls.resolve.length, 0, `${theme}: no JWT must block the resolve call`)
-  assert.equal(unauthenticated.calls.connect, 0)
-  assert.equal(getPendingDeviceQrScene(unauthenticated.context.uni), scene)
+for (const dark of [false, true]) {
+  const theme = dark ? 'pages-dark' : 'pages'
+
+  const unauthenticated = createScanPageHarness(dark)
+  unauthenticated.load({ scene })
+  assert.equal(getPendingDeviceQrScene(unauthenticated.runtime), scene)
+  await unauthenticated.mount()
+  assert.deepEqual(unauthenticated.calls.resolve, [], `${theme}: no JWT must block the resolve call`)
+  assert.deepEqual(unauthenticated.calls.connect, [])
   assert.equal(unauthenticated.calls.login[0].url, `/pages${dark ? '-dark' : ''}/index/index?scene=${scene}`)
 
-  const connected = createScanPageHarness(source, dark, {
-    authToken: 'user-jwt',
-    connect: context => {
-      assert.equal(context.deviceId.value, 'device-1')
-      assert.equal(context.token.value, 'device-token')
-      assert.equal(context.deviceName.value, '', `${theme}: resolve name must not skip the connect call`)
-      context.deviceName.value = 'connect response name'
-      context.connected.value = true
-      return true
-    }
-  })
-  await connected.run(scene)
+  const connected = createScanPageHarness(dark, { authToken: 'user-jwt' })
+  connected.load({ scene })
+  await connected.mount()
   assert.deepEqual(connected.calls.resolve, [scene])
-  assert.equal(connected.calls.connect, 1, `${theme}: resolved device still goes through connect (${JSON.stringify(connected.calls)}; ${connected.context.errorMessage.value})`)
-  assert.equal(connected.context.deviceName.value, 'connect response name')
-  assert.equal(getPendingDeviceQrScene(connected.context.uni), '')
+  assert.equal(connected.calls.connect.length, 1, `${theme}: resolved device still goes through connect`)
+  assert.equal(connected.calls.connect[0].deviceId, 'device-1')
+  assert.equal(connected.calls.connect[0].token, 'device-token')
+  assert.equal(connected.page.deviceName.value, 'connect response name')
+  assert.equal(getPendingDeviceQrScene(connected.runtime), '')
 
-  const unauthorized = createScanPageHarness(source, dark, {
+  const unauthorized = createScanPageHarness(dark, {
     authToken: 'expired-jwt',
     resolve: async () => { throw { code: 401 } }
   })
-  await unauthorized.run(scene)
-  assert.equal(unauthorized.calls.connect, 0)
-  assert.equal(getPendingDeviceQrScene(unauthorized.context.uni), scene, `${theme}: 401 retains the scan for login recovery`)
+  unauthorized.load({ scene })
+  await unauthorized.mount()
+  assert.deepEqual(unauthorized.calls.connect, [])
+  assert.equal(getPendingDeviceQrScene(unauthorized.runtime), scene, `${theme}: 401 retains the scan for login recovery`)
 
-  const expired = createScanPageHarness(source, dark, {
+  const expired = createScanPageHarness(dark, {
     authToken: 'user-jwt',
     resolve: async () => ({ code: 2, data: {} })
   })
-  await expired.run(scene)
-  assert.equal(expired.calls.connect, 0)
-  assert.equal(expired.context.connected.value, false, `${theme}: resolve failure cannot mark the page connected`)
-  assert.match(expired.context.errorMessage.value, /重新扫码/)
-  assert.equal(getPendingDeviceQrScene(expired.context.uni), '')
+  expired.load({ scene })
+  await expired.mount()
+  assert.deepEqual(expired.calls.connect, [])
+  assert.equal(expired.page.connected.value, false, `${theme}: resolve failure cannot mark the page connected`)
+  assert.match(expired.page.errorMessage.value, /重新扫码/)
+  assert.equal(getPendingDeviceQrScene(expired.runtime), '')
 
   let finishResolve
-  const unmounted = createScanPageHarness(source, dark, {
+  const unmounted = createScanPageHarness(dark, {
     authToken: 'user-jwt',
     resolve: () => new Promise(resolve => { finishResolve = resolve })
   })
-  const inFlight = unmounted.run(scene)
+  unmounted.load({ scene })
+  const inFlight = unmounted.mount()
   await Promise.resolve()
-  unmounted.context.pageActive = false
+  assert.equal(unmounted.calls.resolve.length, 1)
+  unmounted.unmount()
   finishResolve({ code: 0, data: { device_id: 'device-1', token: 'device-token', device_name: 'resolved name' } })
   await inFlight
-  assert.equal(unmounted.calls.connect, 0, `${theme}: an unloaded scan page cannot connect after resolve`)
-  assert.equal(unmounted.context.connected.value, false)
+  assert.deepEqual(unmounted.calls.connect, [], `${theme}: an unloaded scan page cannot connect after resolve`)
+  assert.equal(unmounted.page.connected.value, false)
 }
 
 console.log('Device QR checks passed: trusted paths, platform scan options, legacy results, strict scene parsing and pending recovery.')

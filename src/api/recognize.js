@@ -39,9 +39,17 @@ export function recognizeImage(file) {
         },
         body: formData
       })
-      .then(response => {
+      .then(async response => {
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          let message = ''
+          try {
+            const data = await response.json()
+            message = data && data.msg ? String(data.msg) : ''
+          } catch (e) {}
+          const error = new Error(`HTTP ${response.status}: ${response.statusText}`)
+          error.status = response.status
+          if (message) error.msg = message
+          throw error
         }
         return response.json()
       })
@@ -55,7 +63,7 @@ export function recognizeImage(file) {
       })
       .catch(err => {
         console.error('H5 fetch上传失败:', err)
-        uni.showToast({ title: '图片上传失败', icon: 'none' })
+        uni.showToast({ title: err.msg || '图片上传失败', icon: 'none' })
         reject(err)
       })
     } else {
@@ -64,6 +72,7 @@ export function recognizeImage(file) {
         url: `${baseUrl}/api/recognize`,
         filePath: typeof file === 'string' ? file : file.path,
         name: 'image', // 字段名必须为image
+        timeout: 600000, // 包含排队、上传和 AI 处理时间。
         formData: {},
         header: {
           'Authorization': token

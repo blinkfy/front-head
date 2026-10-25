@@ -259,6 +259,7 @@ export default {
       freeCount: 0,
       totalFree: 1,
       userPoints: 0,
+      pendingUserPoints: null,
       records: [],
       isSpinning: false,
       showPrizeModal: false,
@@ -637,22 +638,31 @@ export default {
         const res = await drawLottery(usePoints);
         const data = this.extractData(res) || {};
         this.currentPrize = data;
+        this.pendingUserPoints = Object.prototype.hasOwnProperty.call(data, 'userPoints')
+          ? Number(data.userPoints)
+          : null;
         this.spinToPrize(data);
-        if (Object.prototype.hasOwnProperty.call(data, 'userPoints')) {
-          this.userPoints = Number(data.userPoints) || 0;
-          uni.setStorageSync('userPoints', this.userPoints);
-        }
         if (data.isFree && this.freeCount > 0 && !data.grantsRetry) this.freeCount--;
       } catch (e) {
+        this.pendingUserPoints = null;
         uni.showToast({ title: e.message || '抽奖失败', icon: 'none' });
         this.isSpinning = false;
       }
+    },
+    settleDrawPoints() {
+      if (this.pendingUserPoints !== null && Number.isFinite(this.pendingUserPoints)) {
+        this.userPoints = this.pendingUserPoints;
+        uni.setStorageSync('userPoints', this.userPoints);
+      }
+      this.pendingUserPoints = null;
     },
     spinToPrize(prize) {
       // 简单动画模拟
       const prizes = this.config.prizes || [];
       if (prizes.length === 0) {
         this.isSpinning = false;
+        this.settleDrawPoints();
+        this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
         return;
       }
       const prizeIndex = prizes.findIndex(p => p.id === prize.prizeId);
@@ -680,6 +690,7 @@ export default {
           this.requestAnimationFrameCompat(animate);
         } else {
           this.isSpinning = false;
+          this.settleDrawPoints();
           this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
           setTimeout(() => {
             this.showPrizeModal = true;
@@ -788,6 +799,8 @@ export default {
 .dark-mode .navbar .nav-help-icon {
   filter: saturate(1.2) brightness(1.08) drop-shadow(0 0 4rpx rgba(255, 255, 255, 0.4));
 }
+.nav-left, .nav-right { flex: 0 0 80rpx; }
+.nav-right { display: flex; justify-content: flex-end; }
 .nav-title-wrap {
   display: flex; align-items: center; gap: 12rpx;
   flex: 1; justify-content: center;

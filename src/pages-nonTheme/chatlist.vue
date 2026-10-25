@@ -28,13 +28,13 @@
 		<scroll-view ref="userScroll" class="user-list" scroll-y :scroll-top="scrollTop" :style="{ height: listHeight, backgroundColor: 'var(--list-bg)', paddingTop: headerOffset + 'px' }" @scrolltolower="loadMore"
 			refresher-enabled :refresher-triggered="isRefreshing" @refresherrefresh="onRefresh" @click.stop @click="handleContainerClick">
 			<!-- 加载中 -->
-			<view class="loading-wrap" v-if="loading && userList.length === 0">
+			<view class="loading-wrap" v-if="(isSearching ? searchLoading : loading) && filteredUserList.length === 0">
 				<view class="loading-spinner"></view>
 				<text class="loading-text">加载中...</text>
 			</view>
 
 			<!-- 空状态 -->
-			<view class="empty-wrap" v-else-if="!loading && filteredUserList.length === 0">
+			<view class="empty-wrap" v-else-if="!(isSearching ? searchLoading : loading) && filteredUserList.length === 0">
 				<ManifestIcon class="empty-icon" id="empty_chat" :scale="1" />
 				<text class="empty-text">{{ searchKeyword ? '未找到匹配的用户' : '暂无用户消息' }}</text>
 			</view>
@@ -71,10 +71,10 @@
 			</view>
 
 			<!-- 加载更多 -->
-			<view class="load-more" v-if="userList.length > 0 && hasMore">
-				<text class="load-more-text">{{ loadingMore ? '加载中...' : '上拉加载更多' }}</text>
+			<view class="load-more" v-if="filteredUserList.length > 0 && displayHasMore">
+				<text class="load-more-text">{{ displayLoadingMore ? '加载中...' : '上拉加载更多' }}</text>
 			</view>
-			<view class="no-more" v-else-if="userList.length > 0 && !hasMore">
+			<view class="no-more" v-else-if="filteredUserList.length > 0 && !displayHasMore">
 				<text class="no-more-text">没有更多了</text>
 			</view>
 		</scroll-view>
@@ -118,9 +118,23 @@ export default {
 			loadingMore: false,
 			isRefreshing: false,
 			userList: [],
+			searchResults: [],
+			searchPage: 1,
+			searchHasMore: false,
+			searchTotal: null,
+			searchUnreadTotal: null,
+			searchLoading: false,
+			searchLoadingMore: false,
+			searchDebounceTimer: null,
+			searchRequestVersion: 0,
+			normalRequestVersion: 0,
+			requestGeneration: 0,
+			activeAccountIdentity: '',
 			page: 1,
 			pageSize: 20,
 			hasMore: true,
+			listTotal: null,
+			listUnreadTotal: null,
 			isDarkTheme: false,
 			scrollTop: 0,
 			aiEnabled: true,
@@ -146,10 +160,19 @@ computed: {
 			return `calc(100vh - ${navHeight + searchHeight + this.safeAreaBottom}px)`
 		},
 
+		isSearching() {
+			return Boolean(String(this.searchKeyword || ''))
+		},
+		displayHasMore() {
+			return this.isSearching ? this.searchHasMore : this.hasMore
+		},
+		displayLoadingMore() {
+			return this.isSearching ? this.searchLoadingMore : this.loadingMore
+		},
 		filteredUserList() {
-			const list = this.deduplicateConversations(this.userList)
-			if (!this.searchKeyword) return list
-			const keyword = this.searchKeyword.toLowerCase()
+			const list = this.deduplicateConversations(this.isSearching ? this.searchResults : this.userList)
+			const keyword = String(this.searchKeyword || '').toLowerCase()
+			if (!keyword) return list
 			return list.filter(user => {
 				const name = getDisplayName(user, '').toLowerCase()
 				const username = (user.username || '').toLowerCase()
@@ -159,7 +182,7 @@ computed: {
 		},
 
 		totalUsers() {
-			return this.userList.length
+			return Number.isFinite(this.listTotal) ? this.listTotal : this.userList.length
 		},
 
 		onlineUsers() {
@@ -167,6 +190,7 @@ computed: {
 		},
 
 		totalUnread() {
+			if (Number.isFinite(this.listUnreadTotal)) return this.listUnreadTotal
 			return this.userList.reduce((sum, u) => sum + (u.unreadCount || 0), 0)
 		}
 	},
@@ -189,12 +213,12 @@ computed: {
 		// 从本地缓存加载用户列表
 		this.loadFromCache()
 		
-		// 注意：initLoadAllUsers() 和 startPeriodicRefresh() 
-		// 已移动或保留在 onShow 中，或由逻辑控制，避免 onLoad 和 onShow 重复调用
+		// 首次网络刷新由 onShow 统一触发；onLoad 仅恢复本账号缓存。
 	},
 
 	onShow() {
 		this.isPageActive = true
+		this.syncAccountContext()
 		this.refreshAiVisibility()
 		
 		// 初始化加载/刷新
@@ -207,22 +231,26 @@ computed: {
 	onHide() {
 		// 页面隐藏时标记为不活跃
 		this.isPageActive = false
+		this.invalidatePendingRequests()
 		this.stopPeriodicRefresh()
 	},
 	
 	onUnload() {
 		// 页面卸载时标记为不活跃并停止定时刷新
 		this.isPageActive = false
+		this.invalidatePendingRequests()
 		this.stopPeriodicRefresh()
 	},
 
 	// Vue 2/3 通用销毁钩子
 	beforeDestroy() {
 		this.isPageActive = false
+		this.invalidatePendingRequests()
 		this.stopPeriodicRefresh()
 	},
 	beforeUnmount() {
 		this.isPageActive = false
+		this.invalidatePendingRequests()
 		this.stopPeriodicRefresh()
 	},
 
@@ -236,10 +264,102 @@ computed: {
 			try {
 				const userId = this.getCurrentUserId() || 'unknown'
 				this.cacheKey = `chatlist_${userId}`
+				const token = String(uni.getStorageSync('token') || '')
+				this.activeAccountIdentity = `${String(userId)}\u0000${token}`
 			} catch (e) {
 				console.error('初始化缓存 key 失败:', e)
 				this.cacheKey = 'chatlist_unknown'
+				this.activeAccountIdentity = 'unknown\u0000'
 			}
+		},
+
+		getAccountSnapshot() {
+			const userId = String(this.getCurrentUserId() || 'unknown')
+			let token = ''
+			try {
+				token = String(uni.getStorageSync('token') || '')
+			} catch (e) {
+				console.warn('读取登录状态失败:', e)
+			}
+			return { userId, token, identity: `${userId}\u0000${token}`, cacheKey: `chatlist_${userId}` }
+		},
+
+		syncAccountContext() {
+			const snapshot = this.getAccountSnapshot()
+			if (snapshot.identity === this.activeAccountIdentity) return false
+
+			this.invalidatePendingRequests()
+			this.activeAccountIdentity = snapshot.identity
+			this.cacheKey = snapshot.cacheKey
+			this.userList = []
+			this.page = 1
+			this.hasMore = true
+			this.listTotal = null
+			this.listUnreadTotal = null
+			this.lastRefreshTime = 0
+			this.searchResults = []
+			this.searchPage = 1
+			this.searchHasMore = false
+			this.searchTotal = null
+			this.searchUnreadTotal = null
+			this.loadFromCache()
+			return true
+		},
+
+		invalidatePendingRequests() {
+			this.requestGeneration++
+			this.normalRequestVersion++
+			this.searchRequestVersion++
+			if (this.searchDebounceTimer !== null) {
+				clearTimeout(this.searchDebounceTimer)
+				this.searchDebounceTimer = null
+			}
+			this.loading = false
+			this.loadingMore = false
+			this.searchLoading = false
+			this.searchLoadingMore = false
+			this.isRefreshing = false
+		},
+
+		isCurrentRequest(version, generation, identity, search = false) {
+			if (!this.isPageActive || generation !== this.requestGeneration) return false
+			const snapshot = this.getAccountSnapshot()
+			if (snapshot.identity !== this.activeAccountIdentity || snapshot.identity !== identity) {
+				this.syncAccountContext()
+				if (this.isPageActive && this.isSearching) this.onSearchInput()
+				return false
+			}
+			return (search ? this.searchRequestVersion : this.normalRequestVersion) === version
+		},
+
+		getListResponseData(response) {
+			const data = response?.data
+			const list = Array.isArray(data) ? data : (Array.isArray(data?.list) ? data.list : [])
+			return { data, list }
+		},
+
+		getResponseHasMore(data, list, page, cursorPage = page) {
+			const hasTotal = data?.total !== undefined && data?.total !== null && Number.isFinite(Number(data.total))
+			if (cursorPage !== page) {
+				if (page === 1 && list.length < this.pageSize) return false
+				if (hasTotal) return Number(data.total) > cursorPage * this.pageSize
+				if (typeof data?.hasMore === 'boolean') return data.hasMore ? this.hasMore : false
+				return this.hasMore
+			}
+			if (typeof data?.hasMore === 'boolean') return data.hasMore
+			if (hasTotal) return Number(data.total) > page * this.pageSize
+			return list.length >= this.pageSize
+		},
+
+		prepareUserList(list) {
+			const currentUserId = this.getCurrentUserId()
+			return list.map(user => {
+				if (user.unreadCount === undefined) {
+					const isLatestFromOther = user.latestContent && String(user.latestContent.senderId) !== String(currentUserId)
+					user.unreadCount = (user.latestContent?.isRead === false && isLatestFromOther) ? 1 : 0
+				}
+				return user
+			})
 		},
 		
 		/**
@@ -256,6 +376,17 @@ computed: {
 						this.userList = this.deduplicateConversations(cacheData.userList)
 						this.sortUserList()
 						this.lastRefreshTime = cacheData.timestamp || 0
+						if (cacheData.pageSize === this.pageSize && Number.isInteger(cacheData.page) && cacheData.page >= 1 && typeof cacheData.hasMore === 'boolean') {
+							this.pageSize = cacheData.pageSize
+							this.page = cacheData.page
+							this.hasMore = cacheData.hasMore
+						} else {
+							// 旧版缓存可能包含全量数据，但没有可验证的分页游标；始终从第一页继续。
+							this.page = 1
+							this.hasMore = true
+						}
+						this.listTotal = Number.isFinite(cacheData.total) ? cacheData.total : null
+						this.listUnreadTotal = Number.isFinite(cacheData.unreadTotal) ? cacheData.unreadTotal : null
 						console.log('从缓存加载用户列表，共', this.userList.length, '个用户')
 					}
 				}
@@ -274,7 +405,12 @@ computed: {
 				
 				const cacheData = {
 					userList: this.userList,
-					timestamp: Date.now()
+					timestamp: Date.now(),
+					page: this.page,
+					hasMore: this.hasMore,
+					pageSize: this.pageSize,
+					total: this.listTotal,
+					unreadTotal: this.listUnreadTotal
 				}
 				uni.setStorageSync(this.cacheKey, JSON.stringify(cacheData))
 			} catch (e) {
@@ -307,99 +443,12 @@ computed: {
 			
 			// 设置新的定时器，每 10 秒刷新一次第一页
 			this.refreshTimer = setInterval(() => {
+				if (!this.isPageActive || this.isSearching) return
 				console.log('定时刷新第一页，当前时间:', new Date().toLocaleTimeString())
 				this.refreshFirstPage()
 			}, this.refreshInterval)
 		},
 		
-		/**
-		 * 初始化加载所有用户（首次进入页面时）
-		 */
-		async initLoadAllUsers() {
-			if (this.loading || !this.isPageActive) return
-			this.loading = true
-			
-			try {
-				let page = 1
-				let hasMoreData = true
-				const maxPages = 15 // 稍微增加，覆盖 200*15=3000 用户
-				
-				// 使用较大的 pageSize 一次性拉取尽可能多
-				const BIG_PAGE_SIZE = 200 
-				
-				while (hasMoreData && page <= maxPages) {
-					// 循环内检查：如果页面已切换，立即跳出
-					if (!this.isPageActive) {
-						console.log('initLoadAllUsers: 检测到页面非活跃状态，终止抓取进程')
-						break
-					}
-
-					console.log(`正在全量抓取第 ${page} 轮 (规模: ${BIG_PAGE_SIZE})...`)
-					const res = await chatApi.getChatUserList({
-						page: page,
-						pageSize: BIG_PAGE_SIZE
-					})
-					
-					if (res.code === 0 && res.data) {
-						let list = []
-						if (Array.isArray(res.data)) {
-							list = res.data
-						} else if (res.data.list && Array.isArray(res.data.list)) {
-							list = res.data.list
-						}
-						
-						if (list.length === 0) {
-							console.log(`第 ${page} 轮抓取为空，停止同步`)
-							hasMoreData = false
-							break
-						}
-						
-						// 处理数据
-						const processedList = list.map(user => {
-							if (user.unreadCount === undefined) {
-								const currentUserId = this.getCurrentUserId()
-								const isLatestFromOther = user.latestContent && 
-									String(user.latestContent.senderId) !== String(currentUserId)
-								user.unreadCount = (user.latestContent?.isRead === false && isLatestFromOther) ? 1 : 0
-							}
-							return user
-						})
-						
-						// 合并到本地（mergeUserList 会通过 otherId 自动去重）
-						this.mergeUserList(processedList, page)
-						
-						console.log(`第 ${page} 轮抓取完毕: 本批次收到 ${list.length} 个, 累计排重后 ${this.userList.length} 个`)
-						
-						// 如果返回的数据少于 BIG_PAGE_SIZE，通常说明到头了
-						if (list.length < BIG_PAGE_SIZE) {
-							hasMoreData = false
-						}
-						
-						page++
-					} else {
-						hasMoreData = false
-						break
-					}
-					
-					await new Promise(resolve => setTimeout(resolve, 150))
-				}
-				
-				this.sortUserList()
-				this.page = 1
-				this.hasMore = false 
-				
-				this.saveToCache()
-			} catch (e) {
-				console.error('全量同步失败:', e)
-				uni.showToast({
-					title: '同步失败，请重试',
-					icon: 'none'
-				})
-			} finally {
-				this.loading = false
-			}
-		},
-
 		/**
 		 * 统一排序用户列表（置顶优先，其次按时间倒序）
 		 */
@@ -462,7 +511,7 @@ computed: {
 		 * 停止定时刷新
 		 */
 		stopPeriodicRefresh() {
-			if (this.refreshTimer) {
+			if (this.refreshTimer !== null) {
 				clearInterval(this.refreshTimer)
 				this.refreshTimer = null
 				console.log('定时刷新已停止')
@@ -473,37 +522,47 @@ computed: {
 		 * 刷新第一页
 		 */
 		async refreshFirstPage() {
-			if (!this.isPageActive || this.loading) return
+			if (!this.isPageActive || this.isSearching) return false
+			this.syncAccountContext()
+			if (this.loading || this.loadingMore) return false
+			const generation = this.requestGeneration
+			const identity = this.activeAccountIdentity
+			const version = ++this.normalRequestVersion
+			this.loading = true
 			try {
 				const res = await chatApi.getChatUserList({
 					page: 1,
 					pageSize: this.pageSize
 				})
+				if (!this.isCurrentRequest(version, generation, identity)) return false
+				if (res?.code !== 0 || !res.data) return false
 
-				if (res.code === 0 && res.data) {
-					const list = res.data.list || res.data || []
-					const processedList = list.map(user => {
-						if (user.unreadCount === undefined) {
-							const currentUserId = this.getCurrentUserId()
-							const isLatestFromOther = user.latestContent && 
-								String(user.latestContent.senderId) !== String(currentUserId)
-							user.unreadCount = (user.latestContent?.isRead === false && isLatestFromOther) ? 1 : 0
-						}
-						return user
-					})
-					
-					// 执行增量更新：合并新数据和现有数据（仅第一页）
-					const oldLength = this.userList.length
-					this.mergeUserList(processedList, 1)
-					const newLength = this.userList.length
-					
-					console.log('第一页刷新完成，新增:', newLength - oldLength, '个用户，总共:', newLength)
-					
-					this.lastRefreshTime = Date.now()
-					this.saveToCache()
-				}
+				const { data, list } = this.getListResponseData(res)
+				const oldLength = this.userList.length
+				this.mergeUserList(this.prepareUserList(list), 1)
+				this.sortUserList()
+				this.hasMore = this.getResponseHasMore(data, list, 1, this.page)
+				this.listTotal = data?.total !== undefined && data?.total !== null && Number.isFinite(Number(data.total))
+					? Number(data.total)
+					: null
+				this.listUnreadTotal = data?.unreadTotal !== undefined && data?.unreadTotal !== null && Number.isFinite(Number(data.unreadTotal))
+					? Number(data.unreadTotal)
+					: null
+				console.log('第一页刷新完成，新增:', this.userList.length - oldLength, '个用户，总共:', this.userList.length)
+				this.lastRefreshTime = Date.now()
+				this.saveToCache()
+				return true
 			} catch (e) {
-				console.error('刷新第一页失败:', e)
+				if (this.isCurrentRequest(version, generation, identity)) {
+					console.error('刷新第一页失败:', e)
+					uni.showToast({ title: '加载失败', icon: 'none' })
+				}
+				return false
+			} finally {
+				if (version === this.normalRequestVersion && generation === this.requestGeneration) {
+					this.loading = false
+					this.isRefreshing = false
+				}
 			}
 		},
 		
@@ -648,7 +707,7 @@ computed: {
 		toggleSearch() {
 			this.showSearch = !this.showSearch
 			if (!this.showSearch) {
-				this.searchKeyword = ''
+				this.clearSearch()
 			}
 		},
 
@@ -658,7 +717,7 @@ computed: {
 				// 如果搜索框有内容，让输入框失去焦点；如果没有内容，隐藏搜索框
 				if (!this.searchKeyword || this.searchKeyword.trim() === '') {
 					this.showSearch = false
-					this.searchKeyword = ''
+					this.clearSearch()
 				} else {
 					// 有内容时隐藏键盘
 					uni.hideKeyboard()
@@ -668,85 +727,133 @@ computed: {
 
 		// 搜索输入
 		onSearchInput() {
-			// 可以添加防抖处理
+			this.syncAccountContext()
+			this.cancelSearchRequests()
+			const keyword = String(this.searchKeyword || '')
+			this.searchResults = []
+			this.searchPage = 1
+			this.searchHasMore = Boolean(keyword)
+			this.searchTotal = null
+			this.searchUnreadTotal = null
+			if (!keyword) return
+
+			this.searchLoading = true
+			const version = ++this.searchRequestVersion
+			const generation = this.requestGeneration
+			const identity = this.activeAccountIdentity
+			this.searchDebounceTimer = setTimeout(() => {
+				if (version !== this.searchRequestVersion || generation !== this.requestGeneration) return
+				this.searchDebounceTimer = null
+				this.fetchSearchPage(1, version, generation, identity)
+			}, 300)
+		},
+
+		cancelSearchRequests() {
+			this.searchRequestVersion++
+			if (this.searchDebounceTimer !== null) {
+				clearTimeout(this.searchDebounceTimer)
+				this.searchDebounceTimer = null
+			}
+			this.searchLoading = false
+			this.searchLoadingMore = false
+		},
+
+		async fetchSearchPage(page, version, generation, identity) {
+			if (!this.isPageActive || !this.isSearching) return false
+			const requestVersion = version === undefined ? ++this.searchRequestVersion : version
+			const requestGeneration = generation === undefined ? this.requestGeneration : generation
+			const requestIdentity = identity === undefined ? this.activeAccountIdentity : identity
+			if (page === 1) this.searchLoading = true
+			else this.searchLoadingMore = true
+
+			try {
+				const res = await chatApi.getChatUserList({
+					page,
+					pageSize: this.pageSize,
+					keyword: String(this.searchKeyword || '')
+				})
+				if (!this.isCurrentRequest(requestVersion, requestGeneration, requestIdentity, true)) return false
+				if (res?.code !== 0 || !res.data) return false
+
+				const { data, list } = this.getListResponseData(res)
+				const processedList = this.prepareUserList(list)
+				this.searchResults = this.deduplicateConversations(page === 1
+					? processedList
+					: [...this.searchResults, ...processedList])
+				this.searchPage = page
+				this.searchHasMore = this.getResponseHasMore(data, list, page)
+				this.searchTotal = data?.total !== undefined && data?.total !== null && Number.isFinite(Number(data.total))
+					? Number(data.total)
+					: null
+				this.searchUnreadTotal = data?.unreadTotal !== undefined && data?.unreadTotal !== null && Number.isFinite(Number(data.unreadTotal))
+					? Number(data.unreadTotal)
+					: null
+				return true
+			} catch (e) {
+				if (this.isCurrentRequest(requestVersion, requestGeneration, requestIdentity, true)) {
+					console.error('搜索用户列表失败:', e)
+					uni.showToast({ title: '搜索失败，请重试', icon: 'none' })
+				}
+				return false
+			} finally {
+				if (requestVersion === this.searchRequestVersion && requestGeneration === this.requestGeneration) {
+					if (page === 1) this.searchLoading = false
+					else this.searchLoadingMore = false
+				}
+			}
 		},
 
 		// 清除搜索
 		clearSearch() {
 			this.searchKeyword = ''
+			this.cancelSearchRequests()
+			this.searchResults = []
+			this.searchPage = 1
+			this.searchHasMore = false
+			this.searchTotal = null
+			this.searchUnreadTotal = null
 		},
 
 		// 加载用户列表
-		async loadUserList() {
-			console.log('=== loadUserList 开始 ===', {
-				page: this.page,
-				pageSize: this.pageSize,
-				currentListLength: this.userList.length
-			})
-			
-			if (this.loading && this.page > 1) return // 加载更多时不重复加载
-			if (this.page === 1) this.loading = true
+		async loadUserList(page) {
+			if (!this.isPageActive || this.isSearching || this.loading || this.loadingMore) return false
+			if (this.syncAccountContext()) return false
+			const targetPage = Number.isInteger(page) ? page : this.page + 1
+			if (targetPage <= this.page || !this.hasMore) return false
 
+			const generation = this.requestGeneration
+			const identity = this.activeAccountIdentity
+			const version = ++this.normalRequestVersion
+			this.loadingMore = true
 			try {
-				const res = await chatApi.getChatUserList({
-					page: this.page,
-					pageSize: this.pageSize
-				})
+				const res = await chatApi.getChatUserList({ page: targetPage, pageSize: this.pageSize })
+				if (!this.isCurrentRequest(version, generation, identity)) return false
+				if (res?.code !== 0 || !res.data) return false
 
-				console.log('=== 获取用户列表响应 ===', {
-					code: res.code,
-					dataLength: res.data?.list?.length || res.data?.length || 0,
-					pageSize: this.pageSize
-				})
-
-				if (res.code === 0 && res.data) {
-					const list = res.data.list || res.data || []
-					
-					// 处理数据,添加 unreadCount 字段
-					const processedList = list.map(user => {
-						// 如果后端没有提供 unreadCount,则根据 latestContent.isRead 来判断
-						if (user.unreadCount === undefined) {
-							// 如果最新消息未读且不是自己发的,则未读数为1,否则为0
-							const currentUserId = this.getCurrentUserId()
-							const isLatestFromOther = user.latestContent && 
-								String(user.latestContent.senderId) !== String(currentUserId)
-							user.unreadCount = (user.latestContent?.isRead === false && isLatestFromOther) ? 1 : 0
-						}
-						return user
-					})
-					
-					// 使用增量更新逻辑
-					const oldLength = this.userList.length
-					this.mergeUserList(processedList, this.page)
-					const newLength = this.userList.length
-					
-					console.log('=== mergeUserList 后 ===', {
-						page: this.page,
-						addedCount: newLength - oldLength,
-						totalCount: newLength,
-						receivedCount: list.length
-					})
-					
-					// 判断是否还有更多数据
-					// 只有当返回的数据少于 pageSize 时，才表示没有更多数据
-					this.hasMore = list.length >= this.pageSize
-					
-					console.log('hasMore 设置为:', this.hasMore, '(返回数据:', list.length, '> pageSize:', this.pageSize, ')')
-					
-					// 保存到本地缓存
-					this.saveToCache()
-				}
+				const { data, list } = this.getListResponseData(res)
+				this.mergeUserList(this.prepareUserList(list), targetPage)
+				this.sortUserList()
+				this.page = targetPage
+				this.hasMore = this.getResponseHasMore(data, list, targetPage)
+				this.listTotal = data?.total !== undefined && data?.total !== null && Number.isFinite(Number(data.total))
+					? Number(data.total)
+					: null
+				this.listUnreadTotal = data?.unreadTotal !== undefined && data?.unreadTotal !== null && Number.isFinite(Number(data.unreadTotal))
+					? Number(data.unreadTotal)
+					: null
+				this.saveToCache()
+				return true
 			} catch (e) {
-				console.error('加载用户列表失败:', e)
-				uni.showToast({
-					title: '加载失败',
-					icon: 'none'
-				})
-				// 出错时不改变 hasMore，允许重试
+				if (this.isCurrentRequest(version, generation, identity)) {
+					console.error('加载用户列表失败:', e)
+					uni.showToast({ title: '加载失败', icon: 'none' })
+				}
+				return false
 			} finally {
-				this.loading = false
-				this.loadingMore = false
-				this.isRefreshing = false
+				if (version === this.normalRequestVersion && generation === this.requestGeneration) {
+					this.loadingMore = false
+					this.isRefreshing = false
+				}
 			}
 		},
 
@@ -794,9 +901,9 @@ computed: {
 		// 刷新列表
 		async refreshList() {
 			if (!this.isPageActive) return
-			this.page = 1
-			// 全量加载所有用户
-			await this.initLoadAllUsers()
+			this.syncAccountContext()
+			if (this.isSearching) this.onSearchInput()
+			else await this.refreshFirstPage()
 			
 			if (!this.isPageActive) return
 			
@@ -823,21 +930,33 @@ computed: {
 
 		// 加载更多
 		async loadMore() {			
-			if (this.loadingMore || !this.hasMore) {
+			if (!this.isPageActive) return
+			const accountChanged = this.syncAccountContext()
+			if (accountChanged) {
+				if (this.isSearching) this.onSearchInput()
+				else await this.refreshFirstPage()
 				return
 			}
-			this.loadingMore = true
-			this.page++
-			console.log('准备加载第', this.page, '页')
-			await this.loadUserList()
+			if (this.isSearching) {
+				if (this.searchLoading || this.searchLoadingMore || !this.searchHasMore) return
+				const nextPage = this.searchPage + 1
+				const version = ++this.searchRequestVersion
+				this.searchLoadingMore = true
+				await this.fetchSearchPage(nextPage, version, this.requestGeneration, this.activeAccountIdentity)
+				return
+			}
+			if (this.loading || this.loadingMore || !this.hasMore) return
+			await this.loadUserList(this.page + 1)
 		},
 
 		markLocalChatRead(otherId) {
 			if (!otherId) return
 			let changed = false
+			let normalUnreadReduction = 0
 			this.userList = this.userList.map(user => {
 				if (String(user.otherId) !== String(otherId)) return user
 				changed = true
+				normalUnreadReduction += Number(user.unreadCount) || 0
 				return {
 					...user,
 					unreadCount: 0,
@@ -846,7 +965,26 @@ computed: {
 						: user.latestContent
 				}
 			})
-			if (changed) this.saveToCache()
+			let searchUnreadReduction = 0
+			this.searchResults = this.searchResults.map(user => {
+				if (String(user.otherId) !== String(otherId)) return user
+				searchUnreadReduction += Number(user.unreadCount) || 0
+				return {
+					...user,
+					unreadCount: 0,
+					latestContent: user.latestContent
+						? { ...user.latestContent, isRead: true }
+						: user.latestContent
+				}
+			})
+			const unreadReduction = normalUnreadReduction || searchUnreadReduction
+			if (unreadReduction > 0 && Number.isFinite(this.listUnreadTotal)) {
+				this.listUnreadTotal = Math.max(0, this.listUnreadTotal - unreadReduction)
+			}
+			if (searchUnreadReduction > 0 && Number.isFinite(this.searchUnreadTotal)) {
+				this.searchUnreadTotal = Math.max(0, this.searchUnreadTotal - searchUnreadReduction)
+			}
+			if (changed || searchUnreadReduction > 0) this.saveToCache()
 		},
 
 		// 打开聊天

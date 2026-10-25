@@ -2,7 +2,7 @@
   <view class="controls panel">
     <view class="button-rail">
       <view :class="['control-button', 'primary', { active: playing }]" @tap="$emit(playing ? 'pause' : 'play')">
-        <view :class="playing ? 'icon-pause' : 'icon-play'"><i class="pause-bar"></i><i class="pause-bar"></i></view>
+        <view :class="playing ? 'icon-pause' : 'icon-play'"><i v-if="playing" class="pause-bar"></i><i v-if="playing" class="pause-bar"></i></view>
         <text>{{ playing ? '暂停' : currentIndex > 0 ? '继续' : '开始' }}</text>
       </view>
       <view class="control-button" @tap="$emit('reset')"><view class="icon-reset">↺</view><text>重置</text></view>

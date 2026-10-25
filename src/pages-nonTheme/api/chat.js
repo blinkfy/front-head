@@ -256,9 +256,9 @@ export function getChatHistory(params) {
  * @param {number} params.pageSize - 每页数量
  */
 export function getChatUserList(params) {
-  // 构建查询字符串
-  const queryStr = Object.keys(params)
-    .map(key => `${key}=${params[key]}`)
+  // 构建查询字符串；keyword 可能包含中文、空格、& 或 /，必须逐项编码。
+  const queryStr = Object.keys(params || {})
+    .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key] ?? ''))}`)
     .join('&')
   
   return request({

@@ -93,9 +93,30 @@
               <text class="label-text">密码</text>
             </view>
             <view class="input-wrap">
+              <!-- #ifdef MP-WEIXIN -->
+              <input
+                v-if="showPwd"
+                v-model="password"
+                type="text"
+                placeholder="请输入密码"
+                maxlength="20"
+                class="form-input"
+                @confirm="handleEnterKey"
+              />
+              <input
+                v-else
+                v-model="password"
+                type="text"
+                password
+                placeholder="请输入密码"
+                maxlength="20"
+                class="form-input"
+                @confirm="handleEnterKey"
+              />
+              <!-- #endif -->
+              <!-- #ifndef MP-WEIXIN -->
               <input
                 v-model="password"
-                :key="passwordKey"
                 :type="showPwd ? 'text' : 'password'"
                 placeholder="请输入密码"
                 maxlength="20"
@@ -104,6 +125,7 @@
                 @keyup.enter="handleEnterKey"
                 @keyup="handleKeyup"
               />
+              <!-- #endif -->
               <view class="pwd-toggle" @click="togglePassword">
                 <ManifestIcon class="toggle-icon" :id="showPwd ? 'visibility_off' : 'visibility'" />
               </view>
@@ -286,8 +308,6 @@ async function onWechatLogin(isauto = false) {
 }
 
 // #endif
-const passwordKey = ref(0)
-
 // 启动页显示控制 - 根据平台不同
 const showSplash = ref(false)
 
@@ -377,9 +397,6 @@ function toggleRememberMe() {
 // 切换密码显示/隐藏
 function togglePassword() {
   showPwd.value = !showPwd.value
-  /* #ifdef MP-WEIXIN */
-  passwordKey.value++
-  /* #endif */
 }
 
 // 处理回车键事件

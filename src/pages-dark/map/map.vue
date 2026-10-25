@@ -225,6 +225,7 @@
 
 <script setup>
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
+import { prepareAppMapImage } from '../../utils/map-image-preview.mjs'
 import { ref, onMounted, computed, getCurrentInstance } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { config } from '../../api/config.js'
@@ -1004,21 +1005,40 @@ function goNavigate(m) {
 }
 
 // 示例动作：查看历史图片（如果存在 imageUrl）
-function openHistoryImage(m) {
+const imagePreviewLoading = ref(false)
+async function openHistoryImage(m) {
+  if (imagePreviewLoading.value) return
   if (!m || !m.imageUrl) {
     uni.showToast({ title: '没有图片', icon: 'none' })
     return
   }
-  // // H5: 新窗口打开或使用图片预览库
-  // if (isH5) {
-  //   window.open(m.imageUrl, '_blank')
-  //   return
-  // }
-  // 小程序/APP 预览
-  uni.previewImage({
-    urls: [m.imageUrl],
-  })
-  selectedMarker.value = null
+  imagePreviewLoading.value = true
+  try {
+    let imagePath = m.imageUrl
+    // #ifdef APP-PLUS
+    uni.showLoading({ title: '图片加载中', mask: true })
+    try {
+      imagePath = await prepareAppMapImage(imagePath, {
+        downloadFile: options => uni.downloadFile(options),
+        getImageInfo: options => uni.getImageInfo(options),
+        createBitmap: name => new plus.nativeObj.Bitmap(name)
+      })
+    } finally {
+      uni.hideLoading()
+    }
+    // #endif
+    uni.previewImage({
+      urls: [imagePath],
+      success: () => {
+        if (selectedMarker.value === m) selectedMarker.value = null
+      },
+      fail: () => uni.showToast({ title: '图片预览失败，请重试', icon: 'none' })
+    })
+  } catch (error) {
+    uni.showToast({ title: error?.message || '图片加载失败，请重试', icon: 'none' })
+  } finally {
+    imagePreviewLoading.value = false
+  }
 }
 
 // 示例动作：删除标记（仅前端移除，生产应调用后端）

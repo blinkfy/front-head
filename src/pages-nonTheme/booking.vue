@@ -15,12 +15,12 @@
           <ManifestIcon id="back" class="back-icon" :scale="1" />
         </view>
         <view class="nav-title-wrap">
-          <view class="title-icon-pill"><ManifestIcon id="recycling_booking" :scale="1" /></view>
+          <view class="title-icon-pill"><ManifestIcon id="recycling_booking" /></view>
           <text class="nav-title">预约回收</text>
         </view>
         <view class="nav-right">
           <view class="action-icon-btn" @click="goToOrders">
-            <ManifestIcon class="nav-action-icon" id="reservation_order_table" :scale="1" />
+            <ManifestIcon class="nav-action-icon" id="reservation_order_table" />
           </view>
         </view>
       </view>
@@ -939,6 +939,8 @@ export default {
 .dark-mode .navbar .nav-right .nav-action-icon {
   filter: saturate(1.2) brightness(1.08) drop-shadow(0 0 4rpx rgba(255, 255, 255, 0.4));
 }
+.nav-left, .nav-right { flex: 0 0 80rpx; }
+.nav-right { display: flex; justify-content: flex-end; }
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
   width: 56rpx; height: 56rpx;

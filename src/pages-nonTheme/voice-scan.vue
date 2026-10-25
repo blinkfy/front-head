@@ -939,7 +939,7 @@ export default {
           category: '其他垃圾',
           keywords: ['纸巾', '湿巾', '口罩', '烟头', '陶瓷', '尘土', '污损纸', '尿不湿', '一次性餐具', '保鲜膜', '包装袋'],
           description: '这类通常难以再利用，请投放到其他垃圾桶。',
-          tags: ['其他垃圾', '不易回收', '干垃圾']
+          tags: ['其他垃圾', '不易回收']
         }
       ];
       const matchedRule = rules.find(rule => rule.keywords.some(keyword => lower.includes(keyword.toLowerCase())));
@@ -1043,6 +1043,8 @@ export default {
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
 .dark-mode .back-icon { color: #fff; filter: brightness(0) invert(1); }
+.nav-left, .nav-right { flex: 0 0 80rpx; }
+.nav-right { display: flex; justify-content: flex-end; }
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
   width: 56rpx; height: 56rpx;

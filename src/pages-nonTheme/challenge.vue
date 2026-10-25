@@ -726,6 +726,8 @@ export default {
   box-sizing: border-box;
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; }
+.nav-left, .nav-right { flex: 0 0 80rpx; }
+.nav-right { display: flex; justify-content: flex-end; }
 .nav-title-wrap {
   display: flex;
   align-items: center;

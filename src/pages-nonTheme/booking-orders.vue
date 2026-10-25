@@ -14,7 +14,7 @@
           <ManifestIcon id="back" class="back-icon" :scale="1" />
         </view>
         <view class="nav-title-wrap">
-          <view class="title-icon-pill"><ManifestIcon id="reservation_order_table" :scale="1" /></view>
+          <view class="title-icon-pill"><ManifestIcon id="reservation_order_table" /></view>
           <text class="nav-title">我的订单</text>
         </view>
         <view class="nav-right"></view>
@@ -302,6 +302,7 @@ export default {
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
 .dark-mode .back-icon { color: #fff; filter: brightness(0) invert(1); }
+.nav-left, .nav-right { flex: 0 0 80rpx; }
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
   width: 56rpx; height: 56rpx;

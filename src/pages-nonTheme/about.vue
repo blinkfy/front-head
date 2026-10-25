@@ -42,11 +42,13 @@
 
       <!-- 功能介绍 -->
       <view class="features-section">
-        <text class="section-title">✨ 核心功能</text>
+        <text class="section-title">核心功能</text>
         <text class="section-intro">从分类查询到智能投放，记录每一步环保行动</text>
         <view class="feature-list">
           <view v-for="feature in features" :key="feature.name" class="feature-item">
-            <ManifestIcon class="feature-icon" :id="feature.icon" />
+            <view class="feature-symbol">
+              <ManifestIcon class="feature-icon" :id="feature.icon" size="56rpx" />
+            </view>
             <view class="feature-info">
               <text class="feature-name">{{ feature.name }}</text>
               <text class="feature-desc">{{ feature.desc }}</text>
@@ -57,19 +59,35 @@
 
       <!-- 技术信息 -->
       <view class="tech-section">
-        <text class="section-title">🔬 技术支持</text>
+        <text class="section-title">技术架构</text>
         <view class="tech-info">
           <view class="tech-item">
-            <text class="tech-label">识别方式：</text>
-            <text class="tech-value">图像识别与 AI 对话辅助</text>
+            <text class="tech-index">01</text>
+            <view class="tech-copy">
+              <text class="tech-label">双引擎视觉识别</text>
+              <text class="tech-value">AI 图像理解结合 YOLO 目标检测，可按场景切换并在异常时回退</text>
+            </view>
           </view>
           <view class="tech-item">
-            <text class="tech-label">客户端：</text>
-            <text class="tech-value">uni-app + Vue 3</text>
+            <text class="tech-index">02</text>
+            <view class="tech-copy">
+              <text class="tech-label">上下文 AI 助手</text>
+              <text class="tech-value">结合对话上下文，解答垃圾分类、设备投放与环保问题</text>
+            </view>
           </view>
           <view class="tech-item">
-            <text class="tech-label">设备反馈：</text>
-            <text class="tech-value">以服务端收到的投放记录为准</text>
+            <text class="tech-index">03</text>
+            <view class="tech-copy">
+              <text class="tech-label">端云数据协同</text>
+              <text class="tech-value">贯通分类识别、设备投放记录和积分状态，便于回看与追踪</text>
+            </view>
+          </view>
+          <view class="tech-item">
+            <text class="tech-index">04</text>
+            <view class="tech-copy">
+              <text class="tech-label">跨端应用架构</text>
+              <text class="tech-value">以 Vue 3 与 uni-app 构建，同一套业务适配 H5、App 与小程序</text>
+            </view>
           </view>
         </view>
       </view>
@@ -107,14 +125,14 @@ appIconSource = '/pages-nonTheme/static/Icon.webp.png'
 const isDarkTheme = ref(uni.getStorageSync('app_theme') === 'dark')
 const currentYear = new Date().getFullYear()
 const features = [
-  { icon: 'camera_scan', name: '拍照识别', desc: '拍照获取垃圾分类建议' },
-  { icon: 'ai_assistant', name: 'AI 环保助手', desc: '通过对话查询分类与环保问题' },
-  { icon: 'device_connect', name: '智能投放', desc: '扫码连接设备，查看已同步的投放与积分' },
-  { icon: 'recognition_history', name: '分类记录', desc: '查看在线识别与设备分类历史' },
-  { icon: 'nearby_map', name: '附近设备', desc: '在地图上寻找附近的分类设施' },
-  { icon: 'store', name: '积分与商城', desc: '积累环保积分，浏览兑换商品' },
-  { icon: 'achievements', name: '挑战与成就', desc: '参与答题挑战，查看成就与排行' },
-  { icon: 'community_home', name: '社区交流', desc: '加入社区，分享环保行动' }
+  { icon: 'camera_scan', name: '拍照识别', desc: '拍照获取分类建议' },
+  { icon: 'ai_assistant', name: 'AI 环保助手', desc: '查询分类与环保问题' },
+  { icon: 'device_connect', name: '智能投放', desc: '查看设备投放与积分' },
+  { icon: 'recognition_history', name: '分类记录', desc: '回看识别与投放历史' },
+  { icon: 'nearby_map', name: '附近设备', desc: '查找附近分类设施' },
+  { icon: 'store', name: '积分商城', desc: '浏览并兑换环保好物' },
+  { icon: 'achievements', name: '挑战成就', desc: '答题挑战，记录成就' },
+  { icon: 'community_home', name: '社区交流', desc: '分享环保行动' }
 ]
 
 function checkTheme() {
@@ -122,7 +140,7 @@ function checkTheme() {
   isDarkTheme.value = theme === 'dark'
 }
 
-const currentVersion = manifest?.versionName || '1.4.3'
+const currentVersion = manifest?.versionName || '1.4.4'
 
 const checking = ref(false)
 const updateMessage = ref('')
@@ -499,7 +517,7 @@ onMounted(() => {
 
 /* ===== 应用信息卡片 ===== */
 .info-card {
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(20px);
   border-radius: 30rpx;
   padding: 50rpx 40rpx;
@@ -509,7 +527,7 @@ onMounted(() => {
 }
 
 .about-container.dark-theme .info-card {
-  background: rgba(30, 30, 50, 0.85);
+  background: rgba(30, 30, 50, 0.78);
   box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.4);
 }
 
@@ -697,17 +715,19 @@ onMounted(() => {
 
 /* ===== 功能介绍 ===== */
 .features-section {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.74);
   backdrop-filter: blur(15px);
-  border-radius: 25rpx;
-  padding: 40rpx 30rpx;
-  box-shadow: 0 15rpx 45rpx rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 22rpx;
+  padding: 28rpx 22rpx;
+  box-shadow: 0 8rpx 28rpx rgba(30, 70, 55, 0.06);
   transition: all 0.3s ease;
 }
 
 .about-container.dark-theme .features-section {
-  background: rgba(30, 30, 50, 0.8);
-  box-shadow: 0 15rpx 45rpx rgba(0, 0, 0, 0.3);
+  background: rgba(30, 30, 50, 0.72);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8rpx 28rpx rgba(0, 0, 0, 0.22);
 }
 
 .section-title {
@@ -735,10 +755,34 @@ onMounted(() => {
   color: #e0e0e0;
 }
 
+.features-section .section-title {
+  position: relative;
+  margin-bottom: 28rpx;
+  padding-left: 18rpx;
+  text-align: left;
+}
+
+.features-section .section-title::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 5rpx;
+  height: 32rpx;
+  border-radius: 4rpx;
+  background: #10b981;
+  transform: translateY(-50%);
+}
+
+.features-section .section-intro {
+  margin: -14rpx 0 24rpx 18rpx;
+  text-align: left;
+}
+
 .feature-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18rpx;
+  gap: 0;
 }
 
 @media (min-width: 800px) {
@@ -747,30 +791,60 @@ onMounted(() => {
 
 .feature-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   min-width: 0;
-  padding: 20rpx 16rpx;
-  border-radius: 20rpx;
+  padding: 26rpx 14rpx;
+  border: 0;
+  border-bottom: 1px solid rgba(16, 100, 75, 0.12);
   transition: all 0.3s ease;
-  border-left: 6rpx solid;
+}
+
+.feature-item:nth-child(odd) {
+  border-right: 1px solid rgba(16, 100, 75, 0.12);
+}
+
+.feature-item:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+@media (min-width: 800px) {
+  .feature-item:nth-child(odd) { border-right: 0; }
+  .feature-item:nth-child(4n + 1),
+  .feature-item:nth-child(4n + 2),
+  .feature-item:nth-child(4n + 3) { border-right: 1px solid rgba(16, 100, 75, 0.12); }
+  .feature-item:nth-last-child(-n + 4) { border-bottom: 0; }
 }
 
 /* 浅色模式功能项 */
 .about-container .feature-item {
-  background: rgba(16, 185, 129, 0.05);
-  border-left-color: #10b981;
+  background: transparent;
 }
 
 /* 暗色模式功能项 */
 .about-container.dark-theme .feature-item {
-  background: rgba(102, 126, 234, 0.15);
-  border-left-color: #667eea;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.feature-symbol {
+  display: flex;
+  flex: 0 0 64rpx;
+  align-items: center;
+  justify-content: center;
+  width: 64rpx;
+  height: 64rpx;
+  margin-right: 12rpx;
+  border-radius: 18rpx;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.about-container.dark-theme .feature-symbol {
+  background: rgba(102, 126, 234, 0.14);
 }
 
 .feature-icon {
-  font-size: 34rpx;
-  margin-right: 12rpx;
-  flex-shrink: 0;
+  filter: saturate(0.78);
+  opacity: 0.9;
 }
 
 .feature-info {
@@ -780,10 +854,10 @@ onMounted(() => {
 
 .feature-name {
   display: block;
-  font-size: 27rpx;
+  font-size: 28rpx;
   font-weight: 600;
   color: #2d3748;
-  margin-bottom: 6rpx;
+  margin-bottom: 4rpx;
   transition: color 0.3s ease;
 }
 
@@ -793,10 +867,16 @@ onMounted(() => {
 
 .feature-desc {
   display: block;
-  font-size: 23rpx;
+  font-size: 21rpx;
   color: #718096;
   line-height: 1.4;
   transition: color 0.3s ease;
+}
+
+@media (max-width: 600px) {
+  .features-section { padding: 32rpx 20rpx; }
+  .feature-item { padding: 24rpx 10rpx; }
+  .feature-symbol { flex-basis: 60rpx; width: 60rpx; height: 60rpx; margin-right: 10rpx; }
 }
 
 .about-container.dark-theme .feature-desc {
@@ -805,48 +885,80 @@ onMounted(() => {
 
 /* ===== 技术信息 ===== */
 .tech-section {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.74);
   backdrop-filter: blur(15px);
-  border-radius: 25rpx;
-  padding: 40rpx 30rpx;
-  box-shadow: 0 15rpx 45rpx rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 22rpx;
+  padding: 26rpx 26rpx;
+  box-shadow: 0 8rpx 28rpx rgba(30, 70, 55, 0.06);
   transition: all 0.3s ease;
 }
 
 .about-container.dark-theme .tech-section {
-  background: rgba(30, 30, 50, 0.8);
-  box-shadow: 0 15rpx 45rpx rgba(0, 0, 0, 0.3);
+  background: rgba(30, 30, 50, 0.72);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8rpx 28rpx rgba(0, 0, 0, 0.22);
 }
 
 .tech-info {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+}
+
+.tech-section .section-title {
+  margin-bottom: 12rpx;
+  text-align: left;
 }
 
 .tech-item {
   display: flex;
-  align-items: center;
-  padding: 15rpx 20rpx;
-  border-radius: 15rpx;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 14rpx;
+  padding: 12rpx 4rpx;
+  border-bottom: 1px solid rgba(16, 100, 75, 0.12);
   transition: all 0.3s ease;
 }
 
+.tech-item:last-child { border-bottom: 0; }
+
 /* 浅色模式技术项 */
 .about-container .tech-item {
-  background: rgba(16, 185, 129, 0.05);
+  background: transparent;
 }
 
 /* 暗色模式技术项 */
 .about-container.dark-theme .tech-item {
-  background: rgba(102, 126, 234, 0.15);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.tech-index {
+  flex: 0 0 34rpx;
+  padding-top: 4rpx;
+  color: #8ab8a9;
+  font-size: 22rpx;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.about-container.dark-theme .tech-index {
+  color: #7ca99b;
+}
+
+.tech-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
 }
 
 .tech-label {
   font-size: 28rpx;
   font-weight: 600;
-  color: #4a5568;
-  min-width: 120rpx;
+  color: #168469;
+  margin-bottom: 2rpx;
   transition: color 0.3s ease;
 }
 
@@ -855,9 +967,9 @@ onMounted(() => {
 }
 
 .tech-value {
-  font-size: 28rpx;
+  font-size: 23rpx;
   color: #2d3748;
-  flex: 1;
+  line-height: 1.45;
   transition: color 0.3s ease;
 }
 
@@ -867,7 +979,7 @@ onMounted(() => {
 
 /* ===== 开发者信息 ===== */
 .developer-section {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(15px);
   border-radius: 25rpx;
   padding: 40rpx;
@@ -877,7 +989,7 @@ onMounted(() => {
 }
 
 .about-container.dark-theme .developer-section {
-  background: rgba(30, 30, 50, 0.8);
+  background: rgba(30, 30, 50, 0.72);
   box-shadow: 0 15rpx 45rpx rgba(0, 0, 0, 0.3);
 }
 
@@ -936,31 +1048,25 @@ onMounted(() => {
 
 /* ===== 免责声明 ===== */
 .disclaimer {
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  border-radius: 20rpx;
-  padding: 25rpx 30rpx;
-  border: 2px solid rgba(255, 193, 7, 0.3);
-  box-shadow: 0 10rpx 30rpx rgba(0, 0, 0, 0.05);
+  margin-top: -20rpx;
+  padding: 0 8rpx;
   transition: all 0.3s ease;
 }
 
 .about-container.dark-theme .disclaimer {
-  background: rgba(30, 30, 50, 0.8);
-  border-color: rgba(255, 193, 7, 0.2);
-  box-shadow: 0 10rpx 30rpx rgba(0, 0, 0, 0.3);
+  background: transparent;
 }
 
 .disclaimer-text {
-  font-size: 24rpx;
-  color: #856404;
-  line-height: 1.5;
+  font-size: 20rpx;
+  color: #8a9691;
+  line-height: 1.4;
   text-align: center;
   transition: color 0.3s ease;
 }
 
 .about-container.dark-theme .disclaimer-text {
-  color: #d4a574;
+  color: #8f99aa;
 }
 
 /* 响应式设计 */

@@ -9,9 +9,9 @@ window.FENTOUXIA_OFFICIAL = Object.freeze({
   icp: '', // TODO：如适用，填写真实 ICP 备案号
   icpUrl: '', // TODO：对应真实备案查询链接（选填）
   downloadUrl: 'https://rgqexbnzzipc.sealosbja.site/files/download/classfication.apk', // 复用应用关于页的现有下载入口
-  downloadLabel: '下载 Android 公测版',
+  downloadLabel: '下载公测版 ↗',
   webUrl: './index.html#/pages/home/home', // 复用现有 H5 业务首页；登录与权限仍由业务页处理
   releaseStatus: 'Android 公测版 · 已开放下载',
-  releaseNote: 'Android 版本尚未上架应用商店，欢迎下载公测版体验。',
+  releaseNote: '尚未上架应用商店，可直接下载体验。',
   promoVideoUrl: './official/video/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1.m3u8',
 })

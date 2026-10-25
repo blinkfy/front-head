@@ -637,6 +637,8 @@ export default {
 }
 .back-icon { font-size: 48rpx; font-weight: 600; padding: 8rpx; color: #1f2937; }
 .dark-mode .back-icon { color: #fff; filter: brightness(0) invert(1); }
+.nav-left, .nav-right { flex: 0 0 80rpx; }
+.nav-right { display: flex; justify-content: flex-end; }
 .nav-title-wrap {
   display: flex; align-items: center; gap: 12rpx;
   flex: 1; justify-content: center;
@@ -949,7 +951,14 @@ export default {
   box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.04);
 }
 .dark-mode .comment-bar { background: rgba(40, 40, 95, 1); border-top-color: rgba(255, 255, 255, 0.1); }
-.comment-input-wrapper { display: flex; gap: 16rpx; align-items: center; }
+.comment-input-wrapper {
+  display: flex;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  gap: 16rpx;
+  align-items: center;
+}
 .comment-input {
   flex: 1;
   background: rgba(0, 0, 0, 0.04);

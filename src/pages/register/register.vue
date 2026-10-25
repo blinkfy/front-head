@@ -85,9 +85,30 @@
               <text class="label-text">密码</text>
             </view>
             <view class="input-wrap">
+              <!-- #ifdef MP-WEIXIN -->
+              <input
+                v-if="showPwd"
+                v-model="password"
+                type="text"
+                placeholder="请输入密码（至少6位）"
+                maxlength="20"
+                class="form-input"
+                @confirm="handleEnterKey"
+              />
+              <input
+                v-else
+                v-model="password"
+                type="text"
+                password
+                placeholder="请输入密码（至少6位）"
+                maxlength="20"
+                class="form-input"
+                @confirm="handleEnterKey"
+              />
+              <!-- #endif -->
+              <!-- #ifndef MP-WEIXIN -->
               <input
                 v-model="password"
-                :key="passwordKey"
                 :type="showPwd ? 'text' : 'password'"
                 placeholder="请输入密码（至少6位）"
                 maxlength="20"
@@ -96,6 +117,7 @@
                 @keyup.enter="handleEnterKey"
                 @keyup="handleKeyup"
               />
+              <!-- #endif -->
               <view class="pwd-toggle" @click="togglePassword">
                 <image class="toggle-icon" :src="showPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
               </view>
@@ -110,9 +132,30 @@
               <text class="label-text">确认密码</text>
             </view>
             <view class="input-wrap">
+              <!-- #ifdef MP-WEIXIN -->
+              <input
+                v-if="showConfirmPwd"
+                v-model="confirmPwd"
+                type="text"
+                placeholder="请再次输入密码"
+                maxlength="20"
+                class="form-input"
+                @confirm="handleEnterKey"
+              />
+              <input
+                v-else
+                v-model="confirmPwd"
+                type="text"
+                password
+                placeholder="请再次输入密码"
+                maxlength="20"
+                class="form-input"
+                @confirm="handleEnterKey"
+              />
+              <!-- #endif -->
+              <!-- #ifndef MP-WEIXIN -->
               <input
                 v-model="confirmPwd"
-                :key="confirmPasswordKey"
                 :type="showConfirmPwd ? 'text' : 'password'"
                 placeholder="请再次输入密码"
                 maxlength="20"
@@ -121,6 +164,7 @@
                 @keyup.enter="handleEnterKey"
                 @keyup="handleKeyup"
               />
+              <!-- #endif -->
               <view class="pwd-toggle" @click="toggleConfirmPassword">
                 <image class="toggle-icon" :src="showConfirmPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
               </view>
@@ -220,8 +264,6 @@ const confirmPwd = ref('')
 const showPwd = ref(false)
 const showConfirmPwd = ref(false)
 const isLoading = ref(false)
-const passwordKey = ref(0)
-const confirmPasswordKey = ref(0)
 // #ifdef APP-PLUS || MP-WEIXIN
 const privacyAccepted = ref(false)
 const showPrivacyDetails = ref(false)
@@ -352,17 +394,11 @@ function goLogin() {
 // 切换密码显示/隐藏
 function togglePassword() {
   showPwd.value = !showPwd.value
-  /* #ifdef MP-WEIXIN */
-  passwordKey.value++
-  /* #endif */
 }
 
 // 切换确认密码显示/隐藏
 function toggleConfirmPassword() {
   showConfirmPwd.value = !showConfirmPwd.value
-  /* #ifdef MP-WEIXIN */
-  confirmPasswordKey.value++
-  /* #endif */
 }
 
 // 回车键处理函数

@@ -549,8 +549,9 @@ onBeforeUnmount(() => {
 
 /* ==================== 胶囊筛选标签 ==================== */
 .category-filter-scroll { width: 100%; margin-bottom: 14px; white-space: nowrap; }
-.category-tabs { display: inline-flex; gap: 10px; padding-bottom: 4px; }
-.category-tab { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-secondary); background: var(--border-subtle); font-size: 12px; transition: .2s; }
+.category-tabs { display: inline-flex; flex-wrap: nowrap; gap: 10px; padding-bottom: 4px; }
+.category-tab { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; padding: 9px 14px; border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-secondary); background: var(--border-subtle); font-size: 12px; white-space: nowrap; transition: .2s; }
+.category-tab text { white-space: nowrap; }
 .category-tab.active { color: var(--accent-gold); border-color: var(--border-active); background: rgba(245,158,11,.08); }
 .category-count { min-width: 20px; padding: 1px 6px; border-radius: 999px; text-align: center; color: var(--text-muted); background: var(--bg-primary); font-size: 10px; }
 .filter-tabs { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
@@ -772,10 +773,20 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 600px) {
-  .overview-panel { grid-template-columns: 1fr; gap: 18px; }.completion-ring { width: 92px; height: 92px; flex-basis: 92px; }.completion-ring-inner { width: 70px; height: 70px; }.next-target, .recent-unlocks { padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--border-medium); }
+  .overview-panel { grid-template-columns: 1fr; gap: 16px; }.overview-progress { gap: 14px; min-width: 0; }.overview-copy { min-width: 0; }.overview-title { font-size: 17px; }.completion-ring { width: 84px; height: 84px; flex-basis: 84px; }.completion-ring-inner { width: 66px; height: 66px; }.next-target, .recent-unlocks { padding: 14px 0 0; border-left: 0; border-top: 1px solid var(--border-medium); }
+  .recent-unlocks { padding-top: 8px; }
+  .recent-unlocks .overview-kicker { margin-bottom: 6px; }
+  .recent-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+  .recent-item { gap: 8px; }
   .main-content { padding: 16px 12px calc(20px + env(safe-area-inset-bottom)); }
   .panel { padding: 16px; border-radius: 16px; }
-  .achievement-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .panel-header { margin-bottom: 16px; }
+  .panel-subtitle { white-space: nowrap; padding: 4px 10px; }
+  .category-tabs { gap: 8px; }
+  .category-tab { padding: 8px 12px; }
+  .filter-tabs { gap: 8px; margin-bottom: 18px; }
+  .filter-tab { padding: 6px 10px; }
+  .achievement-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .achievement-card { padding: 16px 12px; gap: 12px; border-radius: 16px; }
   .card-icon-frame { width: 64px; height: 64px; border-width: 3px; }
   .card-name { font-size: 14px; }

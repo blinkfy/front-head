@@ -84,7 +84,7 @@
             v-for="item in historyList" 
             :key="item.id" 
             class="history-item"
-            :class="{ selected: selectedItems.includes(item.id) }"
+            :class="{ selected: selectedItems.includes(item.id), 'select-mode': selectMode }"
             @click="selectMode ? toggleSelect(item.id) : viewDetail(item)"
           >
             <!-- 选择框 -->
@@ -104,6 +104,7 @@
                 />
                 <view v-else class="history-image history-image-ph">
                   <ManifestIcon id="image_gallery" class="ph-icon" />
+                  <text class="image-state-label" @click.stop="onImagePlaceholderTap(item)">{{ getHistoryImageLabel(getHistoryImageState(item, !!thumbFailed[item.id])) }}</text>
                 </view>
                 <view class="source-badge" :class="item.source">
                   <text class="source-text">{{ getSourceLabel(item.source) }}</text>
@@ -124,7 +125,7 @@
               
               <!-- 操作按钮 -->
               <view v-if="!selectMode" class="item-actions">
-              <ManifestIcon id="delete" class="action-icon" @click.stop="deleteItem(item.id)" />
+              <ManifestIcon id="delete" class="action-icon" size="75rpx" @click.stop="deleteItem(item.id)" />
               </view>
             </view>
           </view>
@@ -141,7 +142,7 @@
           <text class="loading-text">加载中...</text>
         </view>
         <view class="loading-more2">
-          <text v-if="!loading &&!hasMore" class="empty-desc2">识别记录仅保留45天</text>
+          <text v-if="!loading &&!hasMore" class="empty-desc2">图片超过{{ HISTORY_IMAGE_RETENTION_DAYS }}天会自动清理，识别记录仍保留</text>
         </view>
       </view>
     </view>
@@ -159,9 +160,12 @@
         
         <!-- 图片区域（按需加载，未就绪时显示占位） -->
         <view class="detail-image-section">
-          <image v-if="detailItem.image" :src="detailItem.image" mode="aspectFit" class="detail-image" />
+          <image v-if="detailItem.image" :src="detailItem.image" mode="aspectFit" class="detail-image" @error="onDetailImageError" />
           <view v-else class="detail-image detail-image-ph">
             <ManifestIcon id="image_gallery" class="detail-ph-icon" />
+            <text class="detail-image-state" @click="retryDetailImage">{{ detailImageLoading ? '图片加载中…' : getHistoryImageLabel(detailImageState) }}</text>
+            <text v-if="!detailImageLoading && detailImageState === 'cleared'" class="detail-image-hint">图片已超过{{ HISTORY_IMAGE_RETENTION_DAYS }}天保留期自动清理</text>
+            <text v-if="!detailImageLoading && detailImageState === 'cleared'" class="detail-image-hint">分类结果和识别时间仍可查看</text>
           </view>
         </view>
         
@@ -209,6 +213,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { getRecognitionHistory, deleteHistoryRecord, batchDeleteHistoryRecords, getHistoryImage } from '@/api/history'
 import { baseUrl } from '@/api/settings'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { HISTORY_IMAGE_RETENTION_DAYS, getHistoryImageState, getHistoryImageLabel } from '@/utils/history-image-state.mjs'
 
 // 页面参数接收
 const onLoad = (options) => {
@@ -520,45 +525,76 @@ async function deleteItem(id) {
   }
 }
 
-// 查看详情（图片存数据库，点开时按需取单条，避免列表批量读取 Base64）
+const detailImageLoading = ref(false)
+const detailImageFailed = ref(false)
+const detailImageState = computed(() => getHistoryImageState(detailItem.value, detailImageFailed.value))
+let detailImageRequest = 0
+
+// 查看详情时仍尝试加载有图的旧记录；只有缺图或失败时才判断清理期限。
 function viewDetail(item) {
   detailItem.value = { ...item, image: '' }
+  detailImageFailed.value = false
   detailVisible.value = true
   loadDetailImage(item)
 }
 
-// 按需加载详情图片；快速切换时以 id 校验防止旧请求覆盖新详情
 async function loadDetailImage(item) {
+  const requestId = ++detailImageRequest
+  detailImageLoading.value = false
   if (!item.hasImage) return
+  detailImageLoading.value = true
+  detailImageFailed.value = false
   try {
     const res = await getHistoryImage(item.id)
-    if (
-      detailVisible.value &&
-      detailItem.value.id === item.id &&
-      res.code === 0 &&
-      res.data && res.data.image
-    ) {
+    if (!detailVisible.value || requestId !== detailImageRequest) return
+    if (res.code === 0 && res.data?.image) {
       const img = res.data.image
-      detailItem.value.image = img.startsWith('data:') ? img : baseUrl + img
+      detailItem.value.image = /^(?:data:|https?:\/\/)/i.test(img) ? img : baseUrl + img
+    } else {
+      detailImageFailed.value = true
     }
   } catch (_) {
-    // 图片加载失败时保持占位图
+    if (detailVisible.value && requestId === detailImageRequest) detailImageFailed.value = true
+  } finally {
+    if (requestId === detailImageRequest) detailImageLoading.value = false
   }
 }
 
-// 列表缩略图：每行单独请求一张按需缩放的小图，避免列表接口携带大 Base64
+function onDetailImageError() {
+  detailItem.value.image = ''
+  detailImageFailed.value = true
+  onThumbError(detailItem.value.id)
+}
+
+function retryDetailImage() {
+  if (!detailImageLoading.value && detailImageState.value === 'error') loadDetailImage(detailItem.value)
+}
+
+// 列表缩略图保持按需加载，失败后可单独重试。
 const thumbFailed = ref({})
+const thumbRetry = ref({})
 function thumbUrl(item) {
   const token = uni.getStorageSync('token') || ''
-  return `${baseUrl}/api/recognition_history/image/${item.id}?raw=1&w=240&token=${encodeURIComponent(token)}`
+  return `${baseUrl}/api/recognition_history/image/${item.id}?raw=1&w=240&token=${encodeURIComponent(token)}&retry=${thumbRetry.value[item.id] || 0}`
 }
 function onThumbError(id) {
   thumbFailed.value = { ...thumbFailed.value, [id]: true }
 }
+function onImagePlaceholderTap(item) {
+  if (selectMode.value) toggleSelect(item.id)
+  else if (getHistoryImageState(item, !!thumbFailed.value[item.id]) === 'error') retryThumb(item)
+  else viewDetail(item)
+}
+function retryThumb(item) {
+  if (getHistoryImageState(item, !!thumbFailed.value[item.id]) !== 'error') return
+  thumbRetry.value = { ...thumbRetry.value, [item.id]: (thumbRetry.value[item.id] || 0) + 1 }
+  thumbFailed.value = { ...thumbFailed.value, [item.id]: false }
+}
 
-// 关闭详情弹窗
 function closeDetail() {
   detailVisible.value = false
+  detailImageRequest++
+  detailImageLoading.value = false
 }
 
 // 获取来源标签
@@ -1093,6 +1129,8 @@ function handleBackupNavigation() {
 }
 
 .history-item {
+  display: flex;
+  align-items: center;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 253, 244, 0.95) 50%, rgba(255, 255, 255, 0.98) 100%);
   backdrop-filter: blur(20px);
   border-radius: 20rpx;
@@ -1162,12 +1200,24 @@ function handleBackupNavigation() {
 .item-content {
   display: flex;
   align-items: center;
+  flex: 1;
+  min-width: 0;
   padding: 24rpx;
 }
 
 /* 选择框 */
 .select-checkbox {
-  margin-right: 24rpx;
+  display: flex;
+  flex: 0 0 48rpx;
+  align-items: center;
+  justify-content: center;
+  width: 48rpx;
+  height: 48rpx;
+  margin: 0 12rpx;
+}
+
+.history-item.select-mode .item-content {
+  padding-left: 0;
 }
 
 .checkbox-icon {
@@ -1208,6 +1258,8 @@ function handleBackupNavigation() {
 /* 列表缩略占位图：图片存数据库，列表不读取，点开详情再取 */
 .history-image-ph {
   display: flex;
+  flex-direction: column;
+  gap: 6rpx;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, rgba(47, 193, 172, 0.12), rgba(47, 193, 172, 0.05));
@@ -1294,7 +1346,6 @@ function handleBackupNavigation() {
 }
 
 .action-icon {
-  font-size: 36rpx;
   padding: 16rpx;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -1465,6 +1516,8 @@ function handleBackupNavigation() {
 
 /* 详情图片未加载完成时的占位 */
 .detail-image-ph {
+  flex-direction: column;
+  gap: 12rpx;
   width: 320rpx;
   height: 320rpx;
   display: flex;
@@ -1476,6 +1529,29 @@ function handleBackupNavigation() {
 .detail-ph-icon {
   font-size: 48rpx;
   opacity: 0.3;
+}
+
+
+.image-state-label {
+  font-size: 18rpx;
+  line-height: 1.4;
+  text-align: center;
+  color: #64748b;
+  padding: 0 4rpx;
+}
+
+.detail-image-state {
+  font-size: 26rpx;
+  line-height: 1.5;
+  text-align: center;
+  color: #475569;
+}
+
+.detail-image-hint {
+  font-size: 22rpx;
+  line-height: 1.5;
+  text-align: center;
+  color: #64748b;
 }
 
 /* 信息区域 */
