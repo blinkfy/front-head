@@ -1,5 +1,22 @@
-import { getDeviceQrScanContent, resolveDeviceQrPathTarget } from './device-qr-entry.mjs'
+import { DEVICE_SCAN_PAGE, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl, getDeviceQrScanContent, resolveDeviceQrPathTarget } from './device-qr-entry.mjs'
 export { getDeviceQrScanContent } from './device-qr-entry.mjs'
+// #ifdef MP-WEIXIN
+import { handleRegistrationQrScan } from './registration-relay.mjs'
+// #endif
+
+export function scanDeviceQrCode(options) {
+  // #ifdef APP-PLUS
+  if (typeof plus !== 'undefined') {
+    void import('./app-qr-scanner.js').then(module => module.scanWithAppQbar(options))
+      .catch(() => {
+        uni.showToast({ title: '当前安装包不支持圆码，请扫描普通二维码', icon: 'none' })
+        uni.scanCode(options)
+      })
+    return
+  }
+  // #endif
+  return uni.scanCode(options)
+}
 
 export const MOCK_DEVICE = Object.freeze({
   device_id: 'FTX-MOCK-ROBOT-001',
@@ -9,6 +26,7 @@ export const MOCK_DEVICE = Object.freeze({
 })
 
 const MOCK_CONNECTION_KEY = 'mock_device_connection'
+const MOCK_CONNECTION_PREVIOUS_KEY = 'mock_device_connection_previous'
 
 function decodeValue(value) {
   try {
@@ -48,7 +66,8 @@ export function buildRobotControlUrl(deviceId, deviceName, isMock = false) {
   return `/pages-nonTheme/robot-control?${query.join('&')}`
 }
 
-export function resolveDeviceScanTarget(rawContent, scanPage = '/pages/scan/scan') {
+export function resolveDeviceScanTarget(rawContent, scanPage = DEVICE_SCAN_PAGE) {
+  if (isLegacyDeviceScanPath(scanPage)) scanPage = DEVICE_SCAN_PAGE
   const raw = String(rawContent || '').trim()
   if (!raw) return { url: '', deviceId: '', deviceName: '', deviceMode: 'bin', token: '', isMock: false }
 
@@ -62,6 +81,7 @@ export function resolveDeviceScanTarget(rawContent, scanPage = '/pages/scan/scan
   }
 
   if (directPath) {
+    directPath = resolveLegacyDeviceScanUrl(directPath) || directPath
     const sceneTarget = resolveDeviceQrPathTarget(directPath, scanPage)
     if (sceneTarget) return sceneTarget
 
@@ -124,13 +144,28 @@ export function resolveDeviceScanTarget(rawContent, scanPage = '/pages/scan/scan
   }
 }
 
+export function getPreviousMockDeviceConnection() {
+  const connection = uni.getStorageSync(MOCK_CONNECTION_PREVIOUS_KEY)
+  return connection && connection.mock ? connection : null
+}
+
+export function getPreferredMockDeviceConnection() {
+  const previous = getPreviousMockDeviceConnection()
+  if (previous) return previous
+  return getMockDeviceConnection()
+}
+
 export function saveMockDeviceConnection(device = MOCK_DEVICE) {
+  const previous = getMockDeviceConnection()
   const connection = {
     device_id: device.device_id || MOCK_DEVICE.device_id,
     device_name: device.device_name || MOCK_DEVICE.device_name,
     device_mode: normalizeDeviceMode(device.device_mode || MOCK_DEVICE.device_mode),
     mock: true,
     connected_at: Date.now()
+  }
+  if (previous) {
+    uni.setStorageSync(MOCK_CONNECTION_PREVIOUS_KEY, previous)
   }
   uni.setStorageSync('connection', connection.connected_at)
   uni.setStorageSync(MOCK_CONNECTION_KEY, connection)
@@ -161,7 +196,7 @@ export function scanAndConnectDevice(onMockConnected) {
   )
 
   const connectDevice = (rawContent) => {
-    const target = resolveDeviceScanTarget(rawContent, '/pages/scan/scan')
+    const target = resolveDeviceScanTarget(rawContent)
     if (!target.url) {
       uni.showToast({ title: target.invalidScene ? '二维码已过期或异常，请重新扫码' : '设备ID不能为空', icon: 'none' })
       return
@@ -189,13 +224,19 @@ export function scanAndConnectDevice(onMockConnected) {
     })
   } else {
     // #ifdef MP-WEIXIN
-    uni.scanCode({
-      success: (res) => connectDevice(getDeviceQrScanContent(res)),
+    scanDeviceQrCode({
+      success: (res) => {
+        if (handleRegistrationQrScan(res, {
+          navigateTo: options => uni.navigateTo(options),
+          showToast: options => uni.showToast(options)
+        })) return
+        connectDevice(getDeviceQrScanContent(res))
+      },
       fail: () => uni.showToast({ title: '扫码失败', icon: 'none' })
     })
     // #endif
     // #ifndef MP-WEIXIN
-    uni.scanCode({
+    scanDeviceQrCode({
       scanType: ['qrCode'],
       success: (res) => connectDevice(getDeviceQrScanContent(res)),
       fail: () => uni.showToast({ title: '扫码失败', icon: 'none' })
@@ -211,4 +252,5 @@ export function getMockDeviceConnection() {
 
 export function clearMockDeviceConnection() {
   uni.removeStorageSync(MOCK_CONNECTION_KEY)
+  uni.removeStorageSync(MOCK_CONNECTION_PREVIOUS_KEY)
 }

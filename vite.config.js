@@ -19,6 +19,16 @@ export default defineConfig(async ({ mode }) => {
       smartSortRobotAssetsPlugin(),
       mpMainPackageAssetsPlugin(),
       officialSitePlugin(),
+      // APP 的 IIFE 不支持动态分包；在输出阶段内联，保留 H5/AMD 的分包行为。
+      {
+        name: 'app-iife-inline-imports',
+        apply: 'build',
+        outputOptions(output) {
+          if (['app', 'app-plus'].includes(process.env.UNI_PLATFORM) && output.format === 'iife') {
+            return { ...output, inlineDynamicImports: true, manualChunks: undefined }
+          }
+        }
+      },
     ],
     resolve: {
       alias: {

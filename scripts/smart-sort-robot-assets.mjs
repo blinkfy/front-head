@@ -6,6 +6,8 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { ROBOT_MP_PACKAGE_NAME } from '../src/components/smart-sort-robot-mp.mjs'
 import { refineIdleMotion } from '../src/components/smart-sort-robot-idle.mjs'
+import { refineRecognitionMotion } from '../src/components/smart-sort-robot-performance.mjs'
+import { ROBOT_SEQUENCES, ROBOT_LOOP_CLIPS } from '../src/utils/recognition-robot-state.mjs'
 import { refineSuccessMotion, refineFailMotion } from '../src/components/smart-sort-robot-engine.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -32,6 +34,7 @@ export async function bakeRobotModel() {
   refineIdleMotion(gltf.animations, gltf.scene)
   refineSuccessMotion(gltf.animations.find(clip => clip.name === 'Success'))
   refineFailMotion(gltf.animations.find(clip => clip.name === 'Fail'), gltf.scene)
+  refineRecognitionMotion(gltf.animations, gltf.scene)
   // 原符号材质被其它特效共用，只为这两个节点追加材质/mesh引用，保留其它效果。
   for (const name of ['FX_FailBadge', 'FX_FailQuestion']) {
     const node = json.nodes.find(item => item.name === name)
@@ -78,7 +81,7 @@ export async function bakeRobotModel() {
     json.accessors.push(item)
     return json.accessors.length - 1
   }
-  for (const name of ['Idle_Base', 'Idle_Curious', 'Success', 'Fail', 'Idle_Reduced']) {
+  for (const name of ['Idle_Base', 'Idle_Curious', 'Wake', 'Analyze_Enter', 'Analyze_Loop', 'Analyze_Confirm', 'Analyze_Review_Loop', 'Result_Look', 'Success', 'Fail', 'Idle_Reduced']) {
     const clip = gltf.animations.find(animation => animation.name === name)
     if (!clip) throw new Error(`Robot animation missing: ${name}`)
     const animation = { name, samplers: [], channels: [] }
@@ -129,7 +132,7 @@ export function smartSortRobotAssetsPlugin() {
         for (const extension of ['js', 'json', 'wxml', 'wxss']) {
           assets.push({ fileName: `${xrComponentRoot}/index.${extension}`, source: await fs.readFile(path.join(root, `src/components/smart-sort-xr-native/index.${extension}`)) })
         }
-        assets.push({ fileName: `${xrComponentRoot}/model-meta.js`, source: `module.exports = ${JSON.stringify({ center: baked.center, src: `/${xrRoot}/smart_sort_robot_v34_animated.glb` })}` })
+        assets.push({ fileName: `${xrComponentRoot}/model-meta.js`, source: `module.exports = ${JSON.stringify({ center: baked.center, src: `/${xrRoot}/smart_sort_robot_v34_animated.glb`, sequences: ROBOT_SEQUENCES, loops: ROBOT_LOOP_CLIPS })}` })
       }
     },
     generateBundle() {

@@ -162,3 +162,70 @@ test('both map page script setups compile', async () => {
   }
 })
 
+
+test('remote Windows separators are normalized before download without changing query or fragment', async () => {
+  let downloadOptions
+  const source = 'https://example.test/images\\bin2.jpeg?token=a%2Fb&sig=x%3Dy#preview'
+  const result = prepareAppMapImage(source, {
+    downloadFile(options) { downloadOptions = options; return {} },
+    getImageInfo(options) { options.success({}) },
+    createBitmap() {}
+  })
+
+  assert.equal(downloadOptions.url, 'https://example.test/images/bin2.jpeg?token=a%2Fb&sig=x%3Dy#preview')
+  downloadOptions.success({ statusCode: 200, tempFilePath: '_doc/download.jpg' })
+  assert.equal(await result, '_doc/download.jpg')
+})
+
+test('native download and image-info errors retain stage, code, and errMsg detail', async () => {
+  const failures = [
+    {
+      stage: '图片下载失败',
+      code: 600001,
+      detail: 'downloadFile:fail network error',
+      run(options) { options.fail({ errMsg: this.detail, code: this.code }) }
+    },
+    {
+      stage: '图片解码失败',
+      code: 9,
+      detail: 'getImageInfo:fail invalid image',
+      run(options) { options.success({ statusCode: 200, tempFilePath: '_doc/bad.jpg' }) }
+    }
+  ]
+
+  for (const failure of failures) {
+    let downloadOptions
+    const promise = prepareAppMapImage('https://example.test/bin.jpg', {
+      downloadFile(options) {
+        downloadOptions = options
+        if (failure.stage === '图片下载失败') failure.run(options)
+        return {}
+      },
+      getImageInfo(options) {
+        if (failure.stage === '图片解码失败') options.fail({ errMsg: failure.detail, code: failure.code })
+      },
+      createBitmap() {}
+    })
+    if (failure.stage === '图片解码失败') failure.run(downloadOptions)
+
+    await assert.rejects(promise, error => {
+      assert.ok(error instanceof Error)
+      assert.equal(error.stage, failure.stage)
+      assert.equal(error.code, failure.code)
+      assert.equal(error.detail, failure.detail)
+      return true
+    })
+  }
+})
+
+test('decoded canonical local path is returned for preview', async () => {
+  let downloadOptions
+  const result = prepareAppMapImage('https://example.test/bin.jpg', {
+    downloadFile(options) { downloadOptions = options; return {} },
+    getImageInfo(options) { options.success({ path: '_doc/canonical/bin.jpg' }) },
+    createBitmap() {}
+  })
+
+  downloadOptions.success({ statusCode: 200, tempFilePath: '_doc/temp/bin.jpg' })
+  assert.equal(await result, '_doc/canonical/bin.jpg')
+})

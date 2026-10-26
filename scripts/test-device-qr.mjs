@@ -2,44 +2,51 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
+import * as Vue from 'vue'
 import {
+  DEVICE_SCAN_PAGE,
   appendPageQuery,
   buildDeviceQrScanUrl,
   clearPendingDeviceQrScene,
   getDeviceQrScanContent,
   getPendingDeviceQrScene,
+  isLegacyDeviceScanPath,
   isValidDeviceQrScene,
   normalizeDeviceQrScene,
   PENDING_DEVICE_QR_KEY,
   PENDING_DEVICE_QR_TTL_MS,
   resolveDeviceQrPathTarget,
+  resolveLegacyDeviceScanUrl,
+  rewriteLegacyDeviceScanLocation,
   savePendingDeviceQrScene
 } from '../src/utils/device-qr-entry.mjs'
 import { getDeviceQrScanContent as getDeviceScanContent, normalizeDeviceMode, resolveDeviceScanTarget } from '../src/utils/device-qr.js'
 
 const scene = '0123456789abcdef0123456789abcdef'
 const path = `/pages/scan/scan?scene=${scene}`
+const darkPath = `/pages-dark/scan/scan?scene=${scene}`
 const hookFile = new URL('../src/utils/use-device-scan-page.js', import.meta.url)
 const hookSource = await readFile(hookFile, 'utf8')
 
 const scannerSources = await Promise.all([
   ['src/utils/device-qr.js', await readFile(new URL('../src/utils/device-qr.js', import.meta.url), 'utf8')],
   ['src/utils/use-device-scan-page.js', hookSource],
-  ['src/pages-dark/home/home.vue', await readFile(new URL('../src/pages-dark/home/home.vue', import.meta.url), 'utf8')]
+  ['src/pages-nonTheme/scan.vue', await readFile(new URL('../src/pages-nonTheme/scan.vue', import.meta.url), 'utf8')]
 ])
 for (const [file, scannerSource] of scannerSources) {
   assert.doesNotMatch(scannerSource, /wxCode/, `${file}: scanType must not use unsupported wxCode`)
   if (file === 'src/utils/device-qr.js') {
-    const miniProgramScan = scannerSource.match(/\/\/ #ifdef MP-WEIXIN\s+uni\.scanCode\(\{([\s\S]*?)\/\/ #endif/)
+    const miniProgramScan = scannerSource.match(/\/\/ #ifdef MP-WEIXIN\s+scanDeviceQrCode\(\{([\s\S]*?)\/\/ #endif/)
     assert.ok(miniProgramScan, 'utility keeps its MP-Weixin scan branch')
     assert.doesNotMatch(miniProgramScan[1], /scanType/, 'MP-Weixin uses its default scan types')
-    assert.match(scannerSource, /\/\/ #ifndef MP-WEIXIN\s+uni\.scanCode\(\{\s*scanType:\s*\['qrCode'\]/)
-  } else {
-    assert.match(scannerSource, /uni\.scanCode\(\{\s*\/\/ #ifndef MP-WEIXIN\s+scanType:\s*\['qrCode'\]/, `${file}: qrCode filtering remains APP-only`)
+    assert.match(scannerSource, /\/\/ #ifndef MP-WEIXIN\s+scanDeviceQrCode\(\{\s*scanType:\s*\['qrCode'\]/)
+  } else if (file === 'src/utils/use-device-scan-page.js') {
+    assert.match(scannerSource, /scanDeviceQrCode\(\{\s*\/\/ #ifndef MP-WEIXIN\s+scanType:\s*\['qrCode'\]/, `${file}: qrCode filtering remains APP-only`)
   }
 }
 
 assert.equal(getDeviceQrScanContent({ path, result: 'legacy-device' }), path, 'an own scan route path takes priority')
+assert.equal(getDeviceQrScanContent({ path: darkPath, result: 'legacy-device' }), darkPath, 'an old dark scan route remains trusted')
 assert.equal(
   getDeviceQrScanContent({ path: '/pages/home/home?scene=ignored', result: 'device_id=bin-7&token=legacy' }),
   'device_id=bin-7&token=legacy',
@@ -54,7 +61,7 @@ assert.equal(
 assert.deepEqual(
   resolveDeviceQrPathTarget(path, '/pages-dark/scan/scan'),
   {
-    url: `/pages-dark/scan/scan?scene=${scene}`,
+    url: `${DEVICE_SCAN_PAGE}?scene=${scene}`,
     scene,
     deviceId: '',
     deviceName: '',
@@ -63,11 +70,55 @@ assert.deepEqual(
     isMock: false
   }
 )
+assert.equal(isLegacyDeviceScanPath('/pages/scan/scan'), true)
+assert.equal(isLegacyDeviceScanPath('/pages-dark/scan/scan?scene=' + scene), true)
+assert.equal(isLegacyDeviceScanPath('/pages/home/home'), false)
+assert.equal(resolveLegacyDeviceScanUrl('/pages-dark/scan/scan?scene=' + scene), `${DEVICE_SCAN_PAGE}?scene=${scene}`)
+assert.equal(
+  resolveLegacyDeviceScanUrl('/pages/scan/scan?scene=' + scene, { username: '张三' }),
+  `${DEVICE_SCAN_PAGE}?scene=${scene}&username=%E5%BC%A0%E4%B8%89`
+)
+const h5HistoryCalls = []
+const h5HistoryState = { marker: 'preserve-state' }
+const legacyHashLocation = {
+  pathname: '/index.html',
+  search: '?campaign=1',
+  hash: `#/pages-dark/scan/scan?scene=${scene}&username=%E5%BC%A0%E4%B8%89&token=a=b`
+}
+assert.equal(
+  rewriteLegacyDeviceScanLocation(legacyHashLocation, {
+    state: h5HistoryState,
+    replaceState: (state, _title, url) => h5HistoryCalls.push({ state, url })
+  }),
+  true,
+  'an old H5 hash URL is rewritten before the router starts'
+)
+assert.deepEqual(h5HistoryCalls[0], {
+  state: h5HistoryState,
+  url: `/index.html?campaign=1#${DEVICE_SCAN_PAGE}?scene=${scene}&username=%E5%BC%A0%E4%B8%89&token=a%3Db`
+})
+const historyModeCalls = []
+assert.equal(
+  rewriteLegacyDeviceScanLocation({
+    pathname: '/pages/scan/scan',
+    search: `?scene=${scene}&token=a=b`,
+    hash: ''
+  }, {
+    state: null,
+    replaceState: (_state, _title, url) => historyModeCalls.push(url)
+  }),
+  true,
+  'an old H5 history URL is rewritten'
+)
+assert.equal(historyModeCalls[0], `${DEVICE_SCAN_PAGE}?scene=${scene}&token=a%3Db`)
 assert.equal(resolveDeviceQrPathTarget('/pages/profile/profile?scene=' + scene, '/pages/scan/scan'), null)
 assert.equal(resolveDeviceQrPathTarget('/pages/scan/scan?scene=not-32-hex', '/pages/scan/scan').invalidScene, true)
 const routedScene = resolveDeviceScanTarget(path, '/pages-dark/scan/scan')
 assert.equal(routedScene.scene, scene)
-assert.equal(routedScene.url, `/pages-dark/scan/scan?scene=${scene}`)
+assert.equal(routedScene.url, `${DEVICE_SCAN_PAGE}?scene=${scene}`)
+const routedDarkLegacyScene = resolveDeviceScanTarget(darkPath, '/pages/scan/scan')
+assert.equal(routedDarkLegacyScene.scene, scene, 'legacy dark QR routes still resolve their scene')
+assert.equal(routedDarkLegacyScene.url, `${DEVICE_SCAN_PAGE}?scene=${scene}`)
 
 const rawHexDeviceId = scene
 const rawTarget = resolveDeviceScanTarget(rawHexDeviceId)
@@ -77,8 +128,8 @@ const oldQueryTarget = resolveDeviceScanTarget('device_id=bin-7&token=legacy-tok
 assert.equal(oldQueryTarget.deviceId, 'bin-7')
 assert.equal(oldQueryTarget.token, 'legacy-token')
 
-assert.equal(buildDeviceQrScanUrl(scene, false), `/pages/scan/scan?scene=${scene}`)
-assert.equal(buildDeviceQrScanUrl(scene, true), `/pages-dark/scan/scan?scene=${scene}`)
+assert.equal(buildDeviceQrScanUrl(scene, false), `${DEVICE_SCAN_PAGE}?scene=${scene}`)
+assert.equal(buildDeviceQrScanUrl(scene, true), `${DEVICE_SCAN_PAGE}?scene=${scene}`)
 assert.equal(appendPageQuery('/pages/index/index', { scene, username: '张三' }), `/pages/index/index?scene=${scene}&username=%E5%BC%A0%E4%B8%89`)
 
 const values = new Map()
@@ -98,8 +149,9 @@ clearPendingDeviceQrScene(storage)
 assert.equal(getPendingDeviceQrScene(storage, 3000), '')
 
 function createScanPageHarness(dark, overrides = {}) {
+  const initialDark = dark && typeof dark === 'object' ? dark.value : dark
   const calls = { resolve: [], connect: [], disconnect: [], connectedDevices: 0, login: [], navigate: [], redirect: [], back: [], toast: [], modals: [], scans: [] }
-  const values = new Map([['app_theme', dark ? 'dark' : 'light']])
+  const values = new Map([['app_theme', initialDark ? 'dark' : 'light']])
   if (overrides.authToken) values.set('token', overrides.authToken)
   const lifecycle = { load: [], show: [], hide: [], mounted: [], unmounted: [] }
   const timers = { nextId: 0, intervals: new Map(), timeouts: new Map(), clearedIntervals: [] }
@@ -164,14 +216,16 @@ function createScanPageHarness(dark, overrides = {}) {
     clearTimeout: id => timers.timeouts.delete(id)
   }
   const context = vm.createContext({
+    ...Vue,
     ...callbacks,
     ...timerApi,
-    ref: value => ({ value }),
+    DEVICE_SCAN_PAGE,
     getDeviceAPI: () => deviceAPI,
     testDeviceAPI: () => true,
     normalizeDeviceMode,
     resolveDeviceScanTarget,
     getDeviceQrScanContent: getDeviceScanContent,
+    scanDeviceQrCode: options => runtime.scanCode(options),
     saveMockDeviceConnection: value => ({ ...value, id: value.device_id }),
     resolveWechatQrScene: async value => {
       calls.resolve.push(value)
@@ -184,7 +238,7 @@ function createScanPageHarness(dark, overrides = {}) {
     savePendingDeviceQrScene,
     uni: runtime,
     getCurrentPages: () => {
-      const route = overrides.route || (dark ? 'pages-dark/scan/scan' : 'pages/scan/scan')
+      const route = overrides.route || 'pages-nonTheme/scan'
       const count = overrides.pageCount || 1
       return Array.from({ length: count }, (_, index) => ({
         route: index === count - 1 ? route : 'pages/home/home',
@@ -278,4 +332,26 @@ for (const dark of [false, true]) {
   assert.equal(unmounted.page.connected.value, false)
 }
 
-console.log('Device QR checks passed: trusted paths, platform scan options, legacy results, strict scene parsing and pending recovery.')
+const changingTheme = Vue.ref(false)
+const dynamicThemePage = createScanPageHarness(changingTheme, { authToken: 'user-jwt' })
+dynamicThemePage.page.goToMap()
+assert.equal(dynamicThemePage.calls.navigate.at(-1).url, '/pages/map/map', 'a light ref selects the light map route')
+changingTheme.value = true
+dynamicThemePage.values.set('app_theme', 'dark')
+dynamicThemePage.page.goToMap()
+assert.equal(dynamicThemePage.calls.navigate.at(-1).url, '/pages-dark/map/map', 'the map route refreshes when the theme ref changes')
+dynamicThemePage.page.startScan()
+dynamicThemePage.calls.scans.at(-1).success({ path: darkPath, result: 'ignored' })
+assert.equal(dynamicThemePage.calls.redirect.at(-1).url, `${DEVICE_SCAN_PAGE}?scene=${scene}`, 'legacy scan QR redirects to the shared route after a theme change')
+dynamicThemePage.page.goBack()
+assert.equal(dynamicThemePage.calls.login.at(-1).url, '/pages-dark/home/home', 'the home route follows the updated theme')
+
+const changingLoginTheme = Vue.ref(false)
+const dynamicLoginPage = createScanPageHarness(changingLoginTheme)
+changingLoginTheme.value = true
+dynamicLoginPage.values.set('app_theme', 'dark')
+dynamicLoginPage.load({ scene })
+await dynamicLoginPage.mount()
+assert.equal(dynamicLoginPage.calls.login.at(-1).url, `/pages-dark/index/index?scene=${scene}`, 'the login route uses the current theme after the ref changes')
+
+console.log('Device QR checks passed: shared route, legacy paths, platform scan options, strict scene parsing and pending recovery.')

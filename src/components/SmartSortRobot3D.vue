@@ -1,17 +1,17 @@
 <template>
-  <view class="robot-slot" :class="variant" :data-robot-status="failed ? 'fallback' : ready ? 'ready' : loadingStage" :data-robot-error="fallbackReason" aria-hidden="true">
-    <ManifestIcon id="smart_sort" class="robot-fallback" :class="{ hidden: ready }" :scale="2" />
+  <view class="robot-slot" :class="[variant, { 'overlay-fallback': overlayFallback }]" :data-robot-status="failed ? 'fallback' : overlayFallback ? 'overlay' : ready ? 'ready' : loadingStage" :data-robot-error="fallbackReason" aria-hidden="true">
+    <ManifestIcon id="smart_sort" class="robot-fallback" :class="{ hidden: displayReady, 'overlay-animated': overlayFallback && active && !reducedMotion }" :scale="2" />
     <!-- #ifdef H5 -->
-    <view ref="host" class="robot-stage" :class="{ visible: ready }"></view>
+    <view ref="host" class="robot-stage" :class="{ visible: displayReady }"></view>
     <!-- #endif -->
     <!-- #ifdef APP-PLUS -->
-    <view v-if="!failed" class="robot-stage" :class="{ visible: ready }">
+    <view v-if="!failed" class="robot-stage" :class="{ visible: displayReady }">
       <SmartSortRobotApp :state="state" :active="active" @ready="handleReady" @fallback="useFallback" @settled="emit('settled')" />
     </view>
     <!-- #endif -->
     <!-- #ifdef MP-WEIXIN -->
-    <view class="robot-stage" :class="{ visible: ready }">
-      <smart-sort-xr v-if="xrSupported && !failed && active" :style="xrStyle" :width="xrSize.width" :height="xrSize.height"
+    <view class="robot-stage" :class="{ visible: displayReady }">
+      <smart-sort-xr v-if="xrSupported && !failed && active && !overlayFallback" :style="xrStyle" :width="xrSize.width" :height="xrSize.height"
         :robot-state="state" :reduced-motion="reducedMotion" @modelready="handleReady" @modelprogress="handleXrProgress" @modelfallback="handleXrFallback" @settled="emit('settled')" />
     </view>
     <!-- #endif -->
@@ -32,11 +32,23 @@ const props = defineProps({
   state: { type: String, default: 'idle' },
   active: { type: Boolean, default: true },
   variant: { type: String, default: 'light' },
-  reducedMotion: { type: Boolean, default: false }
+  reducedMotion: { type: Boolean, default: false },
+  overlayActive: { type: Boolean, default: false }
 })
 const emit = defineEmits(['ready', 'fallback', 'settled'])
 const host = ref(null)
 const ready = ref(false)
+// Guide overlays use the normal image layer on WeChat, avoiding an XR canvas
+// composited above the guide text while the example scrolls underneath it.
+const overlayFallback = computed(() => {
+  // #ifdef MP-WEIXIN
+  return props.overlayActive
+  // #endif
+  // #ifndef MP-WEIXIN
+  return false
+  // #endif
+})
+const displayReady = computed(() => ready.value && !overlayFallback.value)
 let engine = null
 let destroyed = false
 const failed = ref(false)
@@ -46,12 +58,15 @@ let loadingTimer
 function clearLoadingTimer() { clearTimeout(loadingTimer); loadingTimer = null }
 function watchLoading() {
   clearLoadingTimer()
-  if (props.active && !ready.value && !failed.value) {
+  if (props.active && !overlayFallback.value && !ready.value && !failed.value) {
     loadingTimer = setTimeout(() => useFallback(new Error(`Robot rendering timed out (${loadingStage.value})`)), 15000)
   }
 }
 function handleReady() {
-  if (destroyed || failed.value) return
+  if (destroyed || failed.value || overlayFallback.value) return
+  // #ifdef MP-WEIXIN
+  if (!props.active) return
+  // #endif
   clearLoadingTimer()
   ready.value = true
   emit('ready')
@@ -131,6 +146,11 @@ onMounted(() => useFallback(new Error('Platform does not support robot 3D')))
 // #endif
 onMounted(watchLoading)
 
+watch(overlayFallback, value => {
+  if (value) ready.value = false
+  watchLoading()
+})
+
 watch(() => props.state, value => {
   engine?.setState(value)
   if (failed.value && (value === 'success' || value === 'fail')) emit('settled')
@@ -175,6 +195,16 @@ onBeforeUnmount(() => {
   transition: opacity 220ms ease;
 }
 .robot-fallback.hidden { opacity: 0; }
+/* #ifdef MP-WEIXIN */
+.robot-slot.overlay-fallback { overflow: hidden; }
+.overlay-fallback .robot-fallback { max-width: 90%; max-height: 90%; }
+.robot-fallback.overlay-animated { animation: overlay-robot-float 1.8s ease-in-out infinite; }
+@keyframes overlay-robot-float {
+  0%, 100% { transform: translate(-50%, -50%); }
+  50% { transform: translate(-50%, -50%) translateY(-6rpx); }
+}
+@media (prefers-reduced-motion: reduce) { .robot-fallback.overlay-animated { animation: none; } }
+/* #endif */
 .robot-stage {
   position: absolute;
   width: 240rpx;

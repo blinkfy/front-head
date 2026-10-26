@@ -17,23 +17,23 @@ const timeDaysAgo = days => new Date(now - days * dayMs).toISOString()
 
 test('history image state distinguishes retained, cleared, missing, and failed images', async t => {
   await t.test('a loadable old image stays available', () => {
-    assert.equal(HISTORY_IMAGE_RETENTION_DAYS, 90)
-    assert.equal(getHistoryImageState({ hasImage: true, time: timeDaysAgo(120) }, false, now), 'available')
+    assert.equal(HISTORY_IMAGE_RETENTION_DAYS, 180)
+    assert.equal(getHistoryImageState({ hasImage: true, time: timeDaysAgo(200) }, false, now), 'available')
   })
 
   await t.test('missing or failed old images are classified as cleared', () => {
-    assert.equal(getHistoryImageState({ hasImage: false, time: timeDaysAgo(91) }, false, now), 'cleared')
-    assert.equal(getHistoryImageState({ hasImage: true, time: timeDaysAgo(91) }, true, now), 'cleared')
+    assert.equal(getHistoryImageState({ hasImage: false, time: timeDaysAgo(181) }, false, now), 'cleared')
+    assert.equal(getHistoryImageState({ hasImage: true, time: timeDaysAgo(181) }, true, now), 'cleared')
   })
 
-  await t.test('the exact 90 day boundary is not expired', () => {
-    assert.equal(getHistoryImageState({ hasImage: false, time: timeDaysAgo(90) }, false, now), 'none')
-    assert.equal(getHistoryImageState({ hasImage: true, time: timeDaysAgo(90) }, true, now), 'error')
+  await t.test('the exact 180 day boundary is not expired', () => {
+    assert.equal(getHistoryImageState({ hasImage: false, time: timeDaysAgo(180) }, false, now), 'none')
+    assert.equal(getHistoryImageState({ hasImage: true, time: timeDaysAgo(180) }, true, now), 'error')
   })
 
   await t.test('recent missing images and recent load failures remain distinct', () => {
-    assert.equal(getHistoryImageState({ hasImage: false, time: timeDaysAgo(5) }, false, now), 'none')
-    assert.equal(getHistoryImageState({ hasImage: true, time: timeDaysAgo(5) }, true, now), 'error')
+    assert.equal(getHistoryImageState({ hasImage: false, time: timeDaysAgo(120) }, false, now), 'none')
+    assert.equal(getHistoryImageState({ hasImage: true, time: timeDaysAgo(120) }, true, now), 'error')
   })
 
   await t.test('invalid and future timestamps never imply cleanup', () => {

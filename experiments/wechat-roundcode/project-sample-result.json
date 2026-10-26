@@ -1,0 +1,48 @@
+{
+  "status": "roundcode_candidate_payload_unsupported",
+  "scene": null,
+  "expectedSceneVerified": null,
+  "payloadDecoderImplemented": false,
+  "networkUsed": false,
+  "standardQrDecoded": false,
+  "finderCandidateCount": 3,
+  "finderCenters": [
+    [
+      88.19999694824219,
+      88.19999694824219
+    ],
+    [
+      341.20001220703125,
+      88.19999694824219
+    ],
+    [
+      88.19999694824219,
+      341.20001220703125
+    ]
+  ],
+  "angularPeriodEvidence": {
+    "36": 33.6169,
+    "54": 5.3734,
+    "72": 66.9347
+  },
+  "strongestAngularPeriod": 72,
+  "angularSignalToMedian": 21.197,
+  "normalization": "three_finder_affine_not_perspective",
+  "sampling": {
+    "angles": 720,
+    "radialSamples": 128,
+    "isDecodedBitstream": false
+  },
+  "missingStages": [
+    "format_metadata",
+    "32_mask_patterns",
+    "data_cell_layout",
+    "error_correction_parameters",
+    "payload_to_scene_mapping"
+  ],
+  "inputSha256": "2e4831492fb8211cfcd905ef78472dad20c6e89b31a24782dd70f0aae1c8957c",
+  "opencvVersion": "4.10.0",
+  "input": "smartBin/device-simulator/qr.jpg",
+  "knownSceneAvailable": false,
+  "appIntegrated": false
+}

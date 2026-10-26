@@ -320,6 +320,14 @@ export function deleteDevice(id) {
     })
   }
 
+  export function getAdminHistoryImage(id) {
+    return request({
+      url: `/api/admin/history/${id}/image`,
+      method: 'GET',
+      needAuth: true
+    })
+  }
+
   /**
    * 创建历史记录
    * @param {Object} data - 历史记录数据

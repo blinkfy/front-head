@@ -1,5 +1,5 @@
 <template>
-  <view class="home-bg" :class="[tabPageClass, { 'waste-guide-open': showGuideModal }]">
+  <view class="home-bg" :class="[tabPageClass, { 'waste-guide-open': showGuideModal, 'onboarding-demo-reading': showAppOnboarding && onboardingDemoFinished }]">
     <!-- 自定义状态栏 -->
     <view class="custom-statusbar"></view>
     
@@ -48,12 +48,12 @@
       </view>
       
       <!-- 上传区域 -->
-      <view class="upload-section" :class="{ 'robot-returning-card': robotEntryReturning || robotAtEntry }">
+      <view class="upload-section" :class="{ 'robot-returning-card': robotEntryReturning || robotAtEntry || robotEntryFlying }">
         
-        <view class="upload-container onboarding-target-scan" @click="onAddImage" :class="{ 'processing': isProcessing }">
+        <view class="upload-container onboarding-target-scan" @click="!isProcessing && onAddImage()" :class="{ 'processing': isProcessing, 'recognition-failed': failedPreviewPending }">
           <view class="upload-border">
             <view class="upload-inner">
-              <SmartSortRecognitionVisual :show-robot="classificationUi === 'recognizing' || robotFeedbackActive || robotAtEntry" return-to=".smart-sort-return-target" variant="dark" :state="robotState" :active="robotPageActive" @returning="onRobotReturning" @settled="onRobotFeedbackSettled">
+              <SmartSortRecognitionVisual ref="recognitionVisual" entry-from=".smart-sort-entry-source" :show-robot="classificationUi === 'recognizing' || robotFeedbackActive || robotAtEntry || failedPreviewPending" :retain-failure="failedPreviewPending" return-to=".smart-sort-return-target" variant="dark" :state="robotState" :active="robotPageActive" :overlay-active="showAppOnboarding" @entering="robotEntryFlying = true" @entered="robotEntryFlying = false" @returning="onRobotReturning" @settled="onRobotFeedbackSettled">
                 <view class="upload-icon">
                   <ManifestIcon v-if="!isProcessing" id="camera_scan" />
                   <view v-else class="loading-spinner">
@@ -61,17 +61,31 @@
                   </view>
                 </view>
               </SmartSortRecognitionVisual>
-              <text class="upload-text" v-if="!isProcessing">点击上传图片</text>
-              <text class="upload-text processing" v-else>识别/排队中</text>
-              <text class="upload-hint" v-if="!isProcessing">支持JPG、PNG格式，自动压缩优化</text>
+              <text class="upload-text" v-if="!isProcessing">{{ failedPreviewPending ? failureCopy.title : robotFeedbackActive && robotState === 'success' ? '认出来啦，看看结果' : '点击上传图片' }}</text>
+              <text class="upload-text processing" v-else>正在识别图片</text>
+              <text class="upload-hint" v-if="!isProcessing">{{ failedPreviewPending ? failureCopy.description : robotFeedbackActive && robotState === 'success' ? '分类结果已在下方展示' : '支持JPG、PNG格式，自动压缩优化' }}</text>
               <text class="upload-hint processing" v-else>{{ processStatus }}</text>
+              <view v-if="isProcessing" class="recognition-wait-actions" @click.stop>
+                <text>已等待 {{ elapsedSeconds }} 秒</text>
+                <text v-if="elapsedSeconds >= 8">{{ robotState === 'reviewing' ? '我正在整理建议，请稍候' : '我还在仔细看，请稍候' }}</text>
+              </view>
             </view>
           </view>
         </view>
       </view>
       
+      <OnboardingRecognitionDemo
+        ref="onboardingDemoRef"
+        :focus-inset="onboardingFocusInset"
+        v-if="showAppOnboarding && onboardingDemoStage !== 'idle'"
+        :stage="onboardingDemoStage"
+        :ai-enabled="aiServiceEnabled"
+        :dark="true"
+        :active="robotPageActive"
+      />
+
       <!-- 识别结果区域 -->
-      <view v-if="resultImage" class="result-section">
+      <view v-if="resultImage && !onboardingDemoVisible" class="result-section">
         <view class="result-card">
           <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending" class="result-header">
               <view class="result-title"><ManifestIcon id="accuracy_target" /> 识别结果</view>
@@ -80,8 +94,9 @@
             </view>
           </view>
           
-          <view class="result-image-wrap">
+          <view class="result-image-wrap" :class="{ 'recognition-photo-active': isProcessing }">
             <image :src="resultImage" class="result-image" mode="aspectFit" />
+            <view v-if="isProcessing" class="recognition-photo-scan"></view>
             <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending && displayBboxes.length" class="recognition-bbox-layer">
               <view
                 v-for="(bbox, index) in displayBboxes"
@@ -92,6 +107,13 @@
                 <view class="recognition-bbox-label" :style="bbox.labelStyle">{{ bbox.label }}</view>
               </view>
             </view>
+          </view>
+
+          <RecognitionProgressPreview v-if="isProcessing && recognitionPreview" :preview="recognitionPreview" dark />
+          <view v-if="!isProcessing && retryImagePath && failedPreviewPending" class="recognition-retry-actions">
+            <text>这张图片暂时没能识别，可直接重试</text>
+            <button @click="retryLastImage">重试这张图片</button>
+            <button @click="onAddImage">重新选图</button>
           </view>
           
           <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending" class="result-details">
@@ -139,7 +161,7 @@
                   v-if="upcyclingImageUrl"
                   :src="upcyclingImageUrl"
                   mode="aspectFit"
-                  class="upcycling-image"
+                  class="upcycling-image recognition-image-enter"
                   @click="previewUpcyclingImage"
                 />
                 <view v-if="!upcyclingImageUrl && upcyclingTaskId" class="upcycling-image-loading">
@@ -159,10 +181,10 @@
       </view>
       
       <!-- 默认提示区域 -->
-      <view v-if="classificationUi === 'initial'" class="welcome-section">
+      <view v-if="classificationUi === 'initial' && !onboardingDemoVisible && !failedPreviewPending && (!retryImagePath || robotEntryReturning || robotAtEntry)" class="welcome-section">
         <view class="welcome-card" @click="onAddImage">
-          <SmartSortRobot3D v-if="!robotEntryReturning && !robotAtEntry" variant="dark" :state="robotState" :active="robotPageActive" />
-          <view v-else class="smart-sort-return-target dark"></view>
+          <SmartSortRobot3D class="smart-sort-entry-source" v-if="!robotEntryReturning && !robotAtEntry" variant="dark" :state="robotState" :active="robotPageActive" :overlay-active="showAppOnboarding" />
+          <view v-else class="smart-sort-return-target smart-sort-entry-source dark"></view>
           <text class="welcome-title">开始智能分类</text>
           <text class="welcome-desc">上传图片，AI将为您识别垃圾类型<br/>共同践行绿色环保理念</text>
         </view>
@@ -276,13 +298,19 @@
     <AchievementUnlockModal :visible="showAchievementModal" :items="achievementModalItems" dark @close="closeAchievementModal" />
 
     <AppOnboarding
+      ref="onboardingGuideRef"
       :visible="showAppOnboarding"
+      :ai-enabled="aiServiceEnabled"
+      :active="robotPageActive"
       :target-rect="onboardingTargetRect"
+      :focus-inset="onboardingFocusInset"
+      :follow-target="onboardingDemoStage !== 'idle' || onboardingAutoScrolling"
       :include-device="!isH5Platform"
       dark
       @dismiss="completeAppOnboarding"
       @complete="completeAppOnboarding"
       @step-change="handleOnboardingStepChange"
+      @demo-stage="handleOnboardingDemoStage"
       @goGuide="navigateTo('/pages-dark/guide/guide')"
     />
 
@@ -313,20 +341,27 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+// #ifdef MP-WEIXIN
+import { handleRegistrationQrScan } from '@/utils/registration-relay.mjs'
+// #endif
+import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch, getCurrentInstance } from 'vue'
+import { trackOnboardingFocus, queryOnboardingRects, getOnboardingViewport, getOnboardingScrollTop } from '@/utils/onboarding-focus.mjs'
 import { onPageScroll, onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
 import { getRecognitionCompressionDecision, getRecognitionImageSize, isSmallerRecognitionImage, shouldUseCompressedRecognitionImage } from '@/utils/recognition-image.mjs'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
-import { resolveDeviceScanTarget, saveMockDeviceConnection, getDeviceQrScanContent } from '@/utils/device-qr'
+import { resolveDeviceScanTarget, saveMockDeviceConnection, getDeviceQrScanContent, scanDeviceQrCode } from '@/utils/device-qr'
 import AppOnboarding from '@/components/AppOnboarding.vue'
+import OnboardingRecognitionDemo from '@/components/OnboardingRecognitionDemo.vue'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import WasteCategoryModal from '@/components/WasteCategoryModal.vue'
 import { wasteCategoryGuides } from '@/utils/waste-category-guides'
 import SmartSortRobot3D from '@/components/SmartSortRobot3D.vue'
+import { getRecognitionRobotState } from '@/utils/recognition-robot-state.mjs'
 import SmartSortRecognitionVisual from '@/components/SmartSortRecognitionVisual.vue'
+import RecognitionProgressPreview from '@/components/RecognitionProgressPreview.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 import { enqueueAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
@@ -346,9 +381,12 @@ import {
   completeRecognitionTask,
   failRecognitionTask,
   getRecognitionTask,
+  isRecognitionTaskCurrent,
   subscribeRecognitionTask,
-  updateRecognitionTask
+  updateRecognitionTask,
+  updateRecognitionPreview
 } from '@/utils/recognition-task.mjs'
+import { getRecognitionFailureCopy } from '@/utils/recognition-failure-copy.mjs'
 
 const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages-dark/home/home')
 const resultImage = ref('')
@@ -358,17 +396,24 @@ const resultDesc = ref('')
 const aiEnabled = ref(false)
 const aiServiceEnabled = ref(false)
 const isProcessing = ref(false)
+const recognitionVisual = ref(null)
 const robotState = ref('idle')
 const classificationUi = ref('initial')
 const robotFeedbackActive = ref(false)
 const robotPageActive = ref(true)
 const robotEntryReturning = ref(false)
+const robotEntryFlying = ref(false)
 const robotAtEntry = ref(false)
 const failedPreviewPending = ref(false)
+const failureCopy = ref(getRecognitionFailureCopy())
+const retryImagePath = ref('')
+const retryImageFile = ref(null)
+const recognitionPreview = ref(null)
+const elapsedSeconds = ref(0)
 
 function onRobotReturning() {
-  // Fail 已播放完成，此时再移除失败图片，随后测量入口落点。
-  if (failedPreviewPending.value) {
+  // 保留本次原图以便重试，机器人仍返回入口位置。
+  if (failedPreviewPending.value && !retryImagePath.value) {
     resultImage.value = ''
     failedPreviewPending.value = false
   }
@@ -385,7 +430,7 @@ function onRobotFeedbackSettled(feedback) {
 }
 
 watch(robotState, state => {
-  if (['uploading', 'processing', 'success', 'fail'].includes(state)) {
+  if (['uploading', 'processing', 'reviewing', 'success', 'fail'].includes(state)) {
     robotEntryReturning.value = false
     robotAtEntry.value = false
   }
@@ -409,7 +454,7 @@ const bboxLoadBoundImages = new WeakSet()
 let activeRecognitionTaskId = ''
 let recognitionTaskUnsubscribe = null
 let pageVisible = true
-let recognitionLoadingVisible = false
+let elapsedTimer = null
 
 async function refreshAiServiceState() {
   try {
@@ -434,7 +479,15 @@ const shownAchievementKeys = new Set()
 const ONBOARDING_STORAGE_KEY = 'app_onboarding_completed_v1'
 const ONBOARDING_FORCE_KEY = 'app_onboarding_force_open'
 const showAppOnboarding = ref(false)
+const onboardingDemoStage = ref('idle')
+const onboardingDemoFinished = computed(() => onboardingDemoStage.value === 'upcycling' || (!aiServiceEnabled.value && onboardingDemoStage.value === 'classified'))
+const onboardingDemoVisible = computed(() => !['idle', 'intro'].includes(onboardingDemoStage.value))
 const onboardingTargetRect = ref(null)
+const onboardingFocusInset = ref(0)
+const onboardingDemoRef = ref(null)
+const onboardingGuideRef = ref(null)
+const onboardingPageScope = getCurrentInstance()?.proxy
+let onboardingFocusTracker = null
 let onboardingStepRequestId = 0
 const pageScrollTop = ref(0)
 const onboardingAutoScrolling = ref(false)
@@ -478,6 +531,11 @@ function maybeShowAppOnboarding() {
 }
 
 function completeAppOnboarding() {
+  onboardingFocusTracker?.stop()
+  onboardingFocusTracker = null
+  onboardingStepRequestId++
+  onboardingAutoScrolling.value = false
+  onboardingDemoStage.value = 'idle'
   showAppOnboarding.value = false
   onboardingTargetRect.value = null
   try {
@@ -516,102 +574,123 @@ function setOnboardingScrollLock(locked) {
   onboardingScrollLockSnapshot = null
 }
 
-function handleOnboardingStepChange(step) {
-  if (!step || !step.selector) return
-  const requestId = ++onboardingStepRequestId
-
-  const measureTarget = (delay = 320, retries = 2) => {
-    setTimeout(() => {
-      if (requestId !== onboardingStepRequestId) return
-      try {
-        uni.createSelectorQuery()
-          .select(step.selector)
-          .boundingClientRect((rect) => {
-            if (requestId !== onboardingStepRequestId) return
-            let windowHeight = 0
-            try {
-              const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
-              windowHeight = info.windowHeight || 0
-            } catch (e) {}
-            const isVisible = rect && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && (!windowHeight || rect.top < windowHeight)
-            if (isVisible) {
-              onboardingTargetRect.value = rect
-              return
-            }
-            if (retries > 0) {
-              measureTarget(180, retries - 1)
-              return
-            }
-            onboardingTargetRect.value = null
-          })
-          .exec()
-      } catch (e) {
-        onboardingTargetRect.value = null
+function handleOnboardingDemoStage(stage) {
+  if (onboardingAutoScrolling.value) {
+    // Stop an in-flight scroll before exiting, hiding, or replaying the demo.
+    try {
+      if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+        window.scrollTo({ top: window.scrollY, left: window.scrollX, behavior: 'instant' })
+      } else {
+        uni.pageScrollTo({ scrollTop: pageScrollTop.value, duration: 0, fail: () => {} })
       }
-    }, delay)
+    } catch (_) {}
   }
-
-  if (!step.shouldScroll) {
+  onboardingDemoStage.value = stage
+  if (stage === 'idle' || stage === 'exiting' || !showAppOnboarding.value || !robotPageActive.value) {
+    onboardingStepRequestId++
+    onboardingFocusTracker?.stop()
+    onboardingFocusTracker = null
     onboardingAutoScrolling.value = false
-    measureTarget()
     return
   }
+  const selector = {
+    intro: '.onboarding-target-scan',
+    scan: '.onboarding-demo-photo',
+    classified: '.onboarding-demo-summary',
+    advice: '.onboarding-demo-advice',
+    upcycling: '.onboarding-demo-upcycling'
+  }[stage]
+  if (!selector) return
+  nextTick(() => {
+    if (onboardingDemoStage.value !== stage || !showAppOnboarding.value || !robotPageActive.value) return
+    handleOnboardingStepChange({ selector, shouldScroll: true })
+  })
+}
 
-  onboardingAutoScrolling.value = true
-  setTimeout(() => {
+function measureOnboardingTargets(selectors, callback) {
+  queryOnboardingRects({
+    pageScope: onboardingPageScope,
+    demoComponent: onboardingDemoRef.value,
+    guideComponent: onboardingGuideRef.value
+  }, selectors, callback)
+}
+
+function handleOnboardingStepChange(step) {
+  if (!step || !step.selector || !showAppOnboarding.value || !robotPageActive.value) return
+  const requestId = ++onboardingStepRequestId
+
+  onboardingFocusTracker?.stop()
+  onboardingAutoScrolling.value = !!step.shouldScroll
+  let firstScrollPending = !!step.shouldScroll
+  let requestedScrollTop = null
+  const currentScrollTop = () => typeof window !== 'undefined' && typeof document !== 'undefined' ? window.scrollY : pageScrollTop.value
+  const applyScroll = (rect, scrollTop) => {
+    if (requestId !== onboardingStepRequestId || !showAppOnboarding.value || !robotPageActive.value) return
+    const viewport = getOnboardingViewport()
+    let targetTop = getOnboardingScrollTop(rect, scrollTop, viewport, onboardingFocusInset.value, step.selector.startsWith('.onboarding-demo-'))
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      const scrollRoot = document.scrollingElement || document.documentElement
+      if (scrollRoot?.scrollHeight > 0 && window.innerHeight > 0) targetTop = Math.min(targetTop, Math.max(0, scrollRoot.scrollHeight - window.innerHeight))
+    }
+    if (Math.abs(targetTop - scrollTop) > 1 && (requestedScrollTop === null || Math.abs(targetTop - requestedScrollTop) > 1)) {
+      requestedScrollTop = targetTop
+      if (typeof window !== 'undefined' && typeof document !== 'undefined') window.scrollTo({ top: targetTop, behavior: 'smooth' })
+      else uni.pageScrollTo({ scrollTop: targetTop, duration: 260, fail: () => {} })
+    }
+  }
+  const scrollTarget = () => {
+    if (requestId !== onboardingStepRequestId || !showAppOnboarding.value || !robotPageActive.value) return
     try {
-      const isH5Dom = typeof window !== 'undefined' && typeof document !== 'undefined'
-      if (isH5Dom) {
-        const element = document.querySelector(step.selector)
-        if (element) {
-          const rect = element.getBoundingClientRect()
-          const targetTop = Math.max(0, window.scrollY + rect.top - window.innerHeight * 0.34)
-          window.scrollTo({ top: targetTop, behavior: 'smooth' })
-          measureTarget(520, 3)
-          setTimeout(() => {
-            if (requestId !== onboardingStepRequestId) return
-            onboardingAutoScrolling.value = false
-          }, 1100)
-          return
-        }
+      if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+        const element = document.querySelector('.home-bg ' + step.selector)
+        if (element) { applyScroll(element.getBoundingClientRect(), window.scrollY); return }
       }
+      measureOnboardingTargets([step.selector], ([rect]) => applyScroll(rect, pageScrollTop.value))
+    } catch (_) {}
+  }
+  onboardingFocusTracker = trackOnboardingFocus({
+    selector: step.selector,
+    measureRects: measureOnboardingTargets,
+    rootSelector: '.home-bg',
+    isCurrent: () => requestId === onboardingStepRequestId && showAppOnboarding.value && robotPageActive.value,
+    isBrowsing: () => onboardingDemoFinished.value && !onboardingAutoScrolling.value,
+    onRect: rect => {
+      if (firstScrollPending && rect?.height > 0) {
+        firstScrollPending = false
+        // The first photo reserves its own space at scrollTop zero. Other
+        // targets begin scrolling in the same callback that moves the spotlight.
+        if (step.selector !== '.onboarding-demo-photo' || currentScrollTop() > 1) applyScroll(rect, currentScrollTop())
+      }
+      onboardingTargetRect.value = rect
+    },
+    onInset: inset => { onboardingFocusInset.value = inset }
+  })
 
-      uni.createSelectorQuery()
-        .select(step.selector)
-        .boundingClientRect((rect) => {
-          if (requestId !== onboardingStepRequestId) return
-          let windowHeight = 0
-          try {
-            const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
-            windowHeight = info.windowHeight || 0
-          } catch (e) {}
-          if (!rect || !windowHeight) {
-            measureTarget(0)
-            return
-          }
-          const targetTop = Math.max(0, pageScrollTop.value + rect.top - windowHeight * 0.34)
-          uni.pageScrollTo({
-            scrollTop: targetTop,
-            duration: 260,
-            fail: () => {}
-          })
-          measureTarget(420, 3)
-          setTimeout(() => {
-            if (requestId !== onboardingStepRequestId) return
-            onboardingAutoScrolling.value = false
-          }, 900)
-        })
-        .exec()
-    } catch (e) {}
-  }, 320)
+  if (!step.shouldScroll) return
+  // Correct once after guide layout settles, without delaying the initial handoff.
+  if (step.selector.startsWith('.onboarding-demo-')) setTimeout(() => {
+    scrollTarget()
+    if (requestId === onboardingStepRequestId) onboardingFocusTracker?.refresh(1000)
+  }, 550)
+  setTimeout(() => {
+    if (requestId !== onboardingStepRequestId) return
+    onboardingAutoScrolling.value = false
+  }, 1100)
 }
 
 onPageScroll((event) => {
   pageScrollTop.value = event.scrollTop || 0
+  onboardingFocusTracker?.refresh()
 })
 
-watch([showAppOnboarding, onboardingAutoScrolling], ([visible, autoScrolling]) => {
-  setOnboardingScrollLock(visible && !autoScrolling)
+watch([showAppOnboarding, robotPageActive], ([visible, active]) => {
+  if (visible && active) return
+  onboardingFocusTracker?.stop()
+  onboardingFocusTracker = null
+})
+
+watch([showAppOnboarding, onboardingAutoScrolling, onboardingDemoFinished], ([visible, autoScrolling, finished]) => {
+  setOnboardingScrollLock(visible && !autoScrolling && !finished)
 }, { immediate: true })
 
 // 图片压缩配置
@@ -629,7 +708,11 @@ const compressionConfig = {
 
 // 检测平台类型
 onMounted(() => {
-  recognitionTaskUnsubscribe = subscribeRecognitionTask((task) => {
+  recognitionTaskUnsubscribe = subscribeRecognitionTask((task, reason) => {
+    if (reason === 'owner-changed') {
+      clearOtherOwnerRecognition()
+      return
+    }
     if (!pageVisible || !task || task.id === activeRecognitionTaskId) return
     restoreRecognitionTask(task)
   })
@@ -692,21 +775,23 @@ onShow(() => {
 onHide(() => {
   pageVisible = false
   robotPageActive.value = false
-  hideRecognitionLoading()
+  stopElapsedClock()
 })
 
 onUnload(() => {
   pageVisible = false
   robotPageActive.value = false
-  hideRecognitionLoading()
+  stopElapsedClock()
   recognitionTaskUnsubscribe?.()
   recognitionTaskUnsubscribe = null
 })
 
 onBeforeUnmount(() => {
+  onboardingFocusTracker?.stop()
+  onboardingFocusTracker = null
   pageVisible = false
   robotPageActive.value = false
-  hideRecognitionLoading()
+  stopElapsedClock()
   recognitionTaskUnsubscribe?.()
   recognitionTaskUnsubscribe = null
   setOnboardingScrollLock(false)
@@ -766,22 +851,65 @@ function resetEnhancedRecognition() {
   aiEnabled.value = false
 }
 
-function showRecognitionLoading(title) {
-  if (!pageVisible) return
-  uni.showLoading({ title })
-  recognitionLoadingVisible = true
+function stopElapsedClock() {
+  if (elapsedTimer) clearInterval(elapsedTimer)
+  elapsedTimer = null
 }
 
-function hideRecognitionLoading() {
-  if (!recognitionLoadingVisible) return
-  uni.hideLoading()
-  recognitionLoadingVisible = false
+function clearOtherOwnerRecognition() {
+  stopElapsedClock()
+  activeRecognitionTaskId = ''
+  isProcessing.value = false
+  failedPreviewPending.value = false
+  retryImagePath.value = ''
+  retryImageFile.value = null
+  recognitionPreview.value = null
+  resultImage.value = ''
+  resultCategory.value = ''
+  resultConfidence.value = ''
+  resultDesc.value = ''
+  processStatus.value = '处理中...'
+  classificationUi.value = 'initial'
+  robotFeedbackActive.value = false
+  robotState.value = 'idle'
+  resetEnhancedRecognition()
+}
+
+function startElapsedClock(startedAt) {
+  stopElapsedClock()
+  const update = () => { elapsedSeconds.value = Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) }
+  update()
+  if (pageVisible) elapsedTimer = setInterval(update, 1000)
+}
+
+
+function retryLastImage() {
+  if (isProcessing.value || !retryImagePath.value) return
+  recognitionVisual.value?.prepareEntry()
+  void processImage(retryImagePath.value, retryImageFile.value)
+}
+
+function handleRecognitionProgress(taskId, snapshot) {
+  updateRecognitionPreview(taskId, snapshot)
+  if (!isRecognitionTaskCurrent(taskId)) return
+  if (!pageVisible || activeRecognitionTaskId !== taskId) return
+  recognitionPreview.value = snapshot?.preview && Object.keys(snapshot.preview).length ? snapshot.preview : null
+  robotState.value = getRecognitionRobotState(snapshot)
+  const message = {
+    recognizing: '正在识别图片...',
+    advising: '正在整理投放与改造建议...',
+    finalizing: '正在整理识别结果...'
+  }[snapshot?.phase]
+  if (message) {
+    processStatus.value = message
+    updateRecognitionTask(taskId, message)
+  }
 }
 
 function applyRecognitionResult(res, showSuccessToast = false) {
   const label = Array.isArray(res && res.labels) ? res.labels[0] : null
   const rawImage = String((res && res.result_img_base64) || '')
-  resultImage.value = rawImage.startsWith('data:image/jpeg;base64,')
+  resultImage.value = /^data:image\//i.test(rawImage)
     ? rawImage
     : `data:image/jpeg;base64,${rawImage}`
   if (label) {
@@ -801,16 +929,25 @@ function applyRecognitionResult(res, showSuccessToast = false) {
 
 function restoreRecognitionTask(task = getRecognitionTask()) {
   if (!task) return
+  retryImagePath.value = task.source?.filePath || ''
+  retryImageFile.value = task.source?.selectedFile || null
+  recognitionPreview.value = task.preview && Object.keys(task.preview).length ? task.preview : null
   if (task.status === 'pending') {
+    startElapsedClock(task.startedAt || Date.now())
+    if (retryImagePath.value && !resultImage.value) resultImage.value = retryImagePath.value
     failedPreviewPending.value = false
     classificationUi.value = 'recognizing'
     robotFeedbackActive.value = true
-    robotState.value = 'processing'
+    robotState.value = getRecognitionRobotState(task)
     isProcessing.value = true
     processStatus.value = task.message || '识别中...'
     return
   }
   if (task.status === 'succeeded' && task.result) {
+    stopElapsedClock()
+    recognitionPreview.value = null
+    retryImagePath.value = ''
+    retryImageFile.value = null
     failedPreviewPending.value = false
     classificationUi.value = 'complete'
     robotFeedbackActive.value = true
@@ -821,13 +958,16 @@ function restoreRecognitionTask(task = getRecognitionTask()) {
     return
   }
   if (task.status === 'failed') {
+    failureCopy.value = getRecognitionFailureCopy(task.id)
+    stopElapsedClock()
+    recognitionPreview.value = null
+    if (retryImagePath.value && !resultImage.value) resultImage.value = retryImagePath.value
     failedPreviewPending.value = true
     classificationUi.value = 'complete'
     robotFeedbackActive.value = true
     robotState.value = 'fail'
     isProcessing.value = false
     processStatus.value = '处理中...'
-    clearRecognitionTask(task.id)
   }
 }
 
@@ -1247,8 +1387,12 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 
 async function processImage(filePath, selectedFile = null) {
   failedPreviewPending.value = false
-  const taskId = beginRecognitionTask('图片处理中...')
+  const taskId = beginRecognitionTask('正在准备图片...', { filePath, selectedFile })
   activeRecognitionTaskId = taskId
+  retryImagePath.value = filePath
+  retryImageFile.value = selectedFile
+  recognitionPreview.value = null
+  startElapsedClock(getRecognitionTask()?.startedAt || Date.now())
   classificationUi.value = 'recognizing'
   robotFeedbackActive.value = true
   robotState.value = 'uploading'
@@ -1256,8 +1400,7 @@ async function processImage(filePath, selectedFile = null) {
   try {
     isProcessing.value = true
     resetEnhancedRecognition()
-    processStatus.value = '图片处理中...'
-    showRecognitionLoading('图片处理中...')
+    processStatus.value = '正在准备图片...'
     
     // 第一步：图片压缩
     const originalSize = await getRecognitionImageSize(filePath, selectedFile?.size)
@@ -1304,6 +1447,7 @@ async function processImage(filePath, selectedFile = null) {
     }
     
     // 第二步：显示压缩后的图片预览
+    if (!isRecognitionTaskCurrent(taskId)) return
     if (isH5Platform.value && compressedBlob) {
       // H5环境显示压缩后的预览
       resultImage.value = URL.createObjectURL(compressedBlob)
@@ -1313,14 +1457,20 @@ async function processImage(filePath, selectedFile = null) {
     }
     
     // 第三步：调用识别API
-    processStatus.value = '业务繁忙时会自动排队，本地模型首次加载需等待，请耐心等待'
+    processStatus.value = '正在上传并分析图片...'
     updateRecognitionTask(taskId, processStatus.value)
-    showRecognitionLoading('识别/排队中')
-    const recognitionRequest = recognizeImage(compressedFile)
+    const recognitionRequest = recognizeImage(compressedFile, {
+      onProgress: snapshot => handleRecognitionProgress(taskId, snapshot)
+    })
     robotState.value = 'processing'
     const res = await recognitionRequest
+    if (!isRecognitionTaskCurrent(taskId)) return
     completeRecognitionTask(taskId, res)
-    if (!pageVisible) return
+    // 同步广播可能被其它首页消费并清理；当前页仍须展示已确认属于自己的结果。
+    if (activeRecognitionTaskId !== taskId || !pageVisible) return
+    recognitionPreview.value = null
+    retryImagePath.value = ''
+    retryImageFile.value = null
     robotState.value = res.labels?.length ? 'success' : 'fail'
     classificationUi.value = 'complete'
     // console.log('后端返回数据:', res) // 调试日志
@@ -1334,7 +1484,7 @@ async function processImage(filePath, selectedFile = null) {
       resultCategory.value = label.name || '未知类别'
       resultConfidence.value = label.confidence ? (label.confidence * 100).toFixed(2) + '%' : '未知置信度'
       // 检查并避免重复添加前缀
-      resultImage.value = res.result_img_base64.startsWith('data:image/jpeg;base64,')
+      resultImage.value = /^data:image\//i.test(res.result_img_base64)
         ? res.result_img_base64
         : 'data:image/jpeg;base64,' + res.result_img_base64
       resultDesc.value = label.describe
@@ -1342,7 +1492,7 @@ async function processImage(filePath, selectedFile = null) {
       resultCategory.value = '未识别到'
       resultConfidence.value = 'NA'
       resultDesc.value = '未检测到任何标签信息'
-      resultImage.value = res.result_img_base64.startsWith('data:image/jpeg;base64,')
+      resultImage.value = /^data:image\//i.test(res.result_img_base64)
         ? res.result_img_base64
         : 'data:image/jpeg;base64,' + res.result_img_base64
     }
@@ -1365,14 +1515,14 @@ async function processImage(filePath, selectedFile = null) {
       icon: 'success'
     })
     clearRecognitionTask(taskId)
-    activeRecognitionTaskId = ''
     
   } catch (err) {
     failRecognitionTask(taskId, err)
-    if (!pageVisible) return
+    if (!isRecognitionTaskCurrent(taskId) || !pageVisible) return
+    failureCopy.value = getRecognitionFailureCopy(taskId)
+    recognitionPreview.value = null
     robotState.value = 'fail'
     classificationUi.value = 'complete'
-    clearRecognitionTask(taskId)
     resetEnhancedRecognition()
     failedPreviewPending.value = true
     resultCategory.value = ''
@@ -1396,10 +1546,12 @@ async function processImage(filePath, selectedFile = null) {
     }
     console.error('图片处理失败:', err)
   } finally {
-    hideRecognitionLoading()
-    isProcessing.value = false
-    processStatus.value = '处理中...' // 重置状态
-    if (activeRecognitionTaskId === taskId) activeRecognitionTaskId = ''
+    if (activeRecognitionTaskId === taskId) {
+      stopElapsedClock()
+      isProcessing.value = false
+      processStatus.value = '处理中...' // 重置状态
+      activeRecognitionTaskId = ''
+    }
   }
 }
 
@@ -1412,6 +1564,7 @@ function onAddImage() {
     return
   }
 
+  recognitionVisual.value?.prepareEntry()
   // 取消重新选图时不打断尚未结束的失败反馈。
   const keepFailureFeedback = robotFeedbackActive.value && robotState.value === 'fail'
   if (!keepFailureFeedback) robotState.value = 'tap'
@@ -1539,11 +1692,17 @@ function scanDeviceQR() {
     })
   } else {
     // 小程序端使用扫码功能
-    uni.scanCode({
+    scanDeviceQrCode({
       // #ifndef MP-WEIXIN
       scanType: ['qrCode'],
       // #endif
       success: function(res) {
+        // #ifdef MP-WEIXIN
+        if (handleRegistrationQrScan(res, {
+          navigateTo: options => uni.navigateTo(options),
+          showToast: options => uni.showToast(options)
+        })) return
+        // #endif
         connectDevice(getDeviceQrScanContent(res))
       },
       fail: function(err) {
@@ -1558,7 +1717,7 @@ function scanDeviceQR() {
 }
 
 function connectDevice(rawContent) {
-  const target = resolveDeviceScanTarget(rawContent, '/pages-dark/scan/scan')
+  const target = resolveDeviceScanTarget(rawContent, '/pages-nonTheme/scan')
   if (!target.url) {
     uni.showToast({
       title: target.invalidScene ? '二维码已过期或异常，请重新扫码' : '设备ID不能为空',
@@ -3323,4 +3482,39 @@ function closeAchievementModal() {
 .waste-guide-open .floating-agent,
 .waste-guide-open .bg-decoration,
 .waste-guide-open .tech-bg { filter: blur(5px); pointer-events: none; }
+/* 识别等待：沿用首页卡片，保留状态与计时反馈。 */
+.recognition-wait-actions {
+  display: flex; flex-direction: column; align-items: center; gap: 8rpx;
+  margin-top: 14rpx; color: #d5eeee; font-size: 22rpx; text-align: center;
+}
+.recognition-photo-active { overflow: hidden; border-radius: 16rpx; }
+.recognition-photo-scan {
+  position: absolute; top: 0; left: 7%; width: 86%; height: 4rpx;
+  background: linear-gradient(90deg, transparent, #40e0ff, transparent);
+  box-shadow: 0 0 18rpx #40e0ff; pointer-events: none;
+  animation: recognition-photo-sweep 2.7s ease-in-out infinite;
+}
+.recognition-retry-actions {
+  display: flex; flex-direction: column; align-items: stretch; gap: 12rpx;
+  color: #d5eeee; font-size: 24rpx; text-align: center;
+}
+.recognition-retry-actions button {
+  width: 100%; border-radius: 14rpx; color: #40e0ff;
+  background: rgba(20, 50, 63, .85); font-size: 25rpx;
+}
+.recognition-image-enter { animation: recognition-image-enter .35s ease both; }
+@keyframes recognition-photo-sweep { 0% { top: 0; opacity: 0; } 12% { opacity: .8; } 88% { opacity: .8; } 100% { top: 98%; opacity: 0; } }
+@keyframes recognition-image-enter { from { opacity: 0; transform: translateY(10rpx); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .recognition-photo-scan, .recognition-image-enter { animation: none; }
+}
+.upload-container.processing , .upload-container.recognition-failed { height: auto; min-height: 300rpx; }
+.upload-container.processing .upload-border , .upload-container.recognition-failed .upload-border { height: auto; min-height: 300rpx; }
+.upload-container.processing .upload-inner , .upload-container.recognition-failed .upload-inner { height: auto; min-height: 296rpx; padding: 24rpx 14rpx; box-sizing: border-box; }
+.recognition-failed .upload-text, .recognition-failed .upload-hint { max-width: 100%; text-align: center; }
+.recognition-failed .upload-hint { line-height: 1.6; }
+
+.onboarding-demo-reading .home-container,
+.onboarding-demo-reading .tabbar,
+.onboarding-demo-reading .floating-agent { pointer-events: none; }
 </style>

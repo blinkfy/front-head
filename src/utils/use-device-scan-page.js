@@ -1,9 +1,9 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, unref, onMounted, onUnmounted } from 'vue'
 import { onLoad, onShow, onHide } from '@dcloudio/uni-app'
 import { getDeviceAPI } from '@/utils/device-api-loader.js'
-import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection, getDeviceQrScanContent } from '@/utils/device-qr.js'
+import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection, getDeviceQrScanContent, scanDeviceQrCode } from '@/utils/device-qr.js'
 import { resolveWechatQrScene } from '@/api/device.js'
-import { appendPageQuery, clearPendingDeviceQrScene, isValidDeviceQrScene, normalizeDeviceQrScene, savePendingDeviceQrScene } from '@/utils/device-qr-entry.mjs'
+import { DEVICE_SCAN_PAGE, appendPageQuery, clearPendingDeviceQrScene, isValidDeviceQrScene, normalizeDeviceQrScene, savePendingDeviceQrScene } from '@/utils/device-qr-entry.mjs'
 
 // APP端参数设置函数（供其他页面调用）
 export function setScanParams(deviceId, deviceName, token) {
@@ -49,12 +49,12 @@ export function setScanParams(deviceId, deviceName, token) {
 
 // 每次调用独立持有连接状态、API 和定时器；须在页面 setup 中同步调用。
 export function useDeviceScanPage({ dark = false } = {}) {
-  const pageRoot = dark ? '/pages-dark' : '/pages'
+  const pageRoot = () => unref(dark) ? '/pages-dark' : '/pages'
   const pagePaths = {
-    login: `${pageRoot}/index/index`,
-    map: `${pageRoot}/map/map`,
-    home: `${pageRoot}/home/home`,
-    scan: `${pageRoot}/scan/scan`
+    get login() { return `${pageRoot()}/index/index` },
+    get map() { return `${pageRoot()}/map/map` },
+    get home() { return `${pageRoot()}/home/home` },
+    scan: DEVICE_SCAN_PAGE
   }
 
   // 使用安全的API加载器
@@ -1055,7 +1055,7 @@ export function useDeviceScanPage({ dark = false } = {}) {
       })
     } else {
       // 小程序/APP端使用扫码功能
-      uni.scanCode({
+      scanDeviceQrCode({
         // #ifndef MP-WEIXIN
         scanType: ['qrCode'],
         // #endif

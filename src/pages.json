@@ -50,13 +50,6 @@
 			}
 		},
 		{
-			"path": "pages/scan/scan",
-			"style": {
-				"navigationStyle": "custom",
-				"navigationBarTextStyle": "white"
-			}
-		},
-		{
 			"path": "pages/history/history",
 			"style": {
 				"navigationStyle": "custom",
@@ -83,6 +76,13 @@
 			"root": "pages-nonTheme",
 			"name": "pages-nonTheme",
 			"pages": [
+				{
+					"path": "scan",
+					"style": {
+						"navigationStyle": "custom",
+						"navigationBarTextStyle": "white"
+					}
+				},
 				{ 
 					"path": "about",
 					"style": {
@@ -282,12 +282,6 @@
 					"path": "map/map",
 					"style": {
 						"navigationBarTitleText": "垃圾桶查找"
-					}
-				},
-				{
-					"path": "scan/scan",
-					"style": {
-						"navigationStyle": "custom"
 					}
 				},
 				{

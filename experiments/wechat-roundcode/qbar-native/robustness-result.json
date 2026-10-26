@@ -1,0 +1,57 @@
+{
+  "scope": "Offline unidbg ARM64 image perturbations; not a phone camera benchmark",
+  "sample": "smartBin/device-simulator/qr.jpg",
+  "sceneRecoveredByNativeDecoder": false,
+  "cases": [
+    {
+      "case": "rotate-180",
+      "exitCode": 0,
+      "resultCount": 1,
+      "type": "WX_CODE",
+      "rawLength": 48,
+      "rawSha256": "d5e20e90cabd57722a973f268b2a86af49dfb7ce9dfb4b3e5ca62599b74eb183",
+      "passed": true,
+      "error": null
+    },
+    {
+      "case": "rotate-270",
+      "exitCode": 0,
+      "resultCount": 1,
+      "type": "WX_CODE",
+      "rawLength": 48,
+      "rawSha256": "d5e20e90cabd57722a973f268b2a86af49dfb7ce9dfb4b3e5ca62599b74eb183",
+      "passed": true,
+      "error": null
+    },
+    {
+      "case": "perspective-5pct",
+      "exitCode": 0,
+      "resultCount": 1,
+      "type": "WX_CODE",
+      "rawLength": 48,
+      "rawSha256": "d5e20e90cabd57722a973f268b2a86af49dfb7ce9dfb4b3e5ca62599b74eb183",
+      "passed": true,
+      "error": null
+    },
+    {
+      "case": "brightness-0.70",
+      "exitCode": 0,
+      "resultCount": 1,
+      "type": "WX_CODE",
+      "rawLength": 48,
+      "rawSha256": "d5e20e90cabd57722a973f268b2a86af49dfb7ce9dfb4b3e5ca62599b74eb183",
+      "passed": true,
+      "error": null
+    },
+    {
+      "case": "brightness-1.15",
+      "exitCode": 0,
+      "resultCount": 1,
+      "type": "WX_CODE",
+      "rawLength": 48,
+      "rawSha256": "d5e20e90cabd57722a973f268b2a86af49dfb7ce9dfb4b3e5ca62599b74eb183",
+      "passed": true,
+      "error": null
+    }
+  ]
+}

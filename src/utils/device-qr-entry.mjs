@@ -1,8 +1,10 @@
+export const DEVICE_SCAN_PAGE = '/pages-nonTheme/scan'
+
 export const PENDING_DEVICE_QR_KEY = 'pending_device_qr_scene'
 export const PENDING_DEVICE_QR_TTL_MS = 10 * 60 * 1000
 
 const DEVICE_QR_SCENE_PATTERN = /^[a-f0-9]{32}$/i
-const OWN_SCAN_PATH_PATTERN = /^\/?pages(?:-dark)?\/scan\/scan(?:$|\?)/
+const OWN_SCAN_PATH_PATTERN = /^\/?(?:pages(?:-dark)?\/scan\/scan|pages-nonTheme\/scan)(?:$|\?)/
 
 export function normalizeDeviceQrScene(value) {
   let scene = String(value ?? '').trim()
@@ -48,7 +50,34 @@ function parseQuery(queryText) {
   return params
 }
 
-export function resolveDeviceQrPathTarget(pathValue, scanPage) {
+export function isLegacyDeviceScanPath(value) {
+  return /^\/?pages(?:-dark)?\/scan\/scan(?:$|\?)/.test(String(value || '').replace(/^#/, ''))
+}
+
+export function resolveLegacyDeviceScanUrl(value, query = {}) {
+  const path = normalizeOwnScanPath(value)
+  if (!isLegacyDeviceScanPath(path)) return ''
+  const queryIndex = path.indexOf('?')
+  const params = queryIndex < 0 ? {} : parseQuery(path.slice(queryIndex + 1))
+  return appendPageQuery(DEVICE_SCAN_PAGE, { ...params, ...query })
+}
+
+// Run before the H5 router starts so old bookmarks need no legacy page.
+export function rewriteLegacyDeviceScanLocation(location, history) {
+  if (!location || !history?.replaceState) return false
+  const target = resolveLegacyDeviceScanUrl(location.hash)
+  if (target) {
+    history.replaceState(history.state, '', location.pathname + location.search + '#' + target)
+    return true
+  }
+  const directTarget = !location.hash && resolveLegacyDeviceScanUrl(location.pathname + location.search)
+  if (!directTarget) return false
+  history.replaceState(history.state, '', directTarget)
+  return true
+}
+
+export function resolveDeviceQrPathTarget(pathValue, scanPage = DEVICE_SCAN_PAGE) {
+  if (isLegacyDeviceScanPath(scanPage)) scanPage = DEVICE_SCAN_PAGE
   const path = normalizeOwnScanPath(pathValue)
   if (!path) return null
   const queryIndex = path.indexOf('?')
@@ -90,10 +119,10 @@ export function appendPageQuery(path, params = {}) {
   return `${path}${String(path).includes('?') ? '&' : '?'}${query}`
 }
 
-export function buildDeviceQrScanUrl(scene, dark = false) {
+export function buildDeviceQrScanUrl(scene) {
   const normalizedScene = normalizeDeviceQrScene(scene)
   if (!normalizedScene) return ''
-  return appendPageQuery(dark ? '/pages-dark/scan/scan' : '/pages/scan/scan', { scene: normalizedScene })
+  return appendPageQuery(DEVICE_SCAN_PAGE, { scene: normalizedScene })
 }
 
 export function savePendingDeviceQrScene(runtime, scene, now = Date.now()) {

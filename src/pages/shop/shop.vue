@@ -396,40 +396,47 @@ onBeforeUnmount(() => {
   // released automatically with their component nodes.
 })
 
-const fetchUserPoints = async () => {
-  if (pageDisposed) return
+const fetchUserPoints = async (notifyError = true) => {
+  if (pageDisposed) return false
   try {
     loading.value = true
     const token = uni.getStorageSync('token')
     if (!token) {
-      if (pageDisposed) return
+      if (pageDisposed) return false
       userPoints.value = 0
-      return
+      return false
     }
     
     const response = await userinfo("false")
-    if (pageDisposed) return
+    if (pageDisposed) return false
     if (response.code === 0) {
       userPoints.value = response.data.points || 0
+      return true
     } else {
       const storedPoints = uni.getStorageSync('userPoints')
       userPoints.value = storedPoints || 0
+      if (notifyError) uni.showToast({ title: response.msg || '积分获取失败，当前显示缓存数据', icon: 'none' })
+      return false
     }
   } catch (error) {
-    if (pageDisposed) return
+    if (pageDisposed) return false
     const storedPoints = uni.getStorageSync('userPoints')
     userPoints.value = storedPoints || 0
+    if (notifyError) uni.showToast({ title: '积分获取失败，当前显示缓存数据', icon: 'none' })
+    return false
   } finally {
     if (!pageDisposed) loading.value = false
   }
 }
 
 const refreshPoints = async () => {
-  await fetchUserPoints()
+  const success = await fetchUserPoints(false)
   if (pageDisposed) return
-  if (!loading.value) {
-    uni.showToast({ title: '积分已刷新', icon: 'success', duration: 1500 })
-  }
+  uni.showToast({
+    title: success ? '积分已刷新' : '积分刷新失败，当前显示缓存数据',
+    icon: success ? 'success' : 'none',
+    duration: 1500
+  })
 }
 
 const isRecommendCategory = computed(() => {

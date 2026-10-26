@@ -1,0 +1,22 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import QbarBridge from 'ftx.qbar.QbarBridge'
+
+export function isAvailable(): boolean {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) return false
+  return QbarBridge.isAvailable(activity!)
+}
+
+export function startScan(callback: (result: string) => void): void {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) {
+    callback('{"error":"UNAVAILABLE"}')
+    return
+  }
+  QbarBridge.start(activity!, callback)
+}
+
+export function cancelScan(): void {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity != null) QbarBridge.cancel(activity!)
+}

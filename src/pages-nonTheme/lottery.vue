@@ -90,6 +90,7 @@
                 :style="getWheelBulbStyle(n)"
               ></view>
             </view>
+            <!-- #ifndef MP-WEIXIN -->
             <view class="wheel-center" @click="startDraw">
               <view class="center-inner">
                 <text class="center-text">{{ isSpinning ? '...' : '开始' }}</text>
@@ -99,6 +100,7 @@
               <view class="pointer-head"></view>
               <view class="pointer-stem"></view>
             </view>
+            <!-- #endif -->
           </view>
         </view>
 
@@ -279,8 +281,13 @@ export default {
       // #ifdef APP-PLUS
       return {};
       // #endif
+      // #ifdef MP-WEIXIN
+      return {};
+      // #endif
       // #ifndef APP-PLUS
+      // #ifndef MP-WEIXIN
       return { transform: `rotate(${this.spinAngle}deg)` };
+      // #endif
       // #endif
     },
     displayPrizes() {
@@ -535,6 +542,43 @@ export default {
       ctx.setLineWidth(2);
       ctx.stroke();
 
+      // #ifdef MP-WEIXIN
+      // 原生 canvas 会覆盖普通 view/cover-view，直接在同一画布绘制固定的指针和中心按钮。
+      ctx.beginPath();
+      ctx.moveTo(center - center * 0.12, center * 0.16);
+      ctx.lineTo(center + center * 0.12, center * 0.16);
+      ctx.lineTo(center, center * 0.44);
+      ctx.closePath();
+      ctx.setFillStyle('#10b981');
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(center, center * 0.41, center * 0.075, 0, Math.PI * 2);
+      ctx.setFillStyle('#ffffff');
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(center, center * 0.41, center * 0.055, 0, Math.PI * 2);
+      ctx.setFillStyle('#047857');
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(center, center, center * 0.29, 0, Math.PI * 2);
+      ctx.setFillStyle('#ffffff');
+      ctx.fill();
+      ctx.setStrokeStyle('rgba(16, 185, 129, 0.22)');
+      ctx.setLineWidth(2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(center, center, center * 0.245, 0, Math.PI * 2);
+      ctx.setFillStyle('#10b981');
+      ctx.fill();
+      ctx.setFillStyle('#ffffff');
+      ctx.setFontSize(Math.max(12, center * 0.14));
+      ctx.setTextAlign('center');
+      ctx.setTextBaseline('middle');
+      ctx.fillText(this.isSpinning ? '...' : '开始', center, center);
+      // #endif
+
       // #ifdef H5
       ctx.draw();
       // #endif
@@ -683,7 +727,7 @@ export default {
         const easeOut = 1 - Math.pow(1 - progress, 3);
         current = totalAngle * easeOut;
         this.spinAngle = current;
-        // #ifdef H5 || APP-PLUS
+        // #ifdef H5 || APP-PLUS || MP-WEIXIN
         this.drawLotteryWheel(current);
         // #endif
         if (progress < 1) {

@@ -2,7 +2,7 @@
   <view class="wechat-login-panel" :class="{ 'panel-dark': dark }">
     <view class="panel-heading">
       <view class="heading-icon"><ManifestIcon id="wechat" :scale="2.7" /></view>
-      <view><text class="panel-title">{{ status === 'manual' ? '微信扫码注册' : '微信扫码登录 / 注册' }}</text><text class="panel-description">{{ status === 'manual' ? '在小程序完成注册后，使用账号密码登录网页。' : '已有账号扫码登录；新用户可在小程序注册，确认后自动登录网页。' }}</text></view>
+      <view><text class="panel-title">{{ registrationAllowed ? '微信扫码登录' : (status === 'manual' ? '微信扫码注册' : '微信扫码登录 / 注册') }}</text><text class="panel-description">{{ registrationAllowed ? '已有账号可扫码登录网页。' : (status === 'manual' ? '在小程序完成注册后，使用账号密码登录网页。' : '已有账号扫码登录；新用户可在小程序注册，确认后自动登录网页。') }}</text></view>
     </view>
     <view class="qr-halo">
       <view class="qr-leaf leaf-left"></view><view class="qr-leaf leaf-right"></view>
@@ -18,14 +18,14 @@
     <view class="scan-steps">
       <view v-for="(step, index) in steps" :key="step.icon" class="scan-step">
         <ManifestIcon :id="step.icon" :scale="2.3" /><text class="step-number">{{ index + 1 }}</text>
-        <text class="step-title">{{ status === 'manual' && index === 3 ? '账号密码登录' : step.title }}</text><text class="step-description">{{ status === 'manual' && index === 3 ? '返回网页使用账号密码登录' : step.description }}</text>
+        <text class="step-title">{{ registrationAllowed && index === 2 ? '账号登录' : (status === 'manual' && index === 3 ? '账号密码登录' : step.title) }}</text><text class="step-description">{{ registrationAllowed && index === 2 ? '使用已有账号' : (status === 'manual' && index === 3 ? '返回网页使用账号密码登录' : step.description) }}</text>
       </view>
     </view>
     <view class="scan-status" role="status" aria-live="polite">
       <view class="status-icon"><ManifestIcon id="camera_scan" :scale="2.1" /></view>
-      <view><text class="status-title">{{ message }}</text><text class="status-detail">{{ status === 'manual' ? '本页保留账号密码登录，注册完成后即可使用。' : `请在小程序确认网页登录${reference ? `，核对确认码 ${reference}` : '。'}` }}</text></view>
+      <view><text class="status-title">{{ message }}</text><text class="status-detail">{{ registrationAllowed ? `请在扫码端确认网页登录${reference ? `，核对确认码 ${reference}` : '。'}` : (status === 'manual' ? '本页保留账号密码登录，注册完成后即可使用。' : `请在扫码端确认网页登录${reference ? `，核对确认码 ${reference}` : '。'}`) }}</text></view>
     </view>
-    <text class="version-hint">若小程序未出现网页登录确认，完成注册后可用账号密码登录。</text>
+    <text v-if="!registrationAllowed" class="version-hint">若小程序未出现网页登录确认，完成注册后可用账号密码登录。</text>
     <button class="qr-refresh" :disabled="status === 'loading' || status === 'consuming' || disabled" @click="refresh">↻　刷新二维码</button>
   </view>
   <WechatQrDownloadMenu :menu="qrMenu" :dark="dark" @close="closeQrMenu" @download="downloadQr" />
@@ -40,7 +40,7 @@ import WechatQrDownloadMenu from '@/components/WechatQrDownloadMenu.vue'
 import { registrationApi } from '@/utils/registration-relay.js'
 import { createH5RegistrationRelay } from '@/utils/registration-relay.mjs'
 
-const props = defineProps({ dark: Boolean, disabled: Boolean })
+const props = defineProps({ dark: Boolean, disabled: Boolean, registrationAllowed: Boolean })
 const emit = defineEmits(['login', 'busy'])
 const qrSource = ref(''), qrState = ref('loading'), status = ref('loading'), message = ref('正在创建专属二维码…'), reference = ref('')
 const terminal = computed(() => ['expired', 'consumed', 'uncertain', 'cancelled'].includes(status.value))

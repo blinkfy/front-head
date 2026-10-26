@@ -1,5 +1,5 @@
 <template>
-  <view class="scan-container scan-dark" :class="{ 'session-mode': connected && deviceMode === 'bin' }">
+  <view class="scan-container" :class="{ 'scan-dark': dark, 'scan-light': !dark, 'session-mode': connected && deviceMode === 'bin' }">
     <view class="light-eco-decor" aria-hidden="true">
       <text class="eco-symbol eco-leaf-one">🌿</text>
       <text class="eco-symbol eco-leaf-two">🍃</text>
@@ -88,7 +88,7 @@
             style="display: block; width: 100%; min-width: 0; align-self: stretch; box-sizing: border-box;"
             :device-id="deviceId"
             :active="pageVisible"
-            :dark="true"
+            :dark="dark"
             @disconnected="handleSessionDisconnected"
             @sync-state="sessionSyncState = $event"
           />
@@ -132,10 +132,27 @@
 </template>
 
 <script setup>
+import { ref, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { ThemeManager } from '@/utils/theme.js'
 import BinSessionPanel from '@/components/BinSessionPanel.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { useDeviceScanPage } from '@/utils/use-device-scan-page.js'
+
+const dark = ref(ThemeManager.getTheme() === 'dark')
+const syncTheme = () => { dark.value = ThemeManager.getTheme() === 'dark' }
+onShow(syncTheme)
+uni.$on?.('app-theme-change', syncTheme)
+// #ifdef H5
+if (typeof window !== 'undefined') window.addEventListener('storage', syncTheme)
+// #endif
+onUnmounted(() => {
+  uni.$off?.('app-theme-change', syncTheme)
+  // #ifdef H5
+  if (typeof window !== 'undefined') window.removeEventListener('storage', syncTheme)
+  // #endif
+})
 
 const {
   deviceId,
@@ -154,14 +171,15 @@ const {
   endConnection,
   startScan,
   goBack
-} = useDeviceScanPage({ dark: true })
+} = useDeviceScanPage({ dark })
 </script>
 
 <style scoped>
+
 /* 主容器 */
 .scan-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #0d224e 0%, #1a0b3d 25%, #220f58 50%, #0a1a3a 75%, #044868 100%);
+  background: var(--scan-decor-container-background, linear-gradient(180deg, #f0fdf4 0%, #f5f7fa 30%, #f0f9ff 70%, #f5f7fa 100%));
   position: relative;
   overflow: hidden;
   padding: 0;
@@ -185,17 +203,9 @@ const {
   width: 100%;
   height: 100%;
   background-image: 
-    linear-gradient(rgba(64, 224, 255, 0.15) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(64, 224, 255, 0.15) 1px, transparent 1px),
-    radial-gradient(circle at 20% 20%, rgba(64, 224, 255, 0.1) 2px, transparent 2px),
-    radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.1) 2px, transparent 2px);
-  background-size: 60px 60px, 60px 60px, 100px 100px, 120px 120px;
-  animation: gridFloat 25s linear infinite;
-}
-
-@keyframes gridFloat {
-  0% { transform: translate(0, 0) rotate(0deg); }
-  100% { transform: translate(60px, 60px) rotate(360deg); }
+    var(--scan-decor-grid-background-image, radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(52, 211, 153, 0.06) 0%, transparent 40%));
+  background-size: var(--scan-decor-grid-background-size, initial);
 }
 
 .floating-elements {
@@ -206,14 +216,13 @@ const {
 
 .float-item {
   position: absolute;
-  width: 12rpx;
-  height: 12rpx;
-  background: radial-gradient(circle, rgba(64, 224, 255, 0.9) 0%, rgba(16, 185, 129, 0.6) 50%, transparent 100%);
+  width: var(--scan-decor-float-item-width, 8rpx);
+  height: var(--scan-decor-float-item-height, 8rpx);
+  background: var(--scan-decor-float-item-background, rgba(16, 185, 129, 0.3));
   border-radius: 50%;
   animation: floatUp 15s ease-in-out infinite;
   box-shadow: 
-    0 0 20rpx rgba(64, 224, 255, 0.5),
-    0 0 40rpx rgba(16, 185, 129, 0.3);
+    var(--scan-decor-float-item-box-shadow, initial);
 }
 
 .float-item:nth-child(1) { left: 15%; animation-delay: 0s; }
@@ -226,30 +235,23 @@ const {
 .float-item:nth-child(8) { left: 85%; animation-delay: 17.5s; }
 
 @keyframes floatUp {
-  0% { transform: translateY(100vh) scale(0) rotate(0deg); opacity: 0; }
+  0% { transform: translateY(100vh) scale(0); opacity: 0; }
   10% { opacity: 1; }
-  50% { transform: translateY(50vh) scale(1) rotate(180deg); opacity: 1; }
+  50% { transform: translateY(50vh) scale(1); opacity: 0.6; }
   90% { opacity: 1; }
-  100% { transform: translateY(-10vh) scale(0) rotate(360deg); opacity: 0; }
+  100% { transform: translateY(-10vh) scale(0); opacity: 0; }
 }
 
 .scan-lines {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  display: var(--scan-decor-lines-display, none);
+  position: var(--scan-decor-lines-position, initial);
+  top: var(--scan-decor-lines-top, initial);
+  left: var(--scan-decor-lines-left, initial);
+  width: var(--scan-decor-lines-width, initial);
+  height: var(--scan-decor-lines-height, initial);
   background: 
-    linear-gradient(90deg, transparent 49%, rgba(52, 211, 153, 0.4) 50%, transparent 51%),
-    linear-gradient(0deg, transparent 49%, rgba(64, 224, 255, 0.3) 50%, transparent 51%),
-    radial-gradient(circle at 30% 40%, rgba(139, 92, 246, 0.2) 1px, transparent 1px);
-  background-size: 200px 200px, 200px 200px, 80px 80px;
-  animation: scanMove 10s linear infinite;
-}
-
-@keyframes scanMove {
-  0% { transform: translate(0, 0) rotate(0deg); }
-  100% { transform: translate(200px, 200px) rotate(180deg); }
+    var(--scan-decor-lines-background, initial);
+  background-size: var(--scan-decor-lines-background-size, initial);
 }
 
 /* 能量球效果 */
@@ -261,22 +263,22 @@ const {
 
 .energy-orb {
   position: absolute;
-  width: 80rpx;
-  height: 80rpx;
-  background: radial-gradient(circle, rgba(64, 224, 255, 0.3) 0%, rgba(16, 185, 129, 0.2) 50%, transparent 100%);
+  width: var(--scan-decor-energy-orb-width, 60rpx);
+  height: var(--scan-decor-energy-orb-height, 60rpx);
+  background: var(--scan-decor-energy-orb-background, rgba(16, 185, 129, 0.15));
   border-radius: 50%;
   animation: orbFloat 8s ease-in-out infinite;
-  filter: blur(2rpx);
+  filter: var(--scan-decor-energy-orb-filter, initial);
 }
 
 @keyframes orbFloat {
   0%, 100% { 
     transform: translateY(0px) scale(1); 
-    opacity: 0.3; 
+    opacity: 0.2; 
   }
   50% { 
-    transform: translateY(-40rpx) scale(1.2); 
-    opacity: 0.7; 
+    transform: translateY(-30rpx) scale(1.1); 
+    opacity: 0.4; 
   }
 }
 
@@ -295,7 +297,7 @@ const {
   left: 0;
   width: 100%;
   height: 60rpx;
-  background: linear-gradient(90deg, transparent, rgba(64, 224, 255, 0.1), transparent);
+  background: var(--scan-decor-wave-background, linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.08), transparent));
   animation: waveMove 6s ease-in-out infinite;
 }
 
@@ -305,7 +307,7 @@ const {
 
 @keyframes waveMove {
   0% { transform: translateX(-100%) scaleX(1); opacity: 0; }
-  50% { transform: translateX(0%) scaleX(1.5); opacity: 0.6; }
+  50% { transform: translateX(0%) scaleX(1.5); opacity: 0.4; }
   100% { transform: translateX(100%) scaleX(1); opacity: 0; }
 }
 
@@ -875,10 +877,96 @@ const {
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+.scan-container.scan-dark {
+  --scan-decor-container-background: linear-gradient(135deg, #0d224e 0%, #1a0b3d 25%, #220f58 50%, #0a1a3a 75%, #044868 100%);
+  --scan-decor-grid-background-image: linear-gradient(rgba(64, 224, 255, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(64, 224, 255, 0.15) 1px, transparent 1px),
+    radial-gradient(circle at 20% 20%, rgba(64, 224, 255, 0.1) 2px, transparent 2px),
+    radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.1) 2px, transparent 2px);
+  --scan-decor-grid-background-size: 60px 60px, 60px 60px, 100px 100px, 120px 120px;
+  --scan-decor-float-item-width: 12rpx;
+  --scan-decor-float-item-height: 12rpx;
+  --scan-decor-float-item-background: radial-gradient(circle, rgba(64, 224, 255, 0.9) 0%, rgba(16, 185, 129, 0.6) 50%, transparent 100%);
+  --scan-decor-float-item-box-shadow: 0 0 20rpx rgba(64, 224, 255, 0.5),
+    0 0 40rpx rgba(16, 185, 129, 0.3);
+  --scan-decor-lines-display: block;
+  --scan-decor-lines-position: absolute;
+  --scan-decor-lines-top: 0;
+  --scan-decor-lines-left: 0;
+  --scan-decor-lines-width: 100%;
+  --scan-decor-lines-height: 100%;
+  --scan-decor-lines-background: linear-gradient(90deg, transparent 49%, rgba(52, 211, 153, 0.4) 50%, transparent 51%),
+    linear-gradient(0deg, transparent 49%, rgba(64, 224, 255, 0.3) 50%, transparent 51%),
+    radial-gradient(circle at 30% 40%, rgba(139, 92, 246, 0.2) 1px, transparent 1px);
+  --scan-decor-lines-background-size: 200px 200px, 200px 200px, 80px 80px;
+  --scan-decor-energy-orb-width: 80rpx;
+  --scan-decor-energy-orb-height: 80rpx;
+  --scan-decor-energy-orb-background: radial-gradient(circle, rgba(64, 224, 255, 0.3) 0%, rgba(16, 185, 129, 0.2) 50%, transparent 100%);
+  --scan-decor-energy-orb-filter: blur(2rpx);
+  --scan-decor-wave-background: linear-gradient(90deg, transparent, rgba(64, 224, 255, 0.1), transparent);
+}
+
+.scan-dark .bg-grid {
+  animation: gridFloat 25s linear infinite;
+}
+
+.scan-dark .float-item {
+  animation: scanDarkFloatUp 15s ease-in-out infinite;
+}
+
+@keyframes scanDarkFloatUp {
+  0% { transform: translateY(100vh) scale(0) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  50% { transform: translateY(50vh) scale(1) rotate(180deg); opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(-10vh) scale(0) rotate(360deg); opacity: 0; }
+}
+
+.scan-dark .scan-lines {
+  animation: scanMove 10s linear infinite;
+}
+
+.scan-dark .energy-orb {
+  animation: scanDarkOrbFloat 8s ease-in-out infinite;
+}
+
+@keyframes scanDarkOrbFloat {
+  0%, 100% { 
+    transform: translateY(0px) scale(1); 
+    opacity: 0.3; 
+  }
+  50% { 
+    transform: translateY(-40rpx) scale(1.2); 
+    opacity: 0.7; 
+  }
+}
+
+.scan-dark .wave {
+  animation: scanDarkWaveMove 6s ease-in-out infinite;
+}
+
+@keyframes scanDarkWaveMove {
+  0% { transform: translateX(-100%) scaleX(1); opacity: 0; }
+  50% { transform: translateX(0%) scaleX(1.5); opacity: 0.6; }
+  100% { transform: translateX(100%) scaleX(1); opacity: 0; }
+}
+
+@keyframes gridFloat {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(60px, 60px) rotate(360deg); }
+}
+
+@keyframes scanMove {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(200px, 200px) rotate(180deg); }
+}
+
 </style>
 
-<style scoped src="../../styles/scan-connection.css"></style>
+<style scoped src="../styles/scan-connection.css"></style>
 <style scoped>
+
 .scan-container {
   --scan-bg: #f3f7f6;
   --scan-surface: #ffffff;
@@ -1209,6 +1297,18 @@ const {
   font-size: 12px;
   line-height: 1.3;
   font-weight: 760;
+}
+
+.scan-light .section-kicker {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  min-height: 0;
+  padding: 2px 11px 0;
+  box-sizing: border-box;
+  line-height: 1;
 }
 
 .section-kicker.success { color: var(--scan-primary); }
@@ -1609,4 +1709,5 @@ const {
   .session-mode .session-device-heading { padding-bottom: 10px; margin-bottom: 12px; }
   .session-mode .action-group { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; gap: 10px; }
 }
+
 </style>

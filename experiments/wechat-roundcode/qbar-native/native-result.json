@@ -1,0 +1,118 @@
+{
+  "testCases": [
+    {
+      "width": 430,
+      "height": 430,
+      "version": "3.2.20190712",
+      "nativeResultCount": 0,
+      "results": [],
+      "sceneDecoded": false,
+      "scene": null,
+      "case": "blank"
+    },
+    {
+      "width": 430,
+      "height": 430,
+      "version": "3.2.20190712",
+      "nativeResultCount": 1,
+      "results": [
+        {
+          "type": "WX_CODE",
+          "typeId": 18,
+          "charset": "ISO8859-1",
+          "rawLength": 48,
+          "rawSha256": "d5e20e90cabd57722a973f268b2a86af49dfb7ce9dfb4b3e5ca62599b74eb183"
+        }
+      ],
+      "sceneDecoded": false,
+      "scene": null,
+      "case": "round-original"
+    },
+    {
+      "width": 430,
+      "height": 430,
+      "version": "3.2.20190712",
+      "nativeResultCount": 1,
+      "results": [
+        {
+          "type": "WX_CODE",
+          "typeId": 18,
+          "charset": "ISO8859-1",
+          "rawLength": 48,
+          "rawSha256": "d5e20e90cabd57722a973f268b2a86af49dfb7ce9dfb4b3e5ca62599b74eb183"
+        }
+      ],
+      "sceneDecoded": false,
+      "scene": null,
+      "case": "round-rotate90"
+    },
+    {
+      "width": 430,
+      "height": 430,
+      "version": "3.2.20190712",
+      "nativeResultCount": 1,
+      "results": [
+        {
+          "type": "WX_CODE",
+          "typeId": 18,
+          "charset": "ISO8859-1",
+          "rawLength": 48,
+          "rawSha256": "d5e20e90cabd57722a973f268b2a86af49dfb7ce9dfb4b3e5ca62599b74eb183"
+        }
+      ],
+      "sceneDecoded": false,
+      "scene": null,
+      "case": "round-blur"
+    },
+    {
+      "width": 301,
+      "height": 301,
+      "version": "3.2.20190712",
+      "nativeResultCount": 1,
+      "results": [
+        {
+          "type": "WX_CODE",
+          "typeId": 18,
+          "charset": "ISO8859-1",
+          "rawLength": 48,
+          "rawSha256": "d5e20e90cabd57722a973f268b2a86af49dfb7ce9dfb4b3e5ca62599b74eb183"
+        }
+      ],
+      "sceneDecoded": false,
+      "scene": null,
+      "case": "round-scale70"
+    },
+    {
+      "width": 410,
+      "height": 410,
+      "version": "3.2.20190712",
+      "nativeResultCount": 1,
+      "results": [
+        {
+          "type": "QR_CODE",
+          "typeId": 12,
+          "charset": "ISO8859-1",
+          "rawLength": 35,
+          "rawSha256": "d962f09736915ecf0729f277d76fb4a0c160c71730feef9ffde557c00fa9c23a"
+        }
+      ],
+      "sceneDecoded": false,
+      "scene": null,
+      "case": "standard-qr"
+    }
+  ],
+  "scope": "Desktop ARM64/JNI emulation, not APP camera or scene resolution",
+  "sampleSha256": "2e4831492fb8211cfcd905ef78472dad20c6e89b31a24782dd70f0aae1c8957c",
+  "sceneDecoded": false,
+  "appIntegrated": false,
+  "runtime": {
+    "os": "Windows x64",
+    "java": "23.0.1",
+    "emulator": "unidbg 0.9.8 / Unicorn2 ARM64",
+    "qbar": "sollyu/wechat-scanner@8ba599fd90216d1ba148eda4cd051eb86cc5b16d",
+    "neuralModelsEnabled": false
+  },
+  "testsPassed": 3,
+  "nativeScans": 6,
+  "conclusion": "WX_CODE raw payload decoded consistently. Complete business scene/path not recovered or verified. No APP integration."
+}

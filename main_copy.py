@@ -1383,7 +1383,7 @@ class MainWindow(QMainWindow):
                 with self._qr_token_lock:
                     self._current_token = token
 
-            scan_url = f"{self.frontend}/#/pages/scan/scan?device_id={self.device_id}&token={token}"
+            scan_url = f"{self.frontend}/#/pages-nonTheme/scan?device_id={self.device_id}&token={token}"
             
             qr = qrcode.QRCode(version=1, box_size=10, border=5)
             qr.add_data(scan_url)

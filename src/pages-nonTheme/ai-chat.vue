@@ -122,10 +122,16 @@
               <image
                 v-if="getMessageImageSrc(msg)"
                 class="msg-image"
+                lazy-load
                 :src="getMessageImageSrc(msg)"
-                mode="aspectFit"
+                mode="widthFix"
+                @tap.stop="previewMessageImage(msg)"
                 @error="handleMessageImageError(idx)"
               />
+              <view v-else-if="msg.hasImage || msg.recognitionHistoryId" class="msg-image-placeholder">
+                <text>{{ msg.imageExpired ? '图片已超过180天保留期，已自动清理' : (msg._imageLoadFailed ? '图片加载失败' : '暂无图片') }}</text>
+                <text v-if="msg._imageLoadFailed && !msg.imageExpired" class="image-retry" @tap.stop="retryMessageImage(idx)">重新加载</text>
+              </view>
               <!-- 用户消息保持纯文本，助手消息走 Markdown 渲染 -->
               <text v-if="msg.role === 'user'" class="msg-body">{{ msg.content }}</text>
               <!-- 深度思考推理区：DeepSeek风格，可折叠，置于正文上方 -->
@@ -296,11 +302,15 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { onHide, onUnload } from '@dcloudio/uni-app'
 import { baseUrl } from '@/api/settings'
 import MarkdownBody from '@/components/MarkdownBody.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { parseRecognitionSeedSummary } from '@/pages-nonTheme/utils/recognition-seed-display.mjs'
+import { compressChatImage, dataUrlByteLength, MAX_IMAGE_BYTES } from '@/pages-nonTheme/utils/chat-image-compression.js'
+import { resolveChatPreviewSource } from '@/pages-nonTheme/utils/chat-image-preview.js'
+import { SEED_IMAGE_BINDING_KEY, seedImageFingerprint, resolveCachedSeedImage, cachedSeedSession, findCachedSeedMessage } from '@/pages-nonTheme/utils/ai-chat-image-cache.mjs'
 
 // ─── Storage 工具 ────────────────────────────────────────
 function getStorage(key) {
@@ -369,6 +379,9 @@ const messagesViewportHeight = ref(0)
 const composerOverlayHeight = ref(96)
 const historyDrawerOpen = ref(false)
 const pickedImageDataUrl = ref('')
+const pickedImageLocalPath = ref('')
+const imagePreparing = ref(false)
+const imagePreviewPreparing = ref(false)
 const pickedImageName    = ref('')
 const isDeepThinking = ref(false)    // DeepSeek风格：深度思考开关
 const isNarrowScreen = ref(false)    // 超小屏（≤480px）标识
@@ -438,12 +451,48 @@ function isRenderableImageSrc(src) {
   return true
 }
 
+function chatImageUrl(messageId) {
+  return `${baseUrl}/api/ai/chat/image/${messageId}?token=${encodeURIComponent(getStorage('token') || '')}`
+}
+function retryMessageImage(index) {
+  const msg = messageList.value[index]
+  if (!msg || msg.imageExpired) return
+  msg._imageLoadFailed = false
+  msg._imageFallbackTried = false
+  messageList.value = messageList.value.slice()
+}
 function getMessageImageSrc(msg) {
   if (!msg) return ''
-  if (msg._imageLoadFailed) return ''
+  if (msg._imageLoadFailed || msg.imageExpired) return ''
   if (isRenderableImageSrc(msg._localImagePath)) return msg._localImagePath
   if (isRenderableImageSrc(msg.imageBase64)) return msg.imageBase64
+  if (msg.imageAvailable && /^\d+$/.test(String(msg.id))) return chatImageUrl(msg.id)
+  if (msg.recognitionHistoryId && msg.imageAvailable !== false) return `${baseUrl}/api/recognition_history/image/${msg.recognitionHistoryId}?raw=1&token=${encodeURIComponent(getStorage('token') || '')}`
   return ''
+}
+
+async function previewMessageImage(msg) {
+  const source = getMessageImageSrc(msg)
+  if (!source || imagePreviewPreparing.value) return
+  imagePreviewPreparing.value = true
+  let loadingShown = false
+  try {
+    // #ifndef H5
+    loadingShown = true
+    uni.showLoading({ title: '图片加载中', mask: true })
+    // #endif
+    const path = await resolveChatPreviewSource(source)
+    if (path !== source) msg._localImagePath = path
+    if (loadingShown) { uni.hideLoading(); loadingShown = false }
+    await new Promise((resolve, reject) => uni.previewImage({
+      urls: [path], current: path, success: resolve, fail: reject
+    }))
+  } catch (error) {
+    uni.showToast({ title: error?.message || '图片预览失败，请重试', icon: 'none' })
+  } finally {
+    if (loadingShown) uni.hideLoading()
+    imagePreviewPreparing.value = false
+  }
 }
 
 function getDisplayMessageText(msg) {
@@ -827,6 +876,7 @@ function setActiveSession(sessionId) {
   activeSessionId.value = nextId
   setStorage(SESSION_KEY, nextId)
   ensureConversation(nextId)
+  restoreCachedSeedImage()
   expandedSeedSummaries.value = {}
   updateHeader()
   syncConversationList()
@@ -845,6 +895,7 @@ function pushMessageToActive(role, content, imageBase64, createdAt, reasoning, l
     role: role === 'assistant' ? 'assistant' : 'user',
     content: String(content || ''),
     imageBase64: typeof imageBase64 === 'string' ? imageBase64 : '',
+    hasImage: !!imageBase64,
     createdAt: createdAt || new Date().toISOString(),
     reasoning: role === 'assistant' ? (reasoning || '') : undefined
   }
@@ -897,7 +948,7 @@ function convertSeedImagesToTempFiles(sessionId) {
     }
 
     for (const msg of conversation.messages) {
-      if (msg && msg.imageBase64 && msg.imageBase64.startsWith('data:image/')) {
+      if (msg && !msg._localImagePath && msg.imageBase64 && msg.imageBase64.startsWith('data:image/')) {
         const base64Data = msg.imageBase64.replace(/^data:image\/\w+;base64,/, '')
         // 生成唯一文件名，避免多图冲突
         const ext = (msg.imageBase64.match(/^data:image\/(\w+);base64,/) || [, 'jpg'])[1]
@@ -976,43 +1027,31 @@ function localPathToBase64(filePath) {
 // ─── 图片选择 ─────────────────────────────────────────────
 function clearPickedImage() {
   pickedImageDataUrl.value = ''
+  pickedImageLocalPath.value = ''
   pickedImageName.value = ''
 }
 function onPickImage() {
+  if (imagePreparing.value || isStreaming.value) return
   uni.chooseImage({
-    count: 1,
-    sizeType: ['original', 'compressed'],
-    sourceType: ['album', 'camera'],
-    success: (res) => {
-      const path = res.tempFilePaths && res.tempFilePaths[0]
+    count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'],
+    success: async res => {
+      const path = res.tempFilePaths?.[0]
       if (!path) return
-      // H5 端转 base64，非 H5 端直接用临时路径
-      // #ifdef H5
-      const reader = new FileReader()
-      fetch(path)
-        .then(r => r.blob())
-        .then(blob => {
-          reader.onload = () => {
-            pickedImageDataUrl.value = reader.result
-            pickedImageName.value = path.split('/').pop() || '已添加图片'
-          }
-          reader.onerror = () => {
-            pickedImageDataUrl.value = path
-            pickedImageName.value = path.split('/').pop() || '已添加图片'
-          }
-          reader.readAsDataURL(blob)
-        })
-        .catch(() => {
-          pickedImageDataUrl.value = path
-          pickedImageName.value = path.split('/').pop() || '已添加图片'
-        })
-      // #endif
-      // #ifndef H5
-      pickedImageDataUrl.value = path
-      pickedImageName.value = path.split('/').pop() || '已添加图片'
-      // #endif
-    },
-    fail: () => {}
+      imagePreparing.value = true
+      uni.showLoading({ title: '正在处理图片', mask: true })
+      try {
+        const image = await compressChatImage(path)
+        if (!image.dataUrl || dataUrlByteLength(image.dataUrl) > MAX_IMAGE_BYTES) throw new Error('图片需压缩到500KB以内')
+        pickedImageDataUrl.value = image.dataUrl
+        pickedImageLocalPath.value = image.filePath || ''
+        pickedImageName.value = '已添加图片'
+      } catch (error) {
+        uni.showToast({ title: error?.message || '图片处理失败，请重试', icon: 'none' })
+      } finally {
+        imagePreparing.value = false
+        uni.hideLoading()
+      }
+    }, fail: () => {}
   })
 }
 
@@ -1134,6 +1173,11 @@ function hydrateConversations(historyData) {
       role: item.role === 'assistant' ? 'assistant' : 'user',
       content,
       reasoning: item.role === 'assistant' ? String(item.reasoning || '') : '',
+      hasImage: !!item.hasImage,
+      recognitionHistoryId: item.recognitionHistoryId || null,
+      imageAvailable: !!item.imageAvailable,
+      imageExpired: !!item.imageExpired,
+      imageExpiresAt: item.imageExpiresAt || null,
       imageBase64: '',
       createdAt: item.createdAt || new Date().toISOString()
     })
@@ -1166,47 +1210,55 @@ function buildSeedAssistantText(payload) {
   if (!category) return '我已经拿到这次识别结果。你可以继续问我：具体物品分类依据、投放注意事项或变废为宝步骤。'
   return `我已读取这次识别结果，主要类别是「${category}」。\n如果你愿意，我可以继续细化到每个物品的分类依据，并给出可执行的变废为宝步骤。`
 }
-function maybeStartFromFreshSeed() {
-  const seedPayload = parseSeedPayload()
-  if (!seedPayload) return null
-  const createdAt = String(seedPayload.createdAt || '').trim()
-  const seedFingerprint = createdAt || [
-    String(seedPayload.category || '').trim(),
-    String(seedPayload.assistantReply || '').trim().slice(0, 120)
-  ].join('__')
-  const consumedAt = String(getStorage(SEED_CONSUMED_KEY) || '').trim()
-  if (!seedFingerprint || seedFingerprint === consumedAt) return null
-
-  const newSessionId = createSessionId()
-  ensureConversation(newSessionId)
-  activeSessionId.value = newSessionId
-  setStorage(SESSION_KEY, newSessionId)
-
-  // 优先使用 seed 中的 imageBase64，按以下顺序尝试：
-  // 1. 正常 data:image/ URL
-  // 2. 大图占位符 __LARGE_IMAGE__:len → 从独立 key 读取实际 base64
-  // 3. legacy key（H5 和小程序的兼容路径）
-  let seedImage = ''
-  const rawImage = seedPayload.imageBase64 || ''
-  if (rawImage.startsWith('data:image/')) {
-    seedImage = rawImage
-  } else if (rawImage.startsWith('__LARGE_IMAGE__:')) {
-    // 从拆分存储的大图中恢复
-    seedImage = getStorage('ai_chat_seed_image_large') || ''
-  } else {
-    const legacyImage = getStorage('ai_chat_seed_image')
-    if (typeof legacyImage === 'string' && legacyImage.startsWith('data:image/')) {
-      seedImage = legacyImage
-    }
+function cachedImageOwner() {
+  let value = getStorage('userInfo')
+  if (!value) {
+    try { value = uni.getStorageSync('userInfo') } catch (_) {}
   }
+  const info = typeof value === 'string' ? safeJsonParse(value) : value
+  return String(info?.username || '')
+}
+function bindCachedSeedImage(seed, sessionId, pending = false) {
+  setStorage(SEED_IMAGE_BINDING_KEY, JSON.stringify({
+    fingerprint: seedImageFingerprint(seed), sessionId, owner: cachedImageOwner(), pending
+  }))
+}
+function restoreCachedSeedImage() {
+  const seed = parseSeedPayload()
+  const fingerprint = seedImageFingerprint(seed)
+  if (!fingerprint || fingerprint !== String(getStorage(SEED_CONSUMED_KEY) || '').trim()) return
+  const binding = safeJsonParse(getStorage(SEED_IMAGE_BINDING_KEY))
+  const sessionId = cachedSeedSession(binding, fingerprint, cachedImageOwner(), activeSessionId.value || getStorage(SESSION_KEY))
+  let conversation = conversationMap.get(sessionId)
+  if (!conversation && sessionId && binding?.fingerprint === fingerprint && binding.pending === true && binding.owner && binding.owner === cachedImageOwner()) {
+    const image = resolveCachedSeedImage(seed, getStorage)
+    if (!image && !Number(seed.historyId)) return
+    conversation = ensureConversation(sessionId)
+    appendCachedSeedMessages(conversation, seed, image)
+    convertSeedImagesToTempFiles(sessionId)
+    return
+  }
+  if (!conversation) return
+  const target = findCachedSeedMessage(conversation.messages, buildSeedUserText(seed), buildSeedAssistantText(seed))
+  if (!target || target.imageBase64 || target.imageExpired) return
+  const image = resolveCachedSeedImage(seed, getStorage)
+  if (!image) return
+  target.imageBase64 = image
+  bindCachedSeedImage(seed, sessionId)
+  convertSeedImagesToTempFiles(sessionId)
+}
+function appendCachedSeedMessages(conversation, seedPayload, seedImage) {
+  const createdAt = String(seedPayload.createdAt || '').trim()
   const seedUserText = buildSeedUserText(seedPayload)
   const seedText = buildSeedAssistantText(seedPayload)
-  const conversation = ensureConversation(newSessionId)
   if (seedUserText || seedImage) {
     conversation.messages.push({
       id: createMessageId(),
       role: 'user', content: seedUserText || '请继续分析这张图片。',
       imageBase64: seedImage, createdAt: createdAt || new Date().toISOString(),
+      recognitionHistoryId: Number(seedPayload.historyId) > 0 ? Number(seedPayload.historyId) : null,
+      hasImage: !!seedImage || Number(seedPayload.historyId) > 0,
+      imageExpired: !!createdAt && Date.now() - new Date(createdAt).getTime() > 180 * 86400000,
       _pendingPersist: true
     })
   }
@@ -1219,7 +1271,23 @@ function maybeStartFromFreshSeed() {
     })
   }
   refreshConversationMeta(conversation)
+}
+function maybeStartFromFreshSeed() {
+  const seedPayload = parseSeedPayload()
+  if (!seedPayload) return null
+  const seedFingerprint = seedImageFingerprint(seedPayload)
+  const consumedAt = String(getStorage(SEED_CONSUMED_KEY) || '').trim()
+  if (!seedFingerprint || seedFingerprint === consumedAt) return null
+
+  const newSessionId = createSessionId()
+  ensureConversation(newSessionId)
+  activeSessionId.value = newSessionId
+  setStorage(SESSION_KEY, newSessionId)
+
+  const seedImage = resolveCachedSeedImage(seedPayload, getStorage)
+  appendCachedSeedMessages(ensureConversation(newSessionId), seedPayload, seedImage)
   setStorage(SEED_CONSUMED_KEY, seedFingerprint)
+  bindCachedSeedImage(seedPayload, newSessionId, true)
   return newSessionId
 }
 function ensureSessionId() {
@@ -1470,6 +1538,9 @@ function extractHistoryForRequest() {
     .slice(-10)
     .map(item => {
       const entry = { role: item.role, content: item.content }
+      if (item.imageExpired) return entry
+      if (item.role === 'user' && item.hasImage && /^\d+$/.test(String(item.id))) { entry.messageId = item.id; return entry }
+      if (item.role === 'user' && item.recognitionHistoryId) { entry.recognitionHistoryId = item.recognitionHistoryId; return entry }
       // 保留图片信息，让后端能构建多模态消息
       if (item.role === 'user' && item.imageBase64) {
         let img = item.imageBase64
@@ -1488,17 +1559,23 @@ function extractHistoryForRequest() {
 }
 
 // ─── 发送消息 ─────────────────────────────────────────────
-function extractPendingPersistMessages() {
+async function extractPendingPersistMessages() {
   const conversation = ensureConversation(activeSessionId.value)
-  return conversation.messages
-    .filter(item => item && item._pendingPersist && (item.role === 'user' || item.role === 'assistant'))
-    .map(item => ({
-      role: item.role,
-      content: item.content,
-      reasoning: item.role === 'assistant' ? item.reasoning : undefined,
-      hasImage: !!item.imageBase64
-    }))
-    .filter(item => String(item.content || '').trim())
+  const pending = conversation.messages.filter(item => item?._pendingPersist && (item.role === 'user' || item.role === 'assistant'))
+  for (const item of pending) {
+    if (item.role === 'user' && !item.imageExpired && !item.recognitionHistoryId && item.imageBase64) {
+      const compressed = await compressChatImage(item.imageBase64)
+      item.imageBase64 = compressed.dataUrl
+      item._localImagePath = compressed.filePath || ''
+    }
+  }
+  return pending.map(item => ({
+    role: item.role, content: item.content,
+    reasoning: item.role === 'assistant' ? item.reasoning : undefined,
+    hasImage: (!item.imageExpired && !!item.imageBase64) || !!item.recognitionHistoryId,
+    recognitionHistoryId: item.recognitionHistoryId || undefined,
+    imageBase64: item.role === 'user' && !item.imageExpired && !item.recognitionHistoryId ? item.imageBase64 : undefined
+  })).filter(item => String(item.content || '').trim())
 }
 
 function markPendingPersistMessagesSaved() {
@@ -1510,81 +1587,48 @@ function markPendingPersistMessagesSaved() {
       changed = true
     }
   })
-  if (changed) messageList.value = conversation.messages.slice()
+  if (changed) {
+    messageList.value = conversation.messages.slice()
+    const binding = safeJsonParse(getStorage(SEED_IMAGE_BINDING_KEY))
+    if (binding?.sessionId === activeSessionId.value && binding.owner === cachedImageOwner()) {
+      setStorage(SEED_IMAGE_BINDING_KEY, JSON.stringify({ ...binding, pending: false }))
+    }
+  }
 }
 
 async function onSend() {
-  if (isStreaming.value) return
+  if (isStreaming.value || imagePreparing.value) return
   const rawText = promptText.value.trim()
   const sendingImage = pickedImageDataUrl.value
-  if (!rawText && !sendingImage) {
-    uni.showToast({ title: '请先输入问题或选择图片', icon: 'none' })
-    return
-  }
+  const displayImage = pickedImageLocalPath.value || sendingImage
+  if (!rawText && !sendingImage) { uni.showToast({ title: '请先输入问题或选择图片', icon: 'none' }); return }
   streamingMessageId.value = createMessageId()
-  // 小程序端在发送前立即设置状态，防止重复点击
-  // #ifndef H5
   isStreaming.value = true
-  streamingText.value = '正在思考中...'
+  streamingText.value = '正在准备消息…'
   streamingReasoning.value = ''
-  // #endif
-  const userText = rawText || '请基于这张图继续补充具体物品分类和可执行的变废为宝方案。'
-  const historyForApi = extractHistoryForRequest()
-  const seedMessagesForPersist = extractPendingPersistMessages()
-
-  // 小程序端：保留本地路径用于消息气泡显示，另转 base64 发给服务端
-  let apiImage = sendingImage
-  // #ifndef H5
-  console.log('[ai-chat] sendingImage before conversion:', sendingImage, 'startsWith data:', sendingImage && sendingImage.startsWith('data:'), 'startsWith http:', sendingImage && sendingImage.startsWith('http'))
-  if (apiImage && !apiImage.startsWith('data:') && !apiImage.startsWith('http')) {
-    const converted = await localPathToBase64(apiImage)
-    console.log('[ai-chat] apiImage after conversion:', converted ? (converted.substring(0, 50) + '...') : 'empty', 'length:', converted && converted.length)
-    // 只有成功转换出 data URL 才赋值
-    if (converted && converted.startsWith('data:')) {
-      apiImage = converted
-    } else {
-      // 转换失败：保留本地路径给气泡显示，不发给服务端
-      apiImage = ''
-    }
-  }
-  // #endif
-
-  console.log('[ai-chat] onSend: userText=', userText, 'hasImage=', !!apiImage)
-  // 小程序端：本地路径存到 _localImagePath 供气泡渲染，imageBase64 存 data URL 供 API
-  // #ifndef H5
-  const displayImage = sendingImage   // 本地路径，用于气泡显示
-  const storedImage = apiImage        // data URL，用于 API 请求
-  // #endif
-  // #ifdef H5
-  const displayImage = sendingImage
-  const storedImage = sendingImage    // H5 下 sendingImage 本身就是 data URL 或 blob URL
-  // #endif
-  pushMessageToActive('user', userText, storedImage, new Date().toISOString(), undefined, displayImage)
-  promptText.value = ''
-  clearPickedImage()
-
+  let messageSent = false
   try {
-    const streamed = await streamChat({
-      text: userText,
-      imageBase64: apiImage,
-      history: historyForApi,
-      seedMessages: seedMessagesForPersist,
-      enableThinking: isDeepThinking.value
-    })
-    markPendingPersistMessagesSaved()
+    if (sendingImage && dataUrlByteLength(sendingImage) > MAX_IMAGE_BYTES) throw new Error('图片需压缩到500KB以内')
+    const seedMessagesForPersist = await extractPendingPersistMessages()
+    const historyForApi = extractHistoryForRequest()
+    const userText = rawText || '请基于这张图继续补充具体物品分类和可执行的变废为宝方案。'
+    pushMessageToActive('user', userText, sendingImage, new Date().toISOString(), undefined, displayImage)
+    messageSent = true
+    promptText.value = ''
+    clearPickedImage()
+    const streamed = await streamChat({ text: userText, imageBase64: sendingImage, history: historyForApi, seedMessages: seedMessagesForPersist, enableThinking: isDeepThinking.value })
+    if (!streamed.aborted) markPendingPersistMessagesSaved()
     pushMessageToActive('assistant', streamed.content || 'AI 暂未返回内容。', '', new Date().toISOString(), streamed.reasoning || '', '', streamingMessageId.value)
-  } catch (err) {
-    const failedText = err && err.name === 'AbortError'
-      ? '已停止当前回答。'
-      : `请求异常：${err && err.message ? err.message : err}`
-    pushMessageToActive('assistant', failedText, '', new Date().toISOString(), '')
-    // #ifdef H5
+  } catch (error) {
+    if (messageSent) pushMessageToActive('assistant', error?.name === 'AbortError' ? '已停止当前回答。' : `请求异常：${error?.message || error}`, '', new Date().toISOString(), '')
+    else uni.showToast({ title: error?.message || '消息准备失败', icon: 'none' })
+  } finally {
     isStreaming.value = false
-    // #endif
     streamingText.value = ''
     streamingReasoning.value = ''
   }
 }
+
 function onStop() {
   // #ifdef H5
   if (abortCtrl) abortCtrl.abort()
@@ -1656,6 +1700,7 @@ onMounted(async () => {
   let historyData = { items: [], sessionMetas: {} }
   try { historyData = await loadHistoryItems() } catch (_) {}
   hydrateConversations(historyData)
+  restoreCachedSeedImage()
 
   const freshSeedSession = maybeStartFromFreshSeed()
   if (freshSeedSession) {
@@ -1694,7 +1739,11 @@ onMounted(async () => {
   })
 })
 
+onHide(closeHistoryDrawer)
+onUnload(closeHistoryDrawer)
+
 onBeforeUnmount(() => {
+  closeHistoryDrawer()
   if (abortCtrl) abortCtrl.abort()
   if (wsSocket) {
     try { wsSocket.close() } catch (_) {}
@@ -1820,23 +1869,11 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 ::-webkit-scrollbar-thumb:hover { background: rgba(100, 100, 100, 0.5); }
 /* #endif */
 
-/* ─── page容器 ─── */
-page {
-  background: var(--bg-primary);
-  height: 100vh;
-  overflow: hidden;
-  font-family: var(--font-main);
-}
-
-/* 微信小程序安全区域适配 */
-page {
-  padding-top: constant(safe-area-inset-top);
-  padding-top: env(safe-area-inset-top);
-}
-
-/* ─── shell根布局 ─── */
+/* ─── shell根布局：尺寸与滚动限制仅作用于聊天页 ─── */
 .shell {
   width: 100%;
+  padding-top: constant(safe-area-inset-top);
+  padding-top: env(safe-area-inset-top);
   /* 减去小程序状态栏高度 */
   height: calc(100vh - constant(safe-area-inset-top));
   height: calc(100vh - env(safe-area-inset-top));
@@ -2476,6 +2513,9 @@ page {
   cursor: pointer;
 }
 
+.shell .msg-image-placeholder { padding: 14px; margin-bottom: 8px; border: 1px dashed var(--border-color, #d1d5db); border-radius: 8px; font-size: 12px; color: var(--text-secondary, #6b7280); }
+.shell .image-retry { margin-left: 10px; color: #4D6BFE; }
+
 /* 深度思考推理区：DeepSeek风格，浅底左侧竖线 */
 .shell .reasoning-block {
   margin-bottom: 8px;
@@ -2531,9 +2571,9 @@ page {
 
 .shell .msg-image {
   display: block;
-  width: auto;
-  max-width: min(280px, 72vw);
-  max-height: 220px;
+  width: 280px;
+  max-width: 100%;
+  cursor: zoom-in;
   border-radius: 12px;
   margin-bottom: 10px;
   background: var(--bg-tertiary);
@@ -3340,7 +3380,7 @@ page {
 
 /* ─── 响应式：移动端抽屉（≤980px）─── */
 @media (max-width: 980px) {
-  page { padding: 0; }
+  .shell { padding: 0; }
   /* #ifdef H5 */
   body.history-drawer-open { overflow: hidden; }
   /* #endif */
@@ -3379,7 +3419,7 @@ page {
   .shell .messages { padding: 12px 14px; }
   /* 消息气泡：确保不超出屏幕，防止气泡过窄 */
   .shell .msg { max-width: 100% !important; width: 100%; font-size: 13px; padding: 9px 12px; }
-  .shell .msg-image { width: auto; max-width: min(260px, 72vw) !important; max-height: 200px; }
+  .shell .msg-image { width: 260px; max-width: 100% !important; }
   /* 消息行：允许换行，内容不被压缩 */
   .shell .message-row { flex-wrap: wrap; width: 100%; margin-bottom: 14px; }
   .shell .message-content { flex: 1 1 auto !important; min-width: 0; }
@@ -3420,7 +3460,7 @@ page {
   .shell .image-pending-name { max-width: 160px; }
   /* 消息气泡和小屏进一步保证 */
   .shell .msg { max-width: 100% !important; width: 100%; }
-  .shell .msg-image { width: auto; max-width: min(220px, 68vw) !important; max-height: 180px; }
+  .shell .msg-image { width: 220px; max-width: 100% !important; }
   .shell .message-row { flex-wrap: wrap; width: 100%; }
   .shell .message-content { flex: 1 1 auto !important; }
 }

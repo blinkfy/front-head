@@ -1,4 +1,4 @@
-export const HISTORY_IMAGE_RETENTION_DAYS = 90
+export const HISTORY_IMAGE_RETENTION_DAYS = 180
 
 // 仅在没有图片或加载失败时判断保留期限，仍能加载的旧图片继续展示。
 export function getHistoryImageState(item, failed = false, now = Date.now()) {

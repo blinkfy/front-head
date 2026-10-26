@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="ftx.qbar">
+  <uses-permission android:name="android.permission.CAMERA" />
+  <application>
+    <activity android:name="ftx.qbar.ScannerActivity" android:exported="false"
+      android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize"
+      android:screenOrientation="portrait" android:theme="@android:style/Theme.Material.NoActionBar" />
+  </application>
+</manifest>

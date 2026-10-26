@@ -31,6 +31,11 @@ export function resolveWechatQrScene(scene) {
   })
 }
 
+export function resolveWechatQrRaw(rawBase64, token) {
+  return request({ url: '/api/device/wechat-qr/resolve-raw', method: 'POST',
+    data: { rawBase64 }, header: { Authorization: token }, needAuth: true, silent: true })
+}
+
 /**
  * 获取设备状态
  * @param {string} deviceId - 设备ID

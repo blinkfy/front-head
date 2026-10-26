@@ -6,7 +6,7 @@ const smartBinMapVisual = resolveSmartBinVisual('map')
 const patrolRobotMapSprite = Object.freeze({
   src: digitalTwinAssetUrl('digital-twin-replay/sprites/patrol-robot-v1.webp'),
   status: 'formal',
-  source: 'back-end/images/lejv.webp',
+  source: 'back-end/public/images/lejv.webp',
   view: 'left_front_35_45',
   transparent: true,
   groundAnchor: Object.freeze([0.5, 0.965]),

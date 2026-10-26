@@ -1035,7 +1035,8 @@ async function openHistoryImage(m) {
       fail: () => uni.showToast({ title: '图片预览失败，请重试', icon: 'none' })
     })
   } catch (error) {
-    uni.showToast({ title: error?.message || '图片加载失败，请重试', icon: 'none' })
+    console.warn('[map-image-preview]', { stage: error?.stage, code: error?.code, detail: error?.detail || error?.errMsg || error?.message })
+    uni.showToast({ title: error?.message || error?.errMsg || '图片加载失败，请重试', icon: 'none' })
   } finally {
     imagePreviewLoading.value = false
   }

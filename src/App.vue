@@ -18,7 +18,7 @@
 import { ThemeManager } from '@/utils/theme.js'
 import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
 import { warmManifestIcons } from '@/utils/icon-preload.js'
-import { appendPageQuery } from '@/utils/device-qr-entry.mjs'
+import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/device-qr-entry.mjs'
 // #ifdef MP-WEIXIN
 import { captureRegistrationEntry, offerRegistrationRetry } from '@/utils/registration-relay.js'
 // #endif
@@ -33,7 +33,6 @@ const PAGE_MAPPINGS = {
   'pages/guide/guide': 'pages-dark/guide/guide',
   'pages/change-password/change-password': 'pages-dark/change-password/change-password',
   'pages/map/map': 'pages-dark/map/map',
-  'pages/scan/scan': 'pages-dark/scan/scan',
   'pages/history/history': 'pages-dark/history/history',
   'pages/ranking/ranking': 'pages-dark/ranking/ranking',
   'pages/shop/shop': 'pages-dark/shop/shop'
@@ -65,7 +64,9 @@ export default {
     
     // 在 H5 端的默认首页通常是 pages/index/index
     // 如果主题是 dark，立即跳转到对应的暗色页面
-    if (theme === 'dark') {
+    const scanEntry = isLegacyDeviceScanPath(options?.path) ||
+      '/' + String(options?.path || '').replace(/^\//, '') === DEVICE_SCAN_PAGE
+    if (theme === 'dark' && !scanEntry) {
       // 检查是否需要重定向到暗色主题
       const pages = getCurrentPages()
       if (pages.length === 1) {
@@ -73,7 +74,7 @@ export default {
         const currentRoute = currentPage.route
         console.log('onLaunch: Current route =', currentRoute)
         
-        if (currentRoute.startsWith('pages/') && !currentRoute.startsWith('pages-dark/')) {
+        if (currentRoute.startsWith('pages/') && !isLegacyDeviceScanPath(currentRoute)) {
           const targetPath = PAGE_MAPPINGS[currentRoute] || currentRoute.replace('pages/', 'pages-dark/')
           const launchQuery = {
             ...(options?.query || {}),
@@ -99,6 +100,11 @@ export default {
     void offerRegistrationRetry()
     // #endif
     console.log('App Show')
+  },
+  onPageNotFound: function (options) {
+    const target = resolveLegacyDeviceScanUrl(options?.path, options?.query || {})
+    // Missing-page recovery must happen synchronously in mini-programs.
+    if (target) uni.reLaunch({ url: target })
   },
   onHide: function () {
     console.log('App Hide')

@@ -2,9 +2,9 @@
     "version" : "1.0",
     "configurations" : [
         {
-            "customPlaygroundType" : "device",
-            "packageName" : "uni.app.rubbish",
-            "playground" : "standard",
+            "customPlaygroundType" : "local",
+            "packageName" : "",
+            "playground" : "custom",
             "type" : "uni-app:app-android"
         }
     ]

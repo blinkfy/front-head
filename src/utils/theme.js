@@ -1,3 +1,5 @@
+import { DEVICE_SCAN_PAGE, appendPageQuery, resolveLegacyDeviceScanUrl } from './device-qr-entry.mjs'
+
 // 这里的页面映射表需要跟pages.json保持一致
 const PAGE_MAPPINGS = {
   'pages/index/index': 'pages-dark/index/index',
@@ -8,7 +10,6 @@ const PAGE_MAPPINGS = {
   'pages/guide/guide': 'pages-dark/guide/guide',
   'pages/change-password/change-password': 'pages-dark/change-password/change-password',
   'pages/map/map': 'pages-dark/map/map',
-  'pages/scan/scan': 'pages-dark/scan/scan',
   'pages/history/history': 'pages-dark/history/history',
   'pages/ranking/ranking': 'pages-dark/ranking/ranking',
   'pages/shop/shop': 'pages-dark/shop/shop'
@@ -24,6 +25,7 @@ export const ThemeManager = {
   // 设置主题并保存
   setTheme(theme) {
     uni.setStorageSync('app_theme', theme)
+    uni.$emit?.('app-theme-change', theme)
     if (typeof document !== 'undefined' && document.documentElement && document.body) {
       document.documentElement.setAttribute('data-theme', theme)
       document.body.classList.toggle('dark-theme', theme === 'dark')
@@ -43,6 +45,7 @@ export const ThemeManager = {
     const pages = getCurrentPages()
     const currentPage = pages[pages.length - 1]
     const currentRoute = currentPage.route
+    if ('/' + currentRoute.replace(/^\//, '') === DEVICE_SCAN_PAGE) return
     
     // 计算目标路径
     let targetPath = ''
@@ -71,10 +74,12 @@ export const ThemeManager = {
     // 执行跳转
     // 如果是tabbar页面，通常需要reLaunch
     const tabbarPages = [
-      'pages/index/index', 'pages/home/home', 'pages/scan/scan', 'pages/profile/profile',
-      'pages-dark/index/index', 'pages-dark/home/home', 'pages-dark/scan/scan', 'pages-dark/profile/profile'
+      'pages/index/index', 'pages/home/home', 'pages/profile/profile',
+      'pages-dark/index/index', 'pages-dark/home/home', 'pages-dark/profile/profile'
     ]
     
+    targetPath = resolveLegacyDeviceScanUrl(targetPath) || targetPath
+
     // 确保路径以 / 开头
     if (!targetPath.startsWith('/')) {
         targetPath = '/' + targetPath
@@ -82,10 +87,7 @@ export const ThemeManager = {
     
     // 带上参数
     const options = currentPage.options || {}
-    const params = Object.keys(options).map(key => `${key}=${options[key]}`).join('&')
-    if (params) {
-        targetPath += `?${params}`
-    }
+    targetPath = appendPageQuery(targetPath, options)
 
     console.log('Switching theme to', newTheme, 'Target:', targetPath)
 
@@ -100,20 +102,23 @@ export const ThemeManager = {
   // 初始化主题（app启动时调用）
   initTheme(launchPath, launchQuery) {
     const theme = this.getTheme()
+    const legacyTarget = resolveLegacyDeviceScanUrl(launchPath, launchQuery)
+    if (legacyTarget) {
+      uni.reLaunch({ url: legacyTarget })
+      return
+    }
+    if ('/' + String(launchPath || '').replace(/^\//, '') === DEVICE_SCAN_PAGE) return
     console.log('App Launch Theme Check:', theme, 'Path:', launchPath)
     
     // 默认进入的是 pages/ 下的页面
     // 如果主题是 dark 且当前不在 pages-dark，则跳转
-    if (theme === 'dark' && launchPath && !launchPath.includes('pages-dark')) {
+    if (theme === 'dark' && launchPath?.startsWith('pages/')) {
        let targetPath = PAGE_MAPPINGS[launchPath] || launchPath.replace('pages/', 'pages-dark/')
        
        if (!targetPath.startsWith('/')) targetPath = '/' + targetPath
        
        // 处理参数
-       if (launchQuery && Object.keys(launchQuery).length > 0) {
-           const params = Object.keys(launchQuery).map(key => `${key}=${launchQuery[key]}`).join('&')
-           targetPath += `?${params}`
-       }
+       targetPath = appendPageQuery(targetPath, launchQuery || {})
        
        console.log('Redirecting to dark theme:', targetPath)
        uni.reLaunch({ url: targetPath })

@@ -160,7 +160,8 @@
         
         <!-- 图片区域（按需加载，未就绪时显示占位） -->
         <view class="detail-image-section">
-          <image v-if="detailItem.image" :src="detailItem.image" mode="aspectFit" class="detail-image" @error="onDetailImageError" />
+          <image v-if="detailItem.image" :src="detailItem.image" mode="aspectFit" class="detail-image"
+            @click.stop="openImagePreview" @error="onDetailImageError" />
           <view v-else class="detail-image detail-image-ph">
             <ManifestIcon id="image_gallery" class="detail-ph-icon" />
             <text class="detail-image-state" @click="retryDetailImage">{{ detailImageLoading ? '图片加载中…' : getHistoryImageLabel(detailImageState) }}</text>
@@ -205,6 +206,10 @@
         </view>
       </view>
     </view>
+    <view v-if="imagePreviewVisible && detailItem.image" class="image-zoom-overlay" @click.stop="closeImagePreview">
+      <view class="image-zoom-close" @click.stop="closeImagePreview">×</view>
+      <image class="image-zoom-content" :src="detailItem.image" mode="aspectFit" @click.stop="closeImagePreview" />
+    </view>
   </view>
 </template>
 
@@ -236,6 +241,7 @@ const selectMode = ref(false)
 const selectedItems = ref([])
 const activeFilter = ref('all')
 const detailVisible = ref(false)
+const imagePreviewVisible = ref(false)
 const detailItem = ref({
   id: null,
   image: '',
@@ -532,6 +538,7 @@ let detailImageRequest = 0
 
 // 查看详情时仍尝试加载有图的旧记录；只有缺图或失败时才判断清理期限。
 function viewDetail(item) {
+  imagePreviewVisible.value = false
   detailItem.value = { ...item, image: '' }
   detailImageFailed.value = false
   detailVisible.value = true
@@ -592,9 +599,18 @@ function retryThumb(item) {
 }
 
 function closeDetail() {
+  imagePreviewVisible.value = false
   detailVisible.value = false
   detailImageRequest++
   detailImageLoading.value = false
+}
+
+function openImagePreview() {
+  if (detailItem.value.image) imagePreviewVisible.value = true
+}
+
+function closeImagePreview() {
+  imagePreviewVisible.value = false
 }
 
 // 获取来源标签
@@ -679,7 +695,7 @@ function handleBackupNavigation() {
           uni.reLaunch({ url: '/pages/profile/profile' })
           break
         case 'scan':
-          uni.reLaunch({ url: '/pages/scan/scan' })
+          uni.reLaunch({ url: '/pages-nonTheme/scan' })
           break
         default:
           uni.reLaunch({ url: '/pages/home/home' })
@@ -1512,6 +1528,44 @@ function handleBackupNavigation() {
   max-width: 100%;
   max-height: 320rpx;
   border-radius: 12rpx;
+  cursor: zoom-in;
+}
+
+.image-zoom-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80rpx 28rpx 28rpx;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.94);
+}
+
+.image-zoom-content {
+  width: 100%;
+  height: 88vh;
+}
+
+.image-zoom-close {
+  position: absolute;
+  top: 24rpx;
+  right: 28rpx;
+  z-index: 1;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 48rpx;
+  line-height: 1;
 }
 
 /* 详情图片未加载完成时的占位 */

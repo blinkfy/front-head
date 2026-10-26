@@ -10,8 +10,8 @@
     </view>
 
     <view class="hero">
-      <view class="safe-area"></view>
-      <view class="back-btn" @tap="goBack">
+      <view class="safe-area" :style="headerSafeAreaStyle"></view>
+      <view class="back-btn" :style="backButtonStyle" @tap="goBack">
         <ManifestIcon id="back" />
       </view>
       <view class="hero-title-row">
@@ -108,10 +108,10 @@
             <view class="track-fill" :style="{ width: progressLineWidth }"></view>
             <view v-for="(step, index) in steps" :key="step.key" :class="['step-node', stepState(index)]">
               <view class="node-circle">
-              <ManifestIcon v-if="step.iconId" :id="step.iconId" :scale="1" />
+              <ManifestIcon v-if="step.iconId" :id="step.iconId" :scale="1.6" />
               </view>
               <text class="node-label">{{ step.label }}</text>
-              <ManifestIcon v-if="stepState(index) === 'done'" class="node-mark" id="confirm" :scale="1" />
+              <ManifestIcon v-if="stepState(index) === 'done'" class="node-mark" id="confirm" :scale="1.6" />
             </view>
           </view>
         </view>
@@ -161,6 +161,7 @@ const sortingRobotAssets = Object.freeze({
 })
 
 const isDarkTheme = ref(false)
+const headerTopInset = ref(0)
 const syncState = ref('local')
 const actionState = ref('idle')
 const activeStep = ref(0)
@@ -207,14 +208,30 @@ const feedbackLogs = ref([
 const steps = [
   { key: 'recognize', label: '识别', iconId: 'camera_scan' },
   { key: 'navigate', label: '导航', iconId: 'map_location' },
-  { key: 'grasp', label: '抓取', iconId: '' },
-  { key: 'drop', label: '投放', iconId: '' },
-  { key: 'return', label: '返回', iconId: 'device_recycle' }
+  { key: 'grasp', label: '抓取', iconId: 'device_connect' },
+  { key: 'drop', label: '投放', iconId: 'device_recycle' },
+  { key: 'return', label: '返回', iconId: 'home' }
 ]
 
-const robotImageUrl = computed(() => robotImageFailed.value
-  ? sortingRobotAssets.robot
-  : `${baseUrl}/images/lejv.webp`)
+const headerSafeAreaStyle = computed(() => headerTopInset.value
+  ? { height: `${headerTopInset.value}px`, minHeight: `${headerTopInset.value}px` }
+  : {})
+const backButtonStyle = computed(() => headerTopInset.value
+  ? { top: `${headerTopInset.value}px` }
+  : {})
+
+const robotImageUrl = computed(() => {
+  // #ifdef MP-WEIXIN
+  return '/static/lejv.webp'
+  // #endif
+  if (robotImageFailed.value) {
+    // #ifdef APP-PLUS
+    return digitalTwinAssetUrl('robot-control-hero.png')
+    // #endif
+    return sortingRobotAssets.robot
+  }
+  return `${baseUrl}/images/lejv.webp`
+})
 
 function useFallbackRobotImage() {
   robotImageFailed.value = true
@@ -250,9 +267,9 @@ const statusItems = computed(() => [
   { iconId: 'challenge_progress', label: '当前阶段', value: currentTask.value.stage, tone: 'green' },
   { iconId: 'accuracy_target', label: '当前目标', value: currentTask.value.target, tone: 'blue' },
   { iconId: getCategoryBinIcon(robot.value.category), label: '垃圾类别', value: robot.value.category, tone: 'green' },
-  { label: '目标垃圾桶', value: currentTask.value.bin, tone: 'blue' },
+  { iconId: 'smart_bin_marker', label: '目标垃圾桶', value: currentTask.value.bin, tone: 'blue' },
   { iconId: 'map_location', label: 'RGB-D定位', value: robot.value.coordinates, tone: 'mint' },
-  { label: '抓取状态', value: robot.value.grasp, tone: actionState.value === 'running' ? 'green' : 'orange' }
+  { iconId: 'device_connect', label: '抓取状态', value: robot.value.grasp, tone: actionState.value === 'running' ? 'green' : 'orange' }
 ])
 
 function getCategoryBinIcon(category) {
@@ -521,6 +538,11 @@ function goBack() {
 }
 
 onLoad((options = {}) => {
+  // #ifdef MP-WEIXIN
+  const systemInfo = uni.getSystemInfoSync()
+  const menuRect = wx.getMenuButtonBoundingClientRect()
+  headerTopInset.value = Math.max(Number(systemInfo.statusBarHeight) || 0, Number(menuRect.bottom) || 0) + 8
+  // #endif
   routeDeviceId.value = options.deviceId || options.device_id || ''
   isMockMode.value = ['1', 'true', 'yes'].includes(String(options.mock || '').toLowerCase())
   if (routeDeviceId.value) {

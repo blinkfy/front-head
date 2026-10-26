@@ -6,9 +6,59 @@ import { baseUrl } from './settings'
  * @param {File|String} file - 选择的图片文件对象或路径
  * @returns {Promise<Object>} 识别结果
  */
-export function recognizeImage(file) {
+function newProgressId() {
+  const bytes = new Uint8Array(16)
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes)
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  return `rec_${Date.now()}_${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`
+}
+
+export function recognizeImage(file, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const token = uni.getStorageSync('token') || ''
+    const progressId = typeof onProgress === 'function' ? newProgressId() : ''
+    let polling = Boolean(progressId)
+    let pollTimer = null
+    let lastRevision = -1
+
+    const stopPolling = () => {
+      polling = false
+      if (pollTimer) clearTimeout(pollTimer)
+      pollTimer = null
+    }
+    const schedulePoll = (delay = 700) => {
+      if (!polling) return
+      pollTimer = setTimeout(() => {
+        if (!polling) return
+        if ((uni.getStorageSync('token') || '') !== token) {
+          stopPolling()
+          return
+        }
+        uni.request({
+          url: `${baseUrl}/api/recognition-progress/${encodeURIComponent(progressId)}`,
+          method: 'GET',
+          header: { Authorization: token },
+          timeout: 5000,
+          success: response => {
+            if (!polling || (uni.getStorageSync('token') || '') !== token) return
+            if (response?.statusCode === 404) return // Multipart upload may not have reached the controller yet.
+            if (response?.statusCode !== 200 || response?.data?.code !== 0) {
+              stopPolling() // Progress is optional; the original recognition request remains authoritative.
+              return
+            }
+            const snapshot = response?.data?.code === 0 ? response.data.data : null
+            if (snapshot && Number.isInteger(snapshot.revision) && snapshot.revision > lastRevision) {
+              lastRevision = snapshot.revision
+              try { onProgress(snapshot) } catch (error) { console.warn('识别进度更新失败:', error) }
+            }
+            if (snapshot?.status === 'failed' || snapshot?.status === 'succeeded') stopPolling()
+          },
+          fail: stopPolling,
+          complete: () => { if (polling) schedulePoll() }
+        })
+      }, delay)
+    }
+    if (polling) schedulePoll(450)
     
     // 检测当前环境
     let isH5 = false
@@ -28,9 +78,10 @@ export function recognizeImage(file) {
     }
     
     // H5环境且传入的是File对象时，使用fetch上传
-    if (isH5 && file instanceof File) {
+    if (isH5 && typeof File !== 'undefined' && file instanceof File) {
       const formData = new FormData()
       formData.append('image', file)
+      if (progressId) formData.append('progressId', progressId)
       
       fetch(`${baseUrl}/api/recognize`, {
         method: 'POST',
@@ -55,13 +106,16 @@ export function recognizeImage(file) {
       })
       .then(data => {
         if (data.code === 0) {
+          stopPolling()
           resolve(data.data)
         } else {
+          stopPolling()
           uni.showToast({ title: data.msg || '识别失败', icon: 'none' })
           reject(data)
         }
       })
       .catch(err => {
+        stopPolling()
         console.error('H5 fetch上传失败:', err)
         uni.showToast({ title: err.msg || '图片上传失败', icon: 'none' })
         reject(err)
@@ -73,11 +127,12 @@ export function recognizeImage(file) {
         filePath: typeof file === 'string' ? file : file.path,
         name: 'image', // 字段名必须为image
         timeout: 600000, // 包含排队、上传和 AI 处理时间。
-        formData: {},
+        formData: progressId ? { progressId } : {},
         header: {
           'Authorization': token
         },
         success: (res) => {
+          stopPolling()
           let data = res.data
           if (typeof data === 'string') {
             try { data = JSON.parse(data) } catch (e) {}
@@ -90,6 +145,7 @@ export function recognizeImage(file) {
           }
         },
         fail: (err) => {
+          stopPolling()
           console.error('uni.uploadFile上传失败:', err)
           uni.showToast({ title: '图片上传失败', icon: 'none' })
           reject(err)
@@ -114,4 +170,4 @@ export function deleteHistory(id) {
     method: 'DELETE',
     needAuth: true
   })
-} 
+}

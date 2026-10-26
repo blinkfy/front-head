@@ -1,16 +1,10 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { refineIdleMotion } from './smart-sort-robot-idle.mjs'
+import { refineRecognitionMotion } from './smart-sort-robot-performance.mjs'
+import { ROBOT_SEQUENCES as CLIPS, ROBOT_LOOP_CLIPS } from '../utils/recognition-robot-state.mjs'
 
-const CLIPS = {
-  idle: ['Return_Idle', 'Idle_Base'],
-  tap: ['Tap_Response', 'Idle_Base'],
-  uploading: ['Upload_Enter', 'Upload_Loop'],
-  processing: ['Analyze_Enter', 'Analyze_Loop'],
-  success: ['Resolve', 'Success'],
-  fail: ['Resolve', 'Fail']
-}
-const LOOP_CLIPS = new Set(['Idle_Base', 'Upload_Loop', 'Analyze_Loop'])
+const LOOP_CLIPS = new Set(ROBOT_LOOP_CLIPS)
 
 // 只重采样 Success 的主体轨道，保留原模型的表情、嫩芽和成功特效。
 export function refineSuccessMotion(clip) {
@@ -279,15 +273,15 @@ export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active
     if (!name) return
     const next = actions.get(name)
     if (!next) return playNext()
-    if (currentAction && currentAction !== next) currentAction.fadeOut(0.1)
+    if (currentAction && currentAction !== next) currentAction.fadeOut(0.18)
     if (currentAction === next) currentAction.stop()
     next.reset()
     next.enabled = true
-    const loop = LOOP_CLIPS.has(name)
+    const loop = LOOP_CLIPS.has(name) || (name === 'Fail' && currentState === 'fail-loop')
     next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1)
     next.clampWhenFinished = !loop
     next.setEffectiveTimeScale(reducedMotion ? 0.35 : 1)
-    next.fadeIn(0.1).play()
+    next.fadeIn(0.18).play()
     currentAction = next
     if (name === 'Idle_Base') {
       if (!nextBlinkMoment) nextBlinkMoment = performance.now() + 3000 + Math.random() * 2500
@@ -409,6 +403,7 @@ export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active
     refineIdleMotion(gltf.animations, model, { reducedMotion })
     refineSuccessMotion(gltf.animations.find(clip => clip.name === 'Success'))
     refineFailMotion(gltf.animations.find(clip => clip.name === 'Fail'), model)
+    refineRecognitionMotion(gltf.animations, model)
     mixer = new THREE.AnimationMixer(model)
     actions = new Map(gltf.animations.map(clip => [clip.name, mixer.clipAction(clip)]))
     mixer.addEventListener('finished', finished)

@@ -1,5 +1,5 @@
 <template>
-  <view v-if="visible" :class="['tour-root', { dark }]" @touchmove.stop.prevent @wheel.stop.prevent>
+  <view v-if="visible" :class="['tour-root', { dark, 'demo-browsing': demoBrowsing, 'demo-exiting': guideLeaving, 'focus-following': followTarget }]" @touchmove.stop.prevent @wheel.stop.prevent>
     <view v-if="cardVisible && hasTarget" class="mask-piece mask-top" :style="topMaskStyle" @touchmove.stop.prevent @wheel.stop.prevent></view>
     <view v-if="cardVisible && hasTarget" class="mask-piece mask-left" :style="leftMaskStyle" @touchmove.stop.prevent @wheel.stop.prevent></view>
     <view v-if="cardVisible && hasTarget" class="mask-piece mask-right" :style="rightMaskStyle" @touchmove.stop.prevent @wheel.stop.prevent></view>
@@ -10,18 +10,21 @@
       <view class="target-pulse"></view>
     </view>
 
-    <view class="tour-card" :class="{ 'is-visible': cardVisible }" :style="cardStyle" @touchmove.stop.prevent @wheel.stop.prevent>
+    <view class="tour-card" :class="{ 'is-visible': cardVisible && !guideLeaving && displayedIndex === currentIndex, 'demo-compact': compactDemo, 'demo-intro': introDemo }" :style="cardStyle" @touchmove.stop.prevent @wheel.stop.prevent>
       <view class="tour-top">
         <view class="step-badge">{{ currentIndex + 1 }} / {{ visibleSteps.length }}</view>
+        <text v-if="displayedIndex === 0 && demoStage !== 'idle'" class="example-badge">效果示例 · 自动演示</text>
         <button class="close-btn" type="button" aria-label="关闭新用户引导" @click="dismiss">×</button>
       </view>
 
       <view class="tip-image-box" v-if="displayedStep.tipImage">
-        <image class="tip-image" :src="getStepImageUrl(displayedStep)" mode="aspectFit"></image>
+        <image class="tip-image" :src="displayedTipUrl" mode="aspectFit" @load="onTipImageLoad(displayedStep)"></image>
       </view>
 
-      <text class="tour-title">{{ displayedStep.title }}</text>
-      <text class="tour-desc">{{ displayedStep.desc }}</text>
+      <view class="tour-copy" :class="{ 'copy-changing': !copyVisible }">
+        <text class="tour-title">{{ tourTitle }}</text>
+        <text class="tour-desc">{{ tourDesc }}</text>
+      </view>
 
       <view class="hint-line" :class="currentStep.arrow"></view>
 
@@ -29,8 +32,13 @@
         <view v-if="isLastStep" class="ghost-btn" @click="moreInfo">查看更多</view>
         <view v-else class="ghost-btn" @click="dismiss">跳过</view>
         <view class="solid-btn" @click="nextStep">{{ isLastStep ? '知道了' : 'OK' }}</view>
+        <view v-if="demoBrowsing && !guideLeaving" class="replay-btn" @click="startDemo">重播</view>
       </view>
     </view>
+
+    <image v-if="currentIndex === 0 && visibleSteps[1]" class="tip-preload" :src="getStepImageUrl(visibleSteps[1])" mode="aspectFit" aria-hidden="true" />
+
+    <image v-if="currentIndex === 0 && aiEnabled" class="tip-preload" :src="getStepImageUrl({ tipImage: 'tip1-upcycling.webp' })" mode="aspectFit" aria-hidden="true" />
 
     <view class="progress-dots" :class="{ 'is-visible': cardVisible }" @touchmove.stop.prevent @wheel.stop.prevent>
       <view
@@ -44,13 +52,24 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, nextTick, ref, watch, onBeforeUnmount, getCurrentInstance } from 'vue'
+import { measureScopedRects, getOnboardingViewport } from '@/utils/onboarding-focus.mjs'
 import { baseUrl } from '@/api/settings.js'
+
+const componentScope = getCurrentInstance()?.proxy
+function measureRects(selectors, callback) {
+  measureScopedRects(componentScope, selectors, callback)
+}
+defineExpose({ measureRects })
 
 const props = defineProps({
   visible: {
     type: Boolean,
     default: false
+  },
+  active: {
+    type: Boolean,
+    default: true
   },
   dark: {
     type: Boolean,
@@ -60,13 +79,16 @@ const props = defineProps({
     type: Object,
     default: null
   },
+  aiEnabled: { type: Boolean, default: false },
+  followTarget: { type: Boolean, default: false },
+  focusInset: { type: Number, default: 0 },
   includeDevice: {
     type: Boolean,
     default: true
   }
 })
 
-const emit = defineEmits(['dismiss', 'complete', 'step-change','goGuide'])
+const emit = defineEmits(['dismiss', 'complete', 'step-change', 'goGuide', 'demo-stage'])
 
 const steps = [
   {
@@ -115,17 +137,55 @@ const currentIndex = ref(0)
 // index currently shown on the card (delayed swap)
 const displayedIndex = ref(currentIndex.value)
 const windowSize = ref({ width: 375, height: 667 })
+const guideTop = ref(40)
 const cardVisible = ref(false)
 const visibilityTimer = ref(0)
 // timers to coordinate delayed text swap so text doesn't change during hide animation
 const swapTimer = ref(0)
 const swapRequestId = ref(0)
+const demoStage = ref('idle')
+const lastDemoStage = ref('intro')
+const displayedDemoStage = ref('intro')
+const copyVisible = ref(true)
+const guideLeaving = ref(false)
+const demoTimers = new Set()
+const tip1Loaded = ref(false)
+let introTimer = null
+let exitAction = null
+const introDemo = computed(() => currentIndex.value === 0 && (demoStage.value === 'intro' || (demoStage.value === 'exiting' && lastDemoStage.value === 'intro')))
+const compactDemo = computed(() => currentIndex.value === 0 && demoStage.value !== 'idle' && !introDemo.value)
+const demoCopy = {
+  intro: ['先看一段识别效果示例', '用预置照片演示识别、分类到变废为宝，无需上传。'],
+  scan: ['示例演示：机器人识别照片', '看看纸箱、茶罐和玻璃瓶如何被分类。'],
+  classified: ['纸、金属、玻璃都能分类', '已展示类别和识别到的具体物品。'],
+  advice: ['查看投放与改造建议', '了解如何清洁、回收，并安全地组合这些物品。'],
+  upcycling: ['看看桌面收纳改造效果', '可上下滑动回看，也可重播或继续引导。']
+}
+const visibleDemoCopy = computed(() => {
+  if (demoStage.value === 'idle') return null
+  if (!props.aiEnabled) {
+    if (displayedDemoStage.value === 'intro') return ['先看一段识别效果示例', '用预置照片演示物品识别和垃圾分类，无需上传。']
+    if (displayedDemoStage.value !== 'scan') return ['纸、金属、玻璃都能分类', '已展示类别和具体物品，可滑动回看、重播或继续引导。']
+  }
+  return demoCopy[displayedDemoStage.value]
+})
+const tourTitle = computed(() => displayedIndex.value === 0 && visibleDemoCopy.value
+  ? visibleDemoCopy.value[0] : displayedStep.value.title)
+const tourDesc = computed(() => displayedIndex.value === 0 && visibleDemoCopy.value
+  ? visibleDemoCopy.value[1] : displayedStep.value.desc)
 
 const visibleSteps = computed(() => steps.filter(step => !step.requiresDevice || props.includeDevice))
 const currentStep = computed(() => visibleSteps.value[currentIndex.value] || visibleSteps.value[0])
 const displayedStep = computed(() => visibleSteps.value[displayedIndex.value] || visibleSteps.value[0])
 const isLastStep = computed(() => currentIndex.value === visibleSteps.value.length - 1)
-const hasTarget = computed(() => !!props.targetRect && props.targetRect.width > 0 && props.targetRect.height > 0)
+const hasTarget = computed(() => !!props.targetRect && props.targetRect.width > 0 && props.targetRect.height > 0 && props.targetRect.bottom > 0 && props.targetRect.top < windowSize.value.height)
+const demoBrowsing = computed(() => {
+  const stage = demoStage.value === 'exiting' ? lastDemoStage.value : demoStage.value
+  return currentIndex.value === 0 && (stage === 'upcycling' || (!props.aiEnabled && stage === 'classified'))
+})
+
+const displayedTipUrl = computed(() => props.aiEnabled && displayedIndex.value === 0 && displayedDemoStage.value === 'upcycling' && demoStage.value !== 'idle'
+  ? getStepImageUrl({ tipImage: 'tip1-upcycling.webp' }) : getStepImageUrl(displayedStep.value))
 
 const getStepImageUrl = (step) => {
   if (!step || !step.tipImage) return ''
@@ -141,9 +201,10 @@ const spotlight = computed(() => {
   const rect = props.targetRect || {}
   const pad = 8
   const left = Math.max(12, Number(rect.left || 0) - pad)
-  const top = Math.max(12, Number(rect.top || 0) - pad)
+  const minTop = compactDemo.value ? Math.max(12, props.focusInset - pad) : 12
+  const top = Math.min(windowSize.value.height - 64, Math.max(minTop, Number(rect.top || 0) - pad))
   const right = Math.min(windowSize.value.width - 12, Number(rect.right || 0) + pad)
-  const bottom = Math.min(windowSize.value.height - 12, Number(rect.bottom || 0) + pad)
+  const bottom = Math.max(top + 1, Math.min(windowSize.value.height - (compactDemo.value ? 60 : 12), Number(rect.bottom || 0) + pad))
   return {
     left,
     top,
@@ -190,6 +251,24 @@ const targetRingStyle = computed(() => ({
 }))
 
 const cardStyle = computed(() => {
+  if (compactDemo.value) {
+    return {
+      left: '20px',
+      right: '20px',
+      top: `${guideTop.value}px`
+    }
+  }
+  if (introDemo.value && hasTarget.value) {
+    const estimatedHeight = Math.min(windowSize.value.height * 0.25, 220) + 220
+    const belowTop = spotlight.value.bottom + 12
+    if (belowTop + estimatedHeight < windowSize.value.height - 40) {
+      return { left: '20px', right: '20px', top: `${belowTop}px` }
+    }
+    if (spotlight.value.top > estimatedHeight + 12) {
+      return { left: '20px', right: '20px', bottom: `${windowSize.value.height - spotlight.value.top + 12}px` }
+    }
+    return { left: '20px', right: '20px', top: `${guideTop.value}px` }
+  }
   if (!hasTarget.value) {
     return {
       left: '28px',
@@ -216,26 +295,54 @@ const cardStyle = computed(() => {
 })
 
 watch(() => props.visible, (visible) => {
-  if (!visible) return
+  if (!visible) {
+    leaveDemo(() => setDemoStage('idle'))
+    return
+  }
   currentIndex.value = 0
+  displayedIndex.value = 0
   cardVisible.value = false
   if (visibilityTimer.value) {
     clearTimeout(visibilityTimer.value)
     visibilityTimer.value = 0
   }
   refreshWindowSize()
-  nextTick(() => emitStepChange())
+  nextTick(() => {
+    if (!props.visible || !props.active) return
+    emitStepChange()
+    startDemo()
+  })
+})
+
+watch(() => props.active, active => {
+  if (!active) {
+    const action = exitAction
+    exitAction = null
+    clearDemoTimers()
+    setDemoStage('idle')
+    action?.()
+    return
+  }
+  if (props.visible) nextTick(() => {
+    if (!props.visible || !props.active) return
+    emitStepChange()
+    if (currentIndex.value === 0) startDemo()
+  })
 })
 
 watch(() => props.targetRect, (rect) => {
-  if (rect && rect.width > 0 && rect.height > 0) {
-    if (visibilityTimer.value) {
-      clearTimeout(visibilityTimer.value)
+  if (demoBrowsing.value) {
+    cardVisible.value = true
+    return
+  }
+  if (rect && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < windowSize.value.height) {
+    // Fast displays may deliver another rect before 16ms; keep the first timer.
+    if (!cardVisible.value && !visibilityTimer.value) {
+      visibilityTimer.value = setTimeout(() => {
+        cardVisible.value = true
+        visibilityTimer.value = 0
+      }, 16)
     }
-    visibilityTimer.value = setTimeout(() => {
-      cardVisible.value = true
-      visibilityTimer.value = 0
-    }, 16)
     return
   }
   if (visibilityTimer.value) {
@@ -245,7 +352,17 @@ watch(() => props.targetRect, (rect) => {
   cardVisible.value = false
 })
 
+watch(demoBrowsing, browsing => {
+  if (!browsing) return
+  if (visibilityTimer.value) {
+    clearTimeout(visibilityTimer.value)
+    visibilityTimer.value = 0
+  }
+  cardVisible.value = true
+})
+
 watch(currentIndex, () => {
+  guideLeaving.value = false
   // begin hide animation for card but keep displayed text until animation completes
   cardVisible.value = false
   swapRequestId.value += 1
@@ -255,7 +372,10 @@ watch(currentIndex, () => {
     swapTimer.value = 0
   }
   // allow parent to measure target for the new logical step immediately
-  nextTick(() => emitStepChange())
+  nextTick(() => {
+    emitStepChange()
+    if (props.visible && props.active && currentIndex.value === 0 && demoStage.value === 'idle') startDemo()
+  })
   
   // NOTE: do NOT set cardVisible here. 
   // Reliance on props.targetRect watch (which triggers after parent emits new rect)
@@ -266,21 +386,139 @@ watch(currentIndex, () => {
     swapTimer.value = 0
     if (myId !== swapRequestId.value) return
     displayedIndex.value = currentIndex.value
-  }, 220)
+  }, displayedIndex.value === 0 || currentIndex.value === 0 ? 300 : 220)
 })
 
 function refreshWindowSize() {
-  try {
-    const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
-    windowSize.value = {
-      width: info.windowWidth || 375,
-      height: info.windowHeight || 667
-    }
-  } catch (e) {}
+  const viewport = getOnboardingViewport()
+  windowSize.value = { width: viewport.width, height: viewport.height }
+  guideTop.value = viewport.guideTop
 }
 
 function emitStepChange() {
+  if (!props.visible || !props.active) return
   emit('step-change', currentStep.value)
+}
+
+function setDemoStage(stage) {
+  if (demoCopy[stage]) {
+    lastDemoStage.value = stage
+    if (displayedDemoStage.value !== stage && !['idle', 'exiting'].includes(demoStage.value)) {
+      copyVisible.value = false
+      const timer = setTimeout(() => {
+        demoTimers.delete(timer)
+        if (!props.visible || !props.active || demoStage.value !== stage) return
+        displayedDemoStage.value = stage
+        copyVisible.value = true
+      }, 120)
+      demoTimers.add(timer)
+    } else {
+      displayedDemoStage.value = stage
+      copyVisible.value = true
+    }
+  }
+  if (stage === 'idle') copyVisible.value = true
+  demoStage.value = stage
+  emit('demo-stage', stage)
+}
+
+function clearDemoTimers() {
+  for (const timer of demoTimers) clearTimeout(timer)
+  demoTimers.clear()
+  introTimer = null
+}
+
+function onTipImageLoad(step) {
+  if (step?.tipImage !== 'tip1.webp') return
+  tip1Loaded.value = true
+  if (props.visible && props.active && currentIndex.value === 0 && demoStage.value === 'intro') {
+    scheduleIntroEnd(2600)
+  }
+}
+
+function scheduleIntroEnd(delay) {
+  if (introTimer) {
+    clearTimeout(introTimer)
+    demoTimers.delete(introTimer)
+  }
+  const timer = setTimeout(() => {
+    demoTimers.delete(timer)
+    if (introTimer === timer) introTimer = null
+    if (!props.visible || !props.active || currentIndex.value !== 0 || demoStage.value !== 'intro') return
+    setDemoStage('scan')
+    scheduleDemoStages('scan')
+  }, delay)
+  introTimer = timer
+  demoTimers.add(timer)
+}
+
+// Resume from the visible stage when asynchronous settings change.
+function scheduleDemoStages(stage) {
+  if (stage === 'scan') queueDemoStage('classified', 2000)
+  if (!props.aiEnabled) return
+  if (stage === 'scan' || stage === 'classified') {
+    queueDemoStage('advice', stage === 'scan' ? 4500 : 2500)
+    queueDemoStage('upcycling', stage === 'scan' ? 8000 : 6000)
+  } else if (stage === 'advice') queueDemoStage('upcycling', 3500)
+}
+
+watch(() => props.aiEnabled, () => {
+  if (!props.visible || !props.active || currentIndex.value !== 0 || !['scan', 'classified', 'advice', 'upcycling'].includes(demoStage.value)) return
+  clearDemoTimers()
+  const stage = !props.aiEnabled && ['advice', 'upcycling'].includes(demoStage.value) ? 'classified' : demoStage.value
+  setDemoStage(stage)
+  scheduleDemoStages(stage)
+})
+
+function queueDemoStage(stage, delay) {
+  const timer = setTimeout(() => {
+    demoTimers.delete(timer)
+    if (props.visible && props.active && currentIndex.value === 0 && (props.aiEnabled || !['advice', 'upcycling'].includes(stage))) setDemoStage(stage)
+  }, delay)
+  demoTimers.add(timer)
+}
+
+function startDemo() {
+  if (!props.visible || !props.active || currentIndex.value !== 0) return
+  clearDemoTimers()
+  exitAction = null
+  guideLeaving.value = false
+  setDemoStage('intro')
+  scheduleIntroEnd(tip1Loaded.value ? 2600 : 4000)
+}
+
+function leaveDemo(action) {
+  clearDemoTimers()
+  if (currentIndex.value === 0 && demoStage.value !== 'idle') guideLeaving.value = true
+  if (demoStage.value === 'exiting') {
+    if (action) {
+      exitAction = action
+      const timer = setTimeout(() => {
+        demoTimers.delete(timer)
+        setDemoStage('idle')
+        const pendingAction = exitAction
+        exitAction = null
+        pendingAction?.()
+      }, 320)
+      demoTimers.add(timer)
+    }
+    return
+  }
+  if (currentIndex.value !== 0 || demoStage.value === 'idle') {
+    action?.()
+    return
+  }
+  setDemoStage('exiting')
+  if (!action) return
+  exitAction = action
+  const timer = setTimeout(() => {
+    demoTimers.delete(timer)
+    setDemoStage('idle')
+    const pendingAction = exitAction
+    exitAction = null
+    pendingAction?.()
+  }, 320)
+  demoTimers.add(timer)
 }
 
 function moreInfo() {
@@ -292,12 +530,12 @@ function dismiss() {
     clearTimeout(visibilityTimer.value)
     visibilityTimer.value = 0
   }
-  emit('dismiss')
+  leaveDemo(() => emit('dismiss'))
 }
 
 function nextStep() {
   if (!isLastStep.value) {
-    currentIndex.value += 1
+    leaveDemo(() => { currentIndex.value += 1 })
     return
   }
   emit('complete')
@@ -306,10 +544,13 @@ function nextStep() {
 function goToStep(index) {
   if (index === currentIndex.value) return
   if (index < 0 || index >= visibleSteps.value.length) return
-  currentIndex.value = index
+  leaveDemo(() => { currentIndex.value = index })
 }
 
 onBeforeUnmount(() => {
+  leaveDemo()
+  exitAction = null
+  if (demoStage.value !== 'idle') setDemoStage('idle')
   if (visibilityTimer.value) {
     clearTimeout(visibilityTimer.value)
     visibilityTimer.value = 0
@@ -318,6 +559,7 @@ onBeforeUnmount(() => {
     clearTimeout(swapTimer.value)
     swapTimer.value = 0
   }
+  clearDemoTimers()
 })
 </script>
 
@@ -334,9 +576,24 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 
+.tour-root.demo-browsing { pointer-events: none; }
+.tour-root.demo-exiting { pointer-events: auto; }
+.tour-root.demo-exiting .tour-card, .tour-root.demo-exiting .progress-dots { pointer-events: none; }
+.demo-exiting .target-ring { opacity: 0; }
+.demo-browsing .mask-piece,
+.demo-browsing .target-ring { pointer-events: none; }
+.demo-browsing .tour-card,
+.demo-browsing .progress-dots { pointer-events: auto; }
+.demo-browsing .target-ring { visibility: hidden; }
+
+/* Per-frame geometry already follows the content without additional CSS easing. */
+.focus-following .mask-piece { transition: none; }
+.focus-following .target-ring { transition: opacity .28s ease, transform .48s cubic-bezier(.22, 1, .36, 1); }
+
 .mask-piece {
   position: fixed;
   background: rgba(2, 12, 18, 0.76);
+  transition: top .48s cubic-bezier(.22, 1, .36, 1), left .48s cubic-bezier(.22, 1, .36, 1), width .48s cubic-bezier(.22, 1, .36, 1), height .48s cubic-bezier(.22, 1, .36, 1);
 }
 
 .dark .mask-piece {
@@ -360,7 +617,7 @@ onBeforeUnmount(() => {
   pointer-events: none;
   opacity: 0;
   transform: scale(0.98);
-  transition: opacity 0.18s ease, transform 0.18s ease, border-radius 0.18s ease;
+  transition: opacity .28s ease, transform .48s cubic-bezier(.22, 1, .36, 1), border-radius .48s ease, top .48s cubic-bezier(.22, 1, .36, 1), left .48s cubic-bezier(.22, 1, .36, 1), width .48s cubic-bezier(.22, 1, .36, 1), height .48s cubic-bezier(.22, 1, .36, 1);
   overflow: hidden;
 }
 
@@ -392,7 +649,7 @@ onBeforeUnmount(() => {
   text-shadow: 0 4rpx 14rpx rgba(0, 0, 0, 0.35);
   opacity: 0;
   transform: translateY(10rpx) scale(0.985);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity .28s ease, transform .45s cubic-bezier(.22, 1, .36, 1), top .54s cubic-bezier(.22, 1, .36, 1);
 }
 
 .tour-card.is-visible {
@@ -400,9 +657,57 @@ onBeforeUnmount(() => {
   transform: translateY(0) scale(1);
 }
 
+.tour-copy { opacity: 1; transform: translateY(0); transition: opacity .18s ease, transform .24s cubic-bezier(.22, 1, .36, 1); }
+.tour-copy.copy-changing { opacity: 0; transform: translateY(4rpx); }
+
+.tour-card.demo-compact {
+  z-index: 2;
+}
+
+.demo-intro .tip-image-box { height: 25vh; max-height: 220px; margin-bottom: 12rpx; }
+.demo-intro .tour-title { font-size: 48rpx; }
+.demo-intro .tour-desc { margin-top: 10rpx; font-size: 25rpx; line-height: 1.4; }
+.demo-intro .hint-line { height: 30rpx; margin-top: 12rpx; }
+.demo-intro .tour-actions { margin-top: 12rpx; }
+
+.demo-compact .tip-image-box {
+  height: 20vh;
+  max-height: 168px;
+  margin-bottom: 24rpx;
+}
+
+.demo-compact .tour-top { margin-bottom: 20rpx; }
+.example-badge { color: #d1fae5; font-size: 22rpx; font-weight: 700; letter-spacing: 1rpx; }
+.dark .example-badge { color: #cffafe; }
+.demo-compact .tour-title { font-size: 38rpx; line-height: 1.3; }
+.demo-compact .tour-desc { margin-top: 14rpx; font-size: 25rpx; line-height: 1.5; }
+.demo-compact .hint-line { display: none; }
+.demo-compact .tour-actions { margin-top: 24rpx; }
+.demo-compact .ghost-btn,
+.demo-compact .solid-btn { min-width: 132rpx; height: 70rpx; line-height: 70rpx; }
+
+@media (max-height: 680px) {
+  .demo-compact .tip-image-box { height: 14vh; max-height: 90px; margin-bottom: 16rpx; }
+  .demo-compact .tour-top { margin-bottom: 12rpx; }
+  .demo-compact .tour-title { font-size: 36rpx; }
+  .demo-compact .tour-desc { margin-top: 10rpx; }
+  .demo-compact .tour-actions { margin-top: 18rpx; }
+}
+
+.replay-btn {
+  padding: 10rpx 4rpx;
+  color: #bbf7d0;
+  font-size: 24rpx;
+  font-weight: 700;
+  text-shadow: none;
+}
+
+.dark .replay-btn { color: #a5f3fc; }
+
 .tip-image-box {
   width: 100%;
   height: 25vh;
+  transition: height .54s cubic-bezier(.22, 1, .36, 1), max-height .54s cubic-bezier(.22, 1, .36, 1), margin-bottom .45s ease;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -411,6 +716,8 @@ onBeforeUnmount(() => {
   border-radius: 16rpx;
   overflow: hidden;
 }
+
+.tip-preload { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 .tip-image {
   width: 100%;
@@ -580,5 +887,9 @@ onBeforeUnmount(() => {
 @keyframes pulse {
   0%, 100% { opacity: 0.35; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.03); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-card, .tour-copy, .tip-image-box, .mask-piece, .target-ring { transition: none; }
+  .tour-copy.copy-changing { opacity: 1; transform: none; }
 }
 </style>

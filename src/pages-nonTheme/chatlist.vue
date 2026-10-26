@@ -1172,7 +1172,7 @@ computed: {
 							uni.reLaunch({ url: '/pages/profile/profile' })
 							break
 						case 'scan':
-							uni.reLaunch({ url: '/pages/scan/scan' })
+							uni.reLaunch({ url: '/pages-nonTheme/scan' })
 							break
 						default:
 							uni.reLaunch({ url: '/pages/home/home' })

@@ -13,7 +13,7 @@
           <button role="tab" :aria-selected="mode === 'account'" :class="{ selected: mode === 'account' }" :disabled="loading || qrBusy" @click="mode = 'account'">账号登录</button>
           <button role="tab" :aria-selected="mode === 'wechat'" :class="{ selected: mode === 'wechat' }" :disabled="loading || qrBusy" @click="mode = 'wechat'">微信扫码</button>
         </view>
-        <text class="mobile-hint">{{ mode === 'account' ? '可切换到微信扫码，完成登录或注册' : '在小程序完成登录或注册，返回网页继续' }}</text>
+        <text class="mobile-hint">{{ mode === 'account' ? '可切换到微信扫码登录' : '使用微信扫码登录已有账号' }}</text>
         <view class="login-columns">
           <view v-show="wide || mode === 'account'" class="account-column">
             <view class="account-heading"><view class="account-icon"><ManifestIcon id="user_profile" :scale="2.5" /></view><view><text class="account-title">账号密码登录</text><text class="account-description">使用您的账号密码登录分投侠</text></view></view>
@@ -24,11 +24,11 @@
               <view class="account-options"><button type="button" class="remember-toggle" role="checkbox" :aria-checked="rememberMe" @click="emit('update:rememberMe', !rememberMe)"><view class="remember-check" :class="{ checked: rememberMe }"><text v-if="rememberMe">✓</text></view><text>记住我</text></button></view>
               <button form-type="submit" class="account-submit" :disabled="loading || qrBusy"><ManifestIcon v-if="!loading" id="submit_action" :scale="1.8" /><view v-else class="submit-spinner"></view><text>{{ loading || qrBusy ? '正在登录…' : '登 录' }}</text></button>
               <text class="account-caption">已有账号可直接登录</text>
-              <view class="register-entry"><text>还没有账号？</text><button type="button" @click="selectWechat">{{ wide ? '扫码注册 ›' : '切换到微信扫码注册' }}</button></view>
+              <view class="register-entry"><text>还没有账号？</text><button type="button" @click="openRegistration">{{ registrationAllowed ? '立即注册 ›' : (wide ? '扫码注册 ›' : '切换到微信扫码注册') }}</button></view>
             </form>
           </view>
           <view v-if="wide || mode === 'wechat'" ref="qrColumn" class="wechat-column" :class="{ 'wechat-column-highlight': qrAttention }">
-            <H5WechatLoginPanel ref="qrPanel" :dark="dark" :disabled="loading" @busy="qrBusy = $event" @login="emit('qrLogin', $event)" />
+            <H5WechatLoginPanel ref="qrPanel" :dark="dark" :disabled="loading" :registration-allowed="registrationAllowed" @busy="qrBusy = $event" @login="emit('qrLogin', $event)" />
           </view>
         </view>
       </view>
@@ -43,6 +43,7 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import CaptchaBox from '@/components/CaptchaBox.vue'
 import CaptchaDark from '@/components/CaptchaBox-black.vue'
 import H5WechatLoginPanel from '@/components/H5WechatLoginPanel.vue'
+import { useH5RegistrationPolicy } from '@/utils/use-h5-registration-policy'
 const props = defineProps({ dark: Boolean, username: String, password: String, showPassword: Boolean,
   rememberMe: Boolean, loading: Boolean, showCaptcha: Boolean, captchaInput: String, captchaHint: String })
 const emit = defineEmits(['update:username', 'update:password', 'update:showPassword', 'update:rememberMe', 'update:captchaInput', 'login', 'qrLogin'])
@@ -53,6 +54,8 @@ const media = typeof window !== 'undefined' ? window.matchMedia('(min-width: 901
 const wide = ref(media?.matches || false)
 const mascotMotion = ref('enter'), mascotDelay = ref(.2), motionPaused = ref(false)
 const idleMotions = ['bounce', 'sway', 'turn']
+const registrationAllowed = ref(false), registrationPolicyLoading = ref(false), registrationPolicyError = ref('')
+const refreshRegistrationPolicy = useH5RegistrationPolicy({ allowed: registrationAllowed, loading: registrationPolicyLoading, error: registrationPolicyError })
 let qrAttentionTimer = null
 function nextMascotMotion() {
   const choices = idleMotions.filter(value => value !== mascotMotion.value)
@@ -77,13 +80,21 @@ async function selectWechat() {
   qrAttention.value = true
   clearTimeout(qrAttentionTimer)
   qrAttentionTimer = setTimeout(() => { qrAttention.value = false; qrAttentionTimer = null }, 2200)
-  uni.showToast({ title: '请扫描右侧二维码完成注册', icon: 'none', duration: 1800 })
+  uni.showToast({ title: registrationAllowed.value ? '请扫描右侧二维码登录' : '请扫描右侧二维码完成注册', icon: 'none', duration: 1800 })
   await nextTick()
   const element = qrColumn.value?.$el || qrColumn.value
   element?.scrollIntoView?.({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' })
 }
+function openRegistration() {
+  if (registrationAllowed.value) {
+    uni.navigateTo({ url: '/pages/register/register' })
+    return
+  }
+  void selectWechat()
+}
 watch(() => props.loading, loading => { if (!loading) qrPanel.value?.resume() })
 onMounted(() => {
+  void refreshRegistrationPolicy()
   media?.addEventListener('change', resize)
   syncMotionVisibility()
   document.addEventListener('visibilitychange', syncMotionVisibility)

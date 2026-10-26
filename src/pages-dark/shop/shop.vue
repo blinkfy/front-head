@@ -419,40 +419,39 @@ onBeforeUnmount(() => {
 })
 
 // 获取用户积分信息
-const fetchUserPoints = async () => {
-  if (pageDisposed) return
+const fetchUserPoints = async (notifyError = true) => {
+  if (pageDisposed) return false
   try {
     loading.value = true
     const token = uni.getStorageSync('token')
     if (!token) {
-      if (pageDisposed) return
+      if (pageDisposed) return false
       userPoints.value = '未登录'
-      return
+      return false
     }
     
     const response = await userinfo("false")
-    if (pageDisposed) return
+    if (pageDisposed) return false
     if (response.code === 0) {
       userPoints.value = response.data.points || 0
       console.log('获取用户积分成功:', userPoints.value)
+      return true
     } else {
       console.error('获取用户积分失败:', response.msg)
       // 使用本地存储的积分作为备用
       const storedPoints = uni.getStorageSync('userPoints')
       userPoints.value = storedPoints || 0
+      if (notifyError) uni.showToast({ title: response.msg || '积分获取失败，当前显示缓存数据', icon: 'none' })
+      return false
     }
   } catch (error) {
-    if (pageDisposed) return
+    if (pageDisposed) return false
     console.error('请求用户积分出错:', error)
     // 网络错误时使用本地存储的积分
     const storedPoints = uni.getStorageSync('userPoints')
     userPoints.value = storedPoints || 0
-    if (pageDisposed) return
-    uni.showToast({
-      title: '积分数据获取失败，显示缓存数据',
-      icon: 'none',
-      duration: 2000
-    })
+    if (notifyError) uni.showToast({ title: '积分获取失败，当前显示缓存数据', icon: 'none', duration: 2000 })
+    return false
   } finally {
     if (!pageDisposed) loading.value = false
   }
@@ -460,15 +459,13 @@ const fetchUserPoints = async () => {
 
 // 刷新用户积分
 const refreshPoints = async () => {
-  await fetchUserPoints()
+  const success = await fetchUserPoints(false)
   if (pageDisposed) return
-  if (!loading.value) {
-    uni.showToast({
-      title: '积分刷新成功',
-      icon: 'success',
-      duration: 1500
-    })
-  }
+  uni.showToast({
+    title: success ? '积分刷新成功' : '积分刷新失败，当前显示缓存数据',
+    icon: success ? 'success' : 'none',
+    duration: 1500
+  })
 }
 
 // 计算属性：过滤商品

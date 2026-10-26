@@ -408,11 +408,12 @@ function summarizeRecognizeData(data) {
 
 export function saveSeed(seed) {
   if (!seed || typeof seed !== 'object') return;
-  if (!seed.imageBase64 || String(seed.imageBase64).indexOf('data:image/') !== 0) return;
+  const image = typeof seed.imageBase64 === 'string' && seed.imageBase64.startsWith('data:image/') ? seed.imageBase64 : '';
+  if (!image && !normalizePositiveHistoryId(seed.historyId)) return;
 
   try {
     // 检查 base64 是否太大（超过 1MB 约 1,400,000 字符），大图拆分存储避免单条 Storage 配额超限
-    const base64Len = seed.imageBase64.length;
+    const base64Len = image.length;
     const LARGE_IMAGE_THRESHOLD = 1400000;
 
     if (base64Len > LARGE_IMAGE_THRESHOLD) {
@@ -423,7 +424,11 @@ export function saveSeed(seed) {
     } else {
       const seedJson = JSON.stringify(seed);
       uni.setStorageSync(SEED_KEY, seedJson);
-      uni.setStorageSync(LEGACY_IMAGE_KEY, seed.imageBase64);
+      if (image) uni.setStorageSync(LEGACY_IMAGE_KEY, image);
+      else {
+        uni.removeStorageSync(LEGACY_IMAGE_KEY);
+        uni.removeStorageSync('ai_chat_seed_image_large');
+      }
     }
 
     if (seed.category) {
@@ -448,10 +453,16 @@ function stripCompletedRecognitionPrefix(text) {
     .trim();
 }
 
+function normalizePositiveHistoryId(value) {
+  const historyId = Number(value);
+  return Number.isSafeInteger(historyId) && historyId > 0 ? historyId : null;
+}
+
 export function buildSeedFromRecognizeData(data) {
   if (!data || typeof data !== 'object') return null;
 
   const chatSeed = data.chatSeed && typeof data.chatSeed === 'object' ? data.chatSeed : {};
+  const historyId = normalizePositiveHistoryId(chatSeed.historyId) || normalizePositiveHistoryId(data.historyId);
 
   let imageBase64 = '';
   if (typeof chatSeed.imageBase64 === 'string' && chatSeed.imageBase64.trim()) {
@@ -460,7 +471,7 @@ export function buildSeedFromRecognizeData(data) {
   if (!imageBase64 && typeof data.result_img_base64 === 'string' && data.result_img_base64.trim()) {
     imageBase64 = normalizeDataImageUrl(data.result_img_base64);
   }
-  if (!imageBase64) return null;
+  if (!imageBase64 && !historyId) return null;
 
   const labels = Array.isArray(data.labels) ? data.labels : [];
   let category = '';
@@ -487,6 +498,7 @@ export function buildSeedFromRecognizeData(data) {
   const assistantReply = preferLocalSummary ? summarizeRecognizeData(data) : seedReply;
 
   return {
+    historyId,
     imageBase64,
     category,
     userPrompt,

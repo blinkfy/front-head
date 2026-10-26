@@ -327,6 +327,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { userinfo } from '@/api/user'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
@@ -442,11 +443,13 @@ const fetchUserInfo = async () => {
   }
 }
  
+// 系统或手势返回会复用旧页面，每次显示时校验主题。
+onShow(() => {
+  if (uni.getStorageSync('app_theme') !== 'dark') return
+  uni.reLaunch({ url: '/pages-dark/profile/profile' })
+})
+
 onMounted(async () => {
-  const theme = uni.getStorageSync('app_theme')
-  if(theme === 'dark'){
-    uni.navigateTo({url:'/pages-dark/profile/profile'})
-  }
   const savedUser = uni.getStorageSync('savedUser')?.username
   if (savedUser && uni.getStorageSync('autoLogin')) username.value = savedUser
   await fetchUserInfo()

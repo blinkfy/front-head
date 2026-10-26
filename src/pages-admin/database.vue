@@ -80,7 +80,7 @@
                                 :end="endDate || getCurrentDate()">
                                 <view class="filter-picker">
                                     <text class="filter-value">{{ startDate || '选择日期' }}</text>
-                                    <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                    <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                 </view>
                             </picker>
                         </view>
@@ -91,7 +91,7 @@
                                 :end="getCurrentDate()">
                                 <view class="filter-picker">
                                     <text class="filter-value">{{ endDate || '选择日期' }}</text>
-                                    <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                    <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                 </view>
                             </picker>
                         </view>
@@ -104,7 +104,7 @@
                                     range-key="label" @change="onMessageTypeFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ messageTypeFilterOptions[messageTypeFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -115,7 +115,7 @@
                                     range-key="label" @change="onReadStatusFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ readStatusFilterOptions[readStatusFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -126,7 +126,7 @@
                                     range-key="label" @change="onWithdrawStatusFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ withdrawStatusFilterOptions[withdrawStatusFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -137,7 +137,7 @@
                                     range-key="label" @change="onSenderDeletedFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ deletedFilterOptions[senderDeletedFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -148,7 +148,7 @@
                                     range-key="label" @change="onReceiverDeletedFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ deletedFilterOptions[receiverDeletedFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -162,7 +162,7 @@
                                     range-key="label" @change="onRelationshipFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ relationshipFilterOptions[relationshipFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -173,7 +173,7 @@
                                     range-key="label" @change="onMuteFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ muteFilterOptions[muteFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -184,7 +184,7 @@
                                     range-key="label" @change="onTopFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ topFilterOptions[topFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -198,7 +198,7 @@
                                     range-key="label" @change="onSourceFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ sourceFilterOptions[sourceFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -212,7 +212,7 @@
                                     range-key="label" @change="onReviewFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ reviewFilterOptions[reviewFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -223,7 +223,7 @@
                                     range-key="label" @change="onStatusFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ statusFilterOptions[statusFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -234,7 +234,7 @@
                                     range-key="label" @change="onBinTypeFilterChange">
                                     <view class="filter-picker">
                                         <text class="filter-value">{{ binTypeFilterOptions[binTypeFilterIndex].label }}</text>
-                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1" />
+                                        <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
                             </view>
@@ -253,15 +253,33 @@
                     <view class="data-header">
                         <text class="data-title">{{ getCurrentTableLabel() }}</text>
                         <view class="data-actions" v-if="canEditCurrentTable()">
-                            <view class="action-icon-btn" @click="handleAdd">
-                                <ManifestIcon id="add" :scale="1.5" />
-                            </view>
+                            <template v-if="selectionMode">
+                                <text class="selection-count">已选{{ selectedRecordKeys.length }}条</text>
+                                <view class="action-text-btn" @click="toggleSelectCurrentPage">
+                                    {{ tableData.length && selectedRecordKeys.length === tableData.length ? '取消全选' : '全选本页' }}
+                                </view>
+                                <view class="action-text-btn" :class="{ disabled: !selectedRecordKeys.length }" @click="openBulkEdit">
+                                    批量编辑
+                                </view>
+                                <view class="action-text-btn danger" :class="{ disabled: !selectedRecordKeys.length }" @click="handleBulkDelete">
+                                    批量删除
+                                </view>
+                                <view class="action-text-btn" @click="exitSelectionMode">完成</view>
+                            </template>
+                            <template v-else>
+                                <view class="action-text-btn" @click="enterSelectionMode">多选</view>
+                                <view class="action-icon-btn" @click="handleAdd">
+                                    <ManifestIcon id="add" :scale="1.5" />
+                                </view>
+                            </template>
                         </view>
                     </view>
 
                     <!-- 数据列表 -->
                     <view class="data-list">
-                        <view v-if="tableData.length > 0" class="data-item" v-for="(item, index) in tableData"
+                        <view v-if="tableData.length > 0" class="data-item"
+                            :class="{ selected: isRecordSelected(item), selectable: selectionMode }"
+                            @click="handleDataItemClick(item)" v-for="(item, index) in tableData"
                             :key="getTableRowKey(item, index)">
                             <!-- 左侧ID列（所有表统一显示） -->
                             <view class="data-id-column">
@@ -439,10 +457,10 @@
 
                             <!-- 操作按钮 -->
                             <view class="data-item-actions" v-if="canEditCurrentTable()">
-                                <view class="item-action-btn edit" @click="handleEdit(item)">
+                                <view class="item-action-btn edit" @click.stop="handleEdit(item)">
                                     <ManifestIcon id="post_edit" :scale="1.5" />
                                 </view>
-                                <view class="item-action-btn delete" @click="handleDelete(item)">
+                                <view class="item-action-btn delete" @click.stop="handleDelete(item)">
                                     <ManifestIcon id="delete" :scale="1.5" />
                                 </view>
                             </view>
@@ -454,22 +472,38 @@
                     </view>
 
                     <!-- 分页器 -->
-                    <view v-if="totalPages > 1" class="pagination">
-                        <view class="pagination-left">
-                            <view class="page-btn" :class="{ disabled: currentPage === 1 }" @click="handlePrevPage">
+                    <view v-if="totalCount > 0" class="pagination">
+                        <view class="pagination-main">
+                            <view class="pagination-left">
+                                <picker mode="selector" :range="pageSizeOptions" :value="pageSizeOptions.indexOf(pageSize)"
+                                    @change="handlePageSizeChange">
+                                    <view class="page-size-picker">
+                                        <text>每页{{ pageSize }}条</text>
+                                        <ManifestIcon id="chevron_down" :scale="1.6" />
+                                    </view>
+                                </picker>
+                            </view>
+
+                            <view v-if="totalPages > 1" class="page-btn pagination-step"
+                                :class="{ disabled: currentPage === 1 }" @click="handlePrevPage">
                                 <ManifestIcon id="chevron_left" :scale="1" />
                             </view>
-                        </view>
 
-                        <view class="pagination-center">
-                            <text class="page-text">{{ currentPage }}/{{ totalPages }}</text>
-                            <text class="total-text">共{{ totalCount }}条</text>
-                        </view>
+                            <view class="pagination-center">
+                                <text class="page-text">{{ currentPage }}/{{ totalPages }}</text>
+                                <text class="total-text">共{{ totalCount }}条</text>
+                            </view>
 
-                        <view class="pagination-right">
-                            <view class="page-btn" :class="{ disabled: currentPage === totalPages }"
-                                @click="handleNextPage">
+                            <view v-if="totalPages > 1" class="page-btn pagination-step"
+                                :class="{ disabled: currentPage === totalPages }" @click="handleNextPage">
                                 <ManifestIcon id="chevron_right" :scale="1" />
+                            </view>
+
+                            <view v-if="totalPages > 1" class="page-jump">
+                                <input v-model="pageJumpInput" class="page-jump-input" type="number" placeholder="页码"
+                                    @confirm="handleGoToPage" />
+                                <text class="page-jump-label">页</text>
+                                <view class="page-jump-btn" @click="handleGoToPage">跳转</view>
                             </view>
                         </view>
                     </view>
@@ -624,13 +658,17 @@
 
                         <!-- 编辑模式：显示图片预览和删除按钮 -->
                         <view v-if="editMode === 'edit' && editForm" class="form-item">
-                            <text v-if="editForm.imageUrl" class="form-label">识别图片</text>
+                            <text v-if="editForm.hasImage || editForm.imageUrl || historyImageLoading" class="form-label">识别图片</text>
                             <view v-if="editForm.imageUrl" class="image-preview-container">
-                                <image class="form-image-preview" :src="editForm.imageUrl" mode="aspectFit" />
+                                <image class="form-image-preview" :src="editForm.imageUrl" mode="aspectFit"
+                                    @click.stop="openHistoryImagePreview" />
                                 <view class="image-delete-btn" @click="deleteImage">
                                     <ManifestIcon id="delete" :scale="1" /><text>删除图片</text>
                                 </view>
                             </view>
+                            <view v-else-if="historyImageLoading" class="form-tip">图片加载中…</view>
+                            <view v-else-if="!editForm.hasImage" class="form-tip">暂无图片</view>
+                            <view v-else class="form-tip">图片加载失败，请关闭后重试</view>
                         </view>
 
                         <!-- 新增模式：不显示图片字段（由设备自动上传） -->
@@ -823,6 +861,48 @@
                 </view>
             </view>
         </view>
+        <view v-if="showHistoryImagePreview && editForm.imageUrl" class="image-preview-overlay"
+            @click.stop="closeHistoryImagePreview">
+            <view class="image-preview-close" @click.stop="closeHistoryImagePreview">×</view>
+            <image class="image-preview-large" :src="editForm.imageUrl" mode="aspectFit"
+                @click.stop="closeHistoryImagePreview" />
+        </view>
+
+        <view v-if="showBulkEditModal" class="modal-overlay" @click="closeBulkEdit">
+            <view class="bulk-edit-modal" @click.stop>
+                <view class="modal-header">
+                    <text class="modal-title">批量编辑（{{ selectedRecordKeys.length }}条）</text>
+                    <view class="modal-close" @click="closeBulkEdit"><ManifestIcon id="close" /></view>
+                </view>
+                <view class="bulk-edit-content">
+                    <text class="form-label">修改字段</text>
+                    <picker mode="selector" :range="bulkEditFieldLabels" :value="bulkEditFieldIndex"
+                        @change="onBulkEditFieldChange">
+                        <view class="picker-view">{{ selectedBulkField?.label || '请选择字段' }}</view>
+                    </picker>
+
+                    <view v-if="selectedBulkField" class="bulk-edit-value">
+                        <text class="form-label">统一设置为</text>
+                        <picker v-if="selectedBulkField.editor === 'select'" mode="selector"
+                            :range="selectedBulkField.options" range-key="label" :value="bulkEditOptionIndex"
+                            @change="onBulkEditValueChange">
+                            <view class="picker-view">{{ selectedBulkField.options[bulkEditOptionIndex]?.label || '请选择' }}</view>
+                        </picker>
+                        <view v-else-if="selectedBulkField.editor === 'switch'" class="bulk-edit-switch">
+                            <text>{{ bulkEditBoolean ? '是' : '否' }}</text>
+                            <switch :checked="bulkEditBoolean" @change="bulkEditBoolean = !!$event.detail.value" color="#40e0ff" />
+                        </view>
+                        <input v-else class="form-input" v-model="bulkEditValue" :type="selectedBulkField.inputType || 'text'"
+                            :placeholder="`请输入${selectedBulkField.label}`" />
+                    </view>
+                    <view class="form-tip">所选记录的该字段将统一修改为相同值。</view>
+                </view>
+                <view class="modal-footer">
+                    <view class="modal-btn cancel" @click="closeBulkEdit"><text>取消</text></view>
+                    <view class="modal-btn confirm" @click="confirmBulkEdit"><text>应用到所选记录</text></view>
+                </view>
+            </view>
+        </view>
     </view>
     <view v-else>
         <div style="color:blue;font-size:36px;font-weight: bold;">404</div>
@@ -838,6 +918,7 @@ import {
     getDevicesList, createDevice, updateDevice, deleteDevice,
     getUserDevicesList, createUserDevice, updateUserDevice, deleteUserDevice,
     getHistoryList, createHistory, updateHistory, deleteHistory,
+    getAdminHistoryImage,
     getMessagesList, createMessage, updateMessage, deleteMessage,
     getChatList, createChat, updateChat, deleteChat,
     getDatabaseStats,
@@ -851,10 +932,23 @@ const currentTable = ref('User')
 const showEditModal = ref(false)
 const editMode = ref('add') // 'add' 或 'edit'
 const editForm = ref({})
+const selectionMode = ref(false)
+const selectedRecordKeys = ref([])
+const showBulkEditModal = ref(false)
+const bulkEditFields = ref([])
+const bulkEditFieldLabels = ref([])
+const selectedBulkField = ref(null)
+const bulkEditFieldIndex = ref(0)
+const bulkEditOptionIndex = ref(0)
+const bulkEditValue = ref('')
+const bulkEditBoolean = ref(false)
 const adminUser = ref(false)
 const tablesCollapsed = ref(false)
 const specialTables = new Set(['User', 'Device', 'UserDevice', 'History', 'Message', 'Chat'])
 const tableSchemas = ref({})
+const historyImageLoading = ref(false)
+const showHistoryImagePreview = ref(false)
+let historyImageRequestId = 0
 
 // 搜索相关
 const searchKeyword = ref('')
@@ -948,7 +1042,10 @@ const binTypeFilterOptions = ref([
 
 // 分页相关
 const currentPage = ref(1)
+const pageJumpInput = ref('')
 const pageSize = ref(20)
+// 管理接口最多返回 100 条；保留分批分页，避免单次请求过大。
+const pageSizeOptions = [10, 20, 50, 100]
 const totalCount = ref(0)
 const totalPages = ref(0)
 
@@ -1335,6 +1432,8 @@ function selectTable(table) {
     const tableName = typeof table === 'string' ? table : table.name
     currentTable.value = tableName
     currentPage.value = 1  // 重置到第一页
+    selectionMode.value = false
+    selectedRecordKeys.value = []
     searchKeyword.value = ''  // 清空搜索
     startDate.value = ''  // 清空开始日期
     endDate.value = ''  // 清空结束日期
@@ -1539,6 +1638,7 @@ function clearSearch() {
 }
 
 async function loadTableData() {
+    selectedRecordKeys.value = []
     try {
         uni.showLoading({ title: '加载中...', mask: true })
 
@@ -1546,7 +1646,7 @@ async function loadTableData() {
             tableData.value = []
             totalCount.value = 0
             totalPages.value = 0
-            return
+            return false
         }
 
         // 构建分页参数
@@ -1607,6 +1707,7 @@ async function loadTableData() {
             }
         } else if (currentTable.value === 'History') {
             // History表筛选
+            params.includeImage = false
             const sourceFilter = sourceFilterOptions.value[sourceFilterIndex.value]
             if (sourceFilter.value !== null) {
                 params.source = sourceFilter.value
@@ -1640,6 +1741,7 @@ async function loadTableData() {
                 if (table) {
                     table.count = totalCount.value
                 }
+                return true
             } else {
                 uni.showToast({
                     title: response?.msg || '加载失败',
@@ -1648,8 +1750,8 @@ async function loadTableData() {
                 tableData.value = []
                 totalCount.value = 0
                 totalPages.value = 0
+                return false
             }
-            return
         }
 
         console.log('请求参数:', params)
@@ -1686,6 +1788,7 @@ async function loadTableData() {
             if (table) {
                 table.count = totalCount.value
             }
+            return true
         } else {
             uni.showToast({
                 title: response?.msg || '加载失败',
@@ -1694,11 +1797,12 @@ async function loadTableData() {
             tableData.value = []
             totalCount.value = 0
             totalPages.value = 0
+            return false
         }
     } catch (error) {
         console.error('加载数据失败:', error)
         uni.showToast({
-            title: '加载失败：' + (error.msg || '网络错误'),
+            title: '加载失败：' + (error.msg || error.message || '网络错误'),
             icon: 'none'
         })
         if(error.msg&&error.msg.includes('登录')) {
@@ -1714,6 +1818,7 @@ async function loadTableData() {
             }, 1000)
         }
         tableData.value = []
+        return false
     } finally {
         uni.hideLoading()
     }
@@ -1725,7 +1830,8 @@ async function handleRefresh() {
     isRefreshing.value = true
 
     try {
-        await loadTableData()
+        const success = await loadTableData()
+        if (!success) return
         lastUpdateTime.value = Date.now()
         uni.showToast({ title: '刷新完成', icon: 'success' })
     } catch (error) {
@@ -1742,6 +1848,24 @@ function handlePageChange(page) {
     loadTableData()
 }
 
+function handleGoToPage() {
+    const targetPage = Number(pageJumpInput.value)
+    if (!Number.isInteger(targetPage) || targetPage < 1 || targetPage > totalPages.value) {
+        uni.showToast({ title: `请输入1至${totalPages.value}之间的页码`, icon: 'none' })
+        return
+    }
+    pageJumpInput.value = ''
+    handlePageChange(targetPage)
+}
+
+function handlePageSizeChange(event) {
+    const selectedPageSize = pageSizeOptions[Number(event?.detail?.value)]
+    if (!selectedPageSize || selectedPageSize === pageSize.value) return
+    pageSize.value = selectedPageSize
+    currentPage.value = 1
+    loadTableData()
+}
+
 function handlePrevPage() {
     if (currentPage.value > 1) {
         handlePageChange(currentPage.value - 1)
@@ -1754,7 +1878,143 @@ function handleNextPage() {
     }
 }
 
+function getSelectionKey(item) {
+    return String(getTableRowId(item))
+}
+
+function isRecordSelected(item) {
+    return selectedRecordKeys.value.includes(getSelectionKey(item))
+}
+
+function toggleRecordSelection(item) {
+    const key = getSelectionKey(item)
+    selectedRecordKeys.value = isRecordSelected(item)
+        ? selectedRecordKeys.value.filter(selectedKey => selectedKey !== key)
+        : [...selectedRecordKeys.value, key]
+}
+
+function handleDataItemClick(item) {
+    if (selectionMode.value) toggleRecordSelection(item)
+}
+
+function enterSelectionMode() {
+    selectionMode.value = true
+    selectedRecordKeys.value = []
+}
+
+function exitSelectionMode() {
+    selectionMode.value = false
+    selectedRecordKeys.value = []
+}
+
+function toggleSelectCurrentPage() {
+    if (tableData.value.length && selectedRecordKeys.value.length === tableData.value.length) {
+        selectedRecordKeys.value = []
+        return
+    }
+    selectedRecordKeys.value = tableData.value.map(item => getSelectionKey(item))
+}
+
+function getSelectedRecords() {
+    const selected = new Set(selectedRecordKeys.value)
+    return tableData.value.filter(item => selected.has(getSelectionKey(item)))
+}
+
+function makeBulkField(key, label, type = 'STRING', options = []) {
+    const editor = type === 'BOOLEAN' ? 'switch' : (type === 'ENUM' ? 'select' : 'input')
+    return { key, label, type, editor, options, inputType: isNumericSchemaType(type) ? 'digit' : 'text' }
+}
+
+function getBulkEditableFields() {
+    const selectOptions = (values, labels = {}) => values.map(value => ({ label: labels[value] || String(value), value }))
+    const fieldsByTable = {
+        User: [makeBulkField('points', '积分', 'INTEGER')],
+        Device: [
+            makeBulkField('name', '名称'),
+            makeBulkField('describe', '描述', 'TEXT'),
+            makeBulkField('type', '设备类型', 'ENUM', selectOptions(binTypes, binTypeLabels)),
+            makeBulkField('review', '审核状态', 'BOOLEAN'),
+            makeBulkField('status', '在线状态', 'ENUM', selectOptions(['online', 'offline']))
+        ],
+        UserDevice: [
+            makeBulkField('connectedAt', '连接时间', 'DATE'),
+            makeBulkField('lastActiveAt', '最后活跃时间', 'DATE')
+        ],
+        History: [
+            makeBulkField('category', '垃圾类别', 'ENUM', selectOptions(categories)),
+            makeBulkField('confidence', '识别置信度', 'FLOAT'),
+            makeBulkField('source', '来源', 'ENUM', selectOptions(sources, sourceLabels))
+        ],
+        Message: [
+            makeBulkField('type', '消息类型', 'ENUM', selectOptions(messageTypes, messageTypeLabels)),
+            makeBulkField('content', '消息内容', 'TEXT'),
+            makeBulkField('isRead', '已读状态', 'BOOLEAN'),
+            makeBulkField('isWithdraw', '撤回状态', 'BOOLEAN'),
+            makeBulkField('isDeletedBySender', '发送者删除状态', 'BOOLEAN'),
+            makeBulkField('isDeletedByReceiver', '接收者删除状态', 'BOOLEAN')
+        ],
+        Chat: [
+            makeBulkField('relationship', '关系类型', 'ENUM', selectOptions(chatRelationships, chatRelationshipLabels)),
+            makeBulkField('note', '备注', 'STRING'),
+            makeBulkField('mute', '免打扰', 'BOOLEAN'),
+            makeBulkField('top', '置顶', 'BOOLEAN'),
+            makeBulkField('latestContentId', '最新消息ID', 'INTEGER')
+        ]
+    }
+    if (Object.prototype.hasOwnProperty.call(fieldsByTable, currentTable.value)) {
+        return fieldsByTable[currentTable.value]
+    }
+
+    const sensitiveField = /(password|passwd|secret|token|salt|hash|credential|image|avatar|photo|blob)/i
+    return getGenericSchema(currentTable.value)
+        .filter(field => !field.primaryKey && !field.autoIncrement && !field.unique)
+        .filter(field => !['createdAt', 'updatedAt', 'deletedAt'].includes(field.key))
+        .filter(field => !sensitiveField.test(String(field.key || '')))
+        .filter(field => !String(field.key || '').toLowerCase().endsWith('id'))
+        .filter(field => !['JSON', 'JSONB', 'ARRAY', 'BLOB', 'TEXT', 'CLOB'].includes(String(field.type || '').toUpperCase()))
+        .map(field => {
+            const type = String(field.type || 'STRING').toUpperCase()
+            return makeBulkField(field.key, field.label || formatGenericFieldLabel(field.key), type,
+                type === 'ENUM' ? selectOptions(field.values || []) : [])
+        })
+}
+
+function openBulkEdit() {
+    if (!selectedRecordKeys.value.length) return
+    bulkEditFields.value = getBulkEditableFields()
+    if (!bulkEditFields.value.length) {
+        uni.showToast({ title: '当前数据表没有可批量编辑的安全字段', icon: 'none' })
+        return
+    }
+    bulkEditFieldLabels.value = bulkEditFields.value.map(field => field.label)
+    bulkEditFieldIndex.value = 0
+    selectedBulkField.value = bulkEditFields.value[0]
+    bulkEditOptionIndex.value = 0
+    bulkEditValue.value = ''
+    bulkEditBoolean.value = false
+    showBulkEditModal.value = true
+}
+
+function closeBulkEdit() {
+    showBulkEditModal.value = false
+}
+
+function onBulkEditFieldChange(event) {
+    const index = Number(event?.detail?.value)
+    selectedBulkField.value = bulkEditFields.value[index] || null
+    bulkEditFieldIndex.value = index
+    bulkEditOptionIndex.value = 0
+    bulkEditValue.value = ''
+    bulkEditBoolean.value = false
+}
+
+function onBulkEditValueChange(event) {
+    bulkEditOptionIndex.value = Number(event?.detail?.value) || 0
+}
+
 function handleAdd() {
+    historyImageRequestId += 1
+    historyImageLoading.value = false
     editMode.value = 'add'
     if (!isSpecialTable(currentTable.value)) {
         editForm.value = buildGenericEditForm(currentTable.value, {})
@@ -1800,6 +2060,8 @@ function handleAdd() {
 }
 
 function handleEdit(item) {
+    historyImageRequestId += 1
+    historyImageLoading.value = false
     editMode.value = 'edit'
     if (!isSpecialTable(currentTable.value)) {
         editForm.value = buildGenericEditForm(currentTable.value, item || {})
@@ -1807,7 +2069,46 @@ function handleEdit(item) {
         return
     }
     editForm.value = { ...item }
+    if (currentTable.value === 'History') {
+        editForm.value.imageUrl = undefined
+        if (item.hasImage) {
+            const requestId = historyImageRequestId
+            historyImageLoading.value = true
+            getAdminHistoryImage(item.id).then(response => {
+                if (requestId !== historyImageRequestId || editForm.value.id !== item.id) return
+                if (response?.code === 0) {
+                    editForm.value.imageUrl = response.data?.imageUrl || null
+                    editForm.value.hasImage = !!editForm.value.imageUrl
+                } else {
+                    uni.showToast({ title: response?.msg || '图片加载失败', icon: 'none' })
+                }
+            }).catch(error => {
+                if (requestId !== historyImageRequestId) return
+                console.error('加载历史图片失败:', error)
+                uni.showToast({ title: error?.msg || '图片加载失败', icon: 'none' })
+            }).finally(() => {
+                if (requestId === historyImageRequestId) historyImageLoading.value = false
+            })
+        }
+    }
     showEditModal.value = true
+}
+
+async function deleteDatabaseRecord(item) {
+    if (!isSpecialTable(currentTable.value)) {
+        const targetId = getGenericRecordKey(item, currentTable.value)
+        return deleteGenericTableRecord(currentTable.value, targetId)
+    }
+
+    switch (currentTable.value) {
+        case 'User': return deleteUser(item.id)
+        case 'Device': return deleteDevice(item.id)
+        case 'UserDevice': return deleteUserDevice(item.userId, item.deviceId)
+        case 'History': return deleteHistory(item.id)
+        case 'Message': return deleteMessage(item.id)
+        case 'Chat': return deleteChat(item.userId, item.otherId)
+        default: throw new Error('当前数据表不支持删除')
+    }
 }
 
 async function handleDelete(item) {
@@ -1822,34 +2123,7 @@ async function handleDelete(item) {
                 try {
                     uni.showLoading({ title: '删除中...' })
 
-                    let response
-                    if (isSpecialTable(currentTable.value)) {
-                        switch (currentTable.value) {
-                            case 'User':
-                                response = await deleteUser(item.id)
-                                break
-                            case 'Device':
-                                response = await deleteDevice(item.id)
-                                break
-                            case 'UserDevice':
-                                // UserDevice 使用联合主键 (userId, deviceId)
-                                response = await deleteUserDevice(item.userId, item.deviceId)
-                                break
-                            case 'History':
-                                response = await deleteHistory(item.id)
-                                break
-                            case 'Message':
-                                response = await deleteMessage(item.id)
-                                break
-                            case 'Chat':
-                                // Chat 使用联合主键 (userId, otherId)
-                                response = await deleteChat(item.userId, item.otherId)
-                                break
-                        }
-                    } else {
-                        const targetId = getGenericRecordKey(item, currentTable.value)
-                        response = await deleteGenericTableRecord(currentTable.value, targetId)
-                    }
+                    const response = await deleteDatabaseRecord(item)
 
                     if (response && response.code === 0) {
                         uni.showToast({ title: '删除成功', icon: 'success' })
@@ -1871,6 +2145,131 @@ async function handleDelete(item) {
                     uni.hideLoading()
                 }
             }
+        }
+    })
+}
+
+function handleBulkDelete() {
+    const records = getSelectedRecords()
+    if (!records.length) return
+    uni.showModal({
+        title: '确认批量删除',
+        content: `确定删除当前页选中的 ${records.length} 条记录吗？此操作无法撤销。`,
+        confirmText: '批量删除',
+        cancelText: '取消',
+        confirmColor: '#ef4444',
+        success: async result => {
+            if (!result.confirm) return
+            uni.showLoading({ title: '批量删除中…', mask: true })
+            let succeeded = 0
+            let failed = 0
+            try {
+                for (let index = 0; index < records.length; index += 4) {
+                    const batch = records.slice(index, index + 4)
+                    const results = await Promise.all(batch.map(async item => {
+                        try {
+                            const response = await deleteDatabaseRecord(item)
+                            return response?.code === 0
+                        } catch (error) {
+                            console.error('批量删除记录失败:', error)
+                            return false
+                        }
+                    }))
+                    succeeded += results.filter(Boolean).length
+                    failed += results.length - results.filter(Boolean).length
+                }
+            } finally {
+                uni.hideLoading()
+            }
+            exitSelectionMode()
+            await loadTableData()
+            uni.showToast({
+                title: failed ? `删除${succeeded}条，失败${failed}条` : `成功删除${succeeded}条`,
+                icon: failed ? 'none' : 'success',
+                duration: 2500
+            })
+        }
+    })
+}
+
+async function updateDatabaseRecord(item, data) {
+    if (!isSpecialTable(currentTable.value)) {
+        const targetId = getGenericRecordKey(item, currentTable.value)
+        return updateGenericTableRecord(currentTable.value, targetId, data)
+    }
+
+    switch (currentTable.value) {
+        case 'User': return updateUser(item.id, data)
+        case 'Device': return updateDevice(item.id, data)
+        case 'UserDevice': return updateUserDevice(item.userId, item.deviceId, data)
+        case 'History': return updateHistory(item.id, data)
+        case 'Message': return updateMessage(item.id, data)
+        case 'Chat': return updateChat(item.userId, item.otherId, data)
+        default: throw new Error('当前数据表不支持批量编辑')
+    }
+}
+
+function confirmBulkEdit() {
+    const records = getSelectedRecords()
+    const field = selectedBulkField.value
+    if (!records.length || !field) return
+
+    let value
+    if (field.editor === 'switch') {
+        value = bulkEditBoolean.value
+    } else if (field.editor === 'select') {
+        value = field.options[bulkEditOptionIndex.value]?.value
+        if (value === undefined) {
+            uni.showToast({ title: '请选择要设置的值', icon: 'none' })
+            return
+        }
+    } else if (isNumericSchemaType(field.type)) {
+        if (bulkEditValue.value.trim() === '' || !Number.isFinite(Number(bulkEditValue.value))) {
+            uni.showToast({ title: `请输入有效的${field.label}`, icon: 'none' })
+            return
+        }
+        value = Number(bulkEditValue.value)
+    } else {
+        value = bulkEditValue.value
+    }
+
+    const payload = { [field.key]: value }
+    uni.showModal({
+        title: '确认批量编辑',
+        content: `将选中的 ${records.length} 条记录的“${field.label}”统一修改，是否继续？`,
+        confirmText: '确认修改',
+        cancelText: '取消',
+        success: async result => {
+            if (!result.confirm) return
+            closeBulkEdit()
+            uni.showLoading({ title: '批量更新中…', mask: true })
+            let succeeded = 0
+            let failed = 0
+            try {
+                for (let index = 0; index < records.length; index += 4) {
+                    const batch = records.slice(index, index + 4)
+                    const results = await Promise.all(batch.map(async item => {
+                        try {
+                            const response = await updateDatabaseRecord(item, payload)
+                            return response?.code === 0
+                        } catch (error) {
+                            console.error('批量更新记录失败:', error)
+                            return false
+                        }
+                    }))
+                    succeeded += results.filter(Boolean).length
+                    failed += results.length - results.filter(Boolean).length
+                }
+            } finally {
+                uni.hideLoading()
+            }
+            exitSelectionMode()
+            await loadTableData()
+            uni.showToast({
+                title: failed ? `更新${succeeded}条，失败${failed}条` : `成功更新${succeeded}条`,
+                icon: failed ? 'none' : 'success',
+                duration: 2500
+            })
         }
     })
 }
@@ -1972,6 +2371,7 @@ async function handleSave() {
         } else if (currentTable.value === 'History') {
             data.userId = Number(data.userId)
             data.confidence = data.confidence ? Number(data.confidence) : null
+            delete data.hasImage
             // 确保 imageUrl 为 null 时正确传递（删除图片）
             if (data.imageUrl === null || data.imageUrl === '') {
                 data.imageUrl = null
@@ -2058,8 +2458,19 @@ async function handleSave() {
 }
 
 function closeEditModal() {
+    historyImageRequestId += 1
+    historyImageLoading.value = false
+    showHistoryImagePreview.value = false
     showEditModal.value = false
     editForm.value = {}
+}
+
+function openHistoryImagePreview() {
+    if (editForm.value?.imageUrl) showHistoryImagePreview.value = true
+}
+
+function closeHistoryImagePreview() {
+    showHistoryImagePreview.value = false
 }
 
 function deleteImage() {
@@ -2071,7 +2482,9 @@ function deleteImage() {
         confirmColor: '#ef4444',
         success: (res) => {
             if (res.confirm) {
+                showHistoryImagePreview.value = false
                 editForm.value.imageUrl = null
+                editForm.value.hasImage = false
                 uni.showToast({ title: '图片已删除', icon: 'success' })
             }
         }
@@ -2844,7 +3257,36 @@ onUnmounted(() => {
 
 .data-actions {
     display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 12rpx;
+}
+
+.action-text-btn {
+    padding: 10rpx 16rpx;
+    border: 1px solid rgba(64, 224, 255, 0.32);
+    border-radius: 12rpx;
+    background: rgba(64, 224, 255, 0.1);
+    color: #40e0ff;
+    font-size: 22rpx;
+    white-space: nowrap;
+}
+
+.action-text-btn.danger {
+    color: #ff7b86;
+    border-color: rgba(255, 90, 102, 0.4);
+    background: rgba(255, 90, 102, 0.1);
+}
+
+.action-text-btn.disabled {
+    opacity: 0.4;
+}
+
+.selection-count {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 20rpx;
+    white-space: nowrap;
 }
 
 .action-icon-btn {
@@ -2891,6 +3333,15 @@ onUnmounted(() => {
     flex-shrink: 0;
     width: 70rpx;
     padding: 8rpx;
+}
+
+.data-item.selected {
+    border-color: rgba(64, 224, 255, 0.75);
+    background: rgba(64, 224, 255, 0.1);
+}
+
+.data-item.selectable {
+    cursor: pointer;
 }
 
 .id-badge {
@@ -3019,19 +3470,38 @@ rich-text {
     backdrop-filter: blur(20px);
     border-radius: 10rpx;
     border: 1px solid rgba(64, 224, 255, 0.2);
+}
+
+.pagination-main {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16rpx;
+    gap: 8rpx;
 }
 
-.pagination-left,
-.pagination-right {
+.pagination-left {
     flex: 0 0 auto;
 }
 
+.page-size-picker {
+    display: flex;
+    align-items: center;
+}
+
+.page-size-picker {
+    gap: 8rpx;
+    padding: 10rpx 14rpx;
+    color: #40e0ff;
+    background: rgba(64, 224, 255, 0.1);
+    border: 1px solid rgba(64, 224, 255, 0.35);
+    border-radius: 12rpx;
+    font-size: 22rpx;
+    white-space: nowrap;
+}
+
 .pagination-center {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -3068,6 +3538,98 @@ rich-text {
     cursor: not-allowed;
 }
 
+.page-jump {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 6rpx;
+}
+
+.page-jump-label {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 20rpx;
+}
+
+.page-jump-input {
+    box-sizing: border-box;
+    width: 82rpx;
+    height: 52rpx;
+    padding: 0 8rpx;
+    color: #ffffff;
+    background: rgba(64, 224, 255, 0.06);
+    border: 1px solid rgba(64, 224, 255, 0.3);
+    border-radius: 10rpx;
+    text-align: center;
+    font-size: 22rpx;
+}
+
+.page-jump-btn {
+    padding: 10rpx 12rpx;
+    color: #40e0ff;
+    background: rgba(64, 224, 255, 0.12);
+    border: 1px solid rgba(64, 224, 255, 0.35);
+    border-radius: 10rpx;
+    font-size: 20rpx;
+}
+
+.pagination-step {
+    padding-left: 12rpx;
+    padding-right: 12rpx;
+    flex: 0 0 auto;
+}
+
+@media (min-width: 768px) {
+    .pagination {
+        padding: 20rpx 28rpx;
+    }
+
+    .pagination-main {
+        gap: 24rpx;
+    }
+
+    .page-size-picker {
+        gap: 12rpx;
+        padding: 14rpx 20rpx;
+        font-size: 24rpx;
+    }
+
+    .pagination-center {
+        min-width: 120rpx;
+    }
+
+    .page-text {
+        font-size: 30rpx;
+    }
+
+    .total-text {
+        font-size: 22rpx;
+    }
+
+    .page-btn {
+        padding: 14rpx 22rpx;
+    }
+
+    .pagination-step {
+        padding-left: 20rpx;
+        padding-right: 20rpx;
+    }
+
+    .page-jump {
+        gap: 10rpx;
+    }
+
+    .page-jump-input {
+        width: 104rpx;
+        height: 64rpx;
+        font-size: 24rpx;
+    }
+
+    .page-jump-btn {
+        padding: 14rpx 20rpx;
+        font-size: 22rpx;
+    }
+}
+
 /* 编辑弹窗 */
 .modal-overlay {
     position: fixed;
@@ -3095,6 +3657,35 @@ rich-text {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+.bulk-edit-modal {
+    width: 100%;
+    max-width: 680rpx;
+    background: rgba(0, 35, 65, 0.98);
+    border-radius: 30rpx;
+    border: 2px solid rgba(64, 224, 255, 0.5);
+    box-shadow: 0 0 40rpx rgba(64, 224, 255, 0.3);
+}
+
+.bulk-edit-content {
+    padding: 28rpx 24rpx;
+}
+
+.bulk-edit-value {
+    margin-top: 24rpx;
+}
+
+.bulk-edit-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 76rpx;
+    padding: 0 20rpx;
+    color: #ffffff;
+    background: rgba(64, 224, 255, 0.05);
+    border: 1px solid rgba(64, 224, 255, 0.3);
+    border-radius: 16rpx;
 }
 
 .modal-header {
@@ -3250,6 +3841,44 @@ rich-text {
     border-radius: 12rpx;
     border: 1px solid rgba(64, 224, 255, 0.3);
     background: rgba(0, 0, 0, 0.3);
+    cursor: zoom-in;
+}
+
+.image-preview-overlay {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 72rpx 28rpx 28rpx;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.92);
+}
+
+.image-preview-large {
+    width: 100%;
+    height: 88vh;
+}
+
+.image-preview-close {
+    position: absolute;
+    top: 24rpx;
+    right: 28rpx;
+    z-index: 1;
+    width: 72rpx;
+    height: 72rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.16);
+    font-size: 48rpx;
+    line-height: 1;
 }
 
 .image-delete-btn {

@@ -1,0 +1,5 @@
+export function isAvailable(): boolean { return false }
+export function startScan(callback: (result: string) => void): void {
+  callback('{"error":"UNSUPPORTED"}')
+}
+export function cancelScan(): void {}

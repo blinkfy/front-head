@@ -1,6 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getConnectedDevices } from '../api/device.js'
-import { clearMockDeviceConnection, getMockDeviceConnection, normalizeDeviceMode } from './device-qr.js'
+import { clearMockDeviceConnection, getPreferredMockDeviceConnection, normalizeDeviceMode } from './device-qr.js'
 
 /**
  * 设备连接状态管理组合式函数
@@ -26,7 +26,7 @@ export function useDeviceConnection() {
     // Connection expiry is determined by the backend's last activity time.
     // Continuous deposits must not be disconnected by a fixed local age limit.
 
-    const mockConnection = getMockDeviceConnection()
+    const mockConnection = getPreferredMockDeviceConnection()
     if (mockConnection) {
       hasConnection.value = true
       connectedDevice.value = mockConnection
@@ -108,12 +108,12 @@ export function useDeviceConnection() {
       uni.navigateTo({
         url: deviceMode === 'robot'
           ? `/pages-nonTheme/robot-control?device_id=${encodeURIComponent(deviceId || '')}&device_name=${encodeURIComponent(deviceName || '')}&device_mode=robot${mockQuery}`
-          : `/pages/scan/scan?device_id=${encodeURIComponent(deviceId || '')}&device_name=${encodeURIComponent(deviceName || '')}&device_mode=bin`
+          : `/pages-nonTheme/scan?device_id=${encodeURIComponent(deviceId || '')}&device_name=${encodeURIComponent(deviceName || '')}&device_mode=bin`
       })
     } else {
       // 直接跳转到连接页面
       uni.navigateTo({
-        url: '/pages/scan/scan'
+        url: '/pages-nonTheme/scan'
       })
     }
   }

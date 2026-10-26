@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "repository": "sollyu/wechat-scanner",
+      "commit": "8ba599fd90216d1ba148eda4cd051eb86cc5b16d"
+    },
+    {
+      "repository": "MrWangChong/Qbar",
+      "commit": "30aedea1e3de0e05165880453364daab35e904fa"
+    }
+  ],
+  "files": [
+    {
+      "repository": "sollyu/wechat-scanner",
+      "commit": "8ba599fd90216d1ba148eda4cd051eb86cc5b16d",
+      "path": "library/src/main/java/com/tencent/qbar/QbarNative.java",
+      "local_path": "artifacts/vendor/sollyu-wechat-scanner/library/src/main/java/com/tencent/qbar/QbarNative.java",
+      "url": "https://raw.githubusercontent.com/sollyu/wechat-scanner/8ba599fd90216d1ba148eda4cd051eb86cc5b16d/library/src/main/java/com/tencent/qbar/QbarNative.java",
+      "bytes": 7951,
+      "sha256": "3dca4c7102c0ef745457657a348200a9d826ae7528405b050b2f3f996fde9874"
+    },
+    {
+      "repository": "sollyu/wechat-scanner",
+      "commit": "8ba599fd90216d1ba148eda4cd051eb86cc5b16d",
+      "path": "library/src/main/java/com/tencent/qbar/WxQbarNative.java",
+      "local_path": "artifacts/vendor/sollyu-wechat-scanner/library/src/main/java/com/tencent/qbar/WxQbarNative.java",
+      "url": "https://raw.githubusercontent.com/sollyu/wechat-scanner/8ba599fd90216d1ba148eda4cd051eb86cc5b16d/library/src/main/java/com/tencent/qbar/WxQbarNative.java",
+      "bytes": 3052,
+      "sha256": "499aec04b5a3dbd7cded2558681dd3e99ba1f632c88e9c42697fedabc2b522bd"
+    },
+    {
+      "repository": "sollyu/wechat-scanner",
+      "commit": "8ba599fd90216d1ba148eda4cd051eb86cc5b16d",
+      "path": "library/src/main/java/com/tencent/qbar/WechatScannerDelegate.kt",
+      "local_path": "artifacts/vendor/sollyu-wechat-scanner/library/src/main/java/com/tencent/qbar/WechatScannerDelegate.kt",
+      "url": "https://raw.githubusercontent.com/sollyu/wechat-scanner/8ba599fd90216d1ba148eda4cd051eb86cc5b16d/library/src/main/java/com/tencent/qbar/WechatScannerDelegate.kt",
+      "bytes": 6083,
+      "sha256": "1e7f511cf8ebfb131b46350cd7964d04cee26b04a54486d3574126886f188f7a"
+    },
+    {
+      "repository": "sollyu/wechat-scanner",
+      "commit": "8ba599fd90216d1ba148eda4cd051eb86cc5b16d",
+      "path": "library/src/main/jniLibs/arm64-v8a/libwechatQrMod.so",
+      "local_path": "artifacts/vendor/sollyu-wechat-scanner/library/src/main/jniLibs/arm64-v8a/libwechatQrMod.so",
+      "url": "https://raw.githubusercontent.com/sollyu/wechat-scanner/8ba599fd90216d1ba148eda4cd051eb86cc5b16d/library/src/main/jniLibs/arm64-v8a/libwechatQrMod.so",
+      "bytes": 9282808,
+      "sha256": "bcc8fe759fb7ea0d325712f0db63c4296d30e4ccf044402bc8baa0957e691e1b"
+    },
+    {
+      "repository": "sollyu/wechat-scanner",
+      "commit": "8ba599fd90216d1ba148eda4cd051eb86cc5b16d",
+      "path": "library/src/main/jniLibs/arm64-v8a/libc++_shared.so",
+      "local_path": "artifacts/vendor/sollyu-wechat-scanner/library/src/main/jniLibs/arm64-v8a/libc++_shared.so",
+      "url": "https://raw.githubusercontent.com/sollyu/wechat-scanner/8ba599fd90216d1ba148eda4cd051eb86cc5b16d/library/src/main/jniLibs/arm64-v8a/libc++_shared.so",
+      "bytes": 936368,
+      "sha256": "814328f0de086ca5841f2c190e11b0f05cd5f06d12c3b1b454e5cc979920f16b"
+    },
+    {
+      "repository": "sollyu/wechat-scanner",
+      "commit": "8ba599fd90216d1ba148eda4cd051eb86cc5b16d",
+      "path": "library/src/main/assets/qbar/qbar_detect.xnet",
+      "local_path": "artifacts/vendor/sollyu-wechat-scanner/library/src/main/assets/qbar/qbar_detect.xnet",
+      "url": "https://raw.githubusercontent.com/sollyu/wechat-scanner/8ba599fd90216d1ba148eda4cd051eb86cc5b16d/library/src/main/assets/qbar/qbar_detect.xnet",
+      "bytes": 405767,
+      "sha256": "a05e636a57e1f5b88d8987c443452e9370652648b7311e740142f8faf5fa3a5d"
+    },
+    {
+      "repository": "sollyu/wechat-scanner",
+      "commit": "8ba599fd90216d1ba148eda4cd051eb86cc5b16d",
+      "path": "library/src/main/assets/qbar/qbar_sr.xnet",
+      "local_path": "artifacts/vendor/sollyu-wechat-scanner/library/src/main/assets/qbar/qbar_sr.xnet",
+      "url": "https://raw.githubusercontent.com/sollyu/wechat-scanner/8ba599fd90216d1ba148eda4cd051eb86cc5b16d/library/src/main/assets/qbar/qbar_sr.xnet",
+      "bytes": 45388,
+      "sha256": "529969c2d81b62cf1d8fcac2a1d67fcf08771c810e05bfb3006990746073f65d"
+    },
+    {
+      "repository": "MrWangChong/Qbar",
+      "commit": "30aedea1e3de0e05165880453364daab35e904fa",
+      "path": "wxing/src/main/java/com/tencent/qbar/QbarNative.java",
+      "local_path": "artifacts/vendor/MrWangChong-Qbar/wxing/src/main/java/com/tencent/qbar/QbarNative.java",
+      "url": "https://raw.githubusercontent.com/MrWangChong/Qbar/30aedea1e3de0e05165880453364daab35e904fa/wxing/src/main/java/com/tencent/qbar/QbarNative.java",
+      "bytes": 13501,
+      "sha256": "6181594165a1328184aafd984b88ee9f65a0ce0fb385b9f647294238d4238277"
+    },
+    {
+      "repository": "MrWangChong/Qbar",
+      "commit": "30aedea1e3de0e05165880453364daab35e904fa",
+      "path": "wxing/src/main/java/com/tencent/qbar/QbarNativeUtils.java",
+      "local_path": "artifacts/vendor/MrWangChong-Qbar/wxing/src/main/java/com/tencent/qbar/QbarNativeUtils.java",
+      "url": "https://raw.githubusercontent.com/MrWangChong/Qbar/30aedea1e3de0e05165880453364daab35e904fa/wxing/src/main/java/com/tencent/qbar/QbarNativeUtils.java",
+      "bytes": 5732,
+      "sha256": "90119f8791815c6ab718fc575d618c0c4d6a81218ceef239d9f61e18d08328b1"
+    },
+    {
+      "repository": "MrWangChong/Qbar",
+      "commit": "30aedea1e3de0e05165880453364daab35e904fa",
+      "path": "wxing/src/main/jniLibs/armeabi/libQrMod.so",
+      "local_path": "artifacts/vendor/MrWangChong-Qbar/wxing/src/main/jniLibs/armeabi/libQrMod.so",
+      "url": "https://raw.githubusercontent.com/MrWangChong/Qbar/30aedea1e3de0e05165880453364daab35e904fa/wxing/src/main/jniLibs/armeabi/libQrMod.so",
+      "bytes": 1968952,
+      "sha256": "c10c51e6cef8b047fb5b7c1559e4c01e92307793f86f5e0cc5c1904584b481ca"
+    }
+  ]
+}

@@ -1,10 +1,6 @@
 const model = require('./model-meta')
-const sequences = {
-  idle: ['Return_Idle', 'Idle_Base'], tap: ['Tap_Response', 'Idle_Base'],
-  uploading: ['Upload_Enter', 'Upload_Loop'], processing: ['Analyze_Enter', 'Analyze_Loop'],
-  success: ['Resolve', 'Success'], fail: ['Resolve', 'Fail']
-}
-const loops = new Set(['Idle_Base', 'Idle_Reduced', 'Upload_Loop', 'Analyze_Loop'])
+const sequences = model.sequences
+const loops = new Set([...model.loops, 'Idle_Reduced'])
 
 Component({
   properties: {
@@ -106,7 +102,7 @@ Component({
           this.animator.pauseToFrame(clip, 1)
           this.settleAfterFrame = true
         } else {
-          if (!this.queue.length && loops.has(clip)) this.queue = [clip]
+          if (!this.queue.length && (loops.has(clip) || (clip === 'Fail' && this.state === 'fail-loop'))) this.queue = [clip]
           this.playNext()
         }
       }

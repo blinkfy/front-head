@@ -4,6 +4,48 @@ export function normalizeRegistrationScene(value) {
   return /^r_[a-f0-9]{24}$/.test(scene) ? scene : ''
 }
 
+// scanCode returns mini-program scenes in path, rather than in its opaque result.
+// Only our login/register routes are accepted; never navigate to an arbitrary QR path.
+export function resolveRegistrationQrScanTarget(scanResult) {
+  const path = String(scanResult?.path || '').trim()
+  const content = path || String(scanResult?.result || '').trim()
+  const match = /^\/?pages(?:-dark)?\/(?:register\/register|index\/index)(?:\?([^#]*))?$/.exec(content)
+  let scene = ''
+  if (match) {
+    const scenes = []
+    try {
+      for (const pair of (match[1] || '').split('&')) {
+        const separator = pair.indexOf('=')
+        if (separator < 0) continue
+        const key = decodeURIComponent(pair.slice(0, separator).replace(/\+/g, ' '))
+        if (key === 'scene') scenes.push(decodeURIComponent(pair.slice(separator + 1).replace(/\+/g, ' ')))
+      }
+    } catch (_) { return { url: '', invalidScene: true } }
+    if (scenes.length === 1) scene = scenes[0]
+    scene = scene === 'web_register' ? scene : normalizeRegistrationScene(scene)
+    if (!scene) return { url: '', invalidScene: true }
+  } else {
+    // A known non-login path (notably a device scene) keeps the device flow.
+    if (path) return null
+    scene = normalizeRegistrationScene(content)
+    if (!scene) return null
+  }
+  return { url: '/pages/register/register?scene=' + encodeURIComponent(scene), invalidScene: false }
+}
+
+export function handleRegistrationQrScan(scanResult, runtime) {
+  const target = resolveRegistrationQrScanTarget(scanResult)
+  if (!target) return false
+  if (target.invalidScene) {
+    runtime.showToast({ title: '登录码参数异常，请刷新后重试', icon: 'none' })
+  } else {
+    // The existing landing page captures the session, refreshes WeChat identity,
+    // and asks for confirmation before authorizing the webpage.
+    runtime.navigateTo({ url: target.url })
+  }
+  return true
+}
+
 // These endpoints deliberately do not use the ordinary JWT/401 redirect interceptor.
 export function createRegistrationApi({ runtime, baseUrl }) {
   const root = String(baseUrl).replace(/\/$/, '')
@@ -33,6 +75,9 @@ export function createRegistrationApi({ runtime, baseUrl }) {
       return result
     },
     status: session => privateRequest('GET', session, '/status'),
+    scanApp: (id, token) => request('POST', '/' + id + '/app-scan', {}, { Authorization: 'Bearer ' + token }),
+    authorizeApp: (id, token) => request('POST', '/' + id + '/app-authorize', { confirm: true }, { Authorization: 'Bearer ' + token }),
+    cancelApp: (id, token) => request('POST', '/' + id + '/app-cancel', {}, { Authorization: 'Bearer ' + token }),
     consume: session => privateRequest('POST', session, '/consume'),
     cancel: session => privateRequest('DELETE', session),
     scan: (id, wechatCode) => request('POST', '/' + id + '/scan', { wechatCode }),
@@ -82,7 +127,7 @@ export function createH5RegistrationRelay({ api, onState, onLogin, now = Date.no
       const response = await api.status(target)
       if (!current(revision, target)) return
       Object.assign(session, response.data)
-      emit(session.status)
+      emit(session.status, session.status === 'scanned' && session.scannerPlatform === 'app' ? '已扫码，请在APP中确认网页登录' : '')
       if (session.status === 'authorized' && active) {
         consumeAttempted = true
         emit('consuming')

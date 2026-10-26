@@ -175,12 +175,26 @@
               <view class="row-dot dot-green"></view>
               <div>
                 <div class="label">变废为宝效果图</div>
-                <div class="desc">开启后，识别结果将生成效果图</div>
+                <div class="desc">开启后，可为识别结果生成效果图</div>
               </div>
             </div>
             <view class="switch-row">
               <switch :checked="form.enableUpcyclingImage" @change="form.enableUpcyclingImage = $event.detail.value" color="#17b27a" />
               <text class="switch-label" :class="form.enableUpcyclingImage ? 'sw-on' : 'sw-off'">{{ form.enableUpcyclingImage ? '启用' : '关闭' }}</text>
+            </view>
+          </div>
+
+          <div class="row" :class="{ 'row-muted': !form.enableUpcyclingImage }">
+            <div class="row-label-group">
+              <view class="row-dot dot-green"></view>
+              <div>
+                <div class="label">AI 不建议改造时跳过</div>
+                <div class="desc">默认生成效果图；开启后，仅当识别 AI 明确不建议改造时跳过</div>
+              </div>
+            </div>
+            <view class="switch-row">
+              <switch :checked="form.skipUnrecommendedUpcyclingImage" :disabled="!form.enableUpcyclingImage" @change="form.skipUnrecommendedUpcyclingImage = $event.detail.value" color="#17b27a" />
+              <text class="switch-label" :class="form.skipUnrecommendedUpcyclingImage ? 'sw-on' : 'sw-off'">{{ form.skipUnrecommendedUpcyclingImage ? '启用' : '关闭' }}</text>
             </view>
           </div>
 
@@ -222,7 +236,8 @@ const DEFAULT_FORM = {
   include3d: true,
   enableThinking: false,
   thinkingBudget: 4096,
-  enableUpcyclingImage: true
+  enableUpcyclingImage: true,
+  skipUnrecommendedUpcyclingImage: true
 }
 
 const form = reactive({ ...DEFAULT_FORM })
@@ -282,6 +297,7 @@ function applyData(data) {
   form.enableThinking = !!data.enableThinking
   form.thinkingBudget = Number(data.thinkingBudget || 4096)
   form.enableUpcyclingImage = !!data.enableUpcyclingImage
+  form.skipUnrecommendedUpcyclingImage = data.skipUnrecommendedUpcyclingImage !== false
 }
 
 function resetForm() {
@@ -335,7 +351,8 @@ function saveSettings() {
     include3d: form.include3d,
     enableThinking: form.enableThinking,
     thinkingBudget: Number(form.thinkingBudget || 4096),
-    enableUpcyclingImage: form.enableUpcyclingImage
+    enableUpcyclingImage: form.enableUpcyclingImage,
+    skipUnrecommendedUpcyclingImage: form.skipUnrecommendedUpcyclingImage
   }
   uni.request({
     url: baseUrl + '/api/admin/ai-settings',

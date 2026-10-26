@@ -198,11 +198,13 @@ const loadRanking = async () => {
     
     if (response.code === 0) {
       rankingData.value = response.data
+      return true
     } else {
       uni.showToast({
         title: response.msg || '获取排行榜失败',
         icon: 'none'
       })
+      return false
     }
   } catch (error) {
     console.error('加载排行榜失败:', error)
@@ -210,6 +212,7 @@ const loadRanking = async () => {
       title: '网络错误，请稍后重试',
       icon: 'none'
     })
+    return false
   } finally {
     loading.value = false
   }
@@ -217,7 +220,7 @@ const loadRanking = async () => {
 
 // 刷新排行榜
 const refreshRanking = async () => {
-  await loadRanking()
+  if (!await loadRanking()) return
   uni.showToast({
     title: '刷新成功',
     icon: 'success'
@@ -266,7 +269,7 @@ const handleBackupNavigation = () => {
           uni.reLaunch({ url: '/pages-dark/profile/profile' })
           break
         case 'scan':
-          uni.reLaunch({ url: '/pages-dark/scan/scan' })
+          uni.reLaunch({ url: '/pages-nonTheme/scan' })
           break
         default:
           uni.reLaunch({ url: '/pages-dark/home/home' })

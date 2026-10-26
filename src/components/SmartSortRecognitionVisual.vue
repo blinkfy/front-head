@@ -3,8 +3,8 @@
     <view class="camera-layer" :class="{ visible: !robotMounted || ['fade', 'returning', 'parked'].includes(phase) }">
       <slot />
     </view>
-    <SmartSortRobot3D v-if="robotMounted" class="robot-layer" :class="{ outgoing: phase === 'fade', returning: phase === 'returning', parked: phase === 'parked' }" :style="returnStyle"
-      :variant="variant" :state="state" :active="active" @settled="onRobotSettled" />
+    <SmartSortRobot3D v-if="robotMounted" class="robot-layer" :class="{ outgoing: phase === 'fade', entering: phase === 'entering', arriving: phase === 'arriving', returning: phase === 'returning', parked: phase === 'parked' }" :style="returnStyle"
+      :variant="variant" :state="state === 'fail' && retainFailure ? 'fail-loop' : state" :active="active" :overlay-active="overlayActive" @settled="onRobotSettled" />
   </view>
 </template>
 
@@ -17,9 +17,12 @@ const props = defineProps({
   state: { type: String, default: 'idle' },
   active: { type: Boolean, default: true },
   variant: { type: String, default: 'light' },
-  returnTo: { type: String, default: '' }
+  retainFailure: { type: Boolean, default: false },
+  overlayActive: { type: Boolean, default: false },
+  returnTo: { type: String, default: '' },
+  entryFrom: { type: String, default: '' }
 })
-const emit = defineEmits(['settled', 'returning'])
+const emit = defineEmits(['settled', 'returning', 'entering', 'entered'])
 const owner = getCurrentInstance()
 const visualHost = ref(null)
 const returnStyle = ref({})
@@ -31,12 +34,18 @@ const phase = ref('camera')
 let holdTimer = null
 let fadeTimer = null
 let returnTimer = null
+let entryTimer = null
+let entryFrame = null
+let pendingOrigin = null
+let entrySettled = false
 
 function clearTimers() {
   clearTimeout(holdTimer)
   clearTimeout(fadeTimer)
   clearTimeout(returnTimer)
-  holdTimer = fadeTimer = returnTimer = null
+  clearTimeout(entryTimer)
+  clearTimeout(entryFrame)
+  holdTimer = fadeTimer = returnTimer = entryTimer = entryFrame = null
 }
 
 function finishFeedback() {
@@ -62,7 +71,7 @@ function queryRect(selector, scope) {
   })
 }
 
-async function measureReturnPosition() {
+async function measureReturnPosition(selector = props.returnTo) {
   // H5 从当前视觉节点向上查落点，避开 uni-view 包装层和缓存的其它页面。
   // #ifdef H5
   const element = visualHost.value?.$el || visualHost.value
@@ -70,7 +79,7 @@ async function measureReturnPosition() {
     let scope = element.parentElement
     let target = null
     while (scope && !target) {
-      target = scope.querySelector(props.returnTo)
+      target = scope.querySelector(selector)
       scope = scope.parentElement
     }
     return [element.getBoundingClientRect(), target?.getBoundingClientRect() || null]
@@ -80,12 +89,78 @@ async function measureReturnPosition() {
   const source = await queryRect('.recognition-visual', owner.proxy)
   let scope = owner.parent
   while (source && scope) {
-    const target = await queryRect(props.returnTo, scope.proxy)
+    const target = await queryRect(selector, scope.proxy)
     if (target) return [source, target]
     scope = scope.parent
   }
   return [source, null]
 }
+
+// Capture while the welcome card is still mounted. Selection/upload is never
+// delayed by the transition; the copied rectangle is only visual metadata.
+function prepareEntry() {
+  if (!props.entryFrom) return;
+  pendingOrigin = measureReturnPosition(props.entryFrom).then(([, target]) => target).catch(() => null);
+}
+
+function finishEntry() {
+  clearTimeout(entryTimer);
+  clearTimeout(entryFrame);
+  entryTimer = entryFrame = null;
+  if (!['entering', 'arriving'].includes(phase.value)) return;
+  returnStyle.value = {};
+  phase.value = 'robot';
+  emit('entered');
+  if (entrySettled) {
+    entrySettled = false;
+    onRobotSettled();
+  }
+}
+
+async function enterFromEntry(originPromise) {
+  const version = returnVersion;
+  phase.value = 'entering';
+  emit('entering');
+  entrySettled = false;
+  entryTimer = setTimeout(finishEntry, 700);
+  const origin = await originPromise;
+  await nextTick();
+  if (destroyed || version !== returnVersion || phase.value !== 'entering') return;
+  let target;
+  // #ifdef H5
+  const host = visualHost.value?.$el || visualHost.value;
+  target = host?.getBoundingClientRect?.();
+  // #endif
+  // #ifndef H5
+  target = await queryRect('.recognition-visual', owner.proxy);
+  // #endif
+  if (destroyed || version !== returnVersion || phase.value !== 'entering') return;
+  if (!origin || !target || origin.width <= 0 || origin.height <= 0 || target.width <= 0 || target.height <= 0) return finishEntry();
+  const dx = origin.left + origin.width / 2 - target.left - target.width / 2;
+  const dy = origin.top + origin.height / 2 - target.top - target.height / 2;
+  returnStyle.value = { transform: `translate(${dx}px, ${dy}px)` };
+  await nextTick();
+  if (destroyed || version !== returnVersion || phase.value !== 'entering') return;
+  // Force the origin pose to commit before starting the CSS transition.
+  // #ifdef H5
+  host?.getBoundingClientRect?.();
+  // #endif
+  clearTimeout(entryTimer);
+  entryTimer = null;
+  entryFrame = setTimeout(() => {
+    if (destroyed || version !== returnVersion || phase.value !== 'entering') return;
+    phase.value = 'arriving';
+    returnStyle.value = {};
+    let reduced = false;
+    // #ifdef H5
+    reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+    // #endif
+    if (!props.active || reduced) finishEntry();
+    else entryTimer = setTimeout(finishEntry, 500);
+  }, 16);
+}
+
+defineExpose({ prepareEntry });
 
 function finishReturn() {
   clearTimers()
@@ -116,7 +191,10 @@ async function returnToEntry() {
 }
 
 function onRobotSettled() {
+  if (['entering', 'arriving'].includes(phase.value)) { entrySettled = true; return; }
   if (!robotMounted.value || phase.value !== 'robot' || !['success', 'fail'].includes(props.state)) return
+  // 失败照片仍在时，将出错动画的结束姿态留在识别卡片，等待重试或重新选图。
+  if (props.state === 'fail' && props.retainFailure) return
   if (props.state === 'fail' && props.returnTo) return returnToEntry()
   if (!props.active) return finishFeedback()
   phase.value = 'hold'
@@ -125,8 +203,12 @@ function onRobotSettled() {
 }
 
 watch(() => [props.showRobot, props.state], ([showRobot, state]) => {
-  // 回到入口后 Idle/Tap 继续在落点播放；新请求立即把机器人送回顶部。
+  if (showRobot && ['entering', 'arriving'].includes(phase.value)) return;
+  // 回到入口后 Idle/Tap 继续在落点播放；新请求从入口飞回顶部。
   if (showRobot && ['returning', 'parked'].includes(phase.value) && ['idle', 'tap'].includes(state)) return
+  const origin = showRobot && !['idle', 'tap'].includes(state) ? pendingOrigin : null;
+  if (origin) pendingOrigin = null;
+  if (['entering', 'arriving'].includes(phase.value)) emit('entered');
   returnVersion++
   clearTimers()
   returnStyle.value = {}
@@ -134,6 +216,7 @@ watch(() => [props.showRobot, props.state], ([showRobot, state]) => {
     usedRobot.value = true
     robotMounted.value = true
     phase.value = 'robot'
+    if (origin) void enterFromEntry(origin);
   } else {
     robotMounted.value = false
     phase.value = 'camera'
@@ -141,6 +224,7 @@ watch(() => [props.showRobot, props.state], ([showRobot, state]) => {
 }, { immediate: true })
 
 watch(() => props.active, active => {
+  if (!active && ['entering', 'arriving'].includes(phase.value)) finishEntry();
   if (!active && (phase.value === 'hold' || phase.value === 'fade')) finishFeedback()
   if (!active && phase.value === 'returning') finishReturn()
   if (active && phase.value === 'parked') {
@@ -168,12 +252,14 @@ onBeforeUnmount(() => { destroyed = true; returnVersion++; clearTimers() })
   left: 0;
   opacity: 1;
   transform: scale(1);
-  transition: none;
+  transition: transform 500ms cubic-bezier(0.22, 0.7, 0.3, 1.06);
 }
-.robot-layer.returning { transition: transform 500ms cubic-bezier(0.22, 0.7, 0.3, 1.06); }
+.robot-layer.entering { transition: none; }
+.robot-layer.arriving, .robot-layer.returning { transition: transform 500ms cubic-bezier(0.22, 0.7, 0.3, 1.06); }
 .robot-layer.parked { transition: none; }
 .robot-layer.outgoing { opacity: 0; transform: scale(0.94); transition: opacity 320ms ease-in-out, transform 320ms ease-in-out; }
 @media (prefers-reduced-motion: reduce) {
+  .recognition-visual .robot-layer, .robot-layer.arriving { transition: none; }
   .robot-layer.outgoing { transform: none; }
   .robot-layer.returning { transition: none; }
 }
