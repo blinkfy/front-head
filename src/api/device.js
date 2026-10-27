@@ -36,6 +36,16 @@ export function resolveWechatQrRaw(rawBase64, token) {
     data: { rawBase64 }, header: { Authorization: token }, needAuth: true, silent: true })
 }
 
+export function resolveWechatQrImage(imageBase64, token) {
+  return request({ url: '/api/device/wechat-qr/resolve-image', method: 'POST',
+    data: { imageBase64 }, header: { Authorization: token }, needAuth: true, silent: true, timeout: 12000 })
+}
+
+export function prepareWechatQrImage(token) {
+  return request({ url: '/api/device/wechat-qr/image-ready', method: 'POST',
+    header: { Authorization: token }, needAuth: true, silent: true, timeout: 8000 })
+}
+
 /**
  * 获取设备状态
  * @param {string} deviceId - 设备ID

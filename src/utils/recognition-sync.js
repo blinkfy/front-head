@@ -519,7 +519,23 @@ function hashText(text) {
   return Math.abs(hash);
 }
 
+const bboxCategoryColors = {
+  '可回收垃圾': '#2563eb',
+  '有害垃圾': '#dc2626',
+  '厨余垃圾': '#15803d',
+  '其他垃圾': '#64748b'
+};
+
 export function getBboxColor(label, index) {
+  for (const value of [label?.category, label?.category_name, label?.name, label?.source_name]) {
+    const color = bboxCategoryColors[normalizeCategoryName(value)];
+    if (color) return color;
+  }
+  // The detector's class order is other / hazardous / recyclable / kitchen.
+  const classId = label?.class_id ?? label?.class;
+  if (/^[0-3]$/.test(String(classId))) {
+    return ['#64748b', '#dc2626', '#2563eb', '#15803d'][Number(classId)];
+  }
   const key = String((label && (label.name || label.source_name || label.class_id)) || index || '');
   const idx = hashText(key) % bboxPalette.length;
   return bboxPalette[idx];

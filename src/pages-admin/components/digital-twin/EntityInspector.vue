@@ -1,69 +1,69 @@
 <template>
-  <view class="inspector panel">
-    <view class="inspector-head">
-      <view>
-        <view class="panel-title">对象检查器</view>
-        <view class="panel-sub">点击设备或服务点查看关联信息</view>
+  <view class="inspector panel mpwx-view">
+    <view class="inspector-head mpwx-view">
+      <view class="mpwx-view">
+        <view class="panel-title mpwx-view">对象检查器</view>
+        <view class="panel-sub mpwx-view">点击设备或服务点查看关联信息</view>
       </view>
-      <view :class="['entity-type', typeClass]">{{ typeLabel }}</view>
+      <view :class="['entity-type', typeClass]" class="mpwx-view">{{ typeLabel }}</view>
     </view>
 
-    <view v-if="selectedId" class="entity-summary">
-      <view class="entity-symbol"><view :class="['entity-glyph', typeClass]">{{ glyph }}</view></view>
-      <view class="entity-heading">
-        <view class="entity-name">{{ selectedName }}</view>
-        <view class="entity-id">{{ selectedId }}</view>
+    <view v-if="selectedId" class="entity-summary mpwx-view">
+      <view class="entity-symbol mpwx-view"><view :class="['entity-glyph', typeClass]" class="mpwx-view">{{ glyph }}</view></view>
+      <view class="entity-heading mpwx-view">
+        <view class="entity-name mpwx-view">{{ selectedName }}</view>
+        <view class="entity-id mpwx-view">{{ selectedId }}</view>
       </view>
     </view>
-    <view v-else class="empty-state">请选择场景对象</view>
+    <view v-else class="empty-state mpwx-view">请选择场景对象</view>
 
     <template v-if="selectedId">
-      <view class="data-section">
-        <view class="section-title">当前事件影响</view>
-        <view class="data-row"><text>事件</text><text class="b-text">{{ presentation.title }}</text></view>
-        <view class="data-row"><text>显式状态</text><text class="b-text" :class="statusTone">{{ explicitStatus }}</text></view>
-        <view class="data-row"><text>数据来源</text><text class="b-text" :data-source="currentEvent?.source">{{ displaySourceLabel(currentEvent?.source, '—') }}</text></view>
+      <view class="data-section mpwx-view">
+        <view class="section-title mpwx-view">当前事件影响</view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">事件</text><text class="b-text mpwx-text">{{ presentation.title }}</text></view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">显式状态</text><text class="b-text mpwx-text" :class="statusTone">{{ explicitStatus }}</text></view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">数据来源</text><text class="b-text mpwx-text" :data-source="currentEvent?.source">{{ displaySourceLabel(currentEvent?.source, '—') }}</text></view>
       </view>
 
-      <view v-if="relatedIncident" class="data-section incident-section">
-        <view class="section-title">韧性恢复 <text>{{ incidentTypeLabel }}</text></view>
-        <view class="data-row"><text>恢复阶段</text><text class="b-text warning">{{ incidentStageLabel }}</text></view>
-        <view class="data-row multiline"><text>受影响任务</text><text class="b-text">{{ relatedIncident.responseTaskIds?.length ? relatedIncident.responseTaskIds.join('、') : '无新增任务' }}</text></view>
-        <view class="data-row multiline"><text>系统响应</text><text class="b-text">{{ relatedIncident.systemResponse || '正在确认响应方案' }}</text></view>
-        <view v-if="relatedIncident.recoveryResult" class="data-row multiline"><text>恢复结果</text><text class="b-text success">{{ relatedIncident.recoveryResult }}</text></view>
+      <view v-if="relatedIncident" class="data-section incident-section mpwx-view">
+        <view class="section-title mpwx-view">韧性恢复 <text class="mpwx-text">{{ incidentTypeLabel }}</text></view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">恢复阶段</text><text class="b-text warning mpwx-text">{{ incidentStageLabel }}</text></view>
+        <view class="data-row multiline mpwx-view"><text class="mpwx-text">受影响任务</text><text class="b-text mpwx-text">{{ relatedIncident.responseTaskIds?.length ? relatedIncident.responseTaskIds.join('、') : '无新增任务' }}</text></view>
+        <view class="data-row multiline mpwx-view"><text class="mpwx-text">系统响应</text><text class="b-text mpwx-text">{{ relatedIncident.systemResponse || '正在确认响应方案' }}</text></view>
+        <view v-if="relatedIncident.recoveryResult" class="data-row multiline mpwx-view"><text class="mpwx-text">恢复结果</text><text class="b-text success mpwx-text">{{ relatedIncident.recoveryResult }}</text></view>
       </view>
 
-      <view v-if="showCoordination" class="data-section coordination-section">
-        <view class="section-title">协同调度</view>
-        <view class="data-row"><text>当前任务</text><text class="b-text">{{ coordination.currentTask }}</text></view>
-        <view class="data-row"><text>队列长度</text><text class="b-text">{{ coordination.queueLength }}</text></view>
-        <view class="data-row multiline"><text>分配原因</text><text class="b-text">{{ coordination.selectionReason }}</text></view>
-        <view class="data-row"><text>关联服务点</text><text class="b-text">{{ coordination.servicePointId }}</text></view>
-        <view class="data-row"><text>预留状态</text><text class="b-text">{{ coordination.reservation }}</text></view>
-        <view class="data-row"><text>中心泊位</text><text class="b-text">{{ coordination.bayId }}</text></view>
+      <view v-if="showCoordination" class="data-section coordination-section mpwx-view">
+        <view class="section-title mpwx-view">协同调度</view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">当前任务</text><text class="b-text mpwx-text">{{ coordination.currentTask }}</text></view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">队列长度</text><text class="b-text mpwx-text">{{ coordination.queueLength }}</text></view>
+        <view class="data-row multiline mpwx-view"><text class="mpwx-text">分配原因</text><text class="b-text mpwx-text">{{ coordination.selectionReason }}</text></view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">关联服务点</text><text class="b-text mpwx-text">{{ coordination.servicePointId }}</text></view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">预留状态</text><text class="b-text mpwx-text">{{ coordination.reservation }}</text></view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">中心泊位</text><text class="b-text mpwx-text">{{ coordination.bayId }}</text></view>
       </view>
 
-      <view class="data-section">
-        <view class="section-title">映射信息</view>
-        <view class="data-row"><text>对象类型</text><text class="b-text">{{ typeLabel }}</text></view>
-        <view class="data-row multiline"><text>Prim</text><text class="b-text">{{ primPath }}</text></view>
-        <view class="data-row"><text>回放最终状态</text><text class="b-text">{{ finalStatus }}</text></view>
-        <view v-if="metrics.fillPct != null" class="metric-block">
-          <view class="metric-head"><text>填充率</text><text class="b-text">{{ metrics.fillPct }}%</text></view>
-          <view class="metric-track"><view class="metric-fill fill" :style="{ width: `${metrics.fillPct}%` }"></view></view>
+      <view class="data-section mpwx-view">
+        <view class="section-title mpwx-view">映射信息</view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">对象类型</text><text class="b-text mpwx-text">{{ typeLabel }}</text></view>
+        <view class="data-row multiline mpwx-view"><text class="mpwx-text">Prim</text><text class="b-text mpwx-text">{{ primPath }}</text></view>
+        <view class="data-row mpwx-view"><text class="mpwx-text">回放最终状态</text><text class="b-text mpwx-text">{{ finalStatus }}</text></view>
+        <view v-if="metrics.fillPct != null" class="metric-block mpwx-view">
+          <view class="metric-head mpwx-view"><text class="mpwx-text">填充率</text><text class="b-text mpwx-text">{{ metrics.fillPct }}%</text></view>
+          <view class="metric-track mpwx-view"><view class="metric-fill fill mpwx-view" :style="{ width: `${metrics.fillPct}%` }"></view></view>
         </view>
-        <view v-if="metrics.batteryPct != null" class="metric-block">
-          <view class="metric-head"><text>电量</text><text class="b-text">{{ metrics.batteryPct }}%</text></view>
-          <view class="metric-track"><view class="metric-fill battery" :style="{ width: `${metrics.batteryPct}%` }"></view></view>
+        <view v-if="metrics.batteryPct != null" class="metric-block mpwx-view">
+          <view class="metric-head mpwx-view"><text class="mpwx-text">电量</text><text class="b-text mpwx-text">{{ metrics.batteryPct }}%</text></view>
+          <view class="metric-track mpwx-view"><view class="metric-fill battery mpwx-view" :style="{ width: `${metrics.batteryPct}%` }"></view></view>
         </view>
       </view>
 
-      <view class="data-section tasks-section">
-        <view class="section-title">关联任务 <text>{{ relatedTasks.length }}</text></view>
-        <view v-if="!relatedTasks.length" class="empty-inline">当前回放未关联任务</view>
-        <view v-for="task in relatedTasks" :key="task.id" class="task-row" @tap="$emit('select', task.id)">
-          <view><text>{{ labels[task.id] || task.id }}</text><text class="small-text">{{ task.id }}</text></view>
-          <text class="b-text">{{ task.status }}</text>
+      <view class="data-section tasks-section mpwx-view">
+        <view class="section-title mpwx-view">关联任务 <text class="mpwx-text">{{ relatedTasks.length }}</text></view>
+        <view v-if="!relatedTasks.length" class="empty-inline mpwx-view">当前回放未关联任务</view>
+        <view v-for="task in relatedTasks" :key="task.id" class="task-row mpwx-view" @tap="$emit('select', task.id)">
+          <view class="mpwx-view"><text class="mpwx-text">{{ labels[task.id] || task.id }}</text><text class="small-text mpwx-text">{{ task.id }}</text></view>
+          <text class="b-text mpwx-text">{{ task.status }}</text>
         </view>
       </view>
     </template>
@@ -163,23 +163,23 @@ const incidentStageLabel = computed(() => ({
 .entity-summary { padding: 14px; display: flex; align-items: center; gap: 11px; border-bottom: 1px solid rgba(116,197,255,.14); }.entity-symbol { width: 42px; height: 42px; border: 1px solid rgba(66,176,239,.45); border-radius: 10px; display: flex; align-items: center; justify-content: center; background: rgba(21,84,125,.22); }.entity-glyph { width: 27px; height: 27px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #fff; background: #2c8fff; font: 800 13px/1 ui-monospace, Consolas, monospace; }.entity-glyph.device { background: #1c8fdc; }.entity-glyph.service-point { background: #11a98c; }.entity-glyph.sorting-center { background: #835ed6; }.entity-glyph.task { background: #d58a22; }.entity-glyph.garbage { background: #d94d57; }
 .entity-glyph.incident { background: #d96632; }
 .entity-heading { min-width: 0; }.entity-name { color: #f0fbff; font-size: 13px; font-weight: 700; }.entity-id { color: #69bfea; font: 10px/1.3 ui-monospace, Consolas, monospace; margin-top: 4px; overflow-wrap: anywhere; }
-.data-section { padding: 10px 14px; border-bottom: 1px solid rgba(116,197,255,.12); }.section-title { color: #8bc9e7; font-size: 11px; font-weight: 700; letter-spacing: .6px; margin-bottom: 7px; display: flex; justify-content: space-between; }.section-title text { color: #5f91aa; }.data-row { min-height: 25px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #799eb1; font-size: 10px; }.data-row .b-text { color: #dceff7; font-weight: 600; text-align: right; }.data-row .b-text.warning { color: #ffc76c; }.data-row .b-text.success { color: #79edb5; }.data-row.multiline { align-items: flex-start; }.data-row.multiline .b-text { max-width: 68%; overflow-wrap: anywhere; font: 9px/1.4 ui-monospace, Consolas, monospace; }
+.data-section { padding: 10px 14px; border-bottom: 1px solid rgba(116,197,255,.12); }.section-title { color: #8bc9e7; font-size: 11px; font-weight: 700; letter-spacing: .6px; margin-bottom: 7px; display: flex; justify-content: space-between; }.section-title .mpwx-text { color: #5f91aa; }.data-row { min-height: 25px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #799eb1; font-size: 10px; }.data-row .b-text { color: #dceff7; font-weight: 600; text-align: right; }.data-row .b-text.warning { color: #ffc76c; }.data-row .b-text.success { color: #79edb5; }.data-row.multiline { align-items: flex-start; }.data-row.multiline .b-text { max-width: 68%; overflow-wrap: anywhere; font: 9px/1.4 ui-monospace, Consolas, monospace; }
 .metric-block { margin-top: 8px; }.metric-head { display: flex; justify-content: space-between; color: #82a8ba; font-size: 9px; }.metric-head .b-text { color: #e6f8ff; }.metric-track { height: 5px; margin-top: 5px; border-radius: 99px; overflow: hidden; background: rgba(104,159,187,.18); }.metric-fill { height: 100%; border-radius: inherit; }.metric-fill.fill { background: linear-gradient(90deg,#f5b648,#ff7d48); }.metric-fill.battery { background: linear-gradient(90deg,#0a9c68,#24dda0); }
-.tasks-section { min-height: 0; overflow-y: auto; }.task-row { padding: 7px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid rgba(116,197,255,.09); }.task-row view { min-width: 0; }.task-row text,.task-row .small-text { display: block; }.task-row text { color: #dceef6; font-size: 9px; }.task-row .small-text { color: #6791a6; font: 7px/1.3 ui-monospace, Consolas, monospace; margin-top: 2px; }.task-row .b-text { color: #79edb5; font-size: 8px; }.empty-state,.empty-inline { color: #6f93a6; font-size: 10px; text-align: center; padding: 24px 10px; }.empty-inline { padding: 10px; }
-.incident-section { background: linear-gradient(90deg,rgba(245,182,72,.07),transparent); }.incident-section .section-title text { color: #ffc76c; }
+.tasks-section { min-height: 0; overflow-y: auto; }.task-row { padding: 7px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid rgba(116,197,255,.09); }.task-row .mpwx-view { min-width: 0; }.task-row .mpwx-text,.task-row .small-text { display: block; }.task-row .mpwx-text { color: #dceef6; font-size: 9px; }.task-row .small-text { color: #6791a6; font: 7px/1.3 ui-monospace, Consolas, monospace; margin-top: 2px; }.task-row .b-text { color: #79edb5; font-size: 8px; }.empty-state,.empty-inline { color: #6f93a6; font-size: 10px; text-align: center; padding: 24px 10px; }.empty-inline { padding: 10px; }
+.incident-section { background: linear-gradient(90deg,rgba(245,182,72,.07),transparent); }.incident-section .section-title .mpwx-text { color: #ffc76c; }
 .coordination-section { background:linear-gradient(90deg,rgba(36,217,255,.045),transparent) }
 .panel-title { font-size: 16px; }.panel-sub { font-size: 12px; }.entity-type { font-size: 11px; }
 .entity-name { font-size: 15px; }.entity-id { font-size: 12px; }
 .section-title { font-size: 13px; }.data-row { min-height: 28px; font-size: 12px; }.data-row.multiline .b-text { font-size: 11px; }
 
-.metric-head { font-size: 11px; }.task-row text { font-size: 11px; }.task-row .small-text { font-size: 9px; }.task-row .b-text { font-size: 10px; }
+.metric-head { font-size: 11px; }.task-row .mpwx-text { font-size: 11px; }.task-row .small-text { font-size: 9px; }.task-row .b-text { font-size: 10px; }
 .empty-state,.empty-inline { font-size: 12px; }
 
 /* #ifdef MP-WEIXIN */
 .inspector { min-height: auto; height: auto; overflow: visible; }
 .tasks-section { overflow: visible; }
 .data-row { flex-wrap: wrap; gap: 4px 10px; }
-.data-row text { flex: 0 0 auto; }
+.data-row .mpwx-text { flex: 0 0 auto; }
 .data-row .b-text { flex: 1; text-align: left; }
 /* #endif */
 </style>

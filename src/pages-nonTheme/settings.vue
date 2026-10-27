@@ -59,9 +59,9 @@
                 <!-- #endif -->
             </view>
 
-            <!-- 显示设置 -->
+            <!-- 显示与声音 -->
             <view class="settings-section">
-                <view class="section-title">显示设置</view>
+                <view class="section-title">显示与声音</view>
                 <view class="setting-item" @click="toggleTheme">
                     <view class="item-left">
                         <ManifestIcon class="item-icon" id="dark_mode" />
@@ -73,6 +73,16 @@
                     <view class="toggle-switch" :class="{ active: isDarkTheme }">
                         <view class="toggle-dot"></view>
                     </view>
+                </view>
+                <view class="setting-item" @click="toggleUiSounds" role="switch" :aria-checked="soundEnabled" data-ui-sound-toggle>
+                    <view class="item-left">
+                        <ManifestIcon class="item-icon" id="sound_toggle" />
+                        <view class="item-info">
+                            <text class="item-title">交互音效</text>
+                            <text class="item-desc">{{ soundEnabled ? '已开启，识别与操作完成时轻声反馈' : '已关闭，操作保持安静' }}</text>
+                        </view>
+                    </view>
+                    <view class="toggle-switch" :class="{ active: soundEnabled }"><view class="toggle-dot"></view></view>
                 </view>
             </view>
 
@@ -159,6 +169,7 @@
 import { ref, onMounted } from 'vue'
 import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
 // #ifdef MP-WEIXIN
 import { computed } from 'vue'
 import { getWechatLoginSettings, updateWechatLoginSettings } from '@/api/user'
@@ -206,6 +217,12 @@ async function toggleWechatSharing() {
 }
 // #endif
 
+const soundEnabled = ref(areUiSoundsEnabled())
+function toggleUiSounds() {
+    soundEnabled.value = !soundEnabled.value
+    setUiSoundsEnabled(soundEnabled.value)
+    if (soundEnabled.value) { primeUiSounds(); playUiSound('confirm', { page: 'pages-nonTheme/settings' }) }
+}
 const isDarkTheme = ref(ThemeManager.getTheme() === 'dark')
 const showConfirmModal = ref(false)
 const confirmTitle = ref('')

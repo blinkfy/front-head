@@ -357,6 +357,20 @@
     "file": "icons/reward_gift_48.webp.png"
   },
   {
+    "id": "robot_grab",
+    "zh_name": "机器人抓取",
+    "category": "02_engagement",
+    "recommended_size": 48,
+    "file": "icons/robot_grab_48.webp.png"
+  },
+  {
+    "id": "sound_toggle",
+    "zh_name": "声音开关",
+    "category": "02_engagement",
+    "recommended_size": 64,
+    "file": "icons/sound_toggle_64.webp.png"
+  },
+  {
     "id": "speed_challenge",
     "zh_name": "速度挑战",
     "category": "02_engagement",

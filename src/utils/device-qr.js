@@ -1,10 +1,23 @@
 import { DEVICE_SCAN_PAGE, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl, getDeviceQrScanContent, resolveDeviceQrPathTarget } from './device-qr-entry.mjs'
+import { isPhoneBrowser } from './h5-scan-entry.mjs'
 export { getDeviceQrScanContent } from './device-qr-entry.mjs'
 // #ifdef MP-WEIXIN
 import { handleRegistrationQrScan } from './registration-relay.mjs'
 // #endif
 
 export function scanDeviceQrCode(options) {
+  // #ifdef H5
+  if (typeof window !== 'undefined') {
+    void import('./h5-qr-scanner.js').then(module => module.scanWithH5Camera(options))
+      .catch(() => {
+        uni.showToast({ title: '扫码组件加载失败，请重试', icon: 'none' })
+        const error = { errMsg: 'scanCode:fail 扫码组件加载失败' }
+        options?.fail?.(error)
+        options?.complete?.(error)
+      })
+    return
+  }
+  // #endif
   // #ifdef APP-PLUS
   if (typeof plus !== 'undefined') {
     void import('./app-qr-scanner.js').then(module => module.scanWithAppQbar(options))
@@ -212,10 +225,15 @@ export function scanAndConnectDevice(onMockConnected) {
     uni.navigateTo({ url: target.url })
   }
 
-  if (isH5) {
+  if (isH5 && isPhoneBrowser()) {
+    scanDeviceQrCode({
+      success: res => connectDevice(getDeviceQrScanContent(res)),
+      fail: () => {} // The scanner displays actionable errors; cancel is quiet.
+    })
+  } else if (isH5) {
     uni.showModal({
       title: '连接设备',
-      content: '请输入设备ID（H5端暂不支持扫码）',
+      content: '请输入设备ID',
       editable: true,
       placeholderText: '请输入设备ID',
       success: (res) => {

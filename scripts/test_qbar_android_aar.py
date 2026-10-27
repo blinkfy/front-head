@@ -43,7 +43,7 @@ class QbarAarTests(unittest.TestCase):
 
     def test_java_sources_do_not_shadow_the_aar(self):
         self.assertEqual(list((PLUGIN / "utssdk/app-android").glob("*.java")), [])
-        self.assertEqual(len(list((PLUGIN / "native-src/android").glob("*.java"))), 5)
+        self.assertEqual(len(list((PLUGIN / "native-src/android").glob("*.java"))), 6)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import { createAppQrScanner } from './app-qr-scanner-core.mjs'
 import { createRegistrationApi, createRegistrationDialogs } from './registration-relay.mjs'
 import { resolveWechatQrRaw } from '@/api/device.js'
 import { baseUrl } from '@/api/settings.js'
+import { vibrateScan } from './haptics.mjs'
 // #ifdef APP-PLUS
 import { startScan, isAvailable } from '@/uni_modules/ftx-qbar'
 // #endif
@@ -21,7 +22,7 @@ function getScanner() {
           let result
           try { result = JSON.parse(value) } catch (error) { reject(error); return }
           if (!result?.error && (result?.scanType === 'QR_CODE' || result?.scanType === 'WX_CODE')) {
-            try { uni.vibrateShort({ type: 'light', fail: () => {} }) } catch (_) { /* Haptics must not interrupt scanning. */ }
+            void vibrateScan()
           }
           resolve(result)
         })

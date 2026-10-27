@@ -57,7 +57,6 @@
       </view>
     </view>
   </view>
-    <view :style="{ height: `${demoBottomSpace}px` }" aria-hidden="true"></view>
   </view>
 </template>
 
@@ -67,6 +66,7 @@ import { measureScopedRects, getOnboardingViewport } from '@/utils/onboarding-fo
 import { baseUrl } from '@/api/settings.js'
 import SmartSortRobot3D from './SmartSortRobot3D.vue'
 
+const emit = defineEmits(['tail-space'])
 const componentScope = getCurrentInstance()?.proxy
 function measureRects(selectors, callback) {
   const stage = props.stage
@@ -121,8 +121,11 @@ const contentLevel = computed(() => {
 const demoOriginTop = ref(null)
 const demoViewport = ref(getOnboardingViewport())
 const demoTopSpace = computed(() => demoOriginTop.value === null ? 0 : Math.max(0, props.focusInset - demoOriginTop.value))
-// Reserve trailing room so even a short classification panel can reach the guide.
-const demoBottomSpace = computed(() => Math.max(0, Math.ceil(demoViewport.value.height - props.focusInset - activeSectionHeight.value)))
+// The page places only the remaining scroll room AFTER its services, never
+// between the example and the next real section. Hidden AI sections reserve none.
+const demoBottomSpace = computed(() => contentLevel.value > 0
+  ? Math.max(0, Math.ceil(demoViewport.value.height - props.focusInset - activeSectionHeight.value)) : 0)
+watch(demoBottomSpace, space => emit('tail-space', space), { immediate: true, flush: 'post' })
 const photoFrameStyle = computed(() => ({
   maxWidth: `${Math.max(80, demoViewport.value.bottom - props.focusInset - 80) * 4 / 3}px`
 }))
@@ -148,6 +151,14 @@ watch(() => contentLevel.value > 0, shown => {
   demoOriginTop.value = null
   if (shown) nextTick(() => measureDemoOrigin(requestId))
 }, { immediate: true })
+// H5 follows DOM rectangles directly, so it also needs one scoped height
+// measurement per stage to avoid reserving a full viewport for a short panel.
+watch([() => props.stage, contentLevel, () => props.active], ([stage, level, active]) => {
+  const selector = { scan: '.onboarding-demo-photo', classified: '.onboarding-demo-summary', advice: '.onboarding-demo-advice', upcycling: '.onboarding-demo-upcycling' }[stage]
+  if (active && level > 0 && selector) nextTick(() => {
+    if (props.stage === stage && props.active) measureRects([selector], () => {})
+  })
+}, { immediate: true, flush: 'post' })
 onBeforeUnmount(() => { layoutRequestId++; clearTimeout(layoutRetry) })
 
 const items = ['旧纸箱', '金属茶罐', '玻璃瓶×2', '牛皮纸']

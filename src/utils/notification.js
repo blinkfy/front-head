@@ -1,3 +1,5 @@
+import { vibrateHapticPattern } from './haptics.mjs'
+
 /**
  * 系统消息通知工具
  * 模拟微信/QQ 的系统通知效果
@@ -251,40 +253,12 @@ export async function playNotificationSound(type = 'default') {
 /**
  * 振动反馈
  * @param {number} pattern - 振动模式
- *   0: 短振 (10ms)
- *   1: 长振 (100ms)
- *   2: 双击 (50ms + 50ms)
+ *   0: 单次轻量振动 (120ms)
+ *   1: 单次较长振动 (160ms)
+ *   2: 双击 (100ms + 100ms，中间留出间隔)
  */
 export function vibrateNotification(pattern = 0) {
-  try {
-    const patterns = {
-      0: [10], // 短振
-      1: [100], // 长振
-      2: [50, 50, 50] // 双击
-    }
-
-    const duration = patterns[pattern] || patterns[0]
-
-    // 使用 uni 的振动接口
-    uni.vibrate({
-      duration: duration[0] || 10
-    })
-
-    // 多次振动可通过多次调用实现
-    if (duration.length > 1) {
-      let delay = duration[0]
-      for (let i = 1; i < duration.length; i++) {
-        setTimeout(() => {
-          uni.vibrate({
-            duration: duration[i]
-          })
-        }, delay + 50) // 间隔 50ms
-        delay += duration[i] + 50
-      }
-    }
-  } catch (e) {
-    console.warn('振动反馈不可用:', e)
-  }
+  void vibrateHapticPattern(pattern).catch(() => {})
 }
 
 /**

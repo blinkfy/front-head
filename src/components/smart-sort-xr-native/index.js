@@ -12,14 +12,16 @@ Component({
   lifetimes: {
     attached() {
       this.dead = false
-      this.version = 0
+      this.failed = false
+      this.version = (this.version || 0) + 1
       this.framesUntilReady = 0
     },
     detached() {
       this.dead = true
       this.version++
+      this.framesUntilReady = 0
       this.removeStopListener()
-      try { this.animator?.stop() } catch (_) {}
+      // 原生 XR 场景负责销毁动画；detached 时不再向已释放的上下文发送 stop。
       this.animator = this.camera = this.scene = null
       this.queue = []
     }
@@ -28,13 +30,14 @@ Component({
     fallback(error) {
       if (this.dead || this.failed) return
       this.failed = true
+      this.framesUntilReady = 0
       this.removeStopListener()
       try { this.animator?.stop() } catch (_) {}
       this.triggerEvent('modelfallback', { message: String(error?.message || error) })
     },
     updateCamera() {
       const halfHeight = this.properties.robotState === 'success' && !this.properties.reducedMotion ? 3 : 2.38
-      if (!this.camera) return
+      if (this.dead || this.failed || !this.camera) return
       const halfWidth = halfHeight * (this.properties.width || 240) / (this.properties.height || 218)
       // 使用公开投影 API，精确复用 H5 的上下左右边界，避免 orthSize 半宽/全宽差异。
       try {
@@ -42,17 +45,19 @@ Component({
         this.camera.changeProjectMatrix(true, projection)
       } catch (error) { this.fallback(error) }
     },
-    handleReady({ detail }) {
+    handleReady({ detail } = {}) {
+      if (this.dead || this.failed || !detail?.value) return
       this.scene = detail.value
       this.triggerEvent('modelprogress', { stage: 'scene-ready' })
     },
-    handleAssetsLoaded({ detail }) {
+    handleAssetsLoaded({ detail } = {}) {
+      if (this.dead || this.failed) return
       this.triggerEvent('modelprogress', { stage: 'assets-loaded' })
       const errors = detail?.value?.errors
       if (errors && Object.keys(errors).length) return this.fallback(new Error('XR robot model loading failed'))
       if (!this.dead && !this.failed) this.setData({ assetsReady: true })
     },
-    handleModelLoaded({ detail }) {
+    handleModelLoaded({ detail } = {}) {
       if (this.dead || this.failed) return
       try {
         this.triggerEvent('modelprogress', { stage: 'model-loaded' })

@@ -272,6 +272,8 @@ import { getDailyChallenge, submitChallenge, getChallengeStats, getChallengeLead
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
+import { vibrateHaptic } from '@/utils/haptics.mjs';
+import { playUiSound } from '@/utils/ui-sounds.js';
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements';
@@ -493,18 +495,19 @@ export default {
         this.comboAnswering = true;
         const q = this.currentQuestion;
         const isCorrect = q.correctAnswer === value;
+        playUiSound(isCorrect ? 'answerCorrect' : 'answerWrong', { page: 'pages-nonTheme/challenge' });
         this.answers.push({ questionId: q.id, answer: value });
 
         if (isCorrect) {
           this.comboCount++;
-          uni.vibrateShort && uni.vibrateShort();
+          void vibrateHaptic();
           uni.showToast({ title: `连击 ×${this.comboCount}`, icon: 'none', duration: 600 });
           setTimeout(() => {
             this.comboAnswering = false;
             this.nextComboQuestion();
           }, 700);
         } else {
-          uni.vibrateShort && uni.vibrateShort();
+          void vibrateHaptic();
           uni.showToast({ title: '答错了！', icon: 'none', duration: 1000 });
           setTimeout(() => {
             this.submitQuiz();
@@ -517,7 +520,7 @@ export default {
       if (this.answers[this.currentQuestionIndex] !== undefined) return;
       const q = this.currentQuestion;
       this.answers.push({ questionId: q.id, answer: value });
-      uni.vibrateShort && uni.vibrateShort();
+      void vibrateHaptic();
       setTimeout(() => {
         this.nextQuestion();
       }, 500);
@@ -565,6 +568,12 @@ export default {
         });
         const data = this.extractData(res) || {};
         this.challengeResult = data;
+        if (!data.alreadyCompleted) {
+          playUiSound('challengeComplete', {
+            key: data.recordId != null ? `challenge:${data.recordId}` : undefined,
+            page: 'pages-nonTheme/challenge'
+          });
+        }
         this.showResult = true;
         const unlocks = extractAchievementUnlocks(data);
         if (unlocks.length) {

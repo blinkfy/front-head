@@ -54,7 +54,10 @@ public final class ScanEngine implements AutoCloseable {
             JSONObject result = new JSONObject().put("scanType", item.typeName).put("rawBase64", raw);
             if ("QR_CODE".equals(item.typeName)) {
                 String charset = item.charset == null || item.charset.equals("ANY") ? "UTF-8" : item.charset;
-                result.put("result", new String(item.data, Charset.forName(charset)));
+                Charset encoding;
+                try { encoding = Charset.forName(charset); }
+                catch (IllegalArgumentException unsupported) { encoding = java.nio.charset.StandardCharsets.UTF_8; }
+                result.put("result", new String(item.data, encoding));
             }
             unique.put(item.typeName + ":" + raw, result);
         }

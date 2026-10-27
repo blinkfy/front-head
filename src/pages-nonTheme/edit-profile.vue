@@ -1,7 +1,7 @@
 <template>
   <view :class="['edit-profile-container', { 'dark-theme': isDarkTheme }]">
     <!-- 隐藏的 Canvas 用于头像处理 -->
-    <canvas id="avatar-canvas" class="avatar-canvas"></canvas>
+    <canvas id="avatar-canvas" canvas-id="avatar-canvas" class="avatar-canvas"></canvas>
 
     <!-- 背景 -->
     <view class="bg-effects">

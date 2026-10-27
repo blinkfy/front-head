@@ -13,7 +13,7 @@ function newProgressId() {
   return `rec_${Date.now()}_${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`
 }
 
-export function recognizeImage(file, { onProgress } = {}) {
+export function recognizeImage(file, { onProgress, bboxRenderer } = {}) {
   return new Promise((resolve, reject) => {
     const token = uni.getStorageSync('token') || ''
     const progressId = typeof onProgress === 'function' ? newProgressId() : ''
@@ -81,6 +81,7 @@ export function recognizeImage(file, { onProgress } = {}) {
     if (isH5 && typeof File !== 'undefined' && file instanceof File) {
       const formData = new FormData()
       formData.append('image', file)
+      if (bboxRenderer === 'client') formData.append('bboxRenderer', 'client')
       if (progressId) formData.append('progressId', progressId)
       
       fetch(`${baseUrl}/api/recognize`, {
@@ -127,7 +128,7 @@ export function recognizeImage(file, { onProgress } = {}) {
         filePath: typeof file === 'string' ? file : file.path,
         name: 'image', // 字段名必须为image
         timeout: 600000, // 包含排队、上传和 AI 处理时间。
-        formData: progressId ? { progressId } : {},
+        formData: { ...(progressId ? { progressId } : {}), ...(bboxRenderer === 'client' ? { bboxRenderer: 'client' } : {}) },
         header: {
           'Authorization': token
         },

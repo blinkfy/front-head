@@ -1,5 +1,5 @@
 <template>
-  <view ref="canvasContainerRef" class="park-canvas">
+  <view ref="canvasContainerRef" class="park-canvas mpwx-view">
   <view
     ref="canvasRef"
     :style="[sceneSurfaceStyle, taskCameraStyle]"
@@ -10,24 +10,24 @@
       'hide-dynamic-objects': sceneDev.hideDynamics,
       'task-camera-active': taskCameraActive
     }]"
-  >
-    <view class="environment-back"></view>
+   class="mpwx-view">
+    <view class="environment-back mpwx-view"></view>
     <image
       webp
-      class="park-background ground-layer"
+      class="park-background ground-layer mpwx-image"
       :src="sceneImageSrc(sceneDev.candidate ? sceneAssets.candidateBackground : sceneAssets.formalBackground)"
       mode="aspectFit"
       @error="handleSceneImageError(sceneDev.candidate ? sceneAssets.candidateBackground : sceneAssets.formalBackground)"
     />
-    <image v-if="sceneDev.calibration" class="park-road-overlay" :src="sceneAssets.roadOverlay" mode="scaleToFill" />
-    <view class="ground-detail-layer">
-      <view v-for="detail in groundDetails" :key="detail.id" class="ground-detail" :data-purpose="detail.purpose" :style="detail.style"></view>
+    <image v-if="sceneDev.calibration" class="park-road-overlay mpwx-image" :src="sceneAssets.roadOverlay" mode="scaleToFill" />
+    <view class="ground-detail-layer mpwx-view">
+      <view v-for="detail in groundDetails" :key="detail.id" class="ground-detail mpwx-view" :data-purpose="detail.purpose" :style="detail.style"></view>
     </view>
-    <view class="atmosphere-layer"></view>
+    <view class="atmosphere-layer mpwx-view"></view>
     <image
       v-if="sceneDev.compare"
       webp
-      class="candidate-background-comparison"
+      class="candidate-background-comparison mpwx-image"
       :src="sceneImageSrc(sceneAssets.candidateBackground)"
       mode="scaleToFill"
       @error="handleSceneImageError(sceneAssets.candidateBackground)"
@@ -36,7 +36,7 @@
       v-for="detail in taskDetailEnvironments"
       :key="detail.sceneKey"
       webp
-      class="task-detail-environment"
+      class="task-detail-environment mpwx-image"
       :src="sceneImageSrc(detail.src)"
       mode="scaleToFill"
       :style="taskDetailEnvironmentStyle(detail)"
@@ -44,34 +44,34 @@
       aria-hidden="true"
     />
 
-    <view class="north-mark"><view class="north-arrow"></view><text>N</text></view>
-    <view class="map-legend">
-      <view><i class="legend-shape robot"></i><text>机器人</text></view>
-      <view><i class="legend-shape bin"></i><text>智能桶</text></view>
-      <view><i class="legend-shape waste"></i><text>垃圾物体</text></view>
+    <view class="north-mark mpwx-view"><view class="north-arrow mpwx-view"></view><text class="mpwx-text">N</text></view>
+    <view class="map-legend mpwx-view">
+      <view class="mpwx-view"><i class="legend-shape robot"></i><text class="mpwx-text">机器人</text></view>
+      <view class="mpwx-view"><i class="legend-shape bin"></i><text class="mpwx-text">智能桶</text></view>
+      <view class="mpwx-view"><i class="legend-shape waste"></i><text class="mpwx-text">垃圾物体</text></view>
     </view>
 
-    <view class="zone-label entrance"><text>公园入口</text><text class="small-text">zone_entrance_01</text></view>
-    <view class="zone-label food"><text>餐饮/休息区</text><text class="small-text">zone_food_rest_01</text></view>
-    <view class="road-label">设备返航道路</view>
+    <view class="zone-label entrance mpwx-view"><text class="mpwx-text">公园入口</text><text class="small-text mpwx-text">zone_entrance_01</text></view>
+    <view class="zone-label food mpwx-view"><text class="mpwx-text">餐饮/休息区</text><text class="small-text mpwx-text">zone_food_rest_01</text></view>
+    <view class="road-label mpwx-view">设备返航道路</view>
 
     <view
       v-for="(bay, index) in centerBayRows"
       :key="bay.id"
       :class="['center-bay-anchor', `bay-${index + 1}`, { occupied: bay.deviceId, selected: selectedId === bay.id }]"
       @tap.stop="$emit('select', bay.id)"
-    >
+     class="mpwx-view">
       <i class="bay-marker"></i>
     </view>
-    <view v-for="station in visibleCenterStations" :key="station.id" :class="['facility-anchor', 'station-facility', station.key]">
+    <view v-for="station in visibleCenterStations" :key="station.id" :class="['facility-anchor', 'station-facility', station.key]" class="mpwx-view">
       <MapEntitySprite kind="station" :variant="station.key" :active="centerPhase === station.phase" :depth-scale="mapDepthScale(18)" />
     </view>
 
     <!-- #ifdef H5 -->
     <svg :class="['route-layer', { paused: !playing }]" viewBox="0 0 100 100" preserveAspectRatio="none">
       <defs>
-        <marker id="return-arrow" markerUnits="strokeWidth" markerWidth="2.2" markerHeight="2.2" refX="1.9" refY="1.1" orient="auto" viewBox="0 0 2.2 2.2"><path d="M0,0 L2.2,1.1 L0,2.2 Z" fill="#bd866b" /></marker>
-        <marker id="replace-arrow" markerUnits="strokeWidth" markerWidth="2.2" markerHeight="2.2" refX="1.9" refY="1.1" orient="auto" viewBox="0 0 2.2 2.2"><path d="M0,0 L2.2,1.1 L0,2.2 Z" fill="#65a9b4" /></marker>
+        <marker id="return-arrow" markerUnits="strokeWidth" markerWidth="2.2" markerHeight="2.2" refX="1.9" refY="1.1" orient="auto" viewBox="0 0 2.2 2.2"><path d="M0,0 L2.2,1.1 L0,2.2 Z" fill="#bd866b"  class="mpwx-path"/></marker>
+        <marker id="replace-arrow" markerUnits="strokeWidth" markerWidth="2.2" markerHeight="2.2" refX="1.9" refY="1.1" orient="auto" viewBox="0 0 2.2 2.2"><path d="M0,0 L2.2,1.1 L0,2.2 Z" fill="#65a9b4"  class="mpwx-path"/></marker>
       </defs>
       <polyline :class="['route-path', 'route-bed', { visible: showReturnDispatchRoute, complete: arrivedAtCenter }]" :points="returnRoutePoints" />
       <polyline :class="['route-path', 'route-bed', { visible: showReplacementDispatchRoute, complete: standbyTookOver }]" :points="replacementRoutePoints" />
@@ -100,36 +100,36 @@
       :data-entity-id="object.id"
       :style="object.style"
       @tap.stop="$emit('select', object.id)"
-    >
+     class="mpwx-view">
       <MapEntitySprite v-if="object.kind === 'robot' || object.kind === 'bin'" :kind="object.kind" :variant="object.variant || 'active'" :selected="object.id === selectedId" :affected="priorityEventIds.has(object.id) || incidentAffectedIds.has(object.id)" :moving="object.moving" :depth-scale="object.depthScale" :heading-deg="object.headingDeg" />
       <VisitorBehaviorSprite v-else-if="object.kind === 'visitor'" :visitor-id="object.id" behavior="IDLE" :selected="object.id === selectedId" :depth-scale="object.depthScale" :playing="visitorAnimationPlaying" :playback-rate="playbackRate" />
-      <view v-else-if="object.kind === 'service'" class="service-symbol"></view>
+      <view v-else-if="object.kind === 'service'" class="service-symbol mpwx-view"></view>
       <MapWasteSprite v-else-if="object.kind === 'waste'" :waste="object" :category="object.category" :selected="object.id === selectedId" :affected="priorityEventIds.has(object.id)" :depth-scale="object.depthScale" />
     </view>
 
-    <view v-if="sceneDev.showOcclusion" class="foreground-occlusion-layer" aria-hidden="true">
+    <view v-if="sceneDev.showOcclusion" class="foreground-occlusion-layer mpwx-view" aria-hidden="true">
       <view
         v-for="region in foregroundOcclusions"
         :key="region.id"
         :class="['occlusion-region', region.type]"
         :data-occlusion-id="region.id"
         :style="occlusionStyle(region)"
-      ></view>
+       class="mpwx-view"></view>
     </view>
 
-    <view class="scene-label-overlay">
-      <view v-for="bay in centerBayRows.filter(item => item.deviceId || selectedId === item.id)" :key="`${bay.id}:labels`" :class="['center-bay-label-anchor', bay.id === 'bay_02' ? 'bay-2' : 'bay-1']">
+    <view class="scene-label-overlay mpwx-view">
+      <view v-for="bay in centerBayRows.filter(item => item.deviceId || selectedId === item.id)" :key="`${bay.id}:labels`" :class="['center-bay-label-anchor', bay.id === 'bay_02' ? 'bay-2' : 'bay-1']" class="mpwx-view">
         <StableMapLabel :label-id="`${bay.id}:status`" :text="bay.label" :detail="bay.detail" :priority="selectedId === bay.id ? 99 : 78" placement="below" :tone="bay.tone" :selected="selectedId === bay.id" />
       </view>
-      <view v-for="station in visibleCenterStations" :key="`${station.id}:labels`" :class="['facility-label-anchor', station.key]">
+      <view v-for="station in visibleCenterStations" :key="`${station.id}:labels`" :class="['facility-label-anchor', station.key]" class="mpwx-view">
         <StableMapLabel :label-id="`${station.id}:status`" :text="station.label" :detail="station.id" :priority="centerPhase === station.phase ? 88 : 66" placement="below" :tone="centerPhase === station.phase ? 'cyan' : 'neutral'" :current="centerPhase === station.phase" />
       </view>
-      <view v-for="object in sceneObjects" :key="`${object.id}:labels`" :class="['scene-label-anchor', object.kind]" :style="object.style">
+      <view v-for="object in sceneObjects" :key="`${object.id}:labels`" :class="['scene-label-anchor', object.kind]" :style="object.style" class="mpwx-view">
         <StableMapLabel v-if="showObjectPrimaryLabel(object)" :label-id="`${object.id}:primary`" :text="objectPrimaryLabel(object)" :detail="object.id === selectedId ? object.id : ''" :priority="labelPriority(object)" placement="below" :tone="object.badgeTone || 'neutral'" :selected="object.id === selectedId" :current="priorityEventIds.has(object.id)" />
       </view>
     </view>
 
-    <view v-if="sceneDev.calibration" class="scene-calibration-layer">
+    <view v-if="sceneDev.calibration" class="scene-calibration-layer mpwx-view">
       <!-- #ifdef H5 -->
       <svg class="calibration-road-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
         <path
@@ -137,52 +137,52 @@
           :key="edge.id"
           :d="parkRoadEdgePath(edge)"
           :class="['calibration-road', edge.networkType, edge.laneType, { blocked: isCalibrationBlockedEdge(edge.id) }]"
-        />
+         class="mpwx-path"/>
         <g v-for="route in calibrationCandidateRoutes" :key="route.id" :class="['candidate-route', route.tone]">
-          <path v-for="edge in route.edges" :key="`${route.id}:${edge.id}`" :d="parkRoadEdgePath(edge)" />
+          <path v-for="edge in route.edges" :key="`${route.id}:${edge.id}`" :d="parkRoadEdgePath(edge)"  class="mpwx-path"/>
         </g>
       </svg>
       <!-- #endif -->
       <view
         v-for="anchor in calibrationAnchors"
         :key="anchor.id"
-        class="calibration-anchor"
+        class="calibration-anchor mpwx-view"
         :style="calibrationPointStyle(anchor.positionPct)"
-      ><i class="calibration-dot"></i><text>{{ anchor.id }} · {{ anchor.positionPct.join(',') }}</text></view>
+      ><i class="calibration-dot"></i><text class="mpwx-text">{{ anchor.id }} · {{ anchor.positionPct.join(',') }}</text></view>
       <view
         v-for="anchor in calibrationAnchors"
         :key="`${anchor.id}:error`"
-        class="calibration-anchor-error"
+        class="calibration-anchor-error mpwx-view"
         :style="calibrationPointStyle(anchor.positionPct)"
-      ><text>误差 {{ anchor.errorPct }}%</text></view>
+      ><text class="mpwx-text">误差 {{ anchor.errorPct }}%</text></view>
       <view
         v-for="node in calibrationNodes"
         :key="node.id"
         :class="['calibration-node', node.networkType]"
         :style="calibrationPointStyle([node.x, node.y])"
-      ><i class="calibration-dot"></i><text>{{ node.id }}</text></view>
+       class="mpwx-view"><i class="calibration-dot"></i><text class="mpwx-text">{{ node.id }}</text></view>
       <view
         v-for="edge in calibrationEdgeLabels"
         :key="`${edge.id}:label`"
         :class="['calibration-edge-label', edge.networkType, { blocked: isCalibrationBlockedEdge(edge.id) }]"
         :style="calibrationPointStyle(edge.positionPct)"
-      ><text>{{ edge.id }} · {{ edge.allowedEntities.join('/') }}</text></view>
+       class="mpwx-view"><text class="mpwx-text">{{ edge.id }} · {{ edge.allowedEntities.join('/') }}</text></view>
       <view
         v-for="object in calibrationObjects"
         :key="object.id"
-        class="calibration-object-point"
+        class="calibration-object-point mpwx-view"
         :style="calibrationPointStyle(object.positionPct)"
-      ><text>{{ object.id }}</text></view>
-      <view class="calibration-caption">三类网络：游客 / 机器人 / 移动桶 · 节点 / 边 / allowedEntities / 阻塞 / 候选路线 / 锚点误差{{ sceneDev.compare ? ' · 新旧背景 48% 叠加' : '' }}</view>
+      ><text class="mpwx-text">{{ object.id }}</text></view>
+      <view class="calibration-caption mpwx-view">三类网络：游客 / 机器人 / 移动桶 · 节点 / 边 / allowedEntities / 阻塞 / 候选路线 / 锚点误差{{ sceneDev.compare ? ' · 新旧背景 48% 叠加' : '' }}</view>
     </view>
 
-    <view class="event-overlay">
-      <view :class="['event-pulse', presentation.tone]"></view>
-      <view>
-        <text class="event-overlay-label">当前事件 {{ sequence }}</text>
-        <text class="event-overlay-title">{{ presentation.title }}</text>
+    <view class="event-overlay mpwx-view">
+      <view :class="['event-pulse', presentation.tone]" class="mpwx-view"></view>
+      <view class="mpwx-view">
+        <text class="event-overlay-label mpwx-text">当前事件 {{ sequence }}</text>
+        <text class="event-overlay-title mpwx-text">{{ presentation.title }}</text>
       </view>
-      <text :data-source="currentEvent?.source" :class="['source-tag', sourceClass]">{{ displaySourceLabel(currentEvent?.source, '—') }}</text>
+      <text :data-source="currentEvent?.source" :class="['source-tag', sourceClass]" class="mpwx-text">{{ displaySourceLabel(currentEvent?.source, '—') }}</text>
     </view>
   </view>
   </view>
@@ -689,14 +689,14 @@ onBeforeUnmount(() => {
 .candidate-background-comparison { z-index: 5; object-fit: fill; opacity: .48; mix-blend-mode: normal; }
 .foreground-occlusion-layer { z-index: 6; overflow: hidden; transition:opacity .3s ease; }.occlusion-region { position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:cover;transform:translateZ(0)}.occlusion-region.building_roof{filter:drop-shadow(7px 10px 10px rgba(0,17,29,.2))}
 .task-detail-environment { position:absolute; z-index:7; display:block; pointer-events:none; object-fit:fill; }
-.scene-calibration-layer { z-index: 14; overflow: hidden; }.calibration-road-layer{position:absolute;inset:0;width:100%;height:100%}.calibration-road{fill:none;stroke:#6de9ff;stroke-width:.32;stroke-dasharray:1 1;vector-effect:non-scaling-stroke}.calibration-road.pedestrian{stroke:#d9ff8f}.calibration-road.business_route_reference{stroke:#ffb866}.calibration-anchor,.calibration-object-point{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-anchor .calibration-dot{display:block;width:8px;height:8px;margin:-4px;border:2px solid #fff;border-radius:50%;background:#ff5d66;box-shadow:0 0 10px #ff5d66}.calibration-anchor text{position:absolute;left:8px;top:-12px;padding:2px 4px;border-radius:3px;color:#fff;background:rgba(78,12,20,.86);font:700 7px/1.2 ui-monospace,Consolas,monospace}.calibration-object-point{width:4px;height:4px;border:1px solid #24d9ff;background:#061522}.calibration-object-point text{position:absolute;left:5px;top:3px;color:#8ff2ff;font:6px/1.2 ui-monospace,Consolas,monospace}.calibration-caption{position:absolute;right:12px;top:12px;padding:5px 8px;border:1px solid rgba(255,184,102,.7);border-radius:5px;color:#fff2d8;background:rgba(70,41,9,.86);font:700 8px/1.2 ui-monospace,Consolas,monospace}
-.calibration-road.robot{stroke:#ffbf69}.calibration-road.service_device{stroke:#63e6ff}.calibration-road.blocked{stroke:#ff4f63;stroke-width:.8;stroke-dasharray:2 .5}.candidate-route path{fill:none;stroke-width:.75;stroke-dasharray:2 1;vector-effect:non-scaling-stroke}.candidate-route.east-north path{stroke:#ff9a47}.candidate-route.south-west path{stroke:#b784ff}.calibration-node,.calibration-edge-label,.calibration-anchor-error{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-node .calibration-dot{display:block;width:5px;height:5px;margin:-2.5px;border:1px solid #fff;border-radius:50%;background:#63e6ff}.calibration-node.pedestrian .calibration-dot{background:#b8eb72}.calibration-node.robot .calibration-dot{background:#ffbf69}.calibration-node text{position:absolute;left:4px;top:2px;color:#e8fbff;font:5px/1.1 ui-monospace,Consolas,monospace;text-shadow:0 1px 2px #00111d}.calibration-edge-label{opacity:.75}.calibration-edge-label text{display:block;padding:1px 2px;color:#bfefff;background:rgba(0,21,32,.76);font:4px/1 ui-monospace,Consolas,monospace}.calibration-edge-label.pedestrian text{color:#dfffab}.calibration-edge-label.robot text{color:#ffd49a}.calibration-edge-label.blocked text{color:#fff;background:#a4192a}.calibration-anchor-error{margin-top:9px;color:#ffd8dc;font:5px/1 ui-monospace,Consolas,monospace}.calibration-caption{max-width:52%;white-space:normal}
+.scene-calibration-layer { z-index: 14; overflow: hidden; }.calibration-road-layer{position:absolute;inset:0;width:100%;height:100%}.calibration-road{fill:none;stroke:#6de9ff;stroke-width:.32;stroke-dasharray:1 1;vector-effect:non-scaling-stroke}.calibration-road.pedestrian{stroke:#d9ff8f}.calibration-road.business_route_reference{stroke:#ffb866}.calibration-anchor,.calibration-object-point{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-anchor .calibration-dot{display:block;width:8px;height:8px;margin:-4px;border:2px solid #fff;border-radius:50%;background:#ff5d66;box-shadow:0 0 10px #ff5d66}.calibration-anchor .mpwx-text{position:absolute;left:8px;top:-12px;padding:2px 4px;border-radius:3px;color:#fff;background:rgba(78,12,20,.86);font:700 7px/1.2 ui-monospace,Consolas,monospace}.calibration-object-point{width:4px;height:4px;border:1px solid #24d9ff;background:#061522}.calibration-object-point .mpwx-text{position:absolute;left:5px;top:3px;color:#8ff2ff;font:6px/1.2 ui-monospace,Consolas,monospace}.calibration-caption{position:absolute;right:12px;top:12px;padding:5px 8px;border:1px solid rgba(255,184,102,.7);border-radius:5px;color:#fff2d8;background:rgba(70,41,9,.86);font:700 8px/1.2 ui-monospace,Consolas,monospace}
+.calibration-road.robot{stroke:#ffbf69}.calibration-road.service_device{stroke:#63e6ff}.calibration-road.blocked{stroke:#ff4f63;stroke-width:.8;stroke-dasharray:2 .5}.candidate-route .mpwx-path{fill:none;stroke-width:.75;stroke-dasharray:2 1;vector-effect:non-scaling-stroke}.candidate-route.east-north .mpwx-path{stroke:#ff9a47}.candidate-route.south-west .mpwx-path{stroke:#b784ff}.calibration-node,.calibration-edge-label,.calibration-anchor-error{position:absolute;transform:translate(-50%,-50%);white-space:nowrap}.calibration-node .calibration-dot{display:block;width:5px;height:5px;margin:-2.5px;border:1px solid #fff;border-radius:50%;background:#63e6ff}.calibration-node.pedestrian .calibration-dot{background:#b8eb72}.calibration-node.robot .calibration-dot{background:#ffbf69}.calibration-node .mpwx-text{position:absolute;left:4px;top:2px;color:#e8fbff;font:5px/1.1 ui-monospace,Consolas,monospace;text-shadow:0 1px 2px #00111d}.calibration-edge-label{opacity:.75}.calibration-edge-label .mpwx-text{display:block;padding:1px 2px;color:#bfefff;background:rgba(0,21,32,.76);font:4px/1 ui-monospace,Consolas,monospace}.calibration-edge-label.pedestrian .mpwx-text{color:#dfffab}.calibration-edge-label.robot .mpwx-text{color:#ffd49a}.calibration-edge-label.blocked .mpwx-text{color:#fff;background:#a4192a}.calibration-anchor-error{margin-top:9px;color:#ffd8dc;font:5px/1 ui-monospace,Consolas,monospace}.calibration-caption{max-width:52%;white-space:normal}
 .north-mark { position: absolute; z-index: 10; right: 14px; top: 12px; display: flex; flex-direction: column; align-items: center; color: #dff7ff; font-size: 10px; text-shadow: 0 1px 4px #00111d; }
 .north-arrow { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 22px solid #e9f8ff; filter: drop-shadow(0 1px 3px #00111d); }
 .map-legend { position: absolute; z-index: 10; left: 12px; top: 12px; padding: 8px 9px; display: grid; gap: 6px; border: 1px solid rgba(118,201,255,.28); border-radius: 9px; color: #b8d8e7; background: rgba(3,25,40,.8); font-size: 10px; backdrop-filter: blur(5px); }
-.map-legend view { display: flex; align-items: center; gap: 7px; }.legend-shape { display: inline-block; width: 10px; height: 10px; }.legend-shape.robot { border: 2px solid #8cecff; border-radius: 3px; }.legend-shape.bin { background: #2c8fff; border-radius: 2px; }.legend-shape.waste { background: #ff5d66; border-radius: 50%; }
+.map-legend .mpwx-view { display: flex; align-items: center; gap: 7px; }.legend-shape { display: inline-block; width: 10px; height: 10px; }.legend-shape.robot { border: 2px solid #8cecff; border-radius: 3px; }.legend-shape.bin { background: #2c8fff; border-radius: 2px; }.legend-shape.waste { background: #ff5d66; border-radius: 50%; }
 .zone-label { position: absolute; z-index: 9; padding: 4px 6px; border-radius: 5px; color: #f0fbff; background: rgba(4,26,40,.7); text-shadow: 0 1px 3px #00111d; pointer-events: none; }
-.zone-label text,.zone-label .small-text { display: block; }.zone-label text { font-size: 11px; font-weight: 700; }.zone-label .small-text { color: #8eb4c7; font: 8px/1.2 ui-monospace, Consolas, monospace; margin-top: 2px; }
+.zone-label .mpwx-text,.zone-label .small-text { display: block; }.zone-label .mpwx-text { font-size: 11px; font-weight: 700; }.zone-label .small-text { color: #8eb4c7; font: 8px/1.2 ui-monospace, Consolas, monospace; margin-top: 2px; }
 .zone-label.entrance { left: 44%; bottom: 3%; }.zone-label.food { right: 20%; top: 41%; }
 .road-label { position: absolute; z-index: 9; top: 10%; left: 52%; color: #b6cbd4; font-size: 10px; letter-spacing: 1px; text-shadow: 0 1px 3px #00111d; }
 .facility-anchor { position:absolute; z-index:5; transform:translate(-50%,-50%); pointer-events:none; }.center-facility{left:24%;top:16%}.station-facility{top:20.5%}.station-facility.unload{left:20.5%}.station-facility.wash{left:23%}.station-facility.charge{left:25.5%}
@@ -748,18 +748,18 @@ onBeforeUnmount(() => {
 .park-scene-surface .center-stage-video,
 .park-scene-surface .center-stage-video-tone,
 .park-scene-surface .scene-vignette,
-.park-scene-surface .device-actor image,
+.park-scene-surface .device-actor .robot-image,.park-scene-surface .device-actor .bin-image,
 .park-scene-surface .ready-halo,
 .park-scene-surface .dock-zone > .dock-pulse,
 .park-scene-surface .clean-sweep,
 .park-scene-surface .player-shell { position: absolute; left: 0; top: 0; right: 0; bottom: 0; width: 100%; height: 100%; }
 .park-scene-surface .north-mark { display: none; }
 .map-legend { position: absolute; left: 8px; top: 8px; display: flex; flex-direction: column; gap: 4px; padding: 6px 7px; backdrop-filter: none; }
-.map-legend view { display: flex; align-items: center; gap: 5px; }
+.map-legend .mpwx-view { display: flex; align-items: center; gap: 5px; }
 .event-overlay { position: absolute; left: 8px; bottom: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; max-width: 92%; min-width: 0; padding: 6px 8px; box-sizing: border-box; backdrop-filter: none; }
 .event-overlay::before { content: ''; display: block; width: 8px; height: 8px; border-radius: 50%; background: #2c8fff; box-shadow: 0 0 10px currentColor; }
 .event-overlay .event-pulse { display: none; }
-.event-overlay > view { flex: 1 1 150px; min-width: 0; }
+.event-overlay > .mpwx-view { flex: 1 1 150px; min-width: 0; }
 .event-overlay-label,
 .event-overlay-title { white-space: normal; word-break: break-word; line-height: 1.3; }
 .event-overlay .source-tag { flex: 0 0 auto; }

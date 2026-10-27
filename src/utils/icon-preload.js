@@ -1,6 +1,6 @@
 import { getManifestIconPath, getManifestIcons } from './manifest-icons.js'
 
-const PRIORITY_IDS = ['home', 'map_location', 'store', 'user_profile', 'back', 'help']
+const PRIORITY_IDS = ['smart_sort', 'home', 'map_location', 'store', 'user_profile', 'back', 'help']
 const CONCURRENCY = 2
 let scheduled = false
 
@@ -42,6 +42,7 @@ function preloadImage(source) {
 export function warmManifestIcons() {
   if (scheduled) return
   scheduled = true
+  void preloadImage(getManifestIconPath('smart_sort'))
   const manifest = getManifestIcons()
   const ids = [
     ...PRIORITY_IDS,

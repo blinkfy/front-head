@@ -6,7 +6,7 @@
     <!-- #endif -->
     <!-- #ifdef APP-PLUS -->
     <view v-if="!failed" class="robot-stage" :class="{ visible: displayReady }">
-      <SmartSortRobotApp :state="state" :active="active" @ready="handleReady" @fallback="useFallback" @settled="emit('settled')" />
+      <SmartSortRobotApp :state="state" :active="active" @ready="handleReady" @recovering="handleRecovering" @suspended="handleSuspended" @fallback="useFallback" @settled="emit('settled')" />
     </view>
     <!-- #endif -->
     <!-- #ifdef MP-WEIXIN -->
@@ -61,6 +61,16 @@ function watchLoading() {
   if (props.active && !overlayFallback.value && !ready.value && !failed.value) {
     loadingTimer = setTimeout(() => useFallback(new Error(`Robot rendering timed out (${loadingStage.value})`)), 15000)
   }
+}
+function handleSuspended() {
+  clearLoadingTimer()
+  ready.value = false
+}
+function handleRecovering() {
+  if (destroyed || failed.value) return
+  ready.value = false
+  loadingStage.value = 'recovering'
+  watchLoading()
 }
 function handleReady() {
   if (destroyed || failed.value || overlayFallback.value) return
@@ -124,6 +134,7 @@ onMounted(async () => {
       state: props.state,
       active: props.active,
       onFirstFrame: handleReady,
+      onUnavailable: handleRecovering,
       onSettled: () => emit('settled'),
       onError: useFallback
     })

@@ -127,6 +127,51 @@ public final class GeometryHarness {
                 "portrait preview was not fitted with its rotated aspect ratio");
     }
 
+    private static int[] focus(int x, int y, int width, int height, int rotation) {
+        return ScanGeometry.focusArea(x, y, width, height, rotation);
+    }
+
+    private static void assertFocusRect(int[] rect, int expectedCenterX, int expectedCenterY, String label) {
+        require(rect != null && rect.length == 4, label + " did not return a rectangle");
+        require(rect[0] >= -1000 && rect[1] >= -1000 && rect[2] <= 1000 && rect[3] <= 1000,
+                label + " exceeded Camera1 coordinate bounds");
+        require(rect[2] - rect[0] == 240 && rect[3] - rect[1] == 240,
+                label + " did not preserve the fixed 240x240 focus area");
+        int centerX = (rect[0] + rect[2]) / 2;
+        int centerY = (rect[1] + rect[3]) / 2;
+        require(Math.abs(centerX - expectedCenterX) <= 3 && Math.abs(centerY - expectedCenterY) <= 3,
+                label + " center mismatch: " + centerX + "," + centerY);
+    }
+
+    private static void testFocusArea() {
+        final int width = 400, height = 800;
+        for (int rotation : new int[]{0, 90, 180, 270}) {
+            assertFocusRect(focus(width / 2, height / 2, width, height, rotation), 0, 0,
+                    "center tap rotation=" + rotation);
+        }
+
+        assertFocusRect(focus(0, 0, width, height, 0), -880, -880, "top-left edge clamp");
+        assertFocusRect(focus(width - 1, 0, width, height, 0), 880, -880, "top-right edge clamp");
+        assertFocusRect(focus(0, height - 1, width, height, 0), -880, 880, "bottom-left edge clamp");
+        assertFocusRect(focus(width - 1, height - 1, width, height, 0), 880, 880,
+                "bottom-right edge clamp");
+
+        assertFocusRect(focus(width / 2, height / 4, width, height, 90), -500, 0,
+                "rotation 90 top-to-left mapping");
+        assertFocusRect(focus(width / 2, height / 4, width, height, 270), 500, 0,
+                "rotation 270 top-to-right mapping");
+        assertFocusRect(focus(width * 3 / 4, height / 2, width, height, 90), 0, -500,
+                "rotation 90 right-to-top mapping");
+        assertFocusRect(focus(width * 3 / 4, height / 2, width, height, 270), 0, 500,
+                "rotation 270 right-to-bottom mapping");
+        assertFocusRect(focus(0, 0, width, height, 180), 880, 880,
+                "rotation 180 corner mapping");
+
+        boolean badViewport = false;
+        try { focus(0, 0, 0, height, 0); } catch (IllegalArgumentException expected) { badViewport = true; }
+        require(badViewport, "non-positive viewport should throw IllegalArgumentException");
+    }
+
     private static void expectZoom(float actual, float expected, String message) {
         require(!Float.isNaN(actual) && Math.abs(actual - expected) < 0.001f,
                 message + " (expected " + expected + ", got " + actual + ")");
@@ -257,6 +302,54 @@ public final class GeometryHarness {
         }
     }
 
+    private static void testCropZoom() {
+        final int width = 12, height = 12, ySize = width * height;
+        byte[] nv21 = new byte[ySize + ySize / 2];
+        for (int i = 0; i < ySize; i++) nv21[i] = (byte) i;
+        java.util.Arrays.fill(nv21, ySize, nv21.length, (byte) 250);
+
+        ScanGeometry.Frame one = ScanGeometry.cropZoom(nv21, width, height, 1f);
+        require(one.width == width && one.height == height, "1x crop dimensions changed");
+        require(one.gray != nv21, "1x crop must own an independent copy");
+        for (int i = 0; i < ySize; i++) require(one.gray[i] == nv21[i], "1x crop pixel mismatch at " + i);
+        byte originalFirst = nv21[0];
+        one.gray[0] = (byte) 99;
+        require(nv21[0] == originalFirst, "crop mutation changed source buffer");
+
+        assertCropPattern(nv21, width, height, 1.5f, 8, 8, 2, 2);
+        assertCropPattern(nv21, width, height, 3f, 4, 4, 4, 4);
+
+        byte[] differentChroma = nv21.clone();
+        java.util.Arrays.fill(differentChroma, ySize, differentChroma.length, (byte) 17);
+        ScanGeometry.Frame chromaA = ScanGeometry.cropZoom(nv21, width, height, 1.5f);
+        ScanGeometry.Frame chromaB = ScanGeometry.cropZoom(differentChroma, width, height, 1.5f);
+        require(java.util.Arrays.equals(chromaA.gray, chromaB.gray), "NV21 chroma bytes affected luminance crop");
+
+        for (float invalid : new float[]{Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY, 0.99f, 3.01f}) {
+            boolean rejected = false;
+            try { ScanGeometry.cropZoom(nv21, width, height, invalid); }
+            catch (IllegalArgumentException expected) { rejected = true; }
+            require(rejected, "invalid zoom was accepted: " + invalid);
+        }
+        boolean shortBuffer = false;
+        try { ScanGeometry.cropZoom(java.util.Arrays.copyOf(nv21, ySize - 1), width, height, 1.5f); }
+        catch (IllegalArgumentException expected) { shortBuffer = true; }
+        require(shortBuffer, "short luminance buffer was accepted");
+    }
+
+    private static void assertCropPattern(byte[] source, int width, int height, float zoom,
+                                          int cropWidth, int cropHeight, int left, int top) {
+        ScanGeometry.Frame frame = ScanGeometry.cropZoom(source, width, height, zoom);
+        require(frame.width == cropWidth && frame.height == cropHeight,
+                "crop dimensions mismatch at " + zoom + "x: " + frame.width + "x" + frame.height);
+        require(frame.gray.length == cropWidth * cropHeight, "crop buffer length mismatch at " + zoom + "x");
+        for (int y = 0; y < cropHeight; y++) for (int x = 0; x < cropWidth; x++) {
+            int expected = (top + y) * width + left + x;
+            require((frame.gray[y * cropWidth + x] & 255) == expected,
+                    "center crop pixel mismatch at " + zoom + "x, x=" + x + " y=" + y);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length > 0 && "detect".equals(args[0])) {
             if (args.length != 2) throw new IllegalArgumentException("detect input.png");
@@ -270,9 +363,11 @@ public final class GeometryHarness {
         }
         testCameraScore();
         testPreviewFit();
+        testFocusArea();
         testAutoZoom();
+        testCropZoom();
         testRetryAndWarps();
-        System.out.println("GEOMETRY_OK cameraScore fitPreview AutoZoom RETRY_COUNT=12 warpCandidates=12");
+        System.out.println("GEOMETRY_OK cameraScore fitPreview focusArea AutoZoom cropZoom RETRY_COUNT=12 warpCandidates=12");
     }
 }
 '''
@@ -324,9 +419,9 @@ def compile_harness() -> tuple[str, str]:
 
 def run_geometry(java: str) -> None:
     output = run_checked([java, "-cp", str(CLASSES), "ftx.qbar.GeometryHarness"], timeout=30)
-    if "GEOMETRY_OK cameraScore fitPreview AutoZoom RETRY_COUNT=12 warpCandidates=12" not in output:
+    if "GEOMETRY_OK cameraScore fitPreview focusArea AutoZoom cropZoom RETRY_COUNT=12 warpCandidates=12" not in output:
         raise GeometryError("geometry harness did not report success")
-    print("PASS Java geometry: cameraScore, portrait fit, AutoZoom timing/manual policy, 12 bounded warp candidates")
+    print("PASS Java geometry: cameraScore, portrait fit, focusArea rotation/clamping, AutoZoom policy, cropZoom, 12 bounded warps")
     run_detection_tests(java)
 
 
@@ -403,6 +498,39 @@ def run_detection_tests(java: str) -> None:
     if not (0.40 <= x <= 0.60 and 0.40 <= y <= 0.60 and 0.08 <= size <= 0.36):
         raise GeometryError(f"round-code candidate geometry out of range: x={x:.3f} y={y:.3f} size={size:.3f}")
     print(f"PASS candidate round-code x={x:.3f} y={y:.3f} size={size:.3f}")
+
+    def round_code_frame(width: int, height: int, ratio: float, copies: int = 1):
+        edge = round(min(width, height) * ratio)
+        scale = edge / max(h, w)
+        code = cv2.resize(round_image, (max(1, round(w * scale)), max(1, round(h * scale))),
+                          interpolation=cv2.INTER_AREA)
+        frame = np.full((height, width, 3), 128, dtype=np.uint8)
+        centers = [width // 2] if copies == 1 else [width // 2 - round(edge * 0.65),
+                                                     width // 2 + round(edge * 0.65)]
+        for center_x in centers:
+            left, top = center_x - code.shape[1] // 2, height // 2 - code.shape[0] // 2
+            frame[top:top + code.shape[0], left:left + code.shape[1]] = code
+        return frame
+
+    for width, height in ((1280, 720), (1920, 1080)):
+        for ratio in (0.16, 0.24):
+            frame = round_code_frame(width, height, ratio)
+            candidate = detect_candidate(java, save(f"roundcode-{width}x{height}-{int(ratio * 100)}pct", frame))
+            if candidate is None:
+                raise GeometryError(f"round-code candidate missed at {width}x{height}, ratio={ratio:.2f}")
+            x, y, size = candidate
+            if not (0.46 <= x <= 0.54 and 0.46 <= y <= 0.54):
+                raise GeometryError(f"round-code center mapping out of range at {width}x{height}, ratio={ratio:.2f}: x={x:.3f} y={y:.3f}")
+            if not (ratio * 0.55 <= size <= min(0.36, ratio * 1.45)):
+                raise GeometryError(f"round-code size mapping out of range at {width}x{height}, ratio={ratio:.2f}: size={size:.3f}")
+
+        blank_frame = np.full((height, width, 3), 128, dtype=np.uint8)
+        if detect_candidate(java, save(f"roundcode-blank-{width}x{height}", blank_frame)) is not None:
+            raise GeometryError(f"high-resolution blank frame produced a candidate at {width}x{height}")
+        pair = round_code_frame(width, height, 0.16, copies=2)
+        if detect_candidate(java, save(f"roundcode-pair-{width}x{height}", pair)) is not None:
+            raise GeometryError(f"high-resolution centered double-code frame was auto-selected at {width}x{height}")
+    print("PASS round-code candidate geometry at 16%/24% in 1280x720 and 1920x1080; high-resolution blank and double-code frames rejected")
 
     blank = np.full((320, 320), 255, dtype=np.uint8)
     stripes = np.full((320, 320), 255, dtype=np.uint8)

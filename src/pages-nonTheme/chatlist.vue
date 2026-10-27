@@ -682,7 +682,7 @@ computed: {
 
 		// 初始化系统信息
 		initSystemInfo() {
-			const systemInfo = uni.getSystemInfoSync()
+			const systemInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
 			this.statusBarHeight = systemInfo.statusBarHeight || 20
 			this.safeAreaBottom = systemInfo.safeAreaInsets?.bottom || 0
 			

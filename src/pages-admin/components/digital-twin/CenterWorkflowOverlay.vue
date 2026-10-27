@@ -1,55 +1,55 @@
 <template>
   <view
-    class="center-workflow-overlay"
+    class="center-workflow-overlay mpwx-view"
     :data-event-source="currentEvent?.source"
     :data-stage="phaseKey"
   >
-    <view class="center-head">
-      <view>
-        <view class="center-kicker">CENTER OPS · CONTINUOUS PROCESS</view>
-        <view class="center-title">收运中心处理流程</view>
+    <view class="center-head mpwx-view">
+      <view class="mpwx-view">
+        <view class="center-kicker mpwx-view">CENTER OPS · CONTINUOUS PROCESS</view>
+        <view class="center-title mpwx-view">收运中心处理流程</view>
       </view>
-      <view class="center-status">
+      <view class="center-status mpwx-view">
         <i :class="['center-status-dot', { active: running }]"></i>
-        <text>{{ running ? '流程运行中' : '流程已暂停' }}</text>
+        <text class="mpwx-text">{{ running ? '流程运行中' : '流程已暂停' }}</text>
       </view>
     </view>
 
-    <view class="center-meta">
-      <view><text>设备</text><text class="b-text">{{ deviceId }}</text></view>
-      <view><text>处理泊位</text><text class="b-text">{{ assignedBayId || '待分配' }}</text></view>
-      <view><text>当前事件</text><text class="b-text">{{ currentEvent?.eventType || '—' }}</text></view>
-      <view><text>处理阶段</text><text class="b-text">{{ activeStage.label }}</text></view>
-      <view><text>阶段进度</text><text class="b-text">{{ Math.round(localProgress * 100) }}%</text></view>
+    <view class="center-meta mpwx-view">
+      <view class="mpwx-view"><text class="mpwx-text">设备</text><text class="b-text mpwx-text">{{ deviceId }}</text></view>
+      <view class="mpwx-view"><text class="mpwx-text">处理泊位</text><text class="b-text mpwx-text">{{ assignedBayId || '待分配' }}</text></view>
+      <view class="mpwx-view"><text class="mpwx-text">当前事件</text><text class="b-text mpwx-text">{{ currentEvent?.eventType || '—' }}</text></view>
+      <view class="mpwx-view"><text class="mpwx-text">处理阶段</text><text class="b-text mpwx-text">{{ activeStage.label }}</text></view>
+      <view class="mpwx-view"><text class="mpwx-text">阶段进度</text><text class="b-text mpwx-text">{{ Math.round(localProgress * 100) }}%</text></view>
     </view>
 
-    <view class="flow-rail">
-      <view class="rail-line"></view>
+    <view class="flow-rail mpwx-view">
+      <view class="rail-line mpwx-view"></view>
       <view
         v-for="(stage, index) in CENTER_WORKFLOW_STAGES"
         :key="stage.key"
         :class="['flow-stage', { active: index === activeStageIndex, done: index < activeStageIndex }]"
         @tap="jumpToStage(stage)"
-      >
-        <view class="stage-dot">{{ index + 1 }}</view>
-        <text>{{ stage.label }}</text>
-        <text class="small-text">{{ stage.zone }}</text>
+       class="mpwx-view">
+        <view class="stage-dot mpwx-view">{{ index + 1 }}</view>
+        <text class="mpwx-text">{{ stage.label }}</text>
+        <text class="small-text mpwx-text">{{ stage.zone }}</text>
       </view>
     </view>
 
     <view
-      class="process-panel"
+      class="process-panel mpwx-view"
       :data-stage-visual-status="stageVisual.status"
       :data-stage-visual-source="stageVisual.source"
       :data-video-state="stageVideoState"
     >
-      <view ref="sceneCanvasRef" class="scene-canvas">
-        <image webp class="center-stage-visual" :src="stageVisual.src" mode="aspectFill" />
-        <view :class="['center-stage-video-layer', { active: videoVisualActive }]">
-          <image class="center-stage-video-backdrop" :src="CENTER_WORKFLOW_MASTER_VIDEO.poster" mode="aspectFill" />
+      <view ref="sceneCanvasRef" class="scene-canvas mpwx-view">
+        <image webp class="center-stage-visual mpwx-image" :src="stageVisual.src" mode="aspectFill" />
+        <view :class="['center-stage-video-layer', { active: videoVisualActive }]" class="mpwx-view">
+          <image class="center-stage-video-backdrop mpwx-image" :src="CENTER_WORKFLOW_MASTER_VIDEO.poster" mode="aspectFill" />
           <video
             ref="centerMasterVideoRef"
-            class="center-stage-video"
+            class="center-stage-video mpwx-video"
             :src="CENTER_WORKFLOW_MASTER_VIDEO.file"
             :poster="CENTER_WORKFLOW_MASTER_VIDEO.poster"
             :muted="true"
@@ -70,15 +70,15 @@
             @ended="handleCenterMasterVideoEnded"
             @error="handleCenterMasterVideoError"
           ></video>
-          <view class="center-stage-video-tone"></view>
+          <view class="center-stage-video-tone mpwx-view"></view>
         </view>
-        <view class="scene-vignette"></view>
+        <view class="scene-vignette mpwx-view"></view>
 
-        <view v-if="phaseKey === 'DOCK'" class="dock-zone" :style="dockZoneStyle">
-          <i class="dock-pulse" :style="{ opacity: dockPulseOpacity }"></i><text class="b-text"></text><strong class="dock-label">泊位已对齐</strong>
+        <view v-if="phaseKey === 'DOCK'" class="dock-zone mpwx-view" :style="dockZoneStyle">
+          <i class="dock-pulse" :style="{ opacity: dockPulseOpacity }"></i><text class="b-text mpwx-text"></text><strong class="dock-label">泊位已对齐</strong>
         </view>
 
-        <view v-if="!videoVisualActive && phaseKey === 'UNLOAD'" class="unload-mask" :style="maskStyle('unload')">
+        <view v-if="!videoVisualActive && phaseKey === 'UNLOAD'" class="unload-mask mpwx-view" :style="maskStyle('unload')">
           <i
             v-for="index in CENTER_WORKFLOW_SCENE.unloadStream.particleCount"
             :key="index"
@@ -87,12 +87,12 @@
           ></i>
         </view>
 
-        <view v-if="!videoVisualActive && phaseKey === 'CLEAN'" class="clean-mask" :style="maskStyle('clean')">
-          <view class="clean-sweep" :style="cleanSweepStyle"></view>
+        <view v-if="!videoVisualActive && phaseKey === 'CLEAN'" class="clean-mask mpwx-view" :style="maskStyle('clean')">
+          <view class="clean-sweep mpwx-view" :style="cleanSweepStyle"></view>
         </view>
 
-        <view v-if="!videoVisualActive && phaseKey === 'CHARGE'" class="charge-mask" :style="maskStyle('charge')">
-          <view class="energy-link"></view>
+        <view v-if="!videoVisualActive && phaseKey === 'CHARGE'" class="charge-mask mpwx-view" :style="maskStyle('charge')">
+          <view class="energy-link mpwx-view"></view>
           <i
             v-for="(dot, index) in CENTER_WORKFLOW_SCENE.energyDots"
             :key="index"
@@ -101,54 +101,54 @@
           ></i>
         </view>
 
-        <view v-if="!videoVisualActive && phaseKey === 'CHECK'" class="check-mask" :style="maskStyle('check')">
-          <view class="scan-line" :style="scanLineStyle"></view>
+        <view v-if="!videoVisualActive && phaseKey === 'CHECK'" class="check-mask mpwx-view" :style="maskStyle('check')">
+          <view class="scan-line mpwx-view" :style="scanLineStyle"></view>
           <i class="scan-corner c1"></i><i class="scan-corner c2"></i>
           <i class="scan-corner c3"></i><i class="scan-corner c4"></i>
         </view>
 
-        <view v-if="!videoVisualActive" class="device-actor" :style="deviceStyle">
-          <view v-if="phaseKey === 'UNLOAD'" class="device-fill-window">
+        <view v-if="!videoVisualActive" class="device-actor mpwx-view" :style="deviceStyle">
+          <view v-if="phaseKey === 'UNLOAD'" class="device-fill-window mpwx-view">
             <i class="device-fill-level" :style="{ height: `${fillPreviewPct}%` }"></i>
           </view>
-          <image :src="CENTER_WORKFLOW_SCENE.device.src" mode="aspectFit" />
-          <view v-if="phaseKey === 'DOCK'" class="dock-lock" :style="{ opacity: dockLockOpacity }">
+          <image :src="CENTER_WORKFLOW_SCENE.device.src" mode="aspectFit"  class="mpwx-image"/>
+          <view v-if="phaseKey === 'DOCK'" class="dock-lock mpwx-view" :style="{ opacity: dockLockOpacity }">
             <i class="dock-lock-edge"></i><i class="dock-lock-edge"></i>
           </view>
-          <view v-if="phaseKey === 'STANDBY'" class="ready-halo" :style="{ opacity: readyHaloOpacity }"></view>
+          <view v-if="phaseKey === 'STANDBY'" class="ready-halo mpwx-view" :style="{ opacity: readyHaloOpacity }"></view>
         </view>
 
-        <view :class="['stage-card', { 'video-mode': videoVisualActive }]" :style="stageCardLayoutStyle">
-          <view class="stage-card-head"><text class="small-text">{{ activeStage.zone }}</text><text class="b-text">{{ activeStage.label }}</text></view>
-          <text>{{ stageDescription }}</text>
-          <view class="stage-progress"><i class="stage-progress-bar" :style="{ width: `${localProgress * 100}%` }"></i></view>
+        <view :class="['stage-card', { 'video-mode': videoVisualActive }]" :style="stageCardLayoutStyle" class="mpwx-view">
+          <view class="stage-card-head mpwx-view"><text class="small-text mpwx-text">{{ activeStage.zone }}</text><text class="b-text mpwx-text">{{ activeStage.label }}</text></view>
+          <text class="mpwx-text">{{ stageDescription }}</text>
+          <view class="stage-progress mpwx-view"><i class="stage-progress-bar" :style="{ width: `${localProgress * 100}%` }"></i></view>
           <strong class="stage-metric">{{ stageMetric }}</strong>
         </view>
 
-        <view v-if="videoVisualActive && phaseKey !== 'CHECK'" class="video-status-card" :style="bottomVideoCardLayoutStyle">
-          <text class="small-text">设备状态</text>
-          <text class="b-text">{{ videoDeviceStatus }}</text>
-          <text>阶段进度 {{ Math.round(localProgress * 100) }}%</text>
+        <view v-if="videoVisualActive && phaseKey !== 'CHECK'" class="video-status-card mpwx-view" :style="bottomVideoCardLayoutStyle">
+          <text class="small-text mpwx-text">设备状态</text>
+          <text class="b-text mpwx-text">{{ videoDeviceStatus }}</text>
+          <text class="mpwx-text">阶段进度 {{ Math.round(localProgress * 100) }}%</text>
         </view>
 
         <view
           v-if="phaseKey === 'CHECK'"
           :class="['check-list', { 'video-mode': videoVisualActive }]"
           :style="checkListLayoutStyle"
-        >
-          <view v-for="item in checkItems" :key="item.label" :class="{ done: item.done }">
-            <i class="check-indicator"></i><text>{{ item.label }}</text><text class="b-text">{{ item.value }}</text>
+         class="mpwx-view">
+          <view v-for="item in checkItems" :key="item.label" :class="{ done: item.done }" class="mpwx-view">
+            <i class="check-indicator"></i><text class="mpwx-text">{{ item.label }}</text><text class="b-text mpwx-text">{{ item.value }}</text>
           </view>
         </view>
       </view>
     </view>
 
-    <view class="center-footer">
-      <view class="center-controls">
-        <button size="mini" @tap="running ? emit('pause') : emit('play')">{{ running ? '暂停' : '继续' }}</button>
-        <button class="secondary" size="mini" @tap="replayCurrentStage">重播当前阶段</button>
+    <view class="center-footer mpwx-view">
+      <view class="center-controls mpwx-view">
+        <button size="mini" @tap="running ? emit('pause') : emit('play')" class="mpwx-button">{{ running ? '暂停' : '继续' }}</button>
+        <button class="secondary mpwx-button" size="mini" @tap="replayCurrentStage">重播当前阶段</button>
       </view>
-      <text>点击上方阶段可跳转</text>
+      <text class="mpwx-text">点击上方阶段可跳转</text>
     </view>
   </view>
 </template>
@@ -570,26 +570,26 @@ onBeforeUnmount(() => {
 <style scoped>
 .center-workflow-overlay { position:absolute; z-index:8; inset:12px auto 12px 12px; width:min(76%,760px); min-width:560px; display:flex; flex-direction:column; padding:14px; box-sizing:border-box; overflow:hidden; border:1px solid rgba(92,213,255,.55); border-radius:14px; color:#eaf9ff; background:linear-gradient(145deg,rgba(5,24,39,.98),rgba(8,43,62,.96)); box-shadow:0 18px 60px rgba(0,0,0,.45); }
 .center-head,.center-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }.center-kicker { color:#54dbff; font:700 10px/1.2 ui-monospace,Consolas,monospace; letter-spacing:1.3px; }.center-title { margin-top:4px; color:#fff; font-size:18px; font-weight:800; }.center-status { display:flex; align-items:center; gap:7px; color:#9cc3d2; font-size:9px; }.center-status-dot { width:8px; height:8px; border-radius:50%; background:#607f8c; box-shadow:0 0 0 4px rgba(96,127,140,.12); }.center-status-dot.active { background:#54e6aa; box-shadow:0 0 0 4px rgba(84,230,170,.13),0 0 13px rgba(84,230,170,.5); }
-.center-meta { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin:10px 0; }.center-meta view { min-width:0; padding:7px 8px; border:1px solid rgba(112,194,232,.2); border-radius:8px; background:rgba(14,55,76,.58); }.center-meta text,.center-meta .b-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.center-meta text { color:#7fa5b6; font-size:9px; }.center-meta .b-text { margin-top:3px; color:#e6f8ff; font-size:11px; }
-.flow-rail { position:relative; display:grid; grid-template-columns:repeat(7,1fr); gap:3px; padding-top:4px; }.rail-line { position:absolute; left:6%; right:6%; top:17px; height:2px; background:rgba(113,175,200,.25); }.flow-stage { position:relative; z-index:1; min-width:0; cursor:pointer; text-align:center; color:#688e9f; }.stage-dot { display:grid; place-items:center; width:24px; height:24px; margin:0 auto 4px; border:2px solid rgba(100,160,186,.35); border-radius:50%; color:#759aaa; background:#0b2b3d; font:800 9px/1 ui-monospace,Consolas,monospace; }.flow-stage text,.flow-stage .small-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.flow-stage text { font-size:9px; font-weight:700; }.flow-stage .small-text { margin-top:2px; font:6px/1 ui-monospace,Consolas,monospace; }.flow-stage.done { color:#68d9b1; }.flow-stage.done .stage-dot { color:#fff; border-color:#20b981; background:#147455; }.flow-stage.active { color:#e9fbff; }.flow-stage.active .stage-dot { color:#fff; border-color:#3ad4ff; background:#1680aa; box-shadow:0 0 16px rgba(50,203,255,.35); }
-.process-panel { position:relative; flex:1; min-height:315px; margin-top:10px; border:1px solid rgba(76,204,247,.4); border-radius:12px; overflow:hidden; background:#031725; box-shadow:inset 0 0 38px rgba(19,133,168,.12); }.scene-canvas { position:absolute; inset:0; overflow:hidden; }.center-stage-visual { position:absolute; inset:0; width:100%; height:100%; opacity:.94; filter:saturate(1.12) contrast(1.06) brightness(.9); pointer-events:none; }.center-stage-video-layer { position:absolute; z-index:3; inset:0; overflow:hidden; opacity:0; pointer-events:none; transition:opacity .42s cubic-bezier(.22,.8,.24,1); background:#031421; }.center-stage-video-layer.active { opacity:1; }.center-stage-video-backdrop { position:absolute; inset:0; width:100%; height:100%; opacity:.22; filter:none; transform:none; }.center-stage-video { position:absolute; z-index:1; inset:0; width:100%; height:100%; background:transparent; object-fit:contain; }.center-stage-video video { object-fit:contain !important; }.center-stage-video-tone { position:absolute; z-index:2; inset:0; background:linear-gradient(90deg,rgba(2,17,29,.48),transparent 18%,transparent 82%,rgba(2,16,27,.48)),linear-gradient(0deg,rgba(2,16,27,.58),transparent 27%,rgba(3,20,32,.14)); box-shadow:inset 0 0 48px rgba(0,10,18,.5); }.scene-vignette { position:absolute; z-index:4; inset:0; pointer-events:none; background:linear-gradient(90deg,rgba(1,15,25,.42),transparent 31%,transparent 77%,rgba(1,15,25,.16)),linear-gradient(0deg,rgba(1,15,25,.45),transparent 34%); box-shadow:inset 0 0 55px rgba(0,8,14,.32); }
-.device-actor { position:absolute; z-index:7; aspect-ratio:.78; transform-origin:50% 85%; filter:drop-shadow(0 8px 7px rgba(0,7,13,.48)); pointer-events:none; will-change:left,top,transform,opacity; }.device-actor image { position:absolute; z-index:2; inset:0; width:100%; height:100%; }.device-fill-window { position:absolute; z-index:3; right:12%; bottom:16%; width:13%; height:37%; overflow:hidden; border:1px solid rgba(255,225,164,.72); border-radius:3px; background:rgba(5,25,34,.5); }.device-fill-level { position:absolute; right:1px; bottom:1px; left:1px; border-radius:2px; background:linear-gradient(#ffc265,#e88031); box-shadow:0 0 8px rgba(255,165,74,.48); }
+.center-meta { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin:10px 0; }.center-meta .mpwx-view { min-width:0; padding:7px 8px; border:1px solid rgba(112,194,232,.2); border-radius:8px; background:rgba(14,55,76,.58); }.center-meta .mpwx-text,.center-meta .b-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.center-meta .mpwx-text { color:#7fa5b6; font-size:9px; }.center-meta .b-text { margin-top:3px; color:#e6f8ff; font-size:11px; }
+.flow-rail { position:relative; display:grid; grid-template-columns:repeat(7,1fr); gap:3px; padding-top:4px; }.rail-line { position:absolute; left:6%; right:6%; top:17px; height:2px; background:rgba(113,175,200,.25); }.flow-stage { position:relative; z-index:1; min-width:0; cursor:pointer; text-align:center; color:#688e9f; }.stage-dot { display:grid; place-items:center; width:24px; height:24px; margin:0 auto 4px; border:2px solid rgba(100,160,186,.35); border-radius:50%; color:#759aaa; background:#0b2b3d; font:800 9px/1 ui-monospace,Consolas,monospace; }.flow-stage .mpwx-text,.flow-stage .small-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.flow-stage .mpwx-text { font-size:9px; font-weight:700; }.flow-stage .small-text { margin-top:2px; font:6px/1 ui-monospace,Consolas,monospace; }.flow-stage.done { color:#68d9b1; }.flow-stage.done .stage-dot { color:#fff; border-color:#20b981; background:#147455; }.flow-stage.active { color:#e9fbff; }.flow-stage.active .stage-dot { color:#fff; border-color:#3ad4ff; background:#1680aa; box-shadow:0 0 16px rgba(50,203,255,.35); }
+.process-panel { position:relative; flex:1; min-height:315px; margin-top:10px; border:1px solid rgba(76,204,247,.4); border-radius:12px; overflow:hidden; background:#031725; box-shadow:inset 0 0 38px rgba(19,133,168,.12); }.scene-canvas { position:absolute; inset:0; overflow:hidden; }.center-stage-visual { position:absolute; inset:0; width:100%; height:100%; opacity:.94; filter:saturate(1.12) contrast(1.06) brightness(.9); pointer-events:none; }.center-stage-video-layer { position:absolute; z-index:3; inset:0; overflow:hidden; opacity:0; pointer-events:none; transition:opacity .42s cubic-bezier(.22,.8,.24,1); background:#031421; }.center-stage-video-layer.active { opacity:1; }.center-stage-video-backdrop { position:absolute; inset:0; width:100%; height:100%; opacity:.22; filter:none; transform:none; }.center-stage-video { position:absolute; z-index:1; inset:0; width:100%; height:100%; background:transparent; object-fit:contain !important; }.center-stage-video-tone { position:absolute; z-index:2; inset:0; background:linear-gradient(90deg,rgba(2,17,29,.48),transparent 18%,transparent 82%,rgba(2,16,27,.48)),linear-gradient(0deg,rgba(2,16,27,.58),transparent 27%,rgba(3,20,32,.14)); box-shadow:inset 0 0 48px rgba(0,10,18,.5); }.scene-vignette { position:absolute; z-index:4; inset:0; pointer-events:none; background:linear-gradient(90deg,rgba(1,15,25,.42),transparent 31%,transparent 77%,rgba(1,15,25,.16)),linear-gradient(0deg,rgba(1,15,25,.45),transparent 34%); box-shadow:inset 0 0 55px rgba(0,8,14,.32); }
+.device-actor { position:absolute; z-index:7; aspect-ratio:.78; transform-origin:50% 85%; filter:drop-shadow(0 8px 7px rgba(0,7,13,.48)); pointer-events:none; will-change:left,top,transform,opacity; }.device-actor .robot-image,.device-actor .bin-image { position:absolute; z-index:2; inset:0; width:100%; height:100%; }.device-fill-window { position:absolute; z-index:3; right:12%; bottom:16%; width:13%; height:37%; overflow:hidden; border:1px solid rgba(255,225,164,.72); border-radius:3px; background:rgba(5,25,34,.5); }.device-fill-level { position:absolute; right:1px; bottom:1px; left:1px; border-radius:2px; background:linear-gradient(#ffc265,#e88031); box-shadow:0 0 8px rgba(255,165,74,.48); }
 .dock-zone { position:absolute; z-index:4; border:1px dashed rgba(89,224,255,.6); border-radius:50%; }.dock-zone > .dock-pulse { position:absolute; inset:8%; border:2px solid #5be2ff; border-radius:50%; box-shadow:0 0 22px rgba(46,206,245,.38); }.dock-zone > .b-text { position:absolute; left:50%; bottom:4%; width:12px; height:6px; border-left:3px solid #59e6ad; border-bottom:3px solid #59e6ad; transform:translateX(-50%) rotate(-45deg); }.dock-label { position:absolute; left:50%; bottom:-16px; transform:translateX(-50%); color:#9eeeff; font-size:7px; white-space:nowrap; }.dock-lock { position:absolute; z-index:4; inset:10% -22%; }.dock-lock-edge { position:absolute; top:32%; width:22%; height:35%; border-top:3px solid #58e5ff; border-bottom:3px solid #58e5ff; }.dock-lock-edge:first-child { left:0; border-left:3px solid #58e5ff; border-radius:6px 0 0 6px; }.dock-lock-edge:last-child { right:0; border-right:3px solid #58e5ff; border-radius:0 6px 6px 0; }
 .unload-mask,.clean-mask,.charge-mask,.check-mask { position:absolute; z-index:5; overflow:hidden; pointer-events:none; }.waste-particle { position:absolute; width:7px; height:5px; border-radius:2px; background:linear-gradient(135deg,#ffc35c,#eb7631); box-shadow:0 0 7px rgba(255,171,65,.48); }.clean-sweep { position:absolute; inset:-24% 0 0; background:linear-gradient(112deg,transparent 8%,rgba(109,255,194,.03) 20%,rgba(117,239,196,.38) 52%,rgba(84,207,168,.04) 80%,transparent 92%); filter:blur(1px); }.energy-link { position:absolute; left:7%; right:8%; top:58%; height:3px; border-radius:3px; background:linear-gradient(90deg,rgba(44,215,155,.18),#60efb2,rgba(44,215,155,.2)); box-shadow:0 0 12px rgba(62,229,167,.58); }.energy-dot { position:absolute; top:58%; width:8px; height:8px; margin:-3px 0 0 -4px; border-radius:50%; background:#b9ffe0; box-shadow:0 0 11px #44e6a6; }.check-mask { border:1px solid rgba(88,239,183,.46); background:rgba(24,139,103,.08); }.scan-line { position:absolute; left:4%; right:4%; height:2px; background:#76ffc8; box-shadow:0 0 11px #4be8a8; }.scan-corner { position:absolute; width:14px; height:14px; border-color:#73f6c4; }.scan-corner.c1{left:4px;top:4px;border-left:2px solid;border-top:2px solid}.scan-corner.c2{right:4px;top:4px;border-right:2px solid;border-top:2px solid}.scan-corner.c3{left:4px;bottom:4px;border-left:2px solid;border-bottom:2px solid}.scan-corner.c4{right:4px;bottom:4px;border-right:2px solid;border-bottom:2px solid}.ready-halo { position:absolute; z-index:1; inset:10%; border:3px solid #5aefb6; border-radius:50%; box-shadow:0 0 22px rgba(78,236,175,.7); }
-.stage-card { position:absolute; z-index:9; left:12px; bottom:12px; width:39%; min-width:200px; padding:11px 12px; box-sizing:border-box; border:1px solid rgba(114,207,237,.3); border-radius:10px; background:linear-gradient(145deg,#052637,#031927); box-shadow:0 9px 28px rgba(0,10,18,.35); }.stage-card.video-mode { top:12px; bottom:auto; border-color:rgba(83,219,255,.58); box-shadow:0 9px 28px rgba(0,10,18,.4),inset 3px 0 #37d8f4; }.stage-card-head { display:flex; align-items:baseline; gap:8px; }.stage-card-head .small-text { color:#5ce0ff; font:700 7px/1 ui-monospace,Consolas,monospace; letter-spacing:.8px; }.stage-card-head .b-text { color:#fff; font-size:14px; }.stage-card > text { display:block; min-height:29px; margin-top:6px; color:#9fc2cf; font-size:8px; line-height:1.55; }.stage-progress { height:4px; margin-top:7px; overflow:hidden; border-radius:3px; background:rgba(105,176,202,.18); }.stage-progress-bar { display:block; height:100%; border-radius:3px; background:linear-gradient(90deg,#29bde7,#59eab1); box-shadow:0 0 10px rgba(50,212,255,.45); }.stage-metric { display:block; margin-top:6px; color:#64e4ff; font:800 15px/1 ui-monospace,Consolas,monospace; }.video-status-card { position:absolute; z-index:9; right:12px; bottom:12%; width:34%; min-width:180px; padding:10px 12px; box-sizing:border-box; border:1px solid rgba(84,231,177,.52); border-radius:9px; color:#eafaff; background:linear-gradient(135deg,#041f2f,#053342); box-shadow:0 8px 22px rgba(0,8,15,.42),inset 3px 0 #4ee5aa; }.video-status-card .small-text,.video-status-card .b-text,.video-status-card text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.video-status-card .small-text { color:#71eab9; font-size:7px; }.video-status-card .b-text { margin-top:4px; color:#fff; font-size:12px; }.video-status-card text { margin-top:4px; color:#9fc6d5; font-size:8px; }
-.check-list { position:absolute; z-index:9; right:12px; bottom:12px; width:34%; padding:8px 9px; border:1px solid rgba(92,232,181,.28); border-radius:9px; background:#03222b; }.check-list.video-mode { bottom:12%; background:#03222b; }.check-list view { display:grid; grid-template-columns:11px 1fr auto; align-items:center; gap:6px; min-height:20px; color:#779eaa; font-size:7px; }.check-indicator { width:7px; height:7px; border:1px solid #557e88; border-radius:50%; }.check-list .b-text { color:#9cb8bf; font-weight:600; }.check-list view.done { color:#c7f8e5; }.check-list view.done .check-indicator { border-color:#56e6ae; background:#43d89f; box-shadow:0 0 7px rgba(69,226,169,.5); }.check-list view.done .b-text { color:#62e7b2; }
-.center-footer { margin-top:9px; }.center-footer > text { color:#668b9b; font-size:8px; }.center-controls { display:flex; gap:5px; }.center-controls button { margin:0; padding:0 11px; border:1px solid rgba(68,190,236,.6); color:#fff; background:#167db1; font-size:9px; }.center-controls button.secondary { color:#a9d6e8; background:rgba(255,255,255,.07); }
+.stage-card { position:absolute; z-index:9; left:12px; bottom:12px; width:39%; min-width:200px; padding:11px 12px; box-sizing:border-box; border:1px solid rgba(114,207,237,.3); border-radius:10px; background:linear-gradient(145deg,#052637,#031927); box-shadow:0 9px 28px rgba(0,10,18,.35); }.stage-card.video-mode { top:12px; bottom:auto; border-color:rgba(83,219,255,.58); box-shadow:0 9px 28px rgba(0,10,18,.4),inset 3px 0 #37d8f4; }.stage-card-head { display:flex; align-items:baseline; gap:8px; }.stage-card-head .small-text { color:#5ce0ff; font:700 7px/1 ui-monospace,Consolas,monospace; letter-spacing:.8px; }.stage-card-head .b-text { color:#fff; font-size:14px; }.stage-card > .mpwx-text { display:block; min-height:29px; margin-top:6px; color:#9fc2cf; font-size:8px; line-height:1.55; }.stage-progress { height:4px; margin-top:7px; overflow:hidden; border-radius:3px; background:rgba(105,176,202,.18); }.stage-progress-bar { display:block; height:100%; border-radius:3px; background:linear-gradient(90deg,#29bde7,#59eab1); box-shadow:0 0 10px rgba(50,212,255,.45); }.stage-metric { display:block; margin-top:6px; color:#64e4ff; font:800 15px/1 ui-monospace,Consolas,monospace; }.video-status-card { position:absolute; z-index:9; right:12px; bottom:12%; width:34%; min-width:180px; padding:10px 12px; box-sizing:border-box; border:1px solid rgba(84,231,177,.52); border-radius:9px; color:#eafaff; background:linear-gradient(135deg,#041f2f,#053342); box-shadow:0 8px 22px rgba(0,8,15,.42),inset 3px 0 #4ee5aa; }.video-status-card .small-text,.video-status-card .b-text,.video-status-card .mpwx-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.video-status-card .small-text { color:#71eab9; font-size:7px; }.video-status-card .b-text { margin-top:4px; color:#fff; font-size:12px; }.video-status-card .mpwx-text { margin-top:4px; color:#9fc6d5; font-size:8px; }
+.check-list { position:absolute; z-index:9; right:12px; bottom:12px; width:34%; padding:8px 9px; border:1px solid rgba(92,232,181,.28); border-radius:9px; background:#03222b; }.check-list.video-mode { bottom:12%; background:#03222b; }.check-list .mpwx-view { display:grid; grid-template-columns:11px 1fr auto; align-items:center; gap:6px; min-height:20px; color:#779eaa; font-size:7px; }.check-indicator { width:7px; height:7px; border:1px solid #557e88; border-radius:50%; }.check-list .b-text { color:#9cb8bf; font-weight:600; }.check-list .mpwx-view.done { color:#c7f8e5; }.check-list .mpwx-view.done .check-indicator { border-color:#56e6ae; background:#43d89f; box-shadow:0 0 7px rgba(69,226,169,.5); }.check-list .mpwx-view.done .b-text { color:#62e7b2; }
+.center-footer { margin-top:9px; }.center-footer > .mpwx-text { color:#668b9b; font-size:8px; }.center-controls { display:flex; gap:5px; }.center-controls .mpwx-button { margin:0; padding:0 11px; border:1px solid rgba(68,190,236,.6); color:#fff; background:#167db1; font-size:9px; }.center-controls .mpwx-button.secondary { color:#a9d6e8; background:rgba(255,255,255,.07); }
 @media (max-width:900px) { .center-workflow-overlay { position:relative; inset:auto; width:100%; min-width:0; min-height:620px; }.center-meta { grid-template-columns:repeat(2,1fr); }.flow-stage .small-text { display:none; }.process-panel { min-height:360px; } }
-@media (max-width:560px) { .center-workflow-overlay { padding:10px; min-height:610px; }.center-status { display:none; }.flow-stage text { font-size:7px; }.stage-dot { width:20px; height:20px; }.rail-line { top:15px; }.process-panel { min-height:370px; }.stage-card { left:8px; bottom:8px; width:56%; min-width:0; }.stage-card.video-mode { top:8px; bottom:auto; }.video-status-card { right:8px; bottom:12%; width:38%; min-width:0; }.check-list { right:8px; bottom:8px; width:38%; }.check-list.video-mode { bottom:12%; }.center-footer > text { display:none; } }
+@media (max-width:560px) { .center-workflow-overlay { padding:10px; min-height:610px; }.center-status { display:none; }.flow-stage .mpwx-text { font-size:7px; }.stage-dot { width:20px; height:20px; }.rail-line { top:15px; }.process-panel { min-height:370px; }.stage-card { left:8px; bottom:8px; width:56%; min-width:0; }.stage-card.video-mode { top:8px; bottom:auto; }.video-status-card { right:8px; bottom:12%; width:38%; min-width:0; }.check-list { right:8px; bottom:8px; width:38%; }.check-list.video-mode { bottom:12%; }.center-footer > .mpwx-text { display:none; } }
 
 /* #ifdef MP-WEIXIN */
 .center-workflow-overlay { position: relative; top: auto; left: auto; right: auto; bottom: auto; width: 100%; min-width: 0; height: auto; min-height: 360px; box-sizing: border-box; }
 .center-meta { display: flex; flex-wrap: wrap; }
-.center-meta view { flex: 1; min-width: 80px; }
+.center-meta .mpwx-view { flex: 1; min-width: 80px; }
 .flow-rail { display: flex; justify-content: space-between; }
 .flow-stage { flex: 1; }
 .stage-dot { display: flex; align-items: center; justify-content: center; }
-.check-list view { display: flex; align-items: center; gap: 6px; }
+.check-list .mpwx-view { display: flex; align-items: center; gap: 6px; }
 .device-actor { aspect-ratio: auto; }
 .process-panel { min-height: 240px; }
 .stage-card,.video-status-card,.check-list { position: relative; inset: auto; width: auto; min-width: 0; left: auto; right: auto; bottom: auto; top: auto; }

@@ -1,5 +1,5 @@
 <template>
-  <view v-if="scenario !== 'baseline'" :class="['scenario-layer', { paused: !playing }]" :style="visualTimingStyle">
+  <view v-if="scenario !== 'baseline'" :class="['scenario-layer', { paused: !playing }]" :style="visualTimingStyle" class="mpwx-view">
     <!-- #ifdef H5 -->
     <svg class="scenario-route-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
       <polyline v-if="originalRoutePoints" :points="originalRoutePoints" class="scenario-route-ground" />
@@ -14,16 +14,16 @@
     <view
       v-for="heat in state.heatZones || []"
       :key="`heat-${heat.zoneId}`"
-      class="heat-zone"
+      class="heat-zone mpwx-view"
       :style="heatStyle(heat)"
-    ><text>{{ heat.count == null ? '热区' : `${heat.count}人` }}</text></view>
+    ><text class="mpwx-text">{{ heat.count == null ? '热区' : `${heat.count}人` }}</text></view>
 
     <view
       v-for="(count, zoneId) in state.zoneCounts || {}"
       :key="`count-${zoneId}`"
-      class="zone-count"
+      class="zone-count mpwx-view"
       :style="pointStyle(zonePoint(zoneId))"
-    ><text>{{ zoneName(zoneId) }}</text><text class="b-text">{{ count }} 人</text></view>
+    ><text class="mpwx-text">{{ zoneName(zoneId) }}</text><text class="b-text mpwx-text">{{ count }} 人</text></view>
 
     <view
       v-for="visitor in renderedVisitors"
@@ -31,7 +31,7 @@
       :class="['scenario-visitor', visitor.behavior.toLowerCase(), { selected: visitor.id === selectedId }]"
       :style="pointStyle(visitor.renderedPosition)"
       @tap.stop="$emit('select', visitor.id)"
-    >
+     class="mpwx-view">
       <VisitorBehaviorSprite
         :visitor-id="visitor.id"
         :behavior="visitor.behavior"
@@ -47,52 +47,52 @@
     <view
       v-for="garbage in mapVisibleGarbage"
       :key="garbage.id"
-      class="generated-garbage"
+      class="generated-garbage mpwx-view"
       :class="{ falling: garbage.falling, carried: garbage.carried }"
       :style="pointStyle(garbage.renderedPosition || garbage.position)"
       @tap.stop="$emit('select', garbage.id)"
     ><MapWasteSprite :waste="garbage" :selected="garbage.id === selectedId" :affected="currentEntityIds.has(garbage.id)" :falling="garbage.falling" :carried="garbage.carried" :depth-scale="mapDepthScale((garbage.renderedPosition || garbage.position)?.y)" /></view>
 
-    <view v-if="disposalTrashPosition && activeDisposalHasWasteIdentity" class="action-trash disposal-trash" :style="pointStyle(disposalTrashPosition)">
+    <view v-if="disposalTrashPosition && activeDisposalHasWasteIdentity" class="action-trash disposal-trash mpwx-view" :style="pointStyle(disposalTrashPosition)">
       <MapWasteSprite :waste="activeDisposal" :depth-scale="mapDepthScale(disposalTrashPosition?.y)" />
     </view>
 
-    <view v-if="showFormalObstacle" class="route-obstacle" :style="pointStyle(state.route.obstacle.position)" @tap.stop="$emit('select', state.route.obstacle.id)">
+    <view v-if="showFormalObstacle" class="route-obstacle mpwx-view" :style="pointStyle(state.route.obstacle.position)" @tap.stop="$emit('select', state.route.obstacle.id)">
       <i class="obstacle-icon">!</i>
     </view>
 
-    <view v-for="(robot, index) in mapVisibleRobots" v-if="scenario === 'daily'" :key="robot.id" :class="['scenario-robot', `robot-${index + 1}`]" :style="pointStyle(robot.renderedPosition)" @tap.stop="$emit('select', robot.id)">
+    <view v-for="(robot, index) in mapVisibleRobots" v-if="scenario === 'daily'" :key="robot.id" :class="['scenario-robot', `robot-${index + 1}`]" :style="pointStyle(robot.renderedPosition)" @tap.stop="$emit('select', robot.id)" class="mpwx-view">
       <MapEntitySprite kind="robot" variant="active" :selected="selectedId === robot.id" :affected="currentEntityIds.has(robot.id)" :moving="robot.moving" :depth-scale="mapDepthScale(robot.renderedPosition?.y)" :heading-deg="robot.headingDeg" />
     </view>
 
-    <view v-if="routeVehiclePosition" class="route-vehicle" :style="pointStyle(routeVehiclePosition)">
+    <view v-if="routeVehiclePosition" class="route-vehicle mpwx-view" :style="pointStyle(routeVehiclePosition)">
       <MapEntitySprite kind="bin" variant="returning" :affected="true" :moving="routeVehicleMoving" :depth-scale="mapDepthScale(routeVehiclePosition?.y)" :heading-deg="routeVehicleHeading" />
     </view>
 
-    <view v-if="state.route?.original?.length" class="route-key">
-      <view><i class="original"></i><text>受阻路线</text></view>
-      <view v-if="state.route.replanned?.length"><i class="replanned"></i><text>绕行路线</text></view>
-      <text class="small-text" :data-source="state.route.algorithmSource">{{ displaySourceLabel(state.route.algorithmSource) }}</text>
+    <view v-if="state.route?.original?.length" class="route-key mpwx-view">
+      <view class="mpwx-view"><i class="original"></i><text class="mpwx-text">受阻路线</text></view>
+      <view v-if="state.route.replanned?.length" class="mpwx-view"><i class="replanned"></i><text class="mpwx-text">绕行路线</text></view>
+      <text class="small-text mpwx-text" :data-source="state.route.algorithmSource">{{ displaySourceLabel(state.route.algorithmSource) }}</text>
     </view>
   </view>
 
-  <view v-if="scenario !== 'baseline'" class="scenario-label-overlay">
-    <view v-for="visitor in renderedVisitors.filter(showScenarioVisitorLabel)" :key="`${visitor.id}:label`" class="scenario-label-anchor visitor" :style="pointStyle(visitor.renderedPosition)">
+  <view v-if="scenario !== 'baseline'" class="scenario-label-overlay mpwx-view">
+    <view v-for="visitor in renderedVisitors.filter(showScenarioVisitorLabel)" :key="`${visitor.id}:label`" class="scenario-label-anchor visitor mpwx-view" :style="pointStyle(visitor.renderedPosition)">
       <StableMapLabel :label-id="`${visitor.id}:behavior`" :text="behaviorLabel(visitor.behavior)" :detail="visitor.id === selectedId ? visitor.id : ''" :priority="scenarioLabelPriority('visitor', visitor.id)" placement="above" :selected="visitor.id === selectedId" :current="currentEntityIds.has(visitor.id)" />
     </view>
-    <view v-for="cluster in visibleVisitorClusters.slice(0, 1)" :key="`${cluster.id}:label`" class="scenario-label-anchor cluster" :style="pointStyle(cluster.position)">
+    <view v-for="cluster in visibleVisitorClusters.slice(0, 1)" :key="`${cluster.id}:label`" class="scenario-label-anchor cluster mpwx-view" :style="pointStyle(cluster.position)">
       <StableMapLabel :label-id="`${cluster.id}:aggregate`" :text="`聚集 × ${cluster.count}`" :priority="76" placement="above" tone="amber" aggregate />
     </view>
-    <view v-for="garbage in mapVisibleGarbage.filter(showScenarioGarbageLabel)" :key="`${garbage.id}:label`" class="scenario-label-anchor garbage" :style="pointStyle(garbage.renderedPosition || garbage.position)">
+    <view v-for="garbage in mapVisibleGarbage.filter(showScenarioGarbageLabel)" :key="`${garbage.id}:label`" class="scenario-label-anchor garbage mpwx-view" :style="pointStyle(garbage.renderedPosition || garbage.position)">
       <StableMapLabel :label-id="`${garbage.id}:status`" :text="garbageShortLabel(garbage)" :priority="scenarioLabelPriority('garbage', garbage.id)" placement="below" tone="amber" :selected="garbage.id === selectedId" :current="currentEntityIds.has(garbage.id)" />
     </view>
-    <view v-if="showFormalObstacle" class="scenario-label-anchor obstacle" :style="pointStyle(state.route.obstacle.position)">
+    <view v-if="showFormalObstacle" class="scenario-label-anchor obstacle mpwx-view" :style="pointStyle(state.route.obstacle.position)">
       <StableMapLabel :label-id="`${state.route.obstacle.id}:status`" :text="obstacleLabel(state.route.obstacle.label)" :detail="state.route.obstacle.id" :priority="92" placement="below" tone="red" current />
     </view>
-    <view v-for="(robot, index) in mapVisibleRobots.filter(showScenarioRobotLabel)" :key="`${robot.id}:label`" class="scenario-label-anchor robot" :style="pointStyle(robot.renderedPosition)">
+    <view v-for="(robot, index) in mapVisibleRobots.filter(showScenarioRobotLabel)" :key="`${robot.id}:label`" class="scenario-label-anchor robot mpwx-view" :style="pointStyle(robot.renderedPosition)">
       <StableMapLabel :label-id="`${robot.id}:status`" :text="robot.statusLabel" :detail="robot.id === selectedId ? robot.id : ''" :priority="scenarioLabelPriority('device', robot.id)" placement="above" :tone="robot.status === 'FAULT' ? 'red' : index ? 'amber' : 'cyan'" :selected="selectedId === robot.id" :current="currentEntityIds.has(robot.id)" />
     </view>
-    <view v-if="routeVehiclePosition" class="scenario-label-anchor bin" :style="pointStyle(routeVehiclePosition)">
+    <view v-if="routeVehiclePosition" class="scenario-label-anchor bin mpwx-view" :style="pointStyle(routeVehiclePosition)">
       <StableMapLabel label-id="device_smart_bin_food_01:return-status" :text="`满载桶 · ${routeVehicleBadge}`" :priority="89" placement="below" tone="amber" current />
     </view>
   </view>
@@ -722,13 +722,13 @@ onBeforeUnmount(stopMotion)
 
 <style scoped>
 .scenario-layer { position: absolute; z-index: 5; inset: 0; pointer-events: none; overflow: hidden; }
-.scenario-badges { position: absolute; z-index: 9; right: 42px; top: 12px; display: flex; gap: 4px; }.scenario-badges text { padding: 3px 6px; border: 1px solid rgba(245,182,72,.48); border-radius: 4px; color: #ffd57c; background: rgba(83,55,9,.75); font: 700 7px/1 ui-monospace,Consolas,monospace; }
+.scenario-badges { position: absolute; z-index: 9; right: 42px; top: 12px; display: flex; gap: 4px; }.scenario-badges .mpwx-text { padding: 3px 6px; border: 1px solid rgba(245,182,72,.48); border-radius: 4px; color: #ffd57c; background: rgba(83,55,9,.75); font: 700 7px/1 ui-monospace,Consolas,monospace; }
 .scenario-route-layer { position:absolute; z-index:0; inset:0; width:100%; height:100%; overflow:visible; }.scenario-route,.scenario-route-ground { fill:none;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;transition:opacity .3s ease }.scenario-route-ground{stroke:rgba(3,22,31,.48);stroke-width:4.4;opacity:.34}.scenario-route-ground.robot-ground{stroke-width:3.1;opacity:.25}.scenario-route-ground.muted{opacity:.07}.scenario-route { stroke-width:2.55;stroke-dasharray:4 10;opacity:.18;filter:drop-shadow(1px 1px .6px rgba(0,14,24,.28))}.scenario-route.active{opacity:.82;animation:scenario-route-flow var(--route-flow-duration) linear infinite}.scenario-route.original{stroke:#e9545f}.scenario-route.original.blocked{opacity:.74}.scenario-route.original.blocked.active{opacity:.86}.scenario-route.replanned{stroke:#35cf84}.scenario-route.replanned.active{opacity:.9}.scenario-route.robot-task-route{stroke-width:2.05;stroke-dasharray:3 10}.scenario-route.robot-task-route.robot-one{stroke:#65a9b4}.scenario-route.robot-task-route.robot-two{stroke:#8c83af}.scenario-route.robot-task-route.muted{opacity:.08;animation:none}
 .scenario-layer.paused .scenario-route,
 .scenario-layer.paused .heat-zone,
 .scenario-layer.paused :deep(.map-waste-sprite.falling .waste-image) { animation-play-state: paused; }
 @keyframes scenario-route-flow { to { stroke-dashoffset:-28; } }
-.heat-zone { position: absolute; transform: translate(-50%,-50%) scale(var(--heat-scale)); border-radius: 50%; background: radial-gradient(circle,rgba(255,77,70,.86) 0,rgba(255,157,50,.48) 34%,rgba(255,210,55,.15) 60%,transparent 72%); animation: heat-breathe var(--heat-breathe-duration) ease-in-out infinite; }.heat-zone text { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); color: #fff6d9; font-size: 8px; font-weight: 800; text-shadow: 0 1px 4px #511; white-space: nowrap; }
+.heat-zone { position: absolute; transform: translate(-50%,-50%) scale(var(--heat-scale)); border-radius: 50%; background: radial-gradient(circle,rgba(255,77,70,.86) 0,rgba(255,157,50,.48) 34%,rgba(255,210,55,.15) 60%,transparent 72%); animation: heat-breathe var(--heat-breathe-duration) ease-in-out infinite; }.heat-zone .mpwx-text { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); color: #fff6d9; font-size: 8px; font-weight: 800; text-shadow: 0 1px 4px #511; white-space: nowrap; }
 @keyframes heat-breathe { 50% { filter: saturate(1.25) brightness(1.12); } }
 .zone-count { position: absolute; z-index: 5; transform: translate(-50%,-50%); padding: 3px 6px; display: flex; gap: 5px; border: 1px solid rgba(126,216,255,.36); border-radius: 5px; color: #a8d8ec; background: rgba(3,27,43,.82); font-size: 7px; }.zone-count .b-text { color: #f0fbff; }
 .scenario-visitor { position: absolute; z-index: 8; transform: translate(-50%,-76%); pointer-events: auto; transition: filter .2s ease; }.scenario-visitor:hover { filter: drop-shadow(0 0 7px #24d9ff); }
@@ -738,8 +738,8 @@ onBeforeUnmount(stopMotion)
 .route-vehicle { position: absolute; z-index: 9; transform: translate(-50%,-82%); text-align: center; }
 .scenario-robot { position:absolute;z-index:9;transform:translate(-50%,-82%);text-align:center;pointer-events:auto;cursor:pointer }.scenario-robot.robot-2{filter:drop-shadow(0 0 5px rgba(167,123,255,.65))}
 .scenario-label-overlay{position:absolute;z-index:12;inset:0;overflow:visible;pointer-events:none}.scenario-label-anchor{position:absolute;transform:translate(-50%,-50%);width:1px;height:1px}.scenario-label-anchor.visitor{width:24px;height:41px;transform:translate(-50%,-76%)}.scenario-label-anchor.robot{width:42px;height:60px;transform:translate(-50%,-82%)}.scenario-label-anchor.bin{width:36px;height:46px;transform:translate(-50%,-82%)}.scenario-label-anchor.garbage{width:32px;height:27px}.scenario-label-anchor.obstacle{width:25px;height:25px}
-.route-key { position: absolute; z-index: 8; right: 12px; bottom: 67px; padding: 6px 8px; display: grid; gap: 4px; border: 1px solid rgba(116,197,255,.3); border-radius: 6px; color: #dff7ff; background: rgba(3,25,40,.82); font-size: 7px; }.route-key view { display: flex; align-items: center; gap: 6px; }.route-key .original,.route-key .replanned { width:22px; border-top:2px dotted; }.route-key .original { border-color:#e9545f; }.route-key .replanned { border-color:#35cf84; }.route-key .small-text { color: #ffd57c; font: 6px/1 ui-monospace,Consolas,monospace; }
-@media (max-width: 900px) { .scenario-badges { right: 34px; }.zone-count { padding: 2px 4px; }.zone-count text { display: none; }.route-key { bottom: 62px; } }
+.route-key { position: absolute; z-index: 8; right: 12px; bottom: 67px; padding: 6px 8px; display: grid; gap: 4px; border: 1px solid rgba(116,197,255,.3); border-radius: 6px; color: #dff7ff; background: rgba(3,25,40,.82); font-size: 7px; }.route-key .mpwx-view { display: flex; align-items: center; gap: 6px; }.route-key .original,.route-key .replanned { width:22px; border-top:2px dotted; }.route-key .original { border-color:#e9545f; }.route-key .replanned { border-color:#35cf84; }.route-key .small-text { color: #ffd57c; font: 6px/1 ui-monospace,Consolas,monospace; }
+@media (max-width: 900px) { .scenario-badges { right: 34px; }.zone-count { padding: 2px 4px; }.zone-count .mpwx-text { display: none; }.route-key { bottom: 62px; } }
 
 /* #ifdef MP-WEIXIN */
 .scenario-layer,.scenario-route-layer,.scenario-label-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; }

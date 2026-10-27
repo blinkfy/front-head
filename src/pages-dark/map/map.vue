@@ -747,9 +747,10 @@ async function getUserLocationOnce(coordType = 'gcj02') {
     
     // 获取平台信息
     try {
-      const systemInfo = uni.getSystemInfoSync()
-      const platform = systemInfo.platform
-      const uniPlatform = systemInfo.uniPlatform
+      const deviceInfo = uni.getDeviceInfo ? uni.getDeviceInfo() : uni.getSystemInfoSync()
+      const appInfo = uni.getAppBaseInfo ? uni.getAppBaseInfo() : uni.getSystemInfoSync()
+      const platform = deviceInfo.platform
+      const uniPlatform = appInfo.uniPlatform
       
       // APP端降级处理：如果是APP端且不支持gcj02，使用wgs84
       if (uniPlatform === 'app' || uniPlatform === 'app-plus' || 

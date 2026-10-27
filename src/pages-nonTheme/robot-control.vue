@@ -208,7 +208,7 @@ const feedbackLogs = ref([
 const steps = [
   { key: 'recognize', label: '识别', iconId: 'camera_scan' },
   { key: 'navigate', label: '导航', iconId: 'map_location' },
-  { key: 'grasp', label: '抓取', iconId: 'device_connect' },
+  { key: 'grasp', label: '抓取', iconId: 'robot_grab' },
   { key: 'drop', label: '投放', iconId: 'device_recycle' },
   { key: 'return', label: '返回', iconId: 'home' }
 ]
@@ -269,7 +269,7 @@ const statusItems = computed(() => [
   { iconId: getCategoryBinIcon(robot.value.category), label: '垃圾类别', value: robot.value.category, tone: 'green' },
   { iconId: 'smart_bin_marker', label: '目标垃圾桶', value: currentTask.value.bin, tone: 'blue' },
   { iconId: 'map_location', label: 'RGB-D定位', value: robot.value.coordinates, tone: 'mint' },
-  { iconId: 'device_connect', label: '抓取状态', value: robot.value.grasp, tone: actionState.value === 'running' ? 'green' : 'orange' }
+  { iconId: 'robot_grab', label: '抓取状态', value: robot.value.grasp, tone: actionState.value === 'running' ? 'green' : 'orange' }
 ])
 
 function getCategoryBinIcon(category) {

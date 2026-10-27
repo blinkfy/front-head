@@ -20,7 +20,10 @@
         <view class="deco-circle c3"></view>
       </view>
       <view class="header-content">
-        <view class="header-title"><ManifestIcon id="store" /> 积分商城</view>
+        <view class="header-title-row">
+          <view class="header-title"><ManifestIcon id="store" /> 积分商城</view>
+          <view class="orders-pill" @click="goToOrders">我的订单</view>
+        </view>
         <text class="header-subtitle">环保积分 · 兑换好礼</text>
       </view>
     </view>
@@ -205,6 +208,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { userinfo } from '@/api/user'
 import { createPurchaseRecord, fetchShopRecommendations } from '@/api/shop'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import { playUiSound } from '@/utils/ui-sounds.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import { updatePointerCssVariables } from '@/utils/pointer-position.mjs'
@@ -557,6 +561,10 @@ const exchangeProduct = async () => {
     exchangedProduct.value = product
     showDetailModal.value = false
     showSuccessModal.value = true
+    playUiSound('redeemSuccess', {
+      key: data.id != null ? `redeem:${data.id}` : undefined,
+      page: 'pages/shop/shop'
+    })
 
     const exchangeHistory = uni.getStorageSync('exchangeHistory') || []
     const now = new Date()

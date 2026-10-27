@@ -7,7 +7,7 @@
     :data-label-suppressed="suppressed ? 'true' : 'false'"
   >
     <i class="label-leader"></i>
-    <text>{{ text }}</text>
+    <text class="stable-map-label-text">{{ text }}</text>
     <text class="small-text" v-if="detail">{{ detail }}</text>
   </view>
 </template>
@@ -42,8 +42,8 @@ defineProps({
 .stable-map-label.below { left: 50%; top: calc(100% + 7px); transform: translate(-50%,0) translate(var(--avoid-x),var(--avoid-y)); }
 .stable-map-label.right { left: calc(100% + 6px); top: -6px; transform: translate(0,0) translate(var(--avoid-x),var(--avoid-y)); }
 .stable-map-label.left { right: calc(100% + 6px); top: -6px; transform: translate(0,0) translate(var(--avoid-x),var(--avoid-y)); }
-.stable-map-label text,.stable-map-label .small-text { position: relative; z-index: 2; display: block; overflow: hidden; text-overflow: ellipsis; }
-.stable-map-label text { font-size: 10px; font-weight: 700; }.stable-map-label .small-text { margin-top: 2px; color: #86afc2; font: 8px/1.2 ui-monospace,Consolas,monospace; }
+.stable-map-label-text,.stable-map-label .small-text { position: relative; z-index: 2; display: block; overflow: hidden; text-overflow: ellipsis; }
+.stable-map-label-text { font-size: 10px; font-weight: 700; }.stable-map-label .small-text { margin-top: 2px; color: #86afc2; font: 8px/1.2 ui-monospace,Consolas,monospace; }
 .stable-map-label.green { border-color: rgba(62,211,145,.36); background: rgba(11,87,59,.9); }.stable-map-label.amber { border-color: rgba(245,182,72,.46); background: rgba(116,70,13,.92); }.stable-map-label.cyan { border-color: rgba(36,217,255,.42); background: rgba(8,91,119,.92); }.stable-map-label.red { border-color: rgba(255,93,102,.52); background: rgba(126,35,42,.94); }
 .stable-map-label.aggregate { color: #fff5d2; border-color: rgba(245,182,72,.5); background: rgba(108,66,10,.92); }
 .stable-map-label.selected { border-color: #fff; box-shadow: 0 0 0 1px #24d9ff,0 0 14px rgba(36,217,255,.5); }.stable-map-label.current { border-color: #f5b648; }

@@ -231,6 +231,7 @@ import { getWasteTypes, createBooking, getAvailableTimeSlots, estimatePrice } fr
 import { getUserProfile, updateUserProfile } from '@/api/user.js';
 import { searchPlaces } from '@/api/map.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
+import { playUiSound } from '@/utils/ui-sounds.js';
 
 export default {
   components: { ManifestIcon },
@@ -454,13 +455,18 @@ export default {
         ? new Date().toISOString().split('T')[0]
         : new Date(Date.now() + 86400000).toISOString().split('T')[0];
       try {
-        await createBooking({
+        const response = await createBooking({
           items: this.selectedTypes.map(id => ({ typeId: id, weight: 1 })),
           appointmentDate: dateStr,
           appointmentTimeSlot: this.selectedTimeSlot,
           address: this.address,
           contactPhone: this.contactPhone.trim(),
           notes: this.remark
+        });
+        const booking = response?.data || response;
+        playUiSound('bookingSuccess', {
+          key: booking?.id != null ? `booking:${booking.id}` : undefined,
+          page: 'pages-nonTheme/booking'
         });
         uni.showToast({ title: '预约成功!', icon: 'success' });
         // 若用户信息中未填 phone/location，提交后自动同步到用户资料

@@ -15,16 +15,21 @@ import android.widget.FrameLayout;
 /** The surface and its guide share one measured, un-stretched camera rectangle. */
 public final class ScanPreview extends FrameLayout {
     private final SurfaceView surface;
+    private final FrameLayout viewport;
     private final Guide guide;
     private int bufferWidth, bufferHeight, rotation;
+    private float zoom = 1f;
 
     public ScanPreview(Context context) {
         super(context);
         setBackgroundColor(Color.rgb(6, 17, 16));
         surface = new SurfaceView(context);
+        viewport = new FrameLayout(context);
+        viewport.setClipChildren(true); viewport.setClipToPadding(true);
         guide = new Guide(context);
         guide.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        addView(surface, new FrameLayout.LayoutParams(-1, -1));
+        viewport.addView(surface, new FrameLayout.LayoutParams(-1, -1));
+        addView(viewport, new FrameLayout.LayoutParams(-1, -1));
         addView(guide, new FrameLayout.LayoutParams(-1, -1));
     }
     public SurfaceView surface() { return surface; }
@@ -33,7 +38,13 @@ public final class ScanPreview extends FrameLayout {
         requestLayout();
     }
     public void scanning(boolean active) { guide.scanning(active); }
-    public void focusAt(float x, float y) { guide.focusAt(x, y); }
+    public void zoom(float value) {
+        zoom = value; surface.setScaleX(value); surface.setScaleY(value);
+    }
+    public void focusAt(float x, float y) {
+        guide.focusAt((x - surface.getWidth() / 2f) * zoom + surface.getWidth() / 2f,
+                (y - surface.getHeight() / 2f) * zoom + surface.getHeight() / 2f);
+    }
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         super.onMeasure(widthSpec, heightSpec);
         int width = getMeasuredWidth(), height = getMeasuredHeight();
@@ -45,13 +56,13 @@ public final class ScanPreview extends FrameLayout {
         // on a later LayoutParams update that can be replaced during a surface resize.
         int childWidth = MeasureSpec.makeMeasureSpec(fit[0], MeasureSpec.EXACTLY);
         int childHeight = MeasureSpec.makeMeasureSpec(fit[1], MeasureSpec.EXACTLY);
-        surface.measure(childWidth, childHeight); guide.measure(childWidth, childHeight);
+        viewport.measure(childWidth, childHeight); guide.measure(childWidth, childHeight);
     }
     @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-        int x = (getMeasuredWidth() - surface.getMeasuredWidth()) / 2;
-        int y = (getMeasuredHeight() - surface.getMeasuredHeight()) / 2;
-        surface.layout(x, y, x + surface.getMeasuredWidth(), y + surface.getMeasuredHeight());
-        guide.layout(x, y, x + surface.getMeasuredWidth(), y + surface.getMeasuredHeight());
+        int x = (getMeasuredWidth() - viewport.getMeasuredWidth()) / 2;
+        int y = (getMeasuredHeight() - viewport.getMeasuredHeight()) / 2;
+        viewport.layout(x, y, x + viewport.getMeasuredWidth(), y + viewport.getMeasuredHeight());
+        guide.layout(x, y, x + viewport.getMeasuredWidth(), y + viewport.getMeasuredHeight());
     }
     @Override protected void onDetachedFromWindow() {
         guide.scanning(false); super.onDetachedFromWindow();

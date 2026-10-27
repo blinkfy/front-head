@@ -18,6 +18,8 @@
 import { ThemeManager } from '@/utils/theme.js'
 import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
 import { warmManifestIcons } from '@/utils/icon-preload.js'
+import { warmSmartSortRobot } from '@/utils/robot-preload.js'
+import { initUiSounds, setUiSoundsActive } from '@/utils/ui-sounds.js'
 import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/device-qr-entry.mjs'
 // #ifdef MP-WEIXIN
 import { captureRegistrationEntry, offerRegistrationRetry } from '@/utils/registration-relay.js'
@@ -51,6 +53,7 @@ export default {
 // #endif
   onLaunch: function (options) {
     console.log('App Launch')
+    initUiSounds()
     // #ifdef MP-WEIXIN
     captureRegistrationEntry(options)
     // #endif
@@ -58,6 +61,7 @@ export default {
     // 初始化全局消息总线
     initGlobalMessageBus()
     warmManifestIcons()
+    warmSmartSortRobot()
     
     // 立即尝试检查主题重定向
     const theme = ThemeManager.getTheme()
@@ -99,6 +103,10 @@ export default {
     captureRegistrationEntry(options)
     void offerRegistrationRetry()
     // #endif
+    setUiSoundsActive(true)
+    // #ifdef APP-PLUS
+    uni.$emit('smart-sort-robot:visibility', true)
+    // #endif
     console.log('App Show')
   },
   onPageNotFound: function (options) {
@@ -107,6 +115,10 @@ export default {
     if (target) uni.reLaunch({ url: target })
   },
   onHide: function () {
+    setUiSoundsActive(false)
+    // #ifdef APP-PLUS
+    uni.$emit('smart-sort-robot:visibility', false)
+    // #endif
     console.log('App Hide')
   },
 // #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ

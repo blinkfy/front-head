@@ -53,21 +53,44 @@ function redirectToLogin() {
   }, 1000)
 }
 
+function responseErrorMessage(data, fallback) {
+  for (const value of [data?.msg, data?.error, data?.message]) {
+    if (typeof value === 'string' && value.trim() && !/^request:\s*ok\b/i.test(value.trim())) return value.trim()
+  }
+  return fallback
+}
+
 function httpErrorMessage(res) {
   const statusCode = Number(res?.statusCode)
-  const data = res?.data && typeof res.data === 'object' ? res.data : {}
-  const fromResponse = data.msg || data.error || res?.msg || res?.errMsg
-  if (fromResponse) return String(fromResponse)
-
   const statusMessages = {
-    400: '请求错误400',
+    400: '请求参数有误，请重试',
     401: '请重新登录',
-    403: '禁止访问403',
-    404: '网络错误404',
-    429: '流量限制429',
-    500: '服务器错误500'
+    403: '暂无权限执行该操作',
+    404: '请求的服务不存在，请稍后重试',
+    408: '请求超时，请稍后重试',
+    429: '请求过于频繁，请稍后重试',
+    500: '服务器异常，请稍后重试',
+    502: '服务暂时无法连接，请稍后重试',
+    503: '服务暂不可用，请稍后重试',
+    504: '服务器响应超时，请稍后重试'
   }
-  return statusMessages[statusCode] || `网络错误${statusCode || ''}`
+  // success 回调的 errMsg=request:ok 只表示收到了响应，不能作为 HTTP 错误提示。
+  return responseErrorMessage(res?.data, statusMessages[statusCode] || '请求失败，请稍后重试')
+}
+
+function networkErrorMessage(error) {
+  const detail = `${error?.errMsg || ''} ${error?.message || ''}`
+  const fallback = /timeout|timed out|超时/i.test(detail)
+    ? '请求超时，请检查网络或稍后重试'
+    : '无法连接服务器，请检查网络或稍后重试'
+  // abort/cancel 也可能来自连接中断，不能据此推断用户主动取消。
+  // 原生 request:fail 等诊断信息保留在异常对象，不直接展示给用户。
+  const message = responseErrorMessage({ msg: error?.msg }, fallback)
+  return /^request:/i.test(message) ? fallback : message
+}
+
+function requestError(error, message) {
+  return { ...error, originalErrMsg: error?.errMsg || error?.message, msg: message, message, errMsg: message }
 }
 
 function getToken() {
@@ -161,35 +184,39 @@ function request({
             resolve(res.data)
           } else if (responseData.code === 401 || responseData.error === 'Unauthorized') {
             handleUnauthorized()
-            reject(responseData)
+            reject(requestError(responseData, responseErrorMessage(responseData, '请重新登录')))
           } else if (responseData.code === 2) {
             // 数据库临时关闭：持久化降级状态，并对连续失败做 toast 去重。
+            const message = responseErrorMessage(responseData, '数据库暂不可用，请稍后重试')
             markDatabaseOffline({
               runtime: databaseStatusRuntime,
-              message: responseData.msg || responseData.error || '数据库暂时关闭，该操作暂不可用',
+              message,
               source: url,
               notify: !silent
             })
-            reject(responseData)
+            reject(requestError(responseData, message))
           } else {
             // 同时显示 msg（社区风格）或 error（新增API风格）
-            if (!silent) uni.showToast({ title: responseData.msg || responseData.error || '请求失败', icon: 'none' })
-            reject(responseData)
+            const message = responseErrorMessage(responseData, '请求失败，请稍后重试')
+            if (!silent) uni.showToast({ title: message, icon: 'none' })
+            reject(requestError(responseData, message))
           }
         } else {
           const message = httpErrorMessage(res)
           if (res?.statusCode === 401) {
             handleUnauthorized()
+          } else if (responseData.code === 2) {
+            markDatabaseOffline({ runtime: databaseStatusRuntime, message, source: url, notify: !silent })
           } else if (!silent) {
             uni.showToast({ title: message, icon: 'none' })
           }
-          reject({ ...res, msg: message, message })
+          reject(requestError(res, message))
         }
       },
       fail: err => {
-        const message = err?.msg || err?.errMsg || err?.message || '网络请求失败，请检查网络后重试'
+        const message = networkErrorMessage(err)
         if (!silent) uni.showToast({ title: message, icon: 'none' })
-        reject({ ...err, msg: message, message })
+        reject(requestError(err, message))
       }
     })
   })

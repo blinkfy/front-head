@@ -101,7 +101,12 @@
             <!-- #endif -->
             <!-- #ifndef H5 -->
             <view class="mp-canvas-box donut-canvas-box">
+              <!-- #ifdef MP-WEIXIN -->
+              <canvas type="2d" id="donutCanvas" class="mp-canvas" style="width:220px;height:220px;"></canvas>
+              <!-- #endif -->
+              <!-- #ifndef MP-WEIXIN -->
               <canvas canvas-id="donutCanvas" id="donutCanvas" class="mp-canvas" style="width:220px;height:220px;"></canvas>
+              <!-- #endif -->
               <view v-if="!donutEntries.length" class="empty canvas-empty">暂无分类结构数据</view>
             </view>
             <!-- #endif -->
@@ -138,7 +143,12 @@
             <!-- #endif -->
             <!-- #ifndef H5 -->
             <view class="mp-canvas-box trend-canvas-box">
+              <!-- #ifdef MP-WEIXIN -->
+              <canvas type="2d" id="trendCanvas" class="mp-canvas trend-canvas" :style="trendCanvasStyle"></canvas>
+              <!-- #endif -->
+              <!-- #ifndef MP-WEIXIN -->
               <canvas canvas-id="trendCanvas" id="trendCanvas" class="mp-canvas trend-canvas" :style="trendCanvasStyle"></canvas>
+              <!-- #endif -->
               <view v-if="!trendCanvasData.length" class="empty canvas-empty">暂无趋势数据</view>
             </view>
             <!-- #endif -->
@@ -155,7 +165,12 @@
               <!-- #endif -->
               <!-- #ifndef H5 -->
               <view class="mp-canvas-box radar-canvas-box">
-                <canvas canvas-id="radarCanvas" id="radarCanvas" class="mp-canvas" style="width:220px;height:220px;"></canvas>
+                <!-- #ifdef MP-WEIXIN -->
+              <canvas type="2d" id="radarCanvas" class="mp-canvas" style="width:220px;height:220px;"></canvas>
+              <!-- #endif -->
+              <!-- #ifndef MP-WEIXIN -->
+              <canvas canvas-id="radarCanvas" id="radarCanvas" class="mp-canvas" style="width:220px;height:220px;"></canvas>
+              <!-- #endif -->
                 <view v-if="!radarMetrics.length" class="empty canvas-empty">暂无雷达数据</view>
               </view>
               <!-- #endif -->
@@ -227,15 +242,19 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { baseUrl } from '@/api/settings'
+import request from '@/api/index.js'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
-import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
+import { redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
 import '@/pages-admin/styles/admin-light-theme.css'
+// #ifdef MP-WEIXIN
+import { createCanvas2DChartContext } from '@/utils/canvas-chart-context.mjs'
+const chartScope = getCurrentInstance()?.proxy
+// #endif
 
 // ─── 工具函数 ──────────────────────────────────────────
 function getStorage(key) {
@@ -272,7 +291,7 @@ const statusText = ref('准备就绪')
 const statusCls = ref('')
 const compactStatusText = computed(() => {
   const text = String(statusText.value || '')
-  if (statusCls.value === 'err') return '加载失败'
+  if (statusCls.value === 'err') return _state.lastOverview ? '刷新失败·旧数据' : '加载失败'
   if (statusCls.value === 'warn') return text.includes('重算') ? '重算中' : '加载中'
   if (text.includes('准备')) return '已就绪'
   return '已更新'
@@ -328,7 +347,8 @@ const _state = reactive({
   loading: false,
   lastOverview: null,
   lastBreakdown: null,
-  lastTrend: null
+  lastTrend: null,
+  lastUpdatedAt: ''
 })
 
 // ─── 筛选器事件 ────────────────────────────────────────
@@ -379,49 +399,25 @@ function rankBadgeClass(index) {
   if (index === 2) return 'top3'
   return ''
 }
-function authHeaders() {
-  const token = getStorage('token') || ''
-  const headers = { 'Content-Type': 'application/json' }
-  if (token) headers.Authorization = token
-  return headers
-}
-
 // ─── API ───────────────────────────────────────────────
-async function api(path, options) {
-  const fullPath = path.startsWith('/') ? `${baseUrl}${path}` : path
-  // #ifdef H5
-  const res = await fetch(fullPath, {
-    ...(options || {}),
-    headers: { ...authHeaders(), ...((options && options.headers) || {}) }
-  })
-  let json = null
+async function api(path, options = {}) {
   try {
-    json = await res.json()
-  } catch (_) {}
-  if (!json || json.code !== 0 || !res.ok) {
-    if (redirectIfAccessDenied(json, res)) {
-      throw new Error(describeApiFailure(json, res))
-    }
-    throw new Error(describeApiFailure(json, res))
-  }
-  return json.data
-  // #endif
-  // #ifndef H5
-  return new Promise((resolve, reject) => {
-    uni.request({
-      url: fullPath,
-      method: (options && options.method) || 'GET',
-      data: (options && options.body) ? JSON.parse(options.body) : undefined,
-      header: { ...authHeaders(), ...((options && options.headers) || {}) },
-      success: res => {
-        const json = res.data
-        if (!json || json.code !== 0) { reject(new Error((json && json.msg) || `HTTP ${res.statusCode}`)); return }
-        resolve(json.data)
-      },
-      fail: err => reject(new Error(err && err.errMsg ? err.errMsg : String(err)))
+    const payload = await request({
+      url: path,
+      method: options.method || 'GET',
+      data: options.body ? JSON.parse(options.body) : {},
+      header: options.headers || {},
+      needAuth: true,
+      silent: true
     })
-  })
-  // #endif
+    return payload.data
+  } catch (error) {
+    // 401 由统一请求层处理登录失效，其余权限错误沿用管理页提示。
+    if (error?.statusCode !== 401 && error?.code !== 401) {
+      redirectIfAccessDenied(error?.data || error, { status: error?.statusCode })
+    }
+    throw error
+  }
 }
 
 // ─── 状态控制 ──────────────────────────────────────────
@@ -543,7 +539,7 @@ function renderCategoryDonut(breakdown) {
   }))
   // 非H5 canvas 环图
   // #ifndef H5
-  nextTick(() => drawDonutCanvas(entries.slice(0, 6), total, palette))
+  queueChartDraw(() => drawDonutCanvas(entries.slice(0, 6), total, palette))
   // #endif
 
   // H5 SVG
@@ -594,7 +590,7 @@ function renderTrend(trend) {
       risk:   risk
     }
   })
-  nextTick(() => drawTrendCanvas())
+  queueChartDraw(drawTrendCanvas)
   // #endif
   // H5 SVG
   // #ifdef H5
@@ -661,9 +657,23 @@ function renderTrend(trend) {
 
 // ─── 非H5 Canvas 绘图 ─────────────────────────────────
 // #ifndef H5
-function drawDonutCanvas(entries, total, palette) {
+async function chartContext(id, width, height) {
+  // #ifdef MP-WEIXIN
+  return createCanvas2DChartContext(uni, id, width, height, chartScope)
+  // #endif
+  // #ifndef MP-WEIXIN
+  return uni.createCanvasContext(id)
+  // #endif
+}
+function queueChartDraw(draw) {
+  nextTick(() => Promise.resolve().then(draw).catch(error => {
+    console.warn('[community-dashboard] chart rendering failed:', error)
+    setStatus(error?.message || '图表绘制失败，请重试', 'err')
+  }))
+}
+async function drawDonutCanvas(entries, total, palette) {
   if (!entries || !entries.length) return
-  const ctx = uni.createCanvasContext('donutCanvas')
+  const ctx = await chartContext('donutCanvas', 220, 220)
   // canvas style = 220px × 220px，绘图坐标系与 style px 值一一对应
   const W = 220, H = 220
   const cx = W / 2, cy = H / 2
@@ -704,10 +714,10 @@ function drawDonutCanvas(entries, total, palette) {
   ctx.draw()
 }
 
-function drawTrendCanvas() {
+async function drawTrendCanvas() {
   const data = trendCanvasData.value
   if (!data || !data.length) return
-  const ctx = uni.createCanvasContext('trendCanvas')
+  const ctx = await chartContext('trendCanvas', trendCanvasW.value, 200)
   // W 与 canvas style px 完全一致（由 trendCanvasW 动态决定）
   const W = trendCanvasW.value
   const H = 200
@@ -779,10 +789,10 @@ function drawTrendCanvas() {
   ctx.draw()
 }
 
-function drawRadarCanvas() {
+async function drawRadarCanvas() {
   const metrics = radarMetrics.value
   if (!metrics || !metrics.length) return
-  const ctx = uni.createCanvasContext('radarCanvas')
+  const ctx = await chartContext('radarCanvas', 220, 220)
   // canvas style = 220px × 220px，绘图坐标系与 style px 值一一对应
   const W = 220, H = 220
   const cx = W / 2, cy = H / 2 + 4
@@ -912,7 +922,7 @@ function renderDistrictRadar(overview) {
   // 非H5 canvas 数据
   // #ifndef H5
   radarMetrics.value = metrics
-  nextTick(() => drawRadarCanvas())
+  queueChartDraw(drawRadarCanvas)
   // #endif
   // H5 SVG
   // #ifdef H5
@@ -1044,6 +1054,7 @@ async function loadDashboardData() {
   renderDistricts(overview)
   renderCommunityList(breakdown)
   renderAlerts(breakdown, trend)
+  _state.lastUpdatedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   return overview
 }
 
@@ -1058,7 +1069,8 @@ async function refreshDashboard() {
     setStatus(`更新完成${suffix}`, 'ok')
   } catch (error) {
     console.error('[community-dashboard] refresh failed:', error)
-    setStatus(`刷新失败：${error && error.message ? error.message : '未知错误'}`, 'err')
+    const retained = _state.lastOverview ? `；当前显示 ${_state.lastUpdatedAt} 的旧数据` : ''
+    setStatus(`刷新失败：${error?.msg || error?.message || '请稍后重试'}${retained}`, 'err')
   } finally {
     _state.loading = false
   }
@@ -1094,7 +1106,7 @@ onMounted(async () => {
   // #ifndef H5
   // 获取屏幕宽度用于趋势图 canvas 尺寸（扣除 panel padding 各约10px）
   try {
-    const sysInfo = uni.getSystemInfoSync()
+    const sysInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
     trendCanvasW.value = Math.max(200, (sysInfo.windowWidth || 320) - 20)
   } catch (e) {
     trendCanvasW.value = 300

@@ -87,7 +87,7 @@ const emit = defineEmits(['back', 'screen-action'])
   justify-content: center;
   gap: 5px;
   min-width: 70px;
-  height: 40px;
+  height: var(--admin-screen-control-height, 36px);
   padding: 0 11px;
   border: 1px solid rgba(144, 198, 219, 0.3);
   border-radius: var(--admin-screen-control-radius);

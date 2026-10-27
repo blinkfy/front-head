@@ -13,7 +13,7 @@
           <view class="example-track">
             <view v-for="copy in 2" :key="copy" class="example-set" :aria-hidden="copy === 2">
               <view v-for="item in guide.examples" :key="item.file" class="example-item">
-                <view class="example-picture"><image :src="exampleUrl(item.file)" mode="aspectFit" lazy-load @error="onImageError" /></view>
+                <view class="example-picture"><image class="example-image" :src="exampleUrl(item.file)" mode="aspectFit" lazy-load @error="onImageError" /></view>
                 <text class="example-name">{{ item.name }}</text>
               </view>
             </view>
@@ -128,7 +128,7 @@ const exampleUrl = file => {
 .example-set { display: flex; width: 300%; flex-shrink: 0; }
 .example-item { display: inline-flex; flex-direction: column; vertical-align: top; width: calc(100% / 12); flex-shrink: 0; box-sizing: border-box; padding-right: 12rpx; padding-bottom: 6rpx; }
 .example-picture { height: 116rpx; border-radius: 22rpx; background: var(--category-soft); display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.example-picture image { width: 100%; height: 100%; }
+.example-image { width: 100%; height: 100%; }
 .example-name { font-size: 23rpx; text-align: center; white-space: normal; line-height: 1.4; margin-top: 10rpx; }
 .legacy-description { padding: 30rpx; font-size: 28rpx; line-height: 1.9; color: #526575; max-height: 55vh; overflow-y: auto; }
 .dark .legacy-description { color: #c8d6e2; }

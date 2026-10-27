@@ -57,8 +57,8 @@ def android_jar(explicit=None):
 
 def build_android_aar(library, framework=None):
     sources = sorted((PLUGIN / "native-src/android").glob("*.java"))
-    if len(sources) != 5:
-        raise ValueError("Expected all five canonical QBar Java sources")
+    if len(sources) != 6:
+        raise ValueError("Expected all six canonical QBar Java sources")
     compiler = os.environ.get("QBAR_JAVAC")
     java_home = os.environ.get("JAVA_HOME")
     if not compiler and java_home:
@@ -102,7 +102,7 @@ def validate_android_aar(path):
             raise ValueError("Incomplete QBar AAR: missing " + str(sorted(required_entries - set(archive.namelist()))))
         with zipfile.ZipFile(BytesIO(archive.read("classes.jar"))) as bytecode:
             names = set(bytecode.namelist())
-            required = {"ftx/qbar/ScannerActivity.class", "ftx/qbar/ScanEngine.class",
+            required = {"ftx/qbar/ScannerActivity.class", "ftx/qbar/ScanEngine.class", "ftx/qbar/ScanPreview.class", "ftx/qbar/ScanPreview$Guide.class",
                         "ftx/qbar/ScanGeometry.class", "ftx/qbar/ScanGeometry$Frame.class", "ftx/qbar/ScanGeometry$AutoZoom.class", "ftx/qbar/ScanGeometry$Candidate.class",
                         "com/tencent/qbar/QbarNative.class", "com/tencent/qbar/WxQbarNative.class",
                         "com/tencent/qbar/QbarNative$QBarResultJNI.class",

@@ -12,12 +12,21 @@ import com.github.unidbg.virtualmodule.android.JniGraphics;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
 
 /** Isolated JNI probe. Never loaded by the app, never contacts WeChat or the backend. */
 public final class QbarProbe extends AbstractJni {
     private final Map<DvmObject<?>, Map<String, Object>> fields = new IdentityHashMap<>();
+    private AndroidEmulator emulator;
+    private VM vm;
+    private DvmClass qbar;
+    private DvmObject<?> version;
+    private int id;
 
     private Map<String, Object> fields(DvmObject<?> object) {
         return fields.computeIfAbsent(object, unused -> new HashMap<>());
@@ -49,53 +58,52 @@ public final class QbarProbe extends AbstractJni {
         super.setIntField(vm, object, signature, value);
     }
 
-    private void run(String[] args) throws Exception {
-        if (args.length < 2 || (args.length > 2 && !args[2].equals("modern")))
-            throw new IllegalArgumentException("usage: QbarProbe libwechatQrMod.so image.png [modern]");
-        File library = new File(args[0]).getCanonicalFile();
-        BufferedImage image = ImageIO.read(new File(args[1]));
-        if (image == null) throw new IllegalArgumentException("Unsupported input image");
-        int width = image.getWidth(), height = image.getHeight();
-        byte[] gray = new byte[width * height];
-        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
-            int rgb = image.getRGB(x, y);
-            gray[y * width + x] = (byte) Math.round(0.299 * (rgb >> 16 & 255) + 0.587 * (rgb >> 8 & 255) + 0.114 * (rgb & 255));
-        }
-        AndroidEmulator emulator = AndroidEmulatorBuilder.for64Bit()
+    private void initialize(File library, boolean quiet) throws Exception {
+        emulator = AndroidEmulatorBuilder.for64Bit()
                 .setProcessName("local.fentouxia.qbarprobe")
                 .setRootDir(new File("artifacts/rootfs"))
                 .addBackendFactory(new Unicorn2Factory(true)).build();
-        try {
             emulator.getMemory().setLibraryResolver(new AndroidResolver(23));
             emulator.getSyscallHandler().setEnableThreadDispatcher(true);
-            VM vm = emulator.createDalvikVM();
+            vm = emulator.createDalvikVM();
             vm.setJni(this);
             vm.setVerbose(Boolean.getBoolean("qbar.verbose"));
             new AndroidModule(emulator, vm).register(emulator.getMemory());
             new JniGraphics(emulator, vm).register(emulator.getMemory());
             File cpp = new File(library.getParentFile(), "libc++_shared.so");
             if (cpp.exists()) vm.loadLibrary(cpp, true);
-            System.out.println("STAGE load " + library.getName());
+            if (!quiet) System.out.println("STAGE load " + library.getName());
             DalvikModule module = vm.loadLibrary(library, false);
             module.callJNI_OnLoad(emulator);
-            System.out.println("STAGE JNI_OnLoad completed");
-            DvmClass qbar = vm.resolveClass("com/tencent/qbar/QbarNative");
-            DvmObject<?> version = qbar.callStaticJniMethodObject(emulator, "GetVersion()Ljava/lang/String;");
-            System.out.println("VERSION " + version);
+            if (!quiet) System.out.println("STAGE JNI_OnLoad completed");
+            qbar = vm.resolveClass("com/tencent/qbar/QbarNative");
+            version = qbar.callStaticJniMethodObject(emulator, "GetVersion()Ljava/lang/String;");
+            if (!quiet) System.out.println("VERSION " + version);
             DvmObject<?> model = vm.resolveClass("com/tencent/qbar/QbarNative$QbarAiModelParam").newObject(null);
             for (String name : Arrays.asList("detectModelVersion", "superResolutionModelVersion", "detect_model_bin_path_", "detect_model_param_path_", "superresolution_model_bin_path_", "superresolution_model_param_path_", "qbar_segmentation_model_path_")) {
                 fields(model).put(name, new StringObject(vm, name.endsWith("Version") ? "V1.0.0.26" : ""));
             }
-            int id = qbar.callStaticJniMethodInt(emulator, "Init(IZZZZIILjava/lang/String;Ljava/lang/String;Lcom/tencent/qbar/QbarNative$QbarAiModelParam;)I", 1, false, false, true, false, 1, 1, "ANY", "UTF-8", model);
-            System.out.println("INIT " + id);
+            id = qbar.callStaticJniMethodInt(emulator, "Init(IZZZZIILjava/lang/String;Ljava/lang/String;Lcom/tencent/qbar/QbarNative$QbarAiModelParam;)I", 1, false, false, true, false, 1, 1, "ANY", "UTF-8", model);
+            if (!quiet) System.out.println("INIT " + id);
             if (id < 0) throw new IllegalStateException("Init failed " + id);
             IntArray readers = new IntArray(vm, new int[]{1, 2, 3, 4, 5});
             int set = qbar.callStaticJniMethodInt(emulator, "SetReaders([III)I", readers, 5, id);
-            System.out.println("READERS " + set);
+            if (!quiet) System.out.println("READERS " + set);
             if (set != 0) throw new IllegalStateException("SetReaders failed " + set);
+    }
+
+    private Map<String, Object> scan(File file, boolean quiet) throws Exception {
+            BufferedImage image = ImageIO.read(file);
+            if (image == null) throw new IllegalArgumentException("Unsupported input image");
+            int width = image.getWidth(), height = image.getHeight();
+            byte[] gray = new byte[width * height];
+            for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+                int rgb = image.getRGB(x, y);
+                gray[y * width + x] = (byte) Math.round(0.299 * (rgb >> 16 & 255) + 0.587 * (rgb >> 8 & 255) + 0.114 * (rgb & 255));
+            }
             long start = System.nanoTime();
             int scan = qbar.callStaticJniMethodInt(emulator, "ScanImage([BIII)I", new ByteArray(vm, gray), width, height, id);
-            System.out.println("SCAN " + scan + " elapsedMs=" + (System.nanoTime() - start) / 1_000_000);
+            if (!quiet) System.out.println("SCAN " + scan + " elapsedMs=" + (System.nanoTime() - start) / 1_000_000);
             if (scan != 0) throw new IllegalStateException("ScanImage failed " + scan);
             DvmClass resultClass = vm.resolveClass("com/tencent/qbar/QbarNative$QBarResultJNI");
             DvmObject<?>[] results = new DvmObject<?>[3];
@@ -108,7 +116,7 @@ public final class QbarProbe extends AbstractJni {
             ArrayObject array = new ArrayObject(results);
             String signature = "GetResults([Lcom/tencent/qbar/QbarNative$QBarResultJNI;I)I";
             int count = qbar.callStaticJniMethodInt(emulator, signature, array, id);
-            System.out.println("RESULT_COUNT " + count);
+            if (!quiet) System.out.println("RESULT_COUNT " + count);
             if (count < 0) throw new IllegalStateException("GetResults failed " + count);
             List<Map<String, Object>> decoded = new ArrayList<>();
             for (int i = 0; i < results.length; i++) {
@@ -126,7 +134,7 @@ public final class QbarProbe extends AbstractJni {
                 if (Boolean.getBoolean("qbar.includePayload")) item.put("rawBase64", Base64.getEncoder().encodeToString(data));
                 decoded.add(item);
             }
-            System.out.println("RELEASE " + qbar.callStaticJniMethodInt(emulator, "Release(I)I", id));
+            for (DvmObject<?> result : results) fields.remove(result);
             Map<String, Object> report = new LinkedHashMap<>();
             report.put("width", width);
             report.put("height", height);
@@ -135,8 +143,57 @@ public final class QbarProbe extends AbstractJni {
             report.put("results", decoded);
             report.put("sceneDecoded", false);
             report.put("scene", null);
-            System.out.println("NATIVE_RESULT_JSON " + JSON.toJSONString(report, com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
-        } finally { emulator.close(); }
+            return report;
     }
-    public static void main(String[] args) throws Exception { new QbarProbe().run(args); }
+
+    private void run(String[] args) throws Exception {
+        if (args.length < 2 || (args.length > 2 && !args[2].equals("modern")))
+            throw new IllegalArgumentException("usage: QbarProbe libwechatQrMod.so image.png [modern]");
+        try {
+            initialize(new File(args[0]).getCanonicalFile(), false);
+            Map<String, Object> report = scan(new File(args[1]), false);
+            System.out.println("RELEASE " + qbar.callStaticJniMethodInt(emulator, "Release(I)I", id));
+            System.out.println("NATIVE_RESULT_JSON " + JSON.toJSONString(report, com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
+        } finally { if (emulator != null) emulator.close(); }
+    }
+
+    private void worker(String[] args) throws Exception {
+        if (args.length != 2) throw new IllegalArgumentException("usage: QbarProbe libwechatQrMod.so --worker");
+        PrintStream protocol = System.out;
+        System.setOut(System.err);
+        try {
+            initialize(new File(args[0]).getCanonicalFile(), true);
+            protocol.println("READY");
+            protocol.flush();
+            BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+            String line;
+            int processed = 0;
+            while (processed++ < 64 && (line = input.readLine()) != null) {
+                Map<String, Object> reply = new LinkedHashMap<>();
+                boolean failed = false;
+                try {
+                    Map<String, Object> request = JSON.parseObject(line);
+                    Object requestId = request.get("id");
+                    if (!(requestId instanceof Number) || !(request.get("imagePath") instanceof String))
+                        throw new IllegalArgumentException("Invalid worker request");
+                    reply.put("id", requestId);
+                    reply.put("report", scan(new File((String) request.get("imagePath")), true));
+                } catch (Exception error) {
+                    reply.put("error", "QBAR_DECODE_FAILED");
+                    failed = true;
+                }
+                protocol.println("RESULT " + JSON.toJSONString(reply));
+                protocol.flush();
+                if (failed) break;
+            }
+        } finally {
+            if (emulator != null) emulator.close();
+            System.setOut(protocol);
+        }
+    }
+    public static void main(String[] args) throws Exception {
+        QbarProbe probe = new QbarProbe();
+        if (args.length == 2 && args[1].equals("--worker")) probe.worker(args);
+        else probe.run(args);
+    }
 }

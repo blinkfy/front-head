@@ -1,32 +1,32 @@
 <template>
-  <view class="robot-task-overlay" :data-event-source="eventSource">
-    <view class="overlay-head">
-      <view class="overlay-title-group">
-        <view class="overlay-title">{{ viewMode === 'bin' ? '智能垃圾桶内部处理' : '机器人局部任务' }}</view>
-        <view class="overlay-stage-title">{{ activeDisplayStage.label }}<text>/ {{ activeDisplayStage.key.toUpperCase() }}</text></view>
+  <view class="robot-task-overlay mpwx-view" :data-event-source="eventSource">
+    <view class="overlay-head mpwx-view">
+      <view class="overlay-title-group mpwx-view">
+        <view class="overlay-title mpwx-view">{{ viewMode === 'bin' ? '智能垃圾桶内部处理' : '机器人局部任务' }}</view>
+        <view class="overlay-stage-title mpwx-view">{{ activeDisplayStage.label }}<text class="mpwx-text">/ {{ activeDisplayStage.key.toUpperCase() }}</text></view>
       </view>
-      <view class="task-facts">
-        <view><text>垃圾类别</text><text class="b-text">{{ garbageText }}</text></view>
-        <view><text>目标桶</text><text class="b-text">{{ targetBinText }}</text></view>
-        <view><text>任务</text><text class="b-text">{{ taskId || '—' }}</text></view>
-        <view class="progress-fact"><text>阶段进度</text><text class="b-text">{{ Math.round(overallProgress) }}%</text></view>
+      <view class="task-facts mpwx-view">
+        <view class="mpwx-view"><text class="mpwx-text">垃圾类别</text><text class="b-text mpwx-text">{{ garbageText }}</text></view>
+        <view class="mpwx-view"><text class="mpwx-text">目标桶</text><text class="b-text mpwx-text">{{ targetBinText }}</text></view>
+        <view class="mpwx-view"><text class="mpwx-text">任务</text><text class="b-text mpwx-text">{{ taskId || '—' }}</text></view>
+        <view class="progress-fact mpwx-view"><text class="mpwx-text">阶段进度</text><text class="b-text mpwx-text">{{ Math.round(overallProgress) }}%</text></view>
       </view>
     </view>
 
-    <view :class="['stage-selector', { 'bin-stages': viewMode === 'bin' }]" :aria-label="viewMode === 'bin' ? '智能桶内部处理阶段' : '机器人局部任务阶段'">
+    <view :class="['stage-selector', { 'bin-stages': viewMode === 'bin' }]" :aria-label="viewMode === 'bin' ? '智能桶内部处理阶段' : '机器人局部任务阶段'" class="mpwx-view">
       <view
         v-for="(stage, index) in displayStages"
         :key="stage.key"
         :class="['stage-chip', { active: index === activeDisplayStageIndex, done: index < activeDisplayStageIndex }]"
         :data-stage="stage.key"
         @tap="jumpToDisplayStage(index)"
-      >
-        <text class="stage-index">{{ index + 1 }}</text>
-        <text>{{ stage.label }}</text>
+       class="mpwx-view">
+        <text class="stage-index mpwx-text">{{ index + 1 }}</text>
+        <text class="mpwx-text">{{ stage.label }}</text>
       </view>
     </view>
 
-    <view class="player-shell" :data-render-stage="renderStage" :data-view-mode="viewMode">
+    <view class="player-shell mpwx-view" :data-render-stage="renderStage" :data-view-mode="viewMode">
       <SortingWorkflowPlayer
         v-show="viewMode === 'robot'"
         ref="playerRef"
@@ -69,15 +69,15 @@
         @complete="handleBinComplete"
         @error="handlePlayerError"
       />
-      <view class="progress-track"><view class="progress-fill" :style="{ width: `${overallProgress}%` }"></view></view>
+      <view class="progress-track mpwx-view"><view class="progress-fill mpwx-view" :style="{ width: `${overallProgress}%` }"></view></view>
     </view>
 
-    <view class="overlay-footer">
-      <view class="task-identity">
-        <text>{{ taskId || '未登记任务 ID' }}</text>
-        <text class="small-text">{{ identityDetail }}</text>
+    <view class="overlay-footer mpwx-view">
+      <view class="task-identity mpwx-view">
+        <text class="mpwx-text">{{ taskId || '未登记任务 ID' }}</text>
+        <text class="small-text mpwx-text">{{ identityDetail }}</text>
       </view>
-      <view class="local-controls">
+      <view class="local-controls mpwx-view">
         <button class="local-button" size="mini" @tap="running ? emit('pause') : emit('play')">
           {{ running ? '暂停' : '继续' }}
         </button>
@@ -85,10 +85,10 @@
       </view>
     </view>
 
-    <view v-if="debug" class="debug-stages">
-      <text>{{ eventSource }}</text>
-      <text>{{ visualState.source || 'NO_ASSET_SOURCE' }}</text>
-      <text v-for="stage in LOGICAL_STAGES" :key="stage.key">{{ stage.key.toUpperCase() }}</text>
+    <view v-if="debug" class="debug-stages mpwx-view">
+      <text class="mpwx-text">{{ eventSource }}</text>
+      <text class="mpwx-text">{{ visualState.source || 'NO_ASSET_SOURCE' }}</text>
+      <text v-for="stage in LOGICAL_STAGES" :key="stage.key" class="mpwx-text">{{ stage.key.toUpperCase() }}</text>
     </view>
   </view>
 </template>
@@ -341,11 +341,11 @@ watch(
 .overlay-title-group { min-width: 0; }
 .overlay-title { color: #fff; font-size: 17px; font-weight: 760; letter-spacing: .1px; }
 .overlay-stage-title { margin-top: 4px; color: #62d8ee; font-size: 10px; font-weight: 700; }
-.overlay-stage-title text { margin-left: 5px; color: #7298aa; font: 650 8px/1.2 ui-monospace,Consolas,monospace; }
+.overlay-stage-title .mpwx-text { margin-left: 5px; color: #7298aa; font: 650 8px/1.2 ui-monospace,Consolas,monospace; }
 .task-facts { display: grid; grid-template-columns: 1fr 1fr 1.25fr .68fr; min-width: 0; border-left: 1px solid rgba(112,194,232,.2); }
-.task-facts view { min-width: 0; padding: 2px 10px; border-right: 1px solid rgba(112,194,232,.16); }
-.task-facts text,.task-facts .b-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-facts text { color: #6f94a7; font-size: 8px; font-weight: 560; }
+.task-facts .mpwx-view { min-width: 0; padding: 2px 10px; border-right: 1px solid rgba(112,194,232,.16); }
+.task-facts .mpwx-text,.task-facts .b-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-facts .mpwx-text { color: #6f94a7; font-size: 8px; font-weight: 560; }
 .task-facts .b-text { margin-top: 4px; color: #dff7ff; font-size: 10px; font-weight: 720; }
 .task-facts .progress-fact .b-text { color: #68d8ec; font: 760 12px/1.1 ui-monospace,Consolas,monospace; }
 .stage-selector { position:absolute; z-index:5; top:70px; right:12px; left:12px; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:0; margin:0; padding:7px 0 6px; border-top:1px solid rgba(103,173,205,.2); border-bottom:1px solid rgba(103,173,205,.18); background:linear-gradient(90deg,rgba(3,23,38,.8),rgba(3,23,38,.54)); backdrop-filter:blur(5px); pointer-events:auto; animation:hud-enter-top .42s .04s cubic-bezier(.22,1,.36,1) both; }
@@ -364,14 +364,14 @@ watch(
 .progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg,#4aa892,#4cbad0); transition: width .1s linear; }
 .overlay-footer { position:absolute; z-index:5; right:12px; bottom:10px; left:12px; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:40px; padding:7px 10px; box-sizing:border-box; border:1px solid rgba(85,205,255,.24); border-radius:9px; background:linear-gradient(90deg,rgba(3,23,38,.9),rgba(3,23,38,.7)); box-shadow:0 -8px 24px rgba(0,13,22,.2); backdrop-filter:blur(6px); pointer-events:auto; animation:hud-enter-bottom .4s cubic-bezier(.22,1,.36,1) both; }
 .task-identity { min-width: 0; }
-.task-identity text,.task-identity .small-text { display: block; }
-.task-identity text { overflow: hidden; color: #9fd5eb; font: 700 9px/1.2 ui-monospace,Consolas,monospace; text-overflow: ellipsis; white-space: nowrap; }
+.task-identity .mpwx-text,.task-identity .small-text { display: block; }
+.task-identity .mpwx-text { overflow: hidden; color: #9fd5eb; font: 700 9px/1.2 ui-monospace,Consolas,monospace; text-overflow: ellipsis; white-space: nowrap; }
 .task-identity .small-text { margin-top: 3px; color: #668a9b; font-size: 8px; }
 .local-controls { display: flex; gap: 6px; }
 .local-button { margin: 0; padding: 0 12px; border: 1px solid rgba(68,190,236,.55); color: #fff; background: #1679a7; font-size: 10px; }
 .local-button.secondary { color: #a9d6e8; background: rgba(255,255,255,.055); }
 .debug-stages { display: flex; gap: 4px; margin-top: 5px; overflow: hidden; }
-.debug-stages text { padding: 3px 5px; color: #789aaa; border: 1px dashed rgba(116,197,255,.18); font: 7px/1 ui-monospace,Consolas,monospace; white-space: nowrap; }
+.debug-stages .mpwx-text { padding: 3px 5px; color: #789aaa; border: 1px dashed rgba(116,197,255,.18); font: 7px/1 ui-monospace,Consolas,monospace; white-space: nowrap; }
 @keyframes hud-enter-top { from { opacity:0; transform:translateY(-18px); } to { opacity:1; transform:translateY(0); } }
 @keyframes hud-enter-bottom { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
 @media (max-width: 900px) {
@@ -394,7 +394,7 @@ watch(
 .robot-task-replay-overlay { position: relative; top: auto; left: auto; right: auto; bottom: auto; width: 100%; height: auto; min-height: 300px; }
 .overlay-head { position: relative; top: auto; left: auto; right: auto; bottom: auto; display: flex; flex-direction: column; gap: 7px; backdrop-filter: none; }
 .task-facts { display: flex; flex-wrap: wrap; border-left: 0; }
-.task-facts view { flex: 1; min-width: 80px; border-right: 0; }
+.task-facts .mpwx-view { flex: 1; min-width: 80px; border-right: 0; }
 .stage-selector { position: relative; top: auto; left: auto; right: auto; bottom: auto; display: flex; flex-wrap: wrap; backdrop-filter: none; }
 .stage-selector.bin-stages { display: flex; flex-wrap: wrap; }
 .overlay-footer { position: relative; top: auto; left: auto; right: auto; bottom: auto; backdrop-filter: none; }

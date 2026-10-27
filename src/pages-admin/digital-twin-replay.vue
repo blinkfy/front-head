@@ -1,5 +1,5 @@
 <template>
-  <view :class="['replay-screen', isDark ? 'dark-theme' : 'light-theme', { 'admin-light-theme': !isDark }]">
+  <view :class="['replay-screen', isDark ? 'dark-theme' : 'light-theme', { 'admin-light-theme': !isDark }]" :style="screenStyle">
     <view class="header panel">
       <view class="header-copy">
         <view class="title">{{ pageTitle }}</view>
@@ -12,19 +12,19 @@
           </view>
           <view class="source-summary">数据源 {{ sourceTypes.length }} 类</view>
           <view v-if="pageMode === 'live'" :class="['algorithm-badge', { degraded: algorithmDegraded }]">{{ algorithmStatusLabel }}</view>
-          <picker mode="selector" :range="pageModeOptions" range-key="label" :value="pageModeIndex" @change="onPageModeChange">
+          <picker class="twin-control-picker" mode="selector" :range="pageModeOptions" range-key="label" :value="pageModeIndex" @change="onPageModeChange">
             <view class="mode-select page-mode-select">
               <text>页面模式</text>
               <text class="b-text">{{ activePageModeLabel }}</text>
             </view>
           </picker>
-          <picker v-if="pageMode === 'replay'" mode="selector" :range="scenarioOptions" range-key="label" :value="scenarioIndex" @change="onScenarioChange">
+          <picker v-if="pageMode === 'replay'" class="twin-control-picker" mode="selector" :range="scenarioOptions" range-key="label" :value="scenarioIndex" @change="onScenarioChange">
             <view class="mode-select scenario-select">
               <text>回放场景</text>
               <text class="b-text">{{ activeScenarioLabel }}</text>
             </view>
           </picker>
-          <picker v-if="pageMode === 'replay'" mode="selector" :range="modeOptions" range-key="label" :value="modeIndex" @change="onModeChange">
+          <picker v-if="pageMode === 'replay'" class="twin-control-picker" mode="selector" :range="modeOptions" range-key="label" :value="modeIndex" @change="onModeChange">
             <view class="mode-select">
               <text>数据文件</text>
               <text class="b-text">{{ activeModeLabel }}</text>
@@ -227,6 +227,19 @@ import { robotTaskHandoffStartPositionPct, robotTaskScanStartPositionPct } from 
 import { PARK_ROAD_NETWORK, parkRoutePolyline, sampleParkRoadEdge } from '@/pages-admin/utils/park-road-network.js'
 
 const isDark = ref(applyStoredTheme() === 'dark')
+const miniProgramTopInset = ref(0)
+// #ifdef MP-WEIXIN
+try {
+  const systemInfo = uni.getSystemInfoSync()
+  const menuRect = wx.getMenuButtonBoundingClientRect()
+  miniProgramTopInset.value = Math.max(Number(systemInfo.statusBarHeight) || 0, Number(menuRect.bottom) || 0)
+} catch (e) {
+  miniProgramTopInset.value = 0
+}
+// #endif
+const screenStyle = computed(() => miniProgramTopInset.value
+  ? { paddingTop: `${miniProgramTopInset.value}px` }
+  : {})
 const algorithmStatus = ref(null)
 const algorithmDegraded = computed(() => algorithmStatus.value?.worker?.lastError || algorithmStatus.value?.health?.stgMamba?.trained === false || algorithmStatus.value?.health?.dtMarl?.trained === false)
 const algorithmStatusLabel = computed(() => {
@@ -1939,18 +1952,26 @@ page { background: #071726; }
   .replay-screen.light-theme.admin-light-theme .right-column .entity-inspector.is-empty { flex-basis: 116px; min-height: 116px; }
 }
 
+/* H5 小屏场景容器按场景宽高比收紧，避免画面上下留下大块空白。 */
+@media (max-width: 900px) {
+  .replay-screen .park-stage { width: 100%; height: auto; min-height: 0; aspect-ratio: 1672 / 941; }
+  .replay-screen .park-map { height: 100%; flex: none; }
+}
+
 /* #ifdef MP-WEIXIN */
 /* 微信小程序端专用布局：grid / minmax / clamp / backdrop-filter 等特性支持不佳，改用 flex 垂直布局 */
 .replay-screen { height: auto; min-height: 100vh; width: 100%; overflow: auto; padding: 6px; gap: 6px; box-sizing: border-box; display: flex; flex-direction: column; }
 .replay-screen .panel { backdrop-filter: none; }
-.replay-screen .header { min-height: auto; flex-wrap: wrap; padding: 8px 10px; gap: 8px; }
+.replay-screen .header { min-height: auto; flex-wrap: wrap; padding: 4px 10px 8px; gap: 8px; }
 .replay-screen .header-copy { min-width: 0; flex: 1 1 100%; }
 .replay-screen .title { font-size: 18px; }
 .replay-screen .subtitle { font-size: 10px; }
 .replay-screen .twin-screen-header { margin-left: 0; flex: 1 1 100%; }
 .replay-screen .twin-header-business { flex-wrap: wrap; gap: 6px; width: 100%; }
 .replay-screen .source-legend { display: none; }
-.replay-screen .source-summary { font-size: 10px; padding: 4px 6px; }
+.replay-screen .source-summary { display: none; }
+.replay-screen .twin-header-business .twin-control-picker,
+.replay-screen .twin-header-business .header-button { flex: 1 1 calc(50% - 3px); min-width: 0; }
 .replay-screen .algorithm-badge { max-width: 140px; font-size: 9px; }
 .replay-screen .mode-select { min-width: 96px; padding: 5px 6px; }
 .replay-screen .mode-select text { font-size: 9px; }

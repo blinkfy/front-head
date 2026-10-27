@@ -2,28 +2,28 @@
   <view :class="['compact-metric-card', `tone-${tone}`, { 'is-gauge': hasGauge }]">
     <view class="compact-metric-icon" aria-hidden="true">
       <ManifestIcon v-if="manifestIconIds.has(icon)" :id="icon" />
-      <text v-else>{{ icon }}</text>
+      <text v-else class="mpwx-text">{{ icon }}</text>
     </view>
     <view class="compact-metric-copy">
-      <text class="compact-metric-label">{{ label }}</text>
+      <text class="compact-metric-label mpwx-text">{{ label }}</text>
       <view v-if="!hasGauge" class="compact-metric-value-row">
-        <text class="compact-metric-value">{{ value }}</text>
+        <text class="compact-metric-value mpwx-text">{{ value }}</text>
         <text
           v-if="trend"
           :class="['compact-metric-trend', trend.cls || 'flat']"
           :aria-label="trend.ariaLabel || ''"
-        >
-          <text class="compact-metric-trend-symbol">{{ trend.symbol || '•' }}</text>
-          <text>{{ trend.value || '' }}</text>
+         class="mpwx-text">
+          <text class="compact-metric-trend-symbol mpwx-text">{{ trend.symbol || '•' }}</text>
+          <text class="mpwx-text">{{ trend.value || '' }}</text>
         </text>
       </view>
       <view v-else-if="trend" class="compact-metric-gauge-trend">
         <text
           :class="['compact-metric-trend', trend.cls || 'flat']"
           :aria-label="trend.ariaLabel || ''"
-        >
-          <text class="compact-metric-trend-symbol">{{ trend.symbol || '•' }}</text>
-          <text>{{ trend.value || '' }}</text>
+         class="mpwx-text">
+          <text class="compact-metric-trend-symbol mpwx-text">{{ trend.symbol || '•' }}</text>
+          <text class="mpwx-text">{{ trend.value || '' }}</text>
         </text>
       </view>
     </view>
@@ -38,7 +38,7 @@
       :aria-label="`${label} ${value}`"
     >
       <view class="compact-metric-gauge-core">
-        <text>{{ value }}</text>
+        <text class="mpwx-text">{{ value }}</text>
       </view>
     </view>
   </view>
@@ -275,7 +275,7 @@ const gaugeColor = computed(() => {
   justify-content: center;
 }
 
-.compact-metric-gauge-core text {
+.compact-metric-gauge-core .mpwx-text {
   color: inherit;
   font-family: "Rajdhani", "DIN Alternate", Inter, sans-serif;
   font-size: 17px;
@@ -306,7 +306,7 @@ const gaugeColor = computed(() => {
     flex-basis: 58px;
   }
 
-  .compact-metric-gauge-core text {
+  .compact-metric-gauge-core .mpwx-text {
     font-size: 15px;
   }
 }

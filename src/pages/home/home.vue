@@ -88,6 +88,7 @@
         v-if="showAppOnboarding && onboardingDemoStage !== 'idle'"
         :stage="onboardingDemoStage"
         :ai-enabled="aiServiceEnabled"
+        @tail-space="updateOnboardingTailSpace"
         :dark="false"
         :active="robotPageActive"
       />
@@ -102,7 +103,7 @@
         </view>
         
         <view class="result-image-wrap" :class="{ 'recognition-photo-active': isProcessing }">
-          <image :src="resultImage" class="result-image" mode="aspectFit" />
+          <image :key="bboxImage.key" :data-bbox-key="bboxImage.key" :src="bboxImage.src" class="result-image" mode="aspectFit" @load="bboxImage.onLoad" @error="bboxImage.onError" />
           <view v-if="isProcessing" class="recognition-photo-scan"></view>
           <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending && displayBboxes.length" class="recognition-bbox-layer">
             <view
@@ -165,6 +166,7 @@
                 :src="upcyclingImageUrl"
                 mode="aspectFit"
                 class="upcycling-image recognition-image-enter"
+                  @load="onUpcyclingImageLoaded"
                 @click="previewUpcyclingImage"
               />
               <view v-if="!upcyclingImageUrl && upcyclingTaskId" class="upcycling-image-loading">
@@ -267,8 +269,8 @@
           </view>
         </view>
 
-        <view class="quick-actions-grid" :class="{ 'three-items': isH5Platform }">
-          <view v-if="!isH5Platform" class="action-item compact onboarding-target-device" @click="scanDeviceQR">
+        <view class="quick-actions-grid" :class="{ 'three-items': !showDeviceScan }">
+          <view v-if="showDeviceScan" class="action-item compact onboarding-target-device" @click="scanDeviceQR">
             <view class="action-icon-wrapper device">
               <ManifestIcon id="device_connect" class="action-icon" />
             </view>
@@ -297,6 +299,7 @@
           </view>
         </view>
       </view>
+      <view v-if="showAppOnboarding && onboardingDemoVisible && onboardingTailSpace > 0" class="onboarding-layout-tail" :style="{ height: `${onboardingTailSpace}px` }" aria-hidden="true"></view>
     </view>
 
     <!-- 分类指南弹窗 -->
@@ -351,10 +354,12 @@ import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch, getCurrentI
 import { trackOnboardingFocus, queryOnboardingRects, getOnboardingViewport, getOnboardingScrollTop } from '@/utils/onboarding-focus.mjs'
 import { onPageScroll, onShow, onHide, onUnload, onResize } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
+import { useRecognitionBboxes } from '@/utils/use-recognition-bboxes'
 import { getRecognitionCompressionDecision, getRecognitionImageSize, isSmallerRecognitionImage, shouldUseCompressedRecognitionImage } from '@/utils/recognition-image.mjs'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { scanAndConnectDevice } from '@/utils/device-qr'
+import { canShowDeviceScanEntry } from '@/utils/h5-scan-entry.mjs'
 import AppOnboarding from '@/components/AppOnboarding.vue'
 import OnboardingRecognitionDemo from '@/components/OnboardingRecognitionDemo.vue'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
@@ -362,6 +367,7 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import WasteCategoryModal from '@/components/WasteCategoryModal.vue'
 import { wasteCategoryGuides } from '@/utils/waste-category-guides'
 import SmartSortRobot3D from '@/components/SmartSortRobot3D.vue'
+import { playUiSound } from '@/utils/ui-sounds.js'
 import { getRecognitionRobotState } from '@/utils/recognition-robot-state.mjs'
 import SmartSortRecognitionVisual from '@/components/SmartSortRecognitionVisual.vue'
 import RecognitionProgressPreview from '@/components/RecognitionProgressPreview.vue'
@@ -372,8 +378,6 @@ import {
   buildExpandedUpcyclingText,
   buildSeedFromRecognizeData,
   extractRecognizedItems,
-  getBboxColor,
-  mapBboxToDisplay,
   parseLabelBbox,
   saveSeed,
   splitUpcyclingSections
@@ -444,19 +448,26 @@ const processStatus = ref('处理中...')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
 const isH5Platform = ref(false)
+const showDeviceScan = ref(canShowDeviceScanEntry())
 const targetConfidence = ref(0)
 const recognizedItems = ref([])
 const upcyclingSections = ref([])
 const upcyclingImageUrl = ref('')
+let pendingUpcyclingSound = ''
+function onUpcyclingImageLoaded() {
+  if (!pendingUpcyclingSound) return
+  const key = pendingUpcyclingSound
+  pendingUpcyclingSound = ''
+  if (pageVisible && aiServiceEnabled.value && aiEnabledUpcyclingImage.value) playUiSound('upcyclingComplete', { key, page: 'pages/home/home' })
+}
 const upcyclingTaskId = ref('')
 let upcyclingPollTimer = 0
 const imageLoading = ref(false)
 const aiEnabledUpcyclingImage = ref(false)
 const rawBboxes = ref([])
-const displayBboxes = ref([])
 const recognizeBBoxSpace = ref('')
-let bboxRefreshTimer = 0
-const bboxLoadBoundImages = new WeakSet()
+const { bboxImage, displayBboxes, queueRefreshDisplayBboxes } = useRecognitionBboxes(resultImage, rawBboxes, recognizeBBoxSpace)
+onResize(queueRefreshDisplayBboxes)
 let activeRecognitionTaskId = ''
 let recognitionTaskUnsubscribe = null
 let pageVisible = true
@@ -528,6 +539,20 @@ const onboardingFocusInset = ref(0)
 const onboardingDemoRef = ref(null)
 const onboardingGuideRef = ref(null)
 const onboardingPageScope = getCurrentInstance()?.proxy
+const onboardingTailSpace = ref(0)
+let onboardingTailRequestId = 0
+function updateOnboardingTailSpace(requiredSpace) {
+  const requestId = ++onboardingTailRequestId
+  if (!showAppOnboarding.value || !onboardingDemoVisible.value || requiredSpace <= 0) {
+    onboardingTailSpace.value = 0
+    return
+  }
+  // Services already provide real scrollable content below the example.
+  nextTick(() => measureOnboardingTargets(['.quick-actions'], ([services]) => {
+    if (requestId !== onboardingTailRequestId || !showAppOnboarding.value || !onboardingDemoVisible.value) return
+    onboardingTailSpace.value = Math.max(0, requiredSpace - (services?.height || 0))
+  }))
+}
 let onboardingFocusTracker = null
 let onboardingStepRequestId = 0
 const pageScrollTop = ref(0)
@@ -886,6 +911,7 @@ onShow(() => {
   robotPageActive.value = true
   refreshAiServiceState()
   restoreRecognitionTask()
+  queueRefreshDisplayBboxes()
   // 从语音扫描页面返回时自动处理已选图片
   const pendingImage = uni.getStorageSync('pending_recognize_image')
   if (pendingImage && getRecognitionTask()?.status !== 'pending') {
@@ -923,14 +949,6 @@ onBeforeUnmount(() => {
   recognitionTaskUnsubscribe = null
   setOnboardingScrollLock(false)
   stopUpcyclingPoll()
-  if (bboxRefreshTimer) {
-    if (typeof window !== 'undefined') {
-      window.clearTimeout(bboxRefreshTimer)
-    } else {
-      clearTimeout(bboxRefreshTimer)
-    }
-    bboxRefreshTimer = 0
-  }
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', queueRefreshDisplayBboxes)
     window.removeEventListener('resize', updateHomeAdaptiveStyle)
@@ -956,6 +974,7 @@ function getCategoryIcon(category) {
 function resetEnhancedRecognition() {
   recognizedItems.value = []
   upcyclingSections.value = []
+  pendingUpcyclingSound = ''
   upcyclingImageUrl.value = ''
   upcyclingTaskId.value = ''
   stopUpcyclingPoll()
@@ -1089,133 +1108,6 @@ function restoreRecognitionTask(task = getRecognitionTask()) {
   }
 }
 
-function getResultImageElement() {
-  if (typeof document === 'undefined') return null
-  const host = document.querySelector('.result-image')
-  if (!host) return null
-  if (host.tagName === 'IMG') return host
-  return host.querySelector ? host.querySelector('img') : null
-}
-
-function queueRefreshDisplayBboxes() {
-  if (!isH5Platform.value) {
-    displayBboxes.value = []
-    return
-  }
-
-  if (bboxRefreshTimer) {
-    window.clearTimeout(bboxRefreshTimer)
-  }
-
-  bboxRefreshTimer = window.setTimeout(() => {
-    nextTick(() => {
-      refreshDisplayBboxes()
-    })
-  }, 60)
-}
-
-function refreshDisplayBboxes() {
-  if (!isH5Platform.value || typeof window === 'undefined') {
-    displayBboxes.value = []
-    return
-  }
-
-  if (!rawBboxes.value.length) {
-    displayBboxes.value = []
-    return
-  }
-
-  const img = getResultImageElement()
-  if (!img) {
-    displayBboxes.value = []
-    return
-  }
-
-  if (!img.complete || !(img.naturalWidth > 0)) {
-    if (!bboxLoadBoundImages.has(img)) {
-      bboxLoadBoundImages.add(img)
-      img.addEventListener('load', () => queueRefreshDisplayBboxes(), { once: true })
-    }
-    return
-  }
-
-  const displayWidth = Number(img.clientWidth || 0)
-  const displayHeight = Number(img.clientHeight || 0)
-  if (displayWidth <= 0 || displayHeight <= 0) {
-    displayBboxes.value = []
-    return
-  }
-
-  const metrics = {
-    displayWidth,
-    displayHeight,
-    naturalWidth: Number(img.naturalWidth || 0),
-    naturalHeight: Number(img.naturalHeight || 0),
-    // 强制使用 contain 模式，对应模板中的 mode="aspectFit"
-    // 避免部分浏览器或 uni-app H5 实现中 getComputedStyle(img).objectFit 返回默认值 'fill' 导致计算偏差
-    objectFit: 'contain'
-  }
-  const compact = window.innerWidth <= 768
-
-  // 计算其实际渲染尺寸
-  // 当 object-fit 为 contain 时，图片渲染大小取决于容器大小和图片原始纵横比
-  const ratio = Math.min(
-    metrics.displayWidth / metrics.naturalWidth,
-    metrics.displayHeight / metrics.naturalHeight
-  )
-  const finalRenderW = metrics.naturalWidth * ratio
-  const finalRenderH = metrics.naturalHeight * ratio
-
-  const next = []
-  for (let i = 0; i < rawBboxes.value.length; i += 1) {
-    const item = rawBboxes.value[i]
-    const mapped = mapBboxToDisplay(
-      item.bbox,
-      metrics,
-      recognizeBBoxSpace.value,
-      item && item.label ? item.label.bbox_space : ''
-    )
-    if (!mapped) continue
-
-    // 过滤掉几乎覆盖整个图片的框（宽或高任意一边超过图片渲染尺寸的 90%，则跳过）
-    // 注意：这里的渲染尺寸是指图片实际在屏幕上占据的宽高（finalRenderW/H），而不是容器的宽高（displayWidth/displayHeight）
-    if (mapped.width >= finalRenderW * 0.9 && mapped.height >= finalRenderH * 0.9) continue
-
-    const color = getBboxColor(item.label, item.index)
-    const labelName = String((item.label && (item.label.name || item.label.source_name)) || `目标${item.index + 1}`)
-    const confidence = Number(item.label && item.label.confidence)
-    const confidenceText = Number.isFinite(confidence)
-      ? ` ${Math.max(0, Math.min(100, Math.round(confidence * 100)))}%`
-      : ''
-
-    const boxStyle = {
-      left: `${mapped.left}px`,
-      top: `${mapped.top}px`,
-      width: `${mapped.width}px`,
-      height: `${mapped.height}px`,
-      borderColor: color
-    }
-
-    const labelStyle = {
-      background: color,
-      top: mapped.top <= 24 || mapped.height < 38 ? '2px' : (compact ? '-20px' : '-24px')
-    }
-
-    if (mapped.left + mapped.width >= (displayWidth - 120)) {
-      labelStyle.left = 'auto'
-      labelStyle.right = '-1px'
-    }
-
-    next.push({
-      label: `${labelName}${confidenceText}`,
-      boxStyle,
-      labelStyle
-    })
-  }
-
-  displayBboxes.value = next
-}
-
 function applyEnhancedRecognitionData(recognizeData) {
   if (!recognizeData || typeof recognizeData !== 'object') {
     resetEnhancedRecognition()
@@ -1236,6 +1128,7 @@ function applyEnhancedRecognitionData(recognizeData) {
     imageLoading.value = true
     startUpcyclingPoll()
   } else {
+    pendingUpcyclingSound = ''
     upcyclingImageUrl.value = ''
     upcyclingTaskId.value = ''
   }
@@ -1247,7 +1140,10 @@ function applyEnhancedRecognitionData(recognizeData) {
 
   recognizeBBoxSpace.value = String(recognizeData.bbox_space || '')
   const labels = Array.isArray(recognizeData.labels) ? recognizeData.labels : []
-  rawBboxes.value = labels
+  // Older YOLO servers return painted images; avoid a second set of frames.
+  const serverRendered = recognizeData.bbox_rendered === true ||
+    (recognizeData.bbox_rendered !== false && recognizeData.aiSettings?.detectorMode === 'yolo')
+  rawBboxes.value = (serverRendered ? [] : labels)
     .map((label, index) => ({ index, label, bbox: parseLabelBbox(label) }))
     .filter((item) => Array.isArray(item.bbox) && item.bbox.length >= 4)
 
@@ -1336,6 +1232,7 @@ async function startUpcyclingPoll() {
 
       if (res && res.code === 0 && res.data) {
         if (res.data.status === 'done' && res.data.url) {
+          pendingUpcyclingSound = pageVisible ? taskId : ''
           upcyclingImageUrl.value = res.data.url
           upcyclingTaskId.value = ''
           imageLoading.value = false
@@ -1460,6 +1357,7 @@ function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
 async function processImage(filePath, selectedFile = null) {
   failedPreviewPending.value = false
   const taskId = beginRecognitionTask('正在准备图片...', { filePath, selectedFile })
+  playUiSound('recognitionStart', { key: taskId, page: 'pages/home/home' })
   activeRecognitionTaskId = taskId
   retryImagePath.value = filePath
   retryImageFile.value = selectedFile
@@ -1519,6 +1417,7 @@ async function processImage(filePath, selectedFile = null) {
     processStatus.value = '正在上传并分析图片...'
     updateRecognitionTask(taskId, processStatus.value)
     const recognitionRequest = recognizeImage(compressedFile, {
+      bboxRenderer: 'client',
       onProgress: snapshot => handleRecognitionProgress(taskId, snapshot)
     })
     robotState.value = 'processing'
@@ -1531,6 +1430,7 @@ async function processImage(filePath, selectedFile = null) {
     retryImagePath.value = ''
     retryImageFile.value = null
     robotState.value = res.labels?.length ? 'success' : 'fail'
+    playUiSound(res.labels?.length ? 'recognitionSuccess' : 'recognitionFail', { key: taskId, page: 'pages/home/home' })
     classificationUi.value = 'complete'
     
     if (res.labels && res.labels.length > 0) {
@@ -1574,6 +1474,7 @@ async function processImage(filePath, selectedFile = null) {
     failRecognitionTask(taskId, err)
     if (!isRecognitionTaskCurrent(taskId) || !pageVisible) return
     failureCopy.value = getRecognitionFailureCopy(taskId)
+    playUiSound('recognitionFail', { key: taskId, page: 'pages/home/home' })
     recognitionPreview.value = null
     robotState.value = 'fail'
     classificationUi.value = 'complete'
@@ -2662,6 +2563,7 @@ function closeAchievementModal() {
 }
 
 .recognition-bbox-item {
+  box-sizing: border-box;
   position: absolute;
   border: 2px solid #2f6fed;
   border-radius: 10rpx;

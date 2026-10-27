@@ -252,6 +252,7 @@ import { getLotteryConfig, getLotteryDailyStatus, drawLottery, getLotteryRecords
 import { userinfo } from '@/api/user.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
+import { playUiSound } from '@/utils/ui-sounds.js';
 
 export default {
   components: { ManifestIcon },
@@ -685,6 +686,10 @@ export default {
         this.pendingUserPoints = Object.prototype.hasOwnProperty.call(data, 'userPoints')
           ? Number(data.userPoints)
           : null;
+        playUiSound('lotteryStart', {
+          key: data.recordId != null ? `lottery-start:${data.recordId}` : undefined,
+          page: 'pages-nonTheme/lottery'
+        });
         this.spinToPrize(data);
         if (data.isFree && this.freeCount > 0 && !data.grantsRetry) this.freeCount--;
       } catch (e) {
@@ -701,12 +706,17 @@ export default {
       this.pendingUserPoints = null;
     },
     spinToPrize(prize) {
+      const playResultSound = () => playUiSound(prize.won === true || (prize.won == null && Number(prize.level) > 1) ? 'lotteryWin' : 'lotteryMiss', {
+        key: prize.recordId != null ? `lottery-end:${prize.recordId}` : undefined,
+        page: 'pages-nonTheme/lottery'
+      });
       // 简单动画模拟
       const prizes = this.config.prizes || [];
       if (prizes.length === 0) {
         this.isSpinning = false;
         this.settleDrawPoints();
         this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
+        playResultSound();
         return;
       }
       const prizeIndex = prizes.findIndex(p => p.id === prize.prizeId);
@@ -736,6 +746,7 @@ export default {
           this.isSpinning = false;
           this.settleDrawPoints();
           this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
+          playResultSound();
           setTimeout(() => {
             this.showPrizeModal = true;
           }, 300);

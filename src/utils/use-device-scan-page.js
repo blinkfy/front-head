@@ -1,6 +1,8 @@
+import { isPhoneBrowser } from './h5-scan-entry.mjs'
 import { ref, unref, onMounted, onUnmounted } from 'vue'
 import { onLoad, onShow, onHide } from '@dcloudio/uni-app'
 import { getDeviceAPI } from '@/utils/device-api-loader.js'
+import { playUiSound, primeUiSounds } from '@/utils/ui-sounds.js'
 import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection, getDeviceQrScanContent, scanDeviceQrCode } from '@/utils/device-qr.js'
 import { resolveWechatQrScene } from '@/api/device.js'
 import { DEVICE_SCAN_PAGE, appendPageQuery, clearPendingDeviceQrScene, isValidDeviceQrScene, normalizeDeviceQrScene, savePendingDeviceQrScene } from '@/utils/device-qr-entry.mjs'
@@ -692,6 +694,7 @@ export function useDeviceScanPage({ dark = false } = {}) {
 
   async function attemptConnection() {
     if (loading.value && !activeScene.value) return false
+    primeUiSounds()
     loading.value = true
     connected.value = false
     errorMessage.value = ''
@@ -723,6 +726,9 @@ export function useDeviceScanPage({ dark = false } = {}) {
         uni.setStorageSync('connection', Date.now())
         uni.setStorageSync('connected_device_mode', deviceMode.value)
 
+        if (pageActive && pageVisible.value) {
+          playUiSound('deviceConnected', { page: 'pages-nonTheme/scan' })
+        }
         startDeviceCheckTimer()// 连接成功后启动定时器检查已连接设备
         uni.showToast({
           title: '设备连接成功',
@@ -1040,11 +1046,16 @@ export function useDeviceScanPage({ dark = false } = {}) {
 
     console.log('scanDeviceQR - Platform:', { platform, uniPlatform, isH5 })
 
-    if (isH5) {
-      // H5端使用输入框替代扫码
+    if (isH5 && isPhoneBrowser()) {
+      scanDeviceQrCode({
+        success: res => handleDeviceScanContent(getDeviceQrScanContent(res)),
+        fail: () => {}
+      })
+    } else if (isH5) {
+      // 桌面网页保留手动输入
       uni.showModal({
         title: '连接设备',
-        content: '请输入设备ID（H5端暂不支持扫码）',
+        content: '请输入设备ID',
         editable: true,
         placeholderText: '请输入设备ID',
         success: function(res) {

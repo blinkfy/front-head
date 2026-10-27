@@ -301,7 +301,7 @@ const viewMode = ref(false)
 const viewLocationInfo = ref(null)
 
 // 状态栏高度
-const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight || 0)
+const statusBarHeight = ref((uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()).statusBarHeight || 0)
 
 // 地图上下文（小程序/APP）
 const mapContext = ref(null)
@@ -820,7 +820,7 @@ async function getUserLocationOnce(coordType = 'gcj02') {
   return new Promise((resolve, reject) => {
     let actualCoordType = coordType
     try {
-      const systemInfo = uni.getSystemInfoSync()
+      const systemInfo = uni.getAppBaseInfo ? uni.getAppBaseInfo() : uni.getSystemInfoSync()
       const uniPlatform = systemInfo.uniPlatform
       if (uniPlatform === 'mp-alipay') actualCoordType = null
     } catch (e) {}
@@ -1103,7 +1103,7 @@ function moveFloatingActionsDrag(event) {
   isDraggingFloatingActions.value = true
   event.preventDefault?.()
   event.stopPropagation?.()
-  const { windowWidth, windowHeight, statusBarHeight = 0, safeAreaInsets } = uni.getSystemInfoSync()
+  const { windowWidth, windowHeight, statusBarHeight = 0, safeAreaInsets } = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
   const rpx = windowWidth / 750
   const controlWidth = (isH5 ? 112 : 116) * rpx
   const controlHeight = (isH5 ? 112 : 224) * rpx

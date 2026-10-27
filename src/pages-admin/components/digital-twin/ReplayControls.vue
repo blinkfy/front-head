@@ -3,11 +3,11 @@
     <view class="button-rail">
       <view :class="['control-button', 'primary', { active: playing }]" @tap="$emit(playing ? 'pause' : 'play')">
         <view :class="playing ? 'icon-pause' : 'icon-play'"><i v-if="playing" class="pause-bar"></i><i v-if="playing" class="pause-bar"></i></view>
-        <text>{{ playing ? '暂停' : currentIndex > 0 ? '继续' : '开始' }}</text>
+        <text class="control-button-label">{{ playing ? '暂停' : currentIndex > 0 ? '继续' : '开始' }}</text>
       </view>
-      <view class="control-button" @tap="$emit('reset')"><view class="icon-reset">↺</view><text>重置</text></view>
-      <view class="control-button" @tap="$emit('previous')"><view class="icon-step previous"></view><text>上一事件</text></view>
-      <view class="control-button" @tap="$emit('next')"><view class="icon-step next"></view><text>下一事件</text></view>
+      <view class="control-button" @tap="$emit('reset')"><view class="icon-reset">↺</view><text class="control-button-label">重置</text></view>
+      <view class="control-button" @tap="$emit('previous')"><view class="icon-step previous"></view><text class="control-button-label">上一事件</text></view>
+      <view class="control-button" @tap="$emit('next')"><view class="icon-step next"></view><text class="control-button-label">下一事件</text></view>
     </view>
     <view class="speed-control">
       <text class="control-label">播放速度</text>
@@ -87,7 +87,7 @@ function jump() {
 .controls { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 10px; overflow: visible; box-sizing: border-box; }
 .button-rail { display: flex; flex-wrap: wrap; width: 100%; gap: 7px; overflow: visible; }
 .control-button { flex: 1 1 140px; min-width: 0; height: 40px; padding: 0 6px; }
-.control-button text { white-space: nowrap; }
+.control-button-label { white-space: nowrap; }
 .speed-control { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 6px; }
 .speed-options { display: flex; flex-wrap: wrap; width: 100%; gap: 6px; }
 .speed-button { flex: 1 1 52px; min-width: 52px; box-sizing: border-box; }

@@ -15,21 +15,21 @@
             <text class="account-points">{{ card.account.points }} 积分</text>
           </view>
           <view class="account-stats">
-            <text>接收 {{ card.direction.counts?.recognitionHistory || 0 }} 条识别记录</text>
-            <text>{{ card.direction.counts?.friends || 0 }} 位好友 · {{ card.direction.counts?.purchaseRecords || 0 }} 条兑换记录</text>
+            <text class="merge-line">接收 {{ card.direction.counts?.recognitionHistory || 0 }} 条识别记录</text>
+            <text class="merge-line">{{ card.direction.counts?.friends || 0 }} 位好友 · {{ card.direction.counts?.purchaseRecords || 0 }} 条兑换记录</text>
           </view>
           <view v-if="!card.direction.canMerge" class="merge-blockers">
-            <text v-for="item in card.direction.blockers" :key="item.code">{{ item.message }}</text>
+            <text v-for="item in card.direction.blockers" :key="item.code" class="merge-line">{{ item.message }}</text>
           </view>
-          <view class="keep-account"><text>{{ card.direction.canMerge ? '保留这个账号' : '暂时无法选择' }}</text><text>{{ selected === card.value ? '✓' : '○' }}</text></view>
+          <view class="keep-account"><text class="merge-line">{{ card.direction.canMerge ? '保留这个账号' : '暂时无法选择' }}</text><text class="merge-line">{{ selected === card.value ? '✓' : '○' }}</text></view>
         </view>
         <view class="merge-note">
-          <text>合并后共 {{ preview.pointsAfterMerge }} 积分</text>
-          <text>保留账号的资料和密码不变，微信将绑定此账号。</text>
-          <text>另一账号将永久删除，设备连接断开。此操作不能撤销。</text>
+          <text class="merge-line">合并后共 {{ preview.pointsAfterMerge }} 积分</text>
+          <text class="merge-line">保留账号的资料和密码不变，微信将绑定此账号。</text>
+          <text class="merge-line">另一账号将永久删除，设备连接断开。此操作不能撤销。</text>
         </view>
       </scroll-view>
-      <button class="merge-confirm" :disabled="!selected" @click="$emit('choose', selected)">确认合并并登录</button>
+      <button class="merge-confirm" :class="{ 'is-disabled': !selected }" :disabled="!selected" @click="$emit('choose', selected)">确认合并并登录</button>
       <button class="merge-cancel" @click="$emit('cancel')">暂不合并</button>
     </view>
   </view>
@@ -68,13 +68,13 @@ function select(card) { if (card.direction.canMerge) selected.value = card.value
 .account-id { display: block; font-size: 22rpx; color: #819088; word-break: break-all; }
 .account-points { font-size: 24rpx; color: #079976; margin-left: 10rpx; }
 .account-stats { margin-top: 18rpx; font-size: 23rpx; line-height: 1.7; color: #728078; }
-.account-stats text, .merge-blockers text, .merge-note text { display: block; }
+.merge-line { display: block; }
 .keep-account { display: flex; justify-content: space-between; margin-top: 16rpx; padding-top: 16rpx; border-top: 1rpx solid #e9f0ec; color: #079976; font-size: 26rpx; font-weight: 600; }
 .blocked .keep-account { color: #88928c; }
 .merge-blockers { margin-top: 14rpx; font-size: 23rpx; color: #a86b42; line-height: 1.65; }
 .merge-note { padding: 4rpx 6rpx 18rpx; color: #8b7564; font-size: 23rpx; line-height: 1.8; }
 .merge-confirm { margin-top: 20rpx; background: #06a97d; color: #fff; border-radius: 18rpx; font-size: 29rpx; font-weight: 600; }
-.merge-confirm[disabled] { background: #cddbd3; color: #fff; }
+.merge-confirm.is-disabled { background: #cddbd3; color: #fff; }
 .merge-cancel { margin-top: 8rpx; background: transparent; color: #7b8a81; font-size: 25rpx; }
 .dark .merge-panel { background: #172b25; color: #e5f5ed; }
 .dark .account-card { background: #20372f; border-color: #3c5549; }

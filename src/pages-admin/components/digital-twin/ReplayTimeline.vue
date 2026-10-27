@@ -1,11 +1,11 @@
 <template>
-  <view class="timeline-panel panel">
-    <view class="panel-head">
-      <view>
-        <view class="panel-title">事件时间线</view>
-        <view class="panel-sub">{{ liveWindow ? `实时窗口 · 仅保留最近 ${events.length} 条` : `按 sequence 顺序播放 · 共 ${events.length} 条` }}</view>
+  <view class="timeline-panel panel mpwx-view">
+    <view class="panel-head mpwx-view">
+      <view class="mpwx-view">
+        <view class="panel-title mpwx-view">事件时间线</view>
+        <view class="panel-sub mpwx-view">{{ liveWindow ? `实时窗口 · 仅保留最近 ${events.length} 条` : `按 sequence 顺序播放 · 共 ${events.length} 条` }}</view>
       </view>
-      <view class="counter">{{ currentIndex + 1 }}/{{ events.length }}</view>
+      <view class="counter mpwx-view">{{ currentIndex + 1 }}/{{ events.length }}</view>
     </view>
     <scroll-view
       class="timeline-list"
@@ -19,12 +19,12 @@
         :key="event.sequence"
         :class="['event-row', { active: index === currentIndex, passed: index < currentIndex }]"
         @tap="$emit('select', index)"
-      >
-        <view class="event-sequence">{{ String(liveWindow ? index + 1 : event.sequence).padStart(2, '0') }}</view>
-        <view :class="['event-dot', presentation(event).tone]"></view>
-        <view class="event-copy">
-          <view class="event-title">{{ presentation(event).title }}</view>
-          <view class="event-desc">{{ presentation(event).desc }}</view>
+       class="mpwx-view">
+        <view class="event-sequence mpwx-view">{{ String(liveWindow ? index + 1 : event.sequence).padStart(2, '0') }}</view>
+        <view :class="['event-dot', presentation(event).tone]" class="mpwx-view"></view>
+        <view class="event-copy mpwx-view">
+          <view class="event-title mpwx-view">{{ presentation(event).title }}</view>
+          <view class="event-desc mpwx-view">{{ presentation(event).desc }}</view>
         </view>
         <text :data-source="event.source" :class="['source-tag', sourceClass(event.source)]">{{ displaySourceLabel(event.source) }}</text>
       </view>
@@ -77,7 +77,7 @@ const sourceClass = value => String(value || '').toLowerCase().replace(/_/g, '-'
 /* #ifdef MP-WEIXIN */
 .timeline-panel { height: 100%; min-height: 0; overflow: hidden; }
 .panel-head { flex: 0 0 auto; padding: 10px 12px 9px; gap: 8px; }
-.panel-head > view { flex: 1; min-width: 0; }
+.panel-head > .mpwx-view { flex: 1; min-width: 0; }
 .panel-sub { white-space: normal; line-height: 1.35; }
 .counter { flex: 0 0 auto; }
 .timeline-list { flex: 1; height: 0; min-height: 0; overflow: hidden; }

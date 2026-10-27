@@ -242,17 +242,99 @@ function verifyDemoTrailingSpaceGuards() {
 
   const filename = new URL(relativePath, import.meta.url)
   const { descriptor } = parseSfc(readFileSync(filename, 'utf8'), { filename: filename.pathname })
+  const templateAst = parseTemplate(descriptor.template.content)
   const sourceLines = script.split('\n')
   assert.ok(sourceLines.some(line => line.includes('Math.ceil(demoViewport.value.height - props.focusInset - activeSectionHeight.value)')), 'bottom space uses viewport height, focus inset, and measured active-section height')
-  const layout = parseTemplate(descriptor.template.content).children.find(node => node.type === 1 && classNamesForTemplateNode(node).includes('onboarding-demo-layout'))
+  const demoBottomSpace = findVariable(ast, script, 'demoBottomSpace')
+  const bottomSpaceContext = {
+    props: { focusInset: 124 },
+    demoViewport: { value: { height: 844 } },
+    activeSectionHeight: { value: 200 },
+    contentLevel: { value: 2 },
+    computed: getter => ({ get value() { return getter() } })
+  }
+  runInNewContext(`${demoBottomSpace}\nthis.demoBottomSpace = demoBottomSpace`, bottomSpaceContext)
+  assert.equal(bottomSpaceContext.demoBottomSpace.value, 520, 'visible demo keeps its computed alignment space')
+  bottomSpaceContext.contentLevel.value = 0
+  assert.equal(bottomSpaceContext.demoBottomSpace.value, 0, 'hidden demo contributes no required tail space')
+
+  const tailWatcher = (() => {
+    let found = null
+    visitAst(ast, node => {
+      const getter = node.type === 'CallExpression' && node.callee?.name === 'watch' ? node.arguments[0] : null
+      if (getter?.type === 'Identifier' && getter.name === 'demoBottomSpace' || getter?.type === 'ArrowFunctionExpression' && getter.body?.type === 'MemberExpression' && getter.body.object?.name === 'demoBottomSpace') found = node.arguments[1]
+    })
+    return found
+  })()
+  assert.ok(tailWatcher, 'demo bottom-space changes are reported to the owning page')
+  assert.ok(script.slice(tailWatcher.start, tailWatcher.end).includes("emit('tail-space'"), 'demo reports its required tail space')
+  const emittedTailSpaces = []
+  const tailEmitContext = { emit: (...args) => emittedTailSpaces.push(args) }
+  runInNewContext(`this.onBottomSpaceChanged = ${script.slice(tailWatcher.start, tailWatcher.end)}`, tailEmitContext)
+  tailEmitContext.onBottomSpaceChanged(320)
+  assert.deepEqual(emittedTailSpaces, [['tail-space', 320]], 'demo emits the computed tail-space value when it changes')
+
+  const layout = templateAst.children.find(node => node.type === 1 && classNamesForTemplateNode(node).includes('onboarding-demo-layout'))
   assert.ok(layout, 'temporary demo wrapper exists')
-  const trailingSpacer = layout.children.filter(node => node.type === 1).at(-1)
-  assert.ok(trailingSpacer?.props?.some(prop => prop.type === 7 && prop.name === 'bind' && prop.arg?.content === 'style' && prop.exp?.content.includes('demoBottomSpace')), 'bottom space is attached to the temporary wrapper trailing spacer')
-  assert.ok(!classNamesForTemplateNode(trailingSpacer).includes('onboarding-demo-summary'), 'trailing space stays outside the measured section target')
+  assert.ok(!layout.children.some(node => node.type === 1 && node.props?.some(prop => prop.type === 7 && prop.name === 'bind' && prop.arg?.content === 'style' && prop.exp?.content.includes('demoBottomSpace'))), 'demo component has no trailing spacer view')
+  const hiddenStages = ['advice', 'upcycling'].map(stage => {
+    const targetClass = `.onboarding-demo-${stage}`
+    const stack = [...templateAst.children]
+    while (stack.length) {
+      const node = stack.pop()
+      if (node.type !== 1) continue
+      if (classNamesForTemplateNode(node).includes(targetClass.slice(1))) return node
+      stack.push(...(node.children || []))
+    }
+    return null
+  })
+  for (const [index, stage] of ['advice', 'upcycling'].entries()) {
+    const conditional = hiddenStages[index]?.props?.find(prop => prop.type === 7 && prop.name === 'if')
+    assert.ok(conditional?.exp?.content.includes('contentLevel'), `${stage} remains conditionally hidden when AI is disabled`)
+  }
+
+  for (const page of ['../src/pages/home/home.vue', '../src/pages-dark/home/home.vue']) verifyHomeTailSpaceLayout(page)
 }
 
 function classNamesForTemplateNode(node) {
   return node?.props?.filter(prop => prop.type === 6 && prop.name === 'class').map(prop => prop.value?.content || '').flatMap(value => value.split(/\s+/)) || []
+}
+
+function verifyHomeTailSpaceLayout(relativePath) {
+  const filename = new URL(relativePath, import.meta.url)
+  const { descriptor, errors } = parseSfc(readFileSync(filename, 'utf8'), { filename: filename.pathname })
+  assert.equal(errors.length, 0, relativePath + ' SFC parses before inspecting its tail-space layout')
+  const ast = parseTemplate(descriptor.template.content)
+  const stack = [...ast.children]
+  let quickActions = null
+  let tail = null
+  while (stack.length) {
+    const node = stack.pop()
+    if (node.type !== 1) continue
+    if (classNamesForTemplateNode(node).includes('quick-actions')) quickActions = node
+    if (classNamesForTemplateNode(node).includes('onboarding-layout-tail')) tail = node
+    stack.push(...(node.children || []))
+  }
+  assert.ok(quickActions && tail, relativePath + ' renders quick actions and the onboarding tail')
+  const findParent = target => {
+    const nodes = [ast]
+    while (nodes.length) {
+      const parent = nodes.pop()
+      if ((parent.children || []).includes(target)) return parent
+      nodes.push(...(parent.children || []).filter(node => node.type === 1))
+    }
+    return null
+  }
+  let section = quickActions
+  let parent = findParent(section)
+  while (parent && findParent(tail) !== parent) {
+    section = parent
+    parent = findParent(section)
+  }
+  assert.ok(parent, relativePath + ' places the tail in the service section content wrapper')
+  assert.ok(parent.children.indexOf(tail) > parent.children.indexOf(section), relativePath + ' places the tail after quick actions')
+  const condition = tail.props.find(prop => prop.type === 7 && prop.name === 'if')?.exp?.content || ''
+  assert.ok(condition.includes('showAppOnboarding') && condition.includes('onboardingDemoVisible'), relativePath + ' only renders the tail while the visible onboarding demo is active')
 }
 
 function makeAppHarness({ aiEnabled = true } = {}) {
@@ -642,7 +724,7 @@ function verifyEarlyNextStepRestoresCopyVisibility() {
 
 function extractHomeHandlers(relativePath) {
   const { script, ast } = readScript(relativePath)
-  const handlers = ['measureOnboardingTargets', 'handleOnboardingDemoStage', 'handleOnboardingStepChange'].map(name => {
+  const handlers = ['measureOnboardingTargets', 'handleOnboardingDemoStage', 'handleOnboardingStepChange', 'updateOnboardingTailSpace'].map(name => {
     const node = findFunction(ast, name)
     return script.slice(node.start, node.end)
   })
@@ -709,10 +791,11 @@ function createFakeQueryScope(name, rects = {}, fallbackRect = null) {
 }
 
 function makeHomeHarness(relativePath, scopeOptions = {}) {
-  const { handlers: [measureTargets, demoStageHandler, stepHandler], finished } = extractHomeHandlers(relativePath)
+  const { handlers: [measureTargets, demoStageHandler, stepHandler, tailSpaceHandler], finished } = extractHomeHandlers(relativePath)
   const clock = createClock()
   const nextTicks = []
   const selectorCalls = []
+  const deferredSelectorCallbacks = []
   const scrollCalls = []
   const events = []
   const focusTrackers = []
@@ -725,6 +808,8 @@ function makeHomeHarness(relativePath, scopeOptions = {}) {
   const context = {
     onboardingDemoStage: { value: 'idle' },
     aiServiceEnabled: { value: false },
+    onboardingDemoVisible: { value: true },
+    onboardingTailSpace: { value: 0 },
     computed: getter => ({ get value() { return getter() } }),
     onboardingStepRequestId: 0,
     onboardingAutoScrolling: { value: false },
@@ -771,14 +856,18 @@ function makeHomeHarness(relativePath, scopeOptions = {}) {
             return query
           },
           boundingClientRect() { return query },
-          exec(callback) { callback?.(selectors.map(selector => queryScope?.resolveRect(selector) || null)) }
+          exec(callback) {
+            const results = selectors.map(selector => queryScope?.resolveRect(selector) || null)
+            if (scopeOptions.deferSelectorCallbacks) deferredSelectorCallbacks.push(() => callback?.(results))
+            else callback?.(results)
+          }
         }
         return query
       },
       pageScrollTo(options) { events.push(['scroll', options]); scrollCalls.push(options) }
     }
   }
-  runInNewContext(`${finished}\nthis.onboardingDemoFinished = onboardingDemoFinished\nlet onboardingFocusTracker = null\n${measureTargets}\n${demoStageHandler}\n${stepHandler}\nthis.homeHandlers = { measureOnboardingTargets, handleOnboardingDemoStage, handleOnboardingStepChange }`, context,
+  runInNewContext(`${finished}\nthis.onboardingDemoFinished = onboardingDemoFinished\nlet onboardingFocusTracker = null\nlet onboardingTailRequestId = 0\n${measureTargets}\n${demoStageHandler}\n${stepHandler}\n${tailSpaceHandler}\nthis.homeHandlers = { measureOnboardingTargets, handleOnboardingDemoStage, handleOnboardingStepChange, updateOnboardingTailSpace }`, context,
     { filename: 'home-onboarding-handlers.js' })
   return {
     ...clock,
@@ -786,6 +875,7 @@ function makeHomeHarness(relativePath, scopeOptions = {}) {
     handlers: context.homeHandlers,
     nextTicks,
     selectorCalls,
+    deferredSelectorCallbacks,
     scrollCalls,
     focusTrackers,
     events,
@@ -1212,6 +1302,33 @@ function verifyHomeTerminalStageTracksAiSetting() {
   }
 }
 
+function verifyHomeTailSpaceBehavior() {
+  for (const page of ['../src/pages/home/home.vue', '../src/pages-dark/home/home.vue']) {
+    const services = { left: 0, top: 500, right: 390, bottom: 760, width: 390, height: 260 }
+    const harness = makeHomeHarness(page, { pageRects: { '.quick-actions': services }, deferSelectorCallbacks: true })
+    harness.context.onboardingDemoStage.value = 'classified'
+    harness.handlers.updateOnboardingTailSpace(600)
+    harness.flushNextTick()
+    assert.equal(harness.deferredSelectorCallbacks.length, 1, page + ' measures quick actions asynchronously')
+
+    harness.handlers.updateOnboardingTailSpace(900)
+    harness.flushNextTick()
+    assert.equal(harness.deferredSelectorCallbacks.length, 2)
+    harness.deferredSelectorCallbacks[1]()
+    assert.equal(harness.context.onboardingTailSpace.value, 640, page + ' subtracts service height from required tail space')
+    harness.deferredSelectorCallbacks[0]()
+    assert.equal(harness.context.onboardingTailSpace.value, 640, page + ' ignores an older asynchronous measurement')
+
+    harness.handlers.updateOnboardingTailSpace(0)
+    assert.equal(harness.context.onboardingTailSpace.value, 0, page + ' clears reserved tail space when no room is required')
+    harness.deferredSelectorCallbacks[1]()
+    assert.equal(harness.context.onboardingTailSpace.value, 0, page + ' does not let an old callback restore cleared space')
+    harness.context.onboardingDemoVisible.value = false
+    harness.handlers.updateOnboardingTailSpace(500)
+    assert.equal(harness.context.onboardingTailSpace.value, 0, page + ' keeps the tail empty when the onboarding demo is hidden')
+  }
+}
+
 verifyAutomaticDemoSequence()
 verifyAiDisabledAndLiveSettingsChanges()
 verifyTargetRectVisibilityDebounce()
@@ -1231,6 +1348,7 @@ verifyNativeLateFocusCallbackIsIgnored()
 verifyNativeBrowsingFocusPrefersAdvice()
 verifyDelayedHomeScrollGuards()
 verifyHomeTerminalStageTracksAiSetting()
+verifyHomeTailSpaceBehavior()
 verifyOnboardingViewportAndScrollMath()
 verifyDemoPhotoPanelTemplate()
 verifyDemoTrailingSpaceGuards()

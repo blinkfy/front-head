@@ -25,10 +25,11 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import AchievementIcon from '@/components/AchievementIcon.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { dedupeAchievementUnlocks } from '@/utils/achievements'
+import { playUiSound } from '@/utils/ui-sounds.js'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -37,6 +38,20 @@ const props = defineProps({
 })
 const emit = defineEmits(['close'])
 const normalizedItems = computed(() => dedupeAchievementUnlocks(props.items))
+let ownerPage = ''
+function playUnlockSound() {
+  if (!props.visible || !normalizedItems.value.length) return
+  const keys = normalizedItems.value.map(item => item.key).sort().join(',')
+  playUiSound('achievementUnlock', { key: 'achievement:' + keys, page: ownerPage || undefined })
+}
+onMounted(() => {
+  const pages = getCurrentPages()
+  ownerPage = pages[pages.length - 1]?.route || ''
+  playUnlockSound()
+})
+watch(() => props.visible, (visible, wasVisible) => {
+  if (visible && !wasVisible) playUnlockSound()
+})
 </script>
 
 <style scoped>

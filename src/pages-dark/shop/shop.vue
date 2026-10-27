@@ -206,6 +206,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { userinfo } from '@/api/user'
 import { createPurchaseRecord, fetchShopRecommendations } from '@/api/shop'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
+import { playUiSound } from '@/utils/ui-sounds.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
@@ -608,6 +609,10 @@ const exchangeProduct = async () => {
     exchangedProduct.value = product
     showDetailModal.value = false
     showSuccessModal.value = true
+    playUiSound('redeemSuccess', {
+      key: data.id != null ? `redeem:${data.id}` : undefined,
+      page: 'pages-dark/shop/shop'
+    })
 
     const exchangeHistory = uni.getStorageSync('exchangeHistory') || []
     const now = new Date()

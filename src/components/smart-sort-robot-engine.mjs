@@ -200,7 +200,20 @@ function disposeModel(root) {
   materials.forEach(material => material.dispose())
 }
 
-export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active, onFirstFrame, onSettled, onError }) {
+// Cache bytes, not mutable scenes/materials: each mounted robot owns its GPU resources.
+let modelCache = null
+export function preloadSmartSortRobot(modelUrl) {
+  if (modelCache?.url === modelUrl) return modelCache.promise
+  const entry = { url: modelUrl }
+  entry.promise = new THREE.FileLoader().setResponseType('arraybuffer').loadAsync(modelUrl).catch(error => {
+    if (modelCache === entry) modelCache = null
+    throw error
+  })
+  modelCache = entry
+  return entry.promise
+}
+
+export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active, onFirstFrame, onUnavailable, onSettled, onError }) {
   const canvas = document.createElement('canvas')
   canvas.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;width:100%;height:100%;pointer-events:none'
   const context = canvas.getContext('webgl2', { alpha: true, antialias: true })
@@ -243,6 +256,7 @@ export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active
   let previousFrame = 0
   let disposed = false
   let firstFrame = false
+  let contextLost = false
   let isActive = active
   let nextBlinkMoment = 0
   let nextCuriousMoment = 0
@@ -314,7 +328,7 @@ export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active
   }
   const render = timestamp => {
     frame = 0
-    if (disposed || !isActive || document.hidden || !model) return
+    if (disposed || !isActive || document.hidden || contextLost || !model) return
     const delta = previousFrame ? Math.min((timestamp - previousFrame) / 1000, 0.05) : 0
     previousFrame = timestamp
     mixer.update(delta)
@@ -331,6 +345,14 @@ export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active
       }
     }
     try {
+      // Some WebViews lose their drawing surface without dispatching the event.
+      // Never acknowledge an empty frame as a successful recovery.
+      if (context.isContextLost()) { onContextLost({ preventDefault() {} }); return }
+      if (!host.clientWidth || !host.clientHeight) {
+        frame = requestAnimationFrame(render)
+        return
+      }
+      if (!firstFrame) resize()
       renderer.render(scene, camera)
       if (!firstFrame) {
         firstFrame = true
@@ -351,28 +373,46 @@ export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active
   }
   const onContextLost = event => {
     event.preventDefault()
-    onRenderError(new Error('WebGL context lost'))
+    if (disposed) return
+    contextLost = true
+    firstFrame = false
+    cancelAnimationFrame(frame)
+    frame = 0
+    previousFrame = 0
+    onUnavailable?.()
+  }
+  const onContextRestored = () => {
+    if (disposed) return
+    contextLost = false
+    setActive(isActive)
   }
   canvas.addEventListener('webglcontextlost', onContextLost)
+  canvas.addEventListener('webglcontextrestored', onContextRestored)
   const setActive = value => {
     if (disposed) return
     isActive = value
-    if (!isActive || document.hidden) {
-      cancelAnimationFrame(frame)
-      frame = 0
-      previousFrame = 0
-    } else if (!frame && model) {
+    // A suspended WebView can retain a RAF id whose callback never runs.
+    // Always request a fresh frame and viewport when resuming.
+    cancelAnimationFrame(frame)
+    frame = 0
+    previousFrame = 0
+    if (isActive && !document.hidden && !contextLost && model) {
+      firstFrame = false
+      resize()
       frame = requestAnimationFrame(render)
     }
   }
   const onVisibilityChange = () => setActive(isActive)
   document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('pageshow', onVisibilityChange)
   const dispose = () => {
     if (disposed) return
     disposed = true
     cancelAnimationFrame(frame)
     canvas.removeEventListener('webglcontextlost', onContextLost)
+    canvas.removeEventListener('webglcontextrestored', onContextRestored)
     document.removeEventListener('visibilitychange', onVisibilityChange)
+    window.removeEventListener('pageshow', onVisibilityChange)
     resizeObserver?.disconnect()
     if (!resizeObserver) window.removeEventListener('resize', resize)
     mixer?.removeEventListener('finished', finished)
@@ -387,7 +427,8 @@ export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active
   }
 
   const loader = new GLTFLoader()
-  const modelRequest = modelBuffer ? loader.parseAsync(modelBuffer, '') : loader.loadAsync(modelUrl)
+  const bufferRequest = modelBuffer ? Promise.resolve(modelBuffer) : preloadSmartSortRobot(modelUrl)
+  const modelRequest = bufferRequest.then(buffer => loader.parseAsync(buffer, ''))
   modelRequest.then(gltf => {
     if (disposed) {
       disposeModel(gltf.scene)
@@ -415,7 +456,7 @@ export function mountSmartSortRobot(host, { modelUrl, modelBuffer, state, active
       currentState = ''
       setState(initialState)
     }
-    if (isActive && !document.hidden) frame = requestAnimationFrame(render)
+    setActive(isActive)
   }).catch(onRenderError)
   return { setState, setActive, dispose }
 }

@@ -15,6 +15,25 @@ public final class ScanGeometry {
 
     /** Conservative three-finder coarse detector, independent of payload decoding. */
     public static Candidate detectCandidate(byte[] gray, int width, int height) {
+        Candidate whole = detectCandidateRegion(gray, width, height);
+        if (whole == AMBIGUOUS) return null;
+        if (whole != null) return whole;
+        // A 1920px frame reduced to 640px loses the rings of a distant code.
+        // Recheck a centered, bounded native-resolution window, without enlarging
+        // pixels or assuming a code exists. Map the result back to the full frame.
+        if (gray == null || width < 24 || height < 24 || (long) width * height > gray.length) return null;
+        int side = Math.min(640, Math.round(Math.min(width, height) * 0.55f));
+        if (side < 24 || (width <= 640 && height <= 640)) return null;
+        int left = (width - side) / 2, top = (height - side) / 2;
+        byte[] center = new byte[side * side];
+        for (int y = 0; y < side; y++) System.arraycopy(gray, (top + y) * width + left, center, y * side, side);
+        Candidate local = detectCandidateRegion(center, side, side);
+        if (local == null || local == AMBIGUOUS) return null;
+        return new Candidate((left + local.x * side) / width, (top + local.y * side) / height,
+                local.size * side / Math.min(width, height));
+    }
+    private static final Candidate AMBIGUOUS = new Candidate(Float.NaN, Float.NaN, Float.NaN);
+    private static Candidate detectCandidateRegion(byte[] gray, int width, int height) {
         if (width < 24 || height < 24 || gray == null || (long) width * height > gray.length) return null;
         int step = Math.max(1, (Math.max(width, height) + 639) / 640);
         int w = width / step, h = height / step;
@@ -71,7 +90,7 @@ public final class ScanGeometry {
                             }
                         }
                         if (!merged) finders.add(new float[]{centerX, vertical[0], diameter, 1, type});
-                        if (finders.size() > 40) return null;
+                        if (finders.size() > 40) return AMBIGUOUS;
                     }
                 }
                 x = start + Math.max(1, runs[0] + runs[1]);
@@ -100,7 +119,7 @@ public final class ScanGeometry {
             Candidate candidate = new Candidate((b[0] + c[0]) / (2f * w), (b[1] + c[1]) / (2f * h),
                     (float) (Math.max(right - left, bottom - top) / Math.min(w, h)));
             if (answer != null && (Math.hypot(answer.x - candidate.x, answer.y - candidate.y) > 0.08
-                    || Math.abs(answer.size - candidate.size) > answer.size * 0.25)) return null;
+                    || Math.abs(answer.size - candidate.size) > answer.size * 0.25)) return AMBIGUOUS;
             answer = candidate;
         }
         return answer;
@@ -176,10 +195,37 @@ public final class ScanGeometry {
         return new int[]{Math.max(1, (int) Math.round(width * scale)), Math.max(1, (int) Math.round(height * scale))};
     }
 
+    /** Map a tap in the rotated rear-camera preview back to Camera1 sensor coordinates. */
+    public static int[] focusArea(float x, float y, int viewWidth, int viewHeight, int rotation) {
+        if (viewWidth <= 0 || viewHeight <= 0) throw new IllegalArgumentException("INVALID_PREVIEW_SIZE");
+        float nx = Math.max(-1000f, Math.min(1000f, x * 2000f / viewWidth - 1000f));
+        float ny = Math.max(-1000f, Math.min(1000f, y * 2000f / viewHeight - 1000f));
+        float sx = nx, sy = ny;
+        if (rotation == 90) { sx = ny; sy = -nx; }
+        else if (rotation == 180) { sx = -nx; sy = -ny; }
+        else if (rotation == 270) { sx = -ny; sy = nx; }
+        int left = Math.max(-1000, Math.min(760, Math.round(sx) - 120));
+        int top = Math.max(-1000, Math.min(760, Math.round(sy) - 120));
+        return new int[]{left, top, left + 240, top + 240};
+    }
+
     public static final class Frame {
         public final byte[] gray;
         public final int width, height;
         Frame(byte[] gray, int width, int height) { this.gray = gray; this.width = width; this.height = height; }
+    }
+
+    /** Copy the visible, centered digital-zoom crop from an NV21 luminance plane. */
+    public static Frame cropZoom(byte[] gray, int width, int height, float zoom) {
+        if (gray == null || width < 2 || height < 2 || (long) width * height > gray.length
+                || Float.isNaN(zoom) || Float.isInfinite(zoom) || zoom < 1f || zoom > 3f) {
+            throw new IllegalArgumentException("INVALID_ZOOM_INPUT");
+        }
+        int w = Math.max(2, (int) (width / zoom)), h = Math.max(2, (int) (height / zoom));
+        int left = (width - w) / 2, top = (height - h) / 2;
+        byte[] pixels = new byte[w * h];
+        for (int y = 0; y < h; y++) System.arraycopy(gray, (top + y) * width + left, pixels, y * w, w);
+        return new Frame(pixels, w, h);
     }
 
     public static Frame warp(byte[] gray, int width, int height, int candidate, int maxEdge) {

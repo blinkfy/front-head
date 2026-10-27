@@ -1,93 +1,93 @@
 <template>
-  <view class="admin-panel" :class="{ dark }">
-    <view class="panel-heading">
-      <view class="panel-heading-copy">
+  <view class="admin-panel mpwx-view" :class="{ dark }">
+    <view class="panel-heading mpwx-view">
+      <view class="panel-heading-copy mpwx-view">
         <text class="panel-title">点位管理</text>
         <text class="panel-subtitle">审核状态与点位资料</text>
       </view>
-      <view class="status-badge" :class="bin.review ? 'approved' : 'pending'">
-        <view class="status-dot"></view>
+      <view class="status-badge mpwx-view" :class="bin.review ? 'approved' : 'pending'">
+        <view class="status-dot mpwx-view"></view>
         <text>{{ bin.review ? '已通过审核' : '待审核' }}</text>
       </view>
     </view>
-    <view class="report-summary" :class="{ 'has-reports': visibleReports.length }">
+    <view class="report-summary mpwx-view" :class="{ 'has-reports': visibleReports.length }">
       <ManifestIcon :id="visibleReports.length ? 'dark_alert' : 'confirm'" class="summary-icon" />
       <text>{{ visibleReports.length ? `收到 ${visibleReports.length} 条点位反馈` : '暂无用户反馈' }}</text>
-      <view v-if="visibleReports.length" class="summary-action" @click="showReports = !showReports">
+      <view v-if="visibleReports.length" class="summary-action mpwx-view" @click="showReports = !showReports">
         {{ showReports ? '收起' : '查看' }}
       </view>
     </view>
-    <view class="actions">
-      <view class="action-btn edit-btn" :class="{ disabled: busy }" @click="!busy && (editing = !editing)">
+    <view class="actions mpwx-view">
+      <view class="action-btn edit-btn mpwx-view" :class="{ disabled: busy }" @click="!busy && (editing = !editing)">
         <ManifestIcon class="action-icon" :id="editing ? 'close' : 'edit_profile'" />{{ editing ? '收起编辑' : '编辑资料' }}
       </view>
-      <view v-if="!bin.review" class="action-btn approve-btn" :class="{ disabled: busy }" @click="review(true)">
+      <view v-if="!bin.review" class="action-btn approve-btn mpwx-view" :class="{ disabled: busy }" @click="review(true)">
         <ManifestIcon class="action-icon" id="confirm" />审核通过
       </view>
-      <view v-if="bin.review" class="action-btn approve-btn" :class="{ disabled: busy }" @click="review(false)">
+      <view v-if="bin.review" class="action-btn approve-btn mpwx-view" :class="{ disabled: busy }" @click="review(false)">
         <ManifestIcon class="action-icon" id="restore" />撤销审核
       </view>
-      <view class="action-btn delete-btn" :class="{ disabled: busy }" @click="removeBin">
+      <view class="action-btn delete-btn mpwx-view" :class="{ disabled: busy }" @click="removeBin">
         <ManifestIcon class="action-icon" id="delete" />删除点位
       </view>
     </view>
     <scroll-view v-if="editing || showReports" scroll-y class="details">
-      <view v-if="showReports" class="reports">
-        <view class="reports-heading">
-          <view><text class="group-title">用户反馈</text><text class="group-caption">请核实后再清理记录</text></view>
-          <view v-if="visibleReports.length" class="clear-reports" :class="{ disabled: busy }" @click="!busy && (confirmClearReports = true)">清空记录</view>
+      <view v-if="showReports" class="reports mpwx-view">
+        <view class="reports-heading mpwx-view">
+          <view class="mpwx-view"><text class="group-title">用户反馈</text><text class="group-caption">请核实后再清理记录</text></view>
+          <view v-if="visibleReports.length" class="clear-reports mpwx-view" :class="{ disabled: busy }" @click="!busy && (confirmClearReports = true)">清空记录</view>
         </view>
-        <view v-if="confirmClearReports" class="clear-confirm">
+        <view v-if="confirmClearReports" class="clear-confirm mpwx-view">
           <text class="clear-confirm-copy">将清空此点位的 {{ visibleReports.length }} 条反馈，点位资料不会删除。</text>
-          <view class="clear-confirm-actions">
-            <view class="keep-reports" @click="confirmClearReports = false">保留记录</view>
-            <view class="confirm-clear" :class="{ disabled: busy }" @click="!busy && removeReports()">{{ busy ? '清理中…' : '确认清空' }}</view>
+          <view class="clear-confirm-actions mpwx-view">
+            <view class="keep-reports mpwx-view" @click="confirmClearReports = false">保留记录</view>
+            <view class="confirm-clear mpwx-view" :class="{ disabled: busy }" @click="!busy && removeReports()">{{ busy ? '清理中…' : '确认清空' }}</view>
           </view>
         </view>
-        <view v-for="(report, index) in visibleReports" :key="index" class="report">
+        <view v-for="(report, index) in visibleReports" :key="index" class="report mpwx-view">
           <text class="report-reason">{{ report.reason || '未填写原因' }}</text>
           <text class="muted">{{ report.createdAt || '' }} · {{ report.userId || '匿名用户' }}</text>
         </view>
       </view>
-      <view v-if="editing" class="form">
-        <view class="form-heading"><text class="group-title">点位资料</text><text class="group-caption">修改后保存即可同步到地图</text></view>
-        <view class="form-field">
+      <view v-if="editing" class="form mpwx-view">
+        <view class="form-heading mpwx-view"><text class="group-title">点位资料</text><text class="group-caption">修改后保存即可同步到地图</text></view>
+        <view class="form-field mpwx-view">
           <text class="field-label">名称</text>
           <input v-model="draft.name" class="field-control" maxlength="100" placeholder="输入点位名称" />
         </view>
-        <view class="form-field">
+        <view class="form-field mpwx-view">
           <text class="field-label">描述</text>
           <textarea v-model="draft.describe" class="field-control field-textarea" maxlength="2000" auto-height placeholder="补充位置特征或点位说明" />
         </view>
-        <view class="form-row">
-          <view class="form-field">
+        <view class="form-row mpwx-view">
+          <view class="form-field mpwx-view">
             <text class="field-label">类型</text>
-            <picker :range="['普通垃圾桶', '智能垃圾桶']" :value="draft.type === 'smart' ? 1 : 0" @change="draft.type = Number($event.detail.value) === 1 ? 'smart' : 'normal'"><view class="field-control picker">{{ draft.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶' }}</view></picker>
+            <picker :range="['普通垃圾桶', '智能垃圾桶']" :value="draft.type === 'smart' ? 1 : 0" @change="draft.type = Number($event.detail.value) === 1 ? 'smart' : 'normal'"><view class="field-control picker mpwx-view">{{ draft.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶' }}</view></picker>
           </view>
-          <view class="form-field">
+          <view class="form-field mpwx-view">
             <text class="field-label">状态</text>
-            <picker :range="['离线', '在线']" :value="draft.status === 'online' ? 1 : 0" @change="draft.status = Number($event.detail.value) === 1 ? 'online' : 'offline'"><view class="field-control picker">{{ draft.status === 'online' ? '在线' : '离线' }}</view></picker>
+            <picker :range="['离线', '在线']" :value="draft.status === 'online' ? 1 : 0" @change="draft.status = Number($event.detail.value) === 1 ? 'online' : 'offline'"><view class="field-control picker mpwx-view">{{ draft.status === 'online' ? '在线' : '离线' }}</view></picker>
           </view>
         </view>
-        <view class="form-row">
-          <view class="form-field">
+        <view class="form-row mpwx-view">
+          <view class="form-field mpwx-view">
             <text class="field-label">纬度</text>
             <input v-model="draft.latitude" class="field-control" type="text" placeholder="纬度" />
           </view>
-          <view class="form-field">
+          <view class="form-field mpwx-view">
             <text class="field-label">经度</text>
             <input v-model="draft.longitude" class="field-control" type="text" placeholder="经度" />
           </view>
         </view>
-        <view class="form-field">
+        <view class="form-field mpwx-view">
           <text class="field-label">图片路径</text>
           <input v-model="draft.imagePath" class="field-control" maxlength="2000" placeholder="可选" />
         </view>
-        <view class="form-field">
+        <view class="form-field mpwx-view">
           <text class="field-label">设备回调地址</text>
           <input v-model="draft.callback_url" class="field-control" maxlength="2000" placeholder="可选" />
         </view>
-        <view class="save-btn" :class="{ disabled: busy }" @click="save">
+        <view class="save-btn mpwx-view" :class="{ disabled: busy }" @click="save">
           <ManifestIcon class="action-icon" :id="busy ? 'refresh' : 'confirm'" />{{ busy ? '提交中…' : '保存修改' }}
         </view>
       </view>
@@ -196,7 +196,7 @@ function save() {
 .disabled { opacity: .48; }
 .details { max-height: 540rpx; height: 540rpx; margin-top: 18rpx; padding: 18rpx; box-sizing: border-box; border: 1rpx solid #e5ebef; border-radius: 16rpx; background: #ffffff; }
 .reports-heading { margin-bottom: 12rpx; }
-.reports-heading > view:first-child, .form-heading { display: flex; flex-direction: column; gap: 4rpx; }
+.reports-heading > .mpwx-view:first-child, .form-heading { display: flex; flex-direction: column; gap: 4rpx; }
 .group-title { color: #27384a; font-size: 23rpx; font-weight: 700; }
 .clear-reports { padding: 10rpx 16rpx; color: #bd4d4d; background: #fff0ef; border-radius: 12rpx; font-size: 20rpx; }
 .clear-confirm { margin: 12rpx 0; padding: 16rpx; border: 1rpx solid #f0d39e; border-radius: 14rpx; background: #fff8eb; }
