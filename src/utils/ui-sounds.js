@@ -28,6 +28,7 @@ function createWebDriver() {
   const context = new Context()
   const buffers = new Map()
   const requests = new Set()
+  const scanTones = new Set()
   let source = null
   let disposed = false
   let lastWarm = -Infinity
@@ -49,7 +50,11 @@ function createWebDriver() {
     }
     return buffers.get(sound.file)
   }
-  function stop() {
+  function stop({ preserveScanCue = false } = {}) {
+    if (!preserveScanCue) {
+      for (const tone of scanTones) { try { tone.stop() } catch (_) {} }
+      scanTones.clear()
+    }
     const playing = source
     source = null
     try {
@@ -71,6 +76,21 @@ function createWebDriver() {
       for (const sound of Object.values(UI_SOUNDS)) void load(sound).catch(() => {})
     },
     async play(sound, { canStart, onEnded }) {
+      if (sound.scanCue) {
+        if (context.state !== 'running') await context.resume()
+        if (disposed || context.state !== 'running' || !canStart()) return false
+        // A short decoded-code cue needs no downloaded asset, and may finish its
+        // 130ms tail across the immediate scan-result navigation. Mute/hide stops it.
+        const tone = context.createOscillator(), gain = context.createGain(), now = context.currentTime
+        tone.type = 'sine'; tone.frequency.setValueAtTime(1320, now)
+        gain.gain.setValueAtTime(0, now)
+        gain.gain.linearRampToValueAtTime(0.22, now + 0.008)
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12)
+        tone.connect(gain); gain.connect(context.destination); scanTones.add(tone)
+        tone.onended = () => { scanTones.delete(tone); tone.disconnect(); gain.disconnect(); onEnded() }
+        tone.start(now); tone.stop(now + 0.13)
+        return true
+      }
       // resume() is asynchronous even when called from a user gesture. Wait
       // for it as well as decoding, including when the buffer is already warm.
       const resume = context.state === 'running' ? Promise.resolve() : context.resume()
@@ -210,6 +230,7 @@ export const setUiSoundsEnabled = value => controller.setEnabled(value)
 export const setUiSoundsActive = value => controller.setActive(value)
 export const setUiSoundBlocked = (reason, value) => controller.setBlocked(reason, value)
 export const stopUiSounds = () => controller.stop()
+const stopOnNavigation = () => controller.stop({ preserveScanCue: true })
 export function playUiSound(event, options) {
   try { return controller.play(event, options) } catch (_) { return false }
 }
@@ -224,7 +245,7 @@ export function initUiSounds() {
   initialized = true
   // Stop immediately on navigation; returning to a page never replays a cue.
   for (const method of ['navigateTo', 'redirectTo', 'reLaunch', 'switchTab', 'navigateBack']) {
-    try { uni.addInterceptor(method, { invoke: stopUiSounds }) } catch (_) {}
+    try { uni.addInterceptor(method, { invoke: stopOnNavigation }) } catch (_) {}
   }
   // #ifdef H5
   const media = new Set()
@@ -232,9 +253,13 @@ export function initUiSounds() {
   document.addEventListener('touchend', primeUiSounds, { capture: true, passive: true })
   document.addEventListener('keydown', primeUiSounds, { capture: true, passive: true })
   document.addEventListener('visibilitychange', () => controller.setActive(!document.hidden))
-  window.addEventListener('hashchange', () => { stopUiSounds(); releaseMedia({ target: null }) })
+  window.addEventListener('hashchange', () => { stopOnNavigation(); releaseMedia({ target: null }) })
   document.addEventListener('play', event => {
-    if (event.target instanceof HTMLMediaElement) { media.add(event.target); controller.setBlocked('media', true) }
+    if (event.target instanceof HTMLMediaElement) {
+      // A marked, muted camera preview is scanner input, not audible media.
+      if (event.target.muted && event.target.srcObject && event.target.hasAttribute('data-ui-sound-camera-preview')) return
+      media.add(event.target); controller.setBlocked('media', true)
+    }
   }, true)
   const releaseMedia = event => {
     media.delete(event.target)

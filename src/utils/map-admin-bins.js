@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { userinfo } from '@/api/user'
 import { getBinsList } from '@/api/database'
 import { getTrashBinList } from '@/api/map'
+import { toMapDisplayPoint } from '@/utils/map-display-point.mjs'
 
 export function binReports(bin) {
   const value = bin?.errorReport
@@ -30,22 +31,36 @@ export function useMapAdminBins() {
     }
     isMapAdmin.value = await identityRequest
     if (!isMapAdmin.value) return getTrashBinList(params)
-    const list = []
-    let page = 1
-    let total = Infinity
-    while (list.length < total) {
-      const result = await getBinsList({ page, pageSize: 100 })
-      if (result?.code !== 0 || !Array.isArray(result.data?.list)) throw new Error(result?.msg || '管理员垃圾桶列表加载失败')
-      const batch = result.data.list
-      total = Number(result.data.total)
-      list.push(...batch)
-      if (batch.length < 100 || !Number.isFinite(total)) break
-      page++
+    // 管理员按视野查询（矩形 bbox 或中心点+半径 + light 轻量模式），不再全量拉取；
+    // 单次只查一页，是否多轮分批由调用方按密度控制
+    const hasBbox = [params?.minLat, params?.maxLat, params?.minLng, params?.maxLng].every((value) => value != null && Number.isFinite(Number(value)))
+    const hasViewport = !hasBbox && Number.isFinite(Number(params?.latitude)) && Number.isFinite(Number(params?.longitude))
+    // 只携带本次查询用到的参数：uni 会把 undefined 序列化成空串，会干扰后端"是否传参"的判断
+    const queryParams = {
+      page: Number(params?.page) || 1,
+      pageSize: Number(params?.pageSize) || 100,
+      light: 1
     }
-    return { code: 0, data: list.filter(item => item.latitude != null && item.longitude != null && Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)) && Math.abs(Number(item.latitude)) <= 90 && Math.abs(Number(item.longitude)) <= 180).map(item => ({
-      ...item, adminRecord: true, description: item.describe, image: item.imagePath,
-      review: item.review === true || item.review === 1, errorReport: binReports(item)
-    })) }
+    if (hasBbox) {
+      queryParams.minLat = Number(params.minLat)
+      queryParams.maxLat = Number(params.maxLat)
+      queryParams.minLng = Number(params.minLng)
+      queryParams.maxLng = Number(params.maxLng)
+    } else if (hasViewport) {
+      queryParams.latitude = Number(params.latitude)
+      queryParams.longitude = Number(params.longitude)
+      queryParams.radius = Number(params.radius) || 5000
+    }
+    const result = await getBinsList(queryParams)
+    if (result?.code !== 0 || !Array.isArray(result.data?.list)) throw new Error(result?.msg || '管理员垃圾桶列表加载失败')
+    return {
+      code: 0,
+      data: result.data.list.filter(item => item.latitude != null && item.longitude != null && Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)) && Math.abs(Number(item.latitude)) <= 90 && Math.abs(Number(item.longitude)) <= 180).map(item => ({
+        ...toMapDisplayPoint(item), adminRecord: true, description: item.describe, image: item.imagePath,
+        review: item.review === true || item.review === 1, errorReport: binReports(item)
+      })),
+      pagination: { total: Number(result.data.total) || 0 }
+    }
   }
   return { isMapAdmin, loadMapBins }
 }

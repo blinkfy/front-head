@@ -301,10 +301,11 @@
 </template>
 
 <script setup>
+import { chooseAppImage } from '@/utils/image-picker.js'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { onHide, onUnload } from '@dcloudio/uni-app'
 import { baseUrl } from '@/api/settings'
-import MarkdownBody from '@/components/MarkdownBody.vue'
+import MarkdownBody from '@/pages-nonTheme/components/MarkdownBody.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { parseRecognitionSeedSummary } from '@/pages-nonTheme/utils/recognition-seed-display.mjs'
@@ -1032,7 +1033,7 @@ function clearPickedImage() {
 }
 function onPickImage() {
   if (imagePreparing.value || isStreaming.value) return
-  uni.chooseImage({
+  chooseAppImage({
     count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'],
     success: async res => {
       const path = res.tempFilePaths?.[0]

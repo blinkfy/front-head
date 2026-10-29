@@ -5,8 +5,39 @@
         <view class="title">{{ pageTitle }}</view>
         <view class="subtitle">{{ pageSubtitle }}</view>
       </view>
+      <!-- #ifdef MP-WEIXIN -->
+      <view :class="['twin-header-business', { 'twin-header-business--light': !isDark }]">
+        <view class="source-legend">
+          <text v-for="source in sourceTypes" :key="source" :data-source="source" :class="['source-badge', sourceClass(source)]">{{ displaySourceLabel(source) }}</text>
+        </view>
+        <view class="source-summary">数据源 {{ sourceTypes.length }} 类</view>
+        <view v-if="pageMode === 'live'" :class="['algorithm-badge', { degraded: algorithmDegraded }]">{{ algorithmStatusLabel }}</view>
+        <picker class="twin-control-picker" mode="selector" :range="pageModeOptions" range-key="label" :value="pageModeIndex" @change="onPageModeChange">
+          <view class="mode-select page-mode-select">
+            <text>页面模式</text>
+            <text class="b-text">{{ activePageModeLabel }}</text>
+          </view>
+        </picker>
+        <picker v-if="pageMode === 'replay'" class="twin-control-picker" mode="selector" :range="scenarioOptions" range-key="label" :value="scenarioIndex" @change="onScenarioChange">
+          <view class="mode-select scenario-select">
+            <text>回放场景</text>
+            <text class="b-text">{{ activeScenarioLabel }}</text>
+          </view>
+        </picker>
+        <picker v-if="pageMode === 'replay'" class="twin-control-picker" mode="selector" :range="modeOptions" range-key="label" :value="modeIndex" @change="onModeChange">
+          <view class="mode-select">
+            <text>数据文件</text>
+            <text class="b-text">{{ activeModeLabel }}</text>
+          </view>
+        </picker>
+        <view class="filename" :title="filename">{{ pageMode === 'live' ? liveConnectionLabel : displayFilename }}</view>
+        <view class="header-button primary" @tap="refreshPage">刷新</view>
+      </view>
+      <AdminScreenHeader class="twin-screen-header" screen-key="digitalTwinReplay" :tone="isDark ? 'dark' : 'light'" hide-business @back="goBack" />
+      <!-- #endif -->
+      <!-- #ifndef MP-WEIXIN -->
       <AdminScreenHeader class="twin-screen-header" screen-key="digitalTwinReplay" :tone="isDark ? 'dark' : 'light'" @back="goBack">
-        <view class="twin-header-business">
+        <view :class="['twin-header-business', { 'twin-header-business--light': !isDark }]">
           <view class="source-legend">
             <text v-for="source in sourceTypes" :key="source" :data-source="source" :class="['source-badge', sourceClass(source)]">{{ displaySourceLabel(source) }}</text>
           </view>
@@ -34,6 +65,7 @@
           <view class="header-button primary" @tap="refreshPage">刷新</view>
         </view>
       </AdminScreenHeader>
+      <!-- #endif -->
     </view>
 
     <view v-if="loading" class="loading panel">
@@ -47,7 +79,7 @@
 
     <view v-else class="workspace">
       <view class="left-column">
-        <ReplayTimeline class="timeline" :events="events" :current-index="currentIndex" :live-window="pageMode === 'live'" @select="seek" />
+        <ReplayTimeline class="timeline" :light="!isDark" :events="events" :current-index="currentIndex" :live-window="pageMode === 'live'" @select="seek" />
         <view class="current-event panel">
           <view class="section-heading"><text>当前事件</text><text>{{ currentEvent?.sequence || '—' }}</text></view>
           <view class="current-title">{{ currentPresentation.title }}</view>
@@ -209,7 +241,6 @@ import {
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav.js'
 import { redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme.js'
-import '@/pages-admin/styles/admin-light-theme.css'
 import {
   centerPhaseFromEvent,
   currentTaskId,
@@ -231,8 +262,11 @@ const miniProgramTopInset = ref(0)
 // #ifdef MP-WEIXIN
 try {
   const systemInfo = uni.getSystemInfoSync()
-  const menuRect = wx.getMenuButtonBoundingClientRect()
-  miniProgramTopInset.value = Math.max(Number(systemInfo.statusBarHeight) || 0, Number(menuRect.bottom) || 0)
+  const menuRect = typeof wx !== 'undefined' && wx.getMenuButtonBoundingClientRect ? wx.getMenuButtonBoundingClientRect() : null
+  const statusBarHeight = Number(systemInfo.statusBarHeight) || 0
+  const menuTop = Number(menuRect?.top) || 0
+  // 顶部避开状态栏，让卡片标题行与右上角胶囊按钮垂直对齐，消除多余空白并增大内容展示面积
+  miniProgramTopInset.value = Math.max(statusBarHeight, menuTop > 0 ? (menuTop - 4) : statusBarHeight)
 } catch (e) {
   miniProgramTopInset.value = 0
 }
@@ -1222,6 +1256,9 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 小程序端不会编译 script 中引入的 css，改用 style @import 保证浅色主题变量生效。 */
+@import './styles/admin-light-theme.css';
+
 page { background: #071726; }
 .replay-screen {
   --panel: rgba(7,27,43,.86); --line: rgba(116,197,255,.28); --text: #e8f8ff; --muted: #8fb1c4;
@@ -1959,6 +1996,19 @@ page { background: #071726; }
 }
 
 /* #ifdef MP-WEIXIN */
+/* 插槽内容在小程序中可能与页面祖先隔离，布局直接作用于控件自身。 */
+.twin-header-business { display: flex; flex-wrap: nowrap; align-items: stretch; width: 100%; gap: 5px; overflow: visible; }
+.twin-header-business .source-legend,
+.twin-header-business .source-summary,
+.twin-header-business .filename { display: none; }
+.twin-header-business .twin-control-picker { display: block; flex: 1 1 0; width: 0; min-width: 0; }
+.twin-header-business .mode-select { box-sizing: border-box; width: 100%; min-width: 0; height: 38px; padding: 4px 6px; }
+.twin-header-business .mode-select text { display: block; font-size: 10px; line-height: 1.3; }
+.twin-header-business .mode-select .b-text { font-size: 11px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.twin-header-business .header-button.primary { display: flex; flex: 0 0 48px; width: 48px; height: 38px; min-height: 38px; padding: 0; color: #fff; background: #2479e8; }
+.twin-header-business--light .mode-select { border-color: #bfd2df; background: #f5f9fb; }
+.twin-header-business--light .mode-select text { color: #71899a; }
+.twin-header-business--light .mode-select .b-text { color: #244c65; }
 /* 微信小程序端专用布局：grid / minmax / clamp / backdrop-filter 等特性支持不佳，改用 flex 垂直布局 */
 .replay-screen { height: auto; min-height: 100vh; width: 100%; overflow: auto; padding: 6px; gap: 6px; box-sizing: border-box; display: flex; flex-direction: column; }
 .replay-screen .panel { backdrop-filter: none; }
@@ -1967,25 +2017,22 @@ page { background: #071726; }
 .replay-screen .title { font-size: 18px; }
 .replay-screen .subtitle { font-size: 10px; }
 .replay-screen .twin-screen-header { margin-left: 0; flex: 1 1 100%; }
-.replay-screen .twin-header-business { flex-wrap: wrap; gap: 6px; width: 100%; }
+.replay-screen .twin-header-business { flex-wrap: nowrap; gap: 5px; width: 100%; }
 .replay-screen .source-legend { display: none; }
 .replay-screen .source-summary { display: none; }
-.replay-screen .twin-header-business .twin-control-picker,
-.replay-screen .twin-header-business .header-button { flex: 1 1 calc(50% - 3px); min-width: 0; }
 .replay-screen .algorithm-badge { max-width: 140px; font-size: 9px; }
-.replay-screen .mode-select { min-width: 96px; padding: 5px 6px; }
+.replay-screen .mode-select { min-width: 0; padding: 4px 6px; }
 .replay-screen .mode-select text { font-size: 9px; }
 .replay-screen .mode-select .b-text { font-size: 11px; }
 .replay-screen .filename { display: none; }
-.replay-screen .header-button { min-height: 32px; height: 32px; padding: 0 10px; font-size: 12px; }
 .replay-screen .workspace { display: flex; flex-direction: column; flex: none; width: 100%; min-height: auto; gap: 6px; overflow: visible; box-sizing: border-box; }
 .replay-screen .left-column,
 .replay-screen .center-column,
 .replay-screen .right-column { flex: none; width: 100%; min-height: auto; gap: 6px; overflow: visible; box-sizing: border-box; }
 .replay-screen .timeline { display: block; width: 100%; height: 260px; min-height: 260px; flex: 0 0 260px; overflow: hidden; }
 .replay-screen .current-event { flex: none; height: auto; padding: 10px; overflow: visible; }
-.replay-screen .park-stage { flex: none; height: 360px; min-height: 360px; overflow: hidden; }
-.replay-screen .park-map { display: block; width: 100%; height: 100%; flex: none; }
+.replay-screen .park-stage { flex: none; display: block; width: 100%; height: auto; min-height: 0; aspect-ratio: auto; overflow: hidden; }
+.replay-screen .park-map { display: block; width: 100%; height: auto; flex: none; }
 .replay-screen .replay-controls { display: block; width: 100%; flex: none; }
 .replay-screen .right-column { overflow: visible; padding-right: 0; }
 .replay-screen .entity-inspector { flex: none; min-height: 320px; }
@@ -1994,6 +2041,11 @@ page { background: #071726; }
 .replay-screen .loading,
 .replay-screen .error { flex: none; min-height: 55vh; }
 .replay-screen.light-theme .panel { box-shadow: none; }
+.replay-screen.light-theme.admin-light-theme .header-copy { min-width: 0; }
+.replay-screen.light-theme.admin-light-theme .title { font-size: 18px; }
+.replay-screen.light-theme.admin-light-theme .header { border: 1px solid #d5e2e9; border-radius: 10px; background: #fff; padding: 10px; }
+.replay-screen.light-theme.admin-light-theme .twin-header-business .mode-select { min-width: 0; height: 38px; padding: 4px 6px; border: 1px solid #bfd2df; background: #f5f9fb; }
+.replay-screen.light-theme.admin-light-theme .twin-header-business .header-button.primary { height: 38px; min-height: 38px; color: #fff; background: #18a77c; }
 
 /* 微信小程序端子组件全局覆盖 */
 .replay-screen .panel-title,
@@ -2012,10 +2064,12 @@ page { background: #071726; }
 .replay-screen .decision-meta text,
 .replay-screen .metric-grid .small-text { font-size: 10px; }
 .replay-screen .section-heading { min-height: 24px; align-items: flex-start; flex-wrap: wrap; gap: 4px; }
-.replay-screen .event-meta,
-.replay-screen .state-row { align-items: flex-start; flex-wrap: wrap; gap: 4px 8px; }
-.replay-screen .event-meta .b-text,
-.replay-screen .state-row .b-text { flex: 1 1 160px; max-width: 100%; white-space: normal; word-break: break-word; overflow: visible; text-align: left; }
+.replay-screen .event-meta { align-items: flex-start; flex-wrap: wrap; gap: 4px 8px; }
+.replay-screen .event-meta .b-text { flex: 1 1 160px; max-width: 100%; white-space: normal; word-break: break-word; overflow: visible; text-align: left; }
+.replay-screen .state-row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 10px; min-height: 26px; padding: 2px 0; box-sizing: border-box; border-bottom: 1px solid rgba(116,197,255,.08); }
+.replay-screen .state-row:last-child { border-bottom: 0; }
+.replay-screen .state-row text { display: block; flex: 0 0 auto; white-space: nowrap; }
+.replay-screen .state-row .b-text { flex: 1 1 0; min-width: 0; max-width: 100%; white-space: normal; word-break: break-all; overflow: visible; text-align: right; }
 .replay-screen .entity-inspector,
 .replay-screen .decision-explanation,
 .replay-screen .scenario-analytics,

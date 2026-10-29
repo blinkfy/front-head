@@ -131,7 +131,9 @@
 
     <!-- 功能菜单 -->
     <view :animation="tabPageAnimation" class="menu-section tab-page-motion">
-      <view class="menu-title">功能服务</view>
+      <view class="menu-heading">
+        <view class="menu-title">功能服务</view>
+      </view>
       <view class="menu-grid">
         <view class="menu-item" @click="goHistory">
           <view class="menu-icon blue"><ManifestIcon id="recognition_history" /></view>
@@ -153,16 +155,19 @@
           <view class="menu-icon gray"><ManifestIcon id="settings" /></view>
           <text class="menu-text">用户设置</text>
         </view>
-        <view class="menu-item" @click="goAbout">
-          <view class="menu-icon cyan"><ManifestIcon id="about_app" /></view>
-          <text class="menu-text">关于软件</text>
+        <view class="menu-item" @click="goToOrders">
+          <view class="menu-icon cyan"><ManifestIcon id="mystery_bag" :scale="2.1" /></view>
+          <text class="menu-text">我的订单</text>
         </view>
       </view>
     </view>
 
     <!-- 管理员功能-->
     <view :animation="tabPageAnimation" v-if="isAdmin" class="admin-section tab-page-motion">
-      <view class="menu-title">管理员功能</view>
+      <view class="menu-heading">
+        <view class="menu-title">管理员功能</view>
+        <view class="admin-shop-link" role="button" @click="goShopManagement">商城管理 ›</view>
+      </view>
       <view class="admin-grid">
         <view class="admin-item" @click="goFileManagement"><ManifestIcon id="file_manager" /> 文件管理</view>
         <view class="admin-item" @click="go2048"><ManifestIcon id="admin_2048" /> 2048后台</view>
@@ -222,8 +227,9 @@
           <view class="info-item">
             <view class="info-icon orange"><ManifestIcon id="challenge_trophy" /></view>
             <view class="info-content">
-              <text class="info-title">额外奖励</text>
-              <text class="info-desc">连续登录、完美分类等可获得额外积分</text>
+              <text class="info-title">上传投放点奖励</text>
+              <text class="info-desc">上传真实垃圾桶照片和位置，审核通过后发放积分</text>
+              <text class="info-tag">每处首次审核通过：10积分</text>
             </view>
           </view>
         </view>
@@ -576,9 +582,9 @@ const closeContributionInfo = () => { showContributionModal.value = false }
 const goToShop = () => { closePointsInfo(); uni.redirectTo({ url: '/pages/shop/shop' }) }
 
 function goHistory() { uni.navigateTo({ url: '/pages/history/history' }) }
+function goToOrders() { uni.navigateTo({ url: '/pages-nonTheme/shop-orders' }) }
 function goRanking() { uni.navigateTo({ url: '/pages/ranking/ranking' }) }
 function goSettings() { uni.navigateTo({ url: '/pages-nonTheme/settings' }) }
-function goAbout() { uni.navigateTo({ url: '/pages-nonTheme/about' }) }
 function goGuide() { uni.navigateTo({ url: '/pages/guide/guide' }) }
 function goAchievements() { uni.navigateTo({ url: '/pages-nonTheme/achievements' })}
 
@@ -615,6 +621,12 @@ function goFileManagement() {
 function goDbMonitor() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) uni.navigateTo({ url: '/pages-admin/database' })
+  })
+}
+
+function goShopManagement() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) uni.navigateTo({ url: '/pages-admin/shop-management' })
   })
 }
 
@@ -1450,6 +1462,17 @@ function goShop() { navigateBottomTab('profile', 'shop', '/pages/shop/shop') }
   padding-left: 8rpx;
 }
 
+.menu-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.menu-heading .menu-title {
+  margin: 0;
+}
+
 .menu-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1554,7 +1577,7 @@ function goShop() { navigateBottomTab('profile', 'shop', '/pages/shop/shop') }
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(243, 244, 246, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
 
-/* 关于软件 - 青色 */
+/* 我的订单 - 青色 */
 .menu-item:nth-child(6) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(207, 250, 254, 0.7) 50%, rgba(255, 255, 255, 0.95) 100%);
 }
@@ -1636,6 +1659,15 @@ function goShop() { navigateBottomTab('profile', 'shop', '/pages/shop/shop') }
   margin: 0 32rpx 24rpx;
   position: relative;
   z-index: 10;
+}
+
+.admin-shop-link {
+  flex-shrink: 0;
+  padding: 8rpx 0 8rpx 16rpx;
+  color: #059669;
+  font-size: 24rpx;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .admin-grid {

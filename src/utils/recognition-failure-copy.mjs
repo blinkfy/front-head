@@ -29,7 +29,13 @@ let lastTaskId = null
 let lastCopy = copies[0]
 
 // 同一次失败（包括返回首页）保持文案，不随渲染或机器人循环切换。
-export function getRecognitionFailureCopy(taskId) {
+export function getRecognitionFailureCopy(taskId, error) {
+  if (error?.code === 'RECOGNITION_TIMEOUT') {
+    return { title: '小投侠等得有点久啦', description: '这次识别等待超时，原图已保留。检查网络后可以重试原图，或重新拍摄。' }
+  }
+  if (/network|failed to fetch|uploadFile:fail|网络/i.test(String(error?.errMsg || error?.message || ''))) {
+    return { title: '小投侠的信号断了一下', description: '这次未能完成识别，原图已保留。网络恢复后可重试原图，或重新选图。' }
+  }
   if (!taskId) return copies[0]
   if (taskId !== lastTaskId) {
     lastTaskId = taskId

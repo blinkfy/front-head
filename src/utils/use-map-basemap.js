@@ -1,0 +1,83 @@
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onUnload } from '@dcloudio/uni-app'
+import { createMapBasemapController, isBinLocationPicker } from './map-basemap-core.mjs'
+import { captureSatelliteReference } from './bin-satellite-reference.mjs'
+
+export function useMapBasemap({ isH5, options, suspended }) {
+  const satellite = ref(isBinLocationPicker(options))
+  const basemapLoading = ref(false)
+  let h5Map = null, nativeCallbacks = null, disposed = false
+  function nativeSupported() {
+    // App's Vue renderer varies by bundled SDK. Require an affirmative capability check.
+    if (process.env.UNI_PLATFORM === 'mp-weixin') {
+      try { return typeof uni.canIUse !== 'function' || uni.canIUse('map.enable-satellite') } catch (_) { return false }
+    }
+    try { return typeof uni.canIUse === 'function' && uni.canIUse('map.enable-satellite') } catch (_) { return false }
+  }
+  const controller = createMapBasemapController({
+    onChange: state => { satellite.value = state.satellite; basemapLoading.value = state.loading },
+    onFallback: () => uni.showToast({ title: '卫星图暂不可用，已切回普通地图', icon: 'none' }),
+    apply: (enabled, callbacks) => {
+      if (isH5) {
+        if (!h5Map || typeof h5Map.setBaseMap !== 'function') return false
+        const map = h5Map
+        const loaded = () => callbacks.loaded()
+        const failed = () => callbacks.failed()
+        const changed = () => controller.refresh()
+        const cleanup = () => {
+          map.off?.('tilesloaded', loaded)
+          map.off?.('error', failed)
+          map.off?.('bounds_changed', changed)
+        }
+        try {
+          if (enabled) {
+            map.on('tilesloaded', loaded)
+            map.on('error', failed)
+            map.on('bounds_changed', changed)
+          }
+          map.setBaseMap(enabled ? { type: 'satellite', features: ['base', 'road'] } : { type: 'vector' })
+          return cleanup
+        } catch (error) { cleanup(); throw error }
+      }
+      if (enabled && !nativeSupported()) return false
+      nativeCallbacks = callbacks
+      return () => { if (nativeCallbacks === callbacks) nativeCallbacks = null }
+    }
+  })
+  function setBasemap(enabled) {
+    if (disposed) return
+    // The SDK is still loading; keep the requested type until bindH5Map runs.
+    if (isH5 && !h5Map) { satellite.value = !!enabled; return }
+    controller.request(enabled)
+  }
+  function bindH5Map(map) { h5Map = map; controller.request(satellite.value) }
+  function getSatelliteReference(location, containerId) {
+    // #ifdef H5
+    if (isH5 && !disposed && isBinLocationPicker(options)) return captureSatelliteReference({
+      map: h5Map, container: document.getElementById(containerId), location,
+      satellite: satellite.value, loading: basemapLoading.value,
+      toLatLng: point => new window.TMap.LatLng(Number(point.latitude), Number(point.longitude)),
+      createCanvas: () => document.createElement('canvas')
+    })
+    // #endif
+    return null
+  }
+  function onNativeMapUpdated() { nativeCallbacks?.loaded() }
+  function onNativeMapError() { nativeCallbacks?.failed() }
+  function onNativeMapRegionChange(event) {
+    if (event?.type === 'begin' || event?.detail?.type === 'begin') controller.refresh()
+  }
+  onMounted(() => { if (!isH5 && !suspended?.()) controller.request(satellite.value) })
+  if (suspended) watch(suspended, hidden => {
+    if (isH5 || disposed) return
+    if (hidden) controller.pause()
+    else controller.request(satellite.value)
+  }, { flush: 'post' })
+  function dispose() {
+    if (disposed) return
+    disposed = true; controller.dispose(); nativeCallbacks = null; h5Map = null
+  }
+  onBeforeUnmount(dispose)
+  onUnload(dispose)
+  return { satellite, basemapLoading, setBasemap, bindH5Map, getSatelliteReference, onNativeMapUpdated, onNativeMapError, onNativeMapRegionChange }
+}

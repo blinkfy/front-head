@@ -52,7 +52,7 @@
           <view class="saturn-ring"></view>
         </view>
         <view class="bg-circle circle-green">
-          <view class="saturn-ring"></view>
+          <LoginGreenPlanet />
         </view>
         <!-- 流光粒子 -->
         <view class="particle"></view>
@@ -238,6 +238,8 @@ import { ThemeManager } from '@/utils/theme.js'
 import { appendPageQuery, buildDeviceQrScanUrl, getPendingDeviceQrScene } from '@/utils/device-qr-entry.mjs'
 import CaptchaBox from '@/components/CaptchaBox.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import LoginGreenPlanet from '@/components/LoginGreenPlanet.vue'
+import { navigateAfterLogin, claimLoginSplash } from '@/utils/login-navigation.mjs'
 import AppSplash from '@/components/AppSplash.vue'
 
 const username = ref('')
@@ -313,7 +315,7 @@ const showSplash = ref(false)
 
 // #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ
 // 小程序/App端：显示启动页
-showSplash.value = true
+showSplash.value = claimLoginSplash()
 // #endif
 
 // 启动页加载完成回调
@@ -421,7 +423,10 @@ async function onQrLogin(result) {
   uni.showToast({ title: '登录成功', icon: 'success' })
   const pendingScene = getPendingDeviceQrScene(registrationRuntime)
   const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, false) : ''
-  uni.reLaunch({ url: pendingUrl || '/pages/home/home' })
+  await navigateAfterLogin({
+    runtime: uni, url: pendingUrl || '/pages/home/home',
+    setLoading: value => { isLoading.value = value }
+  })
 }
 // #endif
 
@@ -485,22 +490,20 @@ async function completeLogin(res, isauto, isWechat = false) {
     profileCompletionUser.value = registeredUser
     profileCompletionVisible.value = true
     await new Promise(resolve => { resolveProfileCompletion = resolve })
+    if (wechatPageActive) isLoading.value = true
   }
   if (!wechatPageActive) return
   await confirmRegistrationLogin(res.token, loggedInUser?.username || username.value, () => wechatPageActive)
   if (!wechatPageActive) return
   // #endif
-  setTimeout(() => {
-    // #ifdef MP-WEIXIN
-    if (!wechatPageActive) return
-    // #endif
-    isLoading.value = false
-    const pendingScene = getPendingDeviceQrScene(uni)
-    const pendingUrl = pendingScene
-      ? buildDeviceQrScanUrl(pendingScene, ThemeManager.getTheme() === 'dark')
-      : ''
-    uni.reLaunch({ url: pendingUrl || '/pages/home/home' })
-  }, 500)
+  const pendingScene = getPendingDeviceQrScene(uni)
+  const pendingUrl = pendingScene
+    ? buildDeviceQrScanUrl(pendingScene, ThemeManager.getTheme() === 'dark')
+    : ''
+  await navigateAfterLogin({
+    runtime: uni, url: pendingUrl || '/pages/home/home',
+    setLoading: value => { isLoading.value = value }
+  })
 }
 
 function onLogin(isauto) {
@@ -875,6 +878,7 @@ function onRegister() {
 
 /* 球形主体 - 平面渐变风格，错落有致 */
 .circle-blue {
+  animation: auth-orb-blue 32s ease-in-out infinite;
   width: 420rpx;
   height: 420rpx;
   background: linear-gradient(135deg, #93c5fd 0%, #60a5fa 50%, #3b82f6 100%);
@@ -899,10 +903,11 @@ function onRegister() {
     transparent 80%
   );
   border-radius: 50%;
-  animation: planetGlow 10s ease-in-out infinite;
+  animation: planetGlow 24s ease-in-out infinite;
 }
 
 .circle-orange {
+  animation: auth-orb-orange 36s ease-in-out infinite;
   width: 380rpx;
   height: 380rpx;
   background: linear-gradient(135deg, #fcd34d 0%, #fbbf24 50%, #f59e0b 100%);
@@ -927,52 +932,36 @@ function onRegister() {
     transparent 80%
   );
   border-radius: 50%;
-  animation: planetGlow 8s ease-in-out infinite;
+  animation: planetGlow 26s ease-in-out infinite;
 }
 
 .circle-green {
+  --planet-ring-height: 108rpx;
+  --planet-moon-face: rotate(-35deg) scaleY(2.3662);
+  --planet-ring-transform: translate(-50%, -50%) rotateX(65deg) rotateZ(35deg);
+  animation: auth-orb-green 28s ease-in-out infinite;
   width: 320rpx;
   height: 320rpx;
-  background: linear-gradient(135deg, #6ee7b7 0%, #34d399 50%, #10b981 100%);
   bottom: 200rpx;
   left: 80rpx;
-  opacity: 0.55;
-}
-
-.circle-green::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 180%;
-  height: 180%;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(circle, 
-    rgba(251, 191, 36, 0.25) 0%, 
-    rgba(251, 191, 36, 0.15) 20%,
-    rgba(52, 211, 153, 0.1) 40%,
-    rgba(52, 211, 153, 0.05) 60%,
-    transparent 80%
-  );
-  border-radius: 50%;
-  animation: planetGlow 12s ease-in-out infinite;
+  opacity: 0.58;
 }
 
 @keyframes planetGlow {
   0%, 100% {
-    transform: translate(-50%, -50%) scale(0.95);
+    transform: translate(-50%, -50%) scale(0.98);
     opacity: 0.5;
   }
   25% {
-    transform: translate(-50%, -50%) scale(1.05);
+    transform: translate(-50%, -50%) scale(1.01);
     opacity: 0.75;
   }
   50% {
-    transform: translate(-50%, -50%) scale(1.25);
+    transform: translate(-50%, -50%) scale(1.03);
     opacity: 1;
   }
   75% {
-    transform: translate(-50%, -50%) scale(1.1);
+    transform: translate(-50%, -50%) scale(1.02);
     opacity: 0.85;
   }
 }
@@ -1061,45 +1050,6 @@ function onRegister() {
   border-radius: 50%;
   opacity: 0.65;
 }
-
-/* 绿色球土星环 - 左下到右上 / 方向 */
-.circle-green .saturn-ring {
-  transform: translate(-50%, -50%) rotateX(65deg) rotateZ(35deg);
-  background: linear-gradient(90deg, 
-    transparent 0%, 
-    transparent 3%,
-    rgba(110, 231, 183, 0.4) 10%, 
-    rgba(52, 211, 153, 0.7) 35%, 
-    rgba(52, 211, 153, 0.85) 50%,
-    rgba(52, 211, 153, 0.7) 65%,
-    rgba(110, 231, 183, 0.4) 90%, 
-    transparent 97%,
-    transparent 100%
-  );
-  opacity: 0.8;
-}
-
-/* 绿色星环内侧 */
-.circle-green .saturn-ring::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 60%;
-  height: 40rpx;
-  transform: translate(-50%, -50%);
-  background: linear-gradient(90deg, 
-    transparent 0%, 
-    rgba(167, 243, 208, 0.35) 15%, 
-    rgba(110, 231, 183, 0.6) 50%, 
-    rgba(167, 243, 208, 0.35) 85%, 
-    transparent 100%
-  );
-  border-radius: 50%;
-  opacity: 0.65;
-}
-
-
 
 /* 流光粒子 */
 .bg-circles .particle {

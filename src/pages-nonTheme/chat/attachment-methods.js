@@ -1,3 +1,4 @@
+import { chooseAppImage } from '@/utils/image-picker.js'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 
 export const mediaSendMethods = {
@@ -181,7 +182,7 @@ export const mediaSendMethods = {
 
 export const mediaPickerMethods = {
     chooseImage() {
-            uni.chooseImage({
+            chooseAppImage({
                 count: 9,
                 sizeType: ['compressed'],
                 sourceType: ['album'],
@@ -194,7 +195,7 @@ export const mediaPickerMethods = {
             this.showMorePanel = false
         },
     shootPhoto() {
-            uni.chooseImage({
+            chooseAppImage({
                 count: 1,
                 sizeType: ['compressed'],
                 sourceType: ['camera'],

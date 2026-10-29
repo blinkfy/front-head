@@ -1,5 +1,5 @@
 <template>
-  <view :class="['layout', isDark ? 'dark-theme' : 'light-theme', { 'admin-light-theme': !isDark }]">
+  <view :class="['layout', isDark ? 'dark-theme' : 'light-theme', { 'admin-light-theme': !isDark }]" :style="screenStyle">
 
     <!-- ===== 顶部 panel ===== -->
     <view class="panel header-panel">
@@ -193,11 +193,14 @@ import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
-import '@/pages-admin/styles/admin-light-theme.css'
+import { getMiniProgramTopInset } from '@/utils/mp-top-inset.js'
+
+const miniProgramTopInset = getMiniProgramTopInset()
+const screenStyle = miniProgramTopInset ? { paddingTop: `${miniProgramTopInset}px` } : {}
 
 // ─── 常量 ─────────────────────────────────────────────
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
-const DEFAULT_CENTER = { latitude: 36.0671, longitude: 120.3826 }
+const DEFAULT_CENTER = { latitude: 36.065, longitude: 120.346 }
 const ROUTE_STRATEGY_KEY = 'collection_route_strategy'
 const DEMO_SORTING_CENTERS = Object.freeze([
   Object.freeze({ id: 'center-main', name: '中山公园分拣中心', location: '中山公园北侧', latitude: 36.0684, longitude: 120.3478 }),
@@ -712,6 +715,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+@import './styles/admin-light-theme.css';
 /* ─── box-sizing 通用 ─────────────────────────────────── */
 /* #ifdef H5 */
 * { box-sizing: border-box; }
@@ -2209,5 +2213,14 @@ label,navigator,image { box-sizing: border-box; }
   .layout.light-theme.admin-light-theme .top { align-items: flex-start; }
   .layout.light-theme.admin-light-theme .metrics { grid-template-columns: 1fr 1fr; }
   .layout.light-theme.admin-light-theme .map-wrap { min-height: 620px; grid-template-rows: minmax(340px, 1fr) minmax(220px, auto); }
+}
+/* #ifdef MP-WEIXIN */
+.layout .page-intro { padding-right: 96px; box-sizing: border-box; }
+/* #endif */
+/* 竖屏 / 窄屏（H5、APP、小程序）：列表限制最大高度，超出后在内部滚动 */
+@media (max-width: 900px), (orientation: portrait) {
+  .layout .bin-list,
+  .layout .sorting-center-list { flex: none !important; height: auto !important; min-height: 0 !important; max-height: 300px !important; overflow-y: auto !important; box-sizing: border-box; }
+  .layout .route-list { flex: none !important; height: auto !important; min-height: 0 !important; max-height: 220px !important; overflow-y: auto !important; box-sizing: border-box; }
 }
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <view class="map-page" :class="tabPageClass">
+  <view class="map-page" :class="[tabPageClass, { 'nearby-panel-open': showNearbyDisposal && nearbyPanelHeight > 0, 'nearby-panel-closing': nearbyPanelClosing }]" :style="{ '--nearby-panel-height': nearbyPanelHeight + 'px' }">
     <!-- 顶部导航栏 -->
     <view :animation="tabPageAnimation" class="map-header tab-page-motion" :style="{ paddingTop: (statusBarHeight + 10) + 'px' }">
       <view class="header-decoration">
@@ -15,13 +15,16 @@
 
     <!-- 地图容器 -->
     <view :animation="tabPageAnimation" class="map-container tab-page-motion">
-      <div v-if="isH5" id="container" class="map-canvas"></div>
-      <map v-else
+      <div v-if="isH5" :id="mapContainerId" class="map-canvas"></div>
+      <map v-else-if="!showAddModal"
         id="select-map"
         class="map-canvas"
         :latitude="center.latitude"
         :longitude="center.longitude"
-        :scale="12"
+        :scale="mapScale"
+        :enable-satellite="satellite"
+        @updated="onNativeMapUpdated"
+        @error="onNativeMapError"
         :markers="markers"
         show-location
         @markertap="onMarkerTap"
@@ -30,6 +33,15 @@
         @regionchange="onRegionChange"
       >
         <!-- App/小程序端控件：必须使用 cover-view 放在 map 内部 -->
+        <!-- #ifndef APP-PLUS -->
+        <!-- #ifndef MP-WEIXIN -->
+        <NearbyDisposalPanel v-if="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" :native="true" @select="selectNearbyDisposal" @navigate="point => goNavigate({ ...point, title: point.name, desc: point.address || point.description })" />
+        <!-- #endif -->
+        <!-- #endif -->
+        <cover-view class="basemap-switch basemap-switch-native" style="top: 24px">
+          <cover-view class="basemap-option" :class="{ active: !satellite }" @click.stop="setBasemap(false)">普通</cover-view>
+          <cover-view class="basemap-option" :class="{ active: satellite }" @click.stop="setBasemap(true)">{{ basemapLoading ? '加载中' : '卫星' }}</cover-view>
+        </cover-view>
         <cover-view v-if="selectMode" class="center-pin">📍</cover-view>
         <cover-view v-if="selectMode" class="location-control" @click="moveToMyLocation"><cover-image :src="getManifestIconPath('map_location')" style="width: 24px; height: 24px;" /></cover-view>
         
@@ -72,6 +84,21 @@
         </cover-view>
       </map>
     </view>
+
+    <!-- #ifdef H5 -->
+    <view v-if="!showAddModal" class="basemap-switch" :style="{ top: (statusBarHeight + (selectMode ? 4 : 132)) + 'px', left: selectMode ? 'auto' : '6px', right: selectMode ? '6px' : 'auto' }" role="group" aria-label="地图类型">
+      <button class="basemap-option" :class="{ active: !satellite }" :aria-pressed="!satellite" @click.stop="setBasemap(false)">普通</button>
+      <button class="basemap-option" :class="{ active: satellite }" :aria-pressed="satellite" @click.stop="setBasemap(true)">{{ basemapLoading ? '加载中' : '卫星' }}</button>
+    </view>
+    <!-- #endif -->
+
+    <!-- #ifdef APP-PLUS -->
+    <AppNearbyDisposalPanel panel-id="nearby-disposal-light" :visible="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" @select="selectNearbyDisposal" @navigate="point => goNavigate({ ...point, title: point.name, desc: point.address || point.description })" />
+    <!-- #endif -->
+
+    <!-- #ifdef H5 || MP-WEIXIN -->
+    <NearbyDisposalPanel v-if="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" @select="selectNearbyDisposal" @navigate="point => goNavigate({ ...point, title: point.name, desc: point.address || point.description })" />
+    <!-- #endif -->
 
     <view v-if="nearbyLocationModalVisible && isH5" class="nearby-location-overlay" @click.self="closeNearbyLocationPicker">
       <view class="nearby-location-panel">
@@ -183,10 +210,23 @@
     
     <!-- 位置选择模式：显示选择按钮 (仅H5) -->
     <view v-if="selectMode && isH5" class="select-location-panel" :style="{ top: (statusBarHeight + 50) + 'px' }">
-      <view class="select-tips"><ManifestIcon id="map_location" /> 拖动地图到目标位置，或点击“选取中心点”</view>
-      <view v-if="selectedLocation" class="selected-info">
-        <text class="selected-text">已选择位置</text>
-        <text class="selected-coords">{{ selectedLocation.latitude.toFixed(6) }}, {{ selectedLocation.longitude.toFixed(6) }}</text>
+      <view class="select-header">
+        <view class="select-icon-wrap">
+          <ManifestIcon id="map_location" class="select-header-icon" />
+        </view>
+        <view class="select-header-text">
+          <text class="select-title">地图选点</text>
+          <text class="select-subtitle">点按地图落点，或拖动视野后选取中心点</text>
+        </view>
+      </view>
+      <view class="selected-info" :class="{ 'is-empty': !selectedLocation }">
+        <view class="selected-label-row">
+          <view class="selected-dot"></view>
+          <text class="selected-text">{{ selectedLocation ? '已选坐标' : '待选坐标' }}</text>
+        </view>
+        <text class="selected-coords">
+          {{ selectedLocation ? `${selectedLocation.latitude.toFixed(6)}, ${selectedLocation.longitude.toFixed(6)}` : '请在地图上点击或选取中心点' }}
+        </text>
       </view>
       <view class="select-actions">
         <button class="select-btn cancel" @click="cancelSelect">取消</button>
@@ -211,15 +251,15 @@
     </view>
     <!-- 右下角扫码和新增连体按钮 -->
     <view
-      v-if="!selectMode && !viewMode"
-      :class="[isH5 ? 'add-btn-container' : 'floating-actions-container', { dragging: isDraggingFloatingActions }]"
+      v-if="!selectMode && !viewMode && !showAddModal"
+      :class="[isH5 && !showDeviceScan ? 'add-btn-container' : 'floating-actions-container', { dragging: isDraggingFloatingActions }]"
       :style="{ transform: `translate3d(${floatingActionsOffset.x}px, ${floatingActionsOffset.y}px, 0)` }"
       @touchstart="startFloatingActionsDrag"
       @touchmove="moveFloatingActionsDrag"
       @touchend="endFloatingActionsDrag"
       @touchcancel="endFloatingActionsDrag"
     >
-      <view v-if="isH5" class="add-btn" @click.stop="handleFloatingActionClick('add')">
+      <view v-if="isH5 && !showDeviceScan" class="add-btn" @click.stop="handleFloatingActionClick('add')">
         <ManifestIcon id="add" class="add-btn-icon" :scale="1" />
         <text class="add-btn-text">新增</text>
       </view>
@@ -267,17 +307,24 @@
 
 <script setup>
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
-import { prepareAppMapImage } from '../../utils/map-image-preview.mjs'
+import { resolveTrashBinImage, previewTrashBinImage } from '../../utils/trash-bin-image'
 import { ref, onMounted, computed, getCurrentInstance, nextTick } from 'vue'
 import { onReady, onShow } from '@dcloudio/uni-app'
-import { config } from '../../api/config.js'
 import { mapConfig } from '../../api/map-config.js'
-import { reportDeviceError, reverseGeocoder, searchPlaces } from '../../api/map.js'
+import { reportDeviceError, reverseGeocoder, searchPlaces, getTrashBinImage } from '../../api/map.js'
 import AddTrashBinModal from '../../components/AddTrashBinModal.vue'
 import ManifestIcon from '../../components/ManifestIcon.vue'
 import MapBinAdminPanel from '@/components/MapBinAdminPanel.vue'
+import NearbyDisposalPanel from '@/components/NearbyDisposalPanel.vue'
+// #ifdef APP-PLUS
+import AppNearbyDisposalPanel from '@/components/AppNearbyDisposalPanel.vue'
+// #endif
+import { nearbyDisposalPoints, validDisposalLocation } from '@/utils/nearby-disposal.mjs'
+import { isBinLocationPicker } from '@/utils/map-basemap-core.mjs'
+import { useMapBasemap } from '@/utils/use-map-basemap'
 import { useMapAdminBins, binMapLabel } from '@/utils/map-admin-bins'
 import { scanAndConnectDevice } from '@/utils/device-qr'
+import { canShowDeviceScanEntry } from '@/utils/h5-scan-entry.mjs'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 
 const { isMapAdmin, loadMapBins } = useMapAdminBins()
@@ -286,6 +333,7 @@ onShow(() => {
   if (isMapAdmin.value && !selectMode.value && !viewMode.value) loadTrashBinList()
 })
 const isH5 = process.env.UNI_PLATFORM === 'h5'
+const showDeviceScan = canShowDeviceScanEntry()
 // 位置选择模式
 const selectMode = ref(false)
 const selectedLocation = ref(null)
@@ -324,6 +372,21 @@ const suppressFloatingActionClick = ref(false)
 // 垃圾箱点位数据（从后端API获取，不再硬编码）
 const trashPoints = ref([])
 const selectedMarker = ref(null)
+const nearbyPanelHeight = ref(0)
+const nearbyPanelClosing = ref(false)
+const nearbyDisposal = computed(() => nearbyDisposalPoints(trashPoints.value, userLocation.value))
+const showNearbyDisposal = computed(() => !selectMode.value && !viewMode.value &&
+  !selectedMarker.value && !nearbyLocationModalVisible.value && !showAddModal.value && !showReportModal.value && nearbyDisposal.value.length > 0)
+
+function selectNearbyDisposal(point) {
+  center.value = { latitude: point.latitude, longitude: point.longitude }
+  if (isH5 && tmapInstance && window.TMap) {
+    tmapInstance.setCenter(new window.TMap.LatLng(point.latitude, point.longitude))
+    tmapInstance.setZoom?.(16)
+  }
+  onH5MarkerClicked(0, point)
+  selectedMarker.value.title = point.name
+}
 
 // 小程序/APP markers
 const markers = computed(() => {
@@ -349,17 +412,134 @@ const markers = computed(() => {
   return list;
 })
 
+const mapContainerId = `trash-map-${Math.random().toString(36).slice(2)}`
 let tmapInstance = null
-let tmapMarkers = []
+let tmapMarkers = [] // 存放 H5 创建的辅助 marker（如查看位置标记）
+let tmapBinLayer = null // 垃圾桶点位单一 MultiMarker 图层（避免每点一个图层）
+
+// 按视野防抖加载：中心移动超过 500m 或缩放变化时重新拉取点位
+let viewportReloadTimer = null
+let lastLoadCenter = null
+let lastLoadScale = null
+let lastLoadBbox = null // 上次加载覆盖的视野矩形，平移时用于增量查询新露出区域
+const VIEWPORT_RELOAD_MIN_MOVE = 500
+
+function distanceMeters(a, b) {
+  const toRad = d => d * Math.PI / 180
+  const dLat = toRad(a.latitude - b.latitude)
+  const dLng = toRad(a.longitude - b.longitude)
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLng / 2) ** 2
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+}
+
+function scheduleViewportReload(centerPoint, scale) {
+  if (selectMode.value || viewMode.value) return
+  const latitude = Number(centerPoint && centerPoint.latitude)
+  const longitude = Number(centerPoint && centerPoint.longitude)
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return
+  const moved = !lastLoadCenter || distanceMeters(lastLoadCenter, { latitude, longitude }) > VIEWPORT_RELOAD_MIN_MOVE
+  const zoomChanged = scale != null && (lastLoadScale == null || Math.abs(Number(scale) - Number(lastLoadScale)) > 0.5)
+  if (!moved && !zoomChanged) return
+  if (viewportReloadTimer) clearTimeout(viewportReloadTimer)
+  viewportReloadTimer = setTimeout(() => {
+    viewportReloadTimer = null
+    loadTrashBinList({ latitude, longitude }, scale)
+  }, 300)
+}
+
+const MAX_LOAD_ROUNDS = 6 // 全量加载最多轮数（每轮 LOAD_PAGE_SIZE 条）
+const INCR_LOAD_ROUNDS = 2 // 增量矩形加载最多轮数
+const LOAD_PAGE_SIZE = 50
+const MAX_CACHED_POINTS = 1000
+const BBOX_SPAN_LIMIT = 0.45 // 单次查询矩形跨度上限（度），比后端 0.5 上限留余量
+
+// 当前视野矩形（经纬度）：H5 用地图 bounds，小程序按中心 + scale 估算半屏
+function viewportBbox(latitude, longitude) {
+  try {
+    if (isH5 && tmapInstance && typeof tmapInstance.getBounds === 'function') {
+      const bounds = tmapInstance.getBounds()
+      const ne = bounds && typeof bounds.getNorthEast === 'function' ? bounds.getNorthEast() : null
+      const sw = bounds && typeof bounds.getSouthWest === 'function' ? bounds.getSouthWest() : null
+      if (ne && sw) {
+        const toPlain = (p) => ({
+          latitude: Number(typeof p.getLat === 'function' ? p.getLat() : p.lat),
+          longitude: Number(typeof p.getLng === 'function' ? p.getLng() : p.lng)
+        })
+        const a = toPlain(ne)
+        const b = toPlain(sw)
+        const box = {
+          minLat: Math.min(a.latitude, b.latitude), maxLat: Math.max(a.latitude, b.latitude),
+          minLng: Math.min(a.longitude, b.longitude), maxLng: Math.max(a.longitude, b.longitude)
+        }
+        if (Number.isFinite(box.minLat) && Number.isFinite(box.maxLat) && Number.isFinite(box.minLng) && Number.isFinite(box.maxLng) && box.maxLat > box.minLat && box.maxLng > box.minLng) {
+          return clampBboxSpan(box)
+        }
+      }
+    }
+  } catch (e) { /* 忽略，走 scale 估算 */ }
+  const scale = Number(mapScale.value) || 12
+  const windowWidth = uni.getSystemInfoSync().windowWidth || 375
+  const windowHeight = uni.getSystemInfoSync().windowHeight || 667
+  const metersPerPixel = 156543.03 * Math.cos((latitude * Math.PI) / 180) / Math.pow(2, scale)
+  const latDelta = (metersPerPixel * windowHeight / 2) / 111320
+  const lngDelta = (metersPerPixel * windowWidth / 2) / (111320 * Math.max(0.01, Math.cos((latitude * Math.PI) / 180)))
+  return clampBboxSpan({
+    minLat: latitude - latDelta, maxLat: latitude + latDelta,
+    minLng: longitude - lngDelta, maxLng: longitude + lngDelta
+  })
+}
+
+// 单次查询矩形跨度截断：超大视野只覆盖中心区域，限制单次查询代价
+function clampBboxSpan(box) {
+  const latHalf = Math.min(box.maxLat - box.minLat, BBOX_SPAN_LIMIT) / 2
+  const lngHalf = Math.min(box.maxLng - box.minLng, BBOX_SPAN_LIMIT) / 2
+  const latCenter = (box.minLat + box.maxLat) / 2
+  const lngCenter = (box.minLng + box.maxLng) / 2
+  return {
+    minLat: latCenter - latHalf, maxLat: latCenter + latHalf,
+    minLng: lngCenter - lngHalf, maxLng: lngCenter + lngHalf
+  }
+}
+
+// 新旧视野重叠率（交集 / 新视野面积）：比例够高时可只增量加载新露出的区域
+function bboxOverlapRatio(a, b) {
+  const iLat = Math.min(a.maxLat, b.maxLat) - Math.max(a.minLat, b.minLat)
+  const iLng = Math.min(a.maxLng, b.maxLng) - Math.max(a.minLng, b.minLng)
+  if (iLat <= 0 || iLng <= 0) return 0
+  return (iLat * iLng) / ((a.maxLat - a.minLat) * (a.maxLng - a.minLng))
+}
+
+// 新视野减去已加载视野后露出的 L 形区域，拆成最多 2 个矩形；
+// 拆不出（新视野已被完全覆盖或形状太复杂）时返回空数组，调用方退回整屏查询
+function uncoveredRects(viewport, loaded) {
+  const iLatMin = Math.max(viewport.minLat, loaded.minLat)
+  const iLatMax = Math.min(viewport.maxLat, loaded.maxLat)
+  const iLngMin = Math.max(viewport.minLng, loaded.minLng)
+  const iLngMax = Math.min(viewport.maxLng, loaded.maxLng)
+  if (iLatMax <= iLatMin || iLngMax <= iLngMin) return []
+  const rects = []
+  // 左右条带：贯穿新视野整个纬度范围
+  if (viewport.minLng < iLngMin) rects.push({ minLat: viewport.minLat, maxLat: viewport.maxLat, minLng: viewport.minLng, maxLng: iLngMin })
+  if (viewport.maxLng > iLngMax) rects.push({ minLat: viewport.minLat, maxLat: viewport.maxLat, minLng: iLngMax, maxLng: viewport.maxLng })
+  // 上下条带：限制在重叠经度范围内，与左右条带不重叠
+  if (viewport.minLat < iLatMin) rects.push({ minLat: viewport.minLat, maxLat: iLatMin, minLng: iLngMin, maxLng: iLngMax })
+  if (viewport.maxLat > iLatMax) rects.push({ minLat: iLatMax, maxLat: viewport.maxLat, minLng: iLngMin, maxLng: iLngMax })
+  return rects.length >= 1 && rects.length <= 2 ? rects : []
+}
 
 // 处理页面参数
 const pages = getCurrentPages()
 const currentPage = pages[pages.length - 1]
-const pageOptions = currentPage?.$page?.options || {}
+const pageOptions = currentPage?.$page?.options || currentPage?.options || {}
+const mapScale = ref(isBinLocationPicker(pageOptions) ? 18 : 12)
+const { satellite, basemapLoading, setBasemap, bindH5Map, getSatelliteReference, onNativeMapUpdated, onNativeMapError, onNativeMapRegionChange } = useMapBasemap({ isH5, options: pageOptions, suspended: () => showAddModal.value })
 
 // 检查是否为位置选择模式
 if (pageOptions.mode === 'select') {
   selectMode.value = true
+  const origin = { latitude: pageOptions.lat, longitude: pageOptions.lng }
+  if (validDisposalLocation(origin)) center.value = { latitude: Number(origin.latitude), longitude: Number(origin.longitude) }
+  onMapClick(center.value.latitude, center.value.longitude)
 }
 
 // 位置选择相关方法
@@ -384,40 +564,25 @@ const currentCenter = ref(null)
 
 // 监听地图视野变化
 function onRegionChange(e) {
-  // 打印事件详情，确认是否可以直接获取 centerLocation（APP端部分平台支持）
-  console.log('Region Change:', e)
-  
+  onNativeMapRegionChange(e)
+  const detail = e && e.detail ? e.detail : {}
   if (selectMode.value) {
-    // 无论是拖动中还是拖动结束，只要有坐标就更新 selectedLocation
-    // 这样用户在任何时候点击"确定"都已经是最新位置
-    let loc = null
-    
-    // 1. 优先从事件中获取
-    if (e.detail && e.detail.centerLocation) {
-      loc = e.detail.centerLocation
-    } 
-    // 2. 其次如果是 end 事件，尝试读取 mapContext (通过 updateCenterLocation)
-    // 但这里不要阻塞，先直接用事件里的坐标更新最快
-    
-    if (loc) {
-      currentCenter.value = loc
+    // 每当区域变化（用户拖动地图）时，更新中心坐标
+    if (detail.centerLocation) {
+      const loc = detail.centerLocation
       selectedLocation.value = {
-        latitude: loc.latitude,
-        longitude: loc.longitude,
+        latitude: typeof loc.latitude === 'number' ? loc.latitude : parseFloat(loc.latitude),
+        longitude: typeof loc.longitude === 'number' ? loc.longitude : parseFloat(loc.longitude),
         name: '选中的位置',
-        address: `${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`
+        address: `${typeof loc.latitude === 'number' ? loc.latitude.toFixed(6) : parseFloat(loc.latitude).toFixed(6)}, ${typeof loc.longitude === 'number' ? loc.longitude.toFixed(6) : parseFloat(loc.longitude).toFixed(6)}`
       }
     }
+    return
   }
-  
-  // 尝试从事件对象直接获取中心点（作为兜底）
-  if (e.detail && e.detail.centerLocation) {
-    currentCenter.value = e.detail.centerLocation
-  }
-  
-  // 视野变化结束时更新中心点记录
-  if (e.type === 'end' || e.type === 'regionchange') {
-    updateCenterLocation()
+  // 普通模式：视野变化结束后按视野防抖加载点位
+  const loc = detail.centerLocation || detail.center
+  if (loc && (e.type === 'end' || detail.type === 'end')) {
+    scheduleViewportReload({ latitude: Number(loc.latitude), longitude: Number(loc.longitude) }, detail.scale)
   }
 }
 
@@ -450,7 +615,36 @@ function updateCenterLocation() {
 }
 
 function pickCenterLocation() {
-  if (!selectMode.value || isH5) return
+  if (!selectMode.value) return
+
+  if (isH5) {
+    let lat
+    let lng
+    if (tmapInstance && typeof tmapInstance.getCenter === 'function') {
+      const mapCenter = tmapInstance.getCenter()
+      if (mapCenter) {
+        lat = typeof mapCenter.getLat === 'function' ? mapCenter.getLat() : Number(mapCenter.lat)
+        lng = typeof mapCenter.getLng === 'function' ? mapCenter.getLng() : Number(mapCenter.lng)
+      }
+    }
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      const fallback = (currentCenter.value && Number.isFinite(currentCenter.value.latitude))
+        ? currentCenter.value
+        : center.value
+      if (fallback && Number.isFinite(Number(fallback.latitude)) && Number.isFinite(Number(fallback.longitude))) {
+        lat = Number(fallback.latitude)
+        lng = Number(fallback.longitude)
+      }
+    }
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      currentCenter.value = { latitude: lat, longitude: lng }
+      onMapClick(lat, lng)
+      uni.showToast({ title: '已选取当前视野中心', icon: 'none', duration: 1400 })
+    } else {
+      uni.showToast({ title: '无法获取中心坐标', icon: 'none' })
+    }
+    return
+  }
   
   // 1. 优先使用监听到的最新中心点（内存缓存）
   if (currentCenter.value && currentCenter.value.latitude) {
@@ -673,6 +867,13 @@ async function confirmSelect() {
   console.log('确认选择位置:', selectedLocation.value)
   
   const locationData = await buildSelectedLocationData()
+  if (pageOptions.purpose === 'bin' && /^bin-location-[\w-]+$/.test(pageOptions.returnEvent || '')) {
+    const reference = getSatelliteReference(locationData, mapContainerId)
+    if (reference) locationData.satelliteReference = reference
+    uni.$emit(pageOptions.returnEvent, locationData)
+    uni.navigateBack()
+    return
+  }
   await openNearbyLocationPicker(locationData)
 }
 
@@ -722,7 +923,7 @@ function onMapClick(lat, lng) {
           width: 30,
           height: 40,
           anchor: { x: 15, y: 40 },
-          src: '/static/location-marker.png'
+          src: getH5Icon('selected')
         })
       },
       geometries: [{
@@ -785,9 +986,13 @@ onMounted(async () => {
     return
   }
   try {
-    const loc = await getUserLocationOnce('gcj02')
+    const requestedOrigin = { latitude: options.lat, longitude: options.lng }
+    const loc = (options.mode === 'nearby' || (options.mode === 'select' && options.purpose === 'bin')) && validDisposalLocation(requestedOrigin)
+      ? { latitude: Number(options.lat), longitude: Number(options.lng) }
+      : await getUserLocationOnce('gcj02')
     if (loc && typeof loc.latitude === 'number') {
       center.value = { latitude: loc.latitude, longitude: loc.longitude }
+      if (selectMode.value) onMapClick(loc.latitude, loc.longitude)
       userLocation.value = { latitude: loc.latitude, longitude: loc.longitude }
       userMarker.value = {
         id: 'me',
@@ -801,7 +1006,7 @@ onMounted(async () => {
       }
       if (isH5 && typeof window !== 'undefined' && window.TMap && tmapInstance) {
         tmapInstance.setCenter(new window.TMap.LatLng(loc.latitude, loc.longitude))
-        tmapInstance.setZoom && tmapInstance.setZoom(12)
+        tmapInstance.setZoom && tmapInstance.setZoom(mapScale.value)
       }
       await loadTrashBinList()
     }
@@ -876,10 +1081,11 @@ function initTMap() {
   }
   
   try {
-    const map = new window.TMap.Map('container', {
+    const map = new window.TMap.Map(mapContainerId, {
       rotation: 0,
       pitch: 0,
-      zoom: 10,
+      zoom: mapScale.value,
+      renderOptions: { preserveDrawingBuffer: pageOptions.purpose === 'bin' && selectMode.value },
       center: new window.TMap.LatLng(center.value.latitude, center.value.longitude),
       mapStyleId: 'style1'
     })
@@ -900,7 +1106,21 @@ function initTMap() {
       }
     `
     document.head.appendChild(style)
-    
+
+    // 视野变化后按视野防抖加载点位（中心移动 >500m 或缩放变化时）
+    if (!selectMode.value && !viewMode.value) {
+      const reloadFromView = () => {
+        const c = tmapInstance && typeof tmapInstance.getCenter === 'function' ? tmapInstance.getCenter() : null
+        if (!c) return
+        scheduleViewportReload({
+          latitude: typeof c.getLat === 'function' ? c.getLat() : Number(c.lat),
+          longitude: typeof c.getLng === 'function' ? c.getLng() : Number(c.lng)
+        }, typeof tmapInstance.getZoom === 'function' ? tmapInstance.getZoom() : null)
+      }
+      map.on('dragend', reloadFromView)
+      map.on('zoom', reloadFromView)
+    }
+
     // 监听地图点击事件（用于位置选择）
     if (selectMode.value) {
       map.on('click', (evt) => {
@@ -908,8 +1128,21 @@ function initTMap() {
           onMapClick(evt.latLng.getLat(), evt.latLng.getLng())
         }
       })
+      map.on('panend', () => {
+        if (typeof map.getCenter === 'function') {
+          const c = map.getCenter()
+          if (c && typeof c.getLat === 'function') {
+            currentCenter.value = { latitude: c.getLat(), longitude: c.getLng() }
+          }
+        }
+      })
     }
     tmapInstance = map
+    if (selectMode.value) {
+      const point = selectedLocation.value || center.value
+      onMapClick(point.latitude, point.longitude)
+    }
+    bindH5Map(map)
     initH5Markers()
   } catch (error) {
     uni.showToast({ title: '地图初始化失败', icon: 'none', duration: 3000 })
@@ -917,7 +1150,7 @@ function initTMap() {
 }
 
 function getH5Icon(type, pending = false, reported = false) {
-  const color = pending ? '#9ca3af' : type === 'smart' ? '#10b981' : '#3b82f6'
+  const color = pending ? '#9ca3af' : type === 'selected' ? '#ef4444' : type === 'smart' ? '#10b981' : '#3b82f6'
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 24 24'>
     <path d='M12 23C10 20 3 13.5 3 9a9 9 0 0 1 18 0c0 4.5-7 11-9 14z' fill='${color}' stroke='#fff' stroke-width='1'/>
     <circle cx='12' cy='9' r='3.5' fill='#ffffff'/>
@@ -1006,32 +1239,20 @@ function goNavigate(m) {
 const imagePreviewLoading = ref(false)
 async function openHistoryImage(m) {
   if (imagePreviewLoading.value) return
-  if (!m || !m.imageUrl) {
-    uni.showToast({ title: '没有图片', icon: 'none' })
-    return
-  }
   imagePreviewLoading.value = true
   try {
-    let imagePath = m.imageUrl
-    // #ifdef APP-PLUS
-    uni.showLoading({ title: '图片加载中', mask: true })
-    try {
-      imagePath = await prepareAppMapImage(imagePath, {
-        downloadFile: options => uni.downloadFile(options),
-        getImageInfo: options => uni.getImageInfo(options),
-        createBitmap: name => new plus.nativeObj.Bitmap(name)
-      })
-    } finally {
-      uni.hideLoading()
+    let value = m && m.imageUrl
+    if (!value && m && m.hasImage && m.id !== undefined) {
+      // 列表只带图片标识，按需拉取完整图片
+      const result = await getTrashBinImage(m.id)
+      if (result?.code === 0 && result.data?.image) value = result.data.image
     }
-    // #endif
-    uni.previewImage({
-      urls: [imagePath],
-      success: () => {
-        if (selectedMarker.value === m) selectedMarker.value = null
-      },
-      fail: () => uni.showToast({ title: '图片预览失败，请重试', icon: 'none' })
-    })
+    if (!value) {
+      uni.showToast({ title: '没有图片', icon: 'none' })
+      return
+    }
+    await previewTrashBinImage(value)
+    if (selectedMarker.value === m) selectedMarker.value = null
   } catch (error) {
     console.warn('[map-image-preview]', { stage: error?.stage, code: error?.code, detail: error?.detail || error?.errMsg || error?.message })
     uni.showToast({ title: error?.message || error?.errMsg || '图片加载失败，请重试', icon: 'none' })
@@ -1105,8 +1326,8 @@ function moveFloatingActionsDrag(event) {
   event.stopPropagation?.()
   const { windowWidth, windowHeight, statusBarHeight = 0, safeAreaInsets } = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
   const rpx = windowWidth / 750
-  const controlWidth = (isH5 ? 112 : 116) * rpx
-  const controlHeight = (isH5 ? 112 : 224) * rpx
+  const controlWidth = (isH5 && !showDeviceScan ? 112 : 116) * rpx
+  const controlHeight = (isH5 && !showDeviceScan ? 112 : 224) * rpx
   const edge = 8
   const tabbarHeight = 120 * rpx + (safeAreaInsets?.bottom || 0)
   const defaultLeft = windowWidth - 32 * rpx - controlWidth
@@ -1145,84 +1366,79 @@ function scanDeviceQR() {
 }
 
 function closeAddModal() {
+  mapContext.value = null
   showAddModal.value = false
 }
 
-function onAddSuccess(newTrashBin) {
-  if (isMapAdmin.value) {
-    loadTrashBinList()
-    uni.showToast({ title: '垃圾桶已提交审核', icon: 'success' })
-    return
-  }
-  let imageUrl = newTrashBin.image || ''
-  if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
-    imageUrl = imageUrl.startsWith('/') ? `${config.baseUrl}${imageUrl}` : `${config.baseUrl}/${imageUrl}`
-  } else if (!imageUrl) {
-    imageUrl = `${config.baseUrl}/static/smart-bin.png`
-  }
-  
-  const newPoint = {
-    id: Date.now(),
-    name: newTrashBin.name,
-    description: newTrashBin.description,
-    latitude: typeof newTrashBin.latitude === 'number' ? newTrashBin.latitude : parseFloat(newTrashBin.latitude),
-    longitude: typeof newTrashBin.longitude === 'number' ? newTrashBin.longitude : parseFloat(newTrashBin.longitude),
-    image: imageUrl,
-    createdAt: new Date().toISOString(),
-    type: newTrashBin.type || 'normal'
-  }
-  
-  trashPoints.value.push(newPoint)
-  
-  if (isH5 && tmapInstance && window.TMap) {
-    try {
-      const iconUrl = getH5Icon(newPoint.type)
-      const multi = new window.TMap.MultiMarker({
-        id: 'trash' + newPoint.id,
-        map: tmapInstance,
-        styles: { bin: new window.TMap.MarkerStyle({
-          width: 36, height: 36, anchor: { x: 18, y: 35 }, src: iconUrl
-        }) },
-        geometries: [{
-          id: 'trash-geo-' + newPoint.id,
-          styleId: 'bin',
-          position: new window.TMap.LatLng(newPoint.latitude, newPoint.longitude),
-          title: newPoint.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶',
-          width: 36,
-          height: 36
-        }]
-      })
-      tmapMarkers.push({ id: newPoint.id, pointData: newPoint, multiMarker: multi })
-      if (typeof multi.on === 'function') {
-        multi.on('click', () => onH5MarkerClicked(trashPoints.value.length - 1, newPoint))
-      }
-      tmapInstance.setCenter(new window.TMap.LatLng(newPoint.latitude, newPoint.longitude))
-      if (tmapInstance.setZoom) tmapInstance.setZoom(12)
-    } catch (e) {}
-  }
-  
-  if (!isH5) center.value = { latitude: newPoint.latitude, longitude: newPoint.longitude }
-  uni.showToast({ title: '垃圾桶已提交审核', icon: 'success', duration: 2000 })
+function onAddSuccess() {
+  if (isMapAdmin.value) loadTrashBinList()
+  uni.showToast({ title: '已提交，审核通过后展示并奖励积分', icon: 'none', duration: 2500 })
 }
 
-async function loadTrashBinList() {
+async function loadTrashBinList(centerOverride, scaleOverride) {
   try {
-    let latitude = userLocation.value.latitude || 36.0671
-    let longitude = userLocation.value.longitude || 120.3826
-    
-    const result = await loadMapBins({
-      latitude, longitude, radius: 5000, page: 1, pageSize: 100
-    });
+    const override = centerOverride && Number.isFinite(Number(centerOverride.latitude)) && Number.isFinite(Number(centerOverride.longitude))
+      ? centerOverride : null;
+    let latitude, longitude;
+    if (override) {
+      latitude = override.latitude;
+      longitude = override.longitude;
+    } else if (userLocation.value.latitude && userLocation.value.longitude) {
+      latitude = userLocation.value.latitude;
+      longitude = userLocation.value.longitude;
+    } else {
+      latitude = 36.0671;
+      longitude = 120.3826;
+    }
 
-    if (result && result.code === 0 && result.data && Array.isArray(result.data)) {
-      trashPoints.value = result.data.map(item => {
-        let imageUrl = item.image || '';
-        if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
-          imageUrl = imageUrl.startsWith('/') ? `${config.baseUrl}${imageUrl}` : `${config.baseUrl}/${imageUrl}`;
-        } else if (!imageUrl) {
-          imageUrl = `${config.baseUrl}/static/normal-bin.png`;
+    // 记录本次加载的视野，供拖动/缩放时判断是否需要重新加载
+    lastLoadCenter = { latitude: Number(latitude), longitude: Number(longitude) };
+    const scale = Number(
+      scaleOverride != null
+        ? scaleOverride
+        : (isH5 && tmapInstance && typeof tmapInstance.getZoom === 'function' ? tmapInstance.getZoom() : mapScale.value)
+    ) || null;
+    const viewport = viewportBbox(latitude, longitude);
+    // 平移（缩放不变、新旧视野重叠 ≥50%）只增量加载新露出的区域（≤2 个矩形），重叠区不重查；缩放变化或重叠不足则全量
+    const incremental = Boolean(lastLoadBbox) && scale != null && lastLoadScale != null
+      && Math.abs(scale - lastLoadScale) <= 0.5
+      && bboxOverlapRatio(viewport, lastLoadBbox) >= 0.5;
+    const newRects = incremental ? uncoveredRects(viewport, lastLoadBbox) : [];
+    const queries = newRects.length
+      ? newRects.map((rect) => ({ rect, rounds: INCR_LOAD_ROUNDS }))
+      : [{ rect: viewport, rounds: MAX_LOAD_ROUNDS }];
+    const fetched = [];
+    for (const { rect, rounds } of queries) {
+      // 每轮一页分批拉取；页未拉满说明密度低，该矩形即停
+      for (let round = 1; round <= rounds; round++) {
+        const result = await loadMapBins({
+          minLat: rect.minLat,
+          maxLat: rect.maxLat,
+          minLng: rect.minLng,
+          maxLng: rect.maxLng,
+          page: round,
+          pageSize: LOAD_PAGE_SIZE
+        });
+        if (!result || result.code !== 0 || !Array.isArray(result.data)) {
+          console.warn('获取垃圾桶列表响应格式异常:', result);
+          break;
         }
-        return {
+        fetched.push(...result.data);
+        if (result.data.length < LOAD_PAGE_SIZE) break; // 密度低：范围内已取完
+      }
+    }
+    lastLoadBbox = viewport;
+    if (scale != null) lastLoadScale = scale;
+
+    {
+      // 按 id 合并已有点位：地图上已加载的点位不再消失，新数据覆盖同 id 旧数据
+      const merged = new Map(trashPoints.value.map(p => [String(p.id), p]));
+      fetched.forEach(item => {
+        const imageUrl = item.hasImage === true && !(item.image || item.imagePath)
+          ? ''
+          : resolveTrashBinImage(item.image || item.imagePath, item.mapType || 'waste_basket');
+
+        merged.set(String(item.id), {
           ...item,
           id: item.id,
           name: item.name,
@@ -1232,15 +1448,20 @@ async function loadTrashBinList() {
           image: imageUrl,
           createdAt: item.createdAt,
           type: item.type
-        };
-      });
-      
-      if (isH5 && tmapInstance) {
-        tmapMarkers.forEach(item => {
-          try { if (typeof item.multiMarker?.setMap === 'function') item.multiMarker.setMap(null);
-          else if (typeof item.multiMarker?.remove === 'function') item.multiMarker.remove(['trash-geo-' + item.id]); } catch (e) {}
         });
-        tmapMarkers = [];
+      });
+      let mergedList = Array.from(merged.values());
+      if (mergedList.length > MAX_CACHED_POINTS) {
+        // 内存上限：超出时淘汰离当前视野中心最远的点位，优先保留视野内的
+        mergedList.sort((a, b) => distanceMeters(a, { latitude, longitude }) - distanceMeters(b, { latitude, longitude }));
+        mergedList = mergedList.slice(0, MAX_CACHED_POINTS);
+      }
+      trashPoints.value = mergedList;
+
+      console.log(`成功加载 ${trashPoints.value.length} 个垃圾桶标记`)
+
+      // 如果是H5，重建单一标记图层
+      if (isH5 && tmapInstance) {
         initH5Markers()
       }
     }
@@ -1288,29 +1509,62 @@ function initH5Markers() {
     return
   }
   
-  // 正常模式：显示所有垃圾桶标记
-  trashPoints.value.forEach((p, i) => {
+  // 正常模式：单一 MultiMarker 图层承载所有垃圾桶点位
+  renderH5BinMarkers()
+}
+
+// H5 端垃圾桶点位：单一 MultiMarker 实例 + 多状态样式，避免每点创建一个图层
+function renderH5BinMarkers() {
+  if (!isH5 || !tmapInstance || !window.TMap) return
+  if (selectMode.value || (viewMode.value && viewLocationInfo.value)) return
+  // 清除旧图层
+  if (tmapBinLayer) {
     try {
-      const iconUrl = getH5Icon(p.type, isMapAdmin.value && p.adminRecord && !p.review, isMapAdmin.value && p.adminRecord && p.errorReport?.length > 0)
-      const multi = new window.TMap.MultiMarker({
-        id: 'trash' + p.id,
-        map: tmapInstance,
-        styles: { bin: new window.TMap.MarkerStyle({
-          width: 36, height: 36, anchor: { x: 18, y: 35 }, src: iconUrl
-        }) },
-        geometries: [{
-          id: 'trash-geo-' + p.id,
-          styleId: 'bin',
-          position: new window.TMap.LatLng(p.latitude, p.longitude),
-          title: isMapAdmin.value ? binMapLabel(p) : (p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶'),
-          width: 36,
-          height: 36
-        }]
+      if (typeof tmapBinLayer.setMap === 'function') tmapBinLayer.setMap(null)
+      else if (typeof tmapBinLayer.destroy === 'function') tmapBinLayer.destroy()
+    } catch (e) {
+      console.warn('移除旧标记图层失败:', e)
+    }
+    tmapBinLayer = null
+  }
+  const styles = {}
+  const geometries = []
+  trashPoints.value.forEach((p) => {
+    const pending = isMapAdmin.value && p.adminRecord && !p.review
+    const reported = isMapAdmin.value && p.adminRecord && p.errorReport?.length > 0
+    const styleKey = `${p.type === 'smart' ? 'smart' : 'normal'}-${pending ? 'pending' : 'ok'}-${reported ? 'reported' : 'plain'}`
+    if (!styles[styleKey]) {
+      styles[styleKey] = new window.TMap.MarkerStyle({
+        width: 36, height: 36, anchor: { x: 18, y: 35 },
+        src: getH5Icon(p.type, pending, reported)
       })
-      tmapMarkers.push({ id: p.id, pointData: p, multiMarker: multi })
-      if (typeof multi.on === 'function') multi.on('click', () => onH5MarkerClicked(i, p))
-    } catch (e) {}
+    }
+    geometries.push({
+      id: 'trash-geo-' + p.id,
+      styleId: styleKey,
+      position: new window.TMap.LatLng(p.latitude, p.longitude),
+      title: isMapAdmin.value ? binMapLabel(p) : (p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶')
+    })
   })
+  if (!geometries.length) return
+  try {
+    tmapBinLayer = new window.TMap.MultiMarker({
+      id: 'trash-bins',
+      map: tmapInstance,
+      styles,
+      geometries
+    })
+    if (typeof tmapBinLayer.on === 'function') {
+      tmapBinLayer.on('click', (evt) => {
+        // GeometryOverlayEvent：点位数据在 evt.geometry（PointGeometry），几何 id 为 evt.geometry.id
+        const gid = evt && evt.geometry ? evt.geometry.id : null
+        const point = trashPoints.value.find(p => 'trash-geo-' + p.id === gid)
+        if (point) onH5MarkerClicked(0, point)
+      })
+    }
+  } catch (e) {
+    console.warn('创建垃圾桶标记图层失败', e)
+  }
 }
 
 function goHome() {
@@ -1327,6 +1581,7 @@ function goProfile() {
 </script>
 
 <style scoped>
+@import '../../styles/map-basemap.css';
 /* 页面基础 */
 .map-page {
   width: 100vw;
@@ -1449,96 +1704,195 @@ function goProfile() {
   top: 20rpx;
   left: 50%;
   transform: translateX(-50%);
-  width: 90%;
-  max-width: 600rpx;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
-  backdrop-filter: blur(20rpx);
+  width: calc(100% - 48rpx);
+  max-width: 680rpx;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-radius: 24rpx;
-  padding: 24rpx;
-  box-shadow: 0 8rpx 32rpx rgba(102, 126, 234, 0.3), 0 4rpx 16rpx rgba(0, 0, 0, 0.2);
+  padding: 24rpx 26rpx;
+  box-shadow: 0 12rpx 36rpx rgba(15, 23, 42, 0.12), 0 2rpx 8rpx rgba(15, 23, 42, 0.05);
   z-index: 9999;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.18);
+  box-sizing: border-box;
 }
 
-.select-tips {
-  color: #fff;
+.select-header {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  margin-bottom: 18rpx;
+}
+
+.select-icon-wrap {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 16rpx;
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 32rpx;
+}
+
+.select-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  min-width: 0;
+  flex: 1;
+}
+
+.select-title {
+  color: #0f172a;
   font-size: 28rpx;
-  text-align: center;
-  margin-bottom: 20rpx;
-  font-weight: 500;
-  text-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.2);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.select-subtitle {
+  color: #64748b;
+  font-size: 22rpx;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .selected-info {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 12rpx;
-  padding: 16rpx;
+  background: #f0fdf4;
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  border-radius: 14rpx;
+  padding: 14rpx 18rpx;
   margin-bottom: 20rpx;
   display: flex;
-  flex-direction: column;
-  gap: 8rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.selected-info.is-empty {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.selected-label-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  flex-shrink: 0;
+}
+
+.selected-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 4rpx rgba(16, 185, 129, 0.18);
+}
+
+.selected-info.is-empty .selected-dot {
+  background: #94a3b8;
+  box-shadow: none;
 }
 
 .selected-text {
-  color: #fff;
+  color: #065f46;
   font-size: 24rpx;
-  font-weight: 500;
+  font-weight: 600;
+}
+
+.selected-info.is-empty .selected-text {
+  color: #64748b;
 }
 
 .selected-coords {
-  color: rgba(255, 255, 255, 0.85);
+  color: #047857;
+  font-size: 23rpx;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 500;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-info.is-empty .selected-coords {
+  color: #94a3b8;
+  font-family: inherit;
   font-size: 22rpx;
-  font-family: monospace;
+  font-weight: 400;
 }
 
 .select-actions {
   display: flex;
-  gap: 16rpx;
+  align-items: center;
+  gap: 14rpx;
 }
 
 .select-btn {
   flex: 1;
   height: 72rpx;
-  border-radius: 12rpx;
+  line-height: 72rpx;
+  padding: 0 16rpx;
+  border-radius: 14rpx;
   border: none;
-  font-size: 28rpx;
-  font-weight: 500;
-  transition: all 0.3s;
+  font-size: 26rpx;
+  font-weight: 600;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.select-btn::after {
+  border: none;
 }
 
 .select-btn.cancel {
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  flex: 0.9;
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .select-btn.cancel:active {
-  background: rgba(255, 255, 255, 0.15);
+  background: #e2e8f0;
+  transform: scale(0.98);
+}
+
+.select-btn.secondary {
+  flex: 1.45;
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.32);
+}
+
+.select-btn.secondary:active {
+  background: #d1fae5;
   transform: scale(0.98);
 }
 
 .select-btn.confirm {
-  background: linear-gradient(135deg, #fff 0%, #f0f0f0 100%);
-  color: #667eea;
-}
-
-.select-btn.secondary {
-  background: rgba(255, 255, 255, 0.3);
-  color: #fff;
-}
-
-.select-btn.secondary:active {
-  background: rgba(255, 255, 255, 0.2);
-  transform: scale(0.98);
+  flex: 1.05;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  box-shadow: 0 4rpx 12rpx rgba(16, 185, 129, 0.25);
 }
 
 .select-btn.confirm:active {
-  background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%);
+  opacity: 0.92;
   transform: scale(0.98);
 }
 
-.select-btn.confirm:disabled {
-  background: rgba(255, 255, 255, 0.3);
-  color: rgba(255, 255, 255, 0.5);
+.select-btn.confirm:disabled,
+.select-btn.confirm[disabled] {
+  background: #e2e8f0;
+  color: #94a3b8;
+  box-shadow: none;
 }
 
 /* App/小程序 原生选择面板样式 */
@@ -2261,4 +2615,11 @@ function goProfile() {
 .report-cancel { color: #5c6878; background: #f1f4f7; }
 .report-submit { color: #ffffff; background: linear-gradient(135deg, #12b981, #07966e); }
 .report-submit.disabled { opacity: 0.45; }
+.nearby-panel-closing .add-btn-container, .nearby-panel-closing .floating-actions-container { transition: bottom 280ms cubic-bezier(.22, 1, .36, 1); }
+.nearby-panel-open .add-btn-container, .nearby-panel-open .floating-actions-container {
+  bottom: calc(var(--nearby-panel-height) + 86px + env(safe-area-inset-bottom));
+}
+@media (min-width: 900px) {
+  .nearby-panel-open .add-btn-container, .nearby-panel-open .floating-actions-container { bottom: 140px; }
+}
 </style>

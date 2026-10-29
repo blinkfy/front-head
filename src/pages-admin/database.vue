@@ -325,6 +325,14 @@
                                             :class="item.status === 'online' ? 'success' : 'error'">{{ item.status
                                             }}</text>
                                     </view>
+                                    <view v-if="item.imagePath" class="data-row device-image-row">
+                                        <text class="data-label">图片:</text>
+                                        <image class="device-image-thumb" :src="resolveTrashBinImage(item.imagePath)" mode="aspectFill" @click="previewDeviceImage(item.imagePath)" />
+                                        <text class="device-image-action" @click="previewDeviceImage(item.imagePath)">预览已存图片</text>
+                                    </view>
+                                    <view v-else class="data-row">
+                                        <text class="data-label">图片:</text><text class="data-value">暂无图片</text>
+                                    </view>
                                 </template>
 
                                 <!-- UserDevice 表 -->
@@ -583,8 +591,8 @@
                             </picker>
                         </view>
                         <view class="form-item">
-                            <text class="form-label">图片路径</text>
-                            <input class="form-input" v-model="editForm.imagePath" placeholder="请输入图片路径" />
+                            <text class="form-label">图片</text>
+                            <TrashBinImageEditor v-model="editForm.imagePath" :disabled="deviceImageProcessing" @processing="deviceImageProcessing = $event" />
                         </view>
                         <view class="form-item">
                             <text class="form-label">经度</text>
@@ -623,11 +631,11 @@
                     <template v-if="currentTable === 'UserDevice'">
                         <view class="form-item">
                             <text class="form-label">用户ID *</text>
-                            <input class="form-input" v-model="editForm.userId" type="number" placeholder="请输入用户ID" />
+                            <input class="form-input" v-model="editForm.userId" :disabled="editMode === 'edit'" type="number" placeholder="请输入用户ID" />
                         </view>
                         <view class="form-item">
                             <text class="form-label">设备 ID *</text>
-                            <input class="form-input" v-model="editForm.deviceId" type="number" placeholder="请输入设备ID" />
+                            <input class="form-input" v-model="editForm.deviceId" :disabled="editMode === 'edit'" type="number" placeholder="请输入设备ID" />
                         </view>
 
                         <!-- 编辑模式：显示时间信息 -->
@@ -757,11 +765,11 @@
                     <template v-if="currentTable === 'Chat'">
                         <view class="form-item">
                             <text class="form-label">用户ID *</text>
-                            <input class="form-input" v-model="editForm.userId" type="number" placeholder="请输入用户ID" />
+                            <input class="form-input" v-model="editForm.userId" :disabled="editMode === 'edit'" type="number" placeholder="请输入用户ID" />
                         </view>
                         <view class="form-item">
                             <text class="form-label">另一方用户ID *</text>
-                            <input class="form-input" v-model="editForm.otherId" type="number" placeholder="请输入另一方用户ID" />
+                            <input class="form-input" v-model="editForm.otherId" :disabled="editMode === 'edit'" type="number" placeholder="请输入另一方用户ID" />
                         </view>
                         <view class="form-item">
                             <text class="form-label">关系类型</text>
@@ -822,6 +830,7 @@
                                 <textarea
                                     v-else-if="field.editor === 'textarea'"
                                     class="form-textarea"
+                                    :maxlength="-1"
                                     v-model="editForm[field.key]"
                                     :placeholder="field.placeholder"
                                     :disabled="field.locked"
@@ -830,6 +839,7 @@
                                 <input
                                     v-else
                                     class="form-input"
+                                    :maxlength="-1"
                                     v-model="editForm[field.key]"
                                     :type="field.inputType"
                                     :placeholder="field.placeholder"
@@ -855,8 +865,8 @@
                     <view class="modal-btn cancel" @click="closeEditModal">
                         <text>取消</text>
                     </view>
-                    <view class="modal-btn confirm" @click="handleSave">
-                        <text>保存</text>
+                    <view class="modal-btn confirm" :class="{ disabled: deviceImageProcessing }" @click="handleSave">
+                        <text>{{ deviceImageProcessing ? '图片处理中…' : '保存' }}</text>
                     </view>
                 </view>
             </view>
@@ -913,6 +923,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
+import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
 import {
     getUsersList, createUser, updateUser, deleteUser,
     getDevicesList, createDevice, updateDevice, deleteDevice,
@@ -932,6 +944,8 @@ const currentTable = ref('User')
 const showEditModal = ref(false)
 const editMode = ref('add') // 'add' 或 'edit'
 const editForm = ref({})
+const editInitialForm = ref({})
+const deviceImageProcessing = ref(false)
 const selectionMode = ref(false)
 const selectedRecordKeys = ref([])
 const showBulkEditModal = ref(false)
@@ -1264,6 +1278,13 @@ function getGenericPrimaryKeyField(tableName = currentTable.value) {
 }
 
 function getGenericRecordKey(item = {}, tableName = currentTable.value) {
+    const primaryKeys = getGenericSchema(tableName).filter(field => field.primaryKey).map(field => field.key)
+    if (primaryKeys.length > 1) {
+        if (primaryKeys.some(key => item[key] === undefined || item[key] === null || item[key] === '')) {
+            throw new Error('记录缺少完整主键，请刷新后重试')
+        }
+        return JSON.stringify(Object.fromEntries(primaryKeys.map(key => [key, item[key]])))
+    }
     const primaryKeyField = getGenericPrimaryKeyField(tableName)
     if (!primaryKeyField) return item.id
     return item[primaryKeyField.key] !== undefined ? item[primaryKeyField.key] : item.id
@@ -1327,6 +1348,10 @@ function coerceGenericValue(field, value, mode = editMode.value) {
     const type = String(field.type || 'STRING').toUpperCase()
     if (mode === 'add' && field.autoIncrement) return undefined
     if (field.editor === 'switch') return !!value
+    if (type === 'BIGINT' && value !== '' && value !== null && value !== undefined) {
+        if (!/^-?\d+$/.test(String(value))) throw new Error(`${field.label || field.key} 必须为整数`)
+        return String(value)
+    }
     if (isNumericSchemaType(type)) {
         if (value === '' || value === null || value === undefined) {
             return field.allowNull ? null : (field.defaultValue !== undefined ? field.defaultValue : '')
@@ -1348,9 +1373,9 @@ function coerceGenericValue(field, value, mode = editMode.value) {
         }
     }
     if (isDateSchemaType(type)) {
-        return value === undefined || value === null ? '' : String(value)
+        return value === undefined || value === null || value === '' ? (field.allowNull ? null : '') : String(value)
     }
-    return value === undefined || value === null ? '' : value
+    return value === undefined || value === null || value === '' ? (field.allowNull ? null : '') : value
 }
 
 function buildGenericEditForm(tableName, source = {}) {
@@ -1363,7 +1388,7 @@ function buildGenericEditForm(tableName, source = {}) {
             if (isJsonSchemaType(field.type) && rawValue !== undefined && rawValue !== null && typeof rawValue !== 'string') {
                 form[field.key] = JSON.stringify(rawValue, null, 2)
             } else {
-                form[field.key] = coerceGenericValue(field, rawValue, 'edit')
+                form[field.key] = field.primaryKey ? rawValue : coerceGenericValue(field, rawValue, 'edit')
             }
             return
         }
@@ -1393,6 +1418,7 @@ function buildGenericPayload(tableName, form = {}) {
     getGenericEditFields(tableName).forEach(field => {
         if (field.autoIncrement) return
         if (field.primaryKey && editMode.value === 'edit') return
+        if (editMode.value === 'edit' && form[field.key] === editInitialForm.value[field.key]) return
         const serialized = coerceGenericValue(field, form[field.key], editMode.value)
         if (serialized !== undefined) payload[field.key] = serialized
     })
@@ -2065,6 +2091,7 @@ function handleEdit(item) {
     editMode.value = 'edit'
     if (!isSpecialTable(currentTable.value)) {
         editForm.value = buildGenericEditForm(currentTable.value, item || {})
+        editInitialForm.value = { ...editForm.value }
         showEditModal.value = true
         return
     }
@@ -2275,6 +2302,7 @@ function confirmBulkEdit() {
 }
 
 async function handleSave() {
+    if (currentTable.value === 'Device' && deviceImageProcessing.value) return
     if (!isSpecialTable(currentTable.value)) {
         try {
             uni.showLoading({ title: '保存中...' })
@@ -2455,6 +2483,11 @@ async function handleSave() {
     } finally {
         uni.hideLoading()
     }
+}
+
+async function previewDeviceImage(value) {
+    try { await previewTrashBinImage(value) }
+    catch (error) { uni.showToast({ title: '图片预览失败', icon: 'none' }) }
 }
 
 function closeEditModal() {
@@ -3357,6 +3390,13 @@ onUnmounted(() => {
 }
 
 .id-number {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
     color: #40e0ff;
     font-size: 24rpx;
     font-weight: 700;
@@ -3374,6 +3414,19 @@ onUnmounted(() => {
     display: flex;
     gap: 10rpx;
     align-items: center;
+}
+
+.device-image-thumb {
+    width: 72rpx;
+    height: 72rpx;
+    flex-shrink: 0;
+    border-radius: 8rpx;
+    background: rgba(64, 224, 255, 0.08);
+}
+
+.device-image-action {
+    color: #40e0ff;
+    font-size: 20rpx;
 }
 
 .data-label {

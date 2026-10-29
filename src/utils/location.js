@@ -3,7 +3,8 @@ export function getUserLocationOnce(coordType = null) {
   // 返回对象 { latitude, longitude } 或 抛错
   return new Promise((resolve, reject) => {
     // 检测是否为H5环境
-    const isH5 = typeof window !== 'undefined' && !window.wx && !window.my && !window.swan
+    // H5 也可能加载微信 JS SDK，不能通过 window.wx 判断是否为小程序。
+    const isH5 = process.env.UNI_PLATFORM === 'h5'
     
     // 检测平台信息，支付宝小程序不支持type参数
     let shouldSkipType = false

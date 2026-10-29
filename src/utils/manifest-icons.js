@@ -1,4 +1,7 @@
 import manifest from '@/static/manifest.json'
+import { NON_THEME_ONLY_ICON_IDS } from '@/utils/mp-subpackage-icons.mjs'
+
+const nonThemeOnlyIconIds = new Set(NON_THEME_ONLY_ICON_IDS)
 
 const iconsById = new Map(manifest.map(icon => [icon.id, icon]))
 
@@ -18,6 +21,7 @@ export function getManifestIconPath(id) {
   if (icon.id.endsWith('_table') && !['lottery_record_table', 'reservation_order_table'].includes(icon.id)) {
     return `/pages-admin/static/${icon.file}`
   }
+  if (nonThemeOnlyIconIds.has(icon.id)) return `/pages-nonTheme/static/${icon.file}`
   // #endif
   return `/static/${icon.file}`
 }

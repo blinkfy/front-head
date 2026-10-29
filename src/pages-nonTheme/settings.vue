@@ -13,7 +13,7 @@
         <!-- 头部 -->
         <view class="settings-header">
             <view class="header-content">
-                <view class="header-title"><ManifestIcon id="settings" /> 设置</view>
+                <view class="header-title"><ManifestIcon id="settings" size="48rpx" /><text>设置</text></view>
             </view>
         </view>
 
@@ -33,36 +33,22 @@
                     <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
                 </view>
 
-                <view class="setting-item" @click="goChangePassword">
+                <view class="setting-item" @click="goAccountSecurity">
                     <view class="item-left">
-                        <ManifestIcon class="item-icon" id="password" />
+                        <ManifestIcon class="item-icon" id="account_management" />
                         <view class="item-info">
-                            <text class="item-title">修改密码</text>
-                            <text class="item-desc">更改您的账户密码</text>
+                            <text class="item-title">账号与安全</text>
+                            <text class="item-desc">管理登录账号、密码与微信登录权限</text>
                         </view>
                     </view>
                     <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
                 </view>
-                <!-- #ifdef MP-WEIXIN -->
-                <view class="setting-item" :class="{ 'wechat-setting-disabled': wechatSettingsLoaded && !wechatCanManage }" @click="toggleWechatSharing">
-                    <view class="item-left">
-                        <ManifestIcon class="item-icon" id="account_management" />
-                        <view class="item-info">
-                            <text class="item-title">允许其他微信登录</text>
-                            <text class="item-desc">{{ wechatSettingsDescription }}</text>
-                        </view>
-                    </view>
-                    <view class="toggle-switch" :class="{ active: allowOtherWechatLogin }">
-                        <view class="toggle-dot"></view>
-                    </view>
-                </view>
-                <!-- #endif -->
             </view>
 
             <!-- 显示与声音 -->
             <view class="settings-section">
                 <view class="section-title">显示与声音</view>
-                <view class="setting-item" @click="toggleTheme">
+                <view class="setting-item" @click="toggleTheme" role="switch" tabindex="0" aria-label="深色模式" :aria-checked="isDarkTheme" @keydown.enter.prevent="toggleTheme" @keydown.space.prevent="toggleTheme">
                     <view class="item-left">
                         <ManifestIcon class="item-icon" id="dark_mode" />
                         <view class="item-info">
@@ -74,7 +60,7 @@
                         <view class="toggle-dot"></view>
                     </view>
                 </view>
-                <view class="setting-item" @click="toggleUiSounds" role="switch" :aria-checked="soundEnabled" data-ui-sound-toggle>
+                <view class="setting-item" @click="toggleUiSounds" role="switch" tabindex="0" aria-label="交互音效" :aria-checked="soundEnabled" @keydown.enter.prevent="toggleUiSounds" @keydown.space.prevent="toggleUiSounds" data-ui-sound-toggle>
                     <view class="item-left">
                         <ManifestIcon class="item-icon" id="sound_toggle" />
                         <view class="item-info">
@@ -170,52 +156,6 @@ import { ref, onMounted } from 'vue'
 import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
-// #ifdef MP-WEIXIN
-import { computed } from 'vue'
-import { getWechatLoginSettings, updateWechatLoginSettings } from '@/api/user'
-
-const allowOtherWechatLogin = ref(false)
-const wechatCanManage = ref(false)
-const wechatSettingsLoaded = ref(false)
-const wechatSettingsBusy = ref(false)
-const wechatSettingsDescription = computed(() => {
-    if (wechatSettingsBusy.value) return '正在同步登录权限…'
-    if (!wechatSettingsLoaded.value) return '点击获取微信登录设置'
-    if (!wechatCanManage.value) return '仅绑定的微信可修改此项，请使用主微信登录'
-    return allowOtherWechatLogin.value ? '已开启；可通过密码在其他微信登录，每次登录发送官方提醒' : '已关闭；其他微信无法登录此账号'
-})
-
-async function loadWechatSettings() {
-    if (wechatSettingsBusy.value || !uni.getStorageSync('token')) return
-    wechatSettingsBusy.value = true
-    try {
-        const result = await getWechatLoginSettings()
-        allowOtherWechatLogin.value = result.data.allowOtherWechatLogin
-        wechatCanManage.value = result.data.canManage
-        wechatSettingsLoaded.value = true
-    } catch (error) {
-        uni.showToast({ title: error.msg || '微信登录设置获取失败，请点击重试', icon: 'none' })
-    } finally {
-        wechatSettingsBusy.value = false
-    }
-}
-
-async function toggleWechatSharing() {
-    if (wechatSettingsBusy.value) return
-    if (!wechatSettingsLoaded.value) return loadWechatSettings()
-    if (!wechatCanManage.value) return uni.showToast({ title: '请使用此账号绑定的微信登录后修改', icon: 'none' })
-    wechatSettingsBusy.value = true
-    try {
-        const result = await updateWechatLoginSettings(!allowOtherWechatLogin.value)
-        allowOtherWechatLogin.value = result.data.allowOtherWechatLogin
-        uni.showToast({ title: '登录权限已更新', icon: 'success' })
-    } catch (error) {
-        uni.showToast({ title: error.msg || '更新失败，请重试', icon: 'none' })
-    } finally {
-        wechatSettingsBusy.value = false
-    }
-}
-// #endif
 
 const soundEnabled = ref(areUiSoundsEnabled())
 function toggleUiSounds() {
@@ -254,16 +194,8 @@ function goEditProfile() {
     })
 }
 
-function goChangePassword() {
-    if (isDarkTheme.value) {
-        uni.navigateTo({
-            url: '/pages-dark/change-password/change-password'
-        })
-    } else {
-        uni.navigateTo({
-            url: '/pages/change-password/change-password'
-        })
-    }
+function goAccountSecurity() {
+    uni.navigateTo({ url: '/pages-nonTheme/account-security' })
 }
 
 function goAbout() {
@@ -352,14 +284,10 @@ function handleConfirm() {
 
 onMounted(() => {
     checkTheme()
-    // #ifdef MP-WEIXIN
-    loadWechatSettings()
-    // #endif
 })
 </script>
 
 <style scoped>
-.wechat-setting-disabled { opacity: 0.65; }
 .settings-container {
     min-height: 100vh;
     background: linear-gradient(180deg, #f0fdf4 0%, #f5f7fa 30%, #f0f9ff 70%, #f5f7fa 100%);
@@ -407,10 +335,15 @@ onMounted(() => {
     align-items: center;
     justify-content: center;
     margin-top: 20rpx;
+    min-height: 72rpx;
 }
 
 .header-title {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
     font-size: 40rpx;
+    line-height: 1.4;
     font-weight: 700;
     color: #fff;
 }

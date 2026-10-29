@@ -10,7 +10,7 @@
       <view class="target-pulse"></view>
     </view>
 
-    <view class="tour-card" :class="{ 'is-visible': cardVisible && !guideLeaving && displayedIndex === currentIndex, 'demo-compact': compactDemo, 'demo-intro': introDemo }" :style="cardStyle" @touchmove.stop.prevent @wheel.stop.prevent>
+    <view class="tour-card" role="dialog" :aria-label="tourTitle" :class="{ 'is-visible': cardVisible && !guideLeaving && displayedIndex === currentIndex, 'demo-compact': compactDemo, 'demo-intro': introDemo }" :style="cardStyle" @touchmove.stop.prevent @wheel.stop.prevent>
       <view class="tour-top">
         <view class="step-badge">{{ currentIndex + 1 }} / {{ visibleSteps.length }}</view>
         <text v-if="displayedIndex === 0 && demoStage !== 'idle'" class="example-badge">效果示例 · 自动演示</text>
@@ -29,9 +29,11 @@
       <view class="hint-line" :class="currentStep.arrow"></view>
 
       <view class="tour-actions">
-        <view v-if="isLastStep" class="ghost-btn" @click="moreInfo">查看更多</view>
+        <view v-if="demoBrowsing" class="ghost-btn" role="button" tabindex="0" @keydown.enter.prevent="nextStep" @keydown.space.prevent="nextStep" @click="nextStep">继续引导</view>
+        <view v-else-if="isLastStep" class="ghost-btn" @click="moreInfo">查看更多</view>
         <view v-else class="ghost-btn" @click="dismiss">跳过</view>
-        <view class="solid-btn" @click="nextStep">{{ isLastStep ? '知道了' : 'OK' }}</view>
+        <view v-if="demoBrowsing" class="solid-btn" role="button" tabindex="0" @keydown.enter.prevent="tryRecognition" @keydown.space.prevent="tryRecognition" @click="tryRecognition">试拍一张</view>
+        <view v-else class="solid-btn" role="button" tabindex="0" @keydown.enter.prevent="nextStep" @keydown.space.prevent="nextStep" @click="nextStep">{{ isLastStep ? '知道了' : 'OK' }}</view>
         <view v-if="demoBrowsing && !guideLeaving" class="replay-btn" @click="startDemo">重播</view>
       </view>
     </view>
@@ -44,8 +46,14 @@
       <view
         v-for="(_, index) in visibleSteps"
         :key="index"
+        role="button"
+        tabindex="0"
+        :aria-label="`第 ${index + 1} 步：${visibleSteps[index].title}`"
+        :aria-current="index === currentIndex ? 'step' : undefined"
         :class="['dot', { active: index === currentIndex }]"
         @click="goToStep(index)"
+        @keydown.enter.prevent="goToStep(index)"
+        @keydown.space.prevent="goToStep(index)"
       ></view>
     </view>
   </view>
@@ -79,6 +87,7 @@ const props = defineProps({
     type: Object,
     default: null
   },
+  initialStep: { type: Number, default: 0 },
   aiEnabled: { type: Boolean, default: false },
   followTarget: { type: Boolean, default: false },
   focusInset: { type: Number, default: 0 },
@@ -88,7 +97,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['dismiss', 'complete', 'step-change', 'goGuide', 'demo-stage'])
+const emit = defineEmits(['dismiss', 'complete', 'step-change', 'goGuide', 'demo-stage', 'try-recognition'])
 
 const steps = [
   {
@@ -299,8 +308,9 @@ watch(() => props.visible, (visible) => {
     leaveDemo(() => setDemoStage('idle'))
     return
   }
-  currentIndex.value = 0
-  displayedIndex.value = 0
+  currentIndex.value = Math.max(0, Math.min(props.initialStep || 0, visibleSteps.value.length - 1))
+  displayedIndex.value = currentIndex.value
+  guideLeaving.value = false
   cardVisible.value = false
   if (visibilityTimer.value) {
     clearTimeout(visibilityTimer.value)
@@ -310,7 +320,7 @@ watch(() => props.visible, (visible) => {
   nextTick(() => {
     if (!props.visible || !props.active) return
     emitStepChange()
-    startDemo()
+    if (currentIndex.value === 0) startDemo()
   })
 })
 
@@ -539,6 +549,11 @@ function nextStep() {
     return
   }
   emit('complete')
+}
+
+function tryRecognition() {
+  if (!props.visible || !props.active || guideLeaving.value) return
+  leaveDemo(() => emit('try-recognition'))
 }
 
 function goToStep(index) {

@@ -25,12 +25,12 @@ import { getDeviceQrScanContent as getDeviceScanContent, normalizeDeviceMode, re
 const scene = '0123456789abcdef0123456789abcdef'
 const path = `/pages/scan/scan?scene=${scene}`
 const darkPath = `/pages-dark/scan/scan?scene=${scene}`
-const hookFile = new URL('../src/utils/use-device-scan-page.js', import.meta.url)
+const hookFile = new URL('../src/pages-nonTheme/utils/use-device-scan-page.js', import.meta.url)
 const hookSource = await readFile(hookFile, 'utf8')
 
 const scannerSources = await Promise.all([
   ['src/utils/device-qr.js', await readFile(new URL('../src/utils/device-qr.js', import.meta.url), 'utf8')],
-  ['src/utils/use-device-scan-page.js', hookSource],
+  ['src/pages-nonTheme/utils/use-device-scan-page.js', hookSource],
   ['src/pages-nonTheme/scan.vue', await readFile(new URL('../src/pages-nonTheme/scan.vue', import.meta.url), 'utf8')]
 ])
 for (const [file, scannerSource] of scannerSources) {
@@ -40,7 +40,7 @@ for (const [file, scannerSource] of scannerSources) {
     assert.ok(miniProgramScan, 'utility keeps its MP-Weixin scan branch')
     assert.doesNotMatch(miniProgramScan[1], /scanType/, 'MP-Weixin uses its default scan types')
     assert.match(scannerSource, /\/\/ #ifndef MP-WEIXIN\s+scanDeviceQrCode\(\{\s*scanType:\s*\['qrCode'\]/)
-  } else if (file === 'src/utils/use-device-scan-page.js') {
+  } else if (file === 'src/pages-nonTheme/utils/use-device-scan-page.js') {
     assert.match(scannerSource, /scanDeviceQrCode\(\{\s*\/\/ #ifndef MP-WEIXIN\s+scanType:\s*\['qrCode'\]/, `${file}: qrCode filtering remains APP-only`)
   }
 }

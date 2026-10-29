@@ -1,5 +1,5 @@
 {
-  "id": "ftx-qbar", "displayName": "分投侠 Android 圆码扫描", "version": "0.1.7",
+  "id": "ftx-qbar", "displayName": "分投侠 Android 圆码扫描", "version": "0.1.16",
   "description": "Android ARM64 QBar scanner with ordinary QR fallback",
   "uni_modules": { "dependencies": [], "encrypt": [], "platforms": { "client": { "App": { "app-android": "y", "app-ios": "n" } } } }
 }

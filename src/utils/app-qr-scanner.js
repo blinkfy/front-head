@@ -2,9 +2,10 @@ import { createAppQrScanner } from './app-qr-scanner-core.mjs'
 import { createRegistrationApi, createRegistrationDialogs } from './registration-relay.mjs'
 import { resolveWechatQrRaw } from '@/api/device.js'
 import { baseUrl } from '@/api/settings.js'
+import { createScanDebugAccess } from './scan-debug.mjs'
 import { vibrateScan } from './haptics.mjs'
 // #ifdef APP-PLUS
-import { startScan, isAvailable } from '@/uni_modules/ftx-qbar'
+import { startScan, startScanWithDiagnostics, isAvailable } from '@/uni_modules/ftx-qbar'
 // #endif
 
 let scanner
@@ -18,7 +19,9 @@ function getScanner() {
       // #ifdef APP-PLUS
       try {
         if (typeof isAvailable !== 'function' || isAvailable() !== true) { resolve({ error: 'UNAVAILABLE' }); return }
-        startScan(value => {
+        const diagnostics = createScanDebugAccess(uni)
+        const scan = diagnostics() && typeof startScanWithDiagnostics === 'function' ? startScanWithDiagnostics : startScan
+        scan(value => {
           let result
           try { result = JSON.parse(value) } catch (error) { reject(error); return }
           if (!result?.error && (result?.scanType === 'QR_CODE' || result?.scanType === 'WX_CODE')) {

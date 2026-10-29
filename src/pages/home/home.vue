@@ -94,10 +94,10 @@
       />
 
       <!-- 识别结果区域 -->
-      <view v-if="resultImage && !onboardingDemoVisible" class="result-card">
-        <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending" class="result-header">
+      <view v-if="resultImage && !onboardingDemoVisible" class="result-card" :aria-busy="isProcessing">
+        <view v-if="!failedPreviewPending && (classificationUi !== 'recognizing' || recognitionPreview)" class="result-header">
           <view class="result-title"><ManifestIcon id="accuracy_target" /> 识别结果</view>
-          <view class="confidence-badge">
+          <view v-if="!isProcessing" class="confidence-badge">
             <text class="confidence-text">{{ resultConfidence }}</text>
           </view>
         </view>
@@ -117,37 +117,44 @@
           </view>
         </view>
 
-        <RecognitionProgressPreview v-if="isProcessing && recognitionPreview" :preview="recognitionPreview" />
         <view v-if="!isProcessing && retryImagePath && failedPreviewPending" class="recognition-retry-actions">
           <text>这张图片暂时没能识别，可直接重试</text>
           <button @click="retryLastImage">重试这张图片</button>
           <button @click="onAddImage">重新选图</button>
         </view>
 
-        <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending" class="result-info">
-          <view class="category-row">
-            <view class="category-tag" :class="getCategoryClass(resultCategory)">
-              <ManifestIcon class="tag-icon" :id="getCategoryIcon(resultCategory)" />
-              <text class="tag-text">{{ resultCategory }}</text>
+        <view v-if="!failedPreviewPending && (classificationUi !== 'recognizing' || recognitionPreview)" class="result-info">
+          <text class="recognition-preview-caption" role="status">{{ isProcessing ? '识别分析中 · 内容可能继续更新' : '识别完成' }}</text>
+          <view v-if="displayResultCategory" class="category-row">
+            <view class="category-tag" :class="getCategoryClass(displayResultCategory)">
+              <ManifestIcon class="tag-icon" :id="getCategoryIcon(displayResultCategory)" />
+              <text class="tag-text">{{ displayResultCategory }}</text>
             </view>
-            <view class="ai-helper-btn" v-if="aiServiceEnabled && aiEnabled" @click="goAiChatFromResult">AI对话</view>
+            <view class="ai-helper-btn" v-if="!isProcessing && aiServiceEnabled && aiEnabled" @click="goAiChatFromResult">AI对话</view>
           </view>
 
-          <view v-if="recognizedItems.length" class="recognized-items-box">
+          <view v-if="displayRecognizedItems.length" class="recognized-items-box">
             <text class="recognized-items-title">识别到的具体物品</text>
             <view class="recognized-items-list">
               <text
-                v-for="(item, index) in recognizedItems"
+                v-for="(item, index) in displayRecognizedItems"
                 :key="`recognized-${index}`"
                 class="recognized-item-chip"
               >{{ item }}</text>
             </view>
           </view>
 
-          <view v-if="upcyclingSections.length" class="upcycling-plan">
+          <NearbyDisposalCard
+            v-if="resultImage && !onboardingDemoVisible && classificationUi !== 'recognizing' && !isProcessing && !failedPreviewPending && resultCategory && resultCategory !== '未识别到' && nearbyPoints.length"
+            :point="nearbyPoints[0]"
+            :dark="false"
+            @open="goNearbyDisposal"
+          />
+
+          <view v-if="displayAdviceSections.length" class="upcycling-plan">
             <view
-              v-for="(section, index) in upcyclingSections"
-              :key="`upcycling-${index}`"
+              v-for="(section, index) in displayAdviceSections"
+              :key="section.renderKey"
               :class="['upcycling-plan-item', { 'is-warning': /提醒|风险|注意/.test(section.title) }]"
             >
               <text class="upcycling-plan-title">{{ section.title }}</text>
@@ -156,7 +163,7 @@
           </view>
 
           <!-- 变废为宝效果图 -->
-          <view v-if="aiServiceEnabled && aiEnabledUpcyclingImage && (upcyclingImageUrl || upcyclingTaskId)" class="upcycling-image-card">
+          <view v-if="!isProcessing && aiServiceEnabled && aiEnabledUpcyclingImage && (upcyclingImageUrl || upcyclingTaskId)" class="upcycling-image-card">
             <view class="upcycling-image-header">
               <text class="upcycling-image-title">变废为宝效果图</text>
             </view>
@@ -177,7 +184,7 @@
             <text v-if="upcyclingImageUrl" class="upcycling-image-hint">点击图片可全屏预览</text>
           </view>
 
-          <view v-else-if="resultDesc" class="desc-box">
+          <view v-else-if="!isProcessing && resultDesc" class="desc-box">
             <view class="desc-label"><ManifestIcon id="eco_tip" /> 处理建议</view>
             <view class="desc-text" v-html="formatSemicolonNewline(resultDesc)"></view>
           </view>
@@ -310,6 +317,7 @@
     <AppOnboarding
       ref="onboardingGuideRef"
       :visible="showAppOnboarding"
+      :initial-step="onboardingResumeStep"
       :ai-enabled="aiServiceEnabled"
       :active="robotPageActive"
       :target-rect="onboardingTargetRect"
@@ -318,6 +326,7 @@
       :include-device="!isH5Platform"
       @dismiss="completeAppOnboarding"
       @complete="completeAppOnboarding"
+      @try-recognition="tryRecognitionFromOnboarding"
       @step-change="handleOnboardingStepChange"
       @demo-stage="handleOnboardingDemoStage"
       @goGuide="navigateTo('/pages/guide/guide')"
@@ -368,9 +377,11 @@ import WasteCategoryModal from '@/components/WasteCategoryModal.vue'
 import { wasteCategoryGuides } from '@/utils/waste-category-guides'
 import SmartSortRobot3D from '@/components/SmartSortRobot3D.vue'
 import { playUiSound } from '@/utils/ui-sounds.js'
+import { chooseRecognitionImage } from '@/utils/recognition-picker.js'
 import { getRecognitionRobotState } from '@/utils/recognition-robot-state.mjs'
 import SmartSortRecognitionVisual from '@/components/SmartSortRecognitionVisual.vue'
-import RecognitionProgressPreview from '@/components/RecognitionProgressPreview.vue'
+import NearbyDisposalCard from '@/components/NearbyDisposalCard.vue'
+import { useNearbyDisposal } from '@/utils/use-nearby-disposal'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 import { enqueueAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
@@ -407,6 +418,7 @@ const isProcessing = ref(false)
 const recognitionVisual = ref(null)
 const robotState = ref('idle')
 const classificationUi = ref('initial')
+const { nearbyPoints, nearbyOrigin } = useNearbyDisposal(classificationUi)
 const robotFeedbackActive = ref(false)
 const robotPageActive = ref(true)
 const robotEntryReturning = ref(false)
@@ -452,6 +464,21 @@ const showDeviceScan = ref(canShowDeviceScanEntry())
 const targetConfidence = ref(0)
 const recognizedItems = ref([])
 const upcyclingSections = ref([])
+// Partial snapshots and final data update the same keyed blocks in place.
+const displayResultCategory = computed(() => isProcessing.value
+  ? String(recognitionPreview.value?.labels?.[0]?.name || '').trim() : resultCategory.value)
+const displayRecognizedItems = computed(() => isProcessing.value
+  ? extractRecognizedItems(recognitionPreview.value) : recognizedItems.value)
+const displayAdviceSections = computed(() => {
+  const text = isProcessing.value ? buildExpandedUpcyclingText(recognitionPreview.value) : ''
+  const sections = isProcessing.value ? (text ? splitUpcyclingSections(text) : []) : upcyclingSections.value
+  const occurrences = Object.create(null)
+  return sections.map(section => {
+    const occurrence = occurrences[section.title] || 0
+    occurrences[section.title] = occurrence + 1
+    return { ...section, renderKey: `${section.title}:${occurrence}` }
+  })
+})
 const upcyclingImageUrl = ref('')
 let pendingUpcyclingSound = ''
 function onUpcyclingImageLoaded() {
@@ -471,6 +498,9 @@ onResize(queueRefreshDisplayBboxes)
 let activeRecognitionTaskId = ''
 let recognitionTaskUnsubscribe = null
 let pageVisible = true
+// #ifdef MP-WEIXIN
+let pendingCameraImage = null
+// #endif
 let elapsedTimer = null
 
 function updateHomeAdaptiveStyle(size = {}) {
@@ -531,6 +561,9 @@ const shownAchievementKeys = new Set()
 const ONBOARDING_STORAGE_KEY = 'app_onboarding_completed_v1'
 const ONBOARDING_FORCE_KEY = 'app_onboarding_force_open'
 const showAppOnboarding = ref(false)
+const onboardingResumeStep = ref(0)
+const onboardingTrialState = ref('idle')
+let onboardingTrialTimer = null
 const onboardingDemoStage = ref('idle')
 const onboardingDemoFinished = computed(() => onboardingDemoStage.value === 'upcycling' || (!aiServiceEnabled.value && onboardingDemoStage.value === 'classified'))
 const onboardingDemoVisible = computed(() => !['idle', 'intro'].includes(onboardingDemoStage.value))
@@ -620,7 +653,50 @@ function maybeShowAppOnboarding() {
   }
 }
 
+function tryRecognitionFromOnboarding() {
+  if (isProcessing.value || onboardingTrialState.value !== 'idle') return
+  hideAppOnboarding()
+  onboardingResumeStep.value = 1
+  onboardingTrialState.value = 'picking'
+  nextTick(() => {
+    if (pageVisible && !isProcessing.value) onAddImage()
+    else onboardingTrialState.value = 'cancelled'
+  })
+}
+
+// A trial pauses the tour; only dismissing or finishing the remaining steps completes it.
+watch([isProcessing, robotPageActive, onboardingTrialState], ([processing, active, state]) => {
+  clearTimeout(onboardingTrialTimer)
+  onboardingTrialTimer = null
+  if (state === 'idle') return
+  if (processing) {
+    if (state === 'picking') onboardingTrialState.value = 'recognizing'
+    return
+  }
+  if (state === 'recognizing') {
+    onboardingTrialState.value = 'finished'
+    return
+  }
+  if (!active || !['finished', 'cancelled'].includes(state)) return
+  onboardingTrialTimer = setTimeout(() => {
+    onboardingTrialTimer = null
+    if (!pageVisible || isProcessing.value || onboardingTrialState.value !== state) return
+    if (state === 'cancelled') onboardingResumeStep.value = 0
+    onboardingTrialState.value = 'idle'
+    showAppOnboarding.value = true
+  }, state === 'finished' ? 1800 : 0)
+})
+
 function completeAppOnboarding() {
+  clearTimeout(onboardingTrialTimer)
+  onboardingTrialState.value = 'idle'
+  hideAppOnboarding()
+  try {
+    uni.setStorageSync(ONBOARDING_STORAGE_KEY, true)
+  } catch (e) {}
+}
+
+function hideAppOnboarding() {
   onboardingFocusTracker?.stop()
   onboardingFocusTracker = null
   onboardingStepRequestId++
@@ -628,9 +704,6 @@ function completeAppOnboarding() {
   onboardingDemoStage.value = 'idle'
   showAppOnboarding.value = false
   onboardingTargetRect.value = null
-  try {
-    uni.setStorageSync(ONBOARDING_STORAGE_KEY, true)
-  } catch (e) {}
 }
 
 function setOnboardingScrollLock(locked) {
@@ -912,6 +985,13 @@ onShow(() => {
   refreshAiServiceState()
   restoreRecognitionTask()
   queueRefreshDisplayBboxes()
+  // #ifdef MP-WEIXIN
+  if (pendingCameraImage) {
+    const image = pendingCameraImage
+    pendingCameraImage = null
+    acceptRecognitionImage(image)
+  }
+  // #endif
   // 从语音扫描页面返回时自动处理已选图片
   const pendingImage = uni.getStorageSync('pending_recognize_image')
   if (pendingImage && getRecognitionTask()?.status !== 'pending') {
@@ -932,6 +1012,8 @@ onHide(() => {
 })
 
 onUnload(() => {
+  clearTimeout(onboardingTrialTimer)
+  onboardingTrialState.value = 'idle'
   pageVisible = false
   robotPageActive.value = false
   stopElapsedClock()
@@ -940,6 +1022,8 @@ onUnload(() => {
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(onboardingTrialTimer)
+  onboardingTrialState.value = 'idle'
   onboardingFocusTracker?.stop()
   onboardingFocusTracker = null
   pageVisible = false
@@ -1095,7 +1179,7 @@ function restoreRecognitionTask(task = getRecognitionTask()) {
     return
   }
   if (task.status === 'failed') {
-    failureCopy.value = getRecognitionFailureCopy(task.id)
+    failureCopy.value = getRecognitionFailureCopy(task.id, task.error)
     stopElapsedClock()
     recognitionPreview.value = null
     if (retryImagePath.value && !resultImage.value) resultImage.value = retryImagePath.value
@@ -1112,6 +1196,11 @@ function applyEnhancedRecognitionData(recognizeData) {
   if (!recognizeData || typeof recognizeData !== 'object') {
     resetEnhancedRecognition()
     return
+  }
+
+  // 大模型的具体建议由下方结构化内容展示，不重复分类预设文案。
+  if (recognizeData.aiSettings?.detectorMode === 'ai' && recognizeData.labels?.length) {
+    resultDesc.value = ''
   }
 
   recognizedItems.value = extractRecognizedItems(recognizeData)
@@ -1473,7 +1562,7 @@ async function processImage(filePath, selectedFile = null) {
   } catch (err) {
     failRecognitionTask(taskId, err)
     if (!isRecognitionTaskCurrent(taskId) || !pageVisible) return
-    failureCopy.value = getRecognitionFailureCopy(taskId)
+    failureCopy.value = getRecognitionFailureCopy(taskId, err)
     playUiSound('recognitionFail', { key: taskId, page: 'pages/home/home' })
     recognitionPreview.value = null
     robotState.value = 'fail'
@@ -1503,6 +1592,19 @@ async function processImage(filePath, selectedFile = null) {
   }
 }
 
+function acceptRecognitionImage(chooseRes) {
+  // The embedded camera emits before navigateBack; start only after home is visible.
+  // #ifdef MP-WEIXIN
+  if (chooseRes.fromEmbeddedCamera && !pageVisible) {
+    pendingCameraImage = chooseRes
+    return
+  }
+  // #endif
+  const filePath = chooseRes.tempFilePaths[0]
+  isProcessing.value = true
+  processImage(filePath, chooseRes.tempFiles?.[0]).catch(() => { isProcessing.value = false })
+}
+
 function onAddImage() {
   if (isProcessing.value) {
     uni.showToast({ title: '正在处理中...', icon: 'none' })
@@ -1510,19 +1612,15 @@ function onAddImage() {
   }
 
   recognitionVisual.value?.prepareEntry()
-  // 取消重新选图时不打断尚未结束的失败反馈。
   const keepFailureFeedback = robotFeedbackActive.value && robotState.value === 'fail'
   if (!keepFailureFeedback) robotState.value = 'tap'
-  uni.chooseImage({
+  chooseRecognitionImage({
     count: 1,
     sizeType: ['compressed'],
     sourceType: ['album', 'camera'],
-    success: (chooseRes) => {
-      const filePath = chooseRes.tempFilePaths[0]
-      isProcessing.value = true
-      processImage(filePath, chooseRes.tempFiles?.[0]).catch(() => isProcessing.value = false)
-    },
+    success: acceptRecognitionImage,
     fail: () => {
+      if (onboardingTrialState.value === 'picking') onboardingTrialState.value = 'cancelled'
       if (!keepFailureFeedback) robotState.value = 'idle'
       uni.showToast({ title: '选择取消', icon: 'none' })
     }
@@ -1542,6 +1640,12 @@ function goShop() {
 
 function goProfile() {
   navigateBottomTab('home', 'profile', '/pages/profile/profile')
+}
+
+function goNearbyDisposal() {
+  if (!nearbyOrigin.value) return
+  const { latitude, longitude } = nearbyOrigin.value
+  navigateBottomTab('home', 'map', '/pages/map/map?from=home&mode=nearby&lat=' + latitude + '&lng=' + longitude, 'navigateTo')
 }
 
 function goMap() {
@@ -1605,6 +1709,7 @@ function closeAchievementModal() {
 </script>
 
 <style scoped>
+.recognition-preview-caption { display: block; color: #64748b; font-size: 24rpx; line-height: 1.5; margin-bottom: 16rpx; }
 /* 页面基础 */
 .home-page {
   min-height: 100vh;
@@ -2443,6 +2548,7 @@ function closeAchievementModal() {
 }
 
 .upcycling-plan-item {
+  animation: recognition-section-enter .24s ease-out both;
   border: 1rpx solid rgba(24, 117, 255, 0.15);
   border-radius: 16rpx;
   padding: 16rpx 20rpx;
@@ -4000,6 +4106,8 @@ function closeAchievementModal() {
 .onboarding-demo-reading .content-wrapper,
 .onboarding-demo-reading .tabbar,
 .onboarding-demo-reading .floating-agent { pointer-events: none; }
+@keyframes recognition-section-enter { from { opacity: .75; transform: translateY(6rpx); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .upcycling-plan-item { animation: none; } }
 </style>
 
 

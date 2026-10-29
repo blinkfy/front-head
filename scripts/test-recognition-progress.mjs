@@ -402,6 +402,9 @@ function makeOnShowContext(task, functions, { pendingImage, processImage } = {})
   }
   const context = {
     pageVisible: false,
+    // The extracted onShow callback includes the MP-WEIXIN preprocessor block.
+    // Keep its unrelated camera-selection branch inert in this VM harness.
+    pendingCameraImage: null,
     robotPageActive: ref(false),
     isProcessing: ref(false),
     getRecognitionTask: task.getRecognitionTask,

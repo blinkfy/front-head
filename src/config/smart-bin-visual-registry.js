@@ -1,8 +1,8 @@
 import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 
-const SMART_BIN_EXTERIOR = digitalTwinAssetUrl('digital-twin-replay/sprites/smart-bin-v2.png')
-const SMART_BIN_CUTAWAY = digitalTwinAssetUrl('digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/fixed-four-panels-user-corrected.png')
-const SMART_BIN_INTERNAL_FRAME = digitalTwinAssetUrl('digital-twin-replay/smart-bin-workflow/smart-bin-internal-frame-front-v1.png')
+const SMART_BIN_EXTERIOR = digitalTwinAssetUrl('digital-twin-replay/sprites/smart-bin-v2.webp.png')
+const SMART_BIN_CUTAWAY = digitalTwinAssetUrl('digital-twin-replay/smart-bin-workflow/cutaway-raster-v8/fixed-four-panels-user-corrected.webp.png')
+const SMART_BIN_INTERNAL_FRAME = digitalTwinAssetUrl('digital-twin-replay/smart-bin-workflow/smart-bin-internal-frame-front-v1.webp.png')
 
 const EXTERIOR_45 = Object.freeze({
   src: SMART_BIN_EXTERIOR,

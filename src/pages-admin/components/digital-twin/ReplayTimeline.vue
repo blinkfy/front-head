@@ -1,5 +1,5 @@
 <template>
-  <view class="timeline-panel panel mpwx-view">
+  <view :class="['timeline-panel', 'panel', 'mpwx-view', { 'timeline-panel--light': light }]">
     <view class="panel-head mpwx-view">
       <view class="mpwx-view">
         <view class="panel-title mpwx-view">事件时间线</view>
@@ -37,6 +37,7 @@ import { eventPresentation } from '@/pages-admin/utils/park-replay.js'
 import { displaySourceLabel } from '@/pages-admin/utils/source-display.js'
 
 defineProps({
+  light: { type: Boolean, default: false },
   events: { type: Array, default: () => [] },
   currentIndex: { type: Number, default: 0 },
   liveWindow: { type: Boolean, default: false }
@@ -79,7 +80,7 @@ const sourceClass = value => String(value || '').toLowerCase().replace(/_/g, '-'
 .panel-head { flex: 0 0 auto; padding: 10px 12px 9px; gap: 8px; }
 .panel-head > .mpwx-view { flex: 1; min-width: 0; }
 .panel-sub { white-space: normal; line-height: 1.35; }
-.counter { flex: 0 0 auto; }
+.panel-head > .counter { flex: 0 0 auto; }
 .timeline-list { flex: 1; height: 0; min-height: 0; overflow: hidden; }
 .event-row { display: flex; align-items: center; width: 100%; min-height: 58px; gap: 8px; }
 .event-sequence { flex: 0 0 28px; }
@@ -88,5 +89,16 @@ const sourceClass = value => String(value || '').toLowerCase().replace(/_/g, '-'
 .event-title,
 .event-desc { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; }
 .source-tag { flex: 0 0 auto; max-width: 76px; white-space: normal; word-break: break-word; text-align: center; }
+.timeline-panel--light { box-sizing: border-box; border: 1px solid #d5e2e9; border-radius: 10px; background: #fff; }
+.timeline-panel--light .panel-head { border-color: #d5e2e9; }
+.timeline-panel--light .panel-title,
+.timeline-panel--light .event-title { color: #18374c; }
+.timeline-panel--light .panel-sub,
+.timeline-panel--light .event-desc,
+.timeline-panel--light .event-sequence { color: #6b8393; }
+.timeline-panel--light .counter { color: #347293; }
+.timeline-panel--light .event-row { border-color: #e2edf3; }
+.timeline-panel--light .event-row.active { background: #e6f6ef; box-shadow: inset 3px 0 #18a77c; }
+.timeline-panel--light .source-tag { color: #347293; border-color: #b9d6e8; background: #edf6fb; }
 /* #endif */
 </style>

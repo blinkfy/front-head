@@ -6,11 +6,11 @@ export const SMART_BIN_WORKFLOW_CONFIG = Object.freeze({
   schemaVersion: 1,
   logicalSize: Object.freeze({ width: 900, height: 520 }),
   sourceBasis: Object.freeze([
-    asset('smart-bin-internal-frame-front-v1.png'),
-    asset('cutaway-raster-v8/fixed-four-panels-user-corrected.png')
+    asset('smart-bin-internal-frame-front-v1.webp.png'),
+    asset('cutaway-raster-v8/fixed-four-panels-user-corrected.webp.png')
   ]),
   visuals: Object.freeze({
-    structure: asset('smart-bin-internal-frame-front-v1.png'),
+    structure: asset('smart-bin-internal-frame-front-v1.webp.png'),
     carriage: asset('gantry-carriage-v1.svg'),
     leftJaw: asset('gripper-left-jaw-v1.svg'),
     rightJaw: asset('gripper-right-jaw-v1.svg'),

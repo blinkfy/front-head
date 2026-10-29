@@ -125,6 +125,7 @@
 </template>
 
 <script>
+import { chooseAppImage } from '@/utils/image-picker.js'
 import { transcribeAudio, transcribeAudioBlob, transcribeAudioSegments, recognizeByText } from '@/pages-nonTheme/api/voice.js';
 import { baseUrl } from '@/api/settings.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
@@ -259,7 +260,7 @@ export default {
       }
     },
     goToCamera() {
-      uni.chooseImage({
+      chooseAppImage({
         count: 1,
         sizeType: ['compressed'],
         sourceType: ['album', 'camera'],

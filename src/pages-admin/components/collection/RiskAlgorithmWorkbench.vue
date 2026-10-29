@@ -1,5 +1,5 @@
 <template>
-  <view class="risk-algorithm-workbench mpwx-view">
+  <view :class="['risk-algorithm-workbench', 'mpwx-view', { 'is-light': tone === 'light' }]">
     <view v-if="!selectedNode" class="algorithm-empty mpwx-view">
       <view class="empty-orbit mpwx-view"></view>
       <text class="mpwx-text">正在构建 STG-Mamba 时空风险图...</text>
@@ -14,7 +14,7 @@
         <view class="summary-card risk mpwx-view">
           <text class="mpwx-text">{{ horizonLabel }}满载概率</text>
           <text class="b-text mpwx-text">{{ pct(selectedProbability * 100) }}</text>
-          <text :class="small-text ['risk-level', riskTone]" class="mpwx-text">{{ riskText }}</text>
+          <text :class="['small-text', 'risk-level', riskTone, 'mpwx-text']">{{ riskText }}</text>
         </view>
         <view class="summary-card mpwx-view">
           <text class="mpwx-text">{{ horizonLabel }}预测容量</text>
@@ -86,44 +86,18 @@
           </view>
           <!-- #endif -->
           <!-- #ifndef H5 -->
-          <svg class="risk-graph" viewBox="0 0 720 408" preserveAspectRatio="none">
-            <defs>
-              <radialGradient id="riskGraphGlow">
-                <stop offset="0%" stop-color="#118b67" stop-opacity=".23" />
-                <stop offset="100%" stop-color="#118b67" stop-opacity="0" />
-              </radialGradient>
-              <filter id="nodeGlow"><feGaussianBlur stdDeviation="3.4" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-            </defs>
-            <circle cx="360" cy="204" r="186" fill="url(#riskGraphGlow)"  class="mpwx-circle"/>
-            <g class="graph-grid">
-              <line v-for="x in [120,240,360,480,600]" :key="'gx-'+x" :x1="x" y1="20" :x2="x" y2="388"  class="mpwx-line"/>
-              <line v-for="y in [82,143,204,265,326]" :key="'gy-'+y" x1="25" :y1="y" x2="695" :y2="y"  class="mpwx-line"/>
-            </g>
-            <g class="graph-edges">
-              <line
-                v-for="edge in graphEdges"
-                :key="edge.id"
-                :x1="edge.x1"
-                :y1="edge.y1"
-                :x2="edge.x2"
-                :y2="edge.y2"
-                :style="{ '--edge-alpha': edge.opacity, '--edge-speed': edge.speed + 's' }"
-               class="mpwx-line"/>
-            </g>
-            <g
-              v-for="node in graphNodes"
-              :key="node.pointId"
-              :class="['graph-node', node.pointId === selectedNode.pointId ? 'selected' : '']"
-              :transform="`translate(${node.x} ${node.y})`"
-              @click="emit('select', node.id)"
-            >
-              <circle v-if="node.pointId === selectedNode.pointId" class="node-wave mpwx-circle" :r="node.radius + 8" />
-              <circle class="node-halo mpwx-circle" :r="node.radius + 4" :fill="node.color" />
-              <circle class="node-core mpwx-circle" :r="node.radius" :fill="node.color" />
-              <text v-if="node.showLabel" :x="node.radius + 5" y="-5" class="mpwx-text">{{ node.pointCode }}</text>
-              <text v-if="node.pointId === selectedNode.pointId" :x="node.radius + 5" y="10" class="node-value mpwx-text">{{ pct(node.probability * 100) }}</text>
-            </g>
-          </svg>
+          <view class="risk-map-shell mpwx-view">
+            <map
+              class="mp-risk-map"
+              :latitude="mpMapCenter.latitude"
+              :longitude="mpMapCenter.longitude"
+              :scale="13"
+              :markers="mpMapMarkers"
+              :polyline="mpMapPolyline"
+              @markertap="onMpMarkerTap"
+            ></map>
+            <view class="risk-map-corner mpwx-view">腾讯地图 · 垃圾桶真实点位</view>
+          </view>
           <!-- #endif -->
           <view class="risk-legend mpwx-view">
             <text class="mpwx-text"><i class="risk-dot low"></i>低风险</text>
@@ -146,10 +120,10 @@
             <!-- #ifdef H5 -->
             <svg class="prediction-curve" viewBox="0 0 430 185" preserveAspectRatio="none">
               <g class="curve-grid">
-                <line v-for="value in [25,50,75,100]" :key="'curve-'+value" x1="28" :y1="curveY(value)" x2="415" :y2="curveY(value)"  class="mpwx-line"/>
-                <text v-for="value in [25,50,75,100]" :key="'label-'+value" x="2" :y="curveY(value)+3" class="mpwx-text">{{ value }}</text>
+                <line v-for="value in curveTicks" :key="'curve-'+value" x1="28" :y1="curveY(value)" x2="415" :y2="curveY(value)"  class="mpwx-line"/>
+                <text v-for="value in curveTicks" :key="'label-'+value" x="2" :y="curveY(value)+3" class="mpwx-text">{{ value }}</text>
               </g>
-              <line x1="28" :y1="curveY(90)" x2="415" :y2="curveY(90)" class="capacity-threshold mpwx-line" />
+              <line v-if="curveDomain.max >= 90" x1="28" :y1="curveY(90)" x2="415" :y2="curveY(90)" class="capacity-threshold mpwx-line" />
               <polygon :points="bandPolygon" class="prediction-band" />
               <polyline :points="historyPolyline" class="history-line" />
               <polyline :points="forecastPolyline" class="forecast-line" />
@@ -161,19 +135,35 @@
               </g>
             </svg>
             <!-- #endif -->
+            <!-- #ifndef H5 -->
+            <view class="mp-curve-bars mpwx-view">
+              <view v-for="(item, idx) in forecastCurvePoints" :key="'mp-fc-'+idx" class="mp-curve-item mpwx-view">
+                <text class="mp-curve-label">{{ ['当前', '+30m', '+60m', '+120m'][idx] }}</text>
+                <view class="mp-curve-track"><view class="mp-curve-fill" :style="{ width: clampPercent(item.value) + '%' }"></view></view>
+                <text class="mp-curve-val b-text">{{ pct(item.value) }}</text>
+              </view>
+            </view>
+            <!-- #endif -->
           </view>
 
           <view class="insight-bottom mpwx-view">
             <view class="algorithm-card driver-card mpwx-view">
               <view class="card-head compact mpwx-view"><view class="mpwx-view"><text class="b-text mpwx-text">风险驱动因素</text><text class="mpwx-text">输入诊断，不代表模型注意力权重</text></view></view>
               <!-- #ifdef H5 -->
-              <svg class="driver-radar" viewBox="0 0 190 178">
-                <polygon v-for="scale in [.33,.66,1]" :key="'radar-'+scale" :points="radarBase(scale)" class="radar-grid" />
-                <line v-for="axis in radarAxes" :key="axis.key" x1="95" y1="86" :x2="axis.x" :y2="axis.y" class="radar-axis mpwx-line" />
-                <polygon :points="radarValuePoints" class="radar-value" />
-                <circle v-for="axis in radarValueAxes" :key="'dot-'+axis.key" :cx="axis.x" :cy="axis.y" r="2.5" class="radar-dot mpwx-circle" />
-                <text v-for="axis in radarAxes" :key="'text-'+axis.key" :x="axis.labelX" :y="axis.labelY" :text-anchor="axis.anchor" class="mpwx-text">{{ axis.label }}</text>
-              </svg>
+              <view class="driver-radar-wrap mpwx-view">
+                <svg class="driver-radar" viewBox="0 0 190 190">
+                  <polygon v-for="scale in [.33,.66,1]" :key="'radar-'+scale" :points="radarBase(scale)" class="radar-grid" />
+                  <line v-for="axis in radarAxes" :key="axis.key" x1="95" y1="95" :x2="axis.x" :y2="axis.y" class="radar-axis mpwx-line" />
+                  <polygon :points="radarValuePoints" class="radar-value" />
+                  <circle v-for="axis in radarValueAxes" :key="'dot-'+axis.key" :cx="axis.x" :cy="axis.y" r="2.5" class="radar-dot mpwx-circle" />
+                </svg>
+                <view
+                  v-for="axis in radarAxes"
+                  :key="'text-'+axis.key"
+                  class="radar-label mpwx-text"
+                  :style="{ left: axis.labelLeft, top: axis.labelTop, transform: axis.labelTransform }"
+                >{{ axis.label }}</view>
+              </view>
               <!-- #endif -->
               <view class="driver-ranking mpwx-view">
                 <view v-for="driver in topDrivers" :key="driver.key" class="mpwx-view">
@@ -218,7 +208,8 @@ const props = defineProps({
   visualization: { type: Object, default: () => ({ nodes: [], edges: [], model: {}, thresholds: {} }) },
   selectedId: { type: [String, Number], default: '' },
   horizon: { type: Number, default: 0 },
-  playing: { type: Boolean, default: true }
+  playing: { type: Boolean, default: true },
+  tone: { type: String, default: 'light' }
 })
 
 const emit = defineEmits(['select', 'horizon', 'toggle-play'])
@@ -327,6 +318,46 @@ const graphEdges = computed(() => (props.visualization?.edges || []).map((edge) 
     speed: Number((3.8 - Math.min(.9, horizonStrength) * 2).toFixed(2))
   }
 }).filter(Boolean))
+
+const mpMapCenter = computed(() => ({
+  latitude: Number(selectedNode.value?.latitude) || 36.0671,
+  longitude: Number(selectedNode.value?.longitude) || 120.3826
+}))
+const mpMapMarkers = computed(() => graphNodes.value.map((node, index) => ({
+  id: index,
+  latitude: Number(node.latitude),
+  longitude: Number(node.longitude),
+  width: node.pointId === selectedNode.value?.pointId ? 26 : 20,
+  height: node.pointId === selectedNode.value?.pointId ? 26 : 20,
+  callout: {
+    content: `${node.pointCode} ${pct(node.probability * 100)}`,
+    color: '#ffffff',
+    fontSize: 10,
+    borderRadius: 6,
+    bgColor: node.color,
+    padding: 4,
+    display: node.pointId === selectedNode.value?.pointId || node.showLabel ? 'ALWAYS' : 'BYCLICK'
+  }
+})))
+const mpMapPolyline = computed(() => graphEdges.value.map((edge) => {
+  const source = graphNodeMap.value.get(edge.source)
+  const target = graphNodeMap.value.get(edge.target)
+  if (!source || !target) return null
+  return {
+    points: [
+      { latitude: Number(source.latitude), longitude: Number(source.longitude) },
+      { latitude: Number(target.latitude), longitude: Number(target.longitude) }
+    ],
+    color: '#118b6788',
+    width: 2,
+    dottedLine: true
+  }
+}).filter(Boolean))
+function onMpMarkerTap(event) {
+  const idx = event?.detail?.markerId
+  const node = graphNodes.value[idx]
+  if (node) emit('select', node.id)
+}
 
 const mapStatus = ref('idle')
 let riskMap = null
@@ -553,7 +584,29 @@ onBeforeUnmount(() => {
   }
 })
 
-const curveY = value => Number((162 - clampPercent(value) * 1.36).toFixed(2))
+const curveValues = computed(() => {
+  const values = [...(selectedNode.value?.history || []).map(item => Number(item.fillLevel)), Number(selectedNode.value?.currentFill)]
+  ;[30, 60, 120].forEach(minutes => {
+    const win = windowFor(selectedNode.value, minutes)
+    if (win) values.push(Number(win.p10) * 100, Number(win.p50) * 100, Number(win.p90) * 100)
+  })
+  return values.filter(value => Number.isFinite(value))
+})
+const curveDomain = computed(() => {
+  const rawMin = curveValues.value.length ? Math.min(...curveValues.value) : 25
+  const rawMax = curveValues.value.length ? Math.max(...curveValues.value) : 75
+  const min = Math.max(0, Math.floor((rawMin - 6) / 10) * 10)
+  const max = Math.min(100, Math.ceil((rawMax + 6) / 10) * 10)
+  return { min, max: Math.max(max, min + 30) }
+})
+const curveTicks = computed(() => {
+  const { min, max } = curveDomain.value
+  return [0, 1, 2, 3].map(step => Math.round(min + (max - min) * step / 3))
+})
+const curveY = value => {
+  const { min, max } = curveDomain.value
+  return Number((158 - (clampPercent(value) - min) / (max - min) * 132).toFixed(2))
+}
 const curveSplitX = 218
 const historyCurvePoints = computed(() => {
   const history = selectedNode.value?.history || []
@@ -591,24 +644,26 @@ const activeCurvePoint = computed(() => {
 })
 
 const radarKeys = Object.keys(driverMeta)
+const RADAR_VIEW_SIZE = 190
 const radarPoint = (index, value, radius = 58) => {
   const angle = -Math.PI / 2 + index * Math.PI * 2 / radarKeys.length
   return {
     x: 95 + Math.cos(angle) * radius * value,
-    y: 86 + Math.sin(angle) * radius * value
+    y: 95 + Math.sin(angle) * radius * value
   }
 }
 const radarAxes = computed(() => radarKeys.map((key, index) => {
   const point = radarPoint(index, 1)
-  const label = radarPoint(index, 1.28)
+  const label = radarPoint(index, 1.17)
+  const anchor = label.x < 82 ? 'end' : label.x > 108 ? 'start' : 'middle'
   return {
     key,
     label: driverMeta[key],
     x: point.x,
     y: point.y,
-    labelX: label.x,
-    labelY: label.y + 3,
-    anchor: label.x < 82 ? 'end' : label.x > 108 ? 'start' : 'middle'
+    labelLeft: (label.x / RADAR_VIEW_SIZE * 100).toFixed(2) + '%',
+    labelTop: (label.y / RADAR_VIEW_SIZE * 100).toFixed(2) + '%',
+    labelTransform: anchor === 'middle' ? 'translate(-50%, -50%)' : anchor === 'start' ? 'translate(0, -50%)' : 'translate(-100%, -50%)'
   }
 }))
 const radarBase = scale => radarKeys.map((_, index) => {
@@ -686,8 +741,8 @@ function handleSlider(event) {
 .card-head > .mpwx-view:first-child .b-text,.card-head > .mpwx-view:first-child .mpwx-text { display:block }
 .card-head > .mpwx-view:first-child .b-text { color:var(--alg-text);font-size:14px }
 .card-head > .mpwx-view:first-child .mpwx-text { margin-top:3px;color:var(--alg-muted);font-size:10px }
-.card-head.compact > .mpwx-view:first-child .b-text { font-size:12px }
-.card-head.compact > .mpwx-view:first-child .mpwx-text { font-size:9px }
+.card-head.compact > .mpwx-view:first-child .b-text { font-size:15px }
+.card-head.compact > .mpwx-view:first-child .mpwx-text { font-size:11px }
 .model-chip { display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid rgba(36,217,255,.2);border-radius:8px;background:rgba(12,72,91,.4) }
 .model-chip-indicator { width:7px;height:7px;border-radius:50%;background:var(--alg-primary);box-shadow:0 0 10px var(--alg-primary);animation:modelPulse 1.8s ease-in-out infinite }
 .model-chip .b-text,.model-chip .mpwx-text { display:block }.model-chip .b-text { color:#d7f7ff;font-size:10px }.model-chip .mpwx-text { margin-top:1px;color:#7daebe;font-size:8px }
@@ -703,7 +758,7 @@ function handleSlider(event) {
 .horizon-tabs { display:flex;gap:4px }
 .horizon-tabs .mpwx-button { padding:7px 10px;border:1px solid var(--alg-border);border-radius:7px;color:#8db4c3;background:rgba(7,35,49,.72);font-size:10px }
 .horizon-tabs .mpwx-button.active { color:#fff;border-color:rgba(46,212,155,.65);background:rgba(17,139,103,.78);box-shadow:0 0 13px rgba(17,139,103,.22) }
-.horizon-caption { margin-left:auto;color:#76a4b5;font-size:9px }
+.horizon-caption { margin-left:auto;color:#76a4b5;font-size:11px }
 .horizon-slider { margin:3px 1px -2px }
 .risk-map-shell { position:relative;isolation:isolate;min-height:180px;flex:1;margin:5px 0 3px;border:1px solid var(--map-frame-line,rgba(122,202,255,.32));border-radius:var(--map-frame-radius,12px);overflow:hidden;background:transparent }
 .risk-tencent-map { position:absolute;inset:0;filter:var(--map-canvas-filter,none) }
@@ -721,46 +776,48 @@ function handleSlider(event) {
 .graph-node .node-value { fill:#fff;font-size:7px }.graph-node.selected .node-core { stroke:#fff;stroke-width:1.8 }
 .node-wave { fill:none;stroke:rgba(36,217,255,.65);stroke-width:1;animation:nodeWave 1.8s ease-out infinite }
 @keyframes nodeWave { 0%{opacity:.9;transform:scale(.65)} 100%{opacity:0;transform:scale(1.45)} }
-.risk-legend { display:flex;align-items:center;gap:11px;color:#79a5b6;font-size:9px }
+.risk-legend { display:flex;align-items:center;gap:11px;color:#79a5b6;font-size:11px }
 .risk-legend .mpwx-text { display:flex;align-items:center;gap:3px }.risk-legend .risk-dot { width:6px;height:6px;border-radius:50% }
 .risk-dot.low { background:#16c57c }.risk-dot.medium { background:#f5b648 }.risk-dot.high { background:#ff8b3d }.risk-dot.emergency { background:#ff5d66 }
-.risk-legend .small-text { margin-left:auto;color:#668f9f;font-size:9px }
+.risk-legend .small-text { margin-left:auto;color:#668f9f;font-size:10px }
 .insight-column { min-height:0;display:grid;grid-template-rows:minmax(210px,.47fr) minmax(240px,.53fr);gap:8px }
 .curve-card { padding:9px 10px 4px;display:flex;flex-direction:column;min-height:0 }
-.secondary-metrics { display:flex;gap:4px }.secondary-metrics .secondary-metric { padding:4px 6px;border-radius:6px;color:#9cd0dd;background:rgba(17,78,96,.46);font-size:9px }
-.prediction-curve { width:100%;min-height:0;flex:1;margin-top:2px;overflow:visible }
-.curve-grid .mpwx-line { stroke:rgba(119,188,211,.12);stroke-width:1;stroke-dasharray:2 4 }.curve-grid .mpwx-text { fill:#6c98a8;font-size:8.5px }
+.secondary-metrics { display:flex;gap:6px }.secondary-metrics .secondary-metric { padding:5px 8px;border-radius:6px;color:#9cd0dd;background:rgba(17,78,96,.46);font-size:11px }
+.prediction-curve { width:100%;min-height:150px;flex:1;margin-top:2px;overflow:visible }
+.curve-grid .mpwx-line { stroke:rgba(119,188,211,.12);stroke-width:1;stroke-dasharray:2 4 }.curve-grid .mpwx-text { fill:#6c98a8;font-size:11px }
 .capacity-threshold { stroke:rgba(230,77,87,.45);stroke-width:1;stroke-dasharray:4 4 }
 .prediction-band { fill:rgba(46,212,155,.14);stroke:rgba(46,212,155,.3);stroke-width:1 }
 .history-line,.forecast-line { fill:none;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke }
 .history-line { stroke:#6caed1;stroke-width:2 }.forecast-line { stroke:#2ed49b;stroke-width:2.4;stroke-dasharray:6 4;filter:drop-shadow(0 0 4px rgba(46,212,155,.45)) }
 .curve-split { stroke:rgba(221,246,255,.28);stroke-width:1;stroke-dasharray:2 3 }
 .active-curve-point { fill:#fff;stroke:#118b67;stroke-width:3;filter:drop-shadow(0 0 5px rgba(46,212,155,.8));transition:cx .5s ease,cy .5s ease }
-.curve-x-labels .mpwx-text { fill:#6f9dad;font-size:8px }
+.curve-x-labels .mpwx-text { fill:#6f9dad;font-size:10px }
 .insight-bottom { min-height:0;display:grid;grid-template-columns:minmax(0,.86fr) minmax(0,1.14fr);gap:8px }
 .driver-card,.threshold-card { padding:9px;min-height:0 }
-.driver-card { display:grid;grid-template-rows:auto minmax(116px,1fr) auto }
-.driver-radar { width:100%;height:100%;min-height:116px }
+.driver-card { display:flex;flex-direction:column;gap:8px }
+.driver-radar-wrap { position:relative;width:100%;max-width:250px;aspect-ratio:1/1;margin:0 auto }
+.driver-radar { width:100%;height:100% }
 .radar-grid { fill:none;stroke:rgba(124,195,217,.18);stroke-width:1 }.radar-axis { stroke:rgba(124,195,217,.14);stroke-width:1 }
 .radar-value { fill:rgba(46,212,155,.2);stroke:#2ed49b;stroke-width:1.6;filter:drop-shadow(0 0 3px rgba(46,212,155,.35));transition:all .45s ease }
-.radar-dot { fill:#eafff7 }.driver-radar .mpwx-text { fill:#79a4b3;font-size:8.5px }
+.radar-dot { fill:#eafff7 }
+.radar-label { position:absolute;font-size:10px;line-height:1;white-space:nowrap;color:#79a4b3 }
 .driver-ranking { display:flex;flex-direction:column;gap:4px }
-.driver-ranking > .mpwx-view { display:grid;grid-template-columns:52px 1fr 36px;align-items:center;gap:4px;color:#86afbd;font-size:8px }
+.driver-ranking > .mpwx-view { display:grid;grid-template-columns:60px 1fr 42px;align-items:center;gap:5px;color:#86afbd;font-size:10px }
 .driver-ranking > .mpwx-view > .mpwx-view { height:4px;border-radius:99px;background:rgba(103,158,178,.18);overflow:hidden }
 .driver-bar { display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#118b67,#42ddb0) }
-.driver-ranking .b-text { color:#bae5dc;text-align:right;font-size:8px }
+.driver-ranking .b-text { color:#bae5dc;text-align:right;font-size:10px }
 .threshold-card { display:flex;flex-direction:column }
 .threshold-status { margin-top:9px;padding:7px 8px;border-left:2px solid #118b67;background:rgba(10,67,61,.28) }
-.threshold-status .b-text,.threshold-status .mpwx-text { display:block }.threshold-status .b-text { font-size:13px }.threshold-status .mpwx-text { margin-top:3px;color:#8eb5c2;font-size:9px;line-height:1.45 }
+.threshold-status .b-text,.threshold-status .mpwx-text { display:block }.threshold-status .b-text { font-size:15px }.threshold-status .mpwx-text { margin-top:4px;color:#8eb5c2;font-size:11px;line-height:1.5 }
 .threshold-track { position:relative;height:11px;margin:28px 7px 15px;border-radius:99px;background:#173b43 }
 .threshold-zone { position:absolute;top:0;bottom:0 }.threshold-zone.low { left:0;width:30%;background:#118b67 }.threshold-zone.medium { left:30%;width:30%;background:#c6ad35 }.threshold-zone.high { left:60%;width:25%;background:#e77f32 }.threshold-zone.emergency { left:85%;right:0;background:#d94550 }
-.threshold-mark { position:absolute;top:-6px;width:1px;height:23px;background:rgba(255,255,255,.45) }.threshold-mark .em-label { position:absolute;top:-14px;left:50%;transform:translateX(-50%);color:#779fac;font-size:8px;font-style:normal }
+.threshold-mark { position:absolute;top:-6px;width:1px;height:23px;background:rgba(255,255,255,.45) }.threshold-mark .em-label { position:absolute;top:-16px;left:50%;transform:translateX(-50%);color:#779fac;font-size:10px;font-style:normal }
 .threshold-pointer { position:absolute;top:50%;width:12px;height:12px;border:2px solid #fff;border-radius:50%;background:#102f38;transform:translate(-50%,-50%);box-shadow:0 0 9px rgba(255,255,255,.55);transition:left .5s ease }
-.threshold-pointer .em-label { position:absolute;top:14px;left:50%;transform:translateX(-50%);color:#fff;font-size:8px;font-style:normal;white-space:nowrap }
+.threshold-pointer .em-label { position:absolute;top:16px;left:50%;transform:translateX(-50%);color:#fff;font-size:10px;font-style:normal;white-space:nowrap }
 .threshold-facts { display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:auto }
 .threshold-facts .mpwx-view { padding:5px;border-radius:6px;background:rgba(26,75,88,.34) }.threshold-facts .mpwx-text,.threshold-facts .b-text { display:block }
-.threshold-facts .mpwx-text { color:#739ead;font-size:8px }.threshold-facts .b-text { margin-top:3px;color:#bfe3e9;font-size:10px }
-.model-metrics { display:flex;flex-wrap:wrap;gap:4px;margin-top:7px }.model-metrics .model-metric { padding:3px 5px;border-radius:5px;color:#80afbc;background:rgba(13,58,72,.52);font-size:8px }
+.threshold-facts .mpwx-text { color:#739ead;font-size:10px }.threshold-facts .b-text { margin-top:3px;color:#bfe3e9;font-size:12px }
+.model-metrics { display:flex;flex-wrap:wrap;gap:4px;margin-top:7px }.model-metrics .model-metric { padding:3px 5px;border-radius:5px;color:#80afbc;background:rgba(13,58,72,.52);font-size:10px }
 
 /* 亮色主题覆盖已迁移到文件末尾的非 scoped <style> 块，避免 scoped :global() 穿透失败 */
 @media (max-width:1100px) {
@@ -774,9 +831,80 @@ function handleSlider(event) {
   .curve-card { min-height:0 }
   .risk-map-shell { min-height:96px }
 }
-@media (max-width:768px) {
-  .risk-map-shell { min-height:220px }
+@media (max-width:900px), (orientation:portrait) {
+  :host { display:block;width:100% }
+  .risk-algorithm-workbench { width:100%;height:auto;flex:none;box-sizing:border-box }
+  .algorithm-summary { grid-template-columns:repeat(2,minmax(0,1fr));flex:none;height:auto }
+  .summary-card { padding:9px 10px }
+  .summary-card > .b-text { font-size:18px }
+  .algorithm-grid { display:flex;flex-direction:column;flex:none;height:auto;gap:8px }
+  .graph-card { height:auto;padding:10px }
+  .card-head { flex-wrap:wrap;gap:6px }
+  .model-chip { flex-shrink:0 }
+  .horizon-control { flex-wrap:wrap;gap:6px }
+  .horizon-tabs { flex:1;min-width:0;display:flex;gap:4px }
+  .horizon-tabs .mpwx-button { flex:1;padding:6px 6px;white-space:nowrap;font-size:11px;text-align:center }
+  .horizon-caption { margin-left:auto;white-space:nowrap }
+  .risk-map-shell { flex:none;width:100%;height:240px;min-height:240px }
+  .risk-legend { flex-wrap:wrap;gap:6px 10px }
+  .risk-legend .small-text { width:100%;margin-left:0 }
+  .insight-column { display:flex;flex-direction:column;height:auto;gap:8px }
+  .curve-card { height:auto;min-height:0;padding:10px 10px 6px }
+  .secondary-metrics { flex-wrap:wrap;gap:4px }
+  .secondary-metrics .secondary-metric { white-space:nowrap }
+  .prediction-curve { flex:none;width:100%;height:190px;min-height:190px }
+  .insight-bottom { display:flex;flex-direction:column;gap:8px;height:auto }
+  .driver-card { display:flex;flex-direction:column;gap:6px;height:auto;padding:10px }
+  .driver-radar-wrap { max-width:240px }
+  .threshold-card { height:auto;padding:10px }
+  .threshold-facts { margin-top:8px }
 }
+.mp-risk-map { display:block;width:100%;height:100%;border-radius:10px }
+.mp-curve-bars { display:flex;flex-direction:column;gap:8px;margin-top:8px;padding:4px 0 }
+.mp-curve-item { display:grid;grid-template-columns:52px 1fr 50px;align-items:center;gap:8px;font-size:11px;color:var(--alg-muted) }
+.mp-curve-track { height:6px;border-radius:99px;background:rgba(17,139,103,.14);overflow:hidden }
+.mp-curve-fill { height:100%;border-radius:99px;background:linear-gradient(90deg,#118b67,#2ed49b) }
+.mp-curve-val { text-align:right;color:var(--alg-text);font-size:11px }
+.risk-algorithm-workbench.is-light {
+  --alg-surface:#f7faf8;
+  --alg-surface-soft:#eef7f2;
+  --alg-border:#c5dbcf;
+  --alg-text:#173c31;
+  --alg-muted:#66877c;
+  --alg-primary:#118b67;
+  --alg-green:#118b67;
+}
+.risk-algorithm-workbench.is-light .algorithm-card,
+.risk-algorithm-workbench.is-light .summary-card { box-shadow:0 6px 18px rgba(41,82,67,.055);background:linear-gradient(150deg,#f4faf7,#eef7f2);border-color:#c5dbcf }
+.risk-algorithm-workbench.is-light .graph-card { background:#f7faf8;border-color:#c5dbcf;backdrop-filter:none }
+.risk-algorithm-workbench.is-light .algorithm-empty { background:#f3f8f5 !important;border-color:#c5dbcf;color:#66877c }
+.risk-algorithm-workbench.is-light .summary-card > .small-text,
+.risk-algorithm-workbench.is-light .card-head > .mpwx-view:first-child .mpwx-text { color:#6b8d81 }
+.risk-algorithm-workbench.is-light .summary-card > .b-text { color:#173c31 }
+.risk-algorithm-workbench.is-light .summary-card.risk > .b-text { color:#c76e25 }
+.risk-algorithm-workbench.is-light .model-chip { border-color:#bad8ca;background:#e4f2eb }
+.risk-algorithm-workbench.is-light .model-chip .b-text { color:#195341 }
+.risk-algorithm-workbench.is-light .horizon-tabs .mpwx-button { color:#637f75;border-color:#cbded4;background:#f8fbf9 }
+.risk-algorithm-workbench.is-light .horizon-tabs .mpwx-button.active { color:#fff;border-color:#118b67;background:#118b67 }
+.risk-algorithm-workbench.is-light .risk-legend,
+.risk-algorithm-workbench.is-light .horizon-caption { color:#68877d }
+.risk-algorithm-workbench.is-light .secondary-metrics .secondary-metric { color:#416c5e;background:#e5f1eb }
+.risk-algorithm-workbench.is-light .threshold-status { background:#e9f4ee }
+.risk-algorithm-workbench.is-light .threshold-status .mpwx-text { color:#58766c }
+.risk-algorithm-workbench.is-light .threshold-facts .mpwx-view,
+.risk-algorithm-workbench.is-light .model-metrics .model-metric { background:#e8f1ec;color:#527266 }
+.risk-algorithm-workbench.is-light .threshold-facts .b-text { color:#245443 }
+.risk-algorithm-workbench.is-light .threshold-track { background:#dbe8e1 }
+.risk-algorithm-workbench.is-light .threshold-mark { background:rgba(35,80,62,.25) }
+.risk-algorithm-workbench.is-light .threshold-mark .em-label { color:#58766c }
+.risk-algorithm-workbench.is-light .threshold-pointer { background:#f7faf8;border-color:#173c31;box-shadow:0 0 9px rgba(23,60,49,.25) }
+.risk-algorithm-workbench.is-light .threshold-pointer .em-label { color:#173c31 }
+.risk-algorithm-workbench.is-light .driver-ranking > .mpwx-view { color:#58766c }
+.risk-algorithm-workbench.is-light .driver-ranking .b-text { color:#245443 }
+.risk-algorithm-workbench.is-light .radar-label { color:#617e74 }
+.risk-algorithm-workbench.is-light .radar-grid,
+.risk-algorithm-workbench.is-light .radar-axis { stroke:rgba(31,95,73,.18) }
+.risk-algorithm-workbench.is-light .risk-legend .small-text { color:#718c83 }
 </style>
 
 <!-- 非 scoped 全局样式：确保亮色主题在 H5 下可靠覆盖 RiskAlgorithmWorkbench 内部元素 -->
@@ -815,7 +943,7 @@ function handleSlider(event) {
 .screen.light-theme .secondary-metrics .secondary-metric { color:#416c5e;background:#e5f1eb }
 .screen.light-theme .radar-grid,
 .screen.light-theme .radar-axis { stroke:rgba(31,95,73,.18) }
-.screen.light-theme .driver-radar .mpwx-text { fill:#617e74 }
+.screen.light-theme .radar-label { color:#617e74 }
 .screen.light-theme .threshold-status { background:#e9f4ee }
 .screen.light-theme .threshold-status .mpwx-text { color:#58766c }
 .screen.light-theme .threshold-facts .mpwx-view,

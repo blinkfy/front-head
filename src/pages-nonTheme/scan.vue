@@ -135,10 +135,10 @@
 import { ref, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { ThemeManager } from '@/utils/theme.js'
-import BinSessionPanel from '@/components/BinSessionPanel.vue'
+import BinSessionPanel from '@/pages-nonTheme/components/BinSessionPanel.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
-import { useDeviceScanPage } from '@/utils/use-device-scan-page.js'
+import { useDeviceScanPage } from '@/pages-nonTheme/utils/use-device-scan-page.js'
 
 const dark = ref(ThemeManager.getTheme() === 'dark')
 const syncTheme = () => { dark.value = ThemeManager.getTheme() === 'dark' }

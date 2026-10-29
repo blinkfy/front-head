@@ -47,6 +47,7 @@ HARNESS_SOURCE = r'''package ftx.qbar;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.util.Arrays;
 import javax.imageio.ImageIO;
 
 public final class GeometryHarness {
@@ -95,14 +96,47 @@ public final class GeometryHarness {
     private static void detectFile(String input) throws Exception {
         BufferedImage image = ImageIO.read(new File(input));
         require(image != null, "unsupported input image");
+        byte[] pixels = gray(image);
+        byte[] original = pixels.clone();
         ScanGeometry.Candidate candidate = ScanGeometry.detectCandidate(
-                gray(image), image.getWidth(), image.getHeight());
+                pixels, image.getWidth(), image.getHeight());
+        require(Arrays.equals(pixels, original), "detectCandidate modified input pixels");
         if (candidate == null) {
             System.out.println("DETECT none");
         } else {
             System.out.printf(java.util.Locale.ROOT, "DETECT candidate x=%.5f y=%.5f size=%.5f%n",
                     candidate.x, candidate.y, candidate.size);
         }
+    }
+
+    private static void testLighting() {
+        byte[] flat = new byte[96 * 96]; Arrays.fill(flat, (byte) 42);
+        require(ScanGeometry.lightLevel(flat, 96, 96) == 42, "dark-frame brightness incorrect");
+        Arrays.fill(flat, (byte) 255);
+        for (int y = 24; y < 72; y++) for (int x = 24; x < 72; x++) flat[y * 96 + x] = 30;
+        require(ScanGeometry.lightLevel(flat, 96, 96) == 30, "frame border biased guide brightness");
+        require(ScanGeometry.lightLevel(null, 96, 96) == -1, "invalid frame brightness accepted");
+        ScanGeometry.ExposureControl control = new ScanGeometry.ExposureControl(); control.reset(0);
+        require(Float.isNaN(control.next(30, 100)), "single dark frame changed exposure");
+        require(Float.isNaN(control.next(30, 500)), "two dark frames changed exposure");
+        require(Float.isNaN(control.next(30, 1000)), "startup cooldown ignored");
+        require(Float.isNaN(control.next(30, 2000)), "startup cooldown ignored");
+        require(control.next(30, 3000) == 0.5f, "stable darkness did not request half-stop correction");
+        require(Float.isNaN(control.next(30, 3400)), "exposure kept accumulating in darkness");
+        require(Float.isNaN(control.next(80, 3800)), "hysteresis did not hold correction");
+        require(Float.isNaN(control.next(130, 4100)), "single bright frame reset exposure");
+        require(Float.isNaN(control.next(130, 4500)), "two bright frames reset exposure");
+        require(Float.isNaN(control.next(130, 5000)), "correction cooldown ignored");
+        require(control.next(130, 6000) == 0f, "stable normal light did not restore baseline");
+        control.reset(7000);
+        control.next(30, 10000); control.next(30, 10400);
+        require(Float.isNaN(control.next(-1, 10800)), "invalid brightness changed exposure");
+        require(Float.isNaN(control.next(30, 11000)), "invalid brightness failed to break evidence");
+        require(Float.isNaN(control.next(30, 14000)), "stale dark observation was reused");
+        require(ScanGeometry.exposureIndex(0, -4, 4, 0.333333f, 0.5f) == 1, "half-stop rounded up beyond cap");
+        require(ScanGeometry.exposureIndex(0, -4, 4, 1f, 0.5f) == 0, "coarse device step exceeded half-stop");
+        require(ScanGeometry.exposureIndex(2, -4, 2, 0.1f, 0.5f) == 2, "exposure exceeded driver maximum");
+        require(ScanGeometry.exposureIndex(-1, -4, 4, 0.1f, 0f) == -1, "baseline was not restored");
     }
 
     private static void testCameraScore() {
@@ -188,91 +222,406 @@ public final class GeometryHarness {
 
     private static void testAutoZoom() {
         ScanGeometry.AutoZoom zoom = new ScanGeometry.AutoZoom();
-        ScanGeometry.Candidate small = candidate(0.50f, 0.50f, 0.20f);
+        ScanGeometry.Candidate medium = candidate(0.50f, 0.50f, 0.20f);
+        ScanGeometry.Candidate tiny = candidate(0.50f, 0.50f, 0.03f);
 
-        // Missing, large, off-center, or decoded candidates must never blind-zoom.
+        // No candidate or one instantaneous false positive may start zoom.
         zoom.reset(0L);
-        for (long now = 2000L; now <= 12000L; now += 1500L) {
-            require(Float.isNaN(next(zoom, now, 3f, 1f, null, false)),
-                    "auto zoom advanced without a detected candidate");
+        require(Float.isNaN(next(zoom, 599L, 3f, 1f, medium, false)), "auto zoom started before 600ms");
+        require(Float.isNaN(next(zoom, 600L, 3f, 1f, null, false)), "missing candidate advanced zoom");
+        require(Float.isNaN(next(zoom, 700L, 3f, 1f, medium, false)), "first observation advanced zoom");
+        require(Float.isNaN(next(zoom, 900L, 3f, 1f, null, false)), "one-frame false positive triggered zoom");
+
+        // Two observations spanning at least 180ms can quickly drive a small code toward 40%.
+        zoom.reset(0L);
+        require(Float.isNaN(next(zoom, 600L, 3f, 1f, medium, false)), "one candidate was enough to zoom");
+        require(Float.isNaN(next(zoom, 779L, 3f, 1f, medium, false)), "observations under 180ms apart triggered zoom");
+        float first = next(zoom, 780L, 3f, 1f, medium, false);
+        require(first > 1f && first <= 1.8f, "medium-code step exceeded the 1.8x bound");
+        require(first * medium.size >= 0.35f && first * medium.size <= 0.40f,
+                "first medium-code step did not move close to the 40% target");
+
+        // A following step is rate-limited to 650ms and remains bounded.
+        require(Float.isNaN(next(zoom, 1429L, 3f, first, medium, false)), "zoom changed before 650ms");
+        float second = next(zoom, 1430L, 3f, first, medium, false);
+        if (!Float.isNaN(second)) {
+            require(second > first && second <= first * 1.8f && second <= 3f,
+                    "subsequent medium-code step exceeded its bounds");
         }
+
+        // Very small codes can take one 2x step, while the normal 1.8x bound still applies above 12%.
         zoom.reset(0L);
-        ScanGeometry.Candidate large = candidate(0.50f, 0.50f, 0.32f);
-        ScanGeometry.Candidate offCenter = candidate(0.22f, 0.50f, 0.18f);
-        for (int i = 0; i < 3; i++) {
-            long now = 2000L + i * 500L;
-            require(Float.isNaN(next(zoom, now, 3f, 1f, large, false)), "large candidate triggered zoom");
-            require(Float.isNaN(next(zoom, now, 3f, 1f, offCenter, false)), "off-center candidate triggered zoom");
-            require(Float.isNaN(next(zoom, now, 3f, 1f, small, true)), "decoded candidate triggered zoom");
+        require(Float.isNaN(next(zoom, 600L, 3f, 1f, tiny, false)), "tiny candidate zoomed after one observation");
+        float tinyZoom = next(zoom, 780L, 3f, 1f, tiny, false);
+        require(tinyZoom > 1f && tinyZoom <= 2f && tinyZoom * tiny.size <= 0.06f,
+                "tiny-code step exceeded its 2x bound");
+        zoom.reset(0L);
+        float twelvePercent = next(zoom, 780L, 3f, 1f, candidate(0.50f, 0.50f, 0.12f), false);
+        require(Float.isNaN(twelvePercent), "one 12% observation advanced zoom");
+        twelvePercent = next(zoom, 960L, 3f, 1f, candidate(0.50f, 0.50f, 0.12f), false);
+        require(twelvePercent > 1f && twelvePercent <= 1.8f, "12% code exceeded the normal step bound");
+
+        // Candidate size is gated to [2.5%, 36%); edge positions remain inside the centered guide.
+        for (float invalidSize : new float[]{0.024f, 0.36f, 0.40f}) {
+            zoom.reset(0L);
+            next(zoom, 600L, 3f, 1f, candidate(0.50f, 0.50f, invalidSize), false);
+            require(Float.isNaN(next(zoom, 780L, 3f, 1f, candidate(0.50f, 0.50f, invalidSize), false)),
+                    "candidate outside size gate triggered zoom: " + invalidSize);
+        }
+        for (float centerX : new float[]{0.35f, 0.65f}) {
+            zoom.reset(0L);
+            require(Float.isNaN(next(zoom, 600L, 3f, 1f, candidate(centerX, 0.50f, 0.20f), false)),
+                    "one boundary candidate advanced zoom");
+            require(!Float.isNaN(next(zoom, 780L, 3f, 1f, candidate(centerX, 0.50f, 0.20f), false)),
+                    "candidate near centered-guide boundary was rejected");
+        }
+        for (float centerX : new float[]{0.22f, 0.78f}) {
+            zoom.reset(0L);
+            next(zoom, 600L, 3f, 1f, candidate(centerX, 0.50f, 0.20f), false);
+            require(Float.isNaN(next(zoom, 780L, 3f, 1f, candidate(centerX, 0.50f, 0.20f), false)),
+                    "off-center candidate triggered zoom");
         }
 
-        // Three consecutive small, centered, stable candidates are required.
+        // A near-edge tiny code may use a bounded first step, but every later step
+        // must preserve the full projected code inside the visible image.
         zoom.reset(0L);
-        require(Float.isNaN(next(zoom, 2000L, 3f, 1f, small, false)), "one candidate was enough to zoom");
-        require(Float.isNaN(next(zoom, 2500L, 3f, 1f, small, false)), "two candidates were enough to zoom");
-        float first = next(zoom, 3000L, 3f, 1f, small, false);
-        require(first > 1f && first <= 1.25f, "first zoom step exceeded the 1.25x step bound");
-        require(Float.isNaN(next(zoom, 3500L, 3f, first, small, false)),
-                "zoom changed before the 1300ms step interval");
-        require(Float.isNaN(next(zoom, 4000L, 3f, first, small, false)),
-                "zoom changed before the 1300ms step interval");
-        require(Float.isNaN(next(zoom, 4299L, 3f, first, small, false)), "zoom changed before 1300ms");
-        float second = next(zoom, 4300L, 3f, first, small, false);
-        require(second > first && second <= first * 1.25f && second <= 3f,
-                "subsequent zoom step exceeded its bounds");
+        ScanGeometry.Candidate edgeTiny = candidate(0.65f, 0.50f, 0.10f);
+        next(zoom, 600L, 3f, 1f, edgeTiny, false);
+        float edgeFirst = next(zoom, 780L, 3f, 1f, edgeTiny, false);
+        require(edgeFirst > 1f && edgeFirst <= 2f, "edge tiny-code step exceeded the 2x bound");
+        ScanGeometry.Candidate edgeAfterFirst = ScanGeometry.reprojectCandidate(
+                edgeTiny, 1f, edgeFirst, 0.5f, 0.5f);
+        require(edgeAfterFirst != null
+                && edgeAfterFirst.x - edgeAfterFirst.size / 2f >= 0f
+                && edgeAfterFirst.x + edgeAfterFirst.size / 2f <= 1f,
+                "first edge zoom clipped the candidate code");
+        next(zoom, 1430L, edgeFirst, edgeFirst, edgeAfterFirst, false);
+        float edgeSecond = next(zoom, 1610L, edgeFirst, edgeFirst, edgeAfterFirst, false);
+        if (!Float.isNaN(edgeSecond)) {
+            ScanGeometry.Candidate edgeAfterSecond = ScanGeometry.reprojectCandidate(
+                    edgeAfterFirst, edgeFirst, edgeSecond, 0.5f, 0.5f);
+            require(edgeAfterSecond != null
+                    && edgeAfterSecond.x - edgeAfterSecond.size / 2f >= 0f
+                    && edgeAfterSecond.x + edgeAfterSecond.size / 2f <= 1f,
+                    "edge zoom step cropped the projected candidate");
+            require(edgeSecond <= edgeFirst * 1.8f,
+                    "edge zoom step exceeded the normal per-step bound");
+        }
 
-        // A >0.06 center drift, >40% size swing, or >1200ms gap breaks stability.
+        // A location jump breaks the pair; two fresh observations at the new location are needed.
         zoom.reset(0L);
-        next(zoom, 2000L, 3f, 1f, small, false);
-        next(zoom, 2500L, 3f, 1f, candidate(0.57f, 0.50f, 0.20f), false);
-        require(Float.isNaN(next(zoom, 3000L, 3f, 1f, candidate(0.57f, 0.50f, 0.20f), false)),
-                "center drift did not reset stable-candidate count");
-        zoom.reset(0L);
-        next(zoom, 2000L, 3f, 1f, candidate(0.50f, 0.50f, 0.15f), false);
-        next(zoom, 2500L, 3f, 1f, candidate(0.50f, 0.50f, 0.23f), false);
-        require(Float.isNaN(next(zoom, 3000L, 3f, 1f, candidate(0.50f, 0.50f, 0.23f), false)),
-                "size swing did not reset stable-candidate count");
-        zoom.reset(0L);
-        next(zoom, 2000L, 3f, 1f, small, false);
-        next(zoom, 3201L, 3f, 1f, small, false);
-        require(Float.isNaN(next(zoom, 3300L, 3f, 1f, small, false)),
-                "candidate gap over 1200ms did not reset stable count");
+        next(zoom, 600L, 3f, 1f, candidate(0.50f, 0.50f, 0.20f), false);
+        require(Float.isNaN(next(zoom, 780L, 3f, 1f, candidate(0.57f, 0.50f, 0.20f), false)),
+                "a shifted candidate inherited old stability");
+        require(!Float.isNaN(next(zoom, 960L, 3f, 1f, candidate(0.57f, 0.50f, 0.20f), false)),
+                "two stable observations after a shift did not restore zoom eligibility");
 
-        // Detection defers zoom; manual mode wins through defer and reset restores automation.
+        // Decode and manual mode still win; reset restores the startup delay and automatic mode.
         zoom.reset(0L);
-        next(zoom, 2000L, 3f, 1f, small, false);
-        next(zoom, 2500L, 3f, 1f, small, false);
-        require(Float.isNaN(next(zoom, 3000L, 3f, 1f, small, true)), "decoded candidate was not deferred");
-        require(Float.isNaN(next(zoom, 4799L, 3f, 1f, small, false)), "decoded pause ended before 1800ms");
-
+        next(zoom, 600L, 3f, 1f, medium, false);
+        require(Float.isNaN(next(zoom, 780L, 3f, 1f, medium, true)), "decoded candidate was not deferred");
         zoom.manual();
         require(zoom.isManual(), "manual mode was not recorded");
-        zoom.defer(5000L);
-        require(zoom.isManual(), "defer incorrectly cleared manual mode");
-        for (long now = 6000L; now <= 10000L; now += 1300L) {
-            require(Float.isNaN(next(zoom, now, 3f, 1f, small, false)), "manual mode was overridden");
+        zoom.defer(1000L);
+        for (long now = 2000L; now <= 4000L; now += 650L) {
+            require(Float.isNaN(next(zoom, now, 3f, 1f, medium, false)), "manual mode was overridden");
         }
-        zoom.reset(20000L);
+        zoom.reset(5000L);
         require(!zoom.isManual(), "reset did not clear manual mode");
-        require(Float.isNaN(next(zoom, 21799L, 3f, 1f, null, false)), "reset did not restore initial delay");
-        require(Float.isNaN(next(zoom, 21800L, 3f, 1f, small, false)), "reset allowed zoom with one candidate");
-        next(zoom, 22300L, 3f, 1f, small, false);
-        float afterReset = next(zoom, 22800L, 3f, 1f, small, false);
-        require(afterReset > 1f && afterReset <= 1.25f, "reset did not restore automatic zoom");
+        require(Float.isNaN(next(zoom, 5599L, 3f, 1f, medium, false)), "reset did not restore startup delay");
+        next(zoom, 5600L, 3f, 1f, medium, false);
+        float afterReset = next(zoom, 5780L, 3f, 1f, medium, false);
+        require(afterReset > 1f && afterReset <= 1.8f, "reset did not restore bounded automatic zoom");
 
-        // Respect hardware maximum and never advance above 3x or currentZoom * 1.25.
+        // Respect the hardware maximum and disable invalid zoom ranges.
         zoom.reset(0L);
-        next(zoom, 2000L, 2.6f, 2.5f, small, false);
-        next(zoom, 2500L, 2.6f, 2.5f, small, false);
-        float bounded = next(zoom, 3000L, 2.6f, 2.5f, small, false);
-        require(bounded > 2.5f && bounded <= 2.6f && bounded <= 3f && bounded <= 2.5f * 1.25f,
+        next(zoom, 600L, 2.6f, 2.5f, medium, false);
+        float bounded = next(zoom, 780L, 2.6f, 2.5f, medium, false);
+        require(bounded > 2.5f && bounded <= 2.6f && bounded <= 3f,
                 "automatic zoom exceeded hardware or 3x bound");
-
         zoom.reset(0L);
         for (float invalid : new float[]{1.05f, Float.NaN, Float.POSITIVE_INFINITY, 0f}) {
-            require(Float.isNaN(next(zoom, 5000L, invalid, 1f, small, false)),
+            require(Float.isNaN(next(zoom, 780L, invalid, 1f, medium, false)),
                     "invalid or low hardware maximum should disable auto zoom");
         }
+    }
+
+    private static void testPreviewPoint() {
+        final float x = 0.2f, y = 0.7f;
+        assertPoint(ScanGeometry.previewPoint(x, y, 0), x, y, "rotation 0");
+        assertPoint(ScanGeometry.previewPoint(x, y, 90), y, 1f - x, "rotation 90");
+        assertPoint(ScanGeometry.previewPoint(x, y, 180), 1f - x, 1f - y, "rotation 180");
+        assertPoint(ScanGeometry.previewPoint(x, y, 270), 1f - y, x, "rotation 270");
+    }
+
+    private static void testPreviewSelection() {
+        int[][] sizes = {
+            {1920, 1080}, {2560, 1440}, {1280, 720}, {1920, 1200},
+            {4096, 1080}, {3840, 2160}, {1920, 2161}, {0, 720}, {-1, 480}, null
+        };
+        int[] selected = ScanGeometry.selectPreview(sizes, 2_500_000);
+        require(selected != null && selected.length == 2, "selectPreview returned no size");
+        require(selected[0] == 1920 && selected[1] == 1200,
+                "selectPreview did not choose the largest valid size under the pixel budget");
+        require(ScanGeometry.selectPreview(sizes, 1_000) == null,
+                "selectPreview selected an over-budget fallback");
+        require(ScanGeometry.selectPreview(null, 2_500_000) == null,
+                "selectPreview accepted a missing size list");
+        int[][] hdModes = {{1920, 1080}, {2560, 1440}, {3840, 2160}, {4096, 1080}, {4000, 2000}};
+        int[] hd = ScanGeometry.selectPreview(hdModes, 8_294_400);
+        require(hd != null && hd[0] == 3840 && hd[1] == 2160,
+                "selectPreview rejected supported 4K within its exact pixel budget");
+        int[] fallback = ScanGeometry.selectPreview(hdModes, 2_073_600);
+        require(fallback != null && fallback[0] == 1920 && fallback[1] == 1080,
+                "selectPreview did not fall back to 1080p under the lower budget");
+    }
+
+    private static void testSampleZoom() {
+        final int width = 12, height = 12, ySize = width * height;
+        byte[] source = new byte[ySize + ySize / 2];
+        for (int i = 0; i < ySize; i++) source[i] = (byte) i;
+        java.util.Arrays.fill(source, ySize, source.length, (byte) 250);
+        byte[] before = source.clone();
+        ScanGeometry.Frame crop = ScanGeometry.sampleZoom(source, width, height, 1.5f, 0f, 1f, 8);
+        assertFramePattern(crop, source, width, 8, 8, 0, 4, "sampleZoom bottom-left visible crop");
+        require(crop.gray != source, "sampleZoom must own an independent output");
+        require(java.util.Arrays.equals(source, before), "sampleZoom mutated its source");
+
+        byte[] flat = new byte[320 * 240];
+        java.util.Arrays.fill(flat, (byte) 90);
+        byte[] flatBefore = flat.clone();
+        ScanGeometry.Frame reduced = ScanGeometry.sampleZoom(flat, 320, 240, 1f, 0.5f, 0.5f, 80);
+        require(reduced.width > 0 && reduced.height > 0 && reduced.width <= 80 && reduced.height <= 80,
+                "sampleZoom exceeded the output edge bound");
+        for (byte pixel : reduced.gray) require((pixel & 255) == 90, "sampleZoom changed uniform downsampled pixels");
+        require(java.util.Arrays.equals(flat, flatBefore), "sampleZoom mutated downsampled source pixels");
+    }
+
+    private static void testCandidateRegion() {
+        final int width = 100, height = 80, span = 26;
+        byte[] source = new byte[width * height];
+        java.util.Arrays.fill(source, (byte) 255);
+        for (int y = 32; y < 48; y++) for (int x = 42; x < 58; x++) source[y * width + x] = 0;
+        byte[] before = source.clone();
+        ScanGeometry.Frame region = ScanGeometry.candidateRegion(source, width, height, 1f, 0.5f, 0.5f,
+                candidate(0.5f, 0.5f, 0.2f), 32);
+        require(region != null && region.width == span && region.height == span,
+                "candidateRegion did not include the requested symmetric padding");
+        assertFramePattern(region, source, width, span, span, 37, 27, "candidateRegion preserved source pixels");
+        require(java.util.Arrays.equals(source, before), "candidateRegion mutated its source");
+
+        byte[] edge = new byte[width * height];
+        java.util.Arrays.fill(edge, (byte) 255); edge[0] = 0;
+        ScanGeometry.Frame corner = ScanGeometry.candidateRegion(edge, width, height, 1f, 0.5f, 0.5f,
+                candidate(0f, 0f, 0.2f), 32);
+        require(corner != null && corner.width > 0 && corner.height > 0
+                && corner.width <= width && corner.height <= height,
+                "candidateRegion produced an invalid top-left clipped ROI");
+        require((corner.gray[0] & 255) == 0, "candidateRegion clipped the visible corner pixel");
+
+        ScanGeometry.Frame reduced = ScanGeometry.candidateRegion(source, width, height, 1f, 0.5f, 0.5f,
+                candidate(0.5f, 0.5f, 0.2f), 12);
+        require(reduced.width > 0 && reduced.height > 0 && reduced.width <= 12 && reduced.height <= 12,
+                "candidateRegion exceeded the downsample edge bound");
+        require(ScanGeometry.candidateRegion(source, width, height, 1f, 0.5f, 0.5f, null, 32) == null,
+                "candidateRegion accepted a missing candidate");
+        require(ScanGeometry.candidateRegion(source, width, height, 1f, 0.5f, 0.5f,
+                candidate(Float.NaN, 0.5f, 0.2f), 32) == null,
+                "candidateRegion accepted an invalid candidate");
+
+        ScanGeometry.Frame hdDetail = centeredDetailCandidate(3840, 2160, 2048);
+        ScanGeometry.Frame fullHdDetail = centeredDetailCandidate(1920, 1080, 2048);
+        require(hdDetail.width == 346 && hdDetail.height == 346
+                && fullHdDetail.width == 173 && fullHdDetail.height == 173,
+                "native candidate ROI dimensions did not scale with source resolution");
+        require(hdDetail.width * 2 == fullHdDetail.width * 4,
+                "4K candidate ROI should retain about twice the linear detail and four times the pixels");
+        for (int y = 0; y < hdDetail.height; y++) for (int x = 0; x < hdDetail.width - 1; x++) {
+            require((hdDetail.gray[y * hdDetail.width + x] & 255)
+                    != (hdDetail.gray[y * hdDetail.width + x + 1] & 255),
+                    "4K native ROI lost original one-pixel detail");
+        }
+    }
+
+    private static void testCandidateBoundsAndSelection() {
+        int width = 100, height = 80;
+        ScanGeometry.Candidate candidate = candidate(0.5f, 0.5f, 0.2f);
+        int[] bounds = ScanGeometry.candidateBounds(width, height, 1f, 0.5f, 0.5f, candidate);
+        require(java.util.Arrays.equals(bounds, new int[]{37, 27, 26, 26}),
+                "candidateBounds did not match candidateRegion sensor ROI");
+        byte[] source = new byte[width * height];
+        java.util.Arrays.fill(source, (byte) 255);
+        ScanGeometry.Frame region = ScanGeometry.candidateRegion(source, width, height, 1f, 0.5f, 0.5f,
+                candidate, 32);
+        require(region != null && region.width == bounds[2] && region.height == bounds[3],
+                "candidateBounds disagreed with candidateRegion dimensions");
+
+        require(ScanGeometry.sameSelectionRegion(null, null), "null/null selection regions should match");
+        int[] original = {100, 200, 100, 100};
+        require(!ScanGeometry.sameSelectionRegion(null, original)
+                && !ScanGeometry.sameSelectionRegion(original, null), "null/non-null selection regions matched");
+        require(ScanGeometry.sameSelectionRegion(original, new int[]{104, 196, 100, 100}),
+                "selection regions within the max(2, side*4%) offset should match");
+        require(!ScanGeometry.sameSelectionRegion(original, new int[]{105, 200, 100, 100}),
+                "selection regions beyond the left offset tolerance matched");
+        require(!ScanGeometry.sameSelectionRegion(original, new int[]{100, 205, 100, 100}),
+                "selection regions beyond the top offset tolerance matched");
+        require(!ScanGeometry.sameSelectionRegion(original, new int[]{100, 200, 101, 100}),
+                "selection regions with different widths matched");
+        require(!ScanGeometry.sameSelectionRegion(original, new int[]{100, 200, 100, 99}),
+                "selection regions with different heights matched");
+
+        require(ScanGeometry.freshSelection(100L, 100L), "same-tick selection should be fresh");
+        require(ScanGeometry.freshSelection(100L, 450L), "350ms selection boundary should be fresh");
+        require(!ScanGeometry.freshSelection(100L, 451L), "351ms selection should be stale");
+        require(!ScanGeometry.freshSelection(101L, 100L), "future selection timestamp should be stale");
+        require(!ScanGeometry.freshSelection(-1L, 100L), "negative capture time should be stale");
+    }
+
+    private static void testReprojectCandidate() {
+        ScanGeometry.Candidate original = candidate(0.55f, 0.45f, 0.10f);
+        ScanGeometry.Candidate zoomed = ScanGeometry.reprojectCandidate(original, 1f, 2f, 0.35f, 0.65f);
+        require(zoomed != null, "reprojectCandidate rejected a valid non-center pivot");
+        assertNear(zoomed.x, 0.75f, 0.0001f, "reprojected x");
+        assertNear(zoomed.y, 0.25f, 0.0001f, "reprojected y");
+        assertNear(zoomed.size, 0.20f, 0.0001f, "reprojected size");
+        ScanGeometry.Candidate restored = ScanGeometry.reprojectCandidate(zoomed, 2f, 1f, 0.35f, 0.65f);
+        require(restored != null, "reprojectCandidate rejected the reverse mapping");
+        assertNear(restored.x, original.x, 0.0001f, "round-trip x");
+        assertNear(restored.y, original.y, 0.0001f, "round-trip y");
+        assertNear(restored.size, original.size, 0.0001f, "round-trip size");
+
+        for (ScanGeometry.Candidate invalid : new ScanGeometry.Candidate[]{null,
+                candidate(Float.NaN, 0.5f, 0.1f), candidate(0.5f, Float.POSITIVE_INFINITY, 0.1f),
+                candidate(-0.01f, 0.5f, 0.1f), candidate(1.01f, 0.5f, 0.1f),
+                candidate(0.5f, 0.5f, 0f)}) {
+            require(ScanGeometry.reprojectCandidate(invalid, 1f, 2f, 0.5f, 0.5f) == null,
+                    "reprojectCandidate accepted an invalid candidate");
+        }
+        for (float[] values : new float[][]{
+                {0f, 2f, 0.5f, 0.5f}, {1f, 0f, 0.5f, 0.5f}, {1f, 3.01f, 0.5f, 0.5f},
+                {Float.NaN, 2f, 0.5f, 0.5f}, {1f, 2f, Float.NaN, 0.5f}, {1f, 2f, 0.5f, 1.01f}}) {
+            require(ScanGeometry.reprojectCandidate(original, values[0], values[1], values[2], values[3]) == null,
+                    "reprojectCandidate accepted an invalid zoom or pivot");
+        }
+
+        // The same native pixels remain under the candidate ROI after zooming around an off-center pivot.
+        final int width = 120, height = 120, ySize = width * height;
+        byte[] nv21 = new byte[ySize + ySize / 2];
+        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+            nv21[y * width + x] = (byte) ((x * 7 + y * 11) & 255);
+        }
+        java.util.Arrays.fill(nv21, ySize, nv21.length, (byte) 128);
+        byte[] originalGray = java.util.Arrays.copyOf(nv21, ySize);
+        ScanGeometry.Frame beforeRegion = ScanGeometry.candidateRegion(originalGray, width, height, 1f, 0.35f, 0.65f,
+                original, 100);
+        ScanGeometry.Frame cropped = ScanGeometry.sampleZoom(nv21, width, height, 2f, 0.35f, 0.65f, 100);
+        require(cropped != null && cropped.width == 60 && cropped.height == 60,
+                "sampleZoom returned unexpected physical dimensions");
+        ScanGeometry.Frame afterRegion = ScanGeometry.candidateRegion(cropped.gray, cropped.width, cropped.height,
+                1f, 0.5f, 0.5f, zoomed, 100);
+        require(beforeRegion != null && afterRegion != null
+                && Math.abs(beforeRegion.width - afterRegion.width) <= 1
+                && Math.abs(beforeRegion.height - afterRegion.height) <= 1,
+                "reprojected native ROI changed physical dimensions");
+        require(samePixelsWithinOnePixel(beforeRegion, afterRegion),
+                "reprojected native ROI moved more than one source pixel");
+    }
+
+    private static boolean samePixelsWithinOnePixel(ScanGeometry.Frame first, ScanGeometry.Frame second) {
+        int minimum = Math.min(first.gray.length, second.gray.length);
+        for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+            boolean same = true;
+            int compared = 0;
+            for (int y = 0; y < first.height && same; y++) for (int x = 0; x < first.width; x++) {
+                int otherX = x + dx, otherY = y + dy;
+                if (otherX < 0 || otherY < 0 || otherX >= second.width || otherY >= second.height) continue;
+                compared++;
+                if (first.gray[y * first.width + x] != second.gray[otherY * second.width + otherX]) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same && compared >= minimum * 0.90) return true;
+        }
+        return false;
+    }
+
+    private static void assertNear(float actual, float expected, float tolerance, String label) {
+        require(Math.abs(actual - expected) <= tolerance, label + " mismatch: " + actual + " != " + expected);
+    }
+
+    private static ScanGeometry.Frame centeredDetailCandidate(int width, int height, int maxEdge) {
+        byte[] source = new byte[width * height];
+        for (int i = 0; i < source.length; i++) source[i] = (byte) ((i % width) % 2 == 0 ? 0 : 255);
+        return ScanGeometry.candidateRegion(source, width, height, 1f, 0.5f, 0.5f,
+                candidate(0.5f, 0.5f, 0.1f), maxEdge);
+    }
+
+    private static byte[] blurBox(byte[] source, int width, int height) {
+        byte[] blurred = new byte[source.length];
+        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+            int sum = 0, count = 0;
+            for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                int sx = x + dx, sy = y + dy;
+                if (sx >= 0 && sx < width && sy >= 0 && sy < height) { sum += source[sy * width + sx] & 255; count++; }
+            }
+            blurred[y * width + x] = (byte) (sum / count);
+        }
+        return blurred;
+    }
+
+    private static void testClarity() {
+        final int width = 80, height = 64;
+        byte[] flat = new byte[width * height];
+        java.util.Arrays.fill(flat, (byte) 100);
+        ScanGeometry.Frame flatFrame = new ScanGeometry.Frame(flat, width, height);
+        require(ScanGeometry.clarity(flatFrame) == 0d, "flat frame clarity must be zero");
+
+        byte[] sharp = new byte[width * height];
+        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+            sharp[y * width + x] = (byte) ((x / 4) % 2 == 0 ? 0 : 255);
+        }
+        byte[] sharpBefore = sharp.clone();
+        byte[] blurred = blurBox(sharp, width, height);
+        double sharpScore = ScanGeometry.clarity(new ScanGeometry.Frame(sharp, width, height));
+        double blurredScore = ScanGeometry.clarity(new ScanGeometry.Frame(blurred, width, height));
+        require(sharpScore >= 0 && blurredScore >= 0, "clarity score must be nonnegative");
+        require(sharpScore > blurredScore, "clarity score did not prefer the sharper pattern");
+        require(java.util.Arrays.equals(sharp, sharpBefore), "clarity mutated its source frame");
+    }
+
+    private static void testSnapshotGate() {
+        ScanGeometry.SnapshotGate gate = new ScanGeometry.SnapshotGate();
+        require(!gate.busy(), "snapshot gate starts busy");
+        require(gate.start(0L), "first snapshot request was not admitted");
+        require(gate.busy(), "snapshot start did not set busy");
+        require(!gate.start(1L), "snapshot gate admitted concurrent work");
+        gate.finish();
+        require(!gate.busy(), "snapshot finish did not clear busy");
+        require(!gate.start(11999L), "snapshot cooldown ended before 12 seconds");
+        require(gate.start(12000L), "snapshot gate did not reopen after cooldown");
+        gate.finish();
+        require(gate.start(24000L), "third snapshot request was not admitted");
+        gate.finish();
+        require(!gate.start(36000L), "snapshot gate exceeded its three-request limit");
+
+        ScanGeometry.SnapshotGate cancelled = new ScanGeometry.SnapshotGate();
+        require(cancelled.start(100L), "cancel test first request was not admitted");
+        cancelled.cancel();
+        require(!cancelled.busy(), "snapshot cancel did not clear busy");
+        require(!cancelled.start(101L), "cancel bypassed the cooldown");
+        require(cancelled.start(12100L), "cancel reset the cooldown timestamp unexpectedly");
+        cancelled.finish();
+        require(cancelled.start(24100L), "cancelled request was not counted toward the request cap");
+        cancelled.cancel();
+        require(!cancelled.start(36100L), "cancel reset the per-instance request count");
+    }
+
+    private static void assertPoint(float[] point, float expectedX, float expectedY, String label) {
+        require(point != null && point.length == 2, label + " returned no normalized point");
+        require(Math.abs(point[0] - expectedX) < 0.0001f && Math.abs(point[1] - expectedY) < 0.0001f,
+                label + " mapping mismatch: " + point[0] + "," + point[1]);
     }
 
     private static void testRetryAndWarps() {
@@ -302,6 +651,68 @@ public final class GeometryHarness {
         }
     }
 
+    private static void testCenterDetail() {
+        final int width = 800, height = 600;
+        byte[] flat = new byte[width * height];
+        java.util.Arrays.fill(flat, (byte) 127);
+        byte[] flatBefore = flat.clone();
+        for (boolean sharpen : new boolean[]{false, true}) {
+            ScanGeometry.Frame frame = ScanGeometry.centerDetail(flat, width, height, sharpen);
+            int expected = Math.min(1280, 2 * Math.min(640, (int) Math.floor(Math.min(width, height) * 0.65)));
+            require(frame != null && frame.gray != null, "centerDetail returned no frame");
+            require(frame.width == expected && frame.height == expected,
+                    "centerDetail dimensions mismatch: " + frame.width + "x" + frame.height);
+            require(frame.width <= 1280 && frame.height <= 1280, "centerDetail exceeded 1280px bound");
+            for (byte pixel : frame.gray) require((pixel & 255) == 127,
+                    "centerDetail changed a flat image with sharpen=" + sharpen);
+        }
+        require(java.util.Arrays.equals(flat, flatBefore), "centerDetail mutated flat source pixels");
+
+        ScanGeometry.Frame maximum = ScanGeometry.centerDetail(new byte[1920 * 1080], 1920, 1080, false);
+        require(maximum.width == 1280 && maximum.height == 1280,
+                "centerDetail did not cap double-size output at 1280px");
+
+        byte[] patterned = flat.clone();
+        patterned[(height / 2) * width + width / 2] = 0;
+        byte[] sourceBefore = patterned.clone();
+        ScanGeometry.Frame bounded = ScanGeometry.centerDetail(patterned, width, height, false);
+        require((bounded.gray[bounded.height / 2 * bounded.width + bounded.width / 2] & 255) == 0,
+                "centerDetail did not preserve the centered source detail");
+        require(java.util.Arrays.equals(patterned, sourceBefore), "centerDetail mutated source pixels");
+
+        byte[] offCenter = flat.clone();
+        offCenter[150 * width + 600] = 0;
+        byte[] offCenterBefore = offCenter.clone();
+        ScanGeometry.Frame shifted = ScanGeometry.centerDetail(offCenter, width, height, false, 0.75f, 0.25f);
+        require(shifted.width == 780 && shifted.height == 780, "off-center detail dimensions changed");
+        require((shifted.gray[300 * shifted.width + 390] & 255) == 0,
+                "centerDetail did not center on the requested normalized point");
+        require(java.util.Arrays.equals(offCenter, offCenterBefore), "off-center detail mutated source pixels");
+
+        byte[] corner = flat.clone();
+        corner[0] = 0;
+        ScanGeometry.Frame clampedCorner = ScanGeometry.centerDetail(corner, width, height, false, 0f, 0f);
+        require((clampedCorner.gray[0] & 255) == 0, "centerDetail did not clamp the crop at the top-left bounds");
+        corner[height * width - 1] = 0;
+        ScanGeometry.Frame clampedBottomRight = ScanGeometry.centerDetail(corner, width, height, false, 1f, 1f);
+        require((clampedBottomRight.gray[(clampedBottomRight.height - 1) * clampedBottomRight.width
+                + clampedBottomRight.width - 1] & 255) == 0,
+                "centerDetail did not clamp the crop at the bottom-right bounds");
+
+        boolean nullRejected = false;
+        try { ScanGeometry.centerDetail(null, width, height, false); }
+        catch (IllegalArgumentException expected) { nullRejected = true; }
+        require(nullRejected, "centerDetail accepted a null image");
+        boolean shortBufferRejected = false;
+        try { ScanGeometry.centerDetail(new byte[width * height - 1], width, height, false); }
+        catch (IllegalArgumentException expected) { shortBufferRejected = true; }
+        require(shortBufferRejected, "centerDetail accepted a short image buffer");
+        boolean badDimensionsRejected = false;
+        try { ScanGeometry.centerDetail(new byte[1], 0, 1, false); }
+        catch (IllegalArgumentException expected) { badDimensionsRejected = true; }
+        require(badDimensionsRejected, "centerDetail accepted non-positive dimensions");
+    }
+
     private static void testCropZoom() {
         final int width = 12, height = 12, ySize = width * height;
         byte[] nv21 = new byte[ySize + ySize / 2];
@@ -325,6 +736,19 @@ public final class GeometryHarness {
         ScanGeometry.Frame chromaB = ScanGeometry.cropZoom(differentChroma, width, height, 1.5f);
         require(java.util.Arrays.equals(chromaA.gray, chromaB.gray), "NV21 chroma bytes affected luminance crop");
 
+        ScanGeometry.Frame topLeft = ScanGeometry.cropZoom(nv21, width, height, 1.5f, 0f, 0f);
+        assertFramePattern(topLeft, nv21, width, 8, 8, 0, 0, "top-left pivot");
+        ScanGeometry.Frame bottomRight = ScanGeometry.cropZoom(nv21, width, height, 1.5f, 1f, 1f);
+        assertFramePattern(bottomRight, nv21, width, 8, 8, 4, 4, "bottom-right pivot");
+        ScanGeometry.Frame centered = ScanGeometry.cropZoom(nv21, width, height, 1.5f, 0.5f, 0.5f);
+        require(java.util.Arrays.equals(centered.gray, chromaA.gray), "explicit center pivot changed default crop");
+
+        final int oddWidth = 13, oddHeight = 11;
+        byte[] odd = new byte[oddWidth * oddHeight];
+        for (int i = 0; i < odd.length; i++) odd[i] = (byte) i;
+        ScanGeometry.Frame oddPivot = ScanGeometry.cropZoom(odd, oddWidth, oddHeight, 2f, 0.5f, 0.5f);
+        assertFramePattern(oddPivot, odd, oddWidth, 6, 5, 3, 3, "floor odd-size center pivot");
+
         for (float invalid : new float[]{Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY, 0.99f, 3.01f}) {
             boolean rejected = false;
             try { ScanGeometry.cropZoom(nv21, width, height, invalid); }
@@ -335,6 +759,25 @@ public final class GeometryHarness {
         try { ScanGeometry.cropZoom(java.util.Arrays.copyOf(nv21, ySize - 1), width, height, 1.5f); }
         catch (IllegalArgumentException expected) { shortBuffer = true; }
         require(shortBuffer, "short luminance buffer was accepted");
+
+        for (float[] invalidPivot : new float[][]{
+                {Float.NaN, 0.5f}, {0.5f, Float.POSITIVE_INFINITY},
+                {-0.01f, 0.5f}, {0.5f, 1.01f}}) {
+            boolean rejected = false;
+            try { ScanGeometry.cropZoom(nv21, width, height, 1.5f, invalidPivot[0], invalidPivot[1]); }
+            catch (IllegalArgumentException expected) { rejected = true; }
+            require(rejected, "invalid crop pivot was accepted: " + invalidPivot[0] + "," + invalidPivot[1]);
+        }
+    }
+
+    private static void assertFramePattern(ScanGeometry.Frame frame, byte[] source, int sourceWidth,
+                                           int width, int height, int left, int top, String label) {
+        require(frame.width == width && frame.height == height, label + " dimensions mismatch");
+        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+            int expected = (top + y) * sourceWidth + left + x;
+            require((frame.gray[y * width + x] & 255) == (source[expected] & 255),
+                    label + " pixel mismatch at " + x + "," + y);
+        }
     }
 
     private static void assertCropPattern(byte[] source, int width, int height, float zoom,
@@ -361,13 +804,23 @@ public final class GeometryHarness {
             writeWarp(args[1], args[2], Integer.parseInt(args[3]), Integer.parseInt(args[4]));
             return;
         }
+        testLighting();
         testCameraScore();
         testPreviewFit();
+        testPreviewPoint();
+        testPreviewSelection();
         testFocusArea();
         testAutoZoom();
         testCropZoom();
+        testSampleZoom();
+        testCandidateRegion();
+        testCandidateBoundsAndSelection();
+        testReprojectCandidate();
+        testClarity();
+        testSnapshotGate();
         testRetryAndWarps();
-        System.out.println("GEOMETRY_OK cameraScore fitPreview focusArea AutoZoom cropZoom RETRY_COUNT=12 warpCandidates=12");
+        testCenterDetail();
+        System.out.println("GEOMETRY_OK cameraScore fitPreview previewPoint selectPreview focusArea AutoZoom cropZoom sampleZoom candidateRegion candidateBounds sameSelectionRegion freshSelection reprojectCandidate clarity SnapshotGate centerDetail RETRY_COUNT=12 warpCandidates=12");
     }
 }
 '''
@@ -419,9 +872,9 @@ def compile_harness() -> tuple[str, str]:
 
 def run_geometry(java: str) -> None:
     output = run_checked([java, "-cp", str(CLASSES), "ftx.qbar.GeometryHarness"], timeout=30)
-    if "GEOMETRY_OK cameraScore fitPreview focusArea AutoZoom cropZoom RETRY_COUNT=12 warpCandidates=12" not in output:
+    if "GEOMETRY_OK cameraScore fitPreview previewPoint selectPreview focusArea AutoZoom cropZoom sampleZoom candidateRegion candidateBounds sameSelectionRegion freshSelection reprojectCandidate clarity SnapshotGate centerDetail RETRY_COUNT=12 warpCandidates=12" not in output:
         raise GeometryError("geometry harness did not report success")
-    print("PASS Java geometry: cameraScore, portrait fit, focusArea rotation/clamping, AutoZoom policy, cropZoom, 12 bounded warps")
+    print("PASS Java geometry: preview selection/sampling, candidate ROI/bounds, selection freshness, clarity, SnapshotGate, cameraScore, AutoZoom and 12 bounded warps")
     run_detection_tests(java)
 
 
@@ -477,11 +930,96 @@ def run_detection_tests(java: str) -> None:
         raise GeometryError(f"small QR candidate geometry out of range: x={x:.3f} y={y:.3f} size={size:.3f}")
     print(f"PASS candidate QR x={x:.3f} y={y:.3f} size={size:.3f}")
 
+    # Camera-sized, genuinely small codes should still yield candidates inside AutoZoom's size gate.
+    small_qr = qr_image("autozoom-probe", 48)
+    for name, edge, blur in (("camera-qr-48", 48, 0), ("camera-qr-60", 60, 0),
+                             ("camera-qr-60-blur07", 60, 0.7)):
+        camera = np.full((1080, 1920), 255, dtype=np.uint8)
+        left, top = (1920 - edge) // 2, (1080 - edge) // 2
+        code = small_qr if edge == 48 else qr_image("autozoom-probe", edge)
+        camera[top:top + edge, left:left + edge] = code
+        if blur:
+            camera = cv2.GaussianBlur(camera, (3, 3), blur)
+        candidate = detect_candidate(java, save(name, camera))
+        if candidate is None:
+            raise GeometryError(f"{name} did not produce an AutoZoom candidate")
+        x, y, size = candidate
+        if not (0.45 <= x <= 0.55 and 0.45 <= y <= 0.55 and 0.025 <= size < 0.04):
+            raise GeometryError(f"{name} outside the small-code AutoZoom gate: x={x:.3f} y={y:.3f} size={size:.3f}")
+        print(f"PASS {name} AutoZoom candidate x={x:.3f} y={y:.3f} size={size:.3f}")
+
     if not SAMPLE.is_file():
         raise GeometryError("existing round-code sample is missing")
     round_image = cv2.imdecode(np.frombuffer(SAMPLE.read_bytes(), dtype=np.uint8), cv2.IMREAD_COLOR)
     if round_image is None:
         raise GeometryError("could not read existing round-code sample")
+
+    def camera_round(edge: int, center_x: float = 0.5, blur: float = 0,
+                     angle: float = 0, perspective: bool = False, low_contrast: bool = False):
+        frame_width, frame_height = 1920, 1080
+        source_height, source_width = round_image.shape[:2]
+        scale = edge / max(source_width, source_height)
+        code = cv2.resize(round_image, (max(1, round(source_width * scale)),
+                                       max(1, round(source_height * scale))), interpolation=cv2.INTER_AREA)
+        code_height, code_width = code.shape[:2]
+        if angle:
+            radians = math.radians(angle)
+            rotated_width = math.ceil(abs(code_width * math.cos(radians)) + abs(code_height * math.sin(radians)))
+            rotated_height = math.ceil(abs(code_height * math.cos(radians)) + abs(code_width * math.sin(radians)))
+            matrix = cv2.getRotationMatrix2D((code_width / 2, code_height / 2), angle, 1)
+            matrix[0, 2] += (rotated_width - code_width) / 2
+            matrix[1, 2] += (rotated_height - code_height) / 2
+            code = cv2.warpAffine(code, matrix, (rotated_width, rotated_height), flags=cv2.INTER_LINEAR,
+                                  borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255))
+        if perspective:
+            source = np.float32([[0, 0], [code_width - 1, 0], [code_width - 1, code_height - 1], [0, code_height - 1]])
+            target = np.float32([[0.05 * code_width, 0.02 * code_height],
+                                 [0.96 * code_width, 0.07 * code_height],
+                                 [0.98 * code_width, 0.96 * code_height],
+                                 [0.02 * code_width, 0.92 * code_height]])
+            code = cv2.warpPerspective(code, cv2.getPerspectiveTransform(source, target),
+                                       (code_width, code_height), flags=cv2.INTER_LINEAR,
+                                       borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255))
+        code_height, code_width = code.shape[:2]
+        left = round(center_x * frame_width - code_width / 2)
+        top = round(frame_height / 2 - code_height / 2)
+        frame = np.full((frame_height, frame_width, 3), 255, dtype=np.uint8)
+        frame[top:top + code_height, left:left + code_width] = code
+        if blur:
+            frame = cv2.GaussianBlur(frame, (3, 3), blur)
+        return cv2.convertScaleAbs(frame, alpha=0.55, beta=100) if low_contrast else frame
+
+    # Recover real round-code crops that are offset or mildly blurred, then confirm
+    # their mapped full-frame centers and sizes remain AutoZoom eligible.
+    for name, edge, center_x, blur in (
+            ("camera-round-240-x40", 240, 0.40, 0),
+            ("camera-round-240-x60", 240, 0.60, 0),
+            ("camera-round-180-blur07", 180, 0.50, 0.7),
+            ("camera-round-160-blur07", 160, 0.50, 0.7),
+            ("camera-round-160-x35-blur07", 160, 0.35, 0.7),
+            ("camera-round-160-x65-blur07", 160, 0.65, 0.7),
+            ("camera-round-120-blur07", 120, 0.50, 0.7)):
+        candidate = detect_candidate(java, save(name, camera_round(edge, center_x, blur)))
+        if candidate is None:
+            raise GeometryError(f"{name} did not produce an AutoZoom candidate")
+        x, y, size = candidate
+        if not (abs(x - center_x) <= 0.03 and abs(y - 0.5) <= 0.03 and 0.025 <= size < 0.28):
+            raise GeometryError(f"{name} mapped outside the AutoZoom gate: x={x:.3f} y={y:.3f} size={size:.3f}")
+        print(f"PASS {name} AutoZoom candidate x={x:.3f} y={y:.3f} size={size:.3f}")
+
+    for name, options in (
+            ("camera-round-120-rot15", {"edge": 120, "angle": 15}),
+            ("camera-round-120-low-contrast", {"edge": 120, "low_contrast": True}),
+            ("camera-round-160-rot15", {"edge": 160, "angle": 15}),
+            ("camera-round-160-perspective", {"edge": 160, "perspective": True})):
+        candidate = detect_candidate(java, save(name, camera_round(**options)))
+        if candidate is None:
+            raise GeometryError(f"{name} did not produce an AutoZoom candidate")
+        x, y, size = candidate
+        if not (0.46 <= x <= 0.54 and 0.46 <= y <= 0.54 and 0.025 <= size < 0.36):
+            raise GeometryError(f"{name} outside the AutoZoom gate: x={x:.3f} y={y:.3f} size={size:.3f}")
+        print(f"PASS {name} AutoZoom candidate x={x:.3f} y={y:.3f} size={size:.3f}")
+
     canvas_size = 512
     h, w = round_image.shape[:2]
     scale = 0.24 * canvas_size / max(h, w)
@@ -512,6 +1050,30 @@ def run_detection_tests(java: str) -> None:
             frame[top:top + code.shape[0], left:left + code.shape[1]] = code
         return frame
 
+    rotation_hits = 0
+    rotation_misses = 0
+    for edge in (120, 160, 240):
+        for angle in (-75, -45, -30, -15, 15, 30, 45, 75):
+            blur = (0.5 if edge == 120 and abs(angle) == 15 else
+                    0.7 if edge == 160 and abs(angle) == 30 else
+                    0.5 if edge == 240 and abs(angle) == 45 else 0)
+            center_x = (0.40 if edge == 160 and angle == 30 else
+                        0.60 if edge == 240 and angle == -45 else 0.50)
+            name = f"camera-round-{edge}-rot{angle:+d}"
+            candidate = detect_candidate(java, save(name, camera_round(edge, center_x, blur, angle)))
+            projected_edge = edge * (abs(math.cos(math.radians(angle))) + abs(math.sin(math.radians(angle))))
+            plausible = candidate is not None and abs(candidate[0] - center_x) <= 0.05 \
+                and abs(candidate[1] - 0.5) <= 0.05 \
+                and edge / 1080 * 0.4 <= candidate[2] <= projected_edge / 1080 * 1.7
+            if plausible:
+                rotation_hits += 1
+                print(f"ROTATION {name} HIT x={candidate[0]:.3f} y={candidate[1]:.3f} size={candidate[2]:.3f}")
+            else:
+                rotation_misses += 1
+                detail = "none" if candidate is None else f"candidate x={candidate[0]:.3f} y={candidate[1]:.3f} size={candidate[2]:.3f}"
+                print(f"ROTATION {name} MISS {detail}")
+    print(f"ROTATION_SUMMARY hit={rotation_hits} miss={rotation_misses} total={rotation_hits + rotation_misses}")
+
     for width, height in ((1280, 720), (1920, 1080)):
         for ratio in (0.16, 0.24):
             frame = round_code_frame(width, height, ratio)
@@ -531,6 +1093,32 @@ def run_detection_tests(java: str) -> None:
         if detect_candidate(java, save(f"roundcode-pair-{width}x{height}", pair)) is not None:
             raise GeometryError(f"high-resolution centered double-code frame was auto-selected at {width}x{height}")
     print("PASS round-code candidate geometry at 16%/24% in 1280x720 and 1920x1080; high-resolution blank and double-code frames rejected")
+
+    pair = round_code_frame(1920, 1080, 0.16, copies=2)
+    for angle in (15, 45):
+        matrix = cv2.getRotationMatrix2D((960, 540), angle, 1)
+        rotated_pair = cv2.warpAffine(pair, matrix, (1920, 1080), flags=cv2.INTER_LINEAR,
+                                      borderMode=cv2.BORDER_CONSTANT, borderValue=(128, 128, 128))
+        if detect_candidate(java, save(f"roundcode-pair-1920-rot{angle}", rotated_pair)) is not None:
+            raise GeometryError(f"rotated double round-code frame was auto-selected at angle={angle}")
+        print(f"PASS rotated double round-code rejected angle={angle}")
+
+    different_rings = np.full((1080, 1920, 3), 255, dtype=np.uint8)
+    for (cx, cy), diameter in zip(((700, 300), (900, 300), (700, 500)), (24, 42, 64)):
+        radius = diameter // 2
+        outer = max(2, round(diameter * 0.15))
+        white = max(3, round(diameter * 0.21))
+        cv2.circle(different_rings, (cx, cy), radius, (0, 0, 0), -1, cv2.LINE_AA)
+        cv2.circle(different_rings, (cx, cy), max(1, radius - outer), (255, 255, 255), -1, cv2.LINE_AA)
+        cv2.circle(different_rings, (cx, cy), max(1, radius - outer - white), (0, 0, 0), -1, cv2.LINE_AA)
+    if detect_candidate(java, save("negative-different-size-rings", different_rings)) is not None:
+        raise GeometryError("different-size concentric ring markers produced a candidate")
+    print("PASS different-size concentric ring markers rejected")
+
+    random_noise = np.random.default_rng(20261029).integers(0, 256, (720, 1280), dtype=np.uint8)
+    if detect_candidate(java, save("negative-random-noise", random_noise)) is not None:
+        raise GeometryError("random noise produced a candidate")
+    print("PASS random noise rejected")
 
     blank = np.full((320, 320), 255, dtype=np.uint8)
     stripes = np.full((320, 320), 255, dtype=np.uint8)

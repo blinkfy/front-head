@@ -28,7 +28,8 @@
       <view class="form-container">
         <view class="input-group">
           <text class="input-label">用户名</text>
-          <input class="form-input" v-model="username" placeholder="请输入用户名" />
+          <input class="form-input" :value="username" :placeholder="profileLoading ? '正在加载账号…' : '当前登录账号'" disabled />
+          <text v-if="profileError" class="profile-retry" @click="loadUsername">用户名加载失败，点击重试</text>
         </view>
 
         <view class="input-group">
@@ -47,8 +48,8 @@
           <input class="form-input" v-model="confirmPassword" type="password" placeholder="请再次输入新密码" />
         </view>
 
-        <button class="submit-btn" @click="onChangePassword">
-          <text class="btn-text">确认修改</text>
+        <button class="submit-btn" @click="onChangePassword" :disabled="profileLoading || profileError || submitting">
+          <text class="btn-text">{{ submitting ? '正在修改…' : '确认修改' }}</text>
           <view class="btn-glow"></view>
         </button>
       </view>
@@ -58,9 +59,13 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { changePassword } from '@/api/user'
+import { changePassword, getUserProfile } from '@/api/user'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { evaluatePassword } from '@/utils/password-strength.mjs'
 const username = ref('')
+const profileError = ref(false)
+const profileLoading = ref(true)
+const submitting = ref(false)
 const password = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
@@ -92,7 +97,26 @@ function goBack() {
     }
 }
 
-function onChangePassword() {
+async function loadUsername() {
+  profileLoading.value = true
+  profileError.value = false
+  try {
+    const res = await getUserProfile()
+    const profileUsername = res && res.data && res.data.username
+    if (res.code !== 0 || !profileUsername) throw new Error('missing username')
+    username.value = profileUsername
+  } catch (_) {
+    username.value = ''
+    profileError.value = true
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+onMounted(loadUsername)
+
+async function onChangePassword() {
+  if (profileLoading.value || profileError.value || !username.value || submitting.value) return
   if (!username.value || !password.value || !newPassword.value || !confirmPassword.value) {
     uni.showToast({ title: '请填写完整信息', icon: 'none' }, 1500)
     return
@@ -102,26 +126,21 @@ function onChangePassword() {
     return
   }
   // 密码强度校验
-  if (newPassword.value.length < 6) {
-    uni.showToast({ title: '密码长度至少6位', icon: 'none' }, 1500)
-    return
-  }
-  let complexity = 0;
-  if (/[a-z]/.test(newPassword.value)) complexity++;
-  if (/[A-Z]/.test(newPassword.value)) complexity++;
-  if (/[0-9]/.test(newPassword.value)) complexity++;
-  if (/[^A-Za-z0-9]/.test(newPassword.value)) complexity++;
-  if (complexity < 2) {
-    uni.showToast({ title: '密码需包含大小写字母、数字、特殊字符中至少两种', icon: 'none' }, 1500)
-    return
-  }
-  changePassword({
+  const pwdCheck = evaluatePassword(newPassword.value, {
     username: username.value,
-    password: password.value,
-    new_password: newPassword.value
-  }).then(res => {
-    //const data = res.data || res[1]?.data
-    console.log('修改密码响应:', res)
+    oldPassword: password.value
+  })
+  if (!pwdCheck.valid) {
+    uni.showToast({ title: pwdCheck.message, icon: 'none' }, 1500)
+    return
+  }
+  submitting.value = true
+  try {
+    const res = await changePassword({
+      username: username.value,
+      password: password.value,
+      new_password: newPassword.value
+    })
     if (res && res.code === 0) {
       uni.showToast({ title: res.msg, icon: 'success' }, 1500)
       setTimeout(() => {
@@ -130,10 +149,11 @@ function onChangePassword() {
     } else {
       uni.showToast({ title: res.msg || '修改失败', icon: 'none' },1500)
     }
-  }).catch(err => {
-    console.error('修改密码错误:', err)
+  } catch (err) {
     uni.showToast({ title: err.msg ||'网络错误，请稍后重试', icon: 'none' },1500)
-  })
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -506,5 +526,12 @@ function onChangePassword() {
 
 .submit-btn:active .btn-glow {
   left: 100%;
+}
+
+.profile-retry {
+  margin-top: 12rpx;
+  color: #059669;
+  font-size: 24rpx;
+  text-decoration: underline;
 }
 </style>\r\n

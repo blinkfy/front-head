@@ -178,8 +178,12 @@ const incidentStageLabel = computed(() => ({
 /* #ifdef MP-WEIXIN */
 .inspector { min-height: auto; height: auto; overflow: visible; }
 .tasks-section { overflow: visible; }
-.data-row { flex-wrap: wrap; gap: 4px 10px; }
-.data-row .mpwx-text { flex: 0 0 auto; }
-.data-row .b-text { flex: 1; text-align: left; }
+.data-row { flex-wrap: nowrap; justify-content: space-between; align-items: center; gap: 10px; padding: 3px 0; box-sizing: border-box; border-bottom: 1px solid rgba(116,197,255,.07); }
+.data-row:last-child { border-bottom: 0; }
+.data-row .mpwx-text { display: block; flex: 0 0 auto; white-space: nowrap; }
+.data-row .b-text { display: block; flex: 1 1 0; min-width: 0; text-align: right; white-space: normal; word-break: break-all; }
+.data-row.multiline { align-items: flex-start; }
+.data-row.multiline .b-text { flex: 0 1 auto; max-width: 68%; margin-left: auto; }
+.task-row .mpwx-text { white-space: normal; }
 /* #endif */
 </style>

@@ -1,4 +1,0 @@
-Built-in imagegen generated artwork, 2026-10-24.
-Prompt: A transparent wide sculptural ribbon in matte sage-green recycled paper pulp with fine fibers and flecks. A large arch at the far left, a low gentle bottom sweep and a smaller folded arc at the far right; leave the central 65 percent empty for three real app screenshots rendered in HTML. Soft realistic studio daylight; no text, phones, UI, people, mascots, icons or leaves.
-Source: exec-90686d5c-fc6c-402d-84cf-557f732e76c9.png
-Web assets: public/official/art/showcase-paper.webp (1600x1067) and showcase-paper-small.webp (800x533).

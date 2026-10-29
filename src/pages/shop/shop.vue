@@ -87,7 +87,12 @@
           <text class="recommend-loading-text">AI 正在生成推荐，请稍候...</text>
         </view>
         
-        <view class="products-grid">
+        <view v-if="productsLoading" class="shop-catalog-state">正在加载商品...</view>
+        <view v-else-if="productsError" class="shop-catalog-state">
+          <text>{{ productsError }}</text><button class="shop-catalog-retry" @click="loadProducts">重新加载</button>
+        </view>
+        <view v-else-if="!filteredProducts.length" class="shop-catalog-state">暂无该分类商品</view>
+        <view v-else class="products-grid">
           <view 
             v-for="product in filteredProducts" 
             :key="product.id"
@@ -159,27 +164,11 @@
             @click="exchangeProduct"
           >
             <ManifestIcon id="redeem_gift" class="btn-icon" />
-            <text class="btn-text">{{ userPoints >= selectedProduct.points ? (selectedProduct.stock > 0 ? '立即兑换' : '库存不足') : '积分不足' }}</text>
+            <text class="btn-text">{{ exchangeLabel }}</text>
           </view>
         </view>
       </view>
     </view>
-
-    <!-- 兑换成功弹窗 -->
-    <view v-if="showSuccessModal" class="modal-overlay" @click="closeSuccessModal">
-      <view class="success-modal" @click.stop="">
-        <view class="success-icon-wrapper">
-          <ManifestIcon id="reward_gift" class="success-icon" />
-        </view>
-        <text class="success-title">兑换成功！</text>
-        <text class="success-desc">{{ exchangedProduct.name }} 已添加到您的奖品库</text>
-        <view class="success-btn" @click="closeSuccessModal">
-          <text>查看我的奖品</text>
-        </view>
-      </view>
-    </view>
-
-    <AchievementUnlockModal :visible="showAchievementModal" :items="achievementModalItems" @close="closeAchievementModal" />
 
     <!-- 底部导航栏-->
     <view class="tabbar">
@@ -204,13 +193,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { userinfo } from '@/api/user'
-import { createPurchaseRecord, fetchShopRecommendations } from '@/api/shop'
-import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
-import { playUiSound } from '@/utils/ui-sounds.js'
+import { fetchShopProducts, fetchShopRecommendations } from '@/api/shop'
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import { updatePointerCssVariables } from '@/utils/pointer-position.mjs'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 import {
@@ -227,12 +214,8 @@ const userPoints = ref(0)
 const loading = ref(false)
 const currentCategory = ref(0)
 const showDetailModal = ref(false)
-const showSuccessModal = ref(false)
-const showAchievementModal = ref(false)
-const achievementModalItems = ref([])
 const exchangeSubmitting = ref(false)
 const selectedProduct = ref({})
-const exchangedProduct = ref({})
 const recommendLoading = ref(false)
 const recommendReady = ref(false)
 const recommendSource = ref('rule-dom')
@@ -255,138 +238,31 @@ const categories = ref([
   { name: '美食券', icon: 'food_coupon', type: 'category', categoryId: 5 }
 ])
 
-const products = ref([
-  {
-    id: 1,
-    name: '环保购物袋',
-    description: '重复利用环保袋，减少塑料污染',
-    image: 'https://image.made-in-china.com/226f3j00UTjleWhIhYoJ/Landscape-Recycle-Shopping-Bag.jpg',
-    points: 50,
-    stock: 10,
-    category: 1,
-    hot: true,
-    features: '防水耐用，可折叠收纳，承重20kg'
-  },
-  {
-    id: 2,
-    name: '竹制餐具套装',
-    description: '天然竹制，环保健康的餐具套装',
-    image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2F2019%2F410%2F976%2F12755679014_1810685200.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634083&t=513c5b5d5a41f80b92a119763c25a5b5',
-    points: 120,
-    stock: 2,
-    category: 1,
-    features: '天然抗菌，轻便易携带，包含筷勺叉'
-  },
-  {
-    id: 3,
-    name: '太阳能充电宝',
-    description: '绿色能源，随时随地为设备充电',
-    image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN01IxpKK61cUg42XsnKB_%21%216000000003604-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634273&t=d300edc54451f9aa092378e6bbd8dc02',
-    points: 300,
-    stock: 1,
-    category: 1,
-    limited: true,
-    features: '10000mAh容量，IP65防水，双USB输出'
-  },
-  {
-    id: 4,
-    name: '无线蓝牙耳机',
-    description: '高品质音效，佩戴舒适',
-    image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN01ARkqoe1lp8bxmr56x_%21%212207796144867-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1772604226&t=71875439063552b8fc4046a5bd82cece',
-    points: 200,
-    stock: 1,
-    category: 2,
-    limited: true,
-    features: '降噪功能，续航8小时，快速充电'
-  },
-  {
-    id: 5,
-    name: '手机支架',
-    description: '多角度调节，稳固不倒',
-    image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fimg.alicdn.com%2Fimgextra%2Fi3%2F91569647%2FO1CN01OquyGx2L8Nq5vUJJV_%21%2191569647.jpg&refer=http%3A%2F%2Fimg.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634468&t=daac5fec3acce16483095a3ffd96d104',
-    points: 80,
-    stock: 2,
-    category: 2,
-    hot: true,
-    features: '铝合金材质，兼容4-10寸设备，可折叠'
-  },
-  {
-    id: 6,
-    name: '无线充电器',
-    description: '快充技术，告别线材束缚',
-    image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN014SwRCT1pepuKwekC3_%21%213686345386-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634522&t=5a627de7988d9f0c7e4eb95fd06fe510',
-    points: 150,
-    stock: 1,
-    category: 2,
-    features: '15W快充，智能识别，过热保护'
-  },
-  {
-    id: 7,
-    name: '保温水杯',
-    description: '316不锈钢，24小时保温',
-    image: 'https://static.airchina.com.cn/upload/t/ZmcLYCAzi6SjZv_Ye4NMk7k57SI=/670x670/img/store/296/1710832561739.jpg',
-    points: 100,
-    stock: 1,
-    category: 3,
-    features: '500ml容量，防漏设计，易清洗'
-  },
-  {
-    id: 8,
-    name: '香薰加湿器',
-    description: '净化空气，舒缓心情',
-    image: 'https://aimg8.dlssyht.cn/u/2061934/ueditor/image/1031/2061934/1736233837447324.jpg',
-    points: 180,
-    stock: 1,
-    category: 3,
-    limited: true,
-    features: '超声波技术，7色氛围灯，定时功能'
-  },
-  {
-    id: 9,
-    name: '多功能笔记本',
-    description: '高质量纸张，多种规格可选',
-    image: 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fcbu01.alicdn.com%2Fimg%2Fibank%2FO1CN01GmVcgy1udzaV88fGu_%21%212211693156061-0-cib.jpg&refer=http%3A%2F%2Fcbu01.alicdn.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=auto?sec=1760634668&t=de5741858f3adee222381a7c22ee5bc8',
-    points: 30,
-    stock: 5,
-    category: 4,
-    features: 'A5尺寸，80页，方格/横线可选'
-  },
-  {
-    id: 10,
-    name: '护眼台灯',
-    description: 'LED护眼，智能调光',
-    image: 'https://img0.baidu.com/it/u=2083889578,895933530&fm=253&fmt=auto&app=138&f=JPEG?w=825&h=500',
-    points: 250,
-    stock: 1,
-    category: 4,
-    limited: true,
-    features: '无频闪，色温调节，触控开关'
-  },
-  {
-    id: 11,
-    name: '星巴克咖啡券',
-    description: '任意饮品通用券，有效期1个月',
-    image: 'https://p6.itc.cn/q_70/images01/20210903/15249c7e53fb43d1bff2f80175dac604.jpeg',
-    points: 80,
-    stock: 5,
-    category: 5,
-    hot: true,
-    features: '全国门店通用，可叠加使用'
-  },
-  {
-    id: 12,
-    name: '肯德基套餐券',
-    description: '指定套餐优惠券，美味不停',
-    image: 'https://p6.itc.cn/q_70/images03/20211204/92f834b2ea8a4cb7b9bb993602b42279.jpeg',
-    points: 120,
-    stock: 0,
-    category: 5,
-    features: '多种套餐可选，部分门店适用'
-  }
-])
+const products = ref([])
+const productsLoading = ref(false)
+const productsError = ref('')
 
-onMounted(async () => {
-  await fetchUserPoints()
+const loadProducts = async () => {
+  if (productsLoading.value || pageDisposed) return
+  productsLoading.value = true
+  productsError.value = ''
+  try {
+    const response = await fetchShopProducts()
+    const list = Array.isArray(response.data) ? response.data : response.data?.products
+    if (!Array.isArray(list)) throw new Error('商品数据异常，请重试')
+    if (pageDisposed) return
+    products.value = list.filter(product => product.status === 'active')
+    recommendReady.value = false
+    if (isRecommendCategory.value) await ensureRecommendations()
+  } catch (error) {
+    if (!pageDisposed) productsError.value = error?.msg || error?.message || '商品加载失败，请重试'
+  } finally {
+    if (!pageDisposed) productsLoading.value = false
+  }
+}
+
+onShow(async () => {
+  await Promise.all([fetchUserPoints(), loadProducts()])
   if (pageDisposed) return
   if (currentCategory.value === 0) {
     await ensureRecommendations()
@@ -511,11 +387,15 @@ const filteredProducts = computed(() => {
   const current = selectedCategory.value
   if (current.type === 'recommend') return recommendProducts.value
   if (current.type === 'all') return products.value
-  return products.value.filter(product => product.category === current.categoryId)
+  return products.value.filter(product => (String(product.category) === String(current.categoryId) || product.category === current.name))
 })
 
-const canExchange = computed(() => {
-  return !exchangeSubmitting.value && userPoints.value >= selectedProduct.value.points && selectedProduct.value.stock > 0
+const canExchange = computed(() => !exchangeSubmitting.value && selectedProduct.value.type === 'physical' && selectedProduct.value.status === 'active' && Number(selectedProduct.value.stock) > 0)
+const exchangeLabel = computed(() => {
+  if (selectedProduct.value.type !== 'physical') return '暂不支持兑换'
+  if (selectedProduct.value.status !== 'active') return '商品已下架'
+  if (Number(selectedProduct.value.stock) <= 0) return '库存不足'
+  return '立即兑换'
 })
 
 const switchCategory = async (index) => {
@@ -535,64 +415,16 @@ const closeProductDetail = () => {
   selectedProduct.value = {}
 }
 
-const exchangeProduct = async () => {
-  if (!canExchange.value) {
-    uni.showToast({ title: '积分不足或商品售罄', icon: 'none' })
-    return
-  }
+function goToOrders() { uni.navigateTo({ url: '/pages-nonTheme/shop-orders' }) }
+
+const exchangeProduct = () => {
+  if (!canExchange.value) return
   exchangeSubmitting.value = true
-  try {
-    const product = { ...selectedProduct.value }
-    const response = await createPurchaseRecord({
-      productId: String(product.id),
-      productName: product.name,
-      productCategory: product.category,
-      pointsPerItem: product.points,
-      quantity: 1,
-      productSnapshot: product
-    })
-    const data = response && response.data ? response.data : {}
-    userPoints.value = Number.isFinite(Number(data.remainingPoints)) ? Number(data.remainingPoints) : userPoints.value
-    uni.setStorageSync('userPoints', userPoints.value)
-
-    const productIndex = products.value.findIndex(p => p.id === product.id)
-    if (productIndex !== -1) products.value[productIndex].stock = Math.max(0, products.value[productIndex].stock - 1)
-
-    exchangedProduct.value = product
-    showDetailModal.value = false
-    showSuccessModal.value = true
-    playUiSound('redeemSuccess', {
-      key: data.id != null ? `redeem:${data.id}` : undefined,
-      page: 'pages/shop/shop'
-    })
-
-    const exchangeHistory = uni.getStorageSync('exchangeHistory') || []
-    const now = new Date()
-    const formattedTime = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
-    exchangeHistory.unshift({ id: data.id || Date.now(), product, exchangeTime: formattedTime, status: '已兑换' })
-    uni.setStorageSync('exchangeHistory', exchangeHistory)
-
-    const unlocks = extractAchievementUnlocks(data)
-    if (unlocks.length) {
-      enqueueAchievementUnlocks(unlocks)
-      achievementModalItems.value = takeAchievementUnlocks()
-      showAchievementModal.value = achievementModalItems.value.length > 0
-    }
-  } catch (error) {
-    uni.showToast({ title: (error && (error.msg || error.message)) || '兑换失败，请稍后重试', icon: 'none' })
-  } finally {
-    exchangeSubmitting.value = false
-  }
-}
-
-const closeSuccessModal = () => {
-  showSuccessModal.value = false
-  exchangedProduct.value = {}
-}
-
-const closeAchievementModal = () => {
-  showAchievementModal.value = false
-  setTimeout(() => { achievementModalItems.value = [] }, 250)
+  uni.navigateTo({
+    url: `/pages-nonTheme/shop-confirm?productId=${encodeURIComponent(selectedProduct.value.id)}`,
+    success: () => { showDetailModal.value = false },
+    complete: () => { exchangeSubmitting.value = false }
+  })
 }
 
 const goHome = () => {
@@ -609,6 +441,9 @@ const goProfile = () => {
 </script>
 
 <style scoped>
+.shop-catalog-state { padding: 60rpx 20rpx; text-align: center; color: #64748b; line-height: 1.8; }
+.shop-catalog-retry { margin: 24rpx auto 0; width: 240rpx; border-radius: 999rpx; background: #00aa83; color: white; font-size: 26rpx; }
+
 /* 页面基础 */
 .shop-page {
   min-height: 100vh;
@@ -823,12 +658,29 @@ const goProfile = () => {
   z-index: 1;
 }
 
+.header-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .header-title {
-  display: block;
+  display: flex;
+  align-items: center;
   font-size: 40rpx;
   font-weight: 700;
   color: #ffffff;
   margin-bottom: 8rpx;
+}
+
+.orders-pill {
+  padding: 10rpx 18rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.55);
+  border-radius: 999rpx;
+  color: #fff;
+  font-size: 23rpx;
+  line-height: 1.2;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .header-subtitle {

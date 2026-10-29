@@ -51,6 +51,9 @@
           <view class="input-wrapper-simple">
             <input
               v-model="username"
+                :focus="focusedField === 'username'"
+                aria-label="用户名"
+                :aria-invalid="!!fieldErrors.username"
               @blur="username = $event.detail.value"
               placeholder="请输入用户名"
               maxlength="20"
@@ -61,6 +64,7 @@
               @keyup="handleKeyup"
             />
           </view>
+          <text v-if="fieldErrors.username" class="field-error" role="alert">{{ fieldErrors.username }}</text>
         </view>
         
         <view class="form-group">
@@ -68,6 +72,9 @@
           <view class="input-wrapper-simple">
             <input
               v-model="password"
+                :focus="focusedField === 'password'"
+                aria-label="密码"
+                :aria-invalid="!!fieldErrors.password"
               :key="passwordKey"
               :type="showPwd ? 'text' : 'password'"
               placeholder="请输入密码"
@@ -77,10 +84,11 @@
               @keyup.enter="handleEnterKey"
               @keyup="handleKeyup"
             />
-            <view class="pwd-toggle" @click="togglePassword">
+            <view class="pwd-toggle" role="button" tabindex="0" :aria-label="showPwd ? '隐藏密码' : '显示密码'" @keydown.enter.prevent="togglePassword" @keydown.space.prevent="togglePassword" @click="togglePassword">
               <image class="toggle-icon" :src="showPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
             </view>
           </view>
+          <text v-if="fieldErrors.password" class="field-error" role="alert">{{ fieldErrors.password }}</text>
         </view>
         
         <view class="form-group">
@@ -88,6 +96,9 @@
           <view class="input-wrapper-simple">
             <input
               v-model="confirmPwd"
+                :focus="focusedField === 'confirmPwd'"
+                aria-label="确认密码"
+                :aria-invalid="!!fieldErrors.confirmPwd"
               :key="confirmPasswordKey"
               :type="showConfirmPwd ? 'text' : 'password'"
               placeholder="请再次输入密码"
@@ -97,10 +108,11 @@
               @keyup.enter="handleEnterKey"
               @keyup="handleKeyup"
             />
-            <view class="pwd-toggle" @click="toggleConfirmPassword">
+            <view class="pwd-toggle" role="button" tabindex="0" :aria-label="showConfirmPwd ? '隐藏确认密码' : '显示确认密码'" @keydown.enter.prevent="toggleConfirmPassword" @keydown.space.prevent="toggleConfirmPassword" @click="toggleConfirmPassword">
               <image class="toggle-icon" :src="showConfirmPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
             </view>
           </view>
+          <text v-if="fieldErrors.confirmPwd" class="field-error" role="alert">{{ fieldErrors.confirmPwd }}</text>
         </view>
 
         <!-- 科技风验证码区域 -->
@@ -152,7 +164,7 @@ import { markWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
 import { onLoad } from '@dcloudio/uni-app'
 import { captureRegistrationEntry, miniRegistrationRelay } from '@/utils/registration-relay.js'
 // #endif
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { register } from '@/api/user'
 // #ifdef H5 || APP-PLUS
 import { onShow } from '@dcloudio/uni-app'
@@ -161,6 +173,8 @@ import { useH5RegistrationPolicy } from '@/utils/use-h5-registration-policy'
 // #endif
 import CaptchaBox from '@/components/CaptchaBox-black.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { returnToLogin } from '@/utils/login-navigation.mjs'
+import { evaluatePassword } from '@/utils/password-strength.mjs'
 // #ifdef APP-PLUS || MP-WEIXIN
 import RegistrationPrivacyAgreement from '@/components/RegistrationPrivacyAgreement.vue'
 // #endif
@@ -183,6 +197,20 @@ usernameInputType = typeof uni.canIUse === 'function' && uni.canIUse('input.type
 // #endif
 const password = ref('')
 const confirmPwd = ref('')
+const fieldErrors = ref({})
+const focusedField = ref('')
+function showFieldError(field, message) {
+  fieldErrors.value = { [field]: message }
+  focusedField.value = ''
+  nextTick(() => { focusedField.value = field })
+}
+watch([username, password, confirmPwd], (values, previous) => {
+  const errors = { ...fieldErrors.value }
+  ;['username', 'password', 'confirmPwd'].forEach((field, index) => {
+    if (values[index] !== previous[index]) delete errors[field]
+  })
+  fieldErrors.value = errors
+})
 const showPwd = ref(false)
 const showConfirmPwd = ref(false)
 const isLoading = ref(false)
@@ -240,40 +268,32 @@ function onRegister() {
   // #ifdef H5 || APP-PLUS
   if (!webRegistrationAllowed.value || webRegistrationLoading.value) return
   // #endif
+  fieldErrors.value = {}
+  captchaHint.value = ''
   if (!username.value){ 
-    captchaHint.value = '请输入用户名'
+    showFieldError('username', '请输入用户名')
     uni.showToast({ title: '请输入用户名', icon: 'none' })
     return
   } 
   if (!password.value){
-    captchaHint.value = '请输入密码'
+    showFieldError('password', '请输入密码')
     uni.showToast({ title: '请输入密码', icon: 'none' })
     return
   }
   if (!confirmPwd.value){
-    captchaHint.value = '请确认密码'
+    showFieldError('confirmPwd', '请确认密码')
     uni.showToast({ title: '请确认密码', icon: 'none' })
     return
   }
   if (password.value !== confirmPwd.value){
-    captchaHint.value = '两次密码不一致'
+    showFieldError('confirmPwd', '两次密码不一致')
     uni.showToast({ title: '两次密码不一致', icon: 'none' })
     return
   } 
-  if (password.value.length < 6) {
-    captchaHint.value = '密码过于简单'
-    uni.showToast({ title: '密码长度至少6位', icon: 'none' })
-    return
-  }
-  
-  let complexity = 0;
-  if (/[a-z]/.test(password.value)) complexity++;
-  if (/[A-Z]/.test(password.value)) complexity++;
-  if (/[0-9]/.test(password.value)) complexity++;
-  if (/[^A-Za-z0-9]/.test(password.value)) complexity++;
-  if (complexity < 2) {
-    captchaHint.value = '密码过于简单'
-    uni.showToast({ title: '密码需包含大小写字母、数字、特殊字符中至少两种', icon: 'none' })
+  const pwdCheck = evaluatePassword(password.value, { username: username.value })
+  if (!pwdCheck.valid) {
+    showFieldError('password', pwdCheck.hint || '密码过于简单')
+    uni.showToast({ title: pwdCheck.message, icon: 'none' })
     return
   }
 
@@ -333,7 +353,7 @@ function goBack() {
 }
 
 function goLogin() {
-  uni.redirectTo({ url: '/pages-dark/index/index' })
+  returnToLogin({ runtime: uni, url: '/pages-dark/index/index' })
 }
 
 // 切换密码显示/隐藏
@@ -381,6 +401,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.field-error { display: block; margin-top: 10rpx; color: #ffb4ab; font-size: 24rpx; line-height: 1.5; }
 /* 主背景 */
 .register-bg {
   min-height: 100vh;
@@ -444,7 +465,7 @@ onMounted(() => {
 
 @keyframes float {
   0%, 100% { transform: translateY(0px) scale(1); opacity: 0.7; }
-  50% { transform: translateY(-40rpx) scale(1.3); opacity: 1; }
+  50% { transform: translateY(-20px) scale(1.2); opacity: 1; }
 }
 
 /* 电路线条 */
@@ -535,7 +556,7 @@ onMounted(() => {
 .register-back {
   position: absolute;
   z-index: 5;
-  top: 0;
+  top: 16rpx;
   left: 0;
   width: 72rpx;
   height: 72rpx;

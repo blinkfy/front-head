@@ -1,44 +1,34 @@
-import { baseUrl } from './settings'
 import request from '@/api/index.js'
 
-export function fetchShopRecommendations({
+export async function fetchShopRecommendations({
   limit = 6,
   currentPoints = 0,
   candidateProducts = []
 } = {}) {
   const token = uni.getStorageSync('token') || ''
-  if (!token) return Promise.resolve(null)
-
-  const url = `${baseUrl}/api/shop/recommendations?token=${encodeURIComponent(token)}`
-  return new Promise((resolve) => {
-    uni.request({
-      url,
+  if (!token) return null
+  try {
+    const payload = await request({
+      url: '/api/shop/recommendations',
       method: 'POST',
-      header: { 'Content-Type': 'application/json', Authorization: token },
-      data: { limit, currentPoints, candidateProducts },
-      success: (res) => {
-        try {
-          const payload = res && res.data ? res.data : null
-          if (!payload || payload.code !== 0 || !payload.data) return resolve(null)
-          const names = (Array.isArray(payload.data.recommendations) ? payload.data.recommendations : [])
-            .map((item) => String((item && item.productName) || '').trim())
-            .filter(Boolean)
-          if (!names.length) return resolve(null)
-          resolve({ source: String(payload.data.source || '').trim(), names })
-        } catch (_) {
-          resolve(null)
-        }
-      },
-      fail: () => resolve(null)
+      needAuth: true,
+      silent: true,
+      data: { limit, currentPoints, candidateProducts }
     })
-  })
+    if (payload.code !== 0 || !payload.data) return null
+    const names = (Array.isArray(payload.data.recommendations) ? payload.data.recommendations : [])
+      .map(item => String(item?.productName || '').trim()).filter(Boolean)
+    return names.length ? { source: String(payload.data.source || '').trim(), names } : null
+  } catch (_) {
+    return null
+  }
 }
 
-export function createPurchaseRecord(data) {
-  return request({
-    url: '/api/shop/purchase-records',
-    method: 'POST',
-    data,
-    needAuth: true
-  })
-}
+const shopRequest = (url, options = {}) => request({ url: `/api/shop${url}`, needAuth: true, silent: true, ...options })
+export const fetchShopProducts = () => shopRequest('/products')
+export const fetchShopProduct = id => shopRequest(`/products/${encodeURIComponent(id)}`)
+export const createShopOrder = data => shopRequest('/orders', { method: 'POST', data })
+export const fetchShopOrders = (status = '', page = 1) => shopRequest('/orders', { params: { status, page, pageSize: 20 } })
+export const fetchShopOrder = id => shopRequest(`/orders/${encodeURIComponent(id)}`)
+export const cancelShopOrder = id => shopRequest(`/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+export const receiveShopOrder = id => shopRequest(`/orders/${encodeURIComponent(id)}/receive`, { method: 'POST' })

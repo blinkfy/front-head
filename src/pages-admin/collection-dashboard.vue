@@ -1,5 +1,5 @@
 <template>
-  <view :class="['screen', isLightTheme ? 'light-theme' : 'dark-theme', { 'admin-light-theme': isLightTheme }]">
+  <view :class="['screen', isLightTheme ? 'light-theme' : 'dark-theme', { 'admin-light-theme': isLightTheme }]" :style="screenStyle">
 
     <!-- ===== 顶部 panel ===== -->
     <view class="top panel">
@@ -64,7 +64,7 @@
     </view>
 
     <!-- ===== 风险预警：全部桶位与自选详情 ===== -->
-    <view v-show="monitor.active && monitor.scene === 'telemetry'" class="telemetry-scene">
+    <view v-if="monitor.active && monitor.scene === 'telemetry'" class="telemetry-scene">
       <view class="panel telemetry-selector">
         <view class="block-title">全部桶位风险 <text class="note">{{ riskMonitorBins.length }} 个点位</text></view>
         <scroll-view class="list" scroll-y>
@@ -91,6 +91,7 @@
         :selected-id="monitor.binId"
         :horizon="riskHorizon"
         :playing="riskPlaying"
+        :tone="isLightTheme ? 'light' : 'dark'"
         @select="selectRiskMonitorBin"
         @horizon="setRiskHorizon"
         @toggle-play="toggleRiskPlayback"
@@ -106,7 +107,11 @@
       </view>
     </view>
 
-    <view v-show="!entryTransitioning && !(monitor.active && (monitor.scene === 'telemetry' || monitor.scene === 'sorting'))" class="main">
+    <view
+      v-show="!entryTransitioning && !(monitor.active && (monitor.scene === 'telemetry' || monitor.scene === 'sorting'))"
+      :style="(!entryTransitioning && !(monitor.active && (monitor.scene === 'telemetry' || monitor.scene === 'sorting'))) ? '' : 'display:none !important;'"
+      class="main"
+    >
 
       <!-- 左列 -->
       <view class="col left">
@@ -317,7 +322,7 @@
 
     </view><!-- end .main -->
 
-    <view v-show="monitor.active && monitor.scene === 'sorting'" class="sorting-scene">
+    <view v-if="monitor.active && monitor.scene === 'sorting'" class="sorting-scene">
       <view class="panel sorting-hero">
         <view class="sorting-head">
           <view>
@@ -346,9 +351,9 @@
               </view>
             </view>
             <view class="twin-canvas">
-              <image v-show="!sortingStageVideoActive" webp :class="['twin-image', { active: sortingVisualState.key === 'intake' }]" :src="sortingCenterAssets.intake" mode="aspectFit"></image>
-              <image v-show="!sortingStageVideoActive" webp :class="['twin-image', { active: sortingVisualState.key === 'washing' }]" :src="sortingCenterAssets.washing" mode="aspectFit"></image>
-              <image v-show="!sortingStageVideoActive" webp :class="['twin-image', { active: sortingVisualState.key === 'inspection' }]" :src="sortingCenterAssets.inspection" mode="aspectFit"></image>
+              <image v-if="!sortingStageVideoActive" webp :class="['twin-image', { active: sortingVisualState.key === 'intake' }]" :src="sortingCenterAssets.intake" mode="aspectFit"></image>
+              <image v-if="!sortingStageVideoActive" webp :class="['twin-image', { active: sortingVisualState.key === 'washing' }]" :src="sortingCenterAssets.washing" mode="aspectFit"></image>
+              <image v-if="!sortingStageVideoActive" webp :class="['twin-image', { active: sortingVisualState.key === 'inspection' }]" :src="sortingCenterAssets.inspection" mode="aspectFit"></image>
               <view v-if="monitor.active" :class="['sorting-stage-video-layer', { active: sortingStageVideoActive }]">
                 <image class="sorting-stage-video-backdrop" :src="CENTER_WORKFLOW_MASTER_VIDEO.poster" mode="aspectFill"></image>
                 <video
@@ -377,7 +382,7 @@
                 <view class="sorting-video-info top-left"><text class="small-text">{{ monitor.sortingStageText }}</text><text class="b-text">{{ monitor.returnBinCode }}</text><text>当前设备</text></view>
                 <view class="sorting-video-info bottom-right"><text class="small-text">设备状态</text><text class="b-text">{{ sortingDeviceStatus }}</text><text>阶段进度 {{ sortingOperation.progress.toFixed(0) }}%</text></view>
               </view>
-              <view v-show="!sortingStageVideoActive" :class="['operation-layer', 'stage-' + sortingOperation.key]">
+              <view v-if="!sortingStageVideoActive" :class="['operation-layer', 'stage-' + sortingOperation.key]">
                 <view class="weigh-operation">
                   <view class="weigh-deck"></view>
                   <text>{{ sortingOperation.key === 'weigh' ? n(monitor.weight, 0).toFixed(1) + ' kg' : 'RFID 识别' }}</text>
@@ -392,16 +397,16 @@
                   <text class="b-text">{{ monitor.returnBinCode }}</text>
                 </view>
               </view>
-              <view v-show="!sortingStageVideoActive" :class="['zone-tag', 'zone-weigh', { active: monitor.sortingStageText.includes('抵达') || monitor.sortingStageText.includes('称重') }]">
+              <view v-if="!sortingStageVideoActive" :class="['zone-tag', 'zone-weigh', { active: monitor.sortingStageText.includes('抵达') || monitor.sortingStageText.includes('称重') }]">
                 <text class="zone-pulse"></text><text>卸载称重区</text>
               </view>
-              <view v-show="!sortingStageVideoActive" :class="['zone-tag', 'zone-wash', { active: monitor.sortingStageText.includes('清洗') || monitor.sortingStageText.includes('烘干') }]">
+              <view v-if="!sortingStageVideoActive" :class="['zone-tag', 'zone-wash', { active: monitor.sortingStageText.includes('清洗') || monitor.sortingStageText.includes('烘干') }]">
                 <text class="zone-pulse"></text><text>清洗消毒线</text>
               </view>
-              <view v-show="!sortingStageVideoActive" :class="['zone-tag', 'zone-check', { active: monitor.sortingStageText.includes('充电') || monitor.sortingStageText.includes('检测') }]">
+              <view v-if="!sortingStageVideoActive" :class="['zone-tag', 'zone-check', { active: monitor.sortingStageText.includes('充电') || monitor.sortingStageText.includes('检测') }]">
                 <text class="zone-pulse"></text><text>电检质检区</text>
               </view>
-              <view v-show="!sortingStageVideoActive" :class="['zone-tag', 'zone-pool', { active: monitor.sortingStageText.includes('投放') }]">
+              <view v-if="!sortingStageVideoActive" :class="['zone-tag', 'zone-pool', { active: monitor.sortingStageText.includes('投放') }]">
                 <text class="zone-pulse"></text><text>备用池</text>
               </view>
               <view class="twin-flow">
@@ -543,7 +548,7 @@ import {
   updateDatabaseStatusFromAvailability
 } from '@/api/database-status.mjs'
 import { isDatabaseHealthEndpoint } from '@/api/request-utils.mjs'
-import { digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
+import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 import { mapConfig } from '@/api/map-config'
 import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/pages-admin/config/center-workflow-video.js'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
@@ -552,7 +557,10 @@ import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
 import RiskAlgorithmWorkbench from '@/pages-admin/components/collection/RiskAlgorithmWorkbench.vue'
-import '@/pages-admin/styles/admin-light-theme.css'
+import { getMiniProgramTopInset } from '@/utils/mp-top-inset.js'
+
+const miniProgramTopInset = getMiniProgramTopInset()
+const screenStyle = miniProgramTopInset ? { paddingTop: `${miniProgramTopInset}px` } : {}
 
 const databaseStatusRuntime = Object.freeze({
   getStorageSync: key => uni.getStorageSync(key),
@@ -564,11 +572,11 @@ const databaseStatusRuntime = Object.freeze({
 // ─── 常量 ─────────────────────────────────────────────
 const QQ_MAP_KEYS = [mapConfig.qqMapKey, mapConfig.qqMapKeyBackup].filter(Boolean)
 const sortingCenterAssets = Object.freeze({
-  intake: digitalTwinWebpAssetUrl('sorting-center/facility-intake.webp', 'sorting-center/facility-intake.png'),
-  washing: digitalTwinWebpAssetUrl('sorting-center/facility-washing.webp', 'sorting-center/facility-washing.png'),
-  inspection: digitalTwinWebpAssetUrl('sorting-center/facility-inspection.webp', 'sorting-center/facility-inspection.png')
+  intake: digitalTwinAssetUrl('sorting-center/facility-intake.webp.png'),
+  washing: digitalTwinAssetUrl('sorting-center/facility-washing.webp.png'),
+  inspection: digitalTwinAssetUrl('sorting-center/facility-inspection.webp.png')
 })
-const DEFAULT_CENTER = { latitude: 36.0671, longitude: 120.3826 }
+const DEFAULT_CENTER = { latitude: 36.065, longitude: 120.346 }
 
 
 
@@ -2481,4 +2489,26 @@ onBeforeUnmount(() => {
 })
 </script>
 
+<style scoped>
+@import './styles/admin-light-theme.css';
+</style>
 <style scoped src="./collection-dashboard/collection-dashboard.css"></style>
+<style scoped>
+/* #ifdef MP-WEIXIN */
+.screen [hidden] { display: none !important; }
+.screen .top .row > view:first-child { padding-right: 96px; box-sizing: border-box; }
+/* #endif */
+/* 竖屏 / 窄屏（H5、APP、小程序）：列表限制最大高度，超出后在内部滚动 */
+@media (max-width: 900px), (orientation: portrait) {
+  .screen .telemetry-scene { flex-direction: column !important; flex: none !important; height: auto !important; gap: 8px; }
+  .screen .telemetry-selector { width: 100% !important; flex: none !important; height: auto !important; box-sizing: border-box; }
+}
+@media (max-width: 1180px), (orientation: portrait) {
+  .screen .list,
+  .screen .monitor-event-panel .list,
+  .screen .sorting-queue .list { flex: none !important; height: auto !important; min-height: 0 !important; max-height: 260px !important; overflow-y: auto !important; box-sizing: border-box; }
+  .screen .monitor-task-panel .task-flow,
+  .screen .task-flow { flex: none !important; height: auto !important; min-height: 0 !important; max-height: 220px !important; overflow-y: auto !important; box-sizing: border-box; }
+  /* 故障列表位于全高抽屉内、下方无其他内容，不限制高度，占满剩余空间内部滚动 */
+}
+</style>

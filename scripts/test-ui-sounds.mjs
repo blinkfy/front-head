@@ -15,6 +15,7 @@ function compilePlatform(platform) {
 }
 
 function compiledFunction(source, name, nextMarker, args = []) {
+  source = source.replace(/\r\n/g, '\n')
   const start = source.indexOf(`function ${name}(`)
   const end = source.indexOf(nextMarker, start)
   assert.ok(start >= 0 && end > start, `${name} should be present after conditional compilation`)
@@ -39,7 +40,7 @@ function harness(overrides = {}) {
           calls.push({ sound, ...options })
           if (overrides.play) return overrides.play(sound, options, calls.at(-1))
         },
-        stop() { calls.push({ type: 'stop' }) },
+        stop(options) { calls.push({ type: 'stop', options }) },
         dispose() { calls.push({ type: 'dispose' }) }
       }
       drivers.push(driver)
@@ -217,6 +218,7 @@ const webDriverFactory = compiledFunction(h5Source, 'createWebDriver', '\nlet dr
 
 function webHarness(fetchImpl) {
   let resumeResolve
+  const oscillators = [], gains = []
   const context = {
     state: 'suspended', currentTime: 0, destination: {},
     resume() { return new Promise(resolve => { resumeResolve = () => { context.state = 'running'; resolve() } }) },
@@ -224,7 +226,26 @@ function webHarness(fetchImpl) {
     createBufferSource() {
       return { connect() {}, disconnect() {}, start() { context.started = (context.started || 0) + 1 }, stop() {} }
     },
-    createGain() { return { gain: { value: 1, cancelScheduledValues() {}, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {}, disconnect() {} } },
+    createOscillator() {
+      const tone = {
+        frequency: { events: [], setValueAtTime(value, time) { this.events.push([value, time]) } },
+        connect() {}, disconnect() {}, start(time) { this.startTime = time; this.startCount = (this.startCount || 0) + 1 },
+        stop(time) { this.stopTime = time; this.stopCount = (this.stopCount || 0) + 1 }
+      }
+      oscillators.push(tone)
+      return tone
+    },
+    createGain() {
+      const gain = { events: [], gain: {
+        value: 1,
+        cancelScheduledValues(time) { gain.events.push(['cancel', time]) },
+        setValueAtTime(value, time) { gain.events.push(['set', value, time]) },
+        linearRampToValueAtTime(value, time) { gain.events.push(['linear', value, time]) },
+        exponentialRampToValueAtTime(value, time) { gain.events.push(['exponential', value, time]) }
+      }, connect() {}, disconnect() {} }
+      gains.push(gain)
+      return gain
+    },
     close: async () => {}
   }
   const win = { AudioContext: function AudioContext() { return context } }
@@ -232,7 +253,117 @@ function webHarness(fetchImpl) {
     constructor() { this.signal = {}; this.aborted = false }
     abort() { this.aborted = true }
   }, () => 1, () => {}, Date)()
-  return { context, driver, resume: () => resumeResolve?.() }
+  return { context, driver, oscillators, gains, resume: () => resumeResolve?.() }
+}
+
+const navStopStart = h5Source.indexOf('const stopOnNavigation =')
+const navStopEnd = h5Source.indexOf('\nexport function playUiSound', navStopStart)
+assert.ok(navStopStart >= 0 && navStopEnd > navStopStart, 'H5 navigation stop hook should be compiled')
+const stopOnNavigationFactory = new Function('controller',
+  `${h5Source.slice(navStopStart, navStopEnd)}\nreturn stopOnNavigation`)
+const initUiSoundsStart = h5Source.indexOf('function initUiSounds()')
+const initUiSoundsEnd = h5Source.lastIndexOf('\n}')
+assert.ok(initUiSoundsStart >= 0 && initUiSoundsEnd > initUiSoundsStart, 'H5 init function should be compiled')
+const initUiSoundsFactory = new Function('controller', 'document', 'window', 'uni', 'primeUiSounds',
+  'stopOnNavigation', 'HTMLMediaElement', 'initialized',
+  `${h5Source.slice(initUiSoundsStart, initUiSoundsEnd + 2)}\nreturn initUiSounds`)
+
+function initSoundLifecycle(controller) {
+  const interceptors = {}, listeners = new Map()
+  const document = { hidden: false, addEventListener(name, callback) { listeners.set(name, callback) } }
+  const window = { addEventListener() {} }
+  const uni = { addInterceptor(name, value) { interceptors[name] = value } }
+  class HTMLMediaElement {}
+  const stopOnNavigation = stopOnNavigationFactory(controller)
+  initUiSoundsFactory(controller, document, window, uni, () => {}, stopOnNavigation, HTMLMediaElement, false)()
+  return { interceptors, listeners, HTMLMediaElement }
+}
+
+// The marked, muted camera preview does not block a cue; ordinary media still does.
+{
+  const blocked = []
+  const controller = {
+    stop() {}, setActive() {},
+    setBlocked(reason, value) { blocked.push([reason, value]) }
+  }
+  const lifecycle = initSoundLifecycle(controller)
+  const dispatchPlay = lifecycle.listeners.get('play')
+  assert.equal(typeof dispatchPlay, 'function')
+  const preview = new lifecycle.HTMLMediaElement()
+  preview.muted = true; preview.srcObject = {}; preview.isConnected = true; preview.paused = false; preview.ended = false
+  preview.hasAttribute = name => name === 'data-ui-sound-camera-preview'
+  dispatchPlay({ target: preview })
+  assert.deepEqual(blocked, [], 'marked muted camera preview must not set the media audio block')
+  const ordinary = new lifecycle.HTMLMediaElement()
+  ordinary.muted = true; ordinary.srcObject = {}; ordinary.isConnected = true; ordinary.paused = false; ordinary.ended = false
+  ordinary.hasAttribute = () => false
+  dispatchPlay({ target: ordinary })
+  assert.deepEqual(blocked, [['media', true]], 'unmarked media retains the normal audio block')
+}
+
+// Scan detection uses a short generated tone: it starts synchronously in a live
+// context and does not fetch the ordinary confirmation sound asset.
+{
+  let fetches = 0
+  const h = webHarness(async () => { fetches++; throw new Error('scan cue must not fetch') })
+  h.context.state = 'running'
+  const tonePromise = h.driver.play({ ...UI_SOUNDS.confirm, id: 'confirm', scanCue: true }, {
+    canStart: () => true, onEnded() {}
+  })
+  assert.equal(h.oscillators.length, 1, 'scan cue oscillator starts synchronously')
+  assert.equal(h.oscillators[0].startCount, 1)
+  assert.deepEqual(h.oscillators[0].frequency.events, [[1320, 0]])
+  assert.ok(h.gains[0].events.some(event => event[0] === 'exponential' && event[2] === 0.12),
+    'scan cue should use the short exponential decay envelope')
+  assert.equal(await tonePromise, true)
+  assert.equal(fetches, 0, 'scan cue must not request audio assets')
+  assert.equal(h.oscillators[0].stopCount, 1, 'driver schedules the normal 130ms tone end')
+  h.driver.stop({ preserveScanCue: true })
+  assert.equal(h.oscillators[0].stopCount, 1, 'navigation stop preserves an already-started scan tail')
+  h.driver.stop()
+  assert.equal(h.oscillators[0].stopCount, 2, 'ordinary stop cuts the scan tone immediately')
+}
+
+// A scan cue requested while suspended is discarded if its session is stale
+// by the time AudioContext resumes.
+{
+  let fetches = 0
+  const h = webHarness(async () => { fetches++; throw new Error('scan cue must not fetch') })
+  const stale = h.driver.play({ ...UI_SOUNDS.confirm, id: 'confirm', scanCue: true }, {
+    canStart: () => false, onEnded() {}
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(h.oscillators.length, 0)
+  h.resume()
+  assert.equal(await stale, false)
+  assert.equal(h.oscillators.length, 0, 'stale scan cue must not start after resume')
+  assert.equal(fetches, 0)
+}
+
+// Core navigation stop options reach the driver; muting remains an unconditional stop.
+{
+  const h = harness()
+  h.controller.play('scanDetected')
+  const lifecycle = initSoundLifecycle(h.controller)
+  lifecycle.interceptors.navigateTo.invoke()
+  assert.deepEqual(h.calls.at(-1), { type: 'stop', options: { preserveScanCue: true } })
+  h.controller.setEnabled(false)
+  assert.deepEqual(h.calls.at(-1), { type: 'stop', options: undefined }, 'mute must use a non-preserving stop')
+}
+
+{
+  let fetches = 0
+  const web = webHarness(async () => { fetches++; throw new Error('scan cue must not fetch') })
+  web.context.state = 'running'
+  const controller = createUiSoundController({ createDriver: () => web.driver })
+  assert.equal(controller.play('scanDetected'), true)
+  const tone = web.oscillators[0]
+  const lifecycle = initSoundLifecycle(controller)
+  lifecycle.interceptors.navigateTo.invoke()
+  assert.equal(tone.stopCount, 1, 'actual navigation hook preserves the cue tail')
+  controller.setEnabled(false)
+  assert.equal(tone.stopCount, 2, 'core mute stops the actual oscillator immediately')
+  assert.equal(fetches, 0)
 }
 
 {

@@ -529,6 +529,7 @@
 </template>
 
 <script>
+import { chooseAppImage } from '@/utils/image-picker.js'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { audioInitializationMethods, voiceRecordingMethods, voicePlaybackMethods, voiceTranscriptionMethods } from '@/pages-nonTheme/chat/audio-methods.js'
 import { mediaSendMethods, mediaPickerMethods, attachmentIngressMethods } from '@/pages-nonTheme/chat/attachment-methods.js'
@@ -539,7 +540,7 @@ import { getUserProfile } from '@/api/user.js'
 import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
-import ChatMarkdown from '@/components/ChatMarkdown.vue'
+import ChatMarkdown from '@/pages-nonTheme/components/ChatMarkdown.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { getDisplayName } from '@/utils/display-name.js'
@@ -2503,7 +2504,7 @@ export default {
 
         editGroupAvatar() {
             if (!this.canManageGroup) return
-            uni.chooseImage({
+            chooseAppImage({
                 count: 1,
                 sizeType: ['compressed'],
                 sourceType: ['album', 'camera'],

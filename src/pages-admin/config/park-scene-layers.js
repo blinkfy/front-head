@@ -1,5 +1,5 @@
 import DIGITAL_TWIN_VISUAL_SYSTEM from '@/config/digital-twin-visual-system.js'
-import { digitalTwinAssetUrl, digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
+import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 
 const freeze = value => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value
@@ -8,14 +8,8 @@ const freeze = value => {
 }
 
 export const PARK_SCENE_ASSETS = freeze({
-  formalBackground: digitalTwinWebpAssetUrl(
-    'digital-twin-replay/park-overview-user-layout-v1.webp',
-    'digital-twin-replay/park-overview-user-layout-v1.png'
-  ),
-  candidateBackground: digitalTwinWebpAssetUrl(
-    'digital-twin-replay/park-overview-user-layout-v1.webp',
-    'digital-twin-replay/park-overview-user-layout-v1.png'
-  ),
+  formalBackground: digitalTwinAssetUrl('digital-twin-replay/park-overview-user-layout-v1.webp.png'),
+  candidateBackground: digitalTwinAssetUrl('digital-twin-replay/park-overview-user-layout-v1.webp.png'),
   roadOverlay: digitalTwinAssetUrl('digital-twin-replay/park-road-overlay.svg'),
   formalStatus: 'active_user_provided',
   candidateStatus: 'disabled_superseded_archive'

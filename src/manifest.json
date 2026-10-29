@@ -2,7 +2,7 @@
     "name" : "分投侠",
     "appid" : "__UNI__0B093BC",
     "description" : "",
-    "versionName" : "1.4.5",
+    "versionName" : "1.4.6",
     "versionCode" : 107,
     "transformPx" : false,
     "app-plus" : {
@@ -115,7 +115,11 @@
             "subPackages" : true
         },
         "setting" : {
-            "urlCheck" : false
+            "urlCheck" : false,
+            "es6" : true,
+            "minified" : true,
+            "minifyWXSS" : true,
+            "minifyWXML" : true
         },
         "usingComponents" : true,
         "permission" : {

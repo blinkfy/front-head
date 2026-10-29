@@ -177,9 +177,11 @@ const costWidth = (candidate) => maximumCost.value ? Math.max(8, Math.round(Numb
 .candidate-empty { font-size:10px }.selected-reason text { font-size:9px }.selected-reason .b-text { font-size:10px }
 
 /* #ifdef MP-WEIXIN */
-.decision-meta { display: flex; flex-wrap: wrap; }
-.decision-meta view { flex: 1; min-width: 120px; }
-.score-summary { display: flex; flex-wrap: wrap; }
-.score-summary view { flex: 1; min-width: 80px; }
+.decision-meta { display: flex; flex-wrap: wrap; gap: 5px; box-sizing: border-box; }
+.decision-meta view { flex: 0 0 calc(50% - 3px); width: calc(50% - 3px); box-sizing: border-box; }
+.score-summary { display: flex; flex-wrap: wrap; gap: 4px; box-sizing: border-box; }
+.score-summary view { flex: 0 0 calc(33.333% - 3px); width: calc(33.333% - 3px); box-sizing: border-box; }
+.candidate-top { display: flex; flex-wrap: nowrap; }
+.candidate-state { flex: 0 0 auto; white-space: nowrap; }
 /* #endif */
 </style>

@@ -205,6 +205,9 @@
 
     <!-- 功能操作区-->
     <view :animation="tabPageAnimation" class="function-grid tab-page-motion">
+      <view class="function-heading">
+        <text class="function-heading-title">功能服务</text>
+      </view>
       <view class="function-row">
         <view class="function-item" @click="goHistory">
           <view class="function-icon">
@@ -259,13 +262,13 @@
           <view class="hover-effect"></view>
         </view>
 
-        <view class="function-item" @click="goAbout">
+        <view class="function-item" @click="goToOrders">
           <view class="function-icon">
-            <ManifestIcon class="icon" id="about_app" />
+            <ManifestIcon class="icon" id="mystery_bag" :scale="2.1" />
             <view class="icon-glow green"></view>
           </view>
-          <text class="function-title">关于软件</text>
-          <text class="function-desc">应用信息</text>
+          <text class="function-title">我的订单</text>
+          <text class="function-desc">查看兑换订单</text>
           <view class="hover-effect"></view>
         </view>
       </view>
@@ -273,7 +276,10 @@
 
     <!-- 管理员专属功能-->
     <view :animation="tabPageAnimation" v-if="isAdmin" class="admin-card tab-page-motion">
-      <view class="admin-header"><ManifestIcon id="settings" /> 管理员功能</view>
+      <view class="admin-heading">
+        <view class="admin-header"><ManifestIcon id="settings" /> 管理员功能</view>
+        <view class="admin-shop-link" role="button" @click="goShopManagement">商城管理 ›</view>
+      </view>
       <view class="admin-buttons">
         <view class="admin-btn" @click="goFileManagement"><ManifestIcon id="file_manager" /> 文件管理</view>
         <view class="admin-btn" @click="go2048"><ManifestIcon id="admin_2048" /> 2048后台</view>
@@ -355,8 +361,9 @@
               <ManifestIcon class="info-emoji" id="reward_gift" />
             </view>
             <view class="info-text">
-              <text class="info-title">额外奖励</text>
-              <text class="info-desc">连续登录、完美分类等可获得额外积分</text>
+              <text class="info-title">上传投放点奖励</text>
+              <text class="info-desc">上传真实垃圾桶照片和位置，审核通过后发放积分</text>
+              <text class="info-limit">每处首次审核通过：10积分</text>
             </view>
           </view>
         </view>
@@ -727,9 +734,9 @@ const goToShop = () => {
 }
 
 function goHistory() {uni.navigateTo({ url: '/pages-dark/history/history' })}
+function goToOrders() { uni.navigateTo({ url: '/pages-nonTheme/shop-orders' }) }
 function goRanking() {uni.navigateTo({ url: '/pages-dark/ranking/ranking' })}
 function goSettings() { uni.navigateTo({ url: '/pages-nonTheme/settings' }) }
-function goAbout() {uni.navigateTo({ url: '/pages-nonTheme/about' })}
 function goGuide() {uni.navigateTo({ url: '/pages-dark/guide/guide' })}
 function goAchievements() { uni.navigateTo({ url: '/pages-nonTheme/achievements' })}
 
@@ -777,6 +784,12 @@ function goDbMonitor() {
         uni.showToast({ title: '无权限访问', icon: 'none' })
       })
     }
+  })
+}
+
+function goShopManagement() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) uni.navigateTo({ url: '/pages-admin/shop-management' })
   })
 }
 
@@ -1788,6 +1801,19 @@ body {
   margin: 0 40rpx 10rpx;
 }
 
+.function-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.function-heading-title {
+  color: #d1fae5;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
 .function-row {
   display: flex;
   gap: 16rpx;
@@ -2297,6 +2323,24 @@ body {
   font-size: 30rpx;
   font-weight: 700;
   margin-bottom: 12rpx;
+}
+.admin-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+.admin-heading .admin-header {
+  margin-bottom: 0;
+}
+.admin-shop-link {
+  flex-shrink: 0;
+  padding: 8rpx 0 8rpx 16rpx;
+  color: #40e0ff;
+  font-size: 24rpx;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 .admin-buttons {
   display: flex;

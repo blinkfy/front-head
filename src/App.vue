@@ -7,7 +7,7 @@
       <view class="app-splash-title">分投侠</view>
       <view class="app-splash-subtitle">智能垃圾分类助手</view>
       <view class="app-splash-progress">
-        <view class="app-splash-progress-bar" :style="{ width: appSplashProgress + '%' }"></view>
+        <view class="app-splash-progress-bar"></view>
       </view>
     </view>
   </view>
@@ -19,8 +19,12 @@ import { ThemeManager } from '@/utils/theme.js'
 import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
 import { warmManifestIcons } from '@/utils/icon-preload.js'
 import { warmSmartSortRobot } from '@/utils/robot-preload.js'
+import { onAppPageReady } from '@/utils/app-page-ready.mjs'
 import { initUiSounds, setUiSoundsActive } from '@/utils/ui-sounds.js'
 import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/device-qr-entry.mjs'
+// #ifdef APP-PLUS
+import { checkAppUpdate } from '@/utils/app-update.js'
+// #endif
 // #ifdef MP-WEIXIN
 import { captureRegistrationEntry, offerRegistrationRetry } from '@/utils/registration-relay.js'
 // #endif
@@ -46,7 +50,6 @@ export default {
   data() {
     return {
       showAppSplash: true,
-      appSplashProgress: 0,
       appSplashFading: false
     }
   },
@@ -114,6 +117,7 @@ export default {
     // Missing-page recovery must happen synchronously in mini-programs.
     if (target) uni.reLaunch({ url: target })
   },
+  beforeUnmount() { this._disposeSplash?.() },
   onHide: function () {
     setUiSoundsActive(false)
     // #ifdef APP-PLUS
@@ -124,56 +128,32 @@ export default {
 // #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ
   methods: {
     startLoading() {
-      // 启动页：等待应用真正加载完成
-      let loadedResources = 0
-      const totalResources = 4 // 框架加载、图片、字体、初始化
-      
-      const checkLoaded = () => {
-        loadedResources++
-        this.appSplashProgress = Math.min((loadedResources / totalResources) * 100, 95)
-        
-        if (loadedResources >= totalResources) {
-          // 所有资源加载完成
-          this.appSplashProgress = 100
-          setTimeout(() => {
-            this.appSplashFading = true
-            setTimeout(() => {
-              this.showAppSplash = false
-            }, 500)
-          }, 500)
-        }
+      let finished = false
+      let releaseTimer = null
+      let safetyTimer = null
+      let unsubscribe = null
+      const finish = () => {
+        if (finished) return
+        finished = true
+        unsubscribe?.()
+        clearTimeout(safetyTimer)
+        this.appSplashFading = true
+        releaseTimer = setTimeout(() => {
+          this.showAppSplash = false
+          // #ifdef APP-PLUS
+          void checkAppUpdate()
+          // #endif
+        }, 200)
       }
-      
-      // 1. 框架加载完成 (立即)
-      checkLoaded()
-      
-      // 2. 检查动图加载
-      uni.getImageInfo({
-        src: '/static/moveable2.gif',
-        success: checkLoaded,
-        fail: checkLoaded
-      })
-      
-      // 3. 模拟系统初始化 (600ms)
-      setTimeout(checkLoaded, 600)
-      
-      // 4. 页面渲染完成检查
-      setTimeout(() => {
-        checkLoaded()
-      }, 1000)
-      
-      // 最长4秒后强制进入
-      setTimeout(() => {
-        if (this.showAppSplash) {
-          this.appSplashProgress = 100
-          setTimeout(() => {
-            this.appSplashFading = true
-            setTimeout(() => {
-              this.showAppSplash = false
-            }, 500)
-          }, 300)
-        }
-      }, 4000)
+      // Page readiness covers the usable shell; decorative media loads independently.
+      unsubscribe = onAppPageReady(finish)
+      if (!finished) safetyTimer = setTimeout(finish, 4000)
+      this._disposeSplash = () => {
+        unsubscribe?.()
+        clearTimeout(safetyTimer)
+        clearTimeout(releaseTimer)
+      }
+
     }
   }
 // #endif
@@ -181,9 +161,17 @@ export default {
 </script>
 
 <style>
+/* #ifndef APP-NVUE */
+@import "@/styles/auth-orbs.css";
 /*每个页面公共css */
 
 /* #ifdef H5 */
+/* Framework action sheets must sit above page dialogs, including photo entry in map forms. */
+uni-actionsheet {
+  position: relative;
+  z-index: 1000000;
+}
+
 :root {
   --page-transition-background: #f8f8f8;
 }
@@ -283,7 +271,6 @@ uni-page-body {
     transform: scale(1);
   }
   50% {
-    transform: scale(1.05);
   }
 }
 
@@ -321,8 +308,8 @@ uni-page-body {
 }
 
 .app-splash-progress-bar {
+  width: 42%;
   height: 100%;
-  width: 0%;
   background: linear-gradient(90deg, #ffffff 0%, #d1fae5 100%);
   border-radius: 2px;
   box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
@@ -332,29 +319,26 @@ uni-page-body {
 
 @keyframes splash-progress {
   0% {
-    width: 0%;
     transform: translateX(-100%);
   }
   50% {
-    width: 100%;
-    transform: translateX(0%);
+    transform: translateX(80%);
   }
   100% {
-    width: 100%;
-    transform: translateX(100%);
+    transform: translateX(240%);
   }
 }
 
 /* 淡出效果 */
 .app-splash-fading {
-  animation: splash-fade-out 0.5s ease forwards;
+  animation: splash-fade-out 0.2s ease forwards;
 }
 
 @keyframes splash-fade-out {
   to {
     opacity: 0;
-    transform: scale(1.05);
     pointer-events: none;
   }
 }
+/* #endif */
 </style>

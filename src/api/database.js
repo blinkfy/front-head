@@ -568,7 +568,7 @@ export function deleteDevice(id) {
 
   export function updateGenericTableRecord(tableName, id, data) {
     return request({
-      url: `/api/admin/tables/${tableName}/${id}`,
+      url: `/api/admin/tables/${encodeURIComponent(tableName)}/${encodeURIComponent(id)}`,
       method: 'PUT',
       data,
       needAuth: true
@@ -577,7 +577,7 @@ export function deleteDevice(id) {
 
   export function deleteGenericTableRecord(tableName, id) {
     return request({
-      url: `/api/admin/tables/${tableName}/${id}`,
+      url: `/api/admin/tables/${encodeURIComponent(tableName)}/${encodeURIComponent(id)}`,
       method: 'DELETE',
       needAuth: true
     })

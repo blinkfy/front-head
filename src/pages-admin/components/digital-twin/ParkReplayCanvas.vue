@@ -199,7 +199,6 @@ import VisitorBehaviorSprite from './VisitorBehaviorSprite.vue'
 import { centerPhaseFromEvent, eventEntityIds, eventPresentation, primaryEventEntityIds } from '@/pages-admin/utils/park-replay.js'
 import { layoutStableMapLabels } from '@/pages-admin/utils/stable-map-label-layout.js'
 import { displaySourceLabel } from '@/pages-admin/utils/source-display.js'
-import { webpPngFallbackUrl } from '@/utils/digital-twin-assets.js'
 import PARK_SCENE_LAYERS, { PARK_SCENE_ASSETS, readParkSceneDevFlags } from '@/pages-admin/config/park-scene-layers.js'
 import PARK_SCENE_OCCLUSIONS, { parkOcclusionStyle } from '@/pages-admin/config/park-scene-occlusion.js'
 import PARK_SCENE_ALIGNMENT from '@/pages-admin/config/park-scene-alignment.json'
@@ -252,17 +251,12 @@ const incidentAffectedIds = computed(() => new Set(activeIncidents.value.flatMap
 const centerQueueCount = computed(() => props.runtimeState?.operations?.centerQueue?.length || 0)
 const sceneAssets = PARK_SCENE_ASSETS
 const sceneDev = ref(readParkSceneDevFlags())
-const sceneImageFallbacks = ref({})
 
 function sceneImageSrc(src) {
-  return sceneImageFallbacks.value[src] || src
+  return src
 }
 
-function handleSceneImageError(src) {
-  const fallbackSrc = webpPngFallbackUrl(src)
-  if (!src || fallbackSrc === src || sceneImageFallbacks.value[src] === fallbackSrc) return
-  sceneImageFallbacks.value = { ...sceneImageFallbacks.value, [src]: fallbackSrc }
-}
+function handleSceneImageError() {}
 
 const groundDetails = PARK_SCENE_LAYERS.groundDetails.items
 const foregroundOcclusions = PARK_SCENE_OCCLUSIONS
@@ -318,6 +312,10 @@ const dispatchProgress = ref(0)
 const canvasContainerRef = ref(null)
 const canvasRef = ref(null)
 const sceneSurfaceStyle = ref({ width: '100%', height: '100%' })
+// #ifdef MP-WEIXIN
+// 小程序拿不到 DOM 尺寸，用 padding-bottom 按 1672:941 锁定场景比例，背景图与实体层百分比坐标才能对齐。
+sceneSurfaceStyle.value = { width: '100%', height: '0', paddingBottom: `${(941 / 1672 * 100).toFixed(4)}%` }
+// #endif
 const taskCameraActive = computed(() => Boolean(
   props.robotVisual?.active && props.robotVisual?.mode === 'robot' && props.robotVisual?.camera
 ))
@@ -408,6 +406,9 @@ function isCalibrationBlockedEdge(edgeId) {
   return runtimeBlockedEdgeIds.value.size ? runtimeBlockedEdgeIds.value.has(edgeId) : defaultBlockedEdgeIds.has(edgeId)
 }
 function fitSceneSurface() {
+  // #ifdef MP-WEIXIN
+  return
+  // #endif
   const root = canvasContainerRef.value?.$el || canvasContainerRef.value
   const bounds = root?.getBoundingClientRect?.()
   // getBoundingClientRect preserves the fractional CSS pixels produced by rpx,
@@ -728,8 +729,8 @@ onBeforeUnmount(() => {
 
 /* #ifdef MP-WEIXIN */
 /* 微信小程序端不支持 aspect-ratio / backdrop-filter / inset，调整布局避免地图高度异常 */
-.park-canvas { position: relative; width: 100%; height: 100%; min-height: 320px; box-sizing: border-box; }
-.park-scene-surface { position: relative; width: 100%; height: 100%; min-height: 320px; max-width: 100%; aspect-ratio: auto; }
+.park-canvas { position: relative; display: block; width: 100%; height: auto; min-height: 0; box-sizing: border-box; }
+.park-scene-surface { position: relative; display: block; flex: none; width: 100%; height: 0; min-height: 0; max-width: 100%; aspect-ratio: auto; box-sizing: content-box; }
 .park-scene-surface .environment-back,
 .park-scene-surface .park-background,
 .park-scene-surface .park-road-overlay,

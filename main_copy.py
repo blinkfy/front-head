@@ -45,13 +45,14 @@ else:
     path="/home/jetson/Desktop/ultralytics-main/myprogram/"
 
 # 设备模拟器相关常量
-DEFAULT_SERVER = "https://wehvspwpvibt.sealosbja.site"
-DEFAULT_FRONTEND = "http://192.168.10.206:5173/"
+DEFAULT_SERVER = os.environ.get("SMARTBIN_SERVER", "https://rgqexbnzzipc.sealosbja.site")
+DEFAULT_FRONTEND = os.environ.get("SMARTBIN_FRONTEND", "https://rgqexbnzzipc.sealosbja.site")
 QR_FILENAME = "device_qr.png"
 WECHAT_QR_ENV_VERSION = os.environ.get("WECHAT_QR_ENV_VERSION", "release").strip().lower()
 if WECHAT_QR_ENV_VERSION not in ("release", "trial", "develop"):
     WECHAT_QR_ENV_VERSION = "release"
-DEVICE_ID = 1  # 固定使用垃圾桶ID=1作为设备ID
+DEVICE_ID = int(os.environ.get("SMARTBIN_BIN_DEVICE_ID", "14"))  # 默认与设备模拟器垃圾桶ID一致
+TOKEN_POLL_INTERVAL = 300
 
 def generate_device_token():
     """设备端生成token"""
@@ -376,9 +377,10 @@ class MainWindow(QMainWindow):
         self.qr_switch_layout.setContentsMargins(0, 0, 0, 0)
         self.qr_app_button = QPushButton('普通 APP', self)
         self.qr_app_button.setCheckable(True)
-        self.qr_app_button.setChecked(True)
+        self.qr_app_button.setChecked(False)
         self.qr_wechat_button = QPushButton('微信小程序', self)
         self.qr_wechat_button.setCheckable(True)
+        self.qr_wechat_button.setChecked(True)
         self.qr_app_button.clicked.connect(self.show_app_qr)
         self.qr_wechat_button.clicked.connect(self.show_wechat_qr)
         self.qr_switch_layout.addWidget(self.qr_app_button)
@@ -397,8 +399,11 @@ class MainWindow(QMainWindow):
         self.wechat_qr_image_label.setAlignment(Qt.AlignCenter)
         self.wechat_qr_image_label.setStyleSheet("border: 2px solid #ddd; background: white;")
         self.qr_stack.addWidget(self.wechat_qr_image_label)
+        self.qr_stack.setCurrentWidget(self.wechat_qr_image_label)
         self.status_v_layout.addWidget(self.qr_stack, alignment=Qt.AlignCenter)
+        self._qr_selection = "wechat"
         self._qr_user_selected = False
+        self._has_wechat_qr_pixmap = False
 
         self.qr_status_label = QLabel('微信小程序码生成中；普通 APP 码可用。', self)
         self.qr_status_label.setWordWrap(True)
@@ -1314,28 +1319,24 @@ class MainWindow(QMainWindow):
             return token == self._current_token
 
     def show_app_qr(self):
+        self._qr_selection = "app"
         self._qr_user_selected = True
         self.qr_stack.setCurrentWidget(self.qr_image_label)
         self.qr_app_button.setChecked(True)
         self.qr_wechat_button.setChecked(False)
 
     def show_wechat_qr(self):
+        self._qr_selection = "wechat"
         self._qr_user_selected = True
         self.qr_stack.setCurrentWidget(self.wechat_qr_image_label)
         self.qr_app_button.setChecked(False)
         self.qr_wechat_button.setChecked(True)
 
     def apply_qr_update(self, token, app_png, wechat_png, message):
-        """在 Qt 主线程显示当前 token 对应的二维码结果。"""
+        """在 Qt 主线程显示当前 token 对应的二维码结果；刷新期间保留旧微信码，拿到新码后再替换。"""
         if not self._is_current_qr_token(token):
             return
         if app_png is not None:
-            self._qr_user_selected = False
-            self.qr_stack.setCurrentWidget(self.qr_image_label)
-            self.qr_app_button.setChecked(True)
-            self.qr_wechat_button.setChecked(False)
-            self.wechat_qr_image_label.clear()
-            self.wechat_qr_image_label.setText('生成中')
             app_pixmap = QPixmap()
             if app_pixmap.loadFromData(app_png):
                 self.qr_image_label.setPixmap(app_pixmap.scaled(190, 190, Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -1347,25 +1348,31 @@ class MainWindow(QMainWindow):
                 wechat_pixmap = QPixmap()
                 if wechat_pixmap.loadFromData(wechat_png):
                     self.wechat_qr_image_label.setPixmap(wechat_pixmap.scaled(190, 190, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-                    if not self._qr_user_selected:
+                    self._has_wechat_qr_pixmap = True
+                    if not self._qr_user_selected or self._qr_selection == "wechat":
+                        self._qr_selection = "wechat"
                         self.qr_stack.setCurrentWidget(self.wechat_qr_image_label)
                         self.qr_app_button.setChecked(False)
                         self.qr_wechat_button.setChecked(True)
                 else:
-                    self.wechat_qr_image_label.clear()
-                    self.wechat_qr_image_label.setText('微信码图片无效')
                     message = '微信小程序码图片无效；请使用普通 APP 码扫码。'
-                    self._qr_user_selected = False
-                    self.qr_stack.setCurrentWidget(self.qr_image_label)
-                    self.qr_app_button.setChecked(True)
-                    self.qr_wechat_button.setChecked(False)
+                    if not self._has_wechat_qr_pixmap:
+                        self.wechat_qr_image_label.clear()
+                        self.wechat_qr_image_label.setText('微信码图片无效')
+                        if not self._qr_user_selected:
+                            self._qr_selection = "app"
+                            self.qr_stack.setCurrentWidget(self.qr_image_label)
+                            self.qr_app_button.setChecked(True)
+                            self.qr_wechat_button.setChecked(False)
             else:
-                self.wechat_qr_image_label.clear()
-                self.wechat_qr_image_label.setText('生成中' if '生成中' in message else '不可用')
-                self._qr_user_selected = False
-                self.qr_stack.setCurrentWidget(self.qr_image_label)
-                self.qr_app_button.setChecked(True)
-                self.qr_wechat_button.setChecked(False)
+                if not self._has_wechat_qr_pixmap:
+                    self.wechat_qr_image_label.clear()
+                    self.wechat_qr_image_label.setText('生成中' if '生成中' in message else '不可用')
+                    if '生成中' not in message and not self._qr_user_selected:
+                        self._qr_selection = "app"
+                        self.qr_stack.setCurrentWidget(self.qr_image_label)
+                        self.qr_app_button.setChecked(True)
+                        self.qr_wechat_button.setChecked(False)
         failed = '失败' in message or '不可用' in message or '无效' in message
         color = '#b42318' if failed else '#666'
         self.qr_status_label.setStyleSheet(f"font-size: 9pt; color: {color}; margin: 3px 0;")
@@ -1373,7 +1380,7 @@ class MainWindow(QMainWindow):
         self.retry_wechat_qr_button.setVisible(failed)
 
     def generate_and_display_qr(self, token=None):
-        """生成普通 APP 连接码；图片写盘和 Qt 更新分别保持兼容及线程安全。"""
+        """生成普通 APP 连接码；图片原子写盘并保持已有微信码不被清空。"""
         try:
             if token is None:
                 with self._qr_token_lock:
@@ -1383,8 +1390,11 @@ class MainWindow(QMainWindow):
                 with self._qr_token_lock:
                     self._current_token = token
 
-            scan_url = f"{self.frontend}/#/pages-nonTheme/scan?device_id={self.device_id}&token={token}"
-            
+            scan_url = (
+                f"{self.frontend}/#/pages-nonTheme/scan?device_id={self.device_id}"
+                f"&token={token}&device_mode=bin"
+            )
+
             qr = qrcode.QRCode(version=1, box_size=10, border=5)
             qr.add_data(scan_url)
             qr.make(fit=True)
@@ -1393,12 +1403,19 @@ class MainWindow(QMainWindow):
             buffer = io.BytesIO()
             img.save(buffer, format="PNG")
             app_png = buffer.getvalue()
+            revision = str(time.time_ns())
+            temp_filename = f"{QR_FILENAME}.{revision}.tmp"
             with self._qr_token_lock:
                 if token != self._current_token:
                     return None
-                with open(QR_FILENAME, "wb") as qr_file:
-                    qr_file.write(app_png)
-            self.qr_update_signal.emit(token, app_png, b'', '微信小程序码生成中；普通 APP 码可用。')
+                try:
+                    with open(temp_filename, "wb") as qr_file:
+                        qr_file.write(app_png)
+                    os.replace(temp_filename, QR_FILENAME)
+                finally:
+                    if os.path.exists(temp_filename):
+                        os.remove(temp_filename)
+            self.qr_update_signal.emit(token, app_png, None, '微信小程序码生成中；普通 APP 码可用。')
             return app_png
         except Exception as e:
             print(f"[二维码] 生成失败: {e}")
@@ -1435,18 +1452,15 @@ class MainWindow(QMainWindow):
                 )
 
     def retry_wechat_qr(self):
-        """重新请求当前 token 的小程序码，不在 Qt 线程执行网络请求。"""
+        """保留已有的旧小程序码，重新异步请求当前 token 的小程序码并在就绪后替换。"""
         with self._qr_token_lock:
             token = self._current_token
         if not token:
             self.qr_status_label.setText('设备 token 尚未准备好；普通 APP 码可用。')
             return
-        self._qr_user_selected = False
-        self.qr_stack.setCurrentWidget(self.qr_image_label)
-        self.qr_app_button.setChecked(True)
-        self.qr_wechat_button.setChecked(False)
-        self.wechat_qr_image_label.clear()
-        self.wechat_qr_image_label.setText('生成中')
+        if not self._has_wechat_qr_pixmap:
+            self.wechat_qr_image_label.clear()
+            self.wechat_qr_image_label.setText('生成中')
         self.qr_status_label.setStyleSheet("font-size: 9pt; color: #666; margin: 3px 0;")
         self.qr_status_label.setText('微信小程序码生成中；普通 APP 码可用。')
         self.retry_wechat_qr_button.hide()
@@ -1458,11 +1472,10 @@ class MainWindow(QMainWindow):
         token = generate_device_token()
         with self._qr_token_lock:
             self._current_token = token
-        self.generate_and_display_qr(token)
 
         def register_and_fetch():
             try:
-                expires_at = int(time.time() + 5 * 60)
+                expires_at = int(time.time() + 7 * 60)
                 response = requests.post(
                     f"{self.server}/api/device/{self.device_id}/online",
                     json={
@@ -1479,6 +1492,7 @@ class MainWindow(QMainWindow):
                     body = {}
                 if response.status_code != 200 or body.get('code') != 0:
                     if self._is_current_qr_token(token):
+                        self.generate_and_display_qr(token)
                         error = body.get('msg') or f"HTTP {response.status_code}"
                         self.qr_update_signal.emit(token, None, b'', f"设备上线失败：{error}；普通 APP 码仍可用。")
                     return
@@ -1487,12 +1501,12 @@ class MainWindow(QMainWindow):
                     if self._current_token != token:
                         return
                     self._current_token = accepted_token
-                if accepted_token != token:
-                    self.generate_and_display_qr(accepted_token)
+                self.generate_and_display_qr(accepted_token)
                 self.request_wechat_qr(accepted_token)
                 print("[设备] 上线信号发送成功")
             except Exception as e:
                 if self._is_current_qr_token(token):
+                    self.generate_and_display_qr(token)
                     self.qr_update_signal.emit(token, None, b'', f"设备上线失败：{e}；普通 APP 码仍可用。")
 
         thread = threading.Thread(target=register_and_fetch, daemon=True)
@@ -1504,10 +1518,10 @@ class MainWindow(QMainWindow):
         def poll_token():
             while True:
                 try:
-                    time.sleep(300)  # 每5分钟轮询一次
-                    # 生成新token
+                    time.sleep(TOKEN_POLL_INTERVAL)  # 每5分钟轮询一次
+                    # 生成新token（预留2分钟缓冲期，共7分钟有效期）
                     new_token = generate_device_token()
-                    expires_at = int(time.time() + 5 * 60)  # 5分钟后过期
+                    expires_at = int(time.time() + 7 * 60)
                     
                     url = f"{self.server}/api/device/{self.device_id}/token"
                     payload = {

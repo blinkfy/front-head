@@ -1,12 +1,14 @@
 <template>
-  <view :class="['admin-screen-header', `admin-screen-header--${tone}`]">
-    <view class="admin-screen-header__business-actions">
+  <view :class="['admin-screen-header', `admin-screen-header--${tone}`, { 'admin-screen-header--twin': screenKey === 'digitalTwinReplay' }]">
+    <view v-if="!hideBusiness" class="admin-screen-header__business-actions">
       <slot />
     </view>
     <view class="admin-screen-header__navigation-actions">
       <AdminScreenSwitcher
+        class="admin-screen-header__switcher"
         :screen-key="screenKey"
         :tone="tone"
+        :compact="screenKey === 'digitalTwinReplay'"
         @screen-action="emit('screen-action', $event)"
       />
       <view
@@ -27,6 +29,7 @@ import AdminScreenSwitcher from './AdminScreenSwitcher.vue'
 import ManifestIcon from './ManifestIcon.vue'
 
 const props = defineProps({
+  hideBusiness: { type: Boolean, default: false },
   screenKey: {
     type: String,
     required: true
@@ -183,4 +186,14 @@ const emit = defineEmits(['back', 'screen-action'])
     flex: 1 1 70px;
   }
 }
+
+/* #ifdef MP-WEIXIN */
+.admin-screen-header__navigation-actions { align-items: center; flex-wrap: nowrap; }
+.admin-screen-header__back { height: 36px; min-height: 36px; box-sizing: border-box; }
+.admin-screen-header--twin { width: 100%; flex-direction: column; align-items: stretch; gap: 8px; }
+.admin-screen-header--twin .admin-screen-header__business-actions { width: 100%; justify-content: flex-start; }
+.admin-screen-header--twin .admin-screen-header__navigation-actions { width: 100%; margin-left: 0; justify-content: stretch; align-items: stretch; }
+.admin-screen-header--twin .admin-screen-header__switcher { flex: 1; width: 0; min-width: 0; }
+.admin-screen-header--twin .admin-screen-header__back { flex: 1; min-width: 0; height: 36px; }
+/* #endif */
 </style>

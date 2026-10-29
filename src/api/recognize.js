@@ -20,11 +20,23 @@ export function recognizeImage(file, { onProgress, bboxRenderer } = {}) {
     let polling = Boolean(progressId)
     let pollTimer = null
     let lastRevision = -1
+    let pollFailures = 0
+    let settled = false
+    let timeoutTimer = null
+    let abortUpload = null
 
     const stopPolling = () => {
       polling = false
       if (pollTimer) clearTimeout(pollTimer)
       pollTimer = null
+    }
+    const settle = (error, data) => {
+      if (settled) return
+      settled = true
+      stopPolling()
+      if (timeoutTimer) clearTimeout(timeoutTimer)
+      if (error) reject(error)
+      else resolve(data)
     }
     const schedulePoll = (delay = 700) => {
       if (!polling) return
@@ -34,18 +46,20 @@ export function recognizeImage(file, { onProgress, bboxRenderer } = {}) {
           stopPolling()
           return
         }
-        uni.request({
+        try { uni.request({
           url: `${baseUrl}/api/recognition-progress/${encodeURIComponent(progressId)}`,
           method: 'GET',
           header: { Authorization: token },
           timeout: 5000,
           success: response => {
             if (!polling || (uni.getStorageSync('token') || '') !== token) return
-            if (response?.statusCode === 404) return // Multipart upload may not have reached the controller yet.
+            if (response?.statusCode === 404) { pollFailures = 0; return } // Upload may still be in transit.
+            if (response?.statusCode >= 500 || response?.statusCode === 429) { pollFailures++; return }
             if (response?.statusCode !== 200 || response?.data?.code !== 0) {
               stopPolling() // Progress is optional; the original recognition request remains authoritative.
               return
             }
+            pollFailures = 0
             const snapshot = response?.data?.code === 0 ? response.data.data : null
             if (snapshot && Number.isInteger(snapshot.revision) && snapshot.revision > lastRevision) {
               lastRevision = snapshot.revision
@@ -53,9 +67,12 @@ export function recognizeImage(file, { onProgress, bboxRenderer } = {}) {
             }
             if (snapshot?.status === 'failed' || snapshot?.status === 'succeeded') stopPolling()
           },
-          fail: stopPolling,
-          complete: () => { if (polling) schedulePoll() }
-        })
+          fail: () => { pollFailures++ },
+          complete: () => { if (polling) schedulePoll(Math.min(5000, 700 * 2 ** Math.min(pollFailures, 3))) }
+        }) } catch (_) {
+          pollFailures++
+          schedulePoll(Math.min(5000, 700 * 2 ** Math.min(pollFailures, 3)))
+        }
       }, delay)
     }
     if (polling) schedulePoll(450)
@@ -79,19 +96,30 @@ export function recognizeImage(file, { onProgress, bboxRenderer } = {}) {
     
     // H5环境且传入的是File对象时，使用fetch上传
     if (isH5 && typeof File !== 'undefined' && file instanceof File) {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+      abortUpload = () => controller?.abort()
+      timeoutTimer = setTimeout(() => {
+        const error = new Error('识别等待超时，请检查网络后重试原图')
+        error.msg = error.message
+        error.code = 'RECOGNITION_TIMEOUT'
+        settle(error)
+        abortUpload?.()
+      }, 600000)
       const formData = new FormData()
       formData.append('image', file)
       if (bboxRenderer === 'client') formData.append('bboxRenderer', 'client')
       if (progressId) formData.append('progressId', progressId)
       
-      fetch(`${baseUrl}/api/recognize`, {
+      let responsePromise
+      try { responsePromise = fetch(`${baseUrl}/api/recognize`, {
         method: 'POST',
         headers: {
           'Authorization': token
         },
-        body: formData
-      })
-      .then(async response => {
+        body: formData,
+        ...(controller ? { signal: controller.signal } : {})
+      }) } catch (error) { settle(error); return }
+      responsePromise.then(async response => {
         if (!response.ok) {
           let message = ''
           try {
@@ -106,24 +134,23 @@ export function recognizeImage(file, { onProgress, bboxRenderer } = {}) {
         return response.json()
       })
       .then(data => {
+        if (settled) return
         if (data.code === 0) {
-          stopPolling()
-          resolve(data.data)
+          settle(null, data.data)
         } else {
-          stopPolling()
           uni.showToast({ title: data.msg || '识别失败', icon: 'none' })
-          reject(data)
+          settle(data)
         }
       })
       .catch(err => {
-        stopPolling()
+        if (settled) return
         console.error('H5 fetch上传失败:', err)
         uni.showToast({ title: err.msg || '图片上传失败', icon: 'none' })
-        reject(err)
+        settle(err)
       })
     } else {
       // 小程序环境或传入路径时，使用uni.uploadFile
-      uni.uploadFile({
+      try { uni.uploadFile({
         url: `${baseUrl}/api/recognize`,
         filePath: typeof file === 'string' ? file : file.path,
         name: 'image', // 字段名必须为image
@@ -133,25 +160,29 @@ export function recognizeImage(file, { onProgress, bboxRenderer } = {}) {
           'Authorization': token
         },
         success: (res) => {
-          stopPolling()
+          if (settled) return
           let data = res.data
           if (typeof data === 'string') {
             try { data = JSON.parse(data) } catch (e) {}
           }
-          if (data.code === 0) {
-            resolve(data.data)
+          if (data?.code === 0) {
+            settle(null, data.data)
           } else {
-            uni.showToast({ title: data.msg || '识别失败', icon: 'none' })
-            reject(data)
+            uni.showToast({ title: data?.msg || '识别失败', icon: 'none' })
+            settle(data || new Error('识别结果暂不可用'))
           }
         },
         fail: (err) => {
-          stopPolling()
+          if (settled) return
           console.error('uni.uploadFile上传失败:', err)
           uni.showToast({ title: '图片上传失败', icon: 'none' })
-          reject(err)
+          if (/timeout/i.test(String(err?.errMsg || ''))) {
+            err.msg = '识别等待超时，请检查网络后重试原图'
+            err.code = 'RECOGNITION_TIMEOUT'
+          }
+          settle(err)
         }
-      })
+      }) } catch (error) { settle(error) }
     }
   })
 }

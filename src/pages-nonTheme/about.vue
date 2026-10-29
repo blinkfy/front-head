@@ -19,24 +19,18 @@
     <view class="content-wrapper">
       <!-- 应用信息卡片 -->
       <view class="info-card">
-        <image class="app-icon" :src="appIconSource" mode="aspectFill" @click="downloadAPK('')"></image>
+        <image class="app-icon" :src="appIconSource" mode="aspectFill" ></image>
         <text class="app-name">分投侠</text>
         <text class="app-slogan">智能垃圾分类助手</text>
         <text class="app-version">Version {{ currentVersion }}</text>
         <text class="app-slogan">让垃圾分类更智能，让环保更简单</text>
         <view class="version-actions">
-          <view class="check-update" :class="{ checking }" @click="checkLatestVersion(true)">
-            {{ checking ? '检查中…' : '检查更新' }}
-          </view>
-        </view>
-
-        <!-- info-card footer: compact update controls (only when update exists) -->
-        <view class="info-footer" v-if="hasUpdate">
-          <view class="version-block">
-            <view v-if="showBadge" :class="['new-badge', { 'shake': badgeShake }]">新版本</view>
-            <text :class="['update-message', { highlight: highlight }]" v-if="updateMessage"
-              @click="latestUrl && downloadAPK(latestUrl)">{{ updateMessage }}</text>
-          </view>
+          <!-- #ifdef APP-PLUS -->
+          <view class="check-update" @click="checkAppUpdate({ manual: true })">检查更新</view>
+          <!-- #endif -->
+          <!-- #ifndef APP-PLUS -->
+          <view class="check-update" @click="downloadApp">下载 APP</view>
+          <!-- #endif -->
         </view>
       </view>
 
@@ -111,7 +105,10 @@
 </template>
 <script setup>
 import { baseUrl } from '@/api/settings'
-import request from '@/api/index'
+import { appDownloadUrl } from '@/utils/app-update-core.mjs'
+// #ifdef APP-PLUS
+import { checkAppUpdate } from '@/utils/app-update.js'
+// #endif
 import manifest from '@/manifest.json'
 import { ref, onMounted } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
@@ -140,32 +137,18 @@ function checkTheme() {
   isDarkTheme.value = theme === 'dark'
 }
 
-const currentVersion = manifest?.versionName || '1.4.5'
+const currentVersion = manifest?.versionName || '1.4.6'
 
-const checking = ref(false)
-const updateMessage = ref('')
-const latestUrl = ref('')
-const hasUpdate = ref(false)
-const highlight = ref(false)
-const showBadge = ref(false)
-const badgeShake = ref(false)
-
-function downloadAPK(apkUrl) {
-  let apk = '/files/download/classfication.apk'
-  if (apkUrl && apkUrl != '') apk = apkUrl
-  // 分环境处理下载
+function downloadApp() {
+  const url = appDownloadUrl(baseUrl)
   // #ifdef H5
-  window.open(apk, '_blank')
+  window.open(url, '_blank')
   // #endif
-  // #ifdef APP-PLUS
-  uni.navigateTo({
-    url: `/pages-nonTheme/webview?url=${encodeURIComponent(baseUrl + apk)}`
-  })
-  // #endif
-  // #ifdef MP-WEIXIN
-  uni.showToast({ title: '请在浏览器中下载 APK 文件', icon: 'none' })
-  uni.navigateTo({
-    url: `/pages-nonTheme/webview?url=${encodeURIComponent(baseUrl + apk)}`
+  // #ifndef H5 || APP-PLUS
+  uni.setClipboardData({
+    data: url,
+    success: () => uni.showModal({ title: '下载 APP', content: '下载链接已复制，请在手机浏览器中打开，下载 Android 安装包。', showCancel: false }),
+    fail: () => uni.showModal({ title: '下载 APP', content: `请在浏览器中打开：${url}`, showCancel: false })
   })
   // #endif
 }
@@ -202,72 +185,8 @@ function openProfileWebview() {
   }
 }
 
-// 版本检查逻辑
-function compareVersion(a = '0.0.0', b = '0.0.0') {
-  const pa = String(a).split('.').map(n => parseInt(n || 0, 10))
-  const pb = String(b).split('.').map(n => parseInt(n || 0, 10))
-  const len = Math.max(pa.length, pb.length)
-  for (let i = 0; i < len; i++) {
-    const na = pa[i] || 0
-    const nb = pb[i] || 0
-    if (na > nb) return 1
-    if (na < nb) return -1
-  }
-  return 0
-}
-
-async function checkLatestVersion(manual = false) {
-  if (checking.value) return
-  checking.value = true
-  updateMessage.value = ''
-  try {
-    // 版本信息来自现有的 /api/version 接口。
-    const res = await request({ url: '/api/version', method: 'GET' })
-    // request 返回的可能是 res.data 或直接 data
-    const payload = res?.data || res || {}
-    const latest = payload.versionName || payload.version || payload.latestVersion || (payload.data && payload.data.versionName) || ''
-    const download = (payload.url || (payload.data && payload.data.url)) || ''
-    if (!latest) {
-      updateMessage.value = '未从服务器获取到版本信息'
-      hasUpdate.value = false
-      if (manual) uni.showToast({ title: '暂时无法获取版本信息', icon: 'none' })
-    } else {
-      if (compareVersion(latest, currentVersion) <= 0) {
-        // 已是最新，隐藏更新控件
-        updateMessage.value = ''
-        latestUrl.value = ''
-        hasUpdate.value = false
-        if (manual) uni.showToast({ title: '已是最新版本', icon: 'none' })
-      } else {
-        latestUrl.value = download
-        updateMessage.value = `发现新版本 ${latest}，点击下载更新`
-        hasUpdate.value = true
-        // trigger short highlight animation
-        highlight.value = true
-        showBadge.value = false
-        setTimeout(() => {
-          highlight.value = false;
-          showBadge.value = true
-          // trigger a short shake animation
-          badgeShake.value = true
-          setTimeout(() => { badgeShake.value = false }, 600)
-        }, 1200)
-        // 在 App 或 H5 可直接使用 downloadAPK(latestUrl.value)；在小程序中引导打开浏览器
-      }
-    }
-  } catch (e) {
-    console.error('checkLatestVersion error', e)
-    updateMessage.value = '检查失败，请稍后重试'
-    if (manual) uni.showToast({ title: '检查失败，请稍后重试', icon: 'none' })
-  } finally {
-    checking.value = false
-  }
-}
-
 onMounted(() => {
   checkTheme()
-  // 页面打开时自动检测一次
-  checkLatestVersion()
 })
 </script>
 

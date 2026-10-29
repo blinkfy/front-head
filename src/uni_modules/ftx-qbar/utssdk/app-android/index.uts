@@ -16,6 +16,15 @@ export function startScan(callback: (result: string) => void): void {
   QbarBridge.start(activity!, callback)
 }
 
+export function startScanWithDiagnostics(callback: (result: string) => void): void {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) {
+    callback('{"error":"UNAVAILABLE"}')
+    return
+  }
+  QbarBridge.startDebug(activity!, callback)
+}
+
 export function cancelScan(): void {
   const activity = UTSAndroid.getUniActivity()
   if (activity != null) QbarBridge.cancel(activity!)

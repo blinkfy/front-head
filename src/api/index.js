@@ -137,6 +137,7 @@ function request({
   header = {},
   needAuth = false,
   silent = false,
+  timeout,
   contentType
 }) {
   const token = getToken()
@@ -163,6 +164,7 @@ function request({
       method: requestMethod,
       data: requestData,
       header: headers,
+      ...(Number.isFinite(timeout) && timeout > 0 ? { timeout } : {}),
       success: res => {
         const responseData = res?.data && typeof res.data === 'object' ? res.data : {}
         if (isDatabaseHealthEndpoint(url)) {

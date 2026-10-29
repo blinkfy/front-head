@@ -1,4 +1,4 @@
-import { digitalTwinAssetUrl, digitalTwinWebpAssetUrl } from '@/utils/digital-twin-assets.js'
+import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'
 
 const VIDEO_ROOT = digitalTwinAssetUrl('digital-twin-replay/center-workflow/video')
 
@@ -24,8 +24,5 @@ export const CENTER_WORKFLOW_MASTER_VIDEO = Object.freeze({
     charge: Object.freeze({ startSeconds: 13.1, endSeconds: 16.57, holdLastFrameSeconds: 0.8 }),
     ready: Object.freeze({ startSeconds: 16.57, endSeconds: 18.33 })
   }),
-  fallbackImage: digitalTwinWebpAssetUrl(
-    'sorting-center/facility-digital-twin.webp',
-    'sorting-center/facility-digital-twin.png'
-  )
+  fallbackImage: digitalTwinAssetUrl('sorting-center/facility-digital-twin.webp.png')
 })

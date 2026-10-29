@@ -19,6 +19,7 @@
 </template>
 
 <script setup>
+import { chooseAppImage } from '@/utils/image-picker.js'
 import { computed, getCurrentInstance, onBeforeUnmount, ref, watch } from 'vue'
 import { baseUrl } from '@/api/settings.js'
 import { compressImageToBase64, getAvatarUrl, validateAvatarSize } from '@/utils/avatar-handler.js'
@@ -62,7 +63,7 @@ async function prepareAvatar(path) {
 function chooseAvatar(event) { void prepareAvatar(event.detail?.avatarUrl) }
 function chooseLocalAvatar() {
   if (busy.value) return
-  uni.chooseImage({ count: 1, sizeType: ['compressed'], success: result => { void prepareAvatar(result.tempFilePaths?.[0]) } })
+  chooseAppImage({ count: 1, sizeType: ['compressed'], success: result => { void prepareAvatar(result.tempFilePaths?.[0]) } })
 }
 function submitProfile(event) {
   if (busy.value) return

@@ -71,7 +71,6 @@
                 @load="onImageLoad"
               />
               <ManifestIcon class="image-remove" id="close" @click="removeImage" />
-              <text class="image-debug-url">URL: {{ formData.imageUrl }}</text>
               <text v-if="imageErrorMsg" class="image-error">错误: {{ imageErrorMsg }}</text>
             </view>
           </view>
@@ -83,6 +82,7 @@
         <button 
           class="btn btn-primary" 
           @click="handleSubmit"
+          :disabled="isSubmitting"
         >
           {{ isSubmitting ? '提交中...' : '确认新增' }}
         </button>
@@ -92,6 +92,7 @@
 </template>
 
 <script setup>
+import { chooseAppImage } from '@/utils/image-picker.js'
 import { ref, computed, watch } from 'vue'
 import ManifestIcon from './ManifestIcon.vue'
 import { addTrashBin, uploadTrashBinImage, reverseGeocoder } from '../api/map.js'
@@ -275,9 +276,10 @@ async function getAddressFromCoords(lat, lng) {
 
 // 选择图片
 function chooseImage() {
-  uni.chooseImage({
+  if (isSubmitting.value) return
+  chooseAppImage({
     count: 1,
-    sizeType: ['compressed'],
+    sizeType: ['original'],
     sourceType: ['album', 'camera'],
     success: res => {
       if (res.tempFilePaths && res.tempFilePaths.length > 0) {
@@ -306,6 +308,7 @@ function onImageLoad() {
 
 // 移除图片
 function removeImage() {
+  if (isSubmitting.value) return
   formData.value.imageUrl = ''
   formData.value.imageFile = null
 }
@@ -328,18 +331,10 @@ async function handleSubmit() {
   isSubmitting.value = true
   
   try {
-    let imageUrl = ''
-    // 如果有图片，先上传图片
-    if (formData.value.imageFile) {
-      try {
-        const uploadResult = await uploadTrashBinImage(formData.value.imageFile)
-        imageUrl = uploadResult.url || uploadResult.path || ''
-      } catch (uploadError) {
-        console.warn('图片上传失败，继续提交:', uploadError)
-        // 图片上传失败不阻止整体提交
-      }
-    }
-    
+    const uploadResult = await uploadTrashBinImage(formData.value.imageFile)
+    const imageUrl = uploadResult.url
+    if (!imageUrl) throw new Error('图片处理失败，请重新选择')
+
     // 提交数据 - 使用新的API数据结构
     const submitData = {
       name: formData.value.name.trim(),
@@ -349,7 +344,10 @@ async function handleSubmit() {
       image: imageUrl
     }
     
-    await addTrashBin(submitData)
+    const result = await addTrashBin(submitData)
+    if (!result || (result.code !== 0 && result.code !== 200)) {
+      throw new Error(result?.msg || result?.message || '提交失败，请重试')
+    }
     
     showCustomToast('新增成功', 'success', 1500)
     
@@ -370,6 +368,7 @@ async function handleSubmit() {
 
 // 关闭弹窗
 function closeModal() {
+  if (isSubmitting.value) return
   emit('close')
 }
 

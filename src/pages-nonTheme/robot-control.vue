@@ -157,7 +157,7 @@ const sortingRobotAssets = Object.freeze({
   layers: digitalTwinAssetUrl('sorting-robot/layers'),
   rig: digitalTwinAssetUrl('sorting-robot/rig.json'),
   timeline: digitalTwinAssetUrl('sorting-robot/timeline.json'),
-  robot: digitalTwinAssetUrl('robot-control-robot.png')
+  robot: digitalTwinAssetUrl('robot-control-robot.webp.png')
 })
 
 const isDarkTheme = ref(false)
@@ -222,11 +222,11 @@ const backButtonStyle = computed(() => headerTopInset.value
 
 const robotImageUrl = computed(() => {
   // #ifdef MP-WEIXIN
-  return '/static/lejv.webp'
+  return '/pages-nonTheme/static/lejv.webp'
   // #endif
   if (robotImageFailed.value) {
     // #ifdef APP-PLUS
-    return digitalTwinAssetUrl('robot-control-hero.png')
+    return digitalTwinAssetUrl('robot-control-hero.webp.png')
     // #endif
     return sortingRobotAssets.robot
   }

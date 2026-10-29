@@ -52,3 +52,9 @@ python test_native.py
 - 这里使用的是公开项目中提取的微信闭源二进制，不是独立实现的圆码算法。包装器开源许可证不等于腾讯原生库的商用再分发授权；本实验不把这些二进制打入 APP。
 
 来源：[sollyu/wechat-scanner](https://github.com/sollyu/wechat-scanner/tree/8ba599fd90216d1ba148eda4cd051eb86cc5b16d)、[MrWangChong/Qbar](https://github.com/MrWangChong/Qbar/tree/30aedea1e3de0e05165880453364daab35e904fa)、[unidbg 0.9.8](https://github.com/zhkl0228/unidbg/tree/v0.9.8)。
+
+## 候选、变焦与角点接口隔离诊断
+
+重新编译实验类后运行 `python test_qbar_diagnostics.py`。每个输入使用独立仿真进程，只输出类型、长度、哈希和几何数据，不输出载荷。
+
+当前二进制/配置下，普通 QR、真实圆码、未解码的模糊小 QR、空白的 `GetCodeDetectInfo` 与 `GetZoomInfo` 均返回 -2，开启检测标志但模型路径为空的对照也无有效候选。因此没有把这些声明直接接到 APP。`GetDetailResults` 对已解码普通码/圆码返回四角，未解码样本返回 0；这不能作为提前定位、自动放大的依据。以上为 ARM64 unidbg 结果，尚不等同真机接口兼容性保证。

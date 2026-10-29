@@ -15,7 +15,7 @@
         </view>
         <view class="nav-title-wrap">
           <view class="title-icon-pill"><ManifestIcon id="reservation_order_table" /></view>
-          <text class="nav-title">我的订单</text>
+          <text class="nav-title">回收订单</text>
         </view>
         <view class="nav-right"></view>
       </view>

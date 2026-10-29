@@ -38,9 +38,9 @@ export const CENTER_WORKFLOW_TIMINGS = Object.freeze({
 export const CENTER_WORKFLOW_SCENE = Object.freeze({
   aspectRatio: 4 / 3,
   device: Object.freeze({
-    src: digitalTwinAssetUrl('digital-twin-replay/sprites/smart-bin-v2.png'),
+    src: digitalTwinAssetUrl('digital-twin-replay/sprites/smart-bin-v2.webp.png'),
     widthPct: 18,
-    source: digitalTwinAssetUrl('digital-twin-replay/sprites/smart-bin-v2.png'),
+    source: digitalTwinAssetUrl('digital-twin-replay/sprites/smart-bin-v2.webp.png'),
     dockFadeEnd: 0.58
   }),
   masks: Object.freeze({

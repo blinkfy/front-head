@@ -310,4 +310,15 @@ const gaugeColor = computed(() => {
     font-size: 15px;
   }
 }
+
+@media screen and (max-width: 640px) {
+  .compact-metric-value-row {
+    flex-wrap: wrap;
+    gap: 3px 6px;
+  }
+
+  .compact-metric-value {
+    font-size: 18px;
+  }
+}
 </style>

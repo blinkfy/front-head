@@ -23,7 +23,10 @@ object QbarBridge {
     }
     @JvmStatic fun isAvailable(activity: Activity): Boolean = scannerClass(activity) != null
     @JvmStatic
-    fun start(activity: Activity, callback: (String) -> Unit) {
+    fun start(activity: Activity, callback: (String) -> Unit) = startScanner(activity, callback, false)
+    @JvmStatic
+    fun startDebug(activity: Activity, callback: (String) -> Unit) = startScanner(activity, callback, true)
+    private fun startScanner(activity: Activity, callback: (String) -> Unit, debug: Boolean) {
         val scanner = scannerClass(activity)
         if (scanner == null) { callback("{\"error\":\"UNAVAILABLE\"}"); return }
         activity.runOnUiThread {
@@ -31,8 +34,11 @@ object QbarBridge {
                 val receiver = object : ValueCallback<String> {
                     override fun onReceiveValue(result: String) { callback(result) }
                 }
-                scanner.getMethod("open", Activity::class.java, ValueCallback::class.java)
-                    .invoke(null, activity, receiver)
+                val method = if (debug) {
+                    try { scanner.getMethod("openDebug", Activity::class.java, ValueCallback::class.java) }
+                    catch (_: NoSuchMethodException) { scanner.getMethod("open", Activity::class.java, ValueCallback::class.java) }
+                } else scanner.getMethod("open", Activity::class.java, ValueCallback::class.java)
+                method.invoke(null, activity, receiver)
             } catch (_: Throwable) { callback("{\"error\":\"UNAVAILABLE\"}") }
         }
     }

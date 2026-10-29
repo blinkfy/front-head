@@ -66,6 +66,9 @@
             <view class="input-wrap">
               <input
                 v-model="username"
+                :focus="focusedField === 'username'"
+                aria-label="用户名"
+                :aria-invalid="!!fieldErrors.username"
                 @blur="username = $event.detail.value"
                 placeholder="请输入用户名"
                 maxlength="20"
@@ -76,6 +79,7 @@
                 @keyup="handleKeyup"
               />
             </view>
+            <text v-if="fieldErrors.username" class="field-error" role="alert">{{ fieldErrors.username }}</text>
           </view>
           
           <!-- 密码输入 -->
@@ -89,6 +93,9 @@
               <input
                 v-if="showPwd"
                 v-model="password"
+                :focus="focusedField === 'password'"
+                aria-label="密码"
+                :aria-invalid="!!fieldErrors.password"
                 type="text"
                 placeholder="请输入密码（至少6位）"
                 maxlength="20"
@@ -98,6 +105,9 @@
               <input
                 v-else
                 v-model="password"
+                :focus="focusedField === 'password'"
+                aria-label="密码"
+                :aria-invalid="!!fieldErrors.password"
                 type="text"
                 password
                 placeholder="请输入密码（至少6位）"
@@ -109,6 +119,9 @@
               <!-- #ifndef MP-WEIXIN -->
               <input
                 v-model="password"
+                :focus="focusedField === 'password'"
+                aria-label="密码"
+                :aria-invalid="!!fieldErrors.password"
                 :type="showPwd ? 'text' : 'password'"
                 placeholder="请输入密码（至少6位）"
                 maxlength="20"
@@ -118,11 +131,12 @@
                 @keyup="handleKeyup"
               />
               <!-- #endif -->
-              <view class="pwd-toggle" @click="togglePassword">
+              <view class="pwd-toggle" role="button" tabindex="0" :aria-label="showPwd ? '隐藏密码' : '显示密码'" @keydown.enter.prevent="togglePassword" @keydown.space.prevent="togglePassword" @click="togglePassword">
                 <image class="toggle-icon" :src="showPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
               </view>
             </view>
             <text class="input-hint">密码需包含大小写字母、数字、特殊字符中至少两种</text>
+            <text v-if="fieldErrors.password" class="field-error" role="alert">{{ fieldErrors.password }}</text>
           </view>
           
           <!-- 确认密码 -->
@@ -136,6 +150,9 @@
               <input
                 v-if="showConfirmPwd"
                 v-model="confirmPwd"
+                :focus="focusedField === 'confirmPwd'"
+                aria-label="确认密码"
+                :aria-invalid="!!fieldErrors.confirmPwd"
                 type="text"
                 placeholder="请再次输入密码"
                 maxlength="20"
@@ -145,6 +162,9 @@
               <input
                 v-else
                 v-model="confirmPwd"
+                :focus="focusedField === 'confirmPwd'"
+                aria-label="确认密码"
+                :aria-invalid="!!fieldErrors.confirmPwd"
                 type="text"
                 password
                 placeholder="请再次输入密码"
@@ -156,6 +176,9 @@
               <!-- #ifndef MP-WEIXIN -->
               <input
                 v-model="confirmPwd"
+                :focus="focusedField === 'confirmPwd'"
+                aria-label="确认密码"
+                :aria-invalid="!!fieldErrors.confirmPwd"
                 :type="showConfirmPwd ? 'text' : 'password'"
                 placeholder="请再次输入密码"
                 maxlength="20"
@@ -165,10 +188,11 @@
                 @keyup="handleKeyup"
               />
               <!-- #endif -->
-              <view class="pwd-toggle" @click="toggleConfirmPassword">
+              <view class="pwd-toggle" role="button" tabindex="0" :aria-label="showConfirmPwd ? '隐藏确认密码' : '显示确认密码'" @keydown.enter.prevent="toggleConfirmPassword" @keydown.space.prevent="toggleConfirmPassword" @click="toggleConfirmPassword">
                 <image class="toggle-icon" :src="showConfirmPwd ? '/static/icons/visibility_off_32.webp.png' : '/static/icons/visibility_32.webp.png'" mode="aspectFit" />
               </view>
             </view>
+            <text v-if="fieldErrors.confirmPwd" class="field-error" role="alert">{{ fieldErrors.confirmPwd }}</text>
           </view>
           
           <!-- 验证码 -->
@@ -230,7 +254,7 @@ import { markWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
 import { onLoad } from '@dcloudio/uni-app'
 import { captureRegistrationEntry, miniRegistrationRelay } from '@/utils/registration-relay.js'
 // #endif
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { register } from '@/api/user'
 // #ifdef H5 || APP-PLUS
 import { onShow } from '@dcloudio/uni-app'
@@ -239,6 +263,8 @@ import { useH5RegistrationPolicy } from '@/utils/use-h5-registration-policy'
 // #endif
 import CaptchaBox from '@/components/CaptchaBox.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { returnToLogin } from '@/utils/login-navigation.mjs'
+import { evaluatePassword } from '@/utils/password-strength.mjs'
 // #ifdef APP-PLUS || MP-WEIXIN
 import RegistrationPrivacyAgreement from '@/components/RegistrationPrivacyAgreement.vue'
 // #endif
@@ -261,6 +287,20 @@ usernameInputType = typeof uni.canIUse === 'function' && uni.canIUse('input.type
 // #endif
 const password = ref('')
 const confirmPwd = ref('')
+const fieldErrors = ref({})
+const focusedField = ref('')
+function showFieldError(field, message) {
+  fieldErrors.value = { [field]: message }
+  focusedField.value = ''
+  nextTick(() => { focusedField.value = field })
+}
+watch([username, password, confirmPwd], (values, previous) => {
+  const errors = { ...fieldErrors.value }
+  ;['username', 'password', 'confirmPwd'].forEach((field, index) => {
+    if (values[index] !== previous[index]) delete errors[field]
+  })
+  fieldErrors.value = errors
+})
 const showPwd = ref(false)
 const showConfirmPwd = ref(false)
 const isLoading = ref(false)
@@ -297,40 +337,32 @@ function onRegister() {
   // #ifdef H5 || APP-PLUS
   if (!webRegistrationAllowed.value || webRegistrationLoading.value) return
   // #endif
+  fieldErrors.value = {}
+  captchaHint.value = ''
   if (!username.value){ 
-    captchaHint.value = '请输入用户名'
+    showFieldError('username', '请输入用户名')
     uni.showToast({ title: '请输入用户名', icon: 'none' })
     return
   } 
   if (!password.value){
-    captchaHint.value = '请输入密码'
+    showFieldError('password', '请输入密码')
     uni.showToast({ title: '请输入密码', icon: 'none' })
     return
   }
   if (!confirmPwd.value){
-    captchaHint.value = '请确认密码'
+    showFieldError('confirmPwd', '请确认密码')
     uni.showToast({ title: '请确认密码', icon: 'none' })
     return
   }
   if (password.value !== confirmPwd.value){
-    captchaHint.value = '两次密码不一致'
+    showFieldError('confirmPwd', '两次密码不一致')
     uni.showToast({ title: '两次密码不一致', icon: 'none' })
     return
   } 
-  if (password.value.length < 6) {
-    captchaHint.value = '密码过于简单'
-    uni.showToast({ title: '密码长度至少6位', icon: 'none' })
-    return
-  }
-  
-  let complexity = 0;
-  if (/[a-z]/.test(password.value)) complexity++;
-  if (/[A-Z]/.test(password.value)) complexity++;
-  if (/[0-9]/.test(password.value)) complexity++;
-  if (/[^A-Za-z0-9]/.test(password.value)) complexity++;
-  if (complexity < 2) {
-    captchaHint.value = '密码过于简单'
-    uni.showToast({ title: '密码需包含大小写字母、数字、特殊字符中至少两种', icon: 'none' })
+  const pwdCheck = evaluatePassword(password.value, { username: username.value })
+  if (!pwdCheck.valid) {
+    showFieldError('password', pwdCheck.hint || '密码过于简单')
+    uni.showToast({ title: pwdCheck.message, icon: 'none' })
     return
   }
 
@@ -388,7 +420,7 @@ function goBack() {
 }
 
 function goLogin() {
-  uni.redirectTo({ url: '/pages/index/index' })
+  returnToLogin({ runtime: uni, url: '/pages/index/index' })
 }
 
 // 切换密码显示/隐藏
@@ -443,6 +475,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.field-error { display: block; margin-top: 10rpx; color: #bf3b36; font-size: 24rpx; line-height: 1.5; }
 .register-page {
   min-height: 100vh;
   background: #ffffff;
@@ -500,6 +533,8 @@ onMounted(() => {
 }
 
 .back-btn {
+  position: relative;
+  top: 16rpx;
   width: 80rpx;
   height: 80rpx;
   background: rgba(255, 255, 255, 0.2);
@@ -610,7 +645,7 @@ onMounted(() => {
   right: 10rpx;
   background: linear-gradient(135deg, #93c5fd 0%, #60a5fa 50%, #3b82f6 100%);
   opacity: 0.18;
-  animation: floatSphere 8s ease-in-out infinite;
+  animation: auth-orb-blue 10s ease-in-out infinite;
 }
 
 .sphere-orange {
@@ -620,7 +655,7 @@ onMounted(() => {
   left: -80rpx;
   background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
   opacity: 0.15;
-  animation: floatSphere 10s ease-in-out infinite reverse;
+  animation: auth-orb-orange 12s ease-in-out infinite;
 }
 
 .sphere-green {
@@ -630,16 +665,7 @@ onMounted(() => {
   right: 20rpx;
   background: linear-gradient(135deg, #86efac 0%, #4ade80 50%, #22c55e 100%);
   opacity: 0.12;
-  animation: floatSphere 9s ease-in-out infinite 1s;
-}
-
-@keyframes floatSphere {
-  0%, 100% {
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(-20rpx) scale(1.05);
-  }
+  animation: auth-orb-green 8s ease-in-out infinite;
 }
 
 .form-card {

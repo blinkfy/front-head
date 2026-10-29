@@ -2,6 +2,8 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { NON_THEME_ONLY_ICON_IDS } from '../src/utils/mp-subpackage-icons.mjs'
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 export function mpMainPackageAssetsPlugin() {
@@ -20,6 +22,11 @@ export function mpMainPackageAssetsPlugin() {
         const tables = manifest.filter(icon => icon.id.endsWith('_table') && !['lottery_record_table', 'reservation_order_table'].includes(icon.id))
         const resources = tables.map(icon => ({ file: icon.file, package: 'pages-admin' }))
         resources.push({ file: 'Icon.webp.png', package: 'pages-nonTheme' })
+        const nonThemeIds = new Set(NON_THEME_ONLY_ICON_IDS)
+        for (const icon of manifest) {
+          if (nonThemeIds.has(icon.id)) resources.push({ file: icon.file, package: 'pages-nonTheme' })
+        }
+        resources.push({ file: 'lejv.webp', package: 'pages-nonTheme' })
         let saved = 0
         for (const resource of resources) {
           const from = path.resolve(output, 'static', resource.file)

@@ -18,6 +18,7 @@ public final class ScanPreview extends FrameLayout {
     private final FrameLayout viewport;
     private final Guide guide;
     private int bufferWidth, bufferHeight, rotation;
+    private int guideTop, guideBottom;
     private float zoom = 1f;
 
     public ScanPreview(Context context) {
@@ -37,13 +38,27 @@ public final class ScanPreview extends FrameLayout {
         bufferWidth = width; bufferHeight = height; rotation = displayRotation;
         requestLayout();
     }
+    public void guideArea(int top, int bottom) {
+        if (guideTop == top && guideBottom == bottom) return;
+        guideTop = top; guideBottom = bottom; requestLayout();
+    }
     public void scanning(boolean active) { guide.scanning(active); }
     public void zoom(float value) {
-        zoom = value; surface.setScaleX(value); surface.setScaleY(value);
+        zoom = value; applyZoomPivot();
+    }
+    public float[] zoomAnchor() {
+        if (guide.getWidth() <= 0 || guide.getHeight() <= 0 || guide.frame.width() <= 0)
+            return new float[]{0.5f, 0.5f};
+        return new float[]{guide.frame.centerX() / guide.getWidth(), guide.frame.centerY() / guide.getHeight()};
+    }
+    private void applyZoomPivot() {
+        float[] anchor = zoomAnchor();
+        surface.setPivotX(anchor[0] * surface.getWidth()); surface.setPivotY(anchor[1] * surface.getHeight());
+        surface.setScaleX(zoom); surface.setScaleY(zoom);
     }
     public void focusAt(float x, float y) {
-        guide.focusAt((x - surface.getWidth() / 2f) * zoom + surface.getWidth() / 2f,
-                (y - surface.getHeight() / 2f) * zoom + surface.getHeight() / 2f);
+        guide.focusAt((x - surface.getPivotX()) * zoom + surface.getPivotX(),
+                (y - surface.getPivotY()) * zoom + surface.getPivotY());
     }
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         super.onMeasure(widthSpec, heightSpec);
@@ -63,6 +78,9 @@ public final class ScanPreview extends FrameLayout {
         int y = (getMeasuredHeight() - viewport.getMeasuredHeight()) / 2;
         viewport.layout(x, y, x + viewport.getMeasuredWidth(), y + viewport.getMeasuredHeight());
         guide.layout(x, y, x + viewport.getMeasuredWidth(), y + viewport.getMeasuredHeight());
+        guide.area(Math.max(0, guideTop - y), guideBottom > 0
+                ? Math.min(guide.getHeight(), guideBottom - y) : guide.getHeight());
+        applyZoomPivot();
     }
     @Override protected void onDetachedFromWindow() {
         guide.scanning(false); super.onDetachedFromWindow();
@@ -76,29 +94,37 @@ public final class ScanPreview extends FrameLayout {
         private float focusX, focusY;
         private long focusUntil;
         private LinearGradient glow;
+        private float areaTop, areaBottom;
         Guide(Context context) { super(context); density = getResources().getDisplayMetrics().density; }
         void scanning(boolean value) { active = value; if (!value) focusUntil = 0; invalidate(); }
         void focusAt(float x, float y) {
             focusX = x; focusY = y; focusUntil = SystemClock.elapsedRealtime() + 650;
             invalidate(); postInvalidateDelayed(650);
         }
-        @Override protected void onSizeChanged(int w, int h, int oldW, int oldH) {
-            float edge = Math.min(w, h) * 0.76f;
-            frame.set((w - edge) / 2, (h - edge) / 2, (w + edge) / 2, (h + edge) / 2);
-            glow = new LinearGradient(frame.left, 0, frame.right, 0,
+        void area(float top, float bottom) {
+            if (areaTop == top && areaBottom == bottom) return;
+            areaTop = top; areaBottom = bottom; updateFrame(); invalidate();
+        }
+        @Override protected void onSizeChanged(int w, int h, int oldW, int oldH) { updateFrame(); }
+        private void updateFrame() {
+            float top = Math.max(0, areaTop), bottom = areaBottom > 0 ? Math.min(getHeight(), areaBottom) : getHeight();
+            float edge = Math.max(0, Math.min(Math.min(getWidth() * 0.76f, (bottom - top) * 0.9f), 340 * density));
+            float centerY = (top + bottom) / 2;
+            frame.set((getWidth() - edge) / 2, centerY - edge / 2, (getWidth() + edge) / 2, centerY + edge / 2);
+            glow = new LinearGradient(frame.left, 0, Math.max(frame.left + 1, frame.right), 0,
                     new int[]{0x002AE0AD, 0xB32AE0AD, 0x002AE0AD}, null, Shader.TileMode.CLAMP);
         }
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             if (frame.width() < 24 * density) return;
-            paint.setShader(null); paint.setStyle(Paint.Style.FILL); paint.setColor(0x63000000);
+            paint.setShader(null); paint.setStyle(Paint.Style.FILL); paint.setColor(0x66000D09);
             canvas.drawRect(0, 0, getWidth(), frame.top, paint);
             canvas.drawRect(0, frame.bottom, getWidth(), getHeight(), paint);
             canvas.drawRect(0, frame.top, frame.left, frame.bottom, paint);
             canvas.drawRect(frame.right, frame.top, getWidth(), frame.bottom, paint);
-            paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(density); paint.setColor(0x5587E8CE);
+            paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(density); paint.setColor(0x2287E8CE);
             canvas.drawRoundRect(frame, 14 * density, 14 * density, paint);
-            paint.setColor(0xFF57E8B9); paint.setStrokeWidth(3 * density); paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setColor(0xFF57E8B9); paint.setStrokeWidth(3.5f * density); paint.setStrokeCap(Paint.Cap.ROUND);
             float corner = Math.min(24 * density, frame.width() / 5);
             for (int i = 0; i < 4; i++) {
                 float x = i % 2 == 0 ? frame.left : frame.right;

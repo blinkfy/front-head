@@ -1,5 +1,5 @@
 <template>
-  <view :class="['screen', isDark ? 'dark-theme' : 'light-theme', { 'admin-light-theme': !isDark }]">
+  <view :class="['screen', isDark ? 'dark-theme' : 'light-theme', { 'admin-light-theme': !isDark }]" :style="screenStyle">
 
     <!-- ===== 顶部 panel ===== -->
     <view class="panel top">
@@ -96,16 +96,16 @@
           <view class="block-title">分类结构环图 <text class="note">垃圾类别占比</text></view>
           <view class="donut-wrap">
             <!-- #ifdef H5 -->
-            <svg id="categoryDonutSvg" viewBox="0 0 320 220" preserveAspectRatio="xMidYMid meet"
+            <svg id="categoryDonutSvg" viewBox="0 0 220 220" preserveAspectRatio="xMidYMid meet"
               v-html="donutSvgHtml" class="donut-svg"></svg>
             <!-- #endif -->
             <!-- #ifndef H5 -->
-            <view class="mp-canvas-box donut-canvas-box">
+            <view class="mp-canvas-box donut-canvas-box" :style="donutCanvasStyle">
               <!-- #ifdef MP-WEIXIN -->
-              <canvas type="2d" id="donutCanvas" class="mp-canvas" style="width:220px;height:220px;"></canvas>
+              <canvas type="2d" id="donutCanvas" class="mp-canvas" :style="donutCanvasStyle"></canvas>
               <!-- #endif -->
               <!-- #ifndef MP-WEIXIN -->
-              <canvas canvas-id="donutCanvas" id="donutCanvas" class="mp-canvas" style="width:220px;height:220px;"></canvas>
+              <canvas canvas-id="donutCanvas" id="donutCanvas" class="mp-canvas" :style="donutCanvasStyle"></canvas>
               <!-- #endif -->
               <view v-if="!donutEntries.length" class="empty canvas-empty">暂无分类结构数据</view>
             </view>
@@ -133,13 +133,13 @@
           </view>
           <view class="chart-wrap">
             <view class="legend">
-              <text class="legend-item"><view class="dot events"></view>分类次数</text>
-              <text class="legend-item"><view class="dot active"></view>活跃用户</text>
-              <text class="legend-item"><view class="dot" style="background:var(--chart-warning)"></view>风险指数</text>
+              <view class="legend-item"><view class="dot events"></view><text>分类次数</text></view>
+              <view class="legend-item"><view class="dot active"></view><text>活跃用户</text></view>
+              <view class="legend-item"><view class="dot" style="background:var(--chart-warning)"></view><text>风险指数</text></view>
             </view>
             <!-- #ifdef H5 -->
-            <svg id="trendSvg" viewBox="0 0 860 300" preserveAspectRatio="none"
-              v-html="trendSvgHtml" style="width:100%;height:100%"></svg>
+            <svg id="trendSvg" :viewBox="trendViewBox" preserveAspectRatio="xMidYMid meet"
+              v-html="trendSvgHtml" class="trend-svg"></svg>
             <!-- #endif -->
             <!-- #ifndef H5 -->
             <view class="mp-canvas-box trend-canvas-box">
@@ -250,7 +250,10 @@ import { redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
 import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
-import '@/pages-admin/styles/admin-light-theme.css'
+import { getMiniProgramTopInset } from '@/utils/mp-top-inset.js'
+
+const miniProgramTopInset = getMiniProgramTopInset()
+const screenStyle = miniProgramTopInset ? { paddingTop: `${miniProgramTopInset}px` } : {}
 // #ifdef MP-WEIXIN
 import { createCanvas2DChartContext } from '@/utils/canvas-chart-context.mjs'
 const chartScope = getCurrentInstance()?.proxy
@@ -338,6 +341,14 @@ const alertSummary       = ref('P1 0 | P2 0 | P3 0')
 // #ifndef H5
 const trendCanvasW = ref(320)
 const trendCanvasStyle = computed(() => `width:${trendCanvasW.value}px;height:200px;`)
+// 环图 canvas 边长（px），按容器宽度自适应，避免窄屏溢出
+const donutSize = ref(185)
+const donutCanvasStyle = computed(() => `width:${donutSize.value}px;height:${donutSize.value}px;`)
+// #endif
+// #ifdef H5
+// H5 趋势图 SVG 按容器实际尺寸绘制，避免 preserveAspectRatio=none 造成文字/线条拉伸变形
+const trendSvgSize = reactive({ width: 860, height: 300 })
+const trendViewBox = computed(() => `0 0 ${trendSvgSize.width} ${trendSvgSize.height}`)
 // #endif
 
 // 内部状态
@@ -545,7 +556,7 @@ function renderCategoryDonut(breakdown) {
   // H5 SVG
   // #ifdef H5
   if (!entries.length) { donutSvgHtml.value = ''; return }
-  const cx = 120, cy = 110, radius = 74, stroke = 34
+  const cx = 110, cy = 110, radius = 84, stroke = 38
   let offset = 0
   const circles = entries.map((item, idx) => {
     const ratio = item.value / total
@@ -595,8 +606,9 @@ function renderTrend(trend) {
   // H5 SVG
   // #ifdef H5
   if (!daily.length) { trendSvgHtml.value = ''; return }
-  const width = 860, height = 300
-  const pad = { top: 18, right: 16, bottom: 28, left: 38 }
+  measureTrendSvg()
+  const width = trendSvgSize.width, height = trendSvgSize.height
+  const pad = { top: width < 520 ? 30 : 18, right: 16, bottom: 28, left: 38 }
   const plotW = width - pad.left - pad.right
   const plotH = height - pad.top  - pad.bottom
   const maxEvents = Math.max(1, ...daily.map(d => n(d.totalEvents, 0)))
@@ -634,7 +646,7 @@ function renderTrend(trend) {
     `L ${activePoints[activePoints.length - 1].x},${pad.top + plotH}`, 'Z'
   ].join(' ')
   const labels = []
-  const step = Math.max(1, Math.floor(daily.length / 6))
+  const step = Math.max(1, Math.ceil(daily.length / (width < 520 ? 5 : 8)))
   for (let i = 0; i < daily.length; i += step) {
     const x = pad.left + (plotW * i) / size
     labels.push(`<text x="${x}" y="${height - 8}" fill="var(--chart-label)" font-size="10" text-anchor="middle">${esc(String(daily[i].date).slice(5))}</text>`)
@@ -673,11 +685,12 @@ function queueChartDraw(draw) {
 }
 async function drawDonutCanvas(entries, total, palette) {
   if (!entries || !entries.length) return
-  const ctx = await chartContext('donutCanvas', 220, 220)
-  // canvas style = 220px × 220px，绘图坐标系与 style px 值一一对应
-  const W = 220, H = 220
+  const ctx = await chartContext('donutCanvas', donutSize.value, donutSize.value)
+  // canvas style = S × S，按边长等比缩放（基准 220）
+  const W = donutSize.value, H = donutSize.value
+  const k = W / 220
   const cx = W / 2, cy = H / 2
-  const outerR = 80, innerR = 46
+  const outerR = 96 * k, innerR = 54 * k
   ctx.clearRect(0, 0, W, H)
   // 背景环
   ctx.beginPath()
@@ -700,17 +713,17 @@ async function drawDonutCanvas(entries, total, palette) {
   // 中心遮罩
   ctx.beginPath()
   ctx.arc(cx, cy, innerR - 2, 0, Math.PI * 2)
-  ctx.setFillStyle('#071a2d')
+  ctx.setFillStyle(isDark.value ? '#071a2d' : '#f4faf8')
   ctx.fill()
   // 中心文字：总次数
-  ctx.setFillStyle('#e8f3ff')
-  ctx.setFontSize(20)
+  ctx.setFillStyle(isDark.value ? '#e8f3ff' : '#13343b')
+  ctx.setFontSize(Math.max(14, Math.round(20 * k)))
   ctx.setTextAlign('center')
   ctx.setTextBaseline('middle')
-  ctx.fillText(String(total), cx, cy - 6)
-  ctx.setFontSize(11)
-  ctx.setFillStyle('#9fbbd7')
-  ctx.fillText('总分类次数', cx, cy + 12)
+  ctx.fillText(String(total), cx, cy - 6 * k)
+  ctx.setFontSize(Math.max(9, Math.round(11 * k)))
+  ctx.setFillStyle(isDark.value ? '#9fbbd7' : '#5d7f86')
+  ctx.fillText('总分类次数', cx, cy + 12 * k)
   ctx.draw()
 }
 
@@ -1097,6 +1110,26 @@ async function syncDaily() {
 // ─── 生命周期 ──────────────────────────────────────────
 let unbindThemeWatcher = null
 let storageHandler = null
+// #ifdef H5
+let trendResizeTimer = null
+function measureTrendSvg() {
+  const el = document.getElementById('trendSvg')
+  if (!el) return false
+  const w = Math.round(el.clientWidth), h = Math.round(el.clientHeight)
+  if (w < 120 || h < 100) return false
+  if (w === trendSvgSize.width && h === trendSvgSize.height) return false
+  trendSvgSize.width = w
+  trendSvgSize.height = h
+  return true
+}
+function onTrendResize() {
+  if (trendResizeTimer) clearTimeout(trendResizeTimer)
+  trendResizeTimer = setTimeout(() => {
+    trendResizeTimer = null
+    if (measureTrendSvg() && _state.lastTrend) renderTrend(_state.lastTrend)
+  }, 120)
+}
+// #endif
 
 onMounted(async () => {
   if (!await ensureAdminScreenAccess('communityDashboard')) return
@@ -1104,20 +1137,39 @@ onMounted(async () => {
   unbindThemeWatcher = bindThemeStorageSync()
 
   // #ifndef H5
-  // 获取屏幕宽度用于趋势图 canvas 尺寸（扣除 panel padding 各约10px）
+  // 按真实容器宽度计算图表尺寸，避免窄屏下画布超出面板被裁切
   try {
     const sysInfo = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
-    trendCanvasW.value = Math.max(200, (sysInfo.windowWidth || 320) - 20)
+    const winW = sysInfo.windowWidth || 320
+    trendCanvasW.value = Math.max(200, winW - 70)
+    donutSize.value = Math.max(140, Math.min(200, Math.floor((winW - 70) * 0.52)))
   } catch (e) {
     trendCanvasW.value = 300
   }
+  await nextTick()
+  await new Promise(resolve => {
+    try {
+      const query = uni.createSelectorQuery().in(chartScope)
+      query.select('.chart-wrap').boundingClientRect()
+      query.select('.donut-wrap').boundingClientRect()
+      query.exec(res => {
+        const chart = res && res[0]
+        const donut = res && res[1]
+        if (chart && chart.width > 120) trendCanvasW.value = Math.floor(chart.width - 20)
+        if (donut && donut.width > 120) donutSize.value = Math.max(140, Math.min(200, Math.floor(donut.width * 0.52)))
+        resolve()
+      })
+    } catch (e) { resolve() }
+  })
   // #endif
 
   // #ifdef H5
+  measureTrendSvg()
   storageHandler = (event) => {
     if (!event || event.key === 'app_theme') syncThemeMode()
   }
   window.addEventListener('storage', storageHandler)
+  window.addEventListener('resize', onTrendResize)
   // #endif
 
   renderClock()
@@ -1140,6 +1192,8 @@ onBeforeUnmount(() => {
   clearAllTimers()
   if (typeof unbindThemeWatcher === 'function') unbindThemeWatcher()
   // #ifdef H5
+  window.removeEventListener('resize', onTrendResize)
+  if (trendResizeTimer) { clearTimeout(trendResizeTimer); trendResizeTimer = null }
   if (storageHandler) {
     window.removeEventListener('storage', storageHandler)
     storageHandler = null
@@ -1148,6 +1202,7 @@ onBeforeUnmount(() => {
 })
 </script>
 <style scoped>
+@import './styles/admin-light-theme.css';
 /* ─── page 背景（覆盖 uni-app 默认白色） ─── */
 page {
   background:
@@ -2056,5 +2111,43 @@ html, body { height: 100%; min-height: 100%; margin: 0; }
 @media (max-width: 760px) {
   .screen.light-theme.admin-light-theme .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .screen.light-theme.admin-light-theme > .main > .col > .block { min-height: 260px; }
+}
+/* #ifdef MP-WEIXIN */
+.screen .panel.top > .row > view:first-child { padding-right: 96px; box-sizing: border-box; }
+/* #endif */
+/* 竖屏 / 窄屏（H5、APP、小程序）：列表限制最大高度，图表自适应容器，避免拉伸与空白 */
+@media (max-width: 1260px), (orientation: portrait) {
+  .screen > .main > .col > .block,
+  .screen.light-theme.admin-light-theme > .main > .col > .block { min-height: 0 !important; }
+  .screen .donut-wrap,
+  .screen.light-theme.admin-light-theme .donut-wrap {
+    grid-template-columns: minmax(145px, 52%) minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+  }
+  .screen .donut-svg,
+  .screen.light-theme.admin-light-theme .donut-svg { height: 190px; }
+  .donut-canvas-box { width: auto; height: auto; margin: 0 auto; }
+  .screen .chart-wrap,
+  .screen.light-theme.admin-light-theme .chart-wrap {
+    height: auto !important;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .screen .legend,
+  .screen.light-theme.admin-light-theme .legend {
+    position: static !important;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+  .screen .trend-svg { width: 100%; height: 210px; display: block; }
+  .screen .dual-chart,
+  .screen.light-theme.admin-light-theme .dual-chart { grid-template-columns: 1fr; }
+  .radar-canvas-box { margin: 0 auto; }
+  .screen .list,
+  .screen .district-grid { flex: none !important; height: auto !important; min-height: 0 !important; max-height: 260px !important; overflow-y: auto !important; box-sizing: border-box; }
+  .screen .alerts { flex: none !important; height: auto !important; min-height: 0 !important; max-height: 220px !important; overflow-y: auto !important; box-sizing: border-box; }
 }
 </style>

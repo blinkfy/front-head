@@ -11,6 +11,7 @@ export const UI_SOUNDS = {
 
 export const UI_SOUND_EVENTS = {
   confirm: { sound: 'confirm', priority: 1 },
+  scanDetected: { sound: 'confirm', priority: 2, scanCue: true },
   preview: { sound: 'success', priority: 3, startTimeout: 5000 },
   recognitionStart: { sound: 'glide', priority: 1 },
   recognitionSuccess: { sound: 'success', priority: 3 },
@@ -47,10 +48,10 @@ export function createUiSoundController({ getStoredEnabled = () => undefined,
   const safe = (fn, fallback) => { try { return fn() } catch (_) { return fallback } }
   const available = () => !disposed && enabled && active && !blocked.size && safe(isVisible, false)
 
-  function stop() {
+  function stop(options) {
     generation++
     current = null
-    safe(() => driver?.stop())
+    safe(() => driver?.stop(options))
   }
   function play(event, options = {}) {
     const definition = Object.prototype.hasOwnProperty.call(UI_SOUND_EVENTS, event) ? UI_SOUND_EVENTS[event] : null
@@ -69,7 +70,7 @@ export function createUiSoundController({ getStoredEnabled = () => undefined,
     if (startedAt - lastPlayed < 100 && priority <= (current?.priority || 1)) return false
     stop()
     const requestId = generation
-    const sound = { ...UI_SOUNDS[definition.sound], id: definition.sound }
+    const sound = { ...UI_SOUNDS[definition.sound], id: definition.sound, ...(definition.scanCue ? { scanCue: true } : {}) }
     const canStart = () => generation === requestId && available() &&
       pageName(safe(getPage, '')) === page && now() - startedAt <= startTimeout
     const onEnded = () => { if (generation === requestId) current = null }

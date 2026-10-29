@@ -1,926 +1,497 @@
 <template>
-  <view v-if="visible" class="modal-overlay" @click="handleOverlayClick">
-    <!-- 自定义Toast提示 -->
-    <view v-if="customToast.show" class="custom-toast" :class="customToast.type">
-      <ManifestIcon class="toast-icon" :id="customToast.icon" />
-      <text class="toast-text">{{ customToast.message }}</text>
-    </view>
-    
-    <view class="modal-content" @click.stop>
-      <view class="modal-header">
-        <text class="modal-title">新增垃圾桶</text>
-        <ManifestIcon class="modal-close" id="close" @click="closeModal" />
+  <view v-if="visible" class="contribution-overlay" :class="{ dark }" :style="miniProgramOverlayStyle" @click.self="closeModal" @touchmove.stop @wheel.stop>
+    <view class="contribution-modal" :style="miniProgramModalStyle" @click.stop>
+      <view class="modal-heading">
+        <view><text class="modal-eyebrow">让附近的投放点更好找</text><text class="modal-title">新增垃圾桶</text></view>
+        <button class="close-button" aria-label="关闭新增垃圾桶" :disabled="isSubmitting" @click="closeModal">×</button>
       </view>
-      
-      <view class="modal-body">
-        <view class="form-group">
-          <text class="form-label">垃圾桶名称 *</text>
-          <input 
-            class="form-input" 
-            v-model="formData.name" 
-            placeholder="请输入垃圾桶名称"
-            maxlength="50"
-          />
-        </view>
-        
-        <view class="form-group">
-          <text class="form-label">描述信息 *</text>
-          <textarea 
-            class="form-textarea" 
-            v-model="formData.description" 
-            placeholder="请输入描述信息（如位置特征、容量等）"
-            maxlength="200"
-          />
-        </view>
-        
-        <view class="form-group">
-          <text class="form-label">位置信息 *</text>
-          <view class="location-info">
-            <text class="location-text" v-if="formData.latitude && formData.longitude">
-              经纬度: {{ formData.latitude.toFixed(6) }}, {{ formData.longitude.toFixed(6) }}
-            </text>
-            <text class="location-text" v-if="formData.address">
-              地址: {{ formData.address }}
-            </text>
-            <text class="location-text location-tip" v-if="!formData.address && formData.latitude && formData.longitude">
-              地址解析中...
-            </text>
-            <button class="location-btn" @click="getCurrentLocation" :disabled="isGettingLocation">
-              {{ isGettingLocation ? '获取中...' : '重新获取位置' }}
-            </button>
-          </view>
-        </view>
-        
-        <view class="form-group">
-          <text class="form-label">垃圾桶照片 *</text>
-          <view class="image-upload">
-            <view 
-              v-if="!formData.imageUrl" 
-              class="image-placeholder" 
-              @click="chooseImage">
-              <ManifestIcon class="upload-icon" id="camera_scan" />
-              <text class="upload-text">点击上传照片</text>
+      <scroll-view class="modal-scroll" scroll-y :scroll-into-view="scrollToReview" scroll-with-animation :show-scrollbar="false" @touchmove.stop @wheel.stop>
+        <view class="form-body">
+          <view class="reward-banner"><ManifestIcon id="challenge_trophy" class="reward-icon" /><view class="reward-copy"><text class="reward-title">分享一个投放点，收获 {{ BIN_APPROVAL_POINTS }} 积分</text><text class="reward-tip">真实地点 · 照片清晰 · 首次审核通过后发放</text></view></view>
+          <view class="form-group">
+            <view class="label-row"><text class="form-label">现场照片 <text class="required">*</text></text><text class="field-note">拍清桶身与分类标识</text></view>
+            <view v-if="!previewSource" class="photo-empty" @click="chooseImage">
+              <ManifestIcon id="camera_scan" class="camera-icon" />
+              <view class="photo-copy"><text class="photo-title">拍下垃圾桶和周围环境</text><text class="photo-tip">保留分类标识、附近门牌或明显地标</text></view>
+              <text class="photo-plus">＋</text>
             </view>
-            <view v-else class="image-preview">
-              <image 
-                :src="formData.imageUrl" 
-                :key="formData.imageUrl"
-                class="preview-image" 
-                mode="aspectFill"
-                @error="onImageError"
-                @load="onImageLoad"
-              />
-              <ManifestIcon class="image-remove" id="close" @click="removeImage" />
-              <text class="image-debug-url">URL: {{ formData.imageUrl }}</text>
-              <text v-if="imageErrorMsg" class="image-error">错误: {{ imageErrorMsg }}</text>
+            <view v-else class="photo-selected">
+              <image class="preview-image" :src="previewSource" mode="aspectFill" @click="previewImage" @error="onImageError" />
+              <view class="photo-copy"><text class="photo-title">{{ isProcessingImage ? '正在处理照片…' : '照片已就绪' }}</text><text class="photo-tip">{{ imageError || '点击照片可放大查看' }}</text><view class="photo-actions"><button class="text-button" :disabled="formLocked || isProcessingImage" @click="chooseImage">重新拍摄 / 选择</button><button class="text-button remove" :disabled="formLocked || isProcessingImage" @click="removeImage">移除</button></view></view>
             </view>
           </view>
+          <view class="form-group">
+            <view class="label-row"><text class="form-label">投放位置 <text class="required">*</text></text><text class="field-note">请站在垃圾桶旁定位</text></view>
+            <view class="location-card">
+              <view class="location-main"><ManifestIcon id="map_location" class="location-icon" /><text class="location-address">{{ isGettingLocation ? '正在定位并查找附近地名…' : (formData.address || (hasLocation ? '已获取坐标，请补充附近地标' : '尚未获取位置')) }}</text></view>
+              <text v-if="hasLocation" class="coordinates">{{ Number(formData.latitude).toFixed(6) }}, {{ Number(formData.longitude).toFixed(6) }}</text>
+              <view class="location-actions"><button class="location-button" :disabled="isGettingLocation || formLocked" @click="getCurrentLocation()">{{ isGettingLocation ? '定位中…' : '重新定位' }}</button><button class="location-button outlined" :disabled="formLocked" @click="pickMapLocation">地图选点</button></view>
+              <view v-if="satelliteCapabilityReady || satelliteReferenceLoading" class="satellite-reference-status"><text class="satellite-reference-copy">{{ satelliteReferenceLoading ? '卫星参考图准备中…可继续填写和提交' : satelliteReference ? 'AI 卫星参考图已就绪' : 'AI 卫星参考图暂不可用' }}</text><button v-if="satelliteReference" class="satellite-reference-link" @click="previewSatelliteReference">查看参考图</button></view>
+            </view>
+          </view>
+          <view class="form-group">
+            <text class="form-label">垃圾桶名称 <text class="required">*</text></text>
+            <input v-model="formData.name" class="form-input" placeholder="如：阳光小区东门分类垃圾桶" placeholder-class="input-placeholder" maxlength="50" :disabled="formLocked" />
+          </view>
+          <view class="form-group last-group">
+            <view class="label-row"><text class="form-label">详细描述</text><text class="field-note">{{ formData.description.length }}/200</text></view>
+            <textarea v-model="formData.description" class="form-textarea" placeholder="如：4个分类桶，标识清晰，位于东门便利店旁；可补充外观和使用情况" placeholder-class="input-placeholder" maxlength="200" :disabled="formLocked" :show-confirm-bar="false" />
+            <text class="description-tip">附近地名会自动补充，重新定位时替换；你填写的内容会保留。</text>
+          </view>
+          <view v-if="isReviewing && reviewPreview" id="bin-review-preview" class="review-card" :class="{ rejected: !reviewPreview.passed }">
+            <text class="review-title">{{ reviewPreview.passed ? 'AI 初步检查通过' : 'AI 初步检查未通过' }}</text>
+            <text v-if="!reviewPreview.passed && reviewPreview.reason" class="review-reason">{{ reviewPreview.reason }}</text>
+            <template v-if="reviewPreview.passed">
+              <text v-if="reviewPreview.suggestions.name && reviewPreview.suggestions.name !== formData.name.trim()" class="review-suggestion">建议名称：{{ reviewPreview.suggestions.name }}</text>
+              <text v-if="reviewPreview.suggestions.description && reviewPreview.suggestions.description !== formData.description.trim()" class="review-suggestion">详细描述建议：{{ reviewPreview.suggestions.description }}</text>
+              <text v-if="reviewPreview.suggestions.summary" class="review-summary">{{ reviewPreview.suggestions.summary }}</text>
+              <text class="review-disclaimer">正在整理建议，接收完成后可选择应用或保留原样。</text>
+            </template>
+            <text v-else class="review-disclaimer">正在整理审核反馈，请稍候。</text>
+          </view>
+          <view v-if="reviewResult" id="bin-review-result" class="review-card" :class="{ rejected: !reviewResult.passed }">
+            <text class="review-title">{{ reviewResult.passed ? 'AI 初审通过 · 100%' : 'AI 初审未通过 · 100%' }}</text>
+            <text v-if="!reviewResult.passed" class="review-reason">{{ reviewResult.reason || '请核对照片与填写信息后重试。' }}</text>
+            <template v-if="reviewResult.passed">
+              <text v-if="reviewResult.suggestions.summary" class="review-summary">{{ reviewResult.suggestions.summary }}</text>
+              <text v-if="reviewResult.suggestions.name && reviewResult.suggestions.name !== formData.name.trim()" class="review-suggestion">建议名称：{{ reviewResult.suggestions.name }}</text>
+              <text v-if="reviewResult.suggestions.description && reviewResult.suggestions.description !== formData.description.trim()" class="review-suggestion">详细描述建议：{{ reviewResult.suggestions.description }}</text>
+              <button v-if="hasSuggestions && !reviewResult.applied" class="apply-suggestions" :disabled="formLocked" @click="applySuggestions">应用建议</button>
+              <text v-if="reviewResult.applied" class="review-summary">已应用建议，请核对后提交。</text>
+              <text class="review-disclaimer">也可保留原样，最终以管理员审核为准。</text>
+            </template>
+            <text v-else-if="reviewResult.reason" class="review-disclaimer">请根据原因调整照片或信息，再次提交初审。</text>
+          </view>
         </view>
-      </view>
-      
+      </scroll-view>
       <view class="modal-footer">
-        <button class="btn btn-cancel" @click="closeModal">取消</button>
-        <button 
-          class="btn btn-primary" 
-          @click="handleSubmit"
-        >
-          {{ isSubmitting ? '提交中...' : '确认新增' }}
-        </button>
+        <view v-if="isReviewing" class="review-progress" role="status" aria-live="polite">
+          <view class="progress-heading"><text>{{ reviewPhase === 'advising' ? '初审通过，正在整理建议' : reviewPhase === 'reviewing' ? 'AI 初审中' : '正在准备提交…' }}</text><text v-if="reviewPhase !== 'checking'" class="progress-value">{{ reviewProgress }}%</text></view>
+          <view v-if="reviewPhase !== 'checking'" class="progress-track"><view class="progress-fill" :style="{ width: reviewProgress + '%' }"></view></view>
+          <text class="progress-tip">{{ reviewPhase === 'advising' ? '建议会逐项显示，接收完成后可应用' : reviewPhase === 'reviewing' ? '等待进度 · 正在核对照片与填写信息' : '正在检查审核服务' }}</text>
+        </view>
+        <text v-if="notice" class="form-notice" role="alert">{{ notice }}</text>
+        <view class="footer-actions"><button class="cancel-button" :disabled="isSubmitting" @click="closeModal">取消</button><button class="submit-button" :disabled="!canSubmit" @click="handleSubmit">{{ submitLabel }}</button></view>
+        <button v-if="manualFallback" class="retry-review" :disabled="formLocked" @click="retryPreReview">重试 AI 初审</button>
+        <text class="footer-tip">{{ reviewResult ? '管理员审核通过后展示并发放积分' : '审核通过后在地图展示，积分自动到账' }}</text>
       </view>
     </view>
+    <!-- #ifdef H5 -->
+    <view v-if="imagePreviewVisible && imagePreviewSource" class="satellite-preview-overlay" role="dialog" :aria-label="`${imagePreviewTitle}预览`" @click.self="closeImagePreview" @touchmove.stop @wheel.stop>
+      <button class="satellite-preview-close" aria-label="关闭图片预览" @click.stop="closeImagePreview">×</button>
+      <image class="satellite-preview-image" :src="imagePreviewSource" mode="aspectFit" />
+      <text class="satellite-preview-caption">{{ imagePreviewTitle }} · 点击空白处关闭</text>
+    </view>
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { chooseAppImage } from '@/utils/image-picker.js'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import ManifestIcon from './ManifestIcon.vue'
-import { addTrashBin, uploadTrashBinImage, reverseGeocoder } from '../api/map.js'
-import { getUserLocationOnce } from '../utils/location'
+import { addTrashBin, reverseGeocoder, getBinPreReviewCapability, getBinSatelliteReference, preReviewTrashBin } from '@/api/map'
+import { getUserLocationOnce } from '@/utils/location'
+import { normalizeSatelliteReference } from '@/utils/bin-satellite-reference.mjs'
+import { resolveLocationAddress } from '@/utils/location-address'
+import { compressTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
+import { BIN_APPROVAL_POINTS, mergeBinLocation, validBinCoordinates } from '@/utils/bin-contribution.mjs'
+import { BIN_PRE_REVIEW_SUGGESTION_ESTIMATE_MS, binReviewWaitingProgress, isLegacyBinReviewError, normalizeBinPreReview, normalizeBinReviewPreview, preserveBinDescription, sameBinSubmission, withBinReviewDeadline } from '@/utils/bin-pre-review.mjs'
 
-const props = defineProps({
-  visible: {
-    type: Boolean,
-    default: false
-  },
-  userLocation: {
-    type: Object,
-    default: () => ({})
-  }
-})
-
+const props = defineProps({ visible: Boolean, userLocation: { type: Object, default: () => ({}) }, dark: Boolean })
 const emit = defineEmits(['close', 'success'])
-
-// 表单数据
-const formData = ref({
-  name: '',
-  description: '',
-  latitude: null,
-  longitude: null,
-  address: '',
-  imageUrl: '',
-  imageFile: null
+const emptyForm = () => ({ name: '', description: '', latitude: null, longitude: null, address: '', image: '' })
+const formData = ref(emptyForm()), previewSource = ref(''), imageError = ref(''), notice = ref('')
+const isGettingLocation = ref(false), isSubmitting = ref(false), isProcessingImage = ref(false)
+const miniProgramOverlayStyle = ref({}), miniProgramModalStyle = ref({})
+const isReviewing = ref(false), reviewResult = ref(null), manualFallback = ref(false), scrollToReview = ref('')
+const reviewPhase = ref('checking'), reviewProgress = ref(0), reviewPreview = ref(null)
+let reviewProgressTimer = null
+const formLocked = computed(() => isSubmitting.value || isReviewing.value)
+let reviewRevision = 0, reviewedPayload = null, applyingSuggestion = false, restorePageScroll
+const currentPayload = () => ({ name: formData.value.name.trim(), description: formData.value.description.trim(), latitude: formData.value.latitude, longitude: formData.value.longitude, image: formData.value.image })
+const hasSuggestions = computed(() => {
+  const suggestion = reviewResult.value?.suggestions
+  return !!suggestion && ((suggestion.name && suggestion.name !== formData.value.name.trim()) || (suggestion.description && suggestion.description !== formData.value.description.trim()))
 })
+const unchangedRejection = computed(() => reviewResult.value?.passed === false && sameBinSubmission(reviewedPayload, currentPayload()))
+const submitLabel = computed(() => isSubmitting.value ? '正在提交…' : isReviewing.value ? (reviewPhase.value === 'checking' ? '准备提交…' : `${reviewPhase.value === 'advising' ? '建议加载' : 'AI 初审'} ${reviewProgress.value}%`) : isProcessingImage.value ? '照片处理中…' : unchangedRejection.value ? '修改后重新初审' : manualFallback.value ? '提交人工审核' : reviewResult.value?.passed ? (reviewResult.value.applied ? '提交人工审核' : '保留原样并提交') : '提交审核')
+const hasLocation = computed(() => validBinCoordinates(formData.value))
+const canSubmit = computed(() => !!formData.value.name.trim() && hasLocation.value && !!formData.value.image && !formLocked.value && !isProcessingImage.value && !isGettingLocation.value && !unchangedRejection.value)
+let locationRevision = 0, imageRevision = 0, automaticLocation = '', pickerEvent = '', pickerHandler
+const satelliteReference = ref(null), satelliteReferenceLoading = ref(false), satelliteCapabilityReady = ref(false)
+const imagePreviewVisible = ref(false), imagePreviewSource = ref(''), imagePreviewTitle = ref('')
+let satelliteCapability = null, pickerSatelliteReference = null
+const activeLocation = token => props.visible && token === locationRevision
+watch(() => [formData.value.name, formData.value.description, formData.value.latitude, formData.value.longitude, formData.value.image], () => {
+  if (applyingSuggestion) return
+  ++reviewRevision; stopReviewProgress(); isReviewing.value = false; reviewPreview.value = null; reviewResult.value = null; reviewedPayload = null; manualFallback.value = false; scrollToReview.value = ''
+}, { flush: 'sync' })
 
-// 状态管理
-const isGettingLocation = ref(false)
-const isSubmitting = ref(false)
-const imageErrorMsg = ref('')
-
-// 自定义Toast
-const customToast = ref({
-  show: false,
-  message: '',
-  type: 'info',
-  icon: 'help'
-})
-
-// 显示自定义Toast
-function showCustomToast(message, type = 'info', duration = 2000) {
-  const icons = {
-    success: 'confirm',
-    error: 'dark_alert',
-    warning: 'dark_alert',
-    info: 'help'
-  }
-  
-  customToast.value = {
-    show: true,
-    message,
-    type,
-    icon: icons[type] || icons.info
-  }
-  
-  setTimeout(() => {
-    customToast.value.show = false
-  }, duration)
-}
-
-// 计算属性：是否可以提交
-const canSubmit = computed(() => {
-  return formData.value.name.trim() && 
-         formData.value.latitude && 
-         formData.value.longitude
-})
-
-// 监听弹窗显示状态，自动获取位置
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
-    resetForm()
-    if (props.userLocation?.latitude && props.userLocation?.longitude) {
-      formData.value.latitude = props.userLocation.latitude
-      formData.value.longitude = props.userLocation.longitude
-      // 延迟获取地址，避免阻塞弹窗显示
-      setTimeout(() => {
-        getAddressFromCoords(props.userLocation.latitude, props.userLocation.longitude)
-      }, 300)
-    } else {
-      getCurrentLocation()
-    }
-  }
-})
-
-// 重置表单
-function resetForm() {
-  formData.value = {
-    name: '',
-    description: '',
-    latitude: null,
-    longitude: null,
-    address: '',
-    imageUrl: '',
-    imageFile: null
-  }
-}
-
-// 获取当前位置
-async function getCurrentLocation() {
-  if (isGettingLocation.value) return
-  
-  isGettingLocation.value = true
+function updateMiniProgramModalInsets() {
+  // #ifdef MP-WEIXIN
   try {
-  const location = await getUserLocationOnce()  // 不指定坐标系，让 location.js 自动处理
-    formData.value.latitude = location.latitude
-    formData.value.longitude = location.longitude
-    
-    showCustomToast('位置获取成功', 'success', 1500)
-    
-    // 延迟进行地址解析，避免阻塞用户操作
-    setTimeout(async () => {
-      try {
-        await getAddressFromCoords(location.latitude, location.longitude)
-      } catch (error) {
-        // 地址解析失败不影响主要功能
-        console.warn('地址解析失败，但位置获取成功')
-      }
-    }, 500)
-    
-  } catch (error) {
-    console.error('获取位置失败:', error)
-    showCustomToast('位置获取失败，请检查定位权限', 'error', 2000)
-  } finally {
-    isGettingLocation.value = false
+    const info = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync()
+    const capsule = uni.getMenuButtonBoundingClientRect()
+    const capsuleBottom = Number(capsule?.bottom) || (Number(capsule?.top) + Number(capsule?.height)) || 0
+    const top = Math.max(capsuleBottom, (Number(info.statusBarHeight) || 0) + 44) + 12
+    miniProgramOverlayStyle.value = { paddingTop: `${top}px` }
+    miniProgramModalStyle.value = { maxHeight: Number(info.windowHeight) > top + 12 ? `${Math.min(820, Number(info.windowHeight) - top - 12)}px` : `calc(100vh - ${top + 12}px)` }
+  } catch (_) {
+    // Keep the close button below the custom navigation area if capsule metrics are unavailable.
+    miniProgramOverlayStyle.value = { paddingTop: 'calc(env(safe-area-inset-top) + 56px)' }
+    miniProgramModalStyle.value = { maxHeight: 'calc(100vh - env(safe-area-inset-top) - 68px)' }
   }
+  // #endif
 }
 
-// 使用共用定位工具 getUserLocationOnce
+function lockPageScroll(locked) {
+  // #ifdef H5
+  if (locked && !restorePageScroll) {
+    const bodyOverflow = document.body.style.overflow
+    const rootOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'
+    restorePageScroll = () => { document.body.style.overflow = bodyOverflow; document.documentElement.style.overflow = rootOverflow }
+  } else if (!locked && restorePageScroll) { restorePageScroll(); restorePageScroll = null }
+  // #endif
+}
 
-// 根据经纬度获取地址描述
-async function getAddressFromCoords(lat, lng) {
-  // 在H5环境中，直接跳过腾讯地图API调用，使用本地解析避免跨域问题
-  const isH5 = typeof window !== 'undefined' && !window.wx && !window.my && !window.swan
-  
-  if (!isH5) {
-    // 非H5环境才尝试调用腾讯地图API
+function detachPicker() {
+  if (pickerEvent && pickerHandler) uni.$off(pickerEvent, pickerHandler)
+  pickerEvent = ''; pickerHandler = null
+}
+watch(() => props.visible, visible => {
+  ++locationRevision; ++imageRevision; ++reviewRevision; stopReviewProgress(); detachPicker(); lockPageScroll(visible)
+  isReviewing.value = false; reviewPreview.value = null; reviewResult.value = null; reviewedPayload = null; manualFallback.value = false; scrollToReview.value = ''
+  isGettingLocation.value = false; isProcessingImage.value = false
+  satelliteReference.value = null; satelliteReferenceLoading.value = false; satelliteCapabilityReady.value = false; satelliteCapability = null; pickerSatelliteReference = null; imagePreviewVisible.value = false; imagePreviewSource.value = ''; imagePreviewTitle.value = ''
+  if (!visible) return
+  updateMiniProgramModalInsets()
+  formData.value = emptyForm(); previewSource.value = ''; imageError.value = ''; notice.value = ''; automaticLocation = ''
+  getCurrentLocation(validBinCoordinates(props.userLocation) ? props.userLocation : null)
+}, { immediate: true })
+onBeforeUnmount(() => { ++locationRevision; ++imageRevision; ++reviewRevision; stopReviewProgress(); detachPicker(); lockPageScroll(false) })
+
+function applyAddress(address) {
+  formData.value.address = String(address || '').trim()
+  const merged = mergeBinLocation(formData.value.description, automaticLocation, formData.value.address)
+  formData.value.description = merged.description
+  automaticLocation = merged.automatic
+}
+async function getCurrentLocation(existing = null) {
+  if (isGettingLocation.value || formLocked.value) return
+  const token = ++locationRevision
+  notice.value = ''; isGettingLocation.value = true; satelliteReference.value = null; satelliteReferenceLoading.value = false; satelliteCapabilityReady.value = false; satelliteCapability = null; pickerSatelliteReference = null
+  try {
+    const location = existing || await getUserLocationOnce('gcj02')
+    if (!activeLocation(token)) return
+    if (!validBinCoordinates(location)) throw new Error('定位结果无效')
+    formData.value.latitude = Number(location.latitude); formData.value.longitude = Number(location.longitude)
+    prepareSatelliteReference(token)
+    const result = await resolveLocationAddress(location.latitude, location.longitude)
+    if (activeLocation(token)) {
+      applyAddress(result.address)
+      if (!result.address) notice.value = '已定位，未获取到附近地名，请在描述中补充地标。'
+    }
+  } catch (error) {
+    if (activeLocation(token)) {
+      applyAddress('')
+      notice.value = hasLocation.value ? '已获取坐标，地址解析暂不可用，请补充附近地标或地图选点。' : '定位失败，请允许定位权限，或使用地图选点。'
+    }
+  } finally { if (activeLocation(token)) isGettingLocation.value = false }
+}
+function pickMapLocation() {
+  if (formLocked.value) return
+  ++locationRevision; isGettingLocation.value = false; detachPicker()
+  pickerEvent = `bin-location-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  pickerHandler = async location => {
+    detachPicker()
+    if (!props.visible || !validBinCoordinates(location)) return
+    const token = ++locationRevision
+    formData.value.latitude = Number(location.latitude); formData.value.longitude = Number(location.longitude)
+    pickerSatelliteReference = normalizeSatelliteReference(location.satelliteReference, location)
+    prepareSatelliteReference(token)
+    if (location.address) { applyAddress(location.address); notice.value = ''; return }
+    isGettingLocation.value = true
     try {
-      const result = await reverseGeocoder(lat, lng)
-      if (result && result.result && result.result.address) {
-        formData.value.address = result.result.address
-        return
-      }
-    } catch (error) {
-      console.warn('腾讯地图地址解析失败，使用本地解析:', error)
-    }
+      const response = await reverseGeocoder(location.latitude, location.longitude)
+      const result = response?.data?.result || response?.result || response?.data || {}
+      if (activeLocation(token)) applyAddress(result.formatted_addresses?.recommend || result.address || '')
+    } catch (_) { if (activeLocation(token)) { applyAddress(''); notice.value = '已选取坐标，请补充附近地标。' } }
+    finally { if (activeLocation(token)) isGettingLocation.value = false }
   }
-  
-  // H5环境或API失败时的本地解析方案
-  try {
-    const addressParts = []
-    
-    // 根据经纬度范围推断大致区域（这里以中国为例）
-    if (lat >= 18 && lat <= 54 && lng >= 73 && lng <= 135) {
-      if (lat >= 39.4 && lat <= 41.6 && lng >= 115.7 && lng <= 117.4) {
-        addressParts.push('北京市')
-      } else if (lat >= 30.40 && lat <= 32.00 && lng >= 120.85 && lng <= 122.30) {
-        addressParts.push('上海市')
-      } else if (lat >= 22.4 && lat <= 23.9 && lng >= 113.1 && lng <= 114.8) {
-        addressParts.push('广州市')
-      } else if (lat >= 35.5 && lat <= 37.1 && lng >= 119.8 && lng <= 121.1) {
-        addressParts.push('青岛市')
-      } else if (lat >= 44.0 && lat <= 46.0 && lng >= 125.0 && lng <= 128.0) {
-        addressParts.push('哈尔滨市')
-      } else {
-        addressParts.push('中国')
-      }
-    } else {
-      addressParts.push('位置')
-    }
-    
-    addressParts.push(`坐标: ${lat.toFixed(6)}, ${lng.toFixed(6)}`)
-    formData.value.address = addressParts.join(' ')
-  } catch (error) {
-    console.warn('本地地址解析也失败:', error)
-    formData.value.address = `坐标: ${lat.toFixed(6)}, ${lng.toFixed(6)}`
-  }
+  uni.$on(pickerEvent, pickerHandler)
+  const page = props.dark ? '/pages-dark/map/map' : '/pages/map/map'
+  const origin = hasLocation.value ? `&lat=${formData.value.latitude}&lng=${formData.value.longitude}` : ''
+  uni.navigateTo({ url: `${page}?mode=select&purpose=bin&returnEvent=${encodeURIComponent(pickerEvent)}${origin}`, fail: () => { detachPicker(); notice.value = '地图暂时无法打开，请重试。' } })
 }
-
-// 选择图片
 function chooseImage() {
-  uni.chooseImage({
-    count: 1,
-    sizeType: ['compressed'],
-    sourceType: ['album', 'camera'],
-    success: res => {
-      if (res.tempFilePaths && res.tempFilePaths.length > 0) {
-        formData.value.imageUrl = res.tempFilePaths[0]
-        formData.value.imageFile = res.tempFilePaths[0]
-      }
+  if (formLocked.value || isProcessingImage.value) return
+  const token = ++imageRevision
+  chooseAppImage({ count: 1, sizeType: ['original'], sourceType: ['camera', 'album'],
+    success: async result => {
+      const path = result.tempFilePaths?.[0]
+      if (!path || !props.visible || token !== imageRevision) return
+      isProcessingImage.value = true; notice.value = ''; imageError.value = ''
+      const previousPreview = previewSource.value
+      previewSource.value = path
+      try {
+        const image = await compressTrashBinImage(path)
+        if (!props.visible || token !== imageRevision) return
+        formData.value.image = image
+        // H5 uses the processed data URI; native platforms retain the accessible local thumbnail path.
+        // #ifdef H5
+        previewSource.value = image
+        // #endif
+      } catch (error) {
+        if (props.visible && token === imageRevision) { previewSource.value = previousPreview; notice.value = error.message || '照片处理失败，请重新选择。' }
+      } finally { if (token === imageRevision) isProcessingImage.value = false }
     },
-    fail: (err) => {
-      console.error('选择图片失败:', err)
-      showCustomToast('选择图片失败', 'error')
-    }
+    fail: error => { if (props.visible && token === imageRevision && !/cancel/i.test(error.errMsg || '')) notice.value = '未能选择照片，请重试。' }
   })
 }
-
-// 图片加载错误处理
-function onImageError(e) {
-  try {
-    console.error('图片加载错误事件:', e)
-  } catch (err) { /* ignore */ }
-  imageErrorMsg.value = '图片加载失败，可能是本地临时路径在 H5 不可访问或 URL 格式不受支持'
-}
-
-function onImageLoad() {
-  imageErrorMsg.value = ''
-}
-
-// 移除图片
 function removeImage() {
-  formData.value.imageUrl = ''
-  formData.value.imageFile = null
+  if (formLocked.value || isProcessingImage.value) return
+  ++imageRevision; formData.value.image = ''; previewSource.value = ''; imageError.value = ''
 }
-
-// 提交表单
-async function handleSubmit() {
-  if (isSubmitting.value) return
-  // 表单验证
-  if (!formData.value.name.trim()) {
-    showCustomToast('请输入垃圾桶名称', 'warning')
-    return
-  }else if (!formData.value.latitude || !formData.value.longitude) {
-    showCustomToast('请获取位置信息', 'warning')
-    return
-  }else if (!formData.value.imageFile) {
-    showCustomToast('请上传垃圾桶照片', 'warning')
-    return
-  }
-
-  isSubmitting.value = true
-  
+function onImageError() { imageError.value = '照片显示失败，请重新选择'; notice.value = imageError.value }
+function previewImage() {
+  if (isProcessingImage.value) return
+  const source = previewSource.value || formData.value.image
+  // #ifdef H5
+  openImagePreview(source, '现场照片')
+  // #else
+  previewNativeImage(source)
+  // #endif
+}
+function previewSatelliteReference() {
+  const image = satelliteReference.value?.image
+  if (!image) return
+  // #ifdef H5
+  openImagePreview(image, 'AI 卫星参考图')
+  // #else
+  previewNativeImage(image)
+  // #endif
+}
+async function previewNativeImage(source) {
+  try { await previewTrashBinImage(source) }
+  catch (_) { notice.value = '暂时无法预览，请重试。' }
+}
+function openImagePreview(source, title) {
+  if (!source) return
+  imagePreviewSource.value = source; imagePreviewTitle.value = title; imagePreviewVisible.value = true
+}
+function closeImagePreview() { imagePreviewVisible.value = false; imagePreviewSource.value = ''; imagePreviewTitle.value = '' }
+function satelliteLog(event, details = {}) { console.info('[bin-satellite-reference]', event, details) }
+async function prepareSatelliteReference(token) {
+  satelliteReference.value = null; satelliteCapabilityReady.value = false; satelliteReferenceLoading.value = false; satelliteCapability = null
+  if (!activeLocation(token) || !validBinCoordinates(formData.value)) return
+  const location = { latitude: Number(formData.value.latitude), longitude: Number(formData.value.longitude) }
+  const started = Date.now()
+  satelliteReferenceLoading.value = true
+  satelliteLog('start')
   try {
-    let imageUrl = ''
-    // 如果有图片，先上传图片
-    if (formData.value.imageFile) {
-      try {
-        const uploadResult = await uploadTrashBinImage(formData.value.imageFile)
-        imageUrl = uploadResult.url || uploadResult.path || ''
-      } catch (uploadError) {
-        console.warn('图片上传失败，继续提交:', uploadError)
-        // 图片上传失败不阻止整体提交
-      }
+    const response = await getBinPreReviewCapability()
+    if (!activeLocation(token)) { satelliteLog('stale response'); return }
+    const capability = response?.data
+    if (capability?.supported !== true || capability.enabled !== true) { const reason = capability?.enabled === false ? 'disabled' : 'unsupported'; satelliteLog(reason); return }
+    satelliteCapability = capability
+    satelliteCapabilityReady.value = capability.satelliteReferenceFetch === true || (capability.satelliteReference === true && !!pickerSatelliteReference)
+    if (capability.satelliteReferenceFetch !== true) {
+      satelliteLog('unsupported', { reason: 'satelliteReferenceFetch' })
+      if (capability.satelliteReference === true && pickerSatelliteReference) satelliteReference.value = pickerSatelliteReference
+      return
     }
-    
-    // 提交数据 - 使用新的API数据结构
-    const submitData = {
-      name: formData.value.name.trim(),
-      description: formData.value.description.trim(),
-      latitude: formData.value.latitude,
-      longitude: formData.value.longitude,
-      image: imageUrl
+    const result = await getBinSatelliteReference(location.latitude, location.longitude)
+    if (!activeLocation(token)) { satelliteLog('stale response'); return }
+    const data = result?.data
+    const normalized = normalizeSatelliteReference(data, location)
+    if (!normalized) {
+      satelliteLog('failed', { reason: result?.msg || 'invalid_response' })
+      if (result?.msg !== 'no_satellite_imagery' && capability.satelliteReference === true && pickerSatelliteReference) satelliteReference.value = pickerSatelliteReference
+      return
     }
-    
-    await addTrashBin(submitData)
-    
-    showCustomToast('新增成功', 'success', 1500)
-    
-    // 延迟关闭，让用户看到成功提示
-    setTimeout(() => {
-      emit('success', submitData)
-      closeModal()
-    }, 1500)
-    
+    satelliteReference.value = { ...normalized, source: data.source, cached: data.cached === true }
+    const bytes = Math.round(normalized.image.length * 3 / 4)
+    satelliteLog('success', { durationMs: Date.now() - started, KB: Math.round(bytes / 1024 * 10) / 10, cached: data.cached === true, zoom: data.zoom, source: data.source || 'unknown' })
   } catch (error) {
-    console.error('提交失败:', error)
-    const message = error.message || error.msg || '提交失败，请重试'
-    showCustomToast(message, 'error', 2000)
+    if (!activeLocation(token)) { satelliteLog('stale response'); return }
+    satelliteLog('failed', { reason: error?.msg || error?.message || 'unavailable' })
+    if (satelliteCapability?.satelliteReference === true && pickerSatelliteReference) satelliteReference.value = pickerSatelliteReference
   } finally {
-    isSubmitting.value = false
+    if (activeLocation(token)) satelliteReferenceLoading.value = false
   }
 }
-
-// 关闭弹窗
-function closeModal() {
-  emit('close')
+function applySuggestions() {
+  if (formLocked.value || !reviewResult.value?.passed || !sameBinSubmission(reviewedPayload, currentPayload())) return
+  const suggestion = reviewResult.value.suggestions
+  applyingSuggestion = true
+  try {
+    if (suggestion.name) formData.value.name = suggestion.name
+    if (suggestion.description) formData.value.description = preserveBinDescription(formData.value.description, suggestion.description)
+    reviewedPayload = currentPayload(); reviewResult.value.applied = true
+  } finally { applyingSuggestion = false }
 }
-
-// 点击遮罩层关闭
-function handleOverlayClick(e) {
-  // 只有点击遮罩层本身才关闭
-  if (e.target === e.currentTarget) {
-    closeModal()
-  }
+function retryPreReview() {
+  if (formLocked.value) return
+  manualFallback.value = false
+  handleSubmit()
 }
+function stopReviewProgress() {
+  if (reviewProgressTimer) clearInterval(reviewProgressTimer)
+  reviewProgressTimer = null
+}
+function startReviewProgress(estimateMs, phase = 'reviewing') {
+  stopReviewProgress()
+  reviewPhase.value = phase; reviewProgress.value = 4
+  const started = Date.now()
+  reviewProgressTimer = setInterval(() => { reviewProgress.value = binReviewWaitingProgress(Date.now() - started, estimateMs) }, 200)
+}
+async function checkPreReview(payload, active) {
+  let capability
+  try { capability = (await getBinPreReviewCapability())?.data }
+  catch (error) { if (isLegacyBinReviewError(error)) return { skip: true }; throw error }
+  if (!active()) return null
+  // Missing fields cover older servers returning a generic successful response.
+  if (capability?.supported !== true || capability.enabled !== true) return { skip: true }
+  if (capability.available === false) throw new Error('AI 初审暂不可用')
+  startReviewProgress(capability.estimatedDurationMs)
+  const reference = capability.satelliteReference === true ? normalizeSatelliteReference(satelliteReference.value, payload) : null
+  satelliteLog('submit', { attached: !!reference, reason: reference ? 'ready' : capability.satelliteReference !== true ? 'unsupported' : satelliteReferenceLoading.value ? 'still_preparing' : 'unavailable' })
+  const reviewPayload = reference ? { ...payload, satelliteReference: reference } : payload
+  let response
+  try { response = await preReviewTrashBin(reviewPayload, capability.progress === true ? {
+    isActive: active,
+    onProgress: snapshot => {
+      if (!active()) return
+      const preview = normalizeBinReviewPreview(snapshot.preview, payload.description)
+      if (!preview) return
+      const firstVerdict = !reviewPreview.value
+      reviewPreview.value = preview
+      if (preview.passed && reviewPhase.value !== 'advising') startReviewProgress(capability.suggestionDurationMs || BIN_PRE_REVIEW_SUGGESTION_ESTIMATE_MS, 'advising')
+      if (firstVerdict) nextTick(() => { if (active()) scrollToReview.value = 'bin-review-preview' })
+    }
+  } : undefined) }
+  catch (error) { if (isLegacyBinReviewError(error)) return { skip: true }; throw error }
+  const data = response?.data
+  if (data?.enabled === false || data?.supported === false) return { skip: true }
+  const normalized = normalizeBinPreReview(data, payload.description)
+  if (!normalized) throw new Error('AI 初审暂不可用')
+  return { decision: normalized }
+}
+async function handleSubmit() {
+  if (!canSubmit.value) return
+  const payload = currentPayload()
+  if (manualFallback.value || (reviewResult.value?.passed && sameBinSubmission(reviewedPayload, payload))) return submitContribution(payload)
+  const token = ++reviewRevision
+  let finished = false
+  const active = () => !finished && props.visible && token === reviewRevision && sameBinSubmission(payload, currentPayload())
+  isReviewing.value = true; reviewPreview.value = null; reviewPhase.value = 'checking'; reviewProgress.value = 0; notice.value = ''
+  try {
+    const outcome = await withBinReviewDeadline(() => checkPreReview(payload, active))
+    if (!active() || !outcome) return
+    stopReviewProgress(); isReviewing.value = false
+    if (outcome.skip) return await submitContribution(payload)
+    reviewProgress.value = 100
+    reviewedPayload = payload; reviewResult.value = outcome.decision
+    await nextTick()
+    if (active()) scrollToReview.value = 'bin-review-result'
+  } catch (error) {
+    if (!active()) return
+    if ([401, 403].includes(Number(error?.code || error?.statusCode))) { notice.value = error.msg || error.message || '请重新登录'; return }
+    manualFallback.value = true
+    notice.value = error.message === 'AI_PRE_REVIEW_TIMEOUT' ? 'AI 初审等待超时，可重试，或提交管理员人工审核。' : 'AI 初审暂不可用，可重试，或提交管理员人工审核。'
+  } finally { finished = true; if (token === reviewRevision) { stopReviewProgress(); isReviewing.value = false } }
+}
+async function submitContribution(payload) {
+  if (isSubmitting.value) return
+  isSubmitting.value = true; notice.value = ''
+  try {
+    const result = await addTrashBin(payload)
+    if (!result || (result.code !== 0 && result.code !== 200)) throw new Error(result?.msg || result?.message || '提交失败，请重试')
+    emit('success', payload); emit('close')
+  } catch (error) { notice.value = error.message || error.msg || '提交失败，请重试' }
+  finally { isSubmitting.value = false }
+}
+function closeModal() { if (!isSubmitting.value) emit('close') }
 </script>
 
 <style scoped>
-/* 模态框遮罩 - 现代化设计 */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(10, 26, 47, 0.6);
-  backdrop-filter: blur(8px);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  animation: overlayFadeIn 0.3s ease-out;
-}
-
-/* 自定义Toast样式 */
-.custom-toast {
-  position: fixed;
-  top: 20%;
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 240rpx;
-  max-width: 80vw;
-  padding: 24rpx 32rpx;
-  border-radius: 16rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16rpx;
-  backdrop-filter: blur(20px) saturate(1.2);
-  z-index: 10001;
-  animation: toastSlideIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  box-shadow: 
-    0 12rpx 32rpx rgba(0, 0, 0, 0.15),
-    0 4rpx 16rpx rgba(0, 0, 0, 0.1),
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.3);
-}
-
-.custom-toast.success {
-  background: rgba(72, 187, 120, 0.95);
-  color: white;
-  border: 1rpx solid rgba(255, 255, 255, 0.2);
-}
-
-.custom-toast.error {
-  background: rgba(245, 101, 101, 0.95);
-  color: white;
-  border: 1rpx solid rgba(255, 255, 255, 0.2);
-}
-
-.custom-toast.warning {
-  background: rgba(237, 137, 54, 0.95);
-  color: white;
-  border: 1rpx solid rgba(255, 255, 255, 0.2);
-}
-
-.custom-toast.info {
-  background: rgba(66, 153, 225, 0.95);
-  color: white;
-  border: 1rpx solid rgba(255, 255, 255, 0.2);
-}
-
-.toast-icon {
-  font-size: 32rpx;
-  line-height: 1;
-}
-
-.toast-text {
-  font-size: 28rpx;
-  font-weight: 500;
-  letter-spacing: 0.3rpx;
-}
-
-@keyframes toastSlideIn {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-20rpx) scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
-}
-
-@keyframes overlayFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* 模态框主体 - 玻璃拟态设计 */
-.modal-content {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px) saturate(1.2);
-  border-radius: 24rpx;
-  width: 85vw;
-  max-width: 640rpx;
-  max-height: 85vh;
-  overflow-y: auto;
-  box-shadow: 
-    0 24rpx 80rpx rgba(0, 0, 0, 0.15),
-    0 8rpx 32rpx rgba(0, 0, 0, 0.1),
-    inset 0 2rpx 0 rgba(255, 255, 255, 0.3),
-    inset 0 0 0 1rpx rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  animation: modalSlideIn 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  position: relative;
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(60px) scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* 头部设计 */
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 48rpx 48rpx 32rpx 48rpx;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 100%);
-}
-
-.modal-title {
-  font-size: 40rpx;
-  font-weight: 700;
-  color: #1a202c;
-  letter-spacing: 0.5rpx;
-  text-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.02);
-}
-
-.modal-close {
-  font-size: 32rpx;
-  color: #718096;
-  padding: 16rpx;
-  line-height: 1;
-  transition: all 0.3s ease;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.03);
-  width: 64rpx;
-  height: 64rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-close:active {
-  color: #e53e3e;
-  background: rgba(229, 62, 62, 0.1);
-  transform: scale(0.9);
-}
-
-/* 主体内容 */
-.modal-body {
-  padding: 40rpx 48rpx;
-}
-
-/* 表单组件设计 */
-.form-group {
-  margin-bottom: 8rpx;
-}
-
-.form-label {
-  display: block;
-  font-size: 30rpx;
-  color: #2d3748;
-  margin-bottom: 20rpx;
-  font-weight: 600;
-  letter-spacing: 0.3rpx;
-}
-
-.form-input {
-  width: 100%;
-  height: 88rpx;
-  padding: 0 32rpx;
-  border: 2rpx solid #e2e8f0;
-  border-radius: 16rpx;
-  font-size: 30rpx;
-  box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  color: #2d3748;
-}
-
-.form-input:focus {
-  border-color: #667eea;
-  outline: none;
-  box-shadow: 
-    0 0 0 4rpx rgba(102, 126, 234, 0.1),
-    0 4rpx 16rpx rgba(102, 126, 234, 0.15);
-  background: rgba(255, 255, 255, 0.95);
-  transform: translateY(-1rpx);
-}
-
-.form-textarea {
-  width: 100%;
-  min-height: 140rpx;
-  padding: 24rpx 32rpx;
-  border: 2rpx solid #e2e8f0;
-  border-radius: 16rpx;
-  font-size: 30rpx;
-  resize: none;
-  box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  color: #2d3748;
-  line-height: 1.6;
-}
-
-.form-textarea:focus {
-  border-color: #667eea;
-  outline: none;
-  box-shadow: 
-    0 0 0 4rpx rgba(102, 126, 234, 0.1),
-    0 4rpx 16rpx rgba(102, 126, 234, 0.15);
-  background: rgba(255, 255, 255, 0.95);
-  transform: translateY(-1rpx);
-}
-
-/* 位置信息卡片 */
-.location-info {
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
-  padding: 32rpx;
-  border-radius: 16rpx;
-  border: 2rpx solid rgba(102, 126, 234, 0.1);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.02);
-}
-
-.location-text {
-  display: block;
-  font-size: 28rpx;
-  color: #4a5568;
-  margin-bottom: 16rpx;
-  line-height: 1.5;
-  font-weight: 500;
-}
-
-.location-tip {
-  color: #9ca3af;
-  font-style: italic;
-  font-weight: 400;
-}
-
-.location-btn {
-  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
-  color: white;
-  border: none;
-  padding: 20rpx 40rpx;
-  border-radius: 12rpx;
-  font-size: 28rpx;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  box-shadow: 0 4rpx 16rpx rgba(16, 185, 129, 0.3);
-  cursor: pointer;
-}
-
-.location-btn:active {
-  transform: translateY(2rpx);
-  box-shadow: 0 2rpx 8rpx rgba(16, 185, 129, 0.4);
-}
-
-.location-btn:disabled {
-  background: linear-gradient(135deg, #cbd5e0 0%, #a0aec0 100%);
-  box-shadow: none;
-  transform: none;
-  cursor: not-allowed;
-}
-
-.image-upload {
-  border: 2rpx dashed #e0e0e0;
-  border-radius: 8rpx;
-  position: relative;
-}
-
-.image-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60rpx 20rpx;
-  color: #999;
-}
-
-.upload-icon {
-  font-size: 60rpx;
-  margin-bottom: 20rpx;
-}
-
-.upload-text {
-  font-size: 26rpx;
-}
-
-.image-preview {
-  position: relative;
-  display: inline-block;
-}
-
-.preview-image {
-  width: 100%;
-  border-radius: 8rpx;
-  object-fit: cover;
-}
-
-.image-remove {
-  position: absolute;
-  top: -10rpx;
-  right: -10rpx;
-  width: 40rpx;
-  height: 40rpx;
-  background: #ff4757;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24rpx;
-  line-height: 1;
-}
-
-.image-debug-url {
-  display: block;
-  font-size: 20rpx;
-  color: #666;
-  margin-top: 10rpx;
-  word-break: break-all;
-}
-
-.image-error {
-  display: block;
-  font-size: 22rpx;
-  color: #ff4757;
-  margin-top: 8rpx;
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 24rpx;
-  padding: 30rpx 32rpx 32rpx 32rpx;
-  border-top: 2rpx solid rgba(226, 232, 240, 0.8);
-  backdrop-filter: blur(10px);
-}
-
-.btn {
-  padding: 2rpx 48rpx;
-  border-radius: 12rpx;
-  font-size: 30rpx;
-  border: none;
-  min-width: 140rpx;
-  text-align: center;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  position: relative;
-  overflow: hidden;
-}
-
-.btn-cancel {
-  background: rgba(255, 255, 255, 0.8);
-  color: #4a5568;
-  border: 2rpx solid #e2e8f0;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
-}
-
-.btn-cancel::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.03), transparent);
-  transition: all 0.5s;
-}
-
-.btn-cancel:hover::before {
-  left: 100%;
-}
-
-.btn-cancel:active {
-  transform: translateY(1rpx);
-  box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.1);
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
-  color: white;
-  box-shadow: 
-    0 4rpx 16rpx rgba(16, 185, 129, 0.3),
-    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.2);
-}
-
-.btn-primary::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: all 0.5s;
-}
-
-.btn-primary:hover::before {
-  left: 100%;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%);
-  transform: translateY(-1rpx);
-}
-
-.btn-primary:active:not(:disabled) {
-  transform: translateY(2rpx);
-  box-shadow: 
-    0 2rpx 8rpx rgba(16, 185, 129, 0.4),
-    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.1);
-}
-
-.btn-primary:disabled {
-  background: linear-gradient(135deg, #cbd5e0 0%, #a0aec0 100%);
-  color: #718096;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
-}
-
-.btn-primary:disabled::before {
-  display: none;
-}
-
-/* 微动画效果 */
-@keyframes buttonPulse {
-  0%, 100% { transform: translateY(-1rpx) scale(1); }
-  50% { transform: translateY(-1rpx) scale(1.02); }
-}
-
-.btn-primary:not(:disabled):hover {
-  animation: buttonPulse 1.5s infinite;
-}
-
-/* H5 内置图片预览覆盖层样式 */
-.img-overlay {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0,0,0,0.85);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 100000;
-}
-.img-box {
-  position: relative;
-  max-width: 94vw;
-  max-height: 94vh;
-}
-.img-full {
-  max-width: 100%;
-  max-height: 100%;
-  display: block;
-  border-radius: 8px;
-}
-.img-close {
-  position: absolute;
-  right: -12px;
-  top: -12px;
-  background: #ff4757;
-  color: white;
-  border: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  font-size: 20px;
-  cursor: pointer;
-}
-
-/* 表单输入焦点微光效果 */
-@keyframes inputGlow {
-  0%, 100% { 
-    box-shadow: 
-      0 0 0 4rpx rgba(102, 126, 234, 0.1), 
-      0 4rpx 16rpx rgba(102, 126, 234, 0.15); 
-  }
-  50% { 
-    box-shadow: 
-      0 0 0 6rpx rgba(102, 126, 234, 0.15), 
-      0 6rpx 20rpx rgba(102, 126, 234, 0.2); 
-  }
-}
-
-.form-input:focus,
-.form-textarea:focus {
-  animation: inputGlow 2s ease-in-out infinite;
-}
-
-/* 上传区域悬浮效果 */
-.upload-area:hover {
-  transform: translateY(-2rpx);
-  border-color: rgba(102, 126, 234, 0.3);
-  background: rgba(102, 126, 234, 0.02);
-  transition: all 0.3s ease;
-}
-
-/* 位置按钮加载状态 */
-.location-btn:disabled {
-  position: relative;
-}
-
-.location-btn:disabled::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 20rpx;
-  height: 20rpx;
-  margin: -10rpx 0 0 -10rpx;
-  border: 2rpx solid transparent;
-  border-top-color: currentColor;
-  border-radius: 50%;
-  animation: btnSpin 1s linear infinite;
-}
-
-@keyframes btnSpin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
+.contribution-overlay { --ink: #203933; --muted: #7e928b; --line: #e2ece7; --card: #fff; --soft: #f3f8f5; position: fixed; inset: 0; z-index: 20000; display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; background: rgba(13, 35, 29, .48); overscroll-behavior: none; }
+.contribution-overlay.dark { --ink: #e5f4ee; --muted: #9aafa8; --line: #36514a; --card: #1b302a; --soft: #243e35; }
+.contribution-modal { display: flex; flex-direction: column; width: 100%; max-width: 480px; height: 90vh; max-height: 820px; border-radius: 24px; background: var(--card); color: var(--ink); box-shadow: 0 18px 70px rgba(8, 42, 29, .22); overflow: hidden; }
+.modal-heading { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 22px 22px 16px; }
+.modal-eyebrow { display: block; font-size: 13px; color: var(--muted); letter-spacing: 1px; margin-bottom: 5px; }
+.modal-title { display: block; font-size: 24px; font-weight: 700; }
+.close-button { margin: 0; padding: 0; width: 32px; height: 32px; line-height: 30px; border-radius: 50%; font-size: 25px; background: var(--soft); color: var(--muted); }
+button::after { border: 0; }
+button[disabled] { opacity: .5; }
+.modal-scroll { flex: 1; min-height: 0; height: 0; overflow: hidden; overscroll-behavior: contain; touch-action: pan-y; }
+.form-body { padding: 0 22px 8px; }
+.reward-banner { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 14px; margin-bottom: 20px; background: var(--soft); }
+.reward-icon { flex-shrink: 0; width: 30px; height: 30px; }
+.reward-copy { flex: 1; min-width: 0; }
+.reward-title { display: block; font-size: 15px; font-weight: 600; color: #06916b; line-height: 1.6; }
+.reward-tip { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+.form-group { margin-bottom: 18px; }
+.last-group { margin-bottom: 0; }
+.label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+.form-label { display: block; font-size: 16px; font-weight: 600; margin-bottom: 9px; }
+.label-row .form-label { margin-bottom: 0; }
+.required { color: #0ca77d; }
+.field-note { font-size: 12px; color: var(--muted); }
+.photo-empty, .photo-selected { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 90px; padding: 14px; box-sizing: border-box; border: 1px dashed #b8d7c7; border-radius: 14px; background: var(--soft); }
+.camera-icon { flex-shrink: 0; width: 38px; height: 38px; }
+.photo-copy { flex: 1; min-width: 0; }
+.photo-title { display: block; font-size: 16px; font-weight: 600; line-height: 1.6; }
+.photo-tip { display: block; font-size: 12px; color: var(--muted); line-height: 1.6; margin-top: 4px; }
+.photo-plus { color: #129c76; font-size: 24px; }
+.photo-selected { padding: 10px; border-style: solid; border-color: var(--line); }
+.preview-image { display: block; width: 90px; height: 90px; flex-shrink: 0; border-radius: 9px; background: #dce9e1; }
+.photo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 7px; }
+.text-button { font-size: 12px; line-height: 1.6; padding: 0; margin: 0; color: #079873; background: transparent; }
+.text-button.remove { color: var(--muted); }
+.location-card { padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
+.location-main { display: flex; align-items: flex-start; gap: 7px; }
+.location-icon { width: 17px; height: 17px; flex-shrink: 0; margin-top: 2px; }
+.location-address { font-size: 16px; line-height: 1.7; overflow-wrap: anywhere; }
+.coordinates { display: block; margin: 5px 0 0 24px; font-size: 12px; color: var(--muted); }
+.location-actions { display: flex; gap: 10px; margin-top: 11px; }
+.satellite-reference-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0 0 24px; }
+.satellite-reference-copy { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.satellite-reference-link { flex-shrink: 0; margin: 0; padding: 0; background: transparent; color: #079873; font-size: 12px; line-height: 1.5; }
+.location-button { flex: 1; padding: 8px 0; margin: 0; font-size: 16px; line-height: 1.7; border-radius: 8px; background: #e0f1e8; color: #0a8665; }
+.location-button.outlined { background: var(--card); border: 1px solid var(--line); box-sizing: border-box; }
+.form-input, .form-textarea { display: block; width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 11px; background: var(--soft); color: var(--ink); font-size: 16px; }
+.form-input { height: 42px; padding: 0 12px; }
+.form-textarea { height: 100px; padding: 10px 12px; line-height: 1.7; }
+.input-placeholder { color: #8c9e96; }
+.description-tip { display: block; margin-top: 7px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.modal-footer { position: relative; z-index: 1; flex-shrink: 0; padding: 14px 22px 15px; border-top: 1px solid var(--line); background: var(--card); }
+.footer-actions { display: flex; gap: 12px; }
+.cancel-button, .submit-button { margin: 0; padding: 11px 0; border-radius: 12px; font-size: 16px; font-weight: 600; line-height: 1.5; }
+.cancel-button { width: 80px; background: var(--soft); color: var(--muted); }
+.submit-button { flex: 1; background: #06a778; color: #fff; }
+.submit-button[disabled] { color: #fff; background: #91cbb4; }
+.footer-tip { display: block; color: var(--muted); font-size: 12px; text-align: center; margin-top: 10px; line-height: 1.5; }
+.form-notice { display: block; font-size: 13px; line-height: 1.6; margin-bottom: 9px; color: #bf6247; }
+.review-progress { padding: 0 0 12px; }
+.progress-heading { display: flex; justify-content: space-between; align-items: center; color: var(--ink); font-size: 15px; font-weight: 600; }
+.progress-value { color: #07936b; }
+.progress-track { height: 7px; margin-top: 10px; overflow: hidden; border-radius: 7px; background: var(--line); }
+.progress-fill { height: 100%; background: #08ad7e; border-radius: 7px; transition: width 220ms linear; }
+.progress-tip { display: block; margin-top: 7px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.review-card { margin-top: 20px; padding: 14px; border: 1px solid #b2dccc; border-radius: 14px; background: var(--soft); }
+.review-card.rejected { border-color: #e5b69c; }
+.review-title { display: block; color: #078461; font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+.rejected .review-title { color: #b35d39; }
+.review-reason, .review-suggestion { display: block; color: var(--ink); font-size: 16px; line-height: 1.8; overflow-wrap: anywhere; }
+.review-summary, .review-disclaimer { display: block; margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.apply-suggestions { margin: 12px 0 0; padding: 8px; background: #d8eee3; color: #087c5d; border-radius: 10px; font-size: 15px; line-height: 1.6; }
+.retry-review { padding: 6px 0 0; margin: 0; background: transparent; color: #087c5d; font-size: 13px; line-height: 1.6; }
+.satellite-preview-overlay { position: fixed; inset: 0; z-index: 21000; display: flex; align-items: center; justify-content: center; padding: 52px 18px 54px; box-sizing: border-box; background: rgba(5, 12, 10, .92); }
+.satellite-preview-image { display: block; width: 100%; height: 100%; max-width: 720px; }
+.satellite-preview-close { position: absolute; top: max(16px, env(safe-area-inset-top)); right: 16px; z-index: 1; width: 38px; height: 38px; margin: 0; padding: 0; border-radius: 50%; background: rgba(255, 255, 255, .16); color: #fff; font-size: 26px; line-height: 36px; }
+.satellite-preview-caption { position: absolute; bottom: max(18px, env(safe-area-inset-bottom)); left: 0; right: 0; color: rgba(255, 255, 255, .82); font-size: 12px; line-height: 1.5; text-align: center; pointer-events: none; }
+@media (max-width: 420px) { .contribution-overlay { padding: 12px; } .contribution-modal { height: 92vh; max-height: 820px; border-radius: 20px; } .modal-heading { padding: 18px 18px 14px; } .form-body { padding-left: 18px; padding-right: 18px; } .modal-footer { padding-left: 18px; padding-right: 18px; padding-bottom: max(14px, env(safe-area-inset-bottom)); } }
 </style>

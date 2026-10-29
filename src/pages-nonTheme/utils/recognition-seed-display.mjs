@@ -30,5 +30,6 @@ export function parseRecognitionSeedSummary(message, index) {
     upcycling = upcycling.slice(`垃圾投放：${disposal}`.length).trim()
   }
   const readable = value => value.replace(/([。；])\s*(?=\S)/g, '$1\n')
-  return { labels, items, disposal: readable(disposal), upcycling: readable(upcycling) }
+  const formattedUpcycling = readable(upcycling).replace(/(^|\n)([ \t]*[\u4e00-\u9fff]{2,16}[：:])[ \t]*(?=\S)/g, '$1$2\n')
+  return { labels, items, disposal: readable(disposal), upcycling: formattedUpcycling }
 }

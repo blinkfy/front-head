@@ -123,6 +123,7 @@
 </template>
 
 <script>
+import { chooseAppImage } from '@/utils/image-picker.js'
 import { createPost } from '@/pages-nonTheme/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { compressImageToBase64 } from '@/utils/avatar-handler.js';
@@ -299,7 +300,7 @@ export default {
         return;
       }
       const count = 9 - this.uploadedImages.length;
-      uni.chooseImage({
+      chooseAppImage({
         count: count,
         sizeType: ['compressed'],
         sourceType: ['album', 'camera'],

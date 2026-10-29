@@ -82,6 +82,7 @@ function extractAppLifecycle() {
 
   const functionNames = ['emitStepChange', 'refreshWindowSize', 'setDemoStage', 'clearDemoTimers', 'onTipImageLoad', 'scheduleIntroEnd', 'scheduleDemoStages', 'queueDemoStage', 'startDemo', 'leaveDemo', 'dismiss', 'nextStep']
   const declarations = [
+    ...['steps', 'visibleSteps'].map(name => findVariable(ast, script, name)),
     ...['currentIndex', 'displayedIndex', 'windowSize', 'guideTop', 'cardVisible', 'visibilityTimer', 'swapTimer', 'swapRequestId', 'demoStage', 'lastDemoStage', 'displayedDemoStage', 'copyVisible', 'guideLeaving', 'demoTimers', 'tip1Loaded', 'introTimer', 'exitAction', 'demoCopy', 'introDemo', 'demoBrowsing'].map(name => findVariable(ast, script, name))
   ]
   const functions = functionNames.map(name => script.slice(findFunction(ast, name).start, findFunction(ast, name).end))

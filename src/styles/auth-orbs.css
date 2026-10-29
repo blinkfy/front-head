@@ -1,0 +1,46 @@
+/* Match the home page: 8/10/12s paths, up to 40rpx travel and 3% scaling. */
+@keyframes auth-orb-green {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    transform: translate(30rpx, -20rpx) scale(1.02);
+  }
+  50% {
+    transform: translate(20rpx, 30rpx) scale(0.98);
+  }
+  75% {
+    transform: translate(-10rpx, 20rpx) scale(1.01);
+  }
+}
+
+@keyframes auth-orb-blue {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-20rpx, 40rpx) scale(1.03);
+  }
+  66% {
+    transform: translate(30rpx, -30rpx) scale(0.97);
+  }
+}
+
+@keyframes auth-orb-orange {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  20% {
+    transform: translate(40rpx, 10rpx) scale(1.02);
+  }
+  40% {
+    transform: translate(20rpx, -40rpx) scale(0.99);
+  }
+  60% {
+    transform: translate(-30rpx, -20rpx) scale(1.01);
+  }
+  80% {
+    transform: translate(-20rpx, 30rpx) scale(0.98);
+  }
+}
+

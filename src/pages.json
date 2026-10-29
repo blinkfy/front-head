@@ -46,7 +46,13 @@
 			"path": "pages/map/map",
 			"style": {
 				"navigationStyle": "custom",
-				"navigationBarTitleText": "垃圾桶查找"
+				"navigationBarTitleText": "垃圾桶查找",
+				"app-plus": {
+					"subNVues": [{
+						"id": "nearby-disposal-light", "path": "pages/map/nearby-panel",
+						"style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 90 }
+					}]
+				}
 			}
 		},
 		{
@@ -76,6 +82,17 @@
 			"root": "pages-nonTheme",
 			"name": "pages-nonTheme",
 			"pages": [
+				// #ifdef MP-WEIXIN
+				{
+					"path": "recognition-camera",
+					"style": {
+						"navigationStyle": "custom",
+						"disableScroll": true,
+						"navigationBarTextStyle": "white",
+						"backgroundColor": "#050505"
+					}
+				},
+				// #endif
 				{
 					"path": "scan",
 					"style": {
@@ -97,6 +114,13 @@
 					}
 				},
 				{ 
+					"path": "account-security",
+					"style": {
+						"navigationStyle": "custom",
+						"navigationBarTitleText": "账号与安全"
+					}
+				},
+				{
 					"path": "edit-profile",
 					"style": {
 						"navigationStyle": "custom",
@@ -188,6 +212,18 @@
 					}
 				},
 				{
+					"path": "shop-confirm",
+					"style": { "navigationStyle": "custom", "navigationBarTitleText": "确认兑换" }
+				},
+				{
+					"path": "shop-orders",
+					"style": { "navigationStyle": "custom", "navigationBarTitleText": "我的订单" }
+				},
+				{
+					"path": "shop-order-detail",
+					"style": { "navigationStyle": "custom", "navigationBarTitleText": "订单详情" }
+				},
+				{
 					"path": "voice-scan",
 					"style": {
 						"navigationStyle": "custom"
@@ -205,6 +241,7 @@
 			"root": "pages-admin",
 			"name": "pages-admin",
 			"pages": [
+				{ "path": "shop-management", "style": { "navigationStyle": "custom", "navigationBarTitleText": "商城管理" } },
 				{
 					"path": "admin-ai-settings",
 					"style": { "navigationStyle": "custom", "navigationBarTitleText": "服务设置" }
@@ -281,7 +318,15 @@
 				{
 					"path": "map/map",
 					"style": {
-						"navigationBarTitleText": "垃圾桶查找"
+						"navigationStyle": "custom",
+						"navigationBarTextStyle": "white",
+						"navigationBarTitleText": "垃圾桶查找",
+						"app-plus": {
+							"subNVues": [{
+								"id": "nearby-disposal-dark", "path": "map/nearby-panel",
+								"style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 90 }
+							}]
+						}
 					}
 				},
 				{

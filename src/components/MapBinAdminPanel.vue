@@ -18,30 +18,39 @@
       </view>
     </view>
     <view class="actions mpwx-view">
-      <view class="action-btn edit-btn mpwx-view" :class="{ disabled: busy }" @click="!busy && (editing = !editing)">
+      <view class="action-btn edit-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="!busy && !imageProcessing && (editing = !editing)">
         <ManifestIcon class="action-icon" :id="editing ? 'close' : 'edit_profile'" />{{ editing ? '收起编辑' : '编辑资料' }}
       </view>
-      <view v-if="!bin.review" class="action-btn approve-btn mpwx-view" :class="{ disabled: busy }" @click="review(true)">
+      <view v-if="!bin.review" class="action-btn approve-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="review(true)">
         <ManifestIcon class="action-icon" id="confirm" />审核通过
       </view>
-      <view v-if="bin.review" class="action-btn approve-btn mpwx-view" :class="{ disabled: busy }" @click="review(false)">
+      <view v-if="bin.review" class="action-btn approve-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="review(false)">
         <ManifestIcon class="action-icon" id="restore" />撤销审核
       </view>
-      <view class="action-btn delete-btn mpwx-view" :class="{ disabled: busy }" @click="removeBin">
+      <view class="action-btn delete-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="removeBin">
         <ManifestIcon class="action-icon" id="delete" />删除点位
+      </view>
+    </view>
+    <view v-if="!editing && binImageSrc" class="bin-image-card mpwx-view">
+      <image class="bin-image-thumbnail" :src="binImageSrc" mode="aspectFill" @click="previewBinImage" />
+      <view class="bin-image-preview-action mpwx-view" @click="previewBinImage">预览点位图片</view>
+    </view>
+    <view v-else-if="!editing && bin.hasImage" class="bin-image-card mpwx-view">
+      <view class="bin-image-preview-action mpwx-view" :class="{ disabled: imageLoading }" @click="loadBinImage">
+        {{ imageLoading ? '图片加载中…' : '加载点位图片' }}
       </view>
     </view>
     <scroll-view v-if="editing || showReports" scroll-y class="details">
       <view v-if="showReports" class="reports mpwx-view">
         <view class="reports-heading mpwx-view">
           <view class="mpwx-view"><text class="group-title">用户反馈</text><text class="group-caption">请核实后再清理记录</text></view>
-          <view v-if="visibleReports.length" class="clear-reports mpwx-view" :class="{ disabled: busy }" @click="!busy && (confirmClearReports = true)">清空记录</view>
+          <view v-if="visibleReports.length" class="clear-reports mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="!busy && !imageProcessing && (confirmClearReports = true)">清空记录</view>
         </view>
         <view v-if="confirmClearReports" class="clear-confirm mpwx-view">
           <text class="clear-confirm-copy">将清空此点位的 {{ visibleReports.length }} 条反馈，点位资料不会删除。</text>
           <view class="clear-confirm-actions mpwx-view">
             <view class="keep-reports mpwx-view" @click="confirmClearReports = false">保留记录</view>
-            <view class="confirm-clear mpwx-view" :class="{ disabled: busy }" @click="!busy && removeReports()">{{ busy ? '清理中…' : '确认清空' }}</view>
+            <view class="confirm-clear mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="!busy && !imageProcessing && removeReports()">{{ busy ? '清理中…' : '确认清空' }}</view>
           </view>
         </view>
         <view v-for="(report, index) in visibleReports" :key="index" class="report mpwx-view">
@@ -80,15 +89,15 @@
           </view>
         </view>
         <view class="form-field mpwx-view">
-          <text class="field-label">图片路径</text>
-          <input v-model="draft.imagePath" class="field-control" maxlength="2000" placeholder="可选" />
+          <text class="field-label">图片</text>
+          <TrashBinImageEditor v-model="draft.imagePath" :disabled="busy" @processing="imageProcessing = $event" />
         </view>
         <view class="form-field mpwx-view">
           <text class="field-label">设备回调地址</text>
           <input v-model="draft.callback_url" class="field-control" maxlength="2000" placeholder="可选" />
         </view>
-        <view class="save-btn mpwx-view" :class="{ disabled: busy }" @click="save">
-          <ManifestIcon class="action-icon" :id="busy ? 'refresh' : 'confirm'" />{{ busy ? '提交中…' : '保存修改' }}
+        <view class="save-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="save">
+          <ManifestIcon class="action-icon" :id="busy ? 'refresh' : 'confirm'" />{{ imageProcessing ? '图片处理中…' : busy ? '提交中…' : '保存修改' }}
         </view>
       </view>
     </scroll-view>
@@ -100,14 +109,21 @@ import { computed, ref, watch } from 'vue'
 import { approveBin, rejectBin, updateBin, deleteBin, clearBinErrorReports } from '@/api/database'
 import { binReports } from '@/utils/map-admin-bins'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
+import { getTrashBinImage } from '@/api/map'
+import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
 const props = defineProps({ bin: { type: Object, required: true }, dark: Boolean })
 const emit = defineEmits(['updated'])
 const reports = computed(() => binReports(props.bin))
+const loadedImage = ref('')
+const imageLoading = ref(false)
+const binImageSrc = computed(() => loadedImage.value ? resolveTrashBinImage(loadedImage.value) : props.bin.hasImage && !(props.bin.image || props.bin.imagePath) ? '' : resolveTrashBinImage(props.bin.imagePath || props.bin.image || '', props.bin.mapType || 'waste_basket'))
 const editing = ref(false)
 const showReports = ref(false)
 const confirmClearReports = ref(false)
 const clearedReportsForId = ref(null)
 const busy = ref(false)
+const imageProcessing = ref(false)
 const draft = ref({})
 watch(() => props.bin.id, () => {
   const bin = props.bin
@@ -115,11 +131,32 @@ watch(() => props.bin.id, () => {
   showReports.value = false
   confirmClearReports.value = false
   clearedReportsForId.value = null
-  draft.value = { name: bin.name || '', describe: bin.description || '', type: bin.type || 'normal', status: bin.status || 'offline', latitude: String(bin.latitude ?? ''), longitude: String(bin.longitude ?? ''), imagePath: bin.imagePath || '', callback_url: bin.callback_url || '' }
+  loadedImage.value = ''
+  draft.value = { name: bin.name || '', describe: bin.description || '', type: bin.type || 'normal', status: bin.status || 'offline', latitude: String(bin.sourceLatitude ?? bin.latitude ?? ''), longitude: String(bin.sourceLongitude ?? bin.longitude ?? ''), imagePath: bin.imagePath ?? bin.image ?? '', callback_url: bin.callback_url || '' }
 }, { immediate: true })
 const visibleReports = computed(() => String(props.bin.id) === String(clearedReportsForId.value) ? [] : reports.value)
+// 列表只带图片标识（Base64 图不出现在列表里），查看图片时单点按需拉取
+async function loadBinImage() {
+  if (imageLoading.value) return
+  imageLoading.value = true
+  try {
+    const result = await getTrashBinImage(props.bin.id)
+    if (result?.code !== 0 || !result.data?.image) throw new Error(result?.msg || '图片加载失败')
+    loadedImage.value = result.data.image
+  } catch (error) { uni.showToast({ title: error.message || '图片加载失败', icon: 'none' }) }
+  finally { imageLoading.value = false }
+}
+async function previewBinImage() {
+  try {
+    if (!binImageSrc.value) await loadBinImage()
+    const value = binImageSrc.value || (props.bin.imagePath ?? props.bin.image ?? '')
+    if (!value) throw new Error('暂无图片')
+    await previewTrashBinImage(value)
+  }
+  catch (error) { uni.showToast({ title: '图片预览失败', icon: 'none' }) }
+}
 async function submit(id, action, onSuccess) {
-  if (busy.value) return
+  if (busy.value || imageProcessing.value) return
   busy.value = true
   try {
     const result = await action()
@@ -132,13 +169,13 @@ async function submit(id, action, onSuccess) {
 }
 function review(approved) {
   const id = props.bin.id
-  if (busy.value) return
+  if (busy.value || imageProcessing.value) return
   uni.showModal({ title: approved ? '审核通过' : '取消通过审核', content: approved ? '确认将此垃圾桶向普通用户开放？' : '确认将此垃圾桶设为未通过审核？普通用户将不再看到它。', success: result => {
     if (result.confirm) submit(id, () => approved ? approveBin(id) : rejectBin(id))
   } })
 }
 function removeBin() {
-  if (busy.value) return
+  if (busy.value || imageProcessing.value) return
   const id = props.bin.id
   const name = props.bin.name || '此垃圾桶'
   uni.showModal({ title: '删除垃圾桶', content: `确认永久删除“${name}”？删除后地图不再显示此桶，关联的用户设备关系也会删除。`, success: result => {
@@ -146,7 +183,7 @@ function removeBin() {
   } })
 }
 function removeReports() {
-  if (busy.value) return
+  if (busy.value || imageProcessing.value) return
   const id = props.bin.id
   submit(id, () => clearBinErrorReports(id), () => {
     clearedReportsForId.value = id
@@ -154,14 +191,17 @@ function removeReports() {
   })
 }
 function save() {
-  if (busy.value) return
+  if (busy.value || imageProcessing.value) return
   const latitude = Number(draft.value.latitude)
   const longitude = Number(draft.value.longitude)
   if (!draft.value.name.trim() || !draft.value.latitude.trim() || !draft.value.longitude.trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
     uni.showToast({ title: '请填写名称和有效经纬度', icon: 'none' }); return
   }
   const id = props.bin.id
-  submit(id, () => updateBin(id, { ...draft.value, name: draft.value.name.trim(), latitude, longitude }))
+  const payload = { ...draft.value, name: draft.value.name.trim(), latitude, longitude }
+  // 列表轻量模式下 data 型图片的 imagePath 为空串，未改图片时不提交该字段，避免误清原图
+  if (draft.value.imagePath === (props.bin.imagePath ?? props.bin.image ?? '')) delete payload.imagePath
+  submit(id, () => updateBin(id, payload))
 }
 </script>
 
@@ -188,6 +228,9 @@ function save() {
 .summary-icon { width: 28rpx; height: 28rpx; }
 .summary-action { margin-left: auto; color: #07825e; font-weight: 600; }
 .actions { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 16rpx; }
+.bin-image-card { display: flex; align-items: center; gap: 14rpx; margin-top: 16rpx; }
+.bin-image-thumbnail { width: 120rpx; height: 120rpx; border-radius: 12rpx; background: #edf1f4; }
+.bin-image-preview-action { color: #087d5e; font-size: 21rpx; }
 .action-btn { min-height: 66rpx; flex: 1 1 30%; display: flex; align-items: center; justify-content: center; gap: 8rpx; padding: 0 10rpx; box-sizing: border-box; border-radius: 13rpx; font-size: 21rpx; font-weight: 600; }
 .action-icon { width: 26rpx; height: 26rpx; }
 .edit-btn { color: #365f91; background: #edf4fd; }

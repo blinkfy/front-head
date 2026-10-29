@@ -18,9 +18,10 @@
           <view class="title-icon-pill"><ManifestIcon id="recycling_booking" /></view>
           <text class="nav-title">预约回收</text>
         </view>
-        <view class="nav-right">
-          <view class="action-icon-btn" @click="goToOrders">
+        <view class="nav-right orders-nav-right">
+          <view class="action-icon-btn recycling-orders-entry" @click="goToOrders">
             <ManifestIcon class="nav-action-icon" id="reservation_order_table" />
+            <text class="nav-action-label">回收订单</text>
           </view>
         </view>
       </view>
@@ -70,7 +71,13 @@
         <!-- 时间段选择 -->
         <view class="section">
           <view class="section-title">选择时间段</view>
-          <view class="time-grid">
+          <view v-if="timeSlotsLoading" class="time-feedback" role="status">正在加载可预约时段…</view>
+          <view v-else-if="timeSlotsError" class="time-feedback" role="alert">
+            <text>{{ timeSlotsError }}</text>
+            <button class="time-retry" @click="loadTimeSlots">重新加载</button>
+          </view>
+          <view v-else-if="!timeSlots.length" class="time-feedback">当天暂无可预约时段，可以选择其他日期。</view>
+          <view v-else class="time-grid">
             <view
               v-for="slot in timeSlots"
               :key="slot.time"
@@ -89,18 +96,28 @@
         <!-- 地址输入 -->
         <view class="section">
           <view class="section-title">回收地址</view>
-          <view class="input-card">
-            <view class="location-wrapper">
-              <input
-                v-model="address"
-                class="input-field location-field"
-                placeholder="请输入详细地址"
-                placeholder-class="input-placeholder"
-              />
-              <view class="location-action" @click="selectLocation">
-                <ManifestIcon id="map_location" />
-              </view>
+          <view class="input-card booking-address-card">
+            <view class="address-field-group">
+              <text class="address-field-label">所在地区</text>
+              <ShopRegionPicker v-model="addressRegion" :disabled="submitting || addressBusy" />
             </view>
+            <view class="address-field-group address-detail-group">
+              <text class="address-field-label">详细地址</text>
+              <input
+                v-model="addressDetail"
+                class="input-field address-detail-input"
+                placeholder="街道、小区、楼栋及门牌号"
+                placeholder-class="input-placeholder"
+                :disabled="submitting || addressBusy"
+              />
+            </view>
+            <ShopAddressPicker
+              :model-value="address"
+              :auto-locate="addressReady"
+              :disabled="submitting"
+              @select="applyLocatedAddress"
+              @busy-change="addressBusy = $event"
+            />
           </view>
         </view>
 
@@ -145,7 +162,7 @@
         <!-- 预约按钮 -->
         <view class="submit-section">
           <view
-            :class="['submit-btn', submitting ? 'disabled' : '']"
+            :class="['submit-btn', submitting || addressBusy ? 'disabled' : '']"
             @click="submitBooking"
           >
             <text class="submit-text">{{ submitting ? '提交中...' : '立即预约' }}</text>
@@ -155,86 +172,21 @@
       </view>
     </scroll-view>
 
-    <!-- H5 地图选点弹窗 -->
-    <view v-if="showMapPicker" class="map-picker-overlay" @click.self="closeMapPicker">
-      <view class="map-picker-modal">
-        <view class="map-picker-header">
-          <text class="map-picker-title">选择位置</text>
-          <ManifestIcon class="map-picker-close" id="close" @click="closeMapPicker" />
-        </view>
-        <view class="map-picker-search">
-          <input
-            v-model="mapSearchQuery"
-            type="text"
-            placeholder="搜索地址..."
-            class="map-search-input"
-            @confirm="searchAddress"
-          />
-          <text class="map-search-btn" @click="searchAddress">搜索</text>
-        </view>
-        <view class="map-picker-body">
-          <view id="map-container" class="map-container"></view>
-          <view class="map-center-marker">📍</view>
-        </view>
-        <view class="map-picker-footer">
-          <view class="map-selected-addr">
-            <text class="map-addr-label">已选：</text>
-            <text class="map-addr-text">{{ mapSelectedAddress || '请在地图上点击选择位置' }}</text>
-          </view>
-          <view class="map-picker-actions">
-            <view class="map-btn map-btn-cancel" @click="closeMapPicker">取消</view>
-            <view class="map-btn map-btn-confirm" @click="confirmMapLocation">确认</view>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <!-- App 附近地点弹窗 -->
-    <view v-if="showNearbyPicker" class="nearby-picker-overlay" @click.self="closeNearbyPicker">
-      <view class="nearby-picker-modal">
-        <view class="nearby-picker-header">
-          <text class="nearby-picker-title">选择附近地点</text>
-          <ManifestIcon class="nearby-picker-close" id="close" @click="closeNearbyPicker" />
-        </view>
-        <view class="nearby-picker-search">
-          <input
-            v-model="nearbySearchQuery"
-            type="text"
-            placeholder="搜索小区/学校/写字楼..."
-            class="nearby-search-input"
-            @confirm="onNearbySearch"
-          />
-          <text class="nearby-search-btn" @click="onNearbySearch">搜索</text>
-        </view>
-        <view class="nearby-picker-body">
-          <view v-if="nearbyLoading" class="nearby-loading">正在加载附近地点...</view>
-          <view v-else-if="nearbyError" class="nearby-error">{{ nearbyError }}</view>
-          <scroll-view v-else class="nearby-list" scroll-y>
-            <view
-              v-for="(item, idx) in nearbyResults"
-              :key="`${item.id || item.uid || idx}`"
-              class="nearby-item"
-              @click="selectNearbyPlace(item)"
-            >
-              <text class="nearby-name">{{ item.title || item.name || '未命名地点' }}</text>
-              <text class="nearby-addr">{{ item.address || item.addr || '' }}</text>
-            </view>
-          </scroll-view>
-        </view>
-      </view>
-    </view>
   </view>
 </template>
 
 <script>
 import { getWasteTypes, createBooking, getAvailableTimeSlots, estimatePrice } from '@/pages-nonTheme/api/booking.js';
 import { getUserProfile, updateUserProfile } from '@/api/user.js';
-import { searchPlaces } from '@/api/map.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
+import ShopRegionPicker from './components/ShopRegionPicker.vue';
+import ShopAddressPicker from '@/pages-nonTheme/components/shop/ShopAddressPicker.vue';
+import { splitShopAddress, composeShopAddress } from './utils/shop-address.js';
 import { playUiSound } from '@/utils/ui-sounds.js';
+import { formatBookingDate } from './utils/booking-date.mjs';
 
 export default {
-  components: { ManifestIcon },
+  components: { ManifestIcon, ShopRegionPicker, ShopAddressPicker },
   data() {
     return {
       wasteTypes: [],
@@ -242,29 +194,22 @@ export default {
       selectedDate: 'today',
       selectedTimeSlot: '',
       timeSlots: [],
-      address: '',
+      timeSlotsLoading: false,
+      timeSlotsError: '',
+      timeSlotsRequestId: 0,
+      timeSlotsDate: '',
+      dateValues: { today: '', tomorrow: '' },
+      addressRegion: ['', '', ''],
+      addressDetail: '',
+      addressBusy: false,
+      addressReady: false,
       contactPhone: '',
       remark: '',
       estimateAmount: 0,
       submitting: false,
       todayStr: '',
       tomorrowStr: '',
-      isDark: false,
-      // H5 地图选点
-      showMapPicker: false,
-      mapSearchQuery: '',
-      mapSelectedAddress: '',
-      mapSelectedLat: null,
-      mapSelectedLng: null,
-      _mapInstance: null,
-      _mapMarker: null,
-      // App 附近地点选择
-      showNearbyPicker: false,
-      nearbySearchQuery: '',
-      nearbyResults: [],
-      nearbyLoading: false,
-      nearbyError: '',
-      nearbyLocation: null
+      isDark: false
     };
   },
   onLoad() {
@@ -277,8 +222,24 @@ export default {
   },
   onShow() {
     this.checkTheme();
+    if (this.dateValues.today && this.dateValues.today !== formatBookingDate(new Date())) {
+      this.initDates();
+      this.selectedTimeSlot = '';
+      this.loadTimeSlots();
+    }
   },
+  onUnload() { this.timeSlotsRequestId++; },
   computed: {
+    address: {
+      get() {
+        return composeShopAddress(this.addressRegion, this.addressDetail);
+      },
+      set(full) {
+        const parsed = splitShopAddress(full);
+        this.addressRegion = parsed.region;
+        this.addressDetail = parsed.detail;
+      }
+    },
     selectedWasteItems() {
       return this.wasteTypes.filter(t => this.selectedTypes.includes(t.id));
     }
@@ -292,6 +253,13 @@ export default {
     }
   },
   methods: {
+    applyLocatedAddress(selection) {
+      if (this.submitting || !selection) return;
+      const parsed = splitShopAddress(selection.address, selection.parts);
+      this.addressRegion = parsed.region;
+      this.addressDetail = parsed.detail;
+      uni.setStorageSync('bookingAddress', this.address);
+    },
     extractData(res) {
       return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
     },
@@ -321,19 +289,22 @@ export default {
       // 优先从缓存读取
       const cached = String(uni.getStorageSync('bookingAddress') || '').trim();
       if (cached) {
-        this.address = cached;
+        if (!this.address.trim()) this.address = cached;
+        this.addressReady = true;
         return;
       }
       try {
         const res = await getUserProfile();
         const data = this.extractData(res) || {};
         const loc = String(data.location || '').trim();
-        if (loc) {
+        if (loc && !this.address.trim()) {
           this.address = loc;
           uni.setStorageSync('bookingAddress', loc);
         }
       } catch (e) {
         console.warn('获取用户地址失败:', e);
+      } finally {
+        this.addressReady = true;
       }
     },
     isValidPhone(phone) {
@@ -361,6 +332,7 @@ export default {
       const format = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
       this.todayStr = format(today);
       this.tomorrowStr = format(tomorrow);
+      this.dateValues = { today: formatBookingDate(today), tomorrow: formatBookingDate(tomorrow) };
     },
     async loadWasteTypes() {
       try {
@@ -378,11 +350,16 @@ export default {
       }
     },
     async loadTimeSlots() {
-      const dateStr = this.selectedDate === 'today'
-        ? new Date().toISOString().split('T')[0]
-        : new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      const requestId = ++this.timeSlotsRequestId;
+      const dateStr = this.dateValues[this.selectedDate];
+      this.timeSlotsLoading = true;
+      this.timeSlotsError = '';
+      this.timeSlots = [];
+      this.selectedTimeSlot = '';
+      this.timeSlotsDate = '';
       try {
         const res = await getAvailableTimeSlots(dateStr);
+        if (requestId !== this.timeSlotsRequestId) return;
         const data = this.extractData(res);
         this.timeSlots = Array.isArray(data)
           ? data.map((slot) => ({
@@ -390,9 +367,14 @@ export default {
               time: slot.slot || slot.time || ''
             }))
           : [];
+        this.timeSlotsDate = dateStr;
       } catch (e) {
+        if (requestId !== this.timeSlotsRequestId) return;
         console.error('获取时间段失败:', e);
         this.timeSlots = [];
+        this.timeSlotsError = '时段加载失败，请重新加载后选择。';
+      } finally {
+        if (requestId === this.timeSlotsRequestId) this.timeSlotsLoading = false;
       }
     },
     toggleWasteType(item) {
@@ -409,6 +391,7 @@ export default {
       this.loadTimeSlots();
     },
     selectTimeSlot(time) {
+      if (this.timeSlotsLoading || this.timeSlotsError) return;
       this.selectedTimeSlot = time;
     },
     async calculateEstimate() {
@@ -430,6 +413,17 @@ export default {
     },
     async submitBooking() {
       if (this.submitting) return;
+      if (this.dateValues.today !== formatBookingDate(new Date())) {
+        this.initDates();
+        this.selectedTimeSlot = '';
+        this.loadTimeSlots();
+        uni.showToast({ title: '日期已更新，请重新选择时段', icon: 'none' });
+        return;
+      }
+      if (this.timeSlotsLoading || this.timeSlotsError || this.timeSlotsDate !== this.dateValues[this.selectedDate]) {
+        uni.showToast({ title: this.timeSlotsLoading ? '正在加载时段，请稍候' : '请先重新加载预约时段', icon: 'none' });
+        return;
+      }
       if (this.selectedTypes.length === 0) {
         uni.showToast({ title: '请选择回收物品', icon: 'none' });
         return;
@@ -438,8 +432,16 @@ export default {
         uni.showToast({ title: '请选择时间段', icon: 'none' });
         return;
       }
-      if (!this.address.trim()) {
-        uni.showToast({ title: '请输入回收地址', icon: 'none' });
+      if (this.addressBusy) {
+        uni.showToast({ title: '请等待附近地址选择完成', icon: 'none' });
+        return;
+      }
+      if (!this.addressRegion.every(part => String(part || '').trim())) {
+        uni.showToast({ title: '请完善所在地区（省、市、区）', icon: 'none' });
+        return;
+      }
+      if (!this.addressDetail.trim()) {
+        uni.showToast({ title: '请输入详细地址（街道、小区及门牌号）', icon: 'none' });
         return;
       }
       if (!this.contactPhone.trim()) {
@@ -451,9 +453,7 @@ export default {
         return;
       }
       this.submitting = true;
-      const dateStr = this.selectedDate === 'today'
-        ? new Date().toISOString().split('T')[0]
-        : new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      const dateStr = this.timeSlotsDate;
       try {
         const response = await createBooking({
           items: this.selectedTypes.map(id => ({ typeId: id, weight: 1 })),
@@ -480,390 +480,6 @@ export default {
         this.submitting = false;
       }
     },
-    formatLocationResult(res) {
-      if (res && typeof res.addresses === 'string' && res.addresses.trim()) return res.addresses.trim();
-      const address = res && res.address
-      if (typeof address === 'string' && address.trim()) return address.trim()
-      if (address && typeof address === 'object') {
-        const detail = [
-          address.province,
-          address.city,
-          address.district,
-          address.street,
-          address.streetNum,
-          address.poiName
-        ].filter(Boolean).join('')
-        if (detail) return detail
-      }
-      const name = String((res && (res.name || res.addressName)) || '').trim()
-      if (name) return name
-      const lat = res && (res.latitude || (res.coords && res.coords.latitude))
-      const lng = res && (res.longitude || (res.coords && res.coords.longitude))
-      if (lat && lng) return `${lat},${lng}`
-      return ''
-    },
-    isAppPlusPlatform() {
-      const platform = uni.getSystemInfoSync().uniPlatform
-      return platform === 'app' || platform === 'app-plus'
-    },
-    getAppCurrentLocation() {
-      return new Promise((resolve, reject) => {
-        if (typeof plus === 'undefined' || !plus.geolocation || typeof plus.geolocation.getCurrentPosition !== 'function') {
-          reject(new Error('当前环境不支持原生定位'))
-          return
-        }
-        plus.geolocation.getCurrentPosition(
-          (position) => resolve(position),
-          (error) => reject(error),
-          {
-            provider: 'system',
-            geocode: false,
-            timeout: 15000
-          }
-        )
-      })
-    },
-    fillCurrentLocation() {
-      uni.showLoading({ title: '定位中...' })
-      const useNativeLocation = this.isAppPlusPlatform() && typeof plus !== 'undefined'
-      const locationTask = useNativeLocation
-        ? this.getAppCurrentLocation()
-        : new Promise((resolve, reject) => {
-            if (typeof uni.getLocation !== 'function') {
-              reject(new Error('当前环境不支持定位'))
-              return
-            }
-            uni.getLocation({
-              type: 'gcj02',
-              geocode: false,
-              success: resolve,
-              fail: reject
-            })
-          })
-
-      locationTask
-        .then((res) => {
-          const locationText = this.formatLocationResult(res)
-          const lat = res && (res.latitude || (res.coords && res.coords.latitude))
-          const lng = res && (res.longitude || (res.coords && res.coords.longitude))
-
-          // 如果获取到的地址只是一串经纬度，使用与 H5 选点同源的 OSM 接口进行强制兜底逆地理编码
-          if (locationText && lat && lng && /^[-+]?\d+\.?\d+,\s*[-+]?\d+\.?\d+$/.test(locationText)) {
-            uni.request({
-              url: `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=zh`,
-              header: { 'User-Agent': 'FenTouXia/1.0' },
-              success: (geoRes) => {
-                const data = geoRes.data;
-                const finalAddr = (data && data.display_name) ? data.display_name : locationText;
-                this.address = finalAddr;
-                uni.setStorageSync('bookingAddress', this.address);
-                uni.showToast({ title: '地址已更新', icon: 'success' });
-              },
-              fail: () => {
-                this.address = locationText;
-                uni.setStorageSync('bookingAddress', this.address);
-                uni.showToast({ title: '地址已更新', icon: 'success' });
-              }
-            });
-            return;
-          }
-
-          if (locationText) {
-            this.address = locationText
-            uni.setStorageSync('bookingAddress', this.address)
-            uni.showToast({ title: '地址已更新', icon: 'success' })
-          } else {
-            uni.showToast({ title: '定位成功，请补充详细地址', icon: 'none' })
-          }
-        })
-        .catch((err) => {
-          console.warn('获取当前位置失败:', err)
-          const message = this.isAppPlusPlatform()
-            ? '定位失败，请检查系统定位权限'
-            : '定位失败，请手动输入'
-          uni.showToast({ title: message, icon: 'none' })
-        })
-        .finally(() => {
-          uni.hideLoading()
-        })
-    },
-    getCurrentCoords() {
-      const useNativeLocation = this.isAppPlusPlatform() && typeof plus !== 'undefined'
-      const locationTask = useNativeLocation
-        ? this.getAppCurrentLocation()
-        : new Promise((resolve, reject) => {
-            if (typeof uni.getLocation !== 'function') {
-              reject(new Error('当前环境不支持定位'))
-              return
-            }
-            uni.getLocation({
-              type: 'gcj02',
-              geocode: false,
-              success: resolve,
-              fail: reject
-            })
-          })
-
-      return locationTask.then((res) => {
-        const lat = res && (res.latitude || (res.coords && res.coords.latitude))
-        const lng = res && (res.longitude || (res.coords && res.coords.longitude))
-        if (!lat || !lng) throw new Error('无法获取定位坐标')
-        return { lat, lng }
-      })
-    },
-    openNearbyPicker() {
-      this.showNearbyPicker = true
-      this.nearbySearchQuery = ''
-      this.nearbyResults = []
-      this.nearbyError = ''
-      this.loadNearbyPlaces()
-    },
-    closeNearbyPicker() {
-      this.showNearbyPicker = false
-    },
-    loadNearbyPlaces(keyword = '') {
-      this.nearbyLoading = true
-      this.nearbyError = ''
-      this.getCurrentCoords()
-        .then(({ lat, lng }) => {
-          this.nearbyLocation = { lat, lng }
-          const query = String(keyword || '').trim() || '小区'
-          return searchPlaces(query, lat, lng, 2000)
-        })
-        .then((res) => {
-          const list = Array.isArray(res && res.data) ? res.data : []
-          this.nearbyResults = list
-          if (!list.length) this.nearbyError = '附近没有找到可选地点'
-        })
-        .catch((err) => {
-          this.nearbyError = (err && err.message) ? err.message : '加载附近地点失败'
-        })
-        .finally(() => {
-          this.nearbyLoading = false
-        })
-    },
-    onNearbySearch() {
-      this.loadNearbyPlaces(this.nearbySearchQuery)
-    },
-    selectNearbyPlace(item) {
-      const title = String(item && (item.title || item.name) || '').trim()
-      const addr = String(item && (item.address || item.addr) || '').trim()
-      let finalText = ''
-      if (title && addr) {
-        finalText = addr.includes(title) ? addr : `${title} ${addr}`
-      } else {
-        finalText = title || addr
-      }
-      if (!finalText && item && item.location && item.location.lat && item.location.lng) {
-        finalText = `${item.location.lat},${item.location.lng}`
-      }
-      if (finalText) {
-        this.address = finalText
-        uni.setStorageSync('bookingAddress', this.address)
-        uni.showToast({ title: '地址已更新', icon: 'success' })
-      }
-      this.closeNearbyPicker()
-    },
-    selectLocation() {
-      const systemInfo = uni.getSystemInfoSync()
-      const uniPlatform = systemInfo.uniPlatform
-
-      // H5环境：打开地图选点弹窗
-      if (uniPlatform === 'web') {
-        this.openMapPicker()
-        return
-      }
-
-      if (uniPlatform === 'app' || uniPlatform === 'app-plus') {
-        this.openNearbyPicker()
-        return
-      }
-
-      // 小程序端使用 uni 自带的地图选择
-      if (typeof uni.chooseLocation === 'function') {
-        uni.chooseLocation({
-          success: (res) => {
-            this.address = res.address || res.name || `${res.latitude},${res.longitude}`
-            uni.setStorageSync('bookingAddress', this.address)
-          },
-          fail: () => {
-            uni.showToast({ title: '定位失败，请手动输入', icon: 'none' })
-          }
-        })
-      } else {
-        uni.showToast({ title: '当前环境不支持地图选址，请手动输入', icon: 'none' })
-      }
-    },
-
-    // ===== H5 地图选点弹窗 =====
-    openMapPicker() {
-      this.showMapPicker = true
-      this.mapSearchQuery = ''
-      this.mapSelectedAddress = this.address || ''
-      this.mapSelectedLat = null
-      this.mapSelectedLng = null
-
-      setTimeout(() => {
-        this.initMap()
-      }, 300)
-    },
-
-    closeMapPicker() {
-      this.showMapPicker = false
-      if (this._mapInstance) {
-        this._mapInstance.remove()
-        this._mapInstance = null
-        this._mapMarker = null
-      }
-    },
-
-    initMap() {
-      const container = document.getElementById('map-container')
-      if (!container) return
-
-      if (this._mapInstance) {
-        this._mapInstance.remove()
-        this._mapInstance = null
-        this._mapMarker = null
-      }
-
-      if (!document.querySelector('link[href*="leaflet.css"]')) {
-        const link = document.createElement('link')
-        link.rel = 'stylesheet'
-        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
-        document.head.appendChild(link)
-      }
-
-      if (typeof window.L === 'undefined') {
-        const script = document.createElement('script')
-        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-        script.onload = () => {
-          this.createMap(container)
-        }
-        document.head.appendChild(script)
-      } else {
-        this.createMap(container)
-      }
-    },
-
-    createMap(container) {
-      const defaultCenter = [35.86, 104.19]
-      let initialCenter = defaultCenter
-      let initialZoom = 5
-
-      if (this.address) {
-        const coords = this.parseCoordsFromAddress(this.address)
-        if (coords) {
-          initialCenter = coords
-          initialZoom = 15
-        }
-      }
-
-      this._mapInstance = window.L.map(container, {
-        center: initialCenter,
-        zoom: initialZoom,
-        zoomControl: true
-      })
-
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>'
-      }).addTo(this._mapInstance)
-
-      this._mapInstance.on('click', (e) => {
-        const { lat, lng } = e.latlng
-        this.placeMarker(lat, lng)
-        this.reverseGeocode(lat, lng)
-      })
-
-      if (this.address && !this.parseCoordsFromAddress(this.address)) {
-        this.mapSearchQuery = this.address
-        setTimeout(() => this.searchAddress(), 500)
-      }
-    },
-
-    placeMarker(lat, lng) {
-      if (this._mapMarker) {
-        this._mapInstance.removeLayer(this._mapMarker)
-      }
-      this._mapMarker = window.L.marker([lat, lng], { draggable: true })
-        .addTo(this._mapInstance)
-        .bindPopup('所选位置')
-        .openPopup()
-
-      this.mapSelectedLat = lat
-      this.mapSelectedLng = lng
-
-      this._mapMarker.on('dragend', () => {
-        const pos = this._mapMarker.getLatLng()
-        this.mapSelectedLat = pos.lat
-        this.mapSelectedLng = pos.lng
-        this.reverseGeocode(pos.lat, pos.lng)
-      })
-    },
-
-    async reverseGeocode(lat, lng) {
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=zh`,
-          { headers: { 'User-Agent': 'FenTouXia/1.0' } }
-        )
-        const data = await res.json()
-        this.mapSelectedAddress = data.display_name || `${lat},${lng}`
-      } catch {
-        this.mapSelectedAddress = `${lat},${lng}`
-      }
-    },
-
-    async searchAddress() {
-      const query = this.mapSearchQuery.trim()
-      if (!query || !this._mapInstance) return
-
-      uni.showLoading({ title: '搜索中...' })
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&accept-language=zh`,
-          { headers: { 'User-Agent': 'FenTouXia/1.0' } }
-        )
-        const results = await res.json()
-        uni.hideLoading()
-
-        if (results && results.length > 0) {
-          const r = results[0]
-          const lat = parseFloat(r.lat)
-          const lng = parseFloat(r.lon)
-          this._mapInstance.setView([lat, lng], 16)
-          this.placeMarker(lat, lng)
-          this.mapSelectedAddress = r.display_name
-        } else {
-          uni.showToast({ title: '未找到该地址', icon: 'none' })
-        }
-      } catch {
-        uni.hideLoading()
-        uni.showToast({ title: '搜索失败，请重试', icon: 'none' })
-      }
-    },
-
-    parseCoordsFromAddress(addr) {
-      if (!addr) return null
-      const match = addr.match(/([-+]?\d+\.?\d+)\s*,\s*([-+]?\d+\.?\d+)/)
-      if (match) {
-        return [parseFloat(match[1]), parseFloat(match[2])]
-      }
-      return null
-    },
-
-    confirmMapLocation() {
-      if (this.mapSelectedAddress) {
-        this.address = this.mapSelectedAddress
-      } else if (this.mapSelectedLat && this.mapSelectedLng) {
-        this.address = `${this.mapSelectedLat},${this.mapSelectedLng}`
-      }
-      this.closeMapPicker()
-      uni.setStorageSync('bookingAddress', this.address)
-      uni.showToast({ title: '地址已更新', icon: 'success' })
-    },
-
     async syncProfileAfterBooking() {
       try {
         const res = await getUserProfile();
@@ -892,6 +508,11 @@ export default {
 </script>
 
 <style scoped>
+.time-feedback { padding: 24rpx 8rpx; color: #536678; font-size: 26rpx; line-height: 1.6; text-align: center; }
+.time-retry { margin: 16rpx auto 0; width: 200rpx; border: 0; border-radius: 40rpx; background: #e4f8ee; color: #087b54; font-size: 26rpx; line-height: 72rpx; }
+.time-retry::after { border: 0; }
+.dark-mode .time-feedback { color: #b4c9d8; }
+.dark-mode .time-retry { background: #153e36; color: #8be6ba; }
 /* ===== 主容器 ===== */
 .booking-page {
   min-height: 100vh;
@@ -946,6 +567,7 @@ export default {
   filter: saturate(1.2) brightness(1.08) drop-shadow(0 0 4rpx rgba(255, 255, 255, 0.4));
 }
 .nav-left, .nav-right { flex: 0 0 80rpx; }
+.orders-nav-right { flex-basis: 160rpx; }
 .nav-right { display: flex; justify-content: flex-end; }
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
@@ -968,6 +590,16 @@ export default {
 }
 .action-icon-btn:active { transform: scale(0.92); }
 .dark-mode .action-icon-btn { background: rgba(255, 255, 255, 0.15); }
+.recycling-orders-entry {
+  width: auto;
+  height: auto;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  gap: 8rpx;
+}
+.recycling-orders-entry .nav-action-icon { font-size: 28rpx; }
+.nav-action-label { color: #059669; font-size: 22rpx; white-space: nowrap; }
+.dark-mode .nav-action-label { color: #a7f3d0; }
 
 /* ===== 主内容区 ===== */
 .main-scroll {
@@ -1091,36 +723,28 @@ export default {
 }
 .dark-mode .input-field { color: #fff; }
 
-/* 地址定位按钮 */
-.location-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
+.booking-address-card {
+  --shop-card: #fff;
+  --shop-text: #1f2937;
+  --shop-muted: #9ca3af;
+  --shop-line: rgba(16, 185, 129, 0.16);
+  --shop-soft: rgba(16, 185, 129, 0.08);
+  --shop-green: #059669;
 }
-.location-field {
-  flex: 1;
+.dark-mode .booking-address-card {
+  --shop-card: #172334;
+  --shop-text: #f8fafc;
+  --shop-muted: #a8b4c4;
+  --shop-line: rgba(148, 163, 184, 0.28);
+  --shop-soft: rgba(16, 185, 129, 0.16);
+  --shop-green: #6ee7b7;
 }
-.location-action {
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 50%;
-  background: #10b981;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 28rpx;
-  box-shadow: 0 4rpx 12rpx rgba(16, 185, 129, 0.3);
-  flex-shrink: 0;
-}
-.location-action:active {
-  transform: scale(0.95);
-}
-.dark-mode .location-action {
-  background: #5B8DEE;
-  box-shadow: 0 4rpx 12rpx rgba(91, 141, 238, 0.4);
-}
-.input-placeholder { color: #9ca3af; }
+.address-field-group { margin-bottom: 20rpx; }
+.address-detail-group { padding-top: 16rpx; border-top: 1rpx solid var(--shop-line); }
+.address-field-label { display: block; margin-bottom: 12rpx; color: var(--shop-muted); font-size: 23rpx; }
+.address-detail-input { width: 100%; min-height: 72rpx; color: var(--shop-text); }
+.address-detail-input[disabled] { opacity: 0.55; }
+.input-placeholder { color: var(--shop-muted); }
 .dark-mode .input-placeholder { color: rgba(255, 255, 255, 0.5); }
 .textarea-card { padding: 20rpx 24rpx; }
 .textarea-field {
@@ -1152,7 +776,7 @@ export default {
 .estimate-note { color: #9ca3af; font-size: 22rpx; }
 .dark-mode .estimate-note { color: rgba(255, 255, 255, 0.5); }
 
-/* ===== 提交按钮（统一绿渐变） ===== */
+/* ===== 预约按钮（统一绿渐变） ===== */
 .submit-section { padding-top: 12rpx; }
 .submit-btn {
   background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
@@ -1166,195 +790,4 @@ export default {
 .submit-btn.disabled { opacity: 0.6; }
 .submit-text { color: #fff; font-size: 32rpx; font-weight: 700; letter-spacing: 2rpx; }
 
-/* ===== H5 地图选点弹窗 ===== */
-.map-picker-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 30rpx;
-}
-.map-picker-modal {
-  width: 100%;
-  max-width: 700rpx;
-  max-height: 85vh;
-  background: #fff;
-  border-radius: 24rpx;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.3);
-}
-.map-picker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24rpx 30rpx;
-  border-bottom: 1rpx solid #eee;
-}
-.map-picker-title { font-size: 32rpx; font-weight: 700; color: #1f2937; }
-.map-picker-close { font-size: 36rpx; color: #999; padding: 10rpx; }
-.map-picker-close:active { color: #333; }
-.map-picker-search {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 16rpx 30rpx;
-  border-bottom: 1rpx solid #eee;
-}
-.map-search-input {
-  flex: 1;
-  height: 64rpx;
-  padding: 0 20rpx;
-  border: 2rpx solid #ddd;
-  border-radius: 12rpx;
-  font-size: 26rpx;
-  color: #333;
-  background: #f9f9f9;
-}
-.map-search-input:focus { border-color: #10b981; background: #fff; }
-.map-search-btn {
-  padding: 12rpx 24rpx;
-  background: #10b981;
-  color: #fff;
-  border-radius: 10rpx;
-  font-size: 26rpx;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.map-search-btn:active { opacity: 0.8; }
-.map-picker-body {
-  position: relative;
-  width: 100%;
-  height: 600rpx;
-  min-height: 400rpx;
-}
-.map-container {
-  position: relative; z-index: 0; isolation: isolate;
-  width: 100%; height: 100%; overflow: hidden;
-}
-.map-center-marker {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -100%);
-  font-size: 48rpx;
-  z-index: 1000;
-  pointer-events: none;
-  text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.3);
-}
-.map-picker-footer {
-  padding: 20rpx 30rpx;
-  border-top: 1rpx solid #eee;
-  background: #fafafa;
-}
-.map-selected-addr {
-  display: flex;
-  align-items: flex-start;
-  gap: 8rpx;
-  margin-bottom: 16rpx;
-}
-.map-addr-label { font-size: 24rpx; color: #666; white-space: nowrap; margin-top: 2rpx; }
-.map-addr-text { font-size: 24rpx; color: #333; line-height: 1.5; word-break: break-all; }
-.map-picker-actions { display: flex; gap: 16rpx; }
-.map-btn {
-  flex: 1;
-  padding: 16rpx 0;
-  border-radius: 12rpx;
-  font-size: 28rpx;
-  font-weight: 600;
-  text-align: center;
-}
-.map-btn-cancel { background: #f0f0f0; color: #666; }
-.map-btn-cancel:active { background: #e0e0e0; }
-.map-btn-confirm { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
-.map-btn-confirm:active { opacity: 0.9; }
-
-/* ===== App 附近地点弹窗 ===== */
-.nearby-picker-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 30rpx;
-}
-.nearby-picker-modal {
-  width: 100%;
-  max-width: 700rpx;
-  max-height: 80vh;
-  background: #fff;
-  border-radius: 24rpx;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.3);
-}
-.nearby-picker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24rpx 30rpx;
-  border-bottom: 1rpx solid #eee;
-}
-.nearby-picker-title { font-size: 32rpx; font-weight: 700; color: #1f2937; }
-.nearby-picker-close { font-size: 36rpx; color: #999; padding: 10rpx; }
-.nearby-picker-close:active { color: #333; }
-.nearby-picker-search {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 16rpx 30rpx;
-  border-bottom: 1rpx solid #eee;
-}
-.nearby-search-input {
-  flex: 1;
-  height: 64rpx;
-  padding: 0 20rpx;
-  border: 2rpx solid #ddd;
-  border-radius: 12rpx;
-  font-size: 26rpx;
-  color: #333;
-  background: #f9f9f9;
-}
-.nearby-search-input:focus { border-color: #10b981; background: #fff; }
-.nearby-search-btn {
-  padding: 12rpx 24rpx;
-  background: #10b981;
-  color: #fff;
-  border-radius: 10rpx;
-  font-size: 26rpx;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.nearby-search-btn:active { opacity: 0.8; }
-.nearby-picker-body {
-  padding: 12rpx 0 20rpx;
-  max-height: 60vh;
-}
-.nearby-loading,
-.nearby-error {
-  padding: 24rpx 30rpx;
-  color: #6b7280;
-  font-size: 26rpx;
-}
-.nearby-list { max-height: 56vh; }
-.nearby-item {
-  padding: 20rpx 30rpx;
-  border-bottom: 1rpx solid #f0f0f0;
-}
-.nearby-item:active { background: #f9fafb; }
-.nearby-name { display: block; font-size: 28rpx; font-weight: 600; color: #111827; }
-.nearby-addr { display: block; margin-top: 6rpx; font-size: 24rpx; color: #6b7280; }
 </style>

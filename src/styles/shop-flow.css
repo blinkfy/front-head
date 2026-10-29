@@ -1,0 +1,60 @@
+.shop-flow { --shop-bg: #f1fcf8; --shop-card: #fff; --shop-text: #14223c; --shop-muted: #7b879b; --shop-line: #e8edf1; --shop-soft: #e9fbf3; --shop-green: #009e78; min-height: 100vh; color: var(--shop-text); background: radial-gradient(ellipse at 0 40%, #e4f2ff, transparent 50%), radial-gradient(ellipse at 100% 70%, #fff9d9, transparent 40%), var(--shop-bg); font-size: 28rpx; }
+.shop-flow.shop-dark { --shop-bg: #0f1c28; --shop-card: #1b2c3b; --shop-text: #eef6ff; --shop-muted: #a2b4c5; --shop-line: #304455; --shop-soft: #153f3a; --shop-green: #4de0af; background: var(--shop-bg); }
+.shop-flow .shop-flow-header { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 130rpx; padding-top: var(--status-bar-height, 0px); background: linear-gradient(120deg, #0bc89b, #009776); color: #fff; font-size: 36rpx; font-weight: 700; }
+.shop-flow .shop-back { position: absolute; left: 24rpx; bottom: 28rpx; width: 72rpx; padding: 0; background: transparent; color: #fff; line-height: 72rpx; z-index: 1; }
+.shop-flow button::after { border: 0; }
+.shop-flow .shop-header-decoration { position: absolute; right: -35rpx; top: -65rpx; width: 220rpx; height: 220rpx; border-radius: 50%; background: rgba(255,255,255,.12); pointer-events: none; }
+.shop-flow .shop-flow-content { position: relative; padding: 26rpx 24rpx calc(170rpx + env(safe-area-inset-bottom)); border-radius: 32rpx 32rpx 0 0; }
+.shop-flow .shop-card { padding: 26rpx; margin-bottom: 24rpx; background: var(--shop-card); border: 1rpx solid var(--shop-line); border-radius: 28rpx; box-shadow: 0 8rpx 24rpx rgba(0,130,100,.04); }
+.shop-flow .shop-heading { display: flex; align-items: center; gap: 14rpx; margin-bottom: 22rpx; font-size: 31rpx; font-weight: 700; }
+.shop-flow .shop-row { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; padding: 20rpx 0; border-bottom: 1rpx solid var(--shop-line); }
+.shop-flow .shop-row:last-child { border-bottom: 0; }
+.shop-flow .shop-label, .shop-flow .shop-muted { color: var(--shop-muted); }
+.shop-flow .shop-value { flex: 1; text-align: right; overflow-wrap: anywhere; word-break: break-all; }
+.shop-flow .shop-points { display: inline-flex; align-items: center; gap: 8rpx; color: #f29108; font-size: 34rpx; font-weight: 700; }
+.shop-flow .shop-green { color: var(--shop-green); }
+.shop-flow .shop-product { display: flex; gap: 24rpx; align-items: flex-start; }
+.shop-flow .shop-image { width: 200rpx; height: 210rpx; flex-shrink: 0; border-radius: 20rpx; background: var(--shop-soft); }
+.shop-flow .shop-product-info { flex: 1; min-width: 0; }
+.shop-flow .shop-product-name { display: block; font-weight: 700; font-size: 31rpx; line-height: 1.5; overflow-wrap: anywhere; }
+.shop-flow .shop-description { display: block; margin: 10rpx 0 18rpx; color: var(--shop-muted); font-size: 25rpx; line-height: 1.6; }
+.shop-flow .shop-button { margin: 0; padding: 0 28rpx; border-radius: 999rpx; background: linear-gradient(110deg, #0bc99a, #009e7e); color: #fff; font-size: 29rpx; font-weight: 700; line-height: 84rpx; }
+.shop-flow .shop-button[disabled] { opacity: .48; color: #fff; }
+.shop-flow .shop-outline { background: var(--shop-soft); color: var(--shop-green); border: 1rpx solid var(--shop-green); }
+.shop-flow .shop-small { display: inline-block; padding: 0 24rpx; line-height: 64rpx; font-size: 25rpx; }
+.shop-flow .shop-fixed { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: flex; align-items: center; gap: 24rpx; padding: 20rpx 28rpx calc(20rpx + env(safe-area-inset-bottom)); background: var(--shop-card); border-top: 1rpx solid var(--shop-line); }
+.shop-flow .shop-fixed .shop-button { flex: 1; }
+.shop-flow .shop-state { padding: 64rpx 24rpx; text-align: center; line-height: 1.8; color: var(--shop-muted); }
+.shop-flow .shop-state .shop-button { margin: 26rpx auto 0; max-width: 360rpx; }
+.shop-flow .shop-error { color: #df6147; }
+.shop-flow .shop-notice { padding: 24rpx; background: var(--shop-soft); border-radius: 24rpx; color: var(--shop-green); line-height: 1.8; margin-bottom: 24rpx; font-size: 25rpx; }
+.shop-flow .shop-status { flex-shrink: 0; padding: 8rpx 16rpx; border-radius: 999rpx; background: var(--shop-soft); color: var(--shop-green); font-size: 23rpx; }
+.shop-flow .shop-status.pending { color: #b87c06; background: rgba(255,185,40,.13); }
+.shop-flow .shop-status.shipped { color: #2196ed; background: rgba(33,150,237,.12); }
+.shop-flow .shop-status.cancelled { color: #e75368; background: rgba(231,83,104,.1); }
+.shop-flow .shop-tabs { display: flex; padding: 12rpx 8rpx; gap: 4rpx; }
+.shop-flow .shop-tab { flex: 1; padding: 18rpx 0; text-align: center; color: var(--shop-muted); font-size: 26rpx; border-radius: 18rpx; }
+.shop-flow .shop-tab.active { background: var(--shop-soft); color: var(--shop-green); font-weight: 700; }
+.shop-flow .shop-order-top { display: flex; justify-content: space-between; align-items: center; gap: 12rpx; margin-bottom: 18rpx; }
+.shop-flow .shop-order-meta { margin: 12rpx 0; color: var(--shop-muted); font-size: 23rpx; overflow-wrap: anywhere; line-height: 1.7; }
+.shop-flow .shop-order-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16rpx; margin-top: 16rpx; }
+.shop-flow .shop-order-card .shop-image { width: 155rpx; height: 180rpx; }
+.shop-flow .shop-form-row { display: flex; align-items: center; gap: 20rpx; padding: 22rpx 0; border-bottom: 1rpx solid var(--shop-line); }
+.shop-flow .shop-form-row:last-child { border: 0; }
+.shop-flow .shop-form-row .shop-label { width: 140rpx; flex-shrink: 0; }
+.shop-flow .shop-input { flex: 1; min-width: 0; font-size: 28rpx; color: var(--shop-text); }
+.shop-flow textarea.shop-input { width: 100%; min-height: 100rpx; line-height: 1.6; }
+.shop-flow .shop-stepper { display: inline-flex; align-items: center; gap: 24rpx; margin-top: 18rpx; padding: 6rpx; background: var(--shop-bg); border: 1rpx solid var(--shop-line); border-radius: 18rpx; }
+.shop-flow .shop-stepper button { width: 56rpx; line-height: 56rpx; padding: 0; margin: 0; color: #fff; background: #04b98d; border-radius: 12rpx; font-size: 34rpx; }
+.shop-flow .shop-stepper button[disabled] { opacity: .35; }
+.shop-flow .shop-modal-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(10,30,25,.6); display: flex; align-items: center; justify-content: center; padding: 34rpx; }
+.shop-flow .shop-success { width: 100%; max-width: 600rpx; padding: 40rpx 28rpx 28rpx; border-radius: 34rpx; background: var(--shop-card); text-align: center; }
+.shop-flow .shop-success-icon { display: block; margin: 0 auto 20rpx; font-size: 108rpx; }
+.shop-flow .shop-success-title { font-size: 42rpx; font-weight: 800; color: var(--shop-green); }
+.shop-flow .shop-success .shop-button { margin-top: 20rpx; }
+.shop-flow .shop-success .shop-row { padding: 20rpx; background: var(--shop-soft); }
+.shop-flow .shop-timeline { display: flex; gap: 12rpx; text-align: center; }
+.shop-flow .shop-step { flex: 1; color: var(--shop-muted); font-size: 24rpx; }
+.shop-flow .shop-step.done { color: var(--shop-green); }
+.shop-flow .shop-step-dot { margin: 0 auto 14rpx; width: 54rpx; line-height: 54rpx; border-radius: 50%; background: var(--shop-soft); font-weight: 700; }
+.shop-flow .shop-step-time { display: block; margin-top: 10rpx; font-size: 20rpx; line-height: 1.5; }

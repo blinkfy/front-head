@@ -6,7 +6,7 @@
       <text class="app-splash-title">分投侠</text>
       <text class="app-splash-subtitle">智能垃圾分类助手</text>
       <view class="app-splash-progress">
-        <view class="app-splash-progress-bar" :style="{ width: appSplashProgress + '%' }"></view>
+        <view class="app-splash-progress-bar" ></view>
       </view>
     </view>
   </view>
@@ -14,69 +14,42 @@
 </template>
 
 <script>
+import { onAppPageReady } from '@/utils/app-page-ready.mjs'
 // #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ
 export default {
   name: 'AppSplash',
   data() {
     return {
       showAppSplash: true,
-      appSplashProgress: 0,
       appSplashFading: false
     }
   },
   mounted() {
     this.startLoading()
   },
+  beforeUnmount() { this._disposeSplash?.() },
   methods: {
     startLoading() {
-      let loadedResources = 0
-      const totalResources = 4
-      
-      const checkLoaded = () => {
-        loadedResources++
-        this.appSplashProgress = Math.min((loadedResources / totalResources) * 100, 95)
-        
-        if (loadedResources >= totalResources) {
-          this.appSplashProgress = 100
-          setTimeout(() => {
-            this.appSplashFading = true
-            setTimeout(() => {
-              this.showAppSplash = false
-              this.$emit('loaded')
-            }, 500)
-          }, 500)
-        }
+      let finished = false
+      let releaseTimer = null
+      let safetyTimer = null
+      const finish = () => {
+        if (finished) return
+        finished = true
+        clearTimeout(safetyTimer)
+        this.appSplashFading = true
+        releaseTimer = setTimeout(() => {
+          this.showAppSplash = false
+          this.$emit('loaded')
+        }, 200)
       }
-      
-      // 1. 框架加载完成
-      checkLoaded()
-      
-      // 2. 检查图片加载
-      uni.getImageInfo({
-        src: '/static/loading.gif',
-        success: checkLoaded,
-        fail: checkLoaded
-      })
-      
-      // 3. 系统初始化
-      setTimeout(checkLoaded, 600)
-      
-      // 4. 页面渲染
-      setTimeout(checkLoaded, 1000)
-      
-      // 最长4秒强制进入
-      setTimeout(() => {
-        if (this.showAppSplash) {
-          this.appSplashProgress = 100
-          setTimeout(() => {
-            this.appSplashFading = true
-            setTimeout(() => {
-              this.showAppSplash = false
-              this.$emit('loaded')
-            }, 500)
-          }, 300)
-        }
-      }, 4000)
+      const unsubscribe = onAppPageReady(finish)
+      if (!finished) safetyTimer = setTimeout(finish, 4000)
+      this._disposeSplash = () => {
+        unsubscribe()
+        clearTimeout(safetyTimer)
+        clearTimeout(releaseTimer)
+      }
     }
   }
 }
@@ -100,12 +73,11 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.5s ease, transform 0.5s ease;
+  transition: opacity 0.2s ease;
 }
 
 .app-splash.fade-out {
   opacity: 0;
-  transform: scale(1.1);
   pointer-events: none;
 }
 
@@ -179,11 +151,14 @@ export default {
 }
 
 .app-splash-progress-bar {
+  width: 42%;
   height: 100%;
   background: linear-gradient(90deg, #ffffff 0%, #d1fae5 100%);
   border-radius: 3rpx;
   transition: width 0.2s ease;
   box-shadow: 0 0 10rpx rgba(255, 255, 255, 0.5);
+  animation: splash-travel 1.4s ease-in-out infinite;
 }
+@keyframes splash-travel { from { transform: translateX(-100%); } to { transform: translateX(240%); } }
 /* #endif */
 </style>

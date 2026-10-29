@@ -161,6 +161,7 @@ import { captureRegistrationEntry, confirmRegistrationLogin, miniRegistrationRel
 import { checkDB } from '@/api/health'
 import CaptchaBox from '@/components/CaptchaBox-black.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { navigateAfterLogin } from '@/utils/login-navigation.mjs'
 
 const username = ref('')
 const password = ref('')
@@ -312,7 +313,10 @@ async function onQrLogin(result) {
   uni.showToast({ title: '登录成功', icon: 'success' })
   const pendingScene = getPendingDeviceQrScene(registrationRuntime)
   const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, true) : ''
-  uni.reLaunch({ url: pendingUrl || '/pages-dark/home/home' })
+  await navigateAfterLogin({
+    runtime: uni, url: pendingUrl || '/pages-dark/home/home',
+    setLoading: value => { isLoading.value = value }
+  })
 }
 // #endif
 
@@ -379,20 +383,18 @@ async function completeLogin(res, isauto, isWechat = false) {
     profileCompletionUser.value = registeredUser
     profileCompletionVisible.value = true
     await new Promise(resolve => { resolveProfileCompletion = resolve })
+    if (wechatPageActive) isLoading.value = true
   }
   if (!wechatPageActive) return
   await confirmRegistrationLogin(res.token, loggedInUser?.username || username.value, () => wechatPageActive)
   if (!wechatPageActive) return
   // #endif
-  setTimeout(() => {
-    // #ifdef MP-WEIXIN
-    if (!wechatPageActive) return
-    // #endif
-    isLoading.value = false
-    const pendingScene = getPendingDeviceQrScene(uni)
-    const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, true) : ''
-    uni.reLaunch({ url: pendingUrl || '/pages-dark/home/home' })
-  }, 1000)
+  const pendingScene = getPendingDeviceQrScene(uni)
+  const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, true) : ''
+  await navigateAfterLogin({
+    runtime: uni, url: pendingUrl || '/pages-dark/home/home',
+    setLoading: value => { isLoading.value = value }
+  })
 }
 
 function onLogin(isauto) {
@@ -557,7 +559,7 @@ function onRegister() {
 
 @keyframes float {
   0%, 100% { transform: translateY(0px) scale(1); opacity: 0.7; }
-  50% { transform: translateY(-40rpx) scale(1.3); opacity: 1; }
+  50% { transform: translateY(-20px) scale(1.2); opacity: 1; }
 }
 
 /* 电路线条 */

@@ -10,12 +10,14 @@
 
     <!-- 返回按钮 -->
     <view class="back-btn" @click="goBack">
-      <ManifestIcon id="back" />
+      <ManifestIcon id="back" :scale="1" />
     </view>
 
     <!-- 头部 -->
     <view class="edit-header">
-      <text class="header-title">编辑个人资料</text>
+      <view class="header-content">
+        <view class="header-title"><ManifestIcon id="edit_profile" size="48rpx" /><text>编辑个人资料</text></view>
+      </view>
     </view>
 
     <!-- 内容 -->
@@ -126,14 +128,17 @@
           <view class="location-wrapper">
             <input
               v-model="formData.location"
+              maxlength="500"
               type="text"
               placeholder="点击定位或直接输入地址"
               class="form-input location-field"
+              @input="onLocationInput"
             />
             <view class="location-action" @click="selectLocation">
               <ManifestIcon id="map_location" />
             </view>
           </view>
+          <view v-if="autoLocationHint" class="input-hint">{{ autoLocationHint }}</view>
         </view>
       </view>
 
@@ -147,16 +152,19 @@
             <picker class="picker-cell" mode="selector" :range="provinceOptions" range-key="name" :value="provinceIndex" @change="onProvinceChange">
               <view class="form-input picker-field">{{ selectedProvinceName || '请选择省份' }}</view>
             </picker>
-            <picker class="picker-cell" mode="selector" :range="cityOptions" range-key="name" :value="cityIndex" @change="onCityChange">
+            <picker class="picker-cell" mode="selector" :disabled="!cityOptions.length" :range="cityOptions" range-key="name" :value="cityIndex" @change="onCityChange">
               <view class="form-input picker-field">{{ selectedCityName || '请选择城市' }}</view>
             </picker>
-            <picker class="picker-cell" mode="selector" :range="districtOptions" range-key="name" :value="districtIndex" @change="onDistrictChange">
+            <picker class="picker-cell" mode="selector" :disabled="!districtOptions.length" :range="districtOptions" range-key="name" :value="districtIndex" @change="onDistrictChange">
               <view class="form-input picker-field">{{ selectedDistrictName || '请选择区县' }}</view>
             </picker>
-            <picker class="picker-cell" mode="selector" :range="communityOptions" range-key="name" :value="communityIndex" @change="onCommunityChange">
-              <view class="form-input picker-field">{{ selectedCommunityName || '请选择社区' }}</view>
+            <picker class="picker-cell" mode="selector" :disabled="!communityOptions.length" :range="communityOptions" range-key="name" :value="communityIndex" @change="onCommunityChange">
+              <view class="form-input picker-field">{{ selectedCommunityName || (communityOptions.length ? '请选择社区' : '暂无可选社区') }}</view>
             </picker>
           </view>
+          <view v-if="communityPrefilled" class="input-hint">已根据地址预选社区，请核对后保存。</view>
+          <view v-if="communityLoadFailed" class="input-hint">社区列表暂不可用，省市区仍可浏览，保存时保留原所属社区。</view>
+          <view v-else-if="communitySelectionActive && !communityOptions.length" class="input-hint">该地区暂无已维护的社区，保存时保留原所属社区。</view>
         </view>
       </view>
 
@@ -252,21 +260,30 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { chooseAppImage } from '@/utils/image-picker.js'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as userApi from '@/api/user.js'
 import { getCommunityTree } from '@/pages-nonTheme/api/community.js'
+import { buildCommunityRegionTree, findCommunityByAddress } from './utils/community-regions.js'
 import { compressImageToBase64, getAvatarUrl, validateAvatarSize } from '@/utils/avatar-handler.js'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { baseUrl } from '@/api/settings.js'
 import { searchPlaces } from '@/api/map.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { nicknameError } from '@/utils/wechat-profile.mjs'
+import { getCurrentAddress } from '@/utils/location-address.js'
+import { splitShopAddress, composeShopAddress } from './utils/shop-address.js'
 
 const isDarkTheme = ref(false)
 const userInfo = ref({})
 const isSaving = ref(false)
 const isLoading = ref(false)
+const locationEdited = ref(false)
+const autoLocationHint = ref('')
+let autoLocationCancelled = false
+let pageUnmounted = false
 const communityTree = ref([])
+const communityLoadFailed = ref(false)
 const provinceOptions = ref([])
 const cityOptions = ref([])
 const districtOptions = ref([])
@@ -280,6 +297,9 @@ const selectedCityName = ref('')
 const selectedDistrictName = ref('')
 const selectedCommunityName = ref('')
 const communitySelectionActive = ref(false)
+const communityEdited = ref(false)
+const communityPrefilled = ref(false)
+let locatedCommunityAddress = null
 
 const supportsAvatar = typeof uni.canIUse === 'function' && uni.canIUse('button.open-type.chooseAvatar')
 const supportsNickname = typeof uni.canIUse === 'function' && uni.canIUse('input.type.nickname')
@@ -359,6 +379,8 @@ function rebuildCommunityPickers() {
 }
 
 function onProvinceChange(e) {
+  communityEdited.value = true
+  communityPrefilled.value = false
   communitySelectionActive.value = true
   provinceIndex.value = Number(e.detail.value || 0)
   cityIndex.value = 0
@@ -368,6 +390,8 @@ function onProvinceChange(e) {
 }
 
 function onCityChange(e) {
+  communityEdited.value = true
+  communityPrefilled.value = false
   communitySelectionActive.value = true
   cityIndex.value = Number(e.detail.value || 0)
   districtIndex.value = 0
@@ -376,6 +400,8 @@ function onCityChange(e) {
 }
 
 function onDistrictChange(e) {
+  communityEdited.value = true
+  communityPrefilled.value = false
   communitySelectionActive.value = true
   districtIndex.value = Number(e.detail.value || 0)
   communityIndex.value = 0
@@ -383,6 +409,8 @@ function onDistrictChange(e) {
 }
 
 function onCommunityChange(e) {
+  communityEdited.value = true
+  communityPrefilled.value = false
   communitySelectionActive.value = true
   communityIndex.value = Number(e.detail.value || 0)
   syncSelectedCommunity()
@@ -424,17 +452,28 @@ function applyCommunitySelectionByCode(communityCode) {
 async function loadCommunityTree(currentCommunityCode = '') {
   try {
     const res = await getCommunityTree()
-    communityTree.value = extractData(res) || []
+    communityTree.value = buildCommunityRegionTree(extractData(res))
+    communityLoadFailed.value = false
     provinceOptions.value = communityTree.value
-    applyCommunitySelectionByCode(currentCommunityCode)
+    if (!communityEdited.value) applyCommunitySelectionByCode(currentCommunityCode)
+    prefillCommunityFromAddress()
   } catch (error) {
     console.error('load community tree failed:', error)
-    provinceOptions.value = []
-    cityOptions.value = []
-    districtOptions.value = []
-    communityOptions.value = []
-    syncSelectedCommunity()
+    communityLoadFailed.value = true
+    communityTree.value = buildCommunityRegionTree()
+    provinceOptions.value = communityTree.value
+    applyCommunitySelectionByCode('')
   }
+}
+
+function prefillCommunityFromAddress() {
+  if (pageUnmounted || isSaving.value || communityEdited.value || formData.communityCode || String(userInfo.value.communityCode || '').trim() || String(userInfo.value.community || '').trim()) return
+  const address = String(formData.location || '').trim()
+  const parts = locatedCommunityAddress?.address === address ? locatedCommunityAddress.parts : {}
+  const match = findCommunityByAddress(communityTree.value, address, parts)
+  if (!match) return
+  applyCommunitySelectionByCode(match.code)
+  communityPrefilled.value = true
 }
 
 function checkTheme() {
@@ -474,7 +513,7 @@ function onFormSubmit(event) {
 }
 
 function uploadAvatar() {
-  uni.chooseImage({
+  chooseAppImage({
     count: 1,
     sizeType: ['compressed'],
     sourceType: ['album', 'camera'],
@@ -718,6 +757,9 @@ function selectNearbyPlace(item) {
 }
 
 function selectLocation() {
+  autoLocationCancelled = true
+  locationEdited.value = true
+  autoLocationHint.value = ''
   const systemInfo = uni.getSystemInfoSync()
   const uniPlatform = systemInfo.uniPlatform
 
@@ -736,7 +778,15 @@ function selectLocation() {
   if (typeof uni.chooseLocation === 'function') {
     uni.chooseLocation({
       success: (res) => {
-        formData.location = res.address || res.name || `${res.latitude},${res.longitude}`
+        if (pageUnmounted || isSaving.value) return
+        const address = String(res.address || '').trim()
+        const name = String(res.name || '').trim()
+        const full = address && name && !address.includes(name) ? `${address} ${name}` : address || name
+        if (!full) {
+          uni.showToast({ title: '未获取到详细地址，请手动输入', icon: 'none' })
+          return
+        }
+        formData.location = full
       },
       fail: () => {
         uni.showToast({ title: '定位失败，请手动输入', icon: 'none' })
@@ -745,6 +795,11 @@ function selectLocation() {
   } else {
     uni.showToast({ title: '当前环境不支持地图选址，请手动输入', icon: 'none' })
   }
+}
+
+function onLocationInput() {
+  locationEdited.value = true
+  autoLocationHint.value = ''
 }
 
 // ===== H5 地图选点弹窗 =====
@@ -928,6 +983,8 @@ function confirmMapLocation() {
 }
 
 async function saveProfile() {
+  autoLocationCancelled = true
+  autoLocationHint.value = ''
   if (isSaving.value) return
   // 验证必填项
   if (!formData.username || formData.username.trim() === '') {
@@ -964,7 +1021,7 @@ async function saveProfile() {
       location: formData.location
     }
     payload.nickname = formData.nickname.trim()
-    if (provinceOptions.value.length && communitySelectionActive.value) {
+    if (provinceOptions.value.length && communitySelectionActive.value && formData.communityCode) {
       payload.provinceCode = formData.provinceCode
       payload.cityCode = formData.cityCode
       payload.districtCode = formData.districtCode
@@ -1018,7 +1075,7 @@ function loadUserInfo() {
       formData.bio = data.bio || ''
       formData.phone = data.phone || ''
       formData.email = data.email || ''
-      formData.location = data.location || ''
+      if (!locationEdited.value && !autoLocationCancelled && !String(formData.location || '').trim()) formData.location = data.location || ''
       loadCommunityTree(data.communityCode || '')
     })
     .catch(error => {
@@ -1030,12 +1087,41 @@ function loadUserInfo() {
     })
     .finally(() => {
       isLoading.value = false
+      if (!String(formData.location || '').trim() && !locationEdited.value) {
+        fillCurrentAddress()
+      }
     })
 }
+
+async function fillCurrentAddress() {
+  if (pageUnmounted || autoLocationCancelled || locationEdited.value || String(formData.location || '').trim()) return
+  autoLocationHint.value = '正在获取当前位置…'
+  try {
+    const result = await getCurrentAddress()
+    if (pageUnmounted || autoLocationCancelled || locationEdited.value || String(formData.location || '').trim()) return
+    const address = String(result?.address || '').trim()
+    if (!address) throw new Error('未获取到地址')
+    const { region, detail } = splitShopAddress(address, result?.parts || {})
+    formData.location = composeShopAddress(region, detail) || address
+    locatedCommunityAddress = { address: formData.location.trim(), parts: result.parts || {} }
+    autoLocationHint.value = ''
+  } catch (error) {
+    if (!pageUnmounted && !autoLocationCancelled && !locationEdited.value && !String(formData.location || '').trim()) {
+      autoLocationHint.value = '未能获取当前位置，请手动输入或点击定位'
+    }
+  }
+}
+
+watch(() => formData.location, () => prefillCommunityFromAddress())
 
 onMounted(() => {
   checkTheme()
   loadUserInfo()
+})
+
+onBeforeUnmount(() => {
+  pageUnmounted = true
+  autoLocationCancelled = true
 })
 </script>
 
@@ -1110,7 +1196,7 @@ onMounted(() => {
   position: relative;
   z-index: 10;
   background: linear-gradient(135deg, #059669 0%, #047857 100%);
-  padding: 60rpx 30rpx 20rpx;
+  padding: 40rpx 30rpx 30rpx;
   margin-bottom: 20rpx;
   box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
   text-align: center;
@@ -1120,8 +1206,20 @@ onMounted(() => {
   background: linear-gradient(135deg, #1a1a3e 0%, #16213e 100%);
 }
 
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20rpx;
+  min-height: 72rpx;
+}
+
 .header-title {
-  font-size: 36rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  font-size: 40rpx;
+  line-height: 1.4;
   font-weight: 700;
   color: #fff;
   text-align: center;

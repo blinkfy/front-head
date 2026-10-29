@@ -434,7 +434,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   max-width: 320px; font-size: 12px; line-height: 1.6; color: var(--muted);
 }
 /* #endif */
-.screen .mp-map { flex: 1; min-height: 300px; border-radius: 12px; }
+.screen .mp-map { display: block; width: 100%; height: 100%; flex: 1; min-height: 300px; border-radius: 12px; box-sizing: border-box; }
 .screen .brief {
   position: absolute; left: 22px; top: 20px; z-index: 8;
   min-width: 200px; max-width: 72%;
@@ -940,12 +940,29 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
 .screen.light-theme .sorting-step.running .sorting-step-label { color: #23637a; }
 .screen.light-theme .fault-mask { background: rgba(28, 47, 61, .38); }
 .screen.light-theme .fault-drawer { color: var(--text); background: linear-gradient(160deg, #fff, #edf5f9); box-shadow: -14px 0 32px rgba(29,65,88,.16); }
+.screen.light-theme .fault-drawer-title { color: var(--text); }
+.screen.light-theme .fault-drawer-sub { color: var(--muted); }
 .screen.light-theme .fault-summary view,
 .screen.light-theme .fault-card { border-color: #cbdde7; background: rgba(255,255,255,.92); }
+.screen.light-theme .fault-summary text { color: var(--muted); }
+.screen.light-theme .danger-text { color: #b33f49; }
+.screen.light-theme .fault-card.critical { border-color: #e4a7ae; box-shadow: inset 3px 0 #c9434f; }
+.screen.light-theme .fault-card.high { border-color: #e8bd97; box-shadow: inset 3px 0 #c76b26; }
+.screen.light-theme .fault-card.medium { border-color: #e4ce9c; box-shadow: inset 3px 0 #bd8b1b; }
+.screen.light-theme .fault-level { color: #46677b; background: #e9f1f5; }
+.screen.light-theme .fault-level.critical { color: #b33f49; background: #fde6e8; }
+.screen.light-theme .fault-level.high { color: #9c5a12; background: #fdeedc; }
+.screen.light-theme .fault-level.medium { color: #8a6410; background: #fbf1d8; }
+.screen.light-theme .fault-title { color: var(--text); }
+.screen.light-theme .fault-status { color: #216b86; }
 .screen.light-theme .fault-message { color: #294c61; }
 .screen.light-theme .fault-device,
 .screen.light-theme .fault-meta { color: var(--muted); }
+.screen.light-theme .fault-recommend { color: #8a5b0b; padding: 5px 7px; border-radius: 7px; background: #fff7e6; border: 1px solid #ecd6a3; }
 .screen.light-theme .fault-action { color: #245f91; background: #eaf3fb; border-color: #bdd5e8; }
+.screen.light-theme .fault-action.return { color: #9a5a12; background: #fdf1e1; border-color: #e8c294; }
+.screen.light-theme .fault-action.manual { color: #6b3fa0; background: #f2ecfa; border-color: #d0bdec; }
+.screen.light-theme .fault-action.resolve { color: #0b7a52; background: #e6f5ee; border-color: #a6d6c0; }
 
 @media (max-width: 900px) and (min-width: 769px) {
   .screen .row { flex-wrap: wrap; align-items: flex-start; }
@@ -978,8 +995,8 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   .screen .card .v { font-size: 18px; }
   .screen .delta { font-size: 10px; gap: 4px; }
   .screen .main { flex-direction: column; flex: none; gap: 8px; }
-  .screen .telemetry-scene { flex: none; }
-  .screen .telemetry-selector { width: auto; flex: none; height: 280px; }
+  .screen .telemetry-scene { flex-direction: column; flex: none; height: auto; gap: 8px; }
+  .screen .telemetry-selector { width: 100%; flex: none; height: auto; box-sizing: border-box; }
   .screen .telemetry-hero { padding: 12px; }
   .screen .telemetry-head { flex-direction: column; align-items: stretch; }
   .screen .warning-banner { min-width: unset; }
@@ -988,7 +1005,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   .screen .telemetry-chart { display: none; }
   .screen .col.left, .screen .col.center, .screen .col.right { width: 100%; min-width: unset; }
   .screen .map-wrap { flex: none; height: 300px; }
-  .screen .mp-map { min-height: 240px; height: 240px; }
+  .screen .mp-map { width: 100%; height: 100%; min-height: 0; }
   .screen .brief { max-width: 90%; left: 10px; top: 10px; font-size: 11px; padding: 6px 8px; }
   .screen .timeline { flex: none; }
   .screen .block { flex: none; }
@@ -1007,7 +1024,7 @@ page { background: linear-gradient(160deg, #071726, #0c2840); }
   .screen .title { font-size: 16px; }
   .screen .list { height: 180px; }
   .screen .map-wrap { height: 260px; }
-  .screen .mp-map { height: 200px; min-height: 200px; }
+  .screen .mp-map { width: 100%; height: 100%; min-height: 0; }
 }
 
 /* ===== 浅色智慧清运运营大屏 ===== */

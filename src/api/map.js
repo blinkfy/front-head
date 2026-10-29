@@ -1,5 +1,8 @@
 import { mapConfig } from './map-config'
 import request from './index'
+import { baseUrl } from './settings'
+import { compressTrashBinImage } from '@/utils/trash-bin-image'
+import { toMapDisplayPoint } from '@/utils/map-display-point.mjs'
 
   // 地点搜索API（兼容H5跨域问题）
   export function searchPlaces(keyword, latitude, longitude, radius = 5000) {
@@ -79,59 +82,95 @@ import request from './index'
         description: data.description,
         latitude: data.latitude,
         longitude: data.longitude,
-        image: data.image // 图片文件或URL
+        image: data.image // 压缩后的 Base64 图片（兼容旧图片地址）
       },
       needAuth: true
     })
   }
 
-  // 获取垃圾桶列表
+  // 获取垃圾桶列表（支持中心点+半径，或矩形 bbox 增量查询）
   export function getTrashBinList(params = {}) {
+    const hasBbox = [params.minLat, params.maxLat, params.minLng, params.maxLng].every((value) => value != null)
+    // 只携带本次查询用到的参数：uni 会把 undefined 序列化成空串，会干扰后端"是否传参"的判断
+    const data = {
+      page: params.page || 1,
+      pageSize: params.pageSize || 20
+    }
+    if (hasBbox) {
+      data.minLat = params.minLat
+      data.maxLat = params.maxLat
+      data.minLng = params.minLng
+      data.maxLng = params.maxLng
+    } else {
+      if (params.latitude != null) data.latitude = params.latitude
+      if (params.longitude != null) data.longitude = params.longitude
+      data.radius = params.radius || 5000 // 默认5km半径
+    }
     return request({
       url: '/api/trash-bin/list',
       method: 'GET',
-      data: {
-        latitude: params.latitude,
-        longitude: params.longitude,
-        radius: params.radius || 5000, // 默认5km半径
-        page: params.page || 1,
-        pageSize: params.pageSize || 20
-      }
+      data
+    }).then(result => Array.isArray(result?.data)
+      ? { ...result, data: result.data.map(toMapDisplayPoint) } : result)
+  }
+
+  // 单点按需取图（列表只带图片标识，查看图片时才拉取完整图片内容）
+  export function getTrashBinImage(id) {
+    return request({
+      url: `/api/trash-bin/${id}/image`,
+      method: 'GET'
     })
   }
 
-  // 上传垃圾桶图片
-  export function uploadTrashBinImage(filePath) {
-    return new Promise((resolve, reject) => {
-      // 从settings中获取baseUrl
-      import('./settings').then(settings => {
-        const uploadUrl = settings.baseUrl + '/api/upload/trash-bin-image'
-        
-        uni.uploadFile({
-          url: uploadUrl,
-          filePath: filePath,
-          name: 'file',
-          header: {
-            'Authorization': uni.getStorageSync('token') ? `Bearer ${uni.getStorageSync('token')}` : ''
-          },
-          success: (res) => {
-            try {
-              const data = JSON.parse(res.data)
-              if (data.code === 200 || data.code === 0) {
-                resolve(data.data)
-              } else {
-                reject(new Error(data.message || data.msg || '上传失败'))
-              }
-            } catch (e) {
-              reject(new Error('上传响应解析失败'))
-            }
-          },
-          fail: (err) => {
-            reject(err)
-          }
-        })
-      }).catch(() => {
-        reject(new Error('无法获取上传配置'))
-      })
-    })
+  // 在客户端压缩，随新增请求直接提交 Base64 图片。
+  export async function uploadTrashBinImage(filePath) {
+    const image = await compressTrashBinImage(filePath)
+    return { url: image, path: image }
   }
+
+// Capability probing keeps newer clients compatible with servers without AI pre-review.
+export function getBinPreReviewCapability() {
+  return request({ url: '/api/trash-bin/pre-review/capability', method: 'GET', needAuth: true, silent: true })
+}
+
+export function getBinSatelliteReference(latitude, longitude) {
+  return request({ url: '/api/map/satellite-reference', method: 'GET', data: { latitude, longitude }, needAuth: true, silent: true })
+}
+
+export function preReviewTrashBin(data, { onProgress, isActive = () => true } = {}) {
+  if (typeof onProgress !== 'function') return request({ url: '/api/trash-bin/pre-review', method: 'POST', data, needAuth: true, silent: true })
+  // As with recognition, the model streams on the server while every client platform reads small snapshots.
+  const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join('')
+  const progressId = `bin_${Date.now()}_${bytes}`
+  const token = uni.getStorageSync('token') || ''
+  let polling = true, pollTimer = null, revision = -1, polls = 0
+  const stop = () => { polling = false; if (pollTimer) clearTimeout(pollTimer); pollTimer = null }
+  const active = () => polling && isActive() && (uni.getStorageSync('token') || '') === token
+  const schedule = (delay = polls < 8 ? 250 : 450) => {
+    if (!active()) { stop(); return }
+    pollTimer = setTimeout(() => {
+      if (!active()) { stop(); return }
+      polls++
+      uni.request({
+        url: `${baseUrl}/api/trash-bin/pre-review/progress/${encodeURIComponent(progressId)}`,
+        method: 'GET', header: token ? { Authorization: token } : {}, timeout: 5000,
+        success: response => {
+          if (!active()) return
+          if (response.statusCode === 404) return // The source request may still be uploading.
+          const snapshot = response.statusCode === 200 && response.data?.code === 0 ? response.data.data : null
+          if (!snapshot) { stop(); return } // The original POST remains authoritative.
+          if (Number.isInteger(snapshot.revision) && snapshot.revision > revision) {
+            revision = snapshot.revision
+            try { onProgress(snapshot) } catch (_) { /* Presentation callbacks cannot fail the submission. */ }
+          }
+          if (snapshot.status === 'failed' || snapshot.status === 'succeeded') stop()
+        },
+        fail: stop,
+        complete: () => { if (active()) schedule(); else stop() }
+      })
+    }, delay)
+  }
+  const pending = request({ url: '/api/trash-bin/pre-review', method: 'POST', data: { ...data, progressId }, needAuth: true, silent: true })
+  schedule(150)
+  return pending.finally(stop)
+}

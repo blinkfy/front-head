@@ -4,6 +4,7 @@
     :class="[
       'admin-screen-switcher',
       `admin-screen-switcher--${tone}`,
+      compact ? 'admin-screen-switcher--compact' : '',
       menuOpen ? 'is-open' : '',
       isNavigating ? 'is-navigating' : ''
     ]"
@@ -81,6 +82,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getAdminScreenList, navigateAdminScreen } from '@/utils/admin-page-nav.js'
 
 const props = defineProps({
+  compact: { type: Boolean, default: false },
   screenKey: {
     type: String,
     required: true
@@ -492,4 +494,12 @@ async function selectScreen(screenOrTarget) {
     width: auto;
   }
 }
+/* #ifdef MP-WEIXIN */
+/* 小程序中 picker 为自定义元素，百分比高度不可靠，统一使用固定高度与返回按钮对齐 */
+.admin-screen-switcher { height: 36px; }
+.admin-screen-switcher__picker,
+.admin-screen-switcher__trigger { display: flex; width: 100%; height: 36px; min-height: 36px; box-sizing: border-box; }
+.admin-screen-switcher__picker { display: block; }
+.admin-screen-switcher--compact { flex: 1; width: auto; min-width: 0; }
+/* #endif */
 </style>

@@ -51,7 +51,7 @@ export const SMART_BIN_INTERNAL_LAYER_REGISTRY = freeze({
     material: 'cold_graphite_aluminium'
   },
   fixedCadStructure: {
-    src: `${BASE}smart-bin-internal-frame-front-v1.png`,
+    src: `${BASE}smart-bin-internal-frame-front-v1.webp.png`,
     nativeSize: { width: 591, height: 702 },
     drawBox: { x: 0, y: 0, width: 591, height: 702 },
     opacity: 0.26,
@@ -171,7 +171,7 @@ export function smartBinInternalAssetSources(structureOverride = '') {
 }
 
 export const SMART_BIN_INTERNAL_LEGACY_VISUALS = freeze({
-  structure: `${BASE}smart-bin-internal-frame-front-v1.png`,
+  structure: `${BASE}smart-bin-internal-frame-front-v1.webp.png`,
   carriage: `${BASE}gantry-carriage-v1.svg`,
   leftJaw: `${BASE}gripper-left-jaw-v1.svg`,
   rightJaw: `${BASE}gripper-right-jaw-v1.svg`,
@@ -209,13 +209,13 @@ export const SMART_BIN_CUTAWAY_RASTER_V3 = freeze({
   },
   layers: {
     fixedMother: {
-      src: `${RASTER_V8_BASE}fixed-four-panels-user-corrected.png`,
+      src: `${RASTER_V8_BASE}fixed-four-panels-user-corrected.webp.png`,
       sourceSize: { width: 1254, height: 1254 },
       sourceBbox: [0, 0, 1254, 1254],
       order: 10
     },
     assembledPoster: {
-      src: `${RASTER_V8_BASE}fixed-four-panels-user-corrected.png`,
+      src: `${RASTER_V8_BASE}fixed-four-panels-user-corrected.webp.png`,
       sourceSize: { width: 1254, height: 1254 },
       sourceBbox: [0, 0, 1254, 1254],
       order: 10
@@ -270,20 +270,20 @@ export const SMART_BIN_CUTAWAY_RASTER_V3 = freeze({
       order: 11
     },
     carriageLift: {
-      src: `${RASTER_V3_BASE}carriage-lift-v3.png`,
+      src: `${RASTER_V3_BASE}carriage-lift-v3.webp.png`,
       sourceSize: { width: 155, height: 111 },
       sourceBbox: [535, 373, 690, 484],
       order: 30
     },
     leftJaw: {
-      src: `${RASTER_V3_BASE}gripper-jaw-left-v3.png`,
+      src: `${RASTER_V3_BASE}gripper-jaw-left-v3.webp.png`,
       sourceSize: { width: 47, height: 116 },
       sourceBbox: [532, 471, 579, 587],
       closeDeltaX: 8,
       order: 40
     },
     rightJaw: {
-      src: `${RASTER_V3_BASE}gripper-jaw-right-v3.png`,
+      src: `${RASTER_V3_BASE}gripper-jaw-right-v3.webp.png`,
       sourceSize: { width: 57, height: 123 },
       sourceBbox: [567, 466, 624, 589],
       closeDeltaX: -8,

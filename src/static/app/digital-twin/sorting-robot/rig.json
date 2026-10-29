@@ -41,19 +41,19 @@
     ]
   },
   "layers": {
-    "base": "00_base.png",
-    "torso": "01_torso.png",
-    "head": "02_head.png",
-    "rightUpperArm": "03_right_upper_arm.png",
-    "rightLowerArmHand": "04_right_lower_arm_hand.png",
-    "rightShoulderCover": "05_right_shoulder_cover.png",
-    "leftShoulderCover": "06_left_shoulder_cover.png",
-    "leftUpperArm": "07_left_upper_arm.png",
-    "leftLowerEmptyHand": "08_left_lower_empty_hand.png",
-    "leftElbowCover": "09_left_elbow_cover.png",
-    "leftJointCleanup": "10_left_joint_cleanup.png",
-    "bottle": "11_bottle.png",
-    "sockets": "12_sockets.png",
-    "bodyRightCover": "13_body_right_cover.png"
+    "base": "00_base.webp.png",
+    "torso": "01_torso.webp.png",
+    "head": "02_head.webp.png",
+    "rightUpperArm": "03_right_upper_arm.webp.png",
+    "rightLowerArmHand": "04_right_lower_arm_hand.webp.png",
+    "rightShoulderCover": "05_right_shoulder_cover.webp.png",
+    "leftShoulderCover": "06_left_shoulder_cover.webp.png",
+    "leftUpperArm": "07_left_upper_arm.webp.png",
+    "leftLowerEmptyHand": "08_left_lower_empty_hand.webp.png",
+    "leftElbowCover": "09_left_elbow_cover.webp.png",
+    "leftJointCleanup": "10_left_joint_cleanup.webp.png",
+    "bottle": "11_bottle.webp.png",
+    "sockets": "12_sockets.webp.png",
+    "bodyRightCover": "13_body_right_cover.webp.png"
   }
 }
