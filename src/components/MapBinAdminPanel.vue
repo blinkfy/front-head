@@ -18,7 +18,7 @@
       </view>
     </view>
     <view class="actions mpwx-view">
-      <view class="action-btn edit-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="!busy && !imageProcessing && (editing = !editing)">
+      <view class="action-btn edit-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="toggleEditing">
         <ManifestIcon class="action-icon" :id="editing ? 'close' : 'edit_profile'" />{{ editing ? '收起编辑' : '编辑资料' }}
       </view>
       <view v-if="!bin.review" class="action-btn approve-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="review(true)">
@@ -32,13 +32,8 @@
       </view>
     </view>
     <view v-if="!editing && binImageSrc" class="bin-image-card mpwx-view">
-      <image class="bin-image-thumbnail" :src="binImageSrc" mode="aspectFill" @click="previewBinImage" />
-      <view class="bin-image-preview-action mpwx-view" @click="previewBinImage">预览点位图片</view>
-    </view>
-    <view v-else-if="!editing && bin.hasImage" class="bin-image-card mpwx-view">
-      <view class="bin-image-preview-action mpwx-view" :class="{ disabled: imageLoading }" @click="loadBinImage">
-        {{ imageLoading ? '图片加载中…' : '加载点位图片' }}
-      </view>
+      <image class="bin-image-thumbnail" :src="binImageSrc" mode="aspectFill" @click.stop="previewBinImage" @error="handleBinImageError(binImageSrc)" />
+      <view class="bin-image-preview-action mpwx-view" @click.stop="previewBinImage">预览点位图片</view>
     </view>
     <scroll-view v-if="editing || showReports" scroll-y class="details">
       <view v-if="showReports" class="reports mpwx-view">
@@ -88,9 +83,9 @@
             <input v-model="draft.longitude" class="field-control" type="text" placeholder="经度" />
           </view>
         </view>
-        <view class="form-field mpwx-view">
+        <view class="form-field mpwx-view" @click.stop>
           <text class="field-label">图片</text>
-          <TrashBinImageEditor v-model="draft.imagePath" :disabled="busy" @processing="imageProcessing = $event" />
+          <TrashBinImageEditor v-model="draft.imagePath" :preview-src="imageChanged ? '' : binImageSrc" :disabled="busy" @update:modelValue="imageChanged = true" @processing="imageProcessing = $event" />
         </view>
         <view class="form-field mpwx-view">
           <text class="field-label">设备回调地址</text>
@@ -110,14 +105,19 @@ import { approveBin, rejectBin, updateBin, deleteBin, clearBinErrorReports } fro
 import { binReports } from '@/utils/map-admin-bins'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
-import { getTrashBinImage } from '@/api/map'
-import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
+import { config } from '@/api/config.js'
+import { resolveBinPointImage } from '@/utils/trash-bin-image-core.mjs'
+import { binPointPhotoKey, getBinPointPhoto } from '@/utils/bin-point-photo.js'
+import { previewTrashBinImage } from '@/utils/trash-bin-image'
 const props = defineProps({ bin: { type: Object, required: true }, dark: Boolean })
 const emit = defineEmits(['updated'])
 const reports = computed(() => binReports(props.bin))
-const loadedImage = ref('')
-const imageLoading = ref(false)
-const binImageSrc = computed(() => loadedImage.value ? resolveTrashBinImage(loadedImage.value) : props.bin.hasImage && !(props.bin.image || props.bin.imagePath) ? '' : resolveTrashBinImage(props.bin.imagePath || props.bin.image || '', props.bin.mapType || 'waste_basket'))
+const imageChanged = ref(false)
+const fallbackImage = ref('')
+const imageFailed = ref(false)
+const photoRequestKey = ref('')
+const binImageSrc = computed(() => imageFailed.value ? '' : fallbackImage.value || (props.bin.hasImage === false || !(props.bin.hasImage || props.bin.imagePath || props.bin.image)
+  ? '' : resolveBinPointImage(props.bin, config.baseUrl)))
 const editing = ref(false)
 const showReports = ref(false)
 const confirmClearReports = ref(false)
@@ -125,31 +125,52 @@ const clearedReportsForId = ref(null)
 const busy = ref(false)
 const imageProcessing = ref(false)
 const draft = ref({})
-watch(() => props.bin.id, () => {
+watch(() => props.bin, () => {
   const bin = props.bin
   editing.value = false
   showReports.value = false
   confirmClearReports.value = false
   clearedReportsForId.value = null
-  loadedImage.value = ''
-  draft.value = { name: bin.name || '', describe: bin.description || '', type: bin.type || 'normal', status: bin.status || 'offline', latitude: String(bin.sourceLatitude ?? bin.latitude ?? ''), longitude: String(bin.sourceLongitude ?? bin.longitude ?? ''), imagePath: bin.imagePath ?? bin.image ?? '', callback_url: bin.callback_url || '' }
+  imageChanged.value = false
+  fallbackImage.value = ''
+  imageFailed.value = false
+  photoRequestKey.value = ''
+  draft.value = { name: bin.name || '', describe: bin.description || '', type: bin.type || 'normal', status: bin.status || 'offline', latitude: String(bin.sourceLatitude ?? bin.latitude ?? ''), longitude: String(bin.sourceLongitude ?? bin.longitude ?? ''), imagePath: bin.hasImage === false ? '' : bin.imagePath || bin.image || '', callback_url: bin.callback_url || '' }
 }, { immediate: true })
 const visibleReports = computed(() => String(props.bin.id) === String(clearedReportsForId.value) ? [] : reports.value)
-// 列表只带图片标识（Base64 图不出现在列表里），查看图片时单点按需拉取
-async function loadBinImage() {
-  if (imageLoading.value) return
-  imageLoading.value = true
+async function loadPointPhoto() {
+  const key = binPointPhotoKey(props.bin)
+  if (!props.bin.hasImage || !key || photoRequestKey.value === key) return ''
+  photoRequestKey.value = key
   try {
-    const result = await getTrashBinImage(props.bin.id)
-    if (result?.code !== 0 || !result.data?.image) throw new Error(result?.msg || '图片加载失败')
-    loadedImage.value = result.data.image
-  } catch (error) { uni.showToast({ title: error.message || '图片加载失败', icon: 'none' }) }
-  finally { imageLoading.value = false }
+    const image = await getBinPointPhoto(props.bin)
+    if (binPointPhotoKey(props.bin) !== key) return ''
+    fallbackImage.value = image
+    imageFailed.value = false
+    return image
+  } catch (_) {
+    if (binPointPhotoKey(props.bin) === key) imageFailed.value = true
+    return ''
+  }
+}
+function handleBinImageError(failedSource) {
+  if (failedSource !== binImageSrc.value) return
+  if (fallbackImage.value) { imageFailed.value = true; return }
+  loadPointPhoto()
+}
+async function toggleEditing() {
+  if (busy.value || imageProcessing.value) return
+  editing.value = !editing.value
+  if (!editing.value || !props.bin.hasImage) return
+  const key = binPointPhotoKey(props.bin)
+  const image = await getBinPointPhoto(props.bin).catch(() => '')
+  if (image && editing.value && !imageChanged.value && binPointPhotoKey(props.bin) === key) draft.value.imagePath = image
 }
 async function previewBinImage() {
   try {
-    if (!binImageSrc.value) await loadBinImage()
-    const value = binImageSrc.value || (props.bin.imagePath ?? props.bin.image ?? '')
+    const key = binPointPhotoKey(props.bin)
+    const value = props.bin.hasImage ? await getBinPointPhoto(props.bin) : binImageSrc.value
+    if (props.bin.hasImage && binPointPhotoKey(props.bin) !== key) return
     if (!value) throw new Error('暂无图片')
     await previewTrashBinImage(value)
   }
@@ -199,8 +220,8 @@ function save() {
   }
   const id = props.bin.id
   const payload = { ...draft.value, name: draft.value.name.trim(), latitude, longitude }
-  // 列表轻量模式下 data 型图片的 imagePath 为空串，未改图片时不提交该字段，避免误清原图
-  if (draft.value.imagePath === (props.bin.imagePath ?? props.bin.image ?? '')) delete payload.imagePath
+  // A thumbnail URL is only for display; only explicit replacement/deletion updates the stored image.
+  if (!imageChanged.value) delete payload.imagePath
   submit(id, () => updateBin(id, payload))
 }
 </script>

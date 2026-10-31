@@ -16,6 +16,10 @@
     <!-- 地图容器 -->
     <view :animation="tabPageAnimation" class="map-container tab-page-motion">
       <div v-if="isH5" :id="mapContainerId" class="map-canvas"></div>
+      <!-- #ifdef APP-PLUS -->
+      <AppTencentMap :covered="showAddModal" ref="appMapRef" class="map-canvas" :latitude="center.latitude" :longitude="center.longitude" :scale="mapScale" :enable-satellite="satellite" :markers="markers" :user-location="userLocation" @updated="onNativeMapUpdated" @error="onNativeMapError" @markertap="onMarkerTap" @tap="onMapTap" @regionchange="onRegionChange" />
+      <!-- #endif -->
+      <!-- #ifndef APP-PLUS -->
       <map v-else-if="!showAddModal"
         id="select-map"
         class="map-canvas"
@@ -86,6 +90,7 @@
           </cover-view>
         </cover-view>
       </map>
+      <!-- #endif -->
     </view>
 
     <!-- #ifdef H5 -->
@@ -104,7 +109,7 @@
     <NearbyDisposalPanel v-if="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" @select="selectNearbyDisposal" @navigate="point => goNavigate({ ...point, title: point.name, desc: point.address || point.description })" />
     <!-- #endif -->
 
-    <view v-if="nearbyLocationModalVisible && isH5" class="nearby-location-overlay" @click.self="closeNearbyLocationPicker">
+    <view v-if="nearbyLocationModalVisible && (isH5 || appMapRef)" class="nearby-location-overlay" @click.self="closeNearbyLocationPicker">
       <view class="nearby-location-panel">
         <view class="nearby-location-header">
           <text class="nearby-location-title">选择发送地点</text>
@@ -313,7 +318,7 @@
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { resolveTrashBinImage, previewTrashBinImage } from '../../utils/trash-bin-image'
 import { ref, onMounted, computed, getCurrentInstance, nextTick } from 'vue'
-import { onReady, onShow } from '@dcloudio/uni-app'
+import { onLoad, onReady, onShow } from '@dcloudio/uni-app'
 import { mapConfig } from '../../api/map-config.js'
 import { reportDeviceError, reverseGeocoder, searchPlaces, getTrashBinImage } from '../../api/map.js'
 import AddTrashBinModal from '../../components/AddTrashBinModal.vue'
@@ -323,9 +328,11 @@ import NearbyDisposalPanel from '@/components/NearbyDisposalPanel.vue'
 // #ifdef APP-PLUS
 import AppNearbyDisposalPanel from '@/components/AppNearbyDisposalPanel.vue'
 import AppMapControls from '@/components/AppMapControls.vue'
+import AppTencentMap from '@/components/AppTencentMap.vue'
 // #endif
 import { nearbyDisposalPoints, validDisposalLocation } from '@/utils/nearby-disposal.mjs'
 import { isBinLocationPicker } from '@/utils/map-basemap-core.mjs'
+import { getPointFocusCenter } from '@/utils/map-point-focus.mjs'
 import { useMapBasemap } from '@/utils/use-map-basemap'
 import { useMapAdminBins, binMapLabel } from '@/utils/map-admin-bins'
 import { scanAndConnectDevice } from '@/utils/device-qr'
@@ -338,6 +345,7 @@ onShow(() => {
   if (isMapAdmin.value && !selectMode.value && !viewMode.value) loadTrashBinList()
 })
 const isH5 = process.env.UNI_PLATFORM === 'h5'
+const isApp = ['app', 'app-plus'].includes(process.env.UNI_PLATFORM)
 const showDeviceScan = canShowDeviceScanEntry()
 // 位置选择模式
 const selectMode = ref(false)
@@ -358,6 +366,7 @@ const statusBarHeight = ref((uni.getWindowInfo ? uni.getWindowInfo() : uni.getSy
 
 // 地图上下文（小程序/APP）
 const mapContext = ref(null)
+const appMapRef = ref(null)
 const instance = getCurrentInstance()
 
 // 青岛市中心点坐标
@@ -383,14 +392,23 @@ const nearbyDisposal = computed(() => nearbyDisposalPoints(trashPoints.value, us
 const showNearbyDisposal = computed(() => !selectMode.value && !viewMode.value &&
   !selectedMarker.value && !nearbyLocationModalVisible.value && !showAddModal.value && !showReportModal.value && nearbyDisposal.value.length > 0)
 
-function selectNearbyDisposal(point) {
-  center.value = { latitude: point.latitude, longitude: point.longitude }
-  if (isH5 && tmapInstance && window.TMap) {
-    tmapInstance.setCenter(new window.TMap.LatLng(point.latitude, point.longitude))
-    tmapInstance.setZoom?.(16)
-  }
+async function selectNearbyDisposal(point) {
+  if (!validDisposalLocation(point)) return
   onH5MarkerClicked(0, point)
   selectedMarker.value.title = point.name
+  await nextTick()
+  const location = await getPointFocusCenter(point, 16, instance)
+  if (String(selectedMarker.value?.id) !== String(point.id)) return
+  center.value = location
+  mapScale.value = 16
+  if (isH5 && tmapInstance && window.TMap) {
+    tmapInstance.setCenter(new window.TMap.LatLng(location.latitude, location.longitude))
+    tmapInstance.setZoom?.(16)
+  } else {
+    // Explicit camera commands also work when the same point is selected again after panning.
+    ensureMapContext()
+    mapContext.value?.moveToLocation({ ...location })
+  }
 }
 
 // 小程序/APP markers
@@ -543,19 +561,24 @@ function uncoveredRects(viewport, loaded) {
 }
 
 // 处理页面参数
-const pages = getCurrentPages()
-const currentPage = pages[pages.length - 1]
-const pageOptions = currentPage?.$page?.options || currentPage?.options || {}
-const mapScale = ref(isBinLocationPicker(pageOptions) ? 18 : 12)
-const { satellite, basemapLoading, setBasemap, bindH5Map, getSatelliteReference, onNativeMapUpdated, onNativeMapError, onNativeMapRegionChange } = useMapBasemap({ isH5, options: pageOptions, suspended: () => showAddModal.value })
+const pageOptions = {}
+const mapScale = ref(12)
+const { satellite, basemapLoading, setBasemap, bindH5Map, getSatelliteReference, onNativeMapUpdated, onNativeMapError, onNativeMapRegionChange } = useMapBasemap({ isH5, options: pageOptions, appWebMap: true, suspended: () => showAddModal.value })
 
-// 检查是否为位置选择模式
-if (pageOptions.mode === 'select') {
-  selectMode.value = true
-  const origin = { latitude: pageOptions.lat, longitude: pageOptions.lng }
-  if (validDisposalLocation(origin)) center.value = { latitude: Number(origin.latitude), longitude: Number(origin.longitude) }
-  onMapClick(center.value.latitude, center.value.longitude)
-}
+// 小程序 setup 阶段可能还没有路由参数，以 onLoad 收到的参数为准。
+onLoad(options => {
+  Object.assign(pageOptions, options || {})
+  if (isBinLocationPicker(pageOptions)) {
+    mapScale.value = 18
+    setBasemap(true)
+  }
+  if (pageOptions.mode === 'select') {
+    selectMode.value = true
+    const origin = { latitude: pageOptions.lat, longitude: pageOptions.lng }
+    if (validDisposalLocation(origin)) center.value = { latitude: Number(origin.latitude), longitude: Number(origin.longitude) }
+    onMapClick(center.value.latitude, center.value.longitude)
+  }
+})
 
 // 位置选择相关方法
 function cancelSelect() {
@@ -568,10 +591,11 @@ function cancelSelect() {
 
 function ensureMapContext() {
   if (isH5) return
-  if (!mapContext.value) {
-    // 再次调整：在 APP 端页面级调用通常不建议传 instance，直接传 ID 查找页面内组件
-    mapContext.value = uni.createMapContext('select-map')
+  if (isApp) {
+    mapContext.value = appMapRef.value
+    return
   }
+  if (!mapContext.value) mapContext.value = uni.createMapContext('select-map')
 }
 
 // 实时记录地图中心点
@@ -591,7 +615,7 @@ function onRegionChange(e) {
         name: '选中的位置',
         address: `${typeof loc.latitude === 'number' ? loc.latitude.toFixed(6) : parseFloat(loc.latitude).toFixed(6)}, ${typeof loc.longitude === 'number' ? loc.longitude.toFixed(6) : parseFloat(loc.longitude).toFixed(6)}`
       }
-    } else if (process.env.UNI_PLATFORM === 'app-plus' && (e.type === 'end' || detail.type === 'end')) {
+    } else if (isApp && (e.type === 'end' || detail.type === 'end')) {
       selectNativeMapCenter()
     }
     return
@@ -634,7 +658,12 @@ function updateCenterLocation() {
 function selectNativeMapCenter(feedback = false) {
   if (!selectMode.value) return
   try {
-    uni.createMapContext('select-map').getCenterLocation({
+    const map = appMapRef.value
+    if (!map) {
+      if (feedback) uni.showToast({ title: '地图正在初始化，请稍后再试', icon: 'none' })
+      return
+    }
+    map.getCenterLocation({
       success: location => {
         if (!selectMode.value || !validDisposalLocation(location)) return
         onMapClick(Number(location.latitude), Number(location.longitude))
@@ -647,7 +676,7 @@ function selectNativeMapCenter(feedback = false) {
 
 function pickCenterLocation() {
   if (!selectMode.value) return
-  if (process.env.UNI_PLATFORM === 'app-plus') { selectNativeMapCenter(true); return }
+  if (isApp) { selectNativeMapCenter(true); return }
 
   if (isH5) {
     let lat
@@ -717,6 +746,19 @@ function pickCenterLocation() {
 
 // 定位到当前位置
 function moveToMyLocation() {
+  if (isApp) {
+    uni.showToast({ title: '正在定位...', icon: 'loading', duration: 2000 })
+    getUserLocationOnce('gcj02').then(loc => {
+      center.value = { latitude: loc.latitude, longitude: loc.longitude }
+      selectedLocation.value = { latitude: loc.latitude, longitude: loc.longitude, name: '我的位置', address: '' }
+      userLocation.value = { latitude: loc.latitude, longitude: loc.longitude }
+      uni.showToast({ title: '已定位到我的位置', icon: 'success', duration: 1000 })
+    }).catch(err => {
+      console.error('定位失败:', err)
+      uni.showToast({ title: '定位失败', icon: 'none', duration: 1000 })
+    })
+    return
+  }
   ensureMapContext()
   if (mapContext.value) {
     mapContext.value.moveToLocation({
@@ -972,9 +1014,7 @@ onMounted(async () => {
     nextTick(() => ensureMapContext())
   }
   // 获取页面参数
-  const pages = getCurrentPages()
-  const currentPage = pages[pages.length - 1]
-  const options = currentPage.options || {}
+  const options = pageOptions
   
   // 检查是否为选择位置模式
   if (options.mode === 'select') {
@@ -1284,7 +1324,6 @@ async function openHistoryImage(m) {
       return
     }
     await previewTrashBinImage(value)
-    if (selectedMarker.value === m) selectedMarker.value = null
   } catch (error) {
     console.warn('[map-image-preview]', { stage: error?.stage, code: error?.code, detail: error?.detail || error?.errMsg || error?.message })
     uni.showToast({ title: error?.message || error?.errMsg || '图片加载失败，请重试', icon: 'none' })
@@ -1969,15 +2008,17 @@ function goProfile() {
 .btn-native {
   flex: 1;
   height: 80rpx;
+  line-height: 80rpx;
   border-radius: 44rpx;
   text-align: center;
   vertical-align: middle;
   font-size: 30rpx;
   font-weight: 600;
   margin: 0 12rpx;
+  display: flex;
   align-items: center;
   justify-content: center;
-  padding-bottom: 0;
+  padding: 0;
 }
 
 .btn-native.cancel {

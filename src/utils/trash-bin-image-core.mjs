@@ -48,6 +48,17 @@ export function resolveStoredBinImage(value, baseUrl = '', mapType = '') {
   return `${baseUrl.replace(/\/$/, '')}/images/${filename}`
 }
 
+// List responses omit Base64; image elements request only the individual photo they display.
+export function resolveBinPointImage(point, baseUrl = '') {
+  const stored = point?.imagePath || point?.image
+  if (stored) return resolveStoredBinImage(stored, baseUrl)
+  if (point?.hasImage && Number.isInteger(Number(point.id)) && Number(point.id) > 0) {
+    const version = point.updatedAt ? `&v=${encodeURIComponent(point.updatedAt)}` : ''
+    return `${baseUrl.replace(/\/$/, '')}/api/trash-bin/${point.id}/image?raw=1${version}`
+  }
+  return resolveStoredBinImage('', baseUrl, point?.mapType || 'waste_basket')
+}
+
 // Every candidate is measured; platforms ignoring quality/size must fail rather than upload an oversized file.
 export async function encodeBinImageWithinLimit(width, height, encode, limit = TRASH_BIN_IMAGE_LIMIT) {
   if (!(width > 0 && height > 0)) throw new Error('图片尺寸无效，请重新选图')

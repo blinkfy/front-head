@@ -1,0 +1,23 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import MapServerBridge from 'ftx.map.MapServerBridge'
+
+export function startLocalMapServer(): string {
+  try {
+    const context = UTSAndroid.getAppContext()
+    if (context == null) return ''
+    const indexPath = UTSAndroid.getResourcePath('/static/app-map/index.html')
+    if (indexPath == null || indexPath.length == 0) return ''
+    return MapServerBridge.start(context!, indexPath)
+  } catch (_: any) {
+    return ''
+  }
+}
+
+export function stopLocalMapServer(baseUrl: string): void {
+  if (baseUrl == null || baseUrl.length == 0) return
+  try {
+    MapServerBridge.stop(baseUrl)
+  } catch (_: any) {
+    // A missing/replaced native base must not interrupt app shutdown.
+  }
+}

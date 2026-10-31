@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { encodeBinImageWithinLimit, imageDataBytes, imageMimeFromBase64, normalizeImageData, resolveStoredBinImage, TRASH_BIN_IMAGE_LIMIT } from '../src/utils/trash-bin-image-core.mjs'
+import { encodeBinImageWithinLimit, imageDataBytes, imageMimeFromBase64, normalizeImageData, resolveBinPointImage, resolveStoredBinImage, TRASH_BIN_IMAGE_LIMIT } from '../src/utils/trash-bin-image-core.mjs'
 import { prepareAppMapImage } from '../src/utils/map-image-preview.mjs'
 import { transformWithEsbuild } from 'vite'
 
@@ -34,6 +34,10 @@ async function testCore() {
   assert.equal(resolveStoredBinImage('', 'https://cdn.test', 'unknown'), 'https://cdn.test/images/waste_basket.webp')
   assert.equal(resolveStoredBinImage('real.jpg', 'https://cdn.test', 'recycling'), 'https://cdn.test/real.jpg')
   assert.equal(resolveStoredBinImage('data:image/jpeg;base64,/9j/AA==', 'https://cdn.test', 'recycling'), 'data:image/jpeg;base64,/9j/AA==')
+  assert.equal(resolveBinPointImage({ imagePath: 'uploads/bin.jpg', id: 7 }, 'https://cdn.test'), 'https://cdn.test/uploads/bin.jpg', 'stored real photos must resolve directly')
+  assert.equal(resolveBinPointImage({ image: 'data:image/jpeg;base64,/9j/AA==', id: 7 }, 'https://cdn.test'), 'data:image/jpeg;base64,/9j/AA==', 'inline Base64 photos must be preserved')
+  assert.equal(resolveBinPointImage({ id: 7, hasImage: true, updatedAt: '2026-10-31 12:30:00' }, 'https://cdn.test'), 'https://cdn.test/api/trash-bin/7/image?raw=1&v=2026-10-31%2012%3A30%3A00', 'listed photos must use the versioned raw image endpoint')
+  assert.equal(resolveBinPointImage({ id: 0, hasImage: true, mapType: 'recycling' }, 'https://cdn.test'), 'https://cdn.test/images/recycling.webp', 'points without a stored photo must use the map type fallback')
 
   const mapSources = ['src/pages/map/map.vue', 'src/pages-dark/map/map.vue'].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
   for (const source of mapSources) {
@@ -41,7 +45,19 @@ async function testCore() {
     assert.match(source, /resolveTrashBinImage\(item\.image\s*\|\|\s*item\.imagePath,\s*item\.mapType\s*\|\|\s*'waste_basket'\)/, 'map cards must pass an explicit default mapType')
   }
   const adminPanel = fs.readFileSync(path.join(root, 'src/components/MapBinAdminPanel.vue'), 'utf8')
-  assert.match(adminPanel, /loadedImage\.value\s*\?\s*resolveTrashBinImage\(loadedImage\.value\)\s*:\s*props\.bin\.hasImage\s*&&\s*!\(props\.bin\.image\s*\|\|\s*props\.bin\.imagePath\)\s*\?\s*''/, 'admin panel must prefer loaded data and preserve its lazy load action')
+  assert.match(adminPanel, /resolveBinPointImage\(props\.bin,\s*config\.baseUrl\)/, 'admin panel must display the bin image through its raw URL')
+  assert.match(adminPanel, /await getBinPointPhoto\(props\.bin\)/, 'admin preview must fetch the JSON image instead of previewing the raw URL')
+  assert.match(adminPanel, /@click\.stop="previewBinImage"/, 'admin image preview clicks must not bubble to the map popup')
+  assert.match(adminPanel, /image\s*&&\s*editing\.value\s*&&\s*!imageChanged\.value\s*&&\s*binPointPhotoKey\(props\.bin\)\s*===\s*key/, 'late image loads must not overwrite a changed image or a closed editor')
+  assert.match(adminPanel, /if\s*\(!imageChanged\.value\)\s*delete payload\.imagePath/, 'admin panel must omit imagePath unless the user changed the image')
+  const nearbyPanel = fs.readFileSync(path.join(root, 'src/components/NearbyDisposalPanel.vue'), 'utf8')
+  assert.match(nearbyPanel, /getBinPointPhotoSource\(point,\s*\{\s*coverImage:\s*props\.native\s*\}\)/, 'nearby images must fetch JSON only after an image error')
+  const nativePanel = fs.readFileSync(path.join(root, 'src/components/NearbyDisposalNativeContent.vue'), 'utf8')
+  assert.match(nativePanel, /send\('imageerror',\s*point\.id\)/, 'native image errors must reach the bridge for lazy fallback')
+  const appBridge = fs.readFileSync(path.join(root, 'src/components/AppNearbyDisposalPanel.vue'), 'utf8')
+  assert.match(appBridge, /pageSubNVue\(page,\s*props\.panelId\)/, 'native-window attachment must use the page-scoped lookup')
+  const photoHelper = fs.readFileSync(path.join(root, 'src/utils/bin-point-photo.js'), 'utf8')
+  assert.match(photoHelper, /console\.warn\('\[bin-point-photo\]',\s*JSON\.stringify\(/, 'photo fallback logs must remain visible in App console output')
 
   let attempts = 0
   const result = await encodeBinImageWithinLimit(2400, 1800, ({ quality }) => {
@@ -52,6 +68,109 @@ async function testCore() {
   assert.ok(imageDataBytes(result) <= TRASH_BIN_IMAGE_LIMIT)
   await assert.rejects(encodeBinImageWithinLimit(2400, 1800, () => jpegData(TRASH_BIN_IMAGE_LIMIT + 1)), /500KB/)
   console.log(`CORE OK normalization, resolver, retries=${attempts}, bytes=${imageDataBytes(result)}, oversized rejection`)
+}
+
+function scriptSetupHarness(file, replacements, args, returned, stubs) {
+  let source = fs.readFileSync(path.join(root, file), 'utf8')
+  const match = source.match(/<script setup>([\s\S]*?)<\/script>/)
+  assert.ok(match, `${file} script setup found`)
+  source = match[1].replace(/^import .*?;?\s*$/gm, '')
+  for (const [pattern, replacement] of replacements) {
+    const updated = source.replace(pattern, replacement)
+    assert.notEqual(updated, source, `expected harness replacement in ${file}`)
+    source = updated
+  }
+  return new Function(...args, `${source}\nreturn { ${returned} }`)(...stubs)
+}
+
+async function testSfcImageFlows() {
+  const emitted = []
+  const editor = scriptSetupHarness('src/components/TrashBinImageEditor.vue', [
+    [/const props = defineProps\([\s\S]*?\)\nconst emit = defineEmits\([\s\S]*?\)/,
+      'const props = inputProps\nconst emit = inputEmit']
+  ], ['inputProps', 'inputEmit', 'ref', 'computed', 'watch', 'onBeforeUnmount', 'resolveTrashBinImage', 'chooseAppImage', 'compressTrashBinImage', 'previewTrashBinImage'], 'imageSrc, removeImage', [
+    { modelValue: '', previewSrc: 'https://cdn.test/api/trash-bin/7/image?raw=1', disabled: false },
+    (name, value) => emitted.push([name, value]), value => ({ value }), fn => ({ get value() { return fn() } }), () => {}, () => {}, value => value, () => {}, async () => '', async () => {}
+  ])
+  assert.equal(editor.imageSrc.value, 'https://cdn.test/api/trash-bin/7/image?raw=1', 'an existing preview URL must make the image deletable before model loading')
+  editor.removeImage()
+  assert.deepEqual(emitted.at(-1), ['update:modelValue', ''], 'deleting a preview-only image must emit an explicit empty value')
+
+  let submitted
+  let previewed
+  const admin = scriptSetupHarness('src/components/MapBinAdminPanel.vue', [
+    [/const props = defineProps\([\s\S]*?\)\nconst emit = defineEmits\([\s\S]*?\)/,
+      'const props = inputProps\nconst emit = inputEmit']
+  ], ['inputProps', 'inputEmit', 'ref', 'computed', 'watch', 'binReports', 'config', 'resolveBinPointImage', 'binPointPhotoKey', 'getBinPointPhoto', 'previewTrashBinImage', 'approveBin', 'rejectBin', 'updateBin', 'deleteBin', 'clearBinErrorReports', 'uni'], 'save, previewBinImage', [
+    { bin: { id: 7, name: '点位', latitude: 25, longitude: 121, imagePath: 'old.jpg', hasImage: true }, dark: false },
+    () => {}, value => ({ value }), fn => ({ get value() { return fn() } }), (source, callback, options) => { if (options?.immediate) callback() }, () => [], { baseUrl: 'https://cdn.test' }, () => '', point => `${point.id}:${point.updatedAt || 'ttl'}`, async () => 'data:image/jpeg;base64,/9j/AA==', async value => { previewed = value }, async () => ({ code: 0 }), async () => ({ code: 0 }), async (_id, payload) => { submitted = payload; return { code: 0 } }, async () => ({ code: 0 }), async () => ({ code: 0 }), { showToast() {} }
+  ])
+  await admin.save()
+  assert.ok(submitted, 'saving unchanged admin details must submit')
+  assert.equal(Object.hasOwn(submitted, 'imagePath'), false, 'saving without touching the image must not clear its stored path')
+  await admin.previewBinImage()
+  assert.equal(previewed, 'data:image/jpeg;base64,/9j/AA==', 'admin point preview must use the JSON image payload')
+  console.log('SFC image flows OK preview-only deletion and unchanged-image save preservation')
+}
+
+async function loadBinPointPhotoModule(platform, fetchImage, uni = {}) {
+  const source = fs.readFileSync(path.join(root, 'src/utils/bin-point-photo.js'), 'utf8')
+  let code = preprocess(source, { MP: platform === 'MP' }, 'js')
+    .replace(/^import \{ getTrashBinImage \} from ['"]@\/api\/map['"];?\s*$/m, '')
+    .replace(/^import \{ config \} from ['"]@\/api\/config\.js['"];?\s*$/m, '')
+    .replace(/^import \{ normalizeImageData, resolveStoredBinImage \} from ['"]\.\/trash-bin-image-core\.mjs['"];?\s*$/m, '')
+    .replace(/\bexport\s+(?=(?:async\s+)?function\b)/g, '')
+  code = (await transformWithEsbuild(code, `bin-point-photo-${platform}.js`, { loader: 'js', target: 'es2022' })).code
+  const factory = new Function('getTrashBinImage', 'config', 'normalizeImageData', 'resolveStoredBinImage', 'uni', 'my', `${code}\nreturn { binPointPhotoKey, getBinPointPhoto, getBinPointPhotoSource }`)
+  return factory(fetchImage, { baseUrl: 'https://cdn.test' }, normalizeImageData, resolveStoredBinImage, uni, {})
+}
+
+async function testBinPointPhoto() {
+  let active = 0
+  let maximumActive = 0
+  const calls = []
+  const image = 'data:image/jpeg;base64,/9j/AA=='
+  const helper = await loadBinPointPhotoModule('H5', async id => {
+    calls.push(id)
+    active += 1
+    maximumActive = Math.max(maximumActive, active)
+    await new Promise(resolve => setTimeout(resolve, 8))
+    active -= 1
+    return { code: 0, data: { image } }
+  })
+  const point1 = { id: 'photo-1', hasImage: true }
+  const [first, duplicate, second, third] = await Promise.all([
+    helper.getBinPointPhoto(point1), helper.getBinPointPhoto(point1),
+    helper.getBinPointPhoto({ id: 'photo-2', hasImage: true }), helper.getBinPointPhoto({ id: 'photo-3', hasImage: true })
+  ])
+  assert.equal(first, image)
+  assert.equal(duplicate, image)
+  assert.equal(second, image)
+  assert.equal(third, image)
+  assert.equal(calls.length, 3, 'same id+updatedAt requests must deduplicate')
+  assert.equal(maximumActive, 2, 'image JSON requests must be limited to two concurrent calls')
+  await helper.getBinPointPhoto(point1)
+  assert.equal(calls.length, 3, 'successful image data must be cached')
+
+  let writes = 0
+  const removed = []
+  const mp = await loadBinPointPhotoModule('MP', async () => ({ code: 0, data: { image } }), {
+    env: { USER_DATA_PATH: '/user' },
+    getFileSystemManager: () => ({
+      writeFile(options) { writes += 1; options.success() },
+      unlink(options) { removed.push(options.filePath); options.success?.() }
+    })
+  })
+  const mpPoint = { id: 'cover-1', hasImage: true }
+  const [tempPath, samePath] = await Promise.all([
+    mp.getBinPointPhotoSource(mpPoint, { coverImage: true }), mp.getBinPointPhotoSource(mpPoint, { coverImage: true })
+  ])
+  assert.match(tempPath, /^\/user\/bin_point_.*\.jpg$/)
+  assert.equal(samePath, tempPath)
+  assert.equal(writes, 1, 'MP cover-image should reuse its bounded temporary file cache')
+  for (let id = 0; id < 11; id++) await mp.getBinPointPhotoSource({ id: `cover-${id + 2}`, hasImage: true }, { coverImage: true })
+  assert.ok(removed.length >= 2, 'MP temporary files must be removed when their bounded cache evicts entries')
+  console.log(`BIN POINT PHOTO OK dedupe, max concurrent=${maximumActive}, cache, MP temp cleanup`)
 }
 
 async function loadPlatformModule(platform, stubs) {
@@ -171,6 +290,8 @@ async function testPreviewPlatform(platform) {
 }
 
 await testCore()
+await testSfcImageFlows()
+await testBinPointPhoto()
 for (const platform of ['APP_PLUS', 'MP']) {
   await testCompressionPlatform(platform)
   await testPreviewPlatform(platform)

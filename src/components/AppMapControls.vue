@@ -5,6 +5,7 @@
 import { getCurrentInstance, onBeforeUnmount, onMounted, watch } from 'vue'
 import { onReady, onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { createAppMapControlsController } from '@/utils/app-map-controls.mjs'
+import { pageSubNVue } from '@/utils/page-subnvue.mjs'
 
 const props = defineProps({
   controlId: { type: String, required: true },
@@ -30,9 +31,9 @@ const controller = createAppMapControlsController({
 })
 function attach() {
   try {
-    const nativeWindow = uni.getSubNVueById(props.controlId)
+    const nativeWindow = pageSubNVue(page, props.controlId)
     if (nativeWindow) controller.attach(nativeWindow)
-  } catch (_) { /* Page ready and the native child's handshake retry attachment. */ }
+  } catch (_) { console.warn('[app-map-controls] attach_failed ' + props.controlId) }
 }
 function sync() {
   controller.update({

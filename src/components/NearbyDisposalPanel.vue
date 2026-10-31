@@ -11,7 +11,7 @@
     <cover-view class="disposal-list native-list">
       <cover-view class="disposal-list-content">
         <cover-view v-for="point in points" :key="point.id" class="disposal-row" @click="$emit('select', point)">
-          <cover-image class="disposal-photo" :src="pointImage(point)" @error="markImageFailed(point)" />
+          <cover-image class="disposal-photo" :src="pointImage(point)" @error="markImageFailed(point, pointImage(point))" />
           <cover-view class="disposal-details">
             <cover-view class="disposal-name">{{ point.name }}</cover-view>
             <cover-view class="disposal-address">{{ point.distance }} · {{ point.address || point.description || '暂无详细地址' }}</cover-view>
@@ -38,7 +38,7 @@
     <scroll-view class="disposal-list" scroll-y>
       <view class="disposal-list-content">
         <view v-for="point in points" :key="point.id" class="disposal-row" @click="$emit('select', point)">
-          <image class="disposal-photo" :src="pointImage(point)" mode="aspectFill" @error="markImageFailed(point)" />
+          <image class="disposal-photo" :src="pointImage(point)" mode="aspectFill" @error="markImageFailed(point, pointImage(point))" />
           <view class="disposal-details">
             <text class="disposal-name">{{ point.name }}</text>
             <text class="disposal-address">{{ point.distance }} · {{ point.address || point.description || '暂无详细地址' }}</text>
@@ -59,7 +59,9 @@
 import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ManifestIcon from './ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
-import { resolveTrashBinImage } from '@/utils/trash-bin-image'
+import { config } from '@/api/config.js'
+import { resolveBinPointImage } from '@/utils/trash-bin-image-core.mjs'
+import { binPointPhotoKey, getBinPointPhotoSource } from '@/utils/bin-point-photo.js'
 const props = defineProps({ points: { type: Array, required: true }, dark: Boolean, native: Boolean })
 const emit = defineEmits(['select', 'navigate', 'heightchange', 'closingchange'])
 const instance = getCurrentInstance()
@@ -196,7 +198,12 @@ function refreshViewport() {
   measureContent()
 }
 
-watch(() => props.points, measureContent, { flush: 'post' })
+watch(() => props.points, () => {
+  const keys = new Set(props.points.map(binPointPhotoKey).filter(Boolean))
+  for (const key of Object.keys(fallbackImages.value)) if (!keys.has(key)) delete fallbackImages.value[key]
+  for (const key of Object.keys(failedImages.value)) if (!keys.has(key)) delete failedImages.value[key]
+  measureContent()
+}, { flush: 'post' })
 onMounted(() => {
   measureContent()
   uni.onWindowResize?.(refreshViewport)
@@ -210,11 +217,31 @@ onBeforeUnmount(() => {
   uni.offWindowResize?.(refreshViewport)
   emit('heightchange', 0)
 })
+const fallbackImages = ref({})
 const failedImages = ref({})
-const markImageFailed = point => { failedImages.value[point.id] = true }
+const pendingImages = new Set()
+function markImageFailed(point, failedSource) {
+  const key = binPointPhotoKey(point)
+  if (!key || failedSource !== pointImage(point)) return
+  if (fallbackImages.value[key]) {
+    failedImages.value[key] = true
+    return
+  }
+  if (!point.hasImage || failedImages.value[key] || pendingImages.has(key)) return
+  pendingImages.add(key)
+  getBinPointPhotoSource(point, { coverImage: props.native }).then(source => {
+    const current = props.points.some(item => binPointPhotoKey(item) === key)
+    if (!disposed && current) fallbackImages.value[key] = source
+  }).catch(() => {
+    if (!disposed && props.points.some(item => binPointPhotoKey(item) === key)) failedImages.value[key] = true
+  }).finally(() => pendingImages.delete(key))
+}
 function pointImage(point) {
-  if (!point.image || failedImages.value[point.id]) return getManifestIconPath('colorful_bin')
-  return resolveTrashBinImage(point.image) || getManifestIconPath('colorful_bin')
+  const key = binPointPhotoKey(point)
+  if (key && failedImages.value[key]) return getManifestIconPath('colorful_bin')
+  if (key && fallbackImages.value[key]) return fallbackImages.value[key]
+  const src = resolveBinPointImage(point, config.baseUrl)
+  return src || getManifestIconPath('colorful_bin')
 }
 </script>
 
@@ -242,8 +269,8 @@ function pointImage(point) {
 .disposal-reopen.dark { background: rgba(22,43,49,.82); }
 .disposal-photo { width: 76px; height: 84px; flex-shrink: 0; border-radius: 12px; background: #e6f1eb; }
 .disposal-details { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.disposal-name { display: block; color: #18343f; font-size: 16px; font-weight: 700; line-height: 1.4; white-space: normal; }
-.disposal-address { display: block; color: #7c8893; font-size: 13px; line-height: 1.5; white-space: normal; }
+.disposal-name { display: block; color: #18343f; font-size: 16px; font-weight: 700; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.disposal-address { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-height: 3em; overflow: hidden; text-overflow: ellipsis; color: #7c8893; font-size: 13px; line-height: 1.5; white-space: normal; word-break: break-all; }
 .disposal-type { display: block; align-self: flex-start; padding: 4px 7px; border-radius: 6px; background: #d5f3e7; color: #179c77; font-size: 12px; line-height: 1.4; }
 .disposal-nav { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 48px; padding: 12px 0; margin: 0; border: 0; border-radius: 24px; background: #e0f7ef; color: #079f7c; font-size: 14px; font-weight: 700; line-height: 1.2; }
 .disposal-nav::after { border: 0; }
@@ -260,7 +287,7 @@ function pointImage(point) {
   .disposal-panel { left: 24px; right: auto; top: 130px; bottom: auto; width: 400px; border-radius: 22px; padding: 16px 16px 0; animation: disposal-side .3s ease-out; }
   .disposal-panel.closing { transform: translateX(-48px); }
   .disposal-grip { order: 2; }
-  .disposal-reopen { left: 24px; top: 130px; bottom: auto; }
+  .disposal-reopen { left: 24px; top: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .disposal-panel { animation: none; } }
 </style>

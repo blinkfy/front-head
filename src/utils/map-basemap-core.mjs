@@ -21,7 +21,7 @@ export function createMapBasemapController({ apply, onChange = () => {}, onFallb
   }
   function arm(token) {
     if (timer !== null) clearTimer(timer)
-    timer = setTimer(() => fallback(token), timeoutMs)
+    timer = setTimer(() => fallback(token), typeof timeoutMs === 'function' ? timeoutMs() : timeoutMs)
   }
   function loaded(token) {
     if (disposed || token !== revision || !state.satellite) return

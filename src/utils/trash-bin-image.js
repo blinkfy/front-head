@@ -87,7 +87,9 @@ export async function compressTrashBinImage(filePath) {
           context.fillStyle = '#ffffff'
           context.fillRect(0, 0, width, height)
           context.drawImage(image, 0, 0, width, height)
-          return canvas.toDataURL('image/jpeg', quality)
+          // Unsupported encoders return PNG; inspect the MIME instead of relabeling the bytes.
+          const webp = canvas.toDataURL('image/webp', quality)
+          return webp.startsWith('data:image/webp;') ? webp : canvas.toDataURL('image/jpeg', quality)
         }))
       } catch (error) { reject(error) }
       finally { canvas.width = canvas.height = 0 }

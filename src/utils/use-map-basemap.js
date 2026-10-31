@@ -1,18 +1,22 @@
 import { getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { onReady, onUnload } from '@dcloudio/uni-app'
+import { onReady, onUnload, onShow, onHide } from '@dcloudio/uni-app'
 import { createMapBasemapController, isBinLocationPicker } from './map-basemap-core.mjs'
 import { captureSatelliteReference } from './bin-satellite-reference.mjs'
 // #ifdef APP-PLUS
 import appManifest from '../manifest.json'
 // #endif
 
-export function useMapBasemap({ isH5, options, suspended }) {
+export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
   const satellite = ref(isBinLocationPicker(options))
   const basemapLoading = ref(false)
   let h5Map = null, nativeCallbacks = null, disposed = false
   const page = getCurrentInstance()?.root
-  const isApp = process.env.UNI_PLATFORM === 'app-plus'
+  const isApp = ['app', 'app-plus'].includes(process.env.UNI_PLATFORM)
   let appReady = false
+  let appPageHidden = false
+  let lastAppWebUpdate = null
+  let lastAppWebError = null
+  let appRendererReady = false
   function nativeSupported() {
     // App capability reporting can return false even when its map SDK supports switching.
     if (isApp) return true
@@ -37,8 +41,13 @@ export function useMapBasemap({ isH5, options, suspended }) {
     // #endif
   }
   const controller = createMapBasemapController({
+    // A cold App start first loads the HTTP frame and its SDK.
+    ...(isApp && appWebMap ? { timeoutMs: () => appRendererReady ? 10000 : 40000 } : {}),
     onChange: state => { satellite.value = state.satellite; basemapLoading.value = state.loading },
-    onFallback: () => uni.showToast({ title: '卫星图暂不可用，已切回普通地图', icon: 'none' }),
+    onFallback: () => {
+      if (isApp) console.warn('[app-map-basemap] fallback', { reason: 'load_failed_or_timeout' })
+      uni.showToast({ title: '卫星图暂不可用，已切回普通地图', icon: 'none' })
+    },
     apply: (enabled, callbacks) => {
       if (isH5) {
         if (!h5Map || typeof h5Map.setBaseMap !== 'function') return false
@@ -63,7 +72,10 @@ export function useMapBasemap({ isH5, options, suspended }) {
       }
       if (enabled && !nativeSupported()) return false
       nativeCallbacks = callbacks
-      if (isApp && appReady) {
+      if (isApp && appWebMap) {
+        if (lastAppWebError?.satellite === enabled) callbacks.failed()
+        else if (lastAppWebUpdate?.satellite === enabled) callbacks.loaded()
+      } else if (isApp && appReady) {
         try { if (applyAppBasemap(enabled)) callbacks.loaded() } catch (_) { nativeCallbacks = null; return false }
       }
       return () => { if (nativeCallbacks === callbacks) nativeCallbacks = null }
@@ -73,6 +85,7 @@ export function useMapBasemap({ isH5, options, suspended }) {
     if (disposed) return
     // The SDK is still loading; keep the requested type until bindH5Map runs.
     if (isH5 && !h5Map) { satellite.value = !!enabled; return }
+    if (isApp && satellite.value !== !!enabled) { lastAppWebUpdate = null; lastAppWebError = null }
     controller.request(enabled)
   }
   function bindH5Map(map) { h5Map = map; controller.request(satellite.value) }
@@ -87,15 +100,30 @@ export function useMapBasemap({ isH5, options, suspended }) {
     // #endif
     return null
   }
-  function onNativeMapUpdated() {
-    if (disposed || suspended?.()) return
-    if (isApp) {
+  function onNativeMapUpdated(event) {
+    if (disposed) return
+    if (isApp && appWebMap) {
+      if (event?.detail?.satellite !== satellite.value) return
+      lastAppWebUpdate = event.detail
+      lastAppWebError = null
+      appRendererReady = true
+    }
+    if (appPageHidden || suspended?.()) return
+    if (isApp && !appWebMap) {
       try { applyAppBasemap(satellite.value) } catch (_) { nativeCallbacks?.failed(); return }
     }
     nativeCallbacks?.loaded()
   }
-  function onNativeMapError() { nativeCallbacks?.failed() }
+  function onNativeMapError(event) {
+    if (disposed || appPageHidden || suspended?.()) return
+    if (isApp && appWebMap && event?.detail?.satellite !== satellite.value) return
+    if (isApp && appWebMap) lastAppWebError = event.detail
+    if (isApp) console.warn('[app-map-basemap] error ' + JSON.stringify({ code: event?.detail?.code || 'native_error', stage: event?.detail?.stage, message: event?.detail?.message }))
+    nativeCallbacks?.failed()
+  }
   function onNativeMapRegionChange(event) {
+    // Panning is not a basemap request; cached tiles may produce no new load event.
+    if (isApp && appWebMap) return
     if (event?.type === 'begin' || event?.detail?.type === 'begin') controller.refresh()
   }
   onMounted(() => { if (!isH5 && !isApp && !suspended?.()) controller.request(satellite.value) })
@@ -103,9 +131,23 @@ export function useMapBasemap({ isH5, options, suspended }) {
     appReady = true
     if (isApp && !disposed && !suspended?.()) controller.request(satellite.value)
   }, page)
+  onHide(() => {
+    if (!isApp || disposed) return
+    appPageHidden = true
+    if (!appWebMap) { appRendererReady = false; lastAppWebUpdate = lastAppWebError = null }
+    controller.pause()
+  }, page)
+  onShow(() => {
+    if (!isApp || !appPageHidden || disposed) return
+    appPageHidden = false
+    nextTick(() => { if (appReady && !disposed && !suspended?.()) controller.request(satellite.value) })
+  }, page)
   if (suspended) watch(suspended, hidden => {
-    if (isH5 || disposed) return
-    if (hidden) controller.pause()
+    if (isH5 || disposed || appPageHidden) return
+    if (hidden) {
+      if (!isApp || !appWebMap) { lastAppWebUpdate = null; lastAppWebError = null; appRendererReady = false }
+      controller.pause()
+    }
     else nextTick(() => { if (!disposed && !suspended?.()) controller.request(satellite.value) })
   }, { flush: 'post' })
   function dispose() {

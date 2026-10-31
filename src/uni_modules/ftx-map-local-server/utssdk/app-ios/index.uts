@@ -1,0 +1,7 @@
+export function startLocalMapServer(): string {
+  return ''
+}
+
+export function stopLocalMapServer(_baseUrl: string): void {
+  // Android-only feature; iOS intentionally provides an unsupported stub.
+}

@@ -14,10 +14,10 @@
       </view>
       <scroll-view class="list" scroll-y :style="{ height: Math.max(0, layout.height - 76) + 'px' }">
         <view v-for="point in points" :key="point.id" class="row" :class="{ 'dark-row': dark }" @click="send('select', point.id)">
-          <image class="photo" :src="point.image || fallbackImage" mode="aspectFill" @error="point.image = fallbackImage" />
+          <image class="photo" :src="point.image || fallbackImage" mode="aspectFill" @error="imageFailed(point)" />
           <view class="details">
-            <text class="name" :class="{ 'light-text': dark }" lines="2">{{ point.name }}</text>
-            <text class="address" lines="1">{{ point.distance }} · {{ point.address || point.description || '暂无详细地址' }}</text>
+            <text class="name" :class="{ 'light-text': dark }" lines="1">{{ point.name }}</text>
+            <text class="address" lines="2">{{ point.distance }} · {{ point.address || point.description || '暂无详细地址' }}</text>
             <text class="type">{{ point.type === 'smart' ? '智能分类投放点' : '生活垃圾投放点' }}</text>
           </view>
           <view class="navigate" @click.stop="send('navigate', point.id)">
@@ -48,8 +48,19 @@ const navigationImage = getManifestIconPath('dark_navigation')
 let drag
 
 function send(type, id, height) { uni.$emit(`${topic}:action`, { type, id, height }) }
+const failedPhotoSources = new Set()
+function imageFailed(point) {
+  const key = `${point.id}:${point.image || ''}`
+  if (!point.id || failedPhotoSources.has(key)) return
+  failedPhotoSources.add(key)
+  if (point.image !== fallbackImage) send('imageerror', point.id)
+}
 function update(data) {
-  if (data.points) points.value = data.points
+  if (data.points) {
+    points.value = data.points
+    const activeKeys = new Set(data.points.map(point => `${point.id}:${point.image || ''}`))
+    for (const key of failedPhotoSources) if (!activeKeys.has(key)) failedPhotoSources.delete(key)
+  }
   if (data.layout) layout.value = data.layout
   dark.value = data.dark
   collapsed.value = data.collapsed

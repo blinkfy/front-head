@@ -7,9 +7,9 @@
     <view v-else class="image-empty">尚未添加图片</view>
     <view class="image-actions">
       <view class="image-action primary" :class="{ disabled: disabled || processing }" @click="chooseImage">
-        {{ processing ? '图片处理中…' : (modelValue ? '替换图片' : '添加图片') }}
+        {{ processing ? '图片处理中…' : (imageSrc ? '替换图片' : '添加图片') }}
       </view>
-      <view v-if="modelValue" class="image-action danger" :class="{ disabled: disabled || processing }" @click="removeImage">删除图片</view>
+      <view v-if="imageSrc" class="image-action danger" :class="{ disabled: disabled || processing }" @click="removeImage">删除图片</view>
       <view v-if="processing" class="image-status">正在压缩图片，请稍候</view>
     </view>
   </view>
@@ -20,11 +20,11 @@ import { chooseAppImage } from '@/utils/image-picker.js'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { compressTrashBinImage, resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
 
-const props = defineProps({ modelValue: { type: String, default: '' }, disabled: Boolean })
+const props = defineProps({ modelValue: { type: String, default: '' }, previewSrc: { type: String, default: '' }, disabled: Boolean })
 const emit = defineEmits(['update:modelValue', 'processing'])
 const processing = ref(false)
 let operationId = 0
-const imageSrc = computed(() => resolveTrashBinImage(props.modelValue))
+const imageSrc = computed(() => resolveTrashBinImage(props.modelValue || props.previewSrc))
 
 watch(() => props.modelValue, () => { operationId += 1 })
 onBeforeUnmount(() => { operationId += 1; setProcessing(false) })
@@ -56,15 +56,15 @@ function chooseImage() {
 }
 
 function removeImage() {
-  if (props.disabled || processing.value || !props.modelValue) return
+  if (props.disabled || processing.value || !imageSrc.value) return
   operationId += 1
   setProcessing(false)
   emit('update:modelValue', '')
 }
 
 async function preview() {
-  if (!props.modelValue) return
-  try { await previewTrashBinImage(props.modelValue) }
+  if (!imageSrc.value) return
+  try { await previewTrashBinImage(imageSrc.value) }
   catch (error) { uni.showToast({ title: '图片预览失败', icon: 'none' }) }
 }
 </script>

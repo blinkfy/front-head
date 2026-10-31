@@ -3,6 +3,33 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { appMapControlsLayout, createAppMapControlsController, hasValidMapCoordinates } from '../src/utils/app-map-controls.mjs'
+import { pageSubNVue } from '../src/utils/page-subnvue.mjs'
+
+const pageA = { proxy: {} }
+const pageB = { proxy: {} }
+const childA = { id: 'map-controls' }
+const childB = { id: 'map-controls' }
+const pageOwners = [
+  { $vm: pageA.proxy, $getAppWebview: () => ({ children: () => [childA] }) },
+  { $vm: pageB.proxy, $getAppWebview: () => ({ children: () => [childB] }) }
+]
+assert.equal(pageSubNVue(pageA, 'map-controls', { pages: () => pageOwners }), childA, 'same-id subNVue resolves from its owning page')
+assert.equal(pageSubNVue(pageB, 'map-controls', { pages: () => pageOwners }), childB, 'same-id subNVue resolves independently for another page')
+
+let globalLookups = 0
+const globalChild = { id: 'map-controls' }
+const globalFallback = () => { globalLookups++; return globalChild }
+const ownerNotReady = { ...pageA, proxy: { ...pageA.proxy } }
+assert.equal(pageSubNVue(ownerNotReady, 'map-controls', {
+  pages: () => [{ $vm: ownerNotReady.proxy, $getAppWebview: () => null }],
+  fallback: globalFallback
+}), null, 'known owner without ready native children does not use global lookup')
+assert.equal(globalLookups, 0, 'global lookup is skipped while the current page owner is known')
+assert.equal(pageSubNVue({ proxy: {} }, 'map-controls', {
+  pages: () => [],
+  fallback: globalFallback
+}), globalChild, 'older environments without an owner use global lookup')
+assert.equal(globalLookups, 1, 'legacy fallback runs once')
 
 assert.deepEqual(appMapControlsLayout({ selectMode: false, top: 24, windowWidth: 375, windowHeight: 800 }), {
   left: 6, top: 24, width: 132, height: 44
