@@ -42,6 +42,17 @@ object QbarBridge {
             } catch (_: Throwable) { callback("{\"error\":\"UNAVAILABLE\"}") }
         }
     }
+    @JvmStatic
+    fun decodeGeneratedImage(activity: Activity, encoded: String, callback: (String) -> Unit) {
+        try {
+            if (scannerClass(activity) == null) { callback("{\"error\":\"UNAVAILABLE\"}"); return }
+            val decoder = Class.forName("ftx.qbar.GeneratedCodeDecoder", false, activity.classLoader)
+            val receiver = object : ValueCallback<String> {
+                override fun onReceiveValue(result: String) { callback(result) }
+            }
+            decoder.getMethod("decode", String::class.java, ValueCallback::class.java).invoke(null, encoded, receiver)
+        } catch (_: Throwable) { callback("{\"error\":\"UNAVAILABLE\"}") }
+    }
     @JvmStatic fun cancel(activity: Activity) {
         try { scannerClass(activity)?.getMethod("cancelCurrent")?.invoke(null) }
         catch (_: Throwable) { /* A missing/replaced native base must not crash cancellation. */ }

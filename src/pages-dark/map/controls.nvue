@@ -1,0 +1,4 @@
+<template><AppMapControlsNativeContent control-id="map-controls-dark" /></template>
+<script setup>
+import AppMapControlsNativeContent from '@/components/AppMapControlsNativeContent.vue'
+</script>

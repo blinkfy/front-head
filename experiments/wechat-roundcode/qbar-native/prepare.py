@@ -1,4 +1,5 @@
 """Fetch pinned experimental inputs into ignored artifacts; never executes them."""
+import argparse
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
@@ -30,9 +31,15 @@ def fetch(item):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--android-only", action="store_true", help="Skip the server-side Maven experiment toolchain")
+    args = parser.parse_args()
     manifest = json.loads((LAB / "vendor-manifest.json").read_text(encoding="utf-8"))
     with ThreadPoolExecutor(max_workers=4) as pool:
         paths = list(pool.map(fetch, manifest["files"]))
+    if args.android_only:
+        print(f"Verified {len(paths)} pinned inputs; skipped Maven and server runtime.")
+        return
     archive = fetch({"local_path": "artifacts/tools/apache-maven-3.9.9-bin.zip",
                      "url": MAVEN_URL, "bytes": 9202456, "algorithm": "sha512", "sha512": MAVEN_SHA512})
     destination = (LAB / "artifacts/tools").resolve()

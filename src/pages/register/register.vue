@@ -248,6 +248,7 @@
 </template>
 
 <script setup>
+import { loginNavigationRuntime } from '@/utils/login-navigation-runtime.js'
 // #ifdef MP-WEIXIN
 import { rememberWechatLogin } from '@/utils/wechat-login.mjs'
 import { markWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
@@ -420,7 +421,7 @@ function goBack() {
 }
 
 function goLogin() {
-  returnToLogin({ runtime: uni, url: '/pages/index/index' })
+  returnToLogin({ runtime: loginNavigationRuntime, url: '/pages/index/index' })
 }
 
 // 切换密码显示/隐藏

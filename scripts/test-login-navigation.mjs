@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 import { navigateAfterLogin, claimLoginSplash, returnToLogin } from '../src/utils/login-navigation.mjs'
+import { loginNavigationRuntime } from '../src/utils/login-navigation-runtime.js'
 
 const root = new URL('../', import.meta.url)
 const pages = [
@@ -97,6 +98,32 @@ async function testHelper() {
   })
 }
 
+async function testLoginNavigationRuntime() {
+  await scenario('H5 navigation runtime delegates explicit uni APIs', () => {
+    const calls = []
+    const previous = globalThis.uni
+    const hadUni = Object.hasOwn(globalThis, 'uni')
+    globalThis.uni = Object.fromEntries(['reLaunch', 'redirectTo', 'navigateBack', 'showToast', 'getStorageSync', 'removeStorageSync'].map(method => [method, (...args) => {
+      calls.push([method, ...args])
+      return method === 'getStorageSync' ? 'stored-value' : undefined
+    }]))
+    try {
+      for (const method of ['reLaunch', 'redirectTo', 'navigateBack', 'showToast']) {
+        const options = { marker: method }
+        loginNavigationRuntime[method](options)
+        assert.deepEqual(calls.at(-1), [method, options])
+      }
+      assert.equal(loginNavigationRuntime.getStorageSync('token'), 'stored-value')
+      assert.deepEqual(calls.at(-1), ['getStorageSync', 'token'])
+      loginNavigationRuntime.removeStorageSync('pending')
+      assert.deepEqual(calls.at(-1), ['removeStorageSync', 'pending'])
+    } finally {
+      if (hadUni) globalThis.uni = previous
+      else delete globalThis.uni
+    }
+  })
+}
+
 async function testReturnNavigation() {
   await scenario('first login launch claims splash once; returning to login suppresses it', async () => {
     assert.equal(claimLoginSplash(), true)
@@ -138,7 +165,7 @@ function loginContext({ page, target = 'APP-PLUS', profile = false, shared = fal
     getStorageSync: key => storage.get(key)
   }
   const context = {
-    ...refs, isLoading: loading, uni,
+    ...refs, isLoading: loading, uni, loginNavigationRuntime: uni,
     userinfo: async () => { events.push('userinfo'); return { data: { username: 'alice' } } },
     rememberWechatLogin: () => {}, consumeWechatProfileCompletion: () => { events.push(`profile:${profile}`); return profile },
     profileCompletionUser: { value: null }, profileCompletionVisible: { value: false },
@@ -166,12 +193,24 @@ function loginContext({ page, target = 'APP-PLUS', profile = false, shared = fal
 for (const page of pages) page.source = await readFile(new URL(page.file, root), 'utf8')
 
 await testHelper()
+await testLoginNavigationRuntime()
 await testReturnNavigation()
 await scenario('both login pages compile script and template for H5, MP-Weixin, and APP-PLUS', () => {
   for (const page of pages) for (const target of ['H5', 'MP-WEIXIN', 'APP-PLUS']) compileSfc(page.source, page.file, target)
 })
 await scenario('both registration pages compile script and template for H5', async () => {
   for (const page of registrationPages) compileSfc(await readFile(new URL(page.file, root), 'utf8'), page.file, 'H5')
+})
+
+await scenario('H5 login and registration navigation uses the explicit runtime adapter', async () => {
+  for (const page of [...pages, ...registrationPages]) {
+    const source = page.source || await readFile(new URL(page.file, root), 'utf8')
+    const descriptor = parse(source, { filename: page.file }).descriptor
+    const script = descriptor.scriptSetup || descriptor.script
+    const h5Script = conditionalSource(script.content, 'H5')
+    assert.doesNotMatch(h5Script, /runtime\s*:\s*uni\b/, `${page.file} does not pass the raw uni namespace to H5 helpers`)
+    assert.match(h5Script, /import\s*\{\s*loginNavigationRuntime\s*\}\s*from/, `${page.file} keeps the adapter import in H5`)
+  }
 })
 
 await scenario('completeLogin stores credentials before navigation and preserves device and theme targets without delays', async () => {

@@ -38,6 +38,7 @@
         <NearbyDisposalPanel v-if="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" :native="true" @select="selectNearbyDisposal" @navigate="point => goNavigate({ ...point, title: point.name, desc: point.address || point.description })" />
         <!-- #endif -->
         <!-- #endif -->
+        <!-- #ifndef APP-PLUS -->
         <cover-view class="basemap-switch basemap-switch-native" style="top: 24px">
           <cover-view class="basemap-option" :class="{ active: !satellite }" @click.stop="setBasemap(false)">普通</cover-view>
           <cover-view class="basemap-option" :class="{ active: satellite }" @click.stop="setBasemap(true)">{{ basemapLoading ? '加载中' : '卫星' }}</cover-view>
@@ -59,6 +60,8 @@
             </cover-view>
           </cover-view>
         </cover-view>
+
+        <!-- #endif -->
 
         <cover-view v-if="nearbyLocationModalVisible && !isH5" class="nearby-location-cover">
           <cover-view class="nearby-location-cover-panel">
@@ -93,6 +96,7 @@
     <!-- #endif -->
 
     <!-- #ifdef APP-PLUS -->
+    <AppMapControls control-id="map-controls-light" :visible="!showAddModal && !showReportModal && !nearbyLocationModalVisible" :select-mode="selectMode" :top="statusBarHeight + (selectMode ? 88 : 108)" :satellite="satellite" :loading="basemapLoading" :latitude="selectedLocation?.latitude" :longitude="selectedLocation?.longitude" @basemap="setBasemap" @cancel="cancelSelect" @confirm="confirmSelect" @center="pickCenterLocation" @locate="moveToMyLocation" />
     <AppNearbyDisposalPanel panel-id="nearby-disposal-light" :visible="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" @select="selectNearbyDisposal" @navigate="point => goNavigate({ ...point, title: point.name, desc: point.address || point.description })" />
     <!-- #endif -->
 
@@ -318,6 +322,7 @@ import MapBinAdminPanel from '@/components/MapBinAdminPanel.vue'
 import NearbyDisposalPanel from '@/components/NearbyDisposalPanel.vue'
 // #ifdef APP-PLUS
 import AppNearbyDisposalPanel from '@/components/AppNearbyDisposalPanel.vue'
+import AppMapControls from '@/components/AppMapControls.vue'
 // #endif
 import { nearbyDisposalPoints, validDisposalLocation } from '@/utils/nearby-disposal.mjs'
 import { isBinLocationPicker } from '@/utils/map-basemap-core.mjs'
@@ -389,8 +394,18 @@ function selectNearbyDisposal(point) {
 }
 
 // 小程序/APP markers
+function appSelectionMarkers() {
+  // #ifdef APP-PLUS
+  if (selectMode.value && validDisposalLocation(selectedLocation.value)) return [{
+    id: -1, latitude: Number(selectedLocation.value.latitude), longitude: Number(selectedLocation.value.longitude),
+    iconPath: '/static/normal-marker.png', width: 36, height: 40, anchor: { x: .5, y: 1 }
+  }]
+  // #endif
+  return []
+}
+
 const markers = computed(() => {
-  const list = selectMode.value ? [] : trashPoints.value.map(p => ({
+  const list = selectMode.value ? appSelectionMarkers() : trashPoints.value.map(p => ({
     id: p.id,
     latitude: typeof p.latitude === 'number' ? p.latitude : parseFloat(p.latitude),
     longitude: typeof p.longitude === 'number' ? p.longitude : parseFloat(p.longitude),
@@ -576,6 +591,8 @@ function onRegionChange(e) {
         name: '选中的位置',
         address: `${typeof loc.latitude === 'number' ? loc.latitude.toFixed(6) : parseFloat(loc.latitude).toFixed(6)}, ${typeof loc.longitude === 'number' ? loc.longitude.toFixed(6) : parseFloat(loc.longitude).toFixed(6)}`
       }
+    } else if (process.env.UNI_PLATFORM === 'app-plus' && (e.type === 'end' || detail.type === 'end')) {
+      selectNativeMapCenter()
     }
     return
   }
@@ -614,8 +631,23 @@ function updateCenterLocation() {
   })
 }
 
+function selectNativeMapCenter(feedback = false) {
+  if (!selectMode.value) return
+  try {
+    uni.createMapContext('select-map').getCenterLocation({
+      success: location => {
+        if (!selectMode.value || !validDisposalLocation(location)) return
+        onMapClick(Number(location.latitude), Number(location.longitude))
+        if (feedback) uni.showToast({ title: '已选取当前视野中心', icon: 'none' })
+      },
+      fail: () => { if (feedback) uni.showToast({ title: '无法获取中心坐标，请重试', icon: 'none' }) }
+    })
+  } catch (_) { if (feedback) uni.showToast({ title: '地图尚未就绪，请稍后再试', icon: 'none' }) }
+}
+
 function pickCenterLocation() {
   if (!selectMode.value) return
+  if (process.env.UNI_PLATFORM === 'app-plus') { selectNativeMapCenter(true); return }
 
   if (isH5) {
     let lat

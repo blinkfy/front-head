@@ -1,5 +1,7 @@
 # APP 圆码扫码接入
 
+> 2026-10-30 当前状态：服务器已移除 Java/unidbg，改由生成端/受控工作端登记原始载荷。Android 0.1.17 新增无相机图片解码；网页保留圆码提示。具体启用方式、权限和未覆盖的平台见 [生成登记说明](roundcode-client-registration.md)。下文旧版本中的服务端解码与 H5 圆码联网为历史记录。
+
 ## 范围与发布前提
 
 Android APP 使用 `src/uni_modules/ftx-qbar` 的 UTS + Java/Kotlin 原生插件。
@@ -21,7 +23,7 @@ python scripts/prepare-qbar-integration.py
 此命令校验固定提交的资源 SHA-256，生成：
 
 - `src/uni_modules/ftx-qbar/utssdk/app-android/libs/qbar-native.aar`：包含 `classes.jar`（扫描 Activity、解码器和全部 JNI 类）、ARM64 原生库、Activity 清单与 JNI 防混淆规则。
-- `back-end/native/qbar/classes/`、`jars/`、`libwechatQrMod.so`：后端隔离 Java 解码运行资源。
+准备脚本仅生成 Android 依赖，不再下载 Maven 或导出后端 Java 运行资源。Android 编译仍需要 JDK，这与服务器运行时无关。
 
 这些可重建二进制被 Git 忽略；仅拉取源码不会自动得到原生能力。准备好后，用支持 UTS 原生混编的 HBuilderX（4.26+）重新制作自定义基座/正式包。前端热更新不能给旧安装包增加 `.so`。无需为本功能修改已有 ABI 列表或账号接口。
 
@@ -48,34 +50,21 @@ Java 包装器来自固定提交 `sollyu/wechat-scanner@8ba599fd90216d1ba148eda4
 
 ## 后端部署
 
-部署新服务代码时，一并复制生成的 `native/qbar/` 运行资源。服务器需 Java 11+ 及 unidbg/Unicorn2 支持的桌面宿主架构。必要时设置：
+服务器只需现有 Node 服务，不需要 Java、unidbg、JNI 或旧的 native/qbar 资源包；Dockerfile 也不再安装 JRE。本地残留的解码运行资源由 .dockerignore 排除，离线实验不属于生产依赖。
 
-```text
-QBAR_JAVA=/absolute/path/to/java
-QBAR_RUNTIME_DIR=/absolute/path/to/back-end/native/qbar
-```
-
-现有 `Dockerfile` / `Dockerfile-simple` 已加入 Debian 默认 headless JRE。构建上下文必须包含准备好的运行资源；只从 Git 拉取源码的 CI 仍须先执行准备步骤并将资源放进后端上下文。本轮没有构建 Docker 镜像。
-
-多进程/多副本必须使用项目已有 Redis 配置，让圆码索引和登录接力状态共享；不配置 Redis 时仅为当前进程内存缓存，进程重启或跨副本将无法匹配旧索引。
-
-缺少运行资源/Java、解码失败、Redis 异常不会破坏原来的微信扫码或普通二维码。APP 提示改扫普通码，不猜测 scene。升级后应刷新设备码和网页专属码：部署前已生成但未登记的圆码不会凭外观或原始串尾部被“补猜”成有效参数。
+微信接口仍正常生成小程序码，微信/小程序按原 path/scene 识别。生成图片不再启动服务端解码；新的原始载荷索引可由生成时签发的短期任务凭证登记。旧的图片识别/预热接口返回 HTTP 501 和 ROUND_CODE_UNSUPPORTED；旧客户端可安全回退。
 
 ## 精确匹配与设备连接
 
-1. 后端仍用原微信接口、原 scene 生成图片。
-2. 服务器对这张生成图执行真实 QBar 解码，把**完整原始字节的 SHA-256 + AppID** 对应到已知 scene，写入短期缓存。
-3. APP 相机/相册用相同内核读出 `WX_CODE`，仅发送原始内容 Base64；不上传照片。
-4. `POST /api/device/wechat-qr/resolve-raw` 要求正常用户 JWT，严格匹配索引。
-5. 设备码重新使用原 `resolve(scene)` 校验完整 token、当前/历史有效期与设备唯一性，再返回原连接页的 scene 路径。最终连接仍执行原业务校验。
+Android 本地 QBar 仍可读取 WX_CODE 并发送原始内容 Base64。resolve-raw 使用已有或客户端新登记、尚未过期且 AppID 一致的精确索引，继续执行设备 token/会话的原有业务校验；Redis 异常不降级猜测参数。
 
-相同尾部而不同前缀的内容不会匹配；重复映射到不同 scene 的内容被隔离，两个映射都不可用。没有新增凭证格式，没有靠截断 token、图片相似度或透传任意二维码路由来放宽连接权限。
-
-索引只在生成图片时解码，读码匹配不重新运行 native。单进程最多一个解码子进程、最多四个等待项、等待不超过 1.8 秒，子进程最长 6 秒且可强制终止。缓存生成失败后最多每 30 秒补试一次；成功的缓存图片不反复解码。已有设备码不延长 token 截止时间，登录会话仍约五分钟。
+新圆码缺少索引时返回 HTTP 501 / ROUND_CODE_UNSUPPORTED，APP 提示改扫普通二维码或用微信扫码。不采用载荷截断、图片相似度或客户端自报映射代替服务端核验。旧索引过期、重启失去内存缓存后亦不能继续依靠它解析。
 
 ## APP 扫网页登录码并确认
 
 APP 必须先登录有效账号；无需微信临时 code，网页登录使用当前 APP 账号。
+
+存在有效精确索引（包括生成任务新登记）时，以下 APP 授权路径可用；未登记的新圆码继续回退。
 
 1. 圆码精确匹配返回 `kind=registration` 和短期 `sessionId`，不返回网页登录 JWT。
 2. `POST /api/registration/sessions/:id/app-scan`：验证 APP JWT 和用户仍存在，以账号身份原子占用会话，网页显示“请在APP中确认”。
@@ -244,7 +233,7 @@ Android Java 编译/依赖 AAR 完整性四项测试、APP 旧后端 HTTP 404/40
 - 对局部光照归一化进行了独立合成对照：10 个正样本仍为 8 个可定位，没有新增命中，因此没有保留正式重试路径。另发现某双 QR 样本在旧、新定位器中均会只定位其中一个，属于现有粗定位歧义缺口；全画面解码和原有多码返回规则继续保留。定位测试不代表真实解码率，曝光调节效果仍须真机验证。
 - 插件和日志版本为 0.1.16。只更新 Android 依赖 AAR，不生成 APK；需重新制作并安装自定义基座。H5、iOS、后端和业务扫码协议本轮不改。
 
-## H5 原生普通码加速与圆码请求调度
+## H5 原生普通码加速与圆码请求调度（历史记录，圆码联网已停用）
 
 - 手机网页实时取景、相册和高清抓拍优先尝试浏览器 BarcodeDetector（需明确支持 qr_code）。原生未命中时继续现有 jsQR/候选 ROI/中心重试；能力缺失、异常或超过 700ms 时本次相机会话回退 jsQR。每次原生调用使用独立像素快照，关闭、账号变化、倍率或画面布局变化后忽略迟结果；原生发现不同内容的多个码时要求一次对准一个。未新增解码依赖，圆码仍由原后端接口核验。
 - 圆码先执行只读 preview，再执行 accept；网络识图期间每 350ms 保持普通码本地识别和候选跟踪，但不自动变焦、抓拍或重复上传。稳定普通码成功（管理员可手动接受首帧）后，未决圆码结果失效；圆码进入确认/授权阶段，或管理员正在接受结果时，暂停竞争结果。管理员已显示的结果继续保留供手动使用。

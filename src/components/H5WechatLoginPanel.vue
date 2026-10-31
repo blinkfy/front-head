@@ -39,11 +39,13 @@ import { useWechatQrSave } from '@/utils/use-wechat-qr-save.js'
 import WechatQrDownloadMenu from '@/components/WechatQrDownloadMenu.vue'
 import { registrationApi } from '@/utils/registration-relay.js'
 import { createH5RegistrationRelay } from '@/utils/registration-relay.mjs'
+import { useGeneratedRoundCode } from '@/utils/use-generated-roundcode.js'
 
 const props = defineProps({ dark: Boolean, disabled: Boolean, registrationAllowed: Boolean })
 const emit = defineEmits(['login', 'busy'])
 const qrSource = ref(''), qrState = ref('loading'), status = ref('loading'), message = ref('正在创建专属二维码…'), reference = ref('')
 const terminal = computed(() => ['expired', 'consumed', 'uncertain', 'cancelled'].includes(status.value))
+useGeneratedRoundCode(qrSource, () => qrState.value === 'ready' && !terminal.value && !props.disabled)
 const { qrMenu, openQrMenu, closeQrMenu, downloadQr, suppressQrContextMenu } = useWechatQrSave(qrSource, () => qrState.value !== 'ready' || terminal.value || props.disabled)
 const messages = { loading: '正在创建专属二维码…', waiting: '等待微信扫码…', scanned: '已扫码，请在小程序中继续',
   authorized: '已确认，正在登录…', consuming: '正在登录…', complete: '登录成功，正在进入首页…',

@@ -4,3 +4,7 @@ export function startScan(callback: (result: string) => void): void {
 }
 export function startScanWithDiagnostics(callback: (result: string) => void): void { startScan(callback) }
 export function cancelScan(): void {}
+
+export function decodeGeneratedImage(encoded: string, callback: (result: string) => void): void {
+  callback('{"error":"UNSUPPORTED"}')
+}

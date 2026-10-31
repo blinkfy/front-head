@@ -25,6 +25,14 @@ import hashlib
 import secrets
 import qrcode
 import requests
+try:
+    from scripts.roundcode_client import register_generated, registration_error
+except ImportError:
+    def register_generated(*_args, **_kwargs):
+        return False
+    def registration_error():
+        return '本机圆码解码模块缺失，请更新完整设备程序'
+
 import threading
 from PIL import Image
 from ultralytics import YOLO
@@ -1423,7 +1431,7 @@ class MainWindow(QMainWindow):
             return None
 
     def request_wechat_qr(self, token):
-        """在网络工作线程请求后端二进制微信码；旧 token 的返回会被丢弃。"""
+        """工作线程先解码登记再替换微信码；刷新期间保留旧码，丢弃过期返回。"""
         if not self._is_current_qr_token(token):
             return
         try:
@@ -1442,7 +1450,17 @@ class MainWindow(QMainWindow):
             if not response.content:
                 raise RuntimeError('后端返回了空图片')
             if self._is_current_qr_token(token):
-                self.qr_update_signal.emit(token, None, response.content, '微信小程序码已就绪。')
+                self.qr_update_signal.emit(token, None, None, '新圆码正在本机解码登记；当前码暂时保留。')
+                registered = register_generated(response, self.server)
+                if not self._is_current_qr_token(token):
+                    return
+                if registered:
+                    self.qr_update_signal.emit(token, None, response.content, '微信小程序码已就绪。')
+                    print('[圆码登记] 已在设备本机解码并完成登记')
+                elif self._has_wechat_qr_pixmap:
+                    self.qr_update_signal.emit(token, None, None, f'新圆码登记失败：{registration_error()}；已保留当前码，可重试或使用普通 APP 码。')
+                else:
+                    self.qr_update_signal.emit(token, None, response.content, f'圆码登记失败：{registration_error()}；当前圆码可供微信扫码，APP 请使用普通 APP 码。')
         except Exception as e:
             if self._is_current_qr_token(token):
                 message = str(e)[:180]

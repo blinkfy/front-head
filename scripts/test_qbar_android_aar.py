@@ -17,6 +17,11 @@ class QbarAarTests(unittest.TestCase):
             with zipfile.ZipFile(BytesIO(archive.read("classes.jar"))) as classes:
                 scanner = classes.read("ftx/qbar/ScannerActivity.class")
                 self.assertIn(b"android/webkit/ValueCallback", scanner)
+                self.assertIn(b"isScanActive", scanner)
+                generated = classes.read("ftx/qbar/GeneratedCodeDecoder.class")
+                self.assertIn(b"android/webkit/ValueCallback", generated)
+                self.assertIn(b"INVALID_IMAGE", generated)
+                self.assertIn(b"WRONG_CODE_TYPE", generated)
 
     def test_previous_native_only_aar_is_rejected(self):
         with tempfile.TemporaryDirectory(prefix="aar-regression-", dir=ARTIFACTS) as temporary:
@@ -43,7 +48,7 @@ class QbarAarTests(unittest.TestCase):
 
     def test_java_sources_do_not_shadow_the_aar(self):
         self.assertEqual(list((PLUGIN / "utssdk/app-android").glob("*.java")), [])
-        self.assertEqual(len(list((PLUGIN / "native-src/android").glob("*.java"))), 6)
+        self.assertEqual(len(list((PLUGIN / "native-src/android").glob("*.java"))), 7)
 
 
 if __name__ == "__main__":

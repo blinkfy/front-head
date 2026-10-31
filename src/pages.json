@@ -51,6 +51,9 @@
 					"subNVues": [{
 						"id": "nearby-disposal-light", "path": "pages/map/nearby-panel",
 						"style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 90 }
+					}, {
+						"id": "map-controls-light", "path": "pages/map/controls",
+						"style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 95 }
 					}]
 				}
 			}
@@ -325,6 +328,9 @@
 							"subNVues": [{
 								"id": "nearby-disposal-dark", "path": "map/nearby-panel",
 								"style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 90 }
+							}, {
+								"id": "map-controls-dark", "path": "map/controls",
+								"style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 95 }
 							}]
 						}
 					}

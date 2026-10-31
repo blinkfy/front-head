@@ -1,12 +1,12 @@
 // Only resolved, registered scenes reach routing. An opaque circle-code payload
 // must never go through the permissive ordinary device-ID parser.
-export function createWebRoundCodeResolver({ getToken, getAccount, resolveImage, scanApp,
+export function createWebRoundCodeResolver({ getToken, getAccount, resolveRaw, resolveImage, scanApp,
   authorizeApp, cancelApp, confirm, notify }) {
   return async function resolve(imageBase64, isActive = () => true) {
     const token = getToken()
     if (!token) throw new Error('请先登录，再识别微信圆码')
     const current = () => isActive() && getToken() === token
-    const response = await resolveImage(imageBase64, token)
+    const response = await (resolveRaw || resolveImage)(imageBase64, token)
     if (!current()) return null
     const data = response?.data
     if (data?.kind === 'device' && /^[a-f0-9]{32}$/i.test(data.token || '')) {

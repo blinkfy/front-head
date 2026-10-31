@@ -25,6 +25,9 @@ import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegac
 // #ifdef APP-PLUS
 import { checkAppUpdate } from '@/utils/app-update.js'
 // #endif
+// #ifdef APP-PLUS || H5
+import { setRoundCodeClientActive } from '@/utils/roundcode-client.js'
+// #endif
 // #ifdef MP-WEIXIN
 import { captureRegistrationEntry, offerRegistrationRetry } from '@/utils/registration-relay.js'
 // #endif
@@ -110,6 +113,9 @@ export default {
     // #ifdef APP-PLUS
     uni.$emit('smart-sort-robot:visibility', true)
     // #endif
+    // #ifdef APP-PLUS || H5
+    setRoundCodeClientActive(true)
+    // #endif
     console.log('App Show')
   },
   onPageNotFound: function (options) {
@@ -122,6 +128,9 @@ export default {
     setUiSoundsActive(false)
     // #ifdef APP-PLUS
     uni.$emit('smart-sort-robot:visibility', false)
+    // #endif
+    // #ifdef APP-PLUS || H5
+    setRoundCodeClientActive(false)
     // #endif
     console.log('App Hide')
   },

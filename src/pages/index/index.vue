@@ -211,6 +211,7 @@
 </template>
 
 <script setup>
+import { loginNavigationRuntime } from '@/utils/login-navigation-runtime.js'
 import { ref, onMounted } from 'vue'
 // #ifdef H5
 import H5LoginShell from '@/components/H5LoginShell.vue'
@@ -424,7 +425,7 @@ async function onQrLogin(result) {
   const pendingScene = getPendingDeviceQrScene(registrationRuntime)
   const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, false) : ''
   await navigateAfterLogin({
-    runtime: uni, url: pendingUrl || '/pages/home/home',
+    runtime: loginNavigationRuntime, url: pendingUrl || '/pages/home/home',
     setLoading: value => { isLoading.value = value }
   })
 }
@@ -496,12 +497,12 @@ async function completeLogin(res, isauto, isWechat = false) {
   await confirmRegistrationLogin(res.token, loggedInUser?.username || username.value, () => wechatPageActive)
   if (!wechatPageActive) return
   // #endif
-  const pendingScene = getPendingDeviceQrScene(uni)
+  const pendingScene = getPendingDeviceQrScene(loginNavigationRuntime)
   const pendingUrl = pendingScene
     ? buildDeviceQrScanUrl(pendingScene, ThemeManager.getTheme() === 'dark')
     : ''
   await navigateAfterLogin({
-    runtime: uni, url: pendingUrl || '/pages/home/home',
+    runtime: loginNavigationRuntime, url: pendingUrl || '/pages/home/home',
     setLoading: value => { isLoading.value = value }
   })
 }

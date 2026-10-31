@@ -6,6 +6,7 @@ import { createScanDebugAccess } from './scan-debug.mjs'
 import { vibrateScan } from './haptics.mjs'
 // #ifdef APP-PLUS
 import { startScan, startScanWithDiagnostics, isAvailable } from '@/uni_modules/ftx-qbar'
+import { prioritizeRoundCodeScanner } from './roundcode-client.js'
 // #endif
 
 let scanner
@@ -15,7 +16,12 @@ function getScanner() {
   const api = createRegistrationApi({ runtime, baseUrl })
   const dialogs = createRegistrationDialogs(runtime)
   scanner = createAppQrScanner({
-    nativeScan: () => new Promise((resolve, reject) => {
+    nativeScan: async () => {
+      let resume = () => {}
+      // #ifdef APP-PLUS
+      resume = await prioritizeRoundCodeScanner()
+      // #endif
+      try { return await new Promise((resolve, reject) => {
       // #ifdef APP-PLUS
       try {
         if (typeof isAvailable !== 'function' || isAvailable() !== true) { resolve({ error: 'UNAVAILABLE' }); return }
@@ -34,7 +40,8 @@ function getScanner() {
       // #ifndef APP-PLUS
       resolve({ error: 'UNSUPPORTED' })
       // #endif
-    }),
+      }) } finally { resume() }
+    },
     standardScan: () => new Promise((resolve, reject) => uni.scanCode({ scanType: ['qrCode'], success: resolve,
       fail: error => /cancel/i.test(error?.errMsg || '') ? resolve(null) : reject(error) })),
     resolveRaw: resolveWechatQrRaw,

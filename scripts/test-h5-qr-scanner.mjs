@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { createScanDebugAccess } from '../src/utils/scan-debug.mjs'
 import { cameraFrame, sharpenQrImage } from '../src/utils/h5-camera-frame.mjs'
-import { isPhoneBrowser } from '../src/utils/h5-scan-entry.mjs'
+import { isPhoneBrowser, canShowDeviceScanEntry, canUseBrowserCamera } from '../src/utils/h5-scan-entry.mjs'
 import { videoConstraints, candidateFrame, imageClarity, PhotoGate, ScanAutoZoom, reprojectCandidate, selectSharpFrame, sharpFrameMatches } from '../src/utils/h5-scan-quality.mjs'
 import { preparePhotoCapture } from '../src/utils/h5-photo-capture.mjs'
 import { createNativeQrReader } from '../src/utils/h5-native-qr.mjs'
@@ -15,17 +15,35 @@ for (const ua of ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Mozilla/5.0 (Mac
   assert.equal(isPhoneBrowser({ userAgent: ua }), false)
 }
 
+// H5 entry visibility and scanner capability must agree without opening a camera.
+{
+  let calls = 0
+  const mobile = { userAgent: 'Mozilla/5.0 (Linux; Android 14) Mobile', mediaDevices: { getUserMedia() { calls++ } } }
+  const secure = { isSecureContext: true }
+  assert.equal(canShowDeviceScanEntry(mobile, secure), true)
+  assert.equal(canShowDeviceScanEntry(mobile, { isSecureContext: false }), false)
+  assert.equal(canShowDeviceScanEntry({ userAgent: mobile.userAgent }, secure), false)
+  assert.equal(canShowDeviceScanEntry({ ...mobile, mediaDevices: {} }, secure), false)
+  assert.equal(canShowDeviceScanEntry({ ...mobile, mediaDevices: { getUserMedia: true } }, secure), false)
+  assert.equal(canShowDeviceScanEntry({ ...mobile, userAgent: 'Windows NT 10.0' }, secure), false)
+  // Older engines may expose camera support without isSecureContext.
+  assert.equal(canShowDeviceScanEntry(mobile, {}), true)
+  assert.equal(canUseBrowserCamera(mobile, null), false)
+  assert.equal(canShowDeviceScanEntry(undefined, undefined), true, 'native/mini-program environments keep their entry')
+  assert.equal(calls, 0, 'visibility check never requests camera permission')
+}
+
 const source = (await readFile(new URL('../src/utils/h5-qr-scanner.js', import.meta.url), 'utf8'))
   .replace(/^import .*\r?\n/gm, '')
   .replace('const loadDecoder =', 'const createNativeQrReader = globalThis.createNativeQrReader\nconst loadDecoder =')
-  .replace(/import\('\.\/h5-roundcode\.js'\)/g, 'Promise.resolve(globalThis.roundModuleMock)')
-  .replace(/const loadDecoder = [\s\S]*?(?=\/\/ Ordinary QR)/, 'const loadDecoder = () => Promise.resolve(globalThis.decoder)\n\n')
+  .replace(/const loadDecoder = [\s\S]*?(?=export function scanWithH5Camera)/, 'const loadDecoder = () => Promise.resolve(globalThis.decoder)\n\n')
+  .replace("const loadRoundPreview = () => import('./h5-roundcode.js')", 'const loadRoundPreview = () => Promise.resolve(globalThis.roundPreviewModule)')
   .replace('export function scanWithH5Camera', 'globalThis.scanWithH5Camera = function')
 
 function harness({ mobile = true, secure = true, getUserMedia, track, admin = false, decodedText = 'device_id=test-bin&token=test',
   deviceMemory, hardwareConcurrency, photoCapture, detectQrCandidate = () => null,
-  detectRoundCodeCandidate = () => null, roundModule, imageDataFactory, soundMuted = false,
-  BarcodeDetector, nativeWithin } = {}) {
+  detectRoundCodeCandidate = () => null, imageDataFactory, soundMuted = false,
+  BarcodeDetector, nativeWithin, roundDecode, roundPreview } = {}) {
   const listeners = new Map(), timers = new Map(), elements = new Map()
   let timerId = 0, cameraCalls = 0, stopped = 0, removed = false, fakeNow = 0, canvasId = 0
   let currentDecodedText = decodedText
@@ -40,8 +58,9 @@ function harness({ mobile = true, secure = true, getUserMedia, track, admin = fa
       attributes: new Set(), setAttribute(name) { this.attributes.add(name) },
       hasAttribute(name) { return this.attributes.has(name) },
       focus() {}, pause() {}, play: async () => {},
+      append() {},
       toDataURL: () => 'data:image/jpeg;base64,scanner-test-image',
-      addEventListener() {}, remove() { removed = true },
+      handlers: {}, addEventListener(name, callback) { this.handlers[name] = callback }, remove() { removed = true },
       querySelector: selector => element(`${key}/${selector}`),
       getContext: () => ({
         drawImage(...args) { draws.push(args) },
@@ -86,13 +105,15 @@ function harness({ mobile = true, secure = true, getUserMedia, track, admin = fa
     document, cameraFrame, sharpenQrImage, detectRoundCodeCandidate, detectQrCandidate,
     videoConstraints, candidateFrame, imageClarity, PhotoGate, ScanAutoZoom, reprojectCandidate, selectSharpFrame, sharpFrameMatches,
     preparePhotoCapture: photoCapture || (async () => null),
-    createNativeQrReader, roundModuleMock: roundModule || {
-      prepareWebRoundCode: async () => {},
-      resolveWebRoundCode: async () => null,
-      previewWebRoundCode: async () => null
-    },
+    createNativeQrReader,
+    createBrowserRoundCodeDecoder: onProgress => ({ available: Boolean(roundDecode),
+      decode: pixels => { onProgress('decoding'); return roundDecode(pixels) }, close() {} }),
+    prioritizeRoundCodeScanner: async () => () => {},
+    preloadBrowserRoundCodeAssets: () => ({ promise: Promise.resolve(true), cancel() {} }),
+    roundPreviewModule: { previewWebRoundCode: roundPreview },
     createScanDebugAccess,
     uni: { getStorageSync: key => storage[key] }, isPhoneBrowser: () => mobile,
+    canUseBrowserCamera: () => canUseBrowserCamera(context.navigator, context.window),
     vibrateScan: () => {},
     primeUiSounds: () => soundCalls.push(['prime']),
     playUiSound: sound => { soundCalls.push(['play', sound]); if (!soundMuted) playedSounds.push(sound) },
@@ -105,7 +126,11 @@ function harness({ mobile = true, secure = true, getUserMedia, track, admin = fa
     clearTimeout: id => timers.delete(id),
     decoder: (...args) => { decoderCalls.push(args); return currentDecodedText ? ({ data: currentDecodedText }) : null },
     within: nativeWithin,
-    URL, Date: class FakeDate extends Date { static now() { return fakeNow } }, Uint8ClampedArray
+    Image: class FakeImage {
+      naturalWidth = 640; naturalHeight = 640
+      set src(value) { if (value) Promise.resolve().then(() => this.onload?.()) }
+    },
+    URL: { createObjectURL: () => 'blob:test-image', revokeObjectURL() {} }, Date: class FakeDate extends Date { static now() { return fakeNow } }, Uint8ClampedArray
   })
   vm.runInContext(source, context)
   const events = []
@@ -191,7 +216,7 @@ assert.deepEqual(mutedCamera.playedSounds, [], 'mock mute suppresses playback')
 
 let resolveLate
 const late = harness({ getUserMedia: () => new Promise(resolve => { resolveLate = resolve }) })
-late.scan(); late.close()
+late.scan(); await flush(); late.close()
 resolveLate({ getTracks: () => [{ stop() { late.events.push(['lateStop']) } }] })
 await flush()
 assert.equal(late.events.filter(([type]) => type === 'lateStop').length, 1)
@@ -207,7 +232,7 @@ denied.element('section/form/input').value = 'test-bin'
 denied.element('section/form').onsubmit({ preventDefault() {} })
 assert.equal(denied.events[0][1].result, 'test-bin')
 
-const insecure = harness({ secure: false }); insecure.scan()
+const insecure = harness({ secure: false }); insecure.scan(); await flush()
 assert.equal(insecure.cameraCalls, 0)
 assert.match(insecure.element('section/[role="status"]').textContent, /HTTPS/)
 insecure.close()
@@ -223,7 +248,7 @@ for (const reason of ['hidden', 'pagehide', 'hashchange', 'popstate']) {
 }
 
 const timeout = harness({ getUserMedia: () => new Promise(() => {}) })
-timeout.scan(); await timeout.tick(15000)
+timeout.scan(); await flush(); await timeout.tick(15000)
 assert.match(timeout.element('section/[role="status"]').textContent, /超时/)
 timeout.close()
 console.log('PASS mobile gate, stable decode/single-flight, cancellation/late stream, denied/manual, HTTPS, camera timeout and lifecycle cleanup')
@@ -554,181 +579,120 @@ for (const lifecycle of ['hidden', 'retry']) {
 }
 console.log('PASS bounded HD fallback, optional still gating, QR singleflight and late-photo cleanup')
 
-function roundPixels({ width, height, now }) {
-  const data = new Uint8ClampedArray(width * height * 4)
-  const sharp = now <= 600
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const value = sharp ? (x % 2 ? 255 : 0) : 100
-    const i = (y * width + x) * 4
-    data[i] = data[i + 1] = data[i + 2] = value; data[i + 3] = 255
-  }
-  return data
-}
-function roundCamera(options = {}) {
-  const candidate = options.candidate || { x: 0.8, y: 0.5, size: 0.15 }
-  const detectorCalls = [], constraints = [], photoCalls = []
+// Web scanning resolves only locally decoded payloads; it never uploads an image.
+assert.doesNotMatch(source, /resolveWechatQrImage|prepareWechatQrImage|imageBase64/)
+assert.match(source, /readRoundCode/)
+
+// A detected circle code gets a calm, explicit guidance message while the local
+// QR pipeline remains active; no round-code upload is attempted.
+{
   const track = {
     getCapabilities: () => ({}), getSettings: () => ({ width: 1280, height: 720 }), addEventListener() {},
-    applyConstraints: async value => { constraints.push(value) }
+    applyConstraints: async () => {}
   }
+  let roundChecks = 0
   const scan = harness({
-    track, decodedText: '', admin: options.admin,
-    detectRoundCodeCandidate: pixels => { detectorCalls.push(pixels); return options.detector ? options.detector(pixels) : candidate },
-    roundModule: options.roundModule,
-    imageDataFactory: options.imageDataFactory || roundPixels,
-    photoCapture: async () => ({ capture: async () => { photoCalls.push(true); return null } })
+    track, decodedText: '',
+    detectRoundCodeCandidate: () => { roundChecks++; return { x: 0.5, y: 0.5, size: 0.3 } },
+    imageDataFactory: ({ width, height }) => new Uint8ClampedArray(width * height * 4)
   })
-  scan.scan()
-  return { scan, detectorCalls, constraints, photoCalls }
+  scan.scan(); await flush()
+  for (let i = 0; i < 12 && !/请使用微信扫码/.test(scan.element('section/[role="status"]').textContent); i++) await scan.tick(200, 350)
+  assert.ok(roundChecks > 0, 'circle-code geometry can be identified locally')
+  assert.match(scan.element('section/[role="status"]').textContent, /请使用微信扫码/)
+  assert.equal(scan.events.some(([type]) => type === 'ok'), false)
+  scan.close()
 }
-async function reachRoundRequest(round) {
-  await flush()
-  for (let i = 0; i < 5 && !round.resolveRequest; i++) await round.scan.tick(200, 200)
-  assert.equal(typeof round.resolveRequest, 'function', 'stable round candidate should start the mocked request')
-}
+console.log('PASS web circle-code guidance without server imports, requests, or image uploads')
 
-// Round recognition first previews without side effects. Local QR can win while
-// that preview is pending; acceptance is a distinct authorization phase.
-{
-  let resolvePreview, resolveAccept, requests = 0, accepts = 0
-  const roundModule = {
-    prepareWebRoundCode: async () => {},
-    previewWebRoundCode(image, isActive) {
-      requests++
-      return new Promise(resolve => { resolvePreview = resolve; roundModule.request = { image, isActive } })
-    }
+// Album guidance must also explain the circle-code limitation when conservative
+// geometry detection misses the rings; ordinary QR success still completes.
+for (const kind of ['round', 'unknown', 'qr']) {
+  const scan = harness({ decodedText: kind === 'qr' ? 'album-ordinary-code' : '',
+    detectRoundCodeCandidate: () => kind === 'round' ? { x: 0.5, y: 0.5, size: 0.6 } : null })
+  scan.scan(); await flush()
+  const input = scan.element('section/input[type="file"]')
+  input.files = [{ size: 1024 }]
+  await input.handlers.change()
+  if (kind === 'qr') assert.equal(scan.events.find(([type]) => type === 'ok')?.[1]?.result, 'album-ordinary-code')
+  else {
+    assert.match(scan.element('section/[role="status"]').textContent, /圆码.*微信扫码/)
+    assert.equal(scan.events.some(([type]) => type === 'ok'), false)
+    scan.close()
   }
-  const round = roundCamera({ roundModule })
-  await reachRoundRequest({ scan: round.scan, get resolveRequest() { return resolvePreview } })
-  assert.equal(requests, 1, 'one geometry candidate starts one network request')
-  assert.match(roundModule.request.image, /^data:image\/jpeg/)
-  assert.ok(round.scan.putImageDataCalls.length >= 1, 'matching sharp source pixels are reused for the encoded request')
-  const firstUploadFrame = round.scan.putImageDataCalls[0].pixels
-  assert.ok(imageClarity(firstUploadFrame) > 0, 'the retained upload frame is the earlier sharper frame')
-
-  const decodersBefore = round.scan.decoderCalls.length
-  const detectionsBefore = round.detectorCalls.length
-  round.scan.setDecodedText('ordinary-qr-wins')
-  await round.scan.tick(350, 350)
-  assert.ok(round.detectorCalls.length >= detectionsBefore, 'local geometry remains observable during preview')
-  assert.ok(round.scan.decoderCalls.length > decodersBefore, 'local QR decoding continues during read-only preview')
-  await round.scan.tick(350, 350)
-  assert.equal(round.scan.events.find(([type]) => type === 'ok')[1].result, 'ordinary-qr-wins', 'stable QR can beat a slow circle preview')
-  assert.equal(round.photoCalls.length, 0, 'round request suppresses still-photo capture')
-  assert.equal(round.constraints.length, 0, 'round request suppresses automatic zoom constraints')
-  assert.equal(requests, 1, 'local tracking does not dispatch a second network request')
-
-  resolvePreview({ text: 'late-round-preview', accept: async () => { accepts++; return new Promise(resolve => { resolveAccept = resolve }) } })
-  await flush()
-  assert.equal(round.scan.events.filter(([type]) => type === 'ok').length, 1)
-  assert.equal(accepts, 0, 'stale circle preview cannot start the authorization side effect')
-  round.scan.close()
 }
+console.log('PASS album circle-code limitation guidance, missed geometry and ordinary QR success')
 
-// Preview timeout releases the camera pipeline so ordinary QR remains usable.
-{
-  let requests = 0
-  const roundModule = {
-    prepareWebRoundCode: async () => {},
-    previewWebRoundCode() { requests++; return new Promise(() => {}) }
+// Camera and album use the local circle decoder and route its preview, never its opaque bytes.
+for (const mode of ['camera', 'album', 'admin']) {
+  let decoded = 0, resolved = 0, accepted = 0
+  const scan = harness({ decodedText: '', admin: mode === 'admin',
+    detectRoundCodeCandidate: () => ({ x: 0.5, y: 0.5, size: 0.5 }),
+    roundDecode: async pixels => { decoded++; assert.ok(pixels.width <= 288); return { scanType: 'WX_CODE', rawBase64: 'opaque-test' } },
+    roundPreview: async raw => { assert.equal(raw, 'opaque-test'); resolved++; return { text: 'registered-scene',
+      accept: async () => { accepted++; return { scanType: 'WX_CODE', path: '/pages-nonTheme/scan?scene=' + 'a'.repeat(32) } } } }
+  })
+  scan.scan(); await flush()
+  if (mode === 'album') {
+    const input = scan.element('section/input[type="file"]'); input.files = [{ size: 1024 }]; await input.handlers.change()
+  } else for (let i = 0; i < 4 && scan.timers.size; i++) await scan.tick(200, 400)
+  assert.equal(decoded, 1); assert.equal(resolved, 1)
+  if (mode === 'admin') {
+    assert.equal(accepted, 0, 'administrator preview waits for explicit use')
+    await scan.element('section/[data-action="use-decoded"]').onclick()
   }
-  const round = roundCamera({ roundModule })
-  await reachRoundRequest({ scan: round.scan, get resolveRequest() { return requests ? () => {} : null } })
-  round.scan.setDecodedText('after-round-timeout')
-  await round.scan.tick(14000, 14000)
-  assert.match(round.scan.element('section/[role="status"]').textContent, /超时/)
-  await round.scan.tick(200, 200)
-  await round.scan.tick(200, 200)
-  assert.equal(round.scan.events.find(([type]) => type === 'ok')[1].result, 'after-round-timeout')
+  assert.equal(accepted, 1)
+  const result = scan.events.find(([type]) => type === 'ok')?.[1]
+  assert.equal(result.scanType, 'WX_CODE'); assert.ok(result.path.includes('scene='))
+  assert.equal(result.result, undefined, 'opaque bytes never enter ordinary QR routing')
 }
-
-// Admin gets a durable preview and explicit use action; authorization pauses
-// the competing decoder until its side effect resolves.
 {
-  let resolveAccept, accepts = 0, requests = 0
-  const roundModule = {
-    prepareWebRoundCode: async () => {},
-    previewWebRoundCode: async () => { requests++; return ({ text: 'admin-round-result', accept() {
-      accepts++
-      return new Promise(resolve => { resolveAccept = resolve })
-    } }) }
-  }
-  const round = roundCamera({ roundModule, admin: true })
-  await reachRoundRequest({ scan: round.scan, get resolveRequest() { return requests ? async () => {} : null } })
-  await flush()
-  assert.equal(round.scan.element('section/[data-debug-text]').textContent, 'admin-round-result')
-  round.scan.setDecodedText('competing-qr')
-  await round.scan.tick(200, 200)
-  assert.equal(round.scan.element('section/[data-debug-text]').textContent, 'admin-round-result',
-    'a transient ordinary QR cannot replace the confirmed admin circle result')
-  assert.equal(round.scan.element('section/[data-action="use-decoded"]').disabled, false)
-  const accepting = round.scan.element('section/[data-action="use-decoded"]').onclick()
-  assert.equal(accepts, 1, 'admin explicit action is the only authorization point')
-  const decoderCalls = round.scan.decoderCalls.length
-  await round.scan.tick(200, 200)
-  assert.equal(round.scan.decoderCalls.length, decoderCalls, 'local QR pauses during explicit round authorization')
-  assert.equal(round.scan.element('section/[data-debug-text]').textContent, 'admin-round-result')
-  assert.equal(round.scan.events.length, 0)
-  resolveAccept({ errMsg: 'scanCode:ok', result: 'admin-round-result', scanType: 'WX_CODE' })
-  await accepting; await flush()
-  assert.equal(round.scan.events.find(([type]) => type === 'ok')[1].result, 'admin-round-result')
+  let complete, resolved = 0
+  const scan = harness({ decodedText: '', roundDecode: () => new Promise(resolve => { complete = resolve }),
+    roundPreview: async () => { resolved++; return null } })
+  scan.scan(); await flush()
+  const input = scan.element('section/input[type="file"]'); input.files = [{ size: 1024 }]
+  const pending = input.handlers.change(); await flush(); scan.close()
+  complete({ scanType: 'WX_CODE', rawBase64: 'late' }); await pending
+  assert.equal(resolved, 0, 'closed scanner never resolves a late Worker result')
 }
+console.log('PASS local camera/album circle decode, administrator acceptance and close guard')
 
-// Manual zoom changes the candidate ROI. A later retry encodes the new region,
-// not pixels cached from before the adjustment.
 {
-  let rejectFirst, resolveSecond, requests = 0
-  const roundModule = {
-    prepareWebRoundCode: async () => {},
-    previewWebRoundCode() {
-      requests++
-      if (requests === 1) return new Promise((_, reject) => { rejectFirst = reject })
-      return new Promise(resolve => { resolveSecond = resolve })
-    }
-  }
-  const round = roundCamera({ roundModule })
-  await reachRoundRequest({ scan: round.scan, get resolveRequest() { return rejectFirst } })
-  const oldRoiWidth = round.scan.putImageDataCalls[0].pixels.width
-  round.scan.element('section/[data-action="zoom-in"]').onclick()
-  await flush()
-  assert.equal(round.scan.element('section/output').textContent, '手动 1.8×')
-  await round.scan.tick(350, 350)
-  rejectFirst(new Error('temporary network failure'))
-  await flush()
-
-  for (let i = 0; i < 24 && requests < 2; i++) await round.scan.tick(200, 200)
-  assert.equal(requests, 2, 'eligible round candidate retries after the request cooldown')
-  assert.equal(typeof resolveSecond, 'function')
-  assert.ok(round.scan.putImageDataCalls.length >= 2, 'retry can select a fresh matching ROI frame')
-  assert.ok(round.scan.putImageDataCalls[1].pixels.width < oldRoiWidth,
-    'manual zoom changes the native pixel ROI and invalidates the old cached frame')
-  resolveSecond(null)
-  await flush()
-  round.scan.close()
+  let complete, resolved = 0
+  const scan = harness({ decodedText: '', roundDecode: () => new Promise(resolve => { complete = resolve }),
+    roundPreview: async () => { resolved++; return null } })
+  scan.scan(); await flush()
+  const input = scan.element('section/input[type="file"]'); input.files = [{ size: 1024 }]
+  const pending = input.handlers.change(); await flush()
+  scan.storage.token = 'another-account'
+  complete({ scanType: 'WX_CODE', rawBase64: 'late' }); await pending
+  assert.equal(resolved, 0, 'account changed during local decoding: never resolve or authorize with a different account')
+  scan.close()
 }
+console.log('PASS circle-code account identity guard during album decoding')
 
-// Closing cancels the request identity; its late completion cannot dispatch a
-// result or duplicate the cancellation callbacks.
-{
-  let resolveLate, requests = 0
-  const roundModule = {
-    prepareWebRoundCode: async () => {},
-    previewWebRoundCode() {
-      requests++
-      return new Promise(resolve => { resolveLate = resolve })
-    }
-  }
-  const round = roundCamera({ roundModule })
-  await reachRoundRequest({ scan: round.scan, get resolveRequest() { return resolveLate } })
-  assert.equal(requests, 1)
-  round.scan.close()
-  let lateAccepts = 0
-  resolveLate({ text: 'late-round-result', accept: async () => { lateAccepts++; return { result: 'late-round-result' } } })
-  await flush()
-  assert.equal(lateAccepts, 0, 'closing during preview prevents the authorization phase')
-  assert.equal(round.scan.events.filter(([type]) => type === 'ok').length, 0)
-  assert.equal(round.scan.events.filter(([type]) => type === 'fail').length, 1)
-  assert.equal(round.scan.events.filter(([type]) => type === 'complete').length, 1)
-  assert.equal(round.scan.soundCalls.filter(([kind]) => kind === 'play').length, 0)
+for (const choice of ['accept', 'cancel', 'close']) {
+  let authorized = 0
+  const scan = harness({ decodedText: '',
+    roundDecode: async () => ({ scanType: 'WX_CODE', rawBase64: 'opaque-test' }),
+    roundPreview: async () => ({ text: 'registered-login-scene', accept: async ({ confirm }) => {
+      const accepted = await confirm('昵称<script>', 'r_' + 'a'.repeat(24))
+      if (accepted) authorized++
+      return { handled: true, errMsg: accepted ? 'scanCode:ok' : 'scanCode:cancel' }
+    } }) })
+  scan.scan(); await flush()
+  const input = scan.element('section/input[type="file"]'); input.files = [{ size: 1024 }]
+  const pending = input.handlers.change(); await flush()
+  assert.match(scan.element('aside').innerHTML, /确认登录网页/)
+  assert.equal(scan.removed, false, 'login confirmation is visible before the scanner closes')
+  assert.ok(scan.element('aside/.ftx-web-scanner-confirm-copy').textContent.includes('昵称<script>'))
+  assert.doesNotMatch(scan.element('aside').innerHTML, /昵称<script>/, 'account text is not interpolated into HTML')
+  assert.equal(authorized, 0)
+  if (choice === 'close') scan.close()
+  else scan.element(`aside/[data-confirm="${choice}"]`).onclick()
+  await pending
+  assert.equal(authorized, choice === 'accept' ? 1 : 0)
+  assert.equal(scan.events.some(([type]) => type === 'ok'), false, 'handled login must not navigate as a device QR')
 }
-console.log('PASS H5 round request singleflight, local tracking, sharp ROI reuse, manual ROI invalidation and late-response cancellation')
+console.log('PASS in-scanner login confirmation, explicit authorization/cancellation, safe account text and close cleanup')

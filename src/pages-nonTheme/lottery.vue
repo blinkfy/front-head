@@ -417,17 +417,32 @@ export default {
       );
     },
     requestDrawWheel() {
-      this.$nextTick(() => {
-        setTimeout(() => {
-          const query = uni.createSelectorQuery().in(this);
-          // 外壳不会旋转；canvas 的旋转外接矩形不能当作画布尺寸。
-          query.select('.wheel-shell').boundingClientRect(rect => {
-            if (!rect || !rect.width) return;
-            const size = Math.max(1, Math.round(rect.width - uni.upx2px(28)));
-            this.wheelCanvasSize = size;
-            this.$nextTick(() => this.drawLotteryWheel(0));
-          }).exec();
-        }, 80);
+      return new Promise(resolve => {
+        const timeout = setTimeout(resolve, 1200);
+        const finish = () => { clearTimeout(timeout); resolve(); };
+        this.$nextTick(() => {
+          setTimeout(() => {
+            try {
+              const query = uni.createSelectorQuery().in(this);
+              // 外壳不会旋转；canvas 的旋转外接矩形不能当作画布尺寸。
+              query.select('.wheel-shell').boundingClientRect(rect => {
+                if (!rect || !rect.width) return finish();
+                this.wheelCanvasSize = Math.max(1, Math.round(rect.width - uni.upx2px(28)));
+                this.$nextTick(() => {
+                  try {
+                    if (!this.isSpinning && !this.showPrizeModal) this.drawLotteryWheel(0);
+                  } catch (error) {
+                    console.warn('转盘初始化失败:', error);
+                  }
+                  finish();
+                });
+              }).exec();
+            } catch (error) {
+              console.warn('转盘初始化失败:', error);
+              finish();
+            }
+          }, 80);
+        });
       });
     },
     drawLotteryWheel(rotationDeg = 0) {
@@ -669,7 +684,7 @@ export default {
       }
     },
     onWheelClick() {
-      if (!this.isSpinning && this.canDraw) this.startDraw();
+      if (!this.isSpinning) this.startDraw();
     },
     async startDraw() {
       if (this.isSpinning) return;
@@ -680,6 +695,7 @@ export default {
       this.isSpinning = true;
       const usePoints = this.freeCount <= 0;
       try {
+        if (this._wheelReadyPromise) await this._wheelReadyPromise;
         const res = await drawLottery(usePoints);
         const data = this.extractData(res) || {};
         this.currentPrize = data;
@@ -728,6 +744,7 @@ export default {
       const totalAngle = extraSpins + targetAngle;
 
       let current = 0;
+      let wheelDrawingFailed = false;
       const duration = 3000;
       const start = Date.now();
       const animate = () => {
@@ -738,7 +755,14 @@ export default {
         current = totalAngle * easeOut;
         this.spinAngle = current;
         // #ifdef H5 || APP-PLUS || MP-WEIXIN
-        this.drawLotteryWheel(current);
+        if (!wheelDrawingFailed) {
+          try {
+            this.drawLotteryWheel(current);
+          } catch (error) {
+            wheelDrawingFailed = true;
+            console.warn('转盘绘制失败:', error);
+          }
+        }
         // #endif
         if (progress < 1) {
           this.requestAnimationFrameCompat(animate);
@@ -757,16 +781,15 @@ export default {
     continueDraw() {
       this.showPrizeModal = false;
       this.currentPrize = null;
+      this._wheelReadyPromise = this.requestDrawWheel();
       if (this.canDraw) {
-        this.$nextTick(() => {
-          this.requestDrawWheel();
-          this.startDraw();
-        });
+        this.startDraw();
       }
     },
     closePrizeModal() {
       this.showPrizeModal = false;
       this.currentPrize = null;
+      this._wheelReadyPromise = this.requestDrawWheel();
       this.loadData();
     },
     formatTime(dateStr) {

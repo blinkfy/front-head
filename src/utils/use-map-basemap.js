@@ -1,18 +1,40 @@
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { onUnload } from '@dcloudio/uni-app'
+import { getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onReady, onUnload } from '@dcloudio/uni-app'
 import { createMapBasemapController, isBinLocationPicker } from './map-basemap-core.mjs'
 import { captureSatelliteReference } from './bin-satellite-reference.mjs'
+// #ifdef APP-PLUS
+import appManifest from '../manifest.json'
+// #endif
 
 export function useMapBasemap({ isH5, options, suspended }) {
   const satellite = ref(isBinLocationPicker(options))
   const basemapLoading = ref(false)
   let h5Map = null, nativeCallbacks = null, disposed = false
+  const page = getCurrentInstance()?.root
+  const isApp = process.env.UNI_PLATFORM === 'app-plus'
+  let appReady = false
   function nativeSupported() {
-    // App's Vue renderer varies by bundled SDK. Require an affirmative capability check.
+    // App capability reporting can return false even when its map SDK supports switching.
+    if (isApp) return true
     if (process.env.UNI_PLATFORM === 'mp-weixin') {
       try { return typeof uni.canIUse !== 'function' || uni.canIUse('map.enable-satellite') } catch (_) { return false }
     }
     try { return typeof uni.canIUse === 'function' && uni.canIUse('map.enable-satellite') } catch (_) { return false }
+  }
+  function applyAppBasemap(enabled) {
+    // #ifdef APP-PLUS
+    const providers = appManifest['app-plus']?.distribute?.sdkConfigs?.maps || {}
+    // Tencent's App renderer uses the component attribute, not plus.maps.
+    if (providers.tencent && !providers.amap && !providers.baidu && !providers.google) return
+    const context = uni.createMapContext('select-map', page?.proxy)
+    const map = context?.$getAppMap?.()
+    if (!map || typeof map.setMapType !== 'function') return
+    const type = enabled ? plus.maps.MapType.MAPTYPE_SATELLITE : plus.maps.MapType.MAPTYPE_NORMAL
+    if (typeof map.getMapType === 'function' && map.getMapType() === type) return true
+    map.setMapType(type)
+    if (typeof map.getMapType === 'function' && map.getMapType() !== type) throw new Error('Map type change failed')
+    return true
+    // #endif
   }
   const controller = createMapBasemapController({
     onChange: state => { satellite.value = state.satellite; basemapLoading.value = state.loading },
@@ -41,6 +63,9 @@ export function useMapBasemap({ isH5, options, suspended }) {
       }
       if (enabled && !nativeSupported()) return false
       nativeCallbacks = callbacks
+      if (isApp && appReady) {
+        try { if (applyAppBasemap(enabled)) callbacks.loaded() } catch (_) { nativeCallbacks = null; return false }
+      }
       return () => { if (nativeCallbacks === callbacks) nativeCallbacks = null }
     }
   })
@@ -62,16 +87,26 @@ export function useMapBasemap({ isH5, options, suspended }) {
     // #endif
     return null
   }
-  function onNativeMapUpdated() { nativeCallbacks?.loaded() }
+  function onNativeMapUpdated() {
+    if (disposed || suspended?.()) return
+    if (isApp) {
+      try { applyAppBasemap(satellite.value) } catch (_) { nativeCallbacks?.failed(); return }
+    }
+    nativeCallbacks?.loaded()
+  }
   function onNativeMapError() { nativeCallbacks?.failed() }
   function onNativeMapRegionChange(event) {
     if (event?.type === 'begin' || event?.detail?.type === 'begin') controller.refresh()
   }
-  onMounted(() => { if (!isH5 && !suspended?.()) controller.request(satellite.value) })
+  onMounted(() => { if (!isH5 && !isApp && !suspended?.()) controller.request(satellite.value) })
+  onReady(() => {
+    appReady = true
+    if (isApp && !disposed && !suspended?.()) controller.request(satellite.value)
+  }, page)
   if (suspended) watch(suspended, hidden => {
     if (isH5 || disposed) return
     if (hidden) controller.pause()
-    else controller.request(satellite.value)
+    else nextTick(() => { if (!disposed && !suspended?.()) controller.request(satellite.value) })
   }, { flush: 'post' })
   function dispose() {
     if (disposed) return

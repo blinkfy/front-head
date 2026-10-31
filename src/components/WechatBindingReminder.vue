@@ -19,12 +19,18 @@
 <script setup>
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { useWechatQrSave } from '@/utils/use-wechat-qr-save.js'
+// #ifdef APP-PLUS || H5
+import { useGeneratedRoundCode } from '@/utils/use-generated-roundcode.js'
+// #endif
 import WechatQrDownloadMenu from '@/components/WechatQrDownloadMenu.vue'
 import { ref } from 'vue'
 import { baseUrl } from '@/api/settings.js'
 const qrSource = ref(String(baseUrl).replace(/\/$/, '') + '/api/registration/wechat-qrcode')
 const qrReady = ref(false), qrFailed = ref(false)
 const { qrMenu, openQrMenu, closeQrMenu, downloadQr, suppressQrContextMenu } = useWechatQrSave(qrSource, () => !qrReady.value || qrFailed.value)
+// #ifdef APP-PLUS || H5
+useGeneratedRoundCode(qrSource, () => qrReady.value && !qrFailed.value)
+// #endif
 defineProps({ dark: Boolean })
 const emit = defineEmits(['close'])
 </script>

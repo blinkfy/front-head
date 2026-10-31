@@ -16,5 +16,10 @@ openWebCamera = async () => {
 // #endif
 
 export const chooseRecognitionImage = createRecognitionImagePicker({
-  runtime: uni, platform, detectCamera, openWebCamera
+  runtime: {
+    chooseImage: options => uni.chooseImage(options),
+    showActionSheet: options => uni.showActionSheet(options),
+    navigateTo: options => uni.navigateTo(options)
+  },
+  platform, detectCamera, openWebCamera
 })

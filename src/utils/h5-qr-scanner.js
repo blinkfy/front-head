@@ -1,4 +1,4 @@
-import { isPhoneBrowser } from './h5-scan-entry.mjs'
+import { isPhoneBrowser, canUseBrowserCamera } from './h5-scan-entry.mjs'
 import { vibrateScan } from './haptics.mjs'
 import { playUiSound, primeUiSounds } from './ui-sounds.js'
 import { createScanDebugAccess } from './scan-debug.mjs'
@@ -7,6 +7,8 @@ import { detectRoundCodeCandidate, detectQrCandidate } from './h5-roundcode-cand
 import { videoConstraints, candidateFrame, selectSharpFrame, sharpFrameMatches, PhotoGate, ScanAutoZoom, reprojectCandidate } from './h5-scan-quality.mjs'
 import { preparePhotoCapture } from './h5-photo-capture.mjs'
 import { createNativeQrReader } from './h5-native-qr.mjs'
+import { createBrowserRoundCodeDecoder, preloadBrowserRoundCodeAssets } from './h5-roundcode-local.js'
+import { prioritizeRoundCodeScanner } from './roundcode-client.js'
 import './h5-qr-scanner.css'
 
 let activeScan = null
@@ -15,8 +17,7 @@ const loadDecoder = () => decoderPromise || (decoderPromise = import('jsqr')
   .then(module => module.default)
   .catch(error => { decoderPromise = null; throw error }))
 
-// Ordinary QR stays local. Stable circle-code candidates trigger at most one
-// bounded still-image request at a time; no video stream is uploaded.
+// Ordinary QR and mini-program circle codes are decoded locally.
 export function scanWithH5Camera(options = {}) {
   if (activeScan) return
   if (!isPhoneBrowser()) {
@@ -47,7 +48,7 @@ export function scanWithH5Camera(options = {}) {
     </div></div>
     <div class="ftx-web-scanner-controls">
       <p class="ftx-web-scanner-hint">将二维码完整放入框内</p>
-      <p class="ftx-web-scanner-supported">支持普通二维码与微信小程序码</p>
+      <p class="ftx-web-scanner-supported">支持普通二维码与微信小程序码，本地识别</p>
       <div class="ftx-web-scanner-zoom" role="group" aria-label="相机倍率">
         <button class="ftx-web-scanner-button" type="button" data-action="zoom-out" aria-label="缩小画面" disabled>−</button>
         <output class="ftx-web-scanner-zoom-value" role="button" tabindex="0" aria-label="当前倍率，点击恢复自动">1×</output>
@@ -72,11 +73,16 @@ export function scanWithH5Camera(options = {}) {
       <form class="ftx-web-scanner-form" hidden><label class="ftx-web-scanner-label" for="ftx-web-device-id">设备 ID 或设备二维码内容</label>
         <div class="ftx-web-scanner-input-row"><input class="ftx-web-scanner-input" id="ftx-web-device-id" autocomplete="off" maxlength="4096" placeholder="请输入设备 ID">
         <button class="ftx-web-scanner-button" type="submit">连接</button></div></form>
-      <p class="ftx-web-scanner-note">普通码本地识别 · 微信圆码自动联网识别</p>
+      <p class="ftx-web-scanner-note">圆码首次识别需加载本地解码资源，请保持画面稳定</p>
     </div><input type="file" accept="image/*" hidden>`
   const debugPanel = adminAtOpen ? root.querySelector('.ftx-web-scanner-debug') : null
   const debugText = adminAtOpen ? root.querySelector('[data-debug-text]') : null
   const useDecoded = adminAtOpen ? root.querySelector('[data-action="use-decoded"]') : null
+  const loadRoundPreview = () => import('./h5-roundcode.js')
+  let roundDecoder, roundBusy = false, roundJob = 0, roundNextAt = 0, roundAttempts = 0
+  let roundActive = () => false
+  let releaseRegistration = () => {}
+  let roundPreload, confirmPanel, dismissConfirmation
   let acceptDecoded = null, acceptingDecoded = false
   const video = root.querySelector('video')
   const status = root.querySelector('[role="status"]')
@@ -93,9 +99,8 @@ export function scanWithH5Camera(options = {}) {
   const context = canvas.getContext('2d', { willReadFrequently: true })
   let stream, timer, cameraTimeout, closed = false, generation = 0, imageJob = 0
   let previousCode = '', previousAt = 0, matching = 0
-  let roundImage = '', roundBusy = false, roundSupported = true, roundModule = null
-  let roundRequest = null, roundAuthorizing = false, nativeReader = null
-  let roundCandidate = null, roundStable = 0, lastRoundCheck = 0, nextRoundAt = 0, roundFailures = 0
+  let nativeReader = null
+  let roundCandidate = null, roundStable = 0, lastRoundCheck = 0
   let resumeFrameScan = null
   let hardwareZoom = false
   let zoomRange = null, currentZoom = 1, torchSupported = false, torchOn = false, cameraControlBusy = false
@@ -172,9 +177,10 @@ export function scanWithH5Camera(options = {}) {
     }
   }
   function releaseCamera() {
-    generation++; imageJob++; roundBusy = false
-    if (roundRequest) roundRequest.valid = false
-    roundRequest = null; roundAuthorizing = false
+    dismissConfirmation?.(false)
+    generation++; imageJob++; roundJob++
+    roundDecoder?.close(); roundDecoder = null; roundBusy = false; roundActive = () => false
+    roundNextAt = 0; roundAttempts = 0
     nativeReader?.close(); nativeReader = null
     for (const cancelWork of [...pendingWork]) cancelWork()
     photoSource = null; photoBusy = false; clearCandidate(); autoZoom.reset(Date.now()); lastZoomAt = -Infinity
@@ -199,6 +205,8 @@ export function scanWithH5Camera(options = {}) {
     closed = true
     imageJob++
     releaseCamera()
+    roundPreload?.cancel()
+    releaseRegistration()
     document.removeEventListener('visibilitychange', onVisibility)
     document.removeEventListener('keydown', onKey)
     window.removeEventListener('pagehide', cancel)
@@ -224,10 +232,31 @@ export function scanWithH5Camera(options = {}) {
     playUiSound('scanDetected')
   }
   function cancel() { finish(null) }
+  function confirmWebLogin(account, sessionId) {
+    if (closed || document.hidden) return Promise.resolve(false)
+    dismissConfirmation?.(false)
+    const panel = document.createElement('aside')
+    panel.className = 'ftx-web-scanner-confirm'
+    panel.setAttribute('role', 'alertdialog'); panel.setAttribute('aria-modal', 'true')
+    panel.setAttribute('aria-label', '确认登录网页')
+    panel.innerHTML = `<div class="ftx-web-scanner-confirm-card"><h3 class="ftx-web-scanner-confirm-title">确认登录网页</h3><p class="ftx-web-scanner-confirm-copy"></p><div class="ftx-web-scanner-confirm-actions"><button type="button" class="ftx-web-scanner-button" data-confirm="cancel">取消</button><button type="button" class="ftx-web-scanner-button" data-confirm="accept">确认登录</button></div></div>`
+    panel.querySelector('.ftx-web-scanner-confirm-copy').textContent = `是否使用当前账号${account ? '“' + account + '”' : ''}登录刚才扫码的分投侠网页（${sessionId.slice(-6)}）？请仅确认您本人打开的网页。`
+    confirmPanel = panel; root.append(panel)
+    return new Promise(resolve => {
+      dismissConfirmation = accepted => {
+        dismissConfirmation = null; confirmPanel = null; panel.remove()
+        if (!closed) root.querySelector('[data-action="close"]').focus()
+        resolve(accepted)
+      }
+      panel.querySelector('[data-confirm="cancel"]').onclick = () => dismissConfirmation?.(false)
+      panel.querySelector('[data-confirm="accept"]').onclick = () => dismissConfirmation?.(true)
+      panel.querySelector('[data-confirm="cancel"]').focus()
+    })
+  }
   function onKey(event) {
-    if (event.key === 'Escape') cancel()
+    if (event.key === 'Escape') { if (dismissConfirmation) dismissConfirmation(false); else cancel() }
     if (event.key !== 'Tab') return
-    const focusable = [...root.querySelectorAll('button:not(:disabled), input:not([type="file"]), output[tabindex="0"]')]
+    const focusable = [...(confirmPanel || root).querySelectorAll('button:not(:disabled), input:not([type="file"]), output[tabindex="0"]')]
       .filter(element => element.getClientRects().length)
     const next = event.shiftKey ? focusable[focusable.length - 1] : focusable[0]
     if (document.activeElement === (event.shiftKey ? focusable[0] : focusable[focusable.length - 1])) {
@@ -238,6 +267,7 @@ export function scanWithH5Camera(options = {}) {
     if (document.hidden) {
       imageJob++
       releaseCamera()
+      roundPreload?.cancel()
       status.textContent = '相机已暂停，返回后可重新开启'
     }
   }
@@ -288,7 +318,7 @@ export function scanWithH5Camera(options = {}) {
     const pixels = pixelsIn(image, visibleFrame(image, width, height), 1920)
     const qr = detectQrCandidate(pixels)
     if (qr) return { kind: 'qr', value: qr }
-    const round = roundSupported && detectRoundCodeCandidate(pixels)
+    const round = detectRoundCodeCandidate(pixels)
     return round ? { kind: 'round', value: round } : null
   }
   function observeCandidate(image, width, height, now) {
@@ -337,122 +367,84 @@ export function scanWithH5Camera(options = {}) {
   }
   function found(text) {
     if (!text || text.length > 4096) return
-    supersedeRound()
     scanFeedback(text)
     const result = { errMsg: 'scanCode:ok', result: text, scanType: 'QR_CODE', charSet: 'UTF-8' }
     if (!showDecoded(text, () => finish(result))) finish(result)
   }
-  function supersedeRound() {
-    // Keep the actual request single-flight until it settles, while preventing
-    // its late response from showing a dialog or overwriting a selected QR.
-    if (roundRequest && !roundAuthorizing) roundRequest.valid = false
-  }
-  function makeRoundImage(image, width, height, candidate = null) {
-    if (!width || !height) throw new Error('画面还未准备好，请先开启相机或从相册选图')
-    const photo = document.createElement('canvas')
-    const visible = visibleFrame(image, width, height)
-    const frame = candidateFrame(visible, candidate) || visible
-    const scale = Math.min(1, 1280 / Math.max(frame.width, frame.height))
-    photo.width = Math.max(1, Math.round(frame.width * scale))
-    photo.height = Math.max(1, Math.round(frame.height * scale))
-    const ctx = photo.getContext('2d')
-    if (!ctx) throw new Error('当前浏览器无法读取图片，请使用微信扫码')
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, photo.width, photo.height)
-    if (image === video && sharpFrameMatches(bestPixels, frame, Date.now())) {
-      const retained = document.createElement('canvas')
-      retained.width = bestPixels.pixels.width; retained.height = bestPixels.pixels.height
-      const retainedContext = retained.getContext('2d')
-      if (retainedContext) {
-        retainedContext.putImageData(bestPixels.pixels, 0, 0)
-        ctx.drawImage(retained, 0, 0, retained.width, retained.height, 0, 0, photo.width, photo.height)
-      } else ctx.drawImage(image, frame.left, frame.top, frame.width, frame.height, 0, 0, photo.width, photo.height)
-    } else ctx.drawImage(image, frame.left, frame.top, frame.width, frame.height, 0, 0, photo.width, photo.height)
-    let result = photo.toDataURL('image/jpeg', 0.82)
-    if (result.length > 1398127) result = photo.toDataURL('image/jpeg', 0.65)
-    if (result.length > 1398127) throw new Error('图片过大，请让圆码靠近并减少背景后重试')
-    return result
-  }
-  async function recognizeRoundCode(imageOverride = null) {
-    if (closed || roundBusy || !roundSupported) return
-    let image
-    try { image = imageOverride || roundImage || makeRoundImage(video, video.videoWidth, video.videoHeight, candidateKind === 'round' ? roundCandidate : null) }
-    catch (error) { status.textContent = error.message; return }
-    roundBusy = true
-    clearTimeout(timer)
-    // The uploaded frame is immutable. Ordinary QR decoding may supersede the
-    // read-only resolution phase; zoom/photo/another upload remain paused.
-    scheduleScan(350)
-    const requestGeneration = generation
-    const job = ++imageJob
-    const request = { valid: true }
-    roundRequest = request
-    let succeeded = false
-    const isActive = () => request.valid && !closed && job === imageJob && requestGeneration === generation && !document.hidden
-    const previewActive = () => request.valid && !closed && requestGeneration === generation && !document.hidden
-    status.textContent = '正在联网识别圆码，也可继续扫描普通二维码…'
+  async function readRoundCode(image, width, height, candidate, isCurrent, album = false) {
+    if (roundBusy || !isCurrent()) return false
+    const tokenAtStart = typeof uni === 'undefined' ? '' : uni.getStorageSync('token') || ''
+    const previousCurrent = isCurrent
+    isCurrent = () => previousCurrent() && tokenAtStart === (typeof uni === 'undefined' ? '' : uni.getStorageSync('token') || '')
+    if (!roundDecoder) roundDecoder = createBrowserRoundCodeDecoder(phase => {
+      if (roundActive()) status.textContent = phase === 'loading'
+        ? '正在初始化本地圆码识别，缓存资源可复用，请稍候…' : '正在本机识别圆码，请保持稳定…'
+    })
+    if (!roundDecoder.available) {
+      status.textContent = '此浏览器暂不支持圆码解码，请使用微信扫码或普通 APP 码'
+      roundNextAt = Date.now() + 10000
+      return false
+    }
+    roundBusy = true; roundActive = isCurrent
+    const job = ++roundJob
     try {
-      const module = roundModule || await within(import('./h5-roundcode.js'), 6000)
-      if (!isActive()) return
-      // Resolve first without login/connection side effects. Ordinary QR may win
-      // during this bounded network phase, but not during explicit authorization.
-      const preview = await within(module.previewWebRoundCode(image, previewActive), 14000)
-      if (!isActive() || acceptingDecoded) return
-      if (debugAccess()) {
-        if (preview) {
-          roundFailures = 0; succeeded = true
-          showDecoded(preview.text, async () => {
-            if (!debugAccess()) return
-            const result = await preview.accept()
-            if (!closed && requestGeneration === generation && debugAccess() && result) finish(result)
-          })
+      const frame = visibleFrame(image, width, height)
+      const crop = candidate ? candidateFrame(frame, { ...candidate, size: candidate.size * 0.8 }) || frame : frame
+      // A small first pass is substantially faster in the WASM interpreter.
+      // Album failures get one detail retry; live frames retry at a bounded cadence.
+      const sizes = album ? [192, 288] : [++roundAttempts % 3 === 0 ? 288 : 192]
+      for (const size of sizes) {
+        const pixels = pixelsIn(image, crop, size)
+        await roundPreload?.promise
+        if (!isCurrent() || job !== roundJob) return false
+        const result = await roundDecoder.decode(pixels)
+        if (!isCurrent() || job !== roundJob) return false
+        if (result?.error === 'NO_CODE' || result?.error === 'WRONG_CODE_TYPE') continue
+        if (result?.error) {
+          status.textContent = result.error === 'MULTIPLE_CODES'
+            ? '图片中有多个码，请一次对准一个'
+            : result.error === 'DECODE_TIMEOUT' ? '圆码本机识别超时，请靠近并保持清晰，或使用普通 APP 码'
+            : '此浏览器圆码组件暂不可用，请重试或使用微信扫码、普通 APP 码'
+          roundNextAt = Date.now() + 10000
+          return false
         }
-        return
+        // Only exact decoded payloads reach the existing server index. Images
+        // stay local; opaque bytes never enter the ordinary device-ID parser.
+        const { previewWebRoundCode } = await loadRoundPreview()
+        if (!isCurrent()) return false
+        status.textContent = '圆码已识别，正在查询连接信息…'
+        const preview = await previewWebRoundCode(result.rawBase64, isCurrent)
+        if (!preview || !isCurrent()) return false
+        const accept = async () => {
+          acceptingDecoded = true
+          try {
+            const result = await preview.accept({ confirm: confirmWebLogin })
+            if (result && isCurrent()) finish(result)
+          } finally { acceptingDecoded = false }
+        }
+        scanFeedback(preview.text)
+        if (!showDecoded(preview.text, accept)) await accept()
+        return true
       }
-      if (!preview) { roundSupported = false; status.textContent = '识别已取消或账号已变化，请重新开启相机后重试'; return }
-      roundAuthorizing = true
-      const result = await preview.accept()
-      if (!isActive()) return
-      if (result) { roundFailures = 0; succeeded = true; finish(result) }
-      else { roundSupported = false; status.textContent = '识别已取消或账号已变化，请重新开启相机后重试' }
+      if (isCurrent()) status.textContent = '暂未读出圆码，请靠近并保持码完整清晰，或使用普通 APP 码'
+      return false
     } catch (error) {
-      if (!isActive()) return
-      const code = error?.statusCode || error?.httpStatus || error?.code
-      if ([401, 403, 404, 405, 429, 501, 503].includes(code)) roundSupported = false
-      status.textContent = [404, 405, 501].includes(code)
-        ? '当前服务尚未支持网页圆码，请使用普通二维码或微信扫码'
-        : error?.message === 'SCAN_WORK_TIMEOUT' ? '圆码识别超时，可继续扫描普通二维码或稍后重试'
-          : error?.msg || error?.message || '圆码暂未识别成功，请换清晰图片或使用普通二维码'
+      if (isCurrent()) status.textContent = error?.msg || error?.message || '圆码登记暂不可用，请刷新设备码或使用普通 APP 码'
+      roundNextAt = Date.now() + 10000
+      return false
     } finally {
-      const countFailure = isActive() && !succeeded
-      if (!succeeded) request.valid = false
-      if (roundRequest === request) {
-        roundRequest = null; roundBusy = false; roundAuthorizing = false
-        nextRoundAt = Date.now() + (debugAccess() ? 15000 : 2500)
-        // Repeated failures require an explicit retry; no video upload loop.
-        if (!closed && requestGeneration === generation && !roundImage && stream) {
-          if (countFailure && ++roundFailures >= 3) roundSupported = false
-          scheduleScan()
-        }
-      }
+      if (job === roundJob) { roundBusy = false; roundActive = () => false }
     }
   }
-  async function prepareRoundCode() {
-    try {
-      const module = await import('./h5-roundcode.js')
-      if (closed) return
-      roundModule = module
-      await module.prepareWebRoundCode()
-    } catch (_) { /* Older servers keep local QR scanning available. */ }
-  }
-  async function startCamera(resetRound = true) {
+  async function startCamera() {
     if (closed) return
     imageJob++
-    roundImage = ''
     roundCandidate = null; roundStable = 0; lastRoundCheck = 0
-    if (resetRound) { roundSupported = true; roundFailures = 0 }
     releaseCamera()
+    roundPreload?.cancel()
+    roundPreload = preloadBrowserRoundCodeAssets()
     form.hidden = true
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    if (!canUseBrowserCamera()) {
       status.textContent = '相机需要 HTTPS 和支持相机的浏览器，可先使用相册识码或手动输入'
       return
     }
@@ -523,7 +515,7 @@ export function scanWithH5Camera(options = {}) {
       void preparePhotoCapture(track, { ImageCapture: window.ImageCapture, createImageBitmap: window.createImageBitmap?.bind(window) },
         within, activeIdentity).then(source => { if (activeIdentity()) photoSource = source }).catch(() => {})
       async function captureCandidate() {
-        if (!photoSource || photoBusy || roundBusy || cameraControlBusy || !activeIdentity() || !photoGate.start(Date.now())) return
+        if (!photoSource || photoBusy || cameraControlBusy || !activeIdentity() || !photoGate.start(Date.now())) return
         photoBusy = true; clearTimeout(timer); updateCameraControls()
         let bitmap
         try {
@@ -537,8 +529,8 @@ export function scanWithH5Camera(options = {}) {
             || readCode(bitmap, bitmap.width, bitmap.height, decoder, 1920)
           if (!activeIdentity()) return
           if (text) found(text)
-          else if (candidate?.kind === 'round' && roundSupported && Date.now() >= nextRoundAt) {
-            await recognizeRoundCode(makeRoundImage(bitmap, bitmap.width, bitmap.height, candidate.value))
+          else if (candidate?.kind === 'round') {
+            status.textContent = '检测到圆码，请保持稳定继续识别，或使用相册选图'
           }
         } catch (error) {
           // Cancellation belongs to the old camera; do not disable a new one.
@@ -553,7 +545,7 @@ export function scanWithH5Camera(options = {}) {
       async function scanFrame() {
         if (closed || attempt !== generation || document.hidden || photoBusy || liveBusy) return
         if (!activeIdentity()) { releaseCamera(); status.textContent = '账号已变化，请重新开启相机'; return }
-        if (cameraControlBusy || roundAuthorizing || acceptingDecoded) { scheduleScan(); return }
+        if (cameraControlBusy || acceptingDecoded) { scheduleScan(); return }
         liveBusy = true
         const started = Date.now()
         if (debugPanel && !debugAccess()) showDecoded('', null)
@@ -562,7 +554,7 @@ export function scanWithH5Camera(options = {}) {
             const layout = `${video.videoWidth}:${video.videoHeight}:${video.clientWidth}:${video.clientHeight}`
             if (layout !== frameLayout) { frameLayout = layout; clearCandidate() }
             const sampledZoom = currentZoom
-            const frameCurrent = () => activeIdentity() && !roundAuthorizing && !acceptingDecoded && sampledZoom === currentZoom
+            const frameCurrent = () => activeIdentity() && !acceptingDecoded && sampledZoom === currentZoom
               && layout === `${video.videoWidth}:${video.videoHeight}:${video.clientWidth}:${video.clientHeight}`
             const native = nativeReader?.available ? await readNative(video, video.videoWidth, video.videoHeight, frameCurrent) : null
             if (!frameCurrent()) return
@@ -595,33 +587,32 @@ export function scanWithH5Camera(options = {}) {
               previousCode = text; previousAt = now
               const result = { errMsg: 'scanCode:ok', result: text, scanType: 'QR_CODE', charSet: 'UTF-8' }
               const promote = matching >= 2 || !acceptDecoded
-              if (text.length <= 4096 && promote && debugAccess()) supersedeRound()
               const inspecting = text.length <= 4096 && showDecoded(text, promote ? () => finish(result) : null)
               if (!inspecting && matching >= 2) { found(text); return }
-            } else if (roundCandidate && now - candidateAt <= 900 && !roundBusy) {
+            } else if (roundCandidate && now - candidateAt <= 900) {
               const targetZoom = observed ? autoZoom.next(now, zoomRange?.max || 1, currentZoom, roundCandidate) : NaN
               if (Number.isFinite(targetZoom)) { void adjustCamera('zoom', targetZoom, false); return }
-              const canPhoto = photoSource && roundStable >= 3 && now - candidateSince >= 1200 && now - cameraStarted >= 2400 && now - lastZoomAt >= 650
-                && (candidateKind === 'qr' || roundSupported && roundFailures > 0 && now >= nextRoundAt)
+              const canPhoto = candidateKind === 'qr' && photoSource && roundStable >= 3 && now - candidateSince >= 1200 && now - cameraStarted >= 2400 && now - lastZoomAt >= 650
               if (canPhoto && !photoGate.busy() && photoGate.enabled && photoGate.attempts < 3 && now >= photoGate.nextAt) {
                 void captureCandidate(); return
               }
-              if (candidateKind === 'round' && roundStable >= 2 && roundSupported && now >= nextRoundAt) {
-                void recognizeRoundCode(); return
+              if (candidateKind === 'round' && roundStable >= 2 && !roundBusy && now >= roundNextAt) {
+                roundNextAt = now + 2500
+                void readRoundCode(video, video.videoWidth, video.videoHeight, roundCandidate, activeIdentity)
               }
             }
           }
           // A sustained slow HD pipeline falls back once, without restarting the camera.
           slowFrames = Date.now() - started > 450 ? slowFrames + 1 : 0
           const actual = track?.getSettings?.() || {}
-          if (!roundBusy && !downgraded && slowFrames >= 3 && actual.width * actual.height > 1920 * 1080 && track?.applyConstraints) {
+          if (!downgraded && slowFrames >= 3 && actual.width * actual.height > 1920 * 1080 && track?.applyConstraints) {
             downgraded = true; bestPixels = null
             void within(track.applyConstraints({ width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 } }), 3000).catch(() => {})
           }
         } catch (error) { if (activeIdentity()) showError(error) }
         finally {
           liveBusy = false
-          if (!closed && attempt === generation) scheduleScan(roundBusy ? 350 : 200)
+          if (!closed && attempt === generation) scheduleScan()
         }
       }
       resumeFrameScan = scanFrame
@@ -655,10 +646,7 @@ export function scanWithH5Camera(options = {}) {
       const candidate = !text && locateCandidate(image, image.naturalWidth, image.naturalHeight)
       if (!text && candidate?.kind === 'qr') text = readCandidate(image, image.naturalWidth, image.naturalHeight, candidate.value, decoder)
       if (text) found(text)
-      else if (candidate?.kind === 'round') {
-        roundImage = makeRoundImage(image, image.naturalWidth, image.naturalHeight, candidate.value)
-        await recognizeRoundCode()
-      } else status.textContent = '未检测到完整二维码，请选择更清晰且包含整个码的图片'
+      else await readRoundCode(image, image.naturalWidth, image.naturalHeight, candidate?.kind === 'round' ? candidate.value : null, imageActive, true)
     } catch (_) {
       if (!closed && job === imageJob) status.textContent = '图片暂时无法识别，请换一张图片或手动输入'
     } finally { URL.revokeObjectURL(url); image.src = '' }
@@ -674,7 +662,6 @@ export function scanWithH5Camera(options = {}) {
   root.querySelector('[data-action="close"]').onclick = cancel
   root.querySelector('[data-action="album"]').onclick = () => {
     imageJob++
-    roundImage = ''
     releaseCamera()
     status.textContent = '请选择二维码图片，取消选图后可重新开启相机'
     fileInput.click()
@@ -687,7 +674,7 @@ export function scanWithH5Camera(options = {}) {
   zoomIn.onclick = () => { void adjustCamera('zoom', currentZoom * 1.2) }
   zoomOut.onclick = () => { void adjustCamera('zoom', currentZoom / 1.2) }
   torch.onclick = () => { void adjustCamera('torch') }
-  retry.onclick = () => { void prepareRoundCode(); void startCamera() }
+  retry.onclick = () => { void startCamera() }
   root.querySelector('[data-action="manual"]').onclick = () => {
     imageJob++
     releaseCamera()
@@ -704,6 +691,9 @@ export function scanWithH5Camera(options = {}) {
   document.body.style.overflow = 'hidden'
   root.querySelector('[data-action="close"]').focus()
   activeScan = cancel
-  void prepareRoundCode()
-  void startCamera()
+  void prioritizeRoundCodeScanner().then(release => {
+    if (closed) { release(); return }
+    releaseRegistration = release
+    void startCamera()
+  })
 }

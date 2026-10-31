@@ -39,6 +39,17 @@ for (const statusCode of [404, 405, 501]) {
   assert(message.includes(`HTTP ${statusCode}`)); assert(message.includes('服务器未提供解析接口'))
   assert(!legacy.events.includes('scan')); assert(!legacy.events.includes('authorize'))
 }
+for (const nested of [false, true]) {
+  for (const useFallback of [false, true]) {
+    let message
+    const reason = { reason: 'ROUND_CODE_UNSUPPORTED' }
+    const disabled = harness({ resolveRaw: async () => { throw { statusCode: 501, ...(nested ? { data: reason } : reason) } },
+      fallback: async value => { message = value; return useFallback } })
+    assert.equal((await disabled.scanner.scan())?.result || null, useFallback ? 'standard' : null)
+    assert(message.includes('无法还原其业务参数')); assert(!message.includes('更新后端'))
+    assert(!disabled.events.includes('scan')); assert(!disabled.events.includes('authorize'))
+  }
+}
 const aborted = harness({ nativeScan: async () => ({ error: 'CANCELLED' }) }); assert.equal(await aborted.scanner.scan(), null); assert.deepEqual(aborted.events, [])
 let release
 const busy = harness({ nativeScan: () => new Promise(resolve => { release = resolve }) })

@@ -123,6 +123,9 @@ import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { baseUrl } from '@/api/settings.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { useWechatQrSave } from '@/utils/use-wechat-qr-save.js'
+// #ifdef APP-PLUS || H5
+import { useGeneratedRoundCode } from '@/utils/use-generated-roundcode.js'
+// #endif
 import WechatQrDownloadMenu from '@/components/WechatQrDownloadMenu.vue'
 // #ifdef H5
 import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
@@ -135,6 +138,9 @@ const emit = defineEmits(['login'])
 const qrSource = ref('')
 const qrState = ref('loading')
 const { qrMenu, openQrMenu, closeQrMenu, downloadQr, suppressQrContextMenu } = useWechatQrSave(qrSource, () => props.checking || qrState.value !== 'ready')
+// #ifdef APP-PLUS || H5
+useGeneratedRoundCode(qrSource, () => qrState.value === 'ready' && !props.checking)
+// #endif
 const sessionStatus = ref('')
 const sessionMessage = ref('')
 const sessionReference = ref('')

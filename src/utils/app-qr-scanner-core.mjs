@@ -38,7 +38,10 @@ export function createAppQrScanner({ nativeScan, standardScan, resolveRaw, scanA
           if (error?.statusCode === 401 || error?.code === 401) {
             notify('登录状态已失效，请先重新登录APP'); return null
           }
-          const message = [404, 405, 501].includes(error?.statusCode || error?.httpStatus)
+          const unsupported = (error?.reason || error?.data?.reason) === 'ROUND_CODE_UNSUPPORTED'
+          const message = unsupported
+            ? 'APP已读出圆码，但当前服务无法还原其业务参数，请使用普通二维码或微信扫码'
+            : [404, 405, 501].includes(error?.statusCode || error?.httpStatus)
             ? `圆码已识别，但服务器未提供解析接口（HTTP ${error?.statusCode || error?.httpStatus}），请更新后端或使用普通二维码/微信扫码。`
             : error?.msg || error?.message || '该圆码暂不可用，请刷新二维码或改扫普通二维码。'
           if (await fallback(message)) return standardScan()

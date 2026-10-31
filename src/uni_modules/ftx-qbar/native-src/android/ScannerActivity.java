@@ -128,8 +128,9 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
     public static synchronized void openDebug(Activity host, ValueCallback<String> callback) {
         openScanner(host, callback, true);
     }
+    public static synchronized boolean isScanActive() { return pending != null || current.get() != null; }
     private static void openScanner(Activity host, ValueCallback<String> callback, boolean debug) {
-        if (pending != null) { callback.onReceiveValue("{\"error\":\"BUSY\"}"); return; }
+        if (pending != null || GeneratedCodeDecoder.isBusy()) { callback.onReceiveValue("{\"error\":\"BUSY\"}"); return; }
         pending = callback;
         try { host.startActivity(new Intent(host, ScannerActivity.class).putExtra("scanDebug", debug)); }
         catch (Exception error) { pending = null; callback.onReceiveValue("{\"error\":\"UNAVAILABLE\"}"); }
@@ -432,7 +433,7 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
             Camera.Size size = parameters.getPreviewSize();
             if ((long) size.width * size.height > 8294400) throw new IllegalStateException("PREVIEW_TOO_LARGE");
             previewContainer.cameraSize(size.width, size.height, previewRotation);
-            android.util.Log.i("FtxQbar", "scanner=0.1.16 camera=" + selectedCamera + " viewAngle=" + parameters.getHorizontalViewAngle()
+            android.util.Log.i("FtxQbar", "scanner=0.1.17 camera=" + selectedCamera + " viewAngle=" + parameters.getHorizontalViewAngle()
                     + " preview=" + size.width + "x" + size.height);
             previewBuffers = new byte[(long) size.width * size.height > 4000000 ? 2 : 3][size.width * size.height * 3 / 2];
             attachPreviewBuffers(camera);

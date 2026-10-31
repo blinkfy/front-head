@@ -29,3 +29,10 @@ export function cancelScan(): void {
   const activity = UTSAndroid.getUniActivity()
   if (activity != null) QbarBridge.cancel(activity!)
 }
+
+// Missing native methods in an older base return UNAVAILABLE via the reflection bridge.
+export function decodeGeneratedImage(encoded: string, callback: (result: string) => void): void {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) { callback('{"error":"UNAVAILABLE"}'); return }
+  QbarBridge.decodeGeneratedImage(activity!, encoded, callback)
+}

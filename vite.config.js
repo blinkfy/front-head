@@ -3,6 +3,7 @@ import uni from '@dcloudio/vite-plugin-uni'
 import { resolve } from 'path'
 import { pathToFileURL } from 'node:url'
 import { officialSitePlugin } from './scripts/official-site.mjs'
+import { browserRoundCodeAssetsPlugin } from './scripts/browser-roundcode-assets.mjs'
 
 // https://vitejs.dev/config/
 export default defineConfig(async ({ mode }) => {
@@ -19,6 +20,7 @@ export default defineConfig(async ({ mode }) => {
       smartSortRobotAssetsPlugin(),
       mpMainPackageAssetsPlugin(),
       officialSitePlugin(),
+      browserRoundCodeAssetsPlugin(),
       // APP 的 IIFE 不支持动态分包；在输出阶段内联，保留 H5/AMD 的分包行为。
       {
         name: 'app-iife-inline-imports',
