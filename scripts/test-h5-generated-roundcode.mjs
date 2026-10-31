@@ -14,13 +14,13 @@ function harness({ headers = true, available = true, decode, register } = {}) {
     decodeBase64: encoded => Buffer.from(encoded, 'base64').toString('ascii'), encodeImage: () => 'iVBORw==',
     transport: { image: async source => { events.push(['image', source]); return response },
       register: async data => { events.push(['register', data]); if (register) await register(data) } },
-    createDecoder() {
+    createDecoder(onProgress) {
       opened++; active++; maxActive = Math.max(maxActive, active)
       let done = false, cancel
       return { available,
         decode: (encoded, mime, isCurrent) => {
           assert.equal(encoded, 'iVBORw=='); assert.equal(mime, 'image/png')
-          const work = decode ? decode(isCurrent) : Promise.resolve({ scanType: 'WX_CODE', rawBase64 })
+          const work = decode ? decode(isCurrent, onProgress) : Promise.resolve({ scanType: 'WX_CODE', rawBase64 })
           return Promise.race([work, new Promise(resolve => { cancel = resolve })])
         },
         close() { if (done) return; done = true; closed++; active--; cancel?.({ error: 'CANCELLED' }) }
@@ -33,11 +33,27 @@ function harness({ headers = true, available = true, decode, register } = {}) {
 }
 const registers = h => h.events.filter(([name]) => name === 'register')
 {
-  const h = harness(); await h.client.registerImage(url)
+  const h = harness(); assert.deepEqual(await h.client.registerImage(url), { status: 'registered' })
   assert.equal(registers(h).length, 1)
   assert.deepEqual(registers(h)[0][1], { taskId: h.task.id, ticket: h.task.ticket, rawBase64 })
   assert.equal(h.closed, 1, 'Worker is released after successful own-image registration')
-  await h.client.registerImage(url); assert.equal(h.opened, 1, 'same URL is deduplicated until task expiry')
+  assert.deepEqual(await h.client.registerImage(url), { status: 'registered' })
+  assert.equal(h.opened, 1, 'same URL is deduplicated until task expiry')
+}
+{
+  let acknowledge
+  const h = harness({ register: () => new Promise(resolve => { acknowledge = resolve }) })
+  let ready = false
+  const first = h.client.registerImage(url).then(result => { ready = result.status === 'registered'; return result })
+  await flush()
+  const duplicate = h.client.registerImage(url)
+  await flush()
+  assert.equal(registers(h).length, 1)
+  assert.equal(ready, false, 'decoding alone must not mark a displayed login code APP-ready')
+  acknowledge()
+  assert.deepEqual(await first, { status: 'registered' })
+  assert.deepEqual(await duplicate, { status: 'registered' }, 'duplicate callers await the same server acknowledgement')
+  assert.equal(h.opened, 1)
 }
 for (const options of [{ headers: false }, { available: false }]) {
   const h = harness(options); await h.client.registerImage(url)
@@ -81,9 +97,29 @@ for (const reason of ['hidden', 'refresh', 'account', 'expiry', 'unmount']) {
 }
 {
   const h = harness({ register: () => { throw new Error('old server') } })
-  await h.client.registerImage(url); assert.equal(h.closed, 1, 'registration failure still releases resources')
+  assert.deepEqual(await h.client.registerImage(url), { status: 'failed' })
+  assert.equal(h.closed, 1, 'registration failure still releases resources')
 }
 for (const bad of [baseUrl + '.evil/api/registration/wechat-qrcode', 'file:///image.png']) {
   const h = harness(); await h.client.registerImage(bad); assert.equal(h.events.length, 0)
 }
 console.log('PASS H5 own-generated registration, anonymous receipt, old backend, single lane, expiry/lifecycle/account guards, scanner priority and resource cleanup')
+{
+  let acknowledge
+  const phases = [], duplicatePhases = []
+  const h = harness({ decode: async (current, report) => {
+    report('loading', 0.5); report('initializing'); report('decoding')
+    return { scanType: 'WX_CODE', rawBase64 }
+  }, register: () => new Promise(resolve => { acknowledge = resolve }) })
+  const first = h.client.registerImage(url, () => true, (phase, fraction) => phases.push([phase, fraction]))
+  await flush()
+  const second = h.client.registerImage(url, () => true, phase => duplicatePhases.push(phase))
+  await flush()
+  assert(phases.some(([phase, fraction]) => phase === 'loading' && fraction === 0.5))
+  assert.equal(phases.at(-1)[0], 'registering')
+  assert.equal(duplicatePhases.at(-1), 'registering', 'joining callers receive current preparation phase')
+  assert(!phases.some(([phase]) => phase === 'registered'))
+  acknowledge(); await Promise.all([first, second])
+  assert.equal(phases.at(-1)[0], 'registered'); assert.equal(duplicatePhases.at(-1), 'registered')
+}
+console.log('PASS own-code progress reaches registered only after acknowledgement; duplicate observers share work')

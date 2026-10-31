@@ -5,7 +5,8 @@ import { encodeBinImageWithinLimit, imageDataBytes, imageMimeFromBase64, normali
 let cachedPreviewPath = ''
 
 export const resolveTrashBinImage = (value, mapType) => resolveStoredBinImage(value, config.baseUrl, mapType)
-const uniCall = (name, options) => new Promise((resolve, reject) => uni[name]({ ...options, success: resolve, fail: reject }))
+// Keep API calls static so H5 production builds retain their implementations.
+const uniCall = (invoke, options) => new Promise((resolve, reject) => invoke({ ...options, success: resolve, fail: reject }))
 
 function fileSystem() {
   if (uni.getFileSystemManager) return uni.getFileSystemManager()
@@ -58,7 +59,7 @@ async function compressNativeImage(src, dimensions) {
     }, result => resolve(result.target), reject))
     // #endif
     // #ifndef APP-PLUS
-    const result = await uniCall('compressImage', {
+    const result = await uniCall(options => uni.compressImage(options), {
       src, quality: Math.round(dimensions.quality * 100),
       compressedWidth: dimensions.width, compressedHeight: dimensions.height
     })
@@ -99,7 +100,7 @@ export async function compressTrashBinImage(filePath) {
   })
   // #endif
   // #ifndef H5
-  const info = await uniCall('getImageInfo', { src: filePath })
+  const info = await uniCall(options => uni.getImageInfo(options), { src: filePath })
   const original = normalizeImageData(await readImageData(filePath))
   if (original && imageDataBytes(original) > 0 && imageDataBytes(original) <= TRASH_BIN_IMAGE_LIMIT) return original
   return encodeBinImageWithinLimit(info.width, info.height, dimensions => compressNativeImage(filePath, dimensions))
@@ -142,7 +143,7 @@ export async function previewTrashBinImage(value) {
   // #endif
   // #endif
   try {
-    await uniCall('previewImage', { urls: [path], current: path })
+    await uniCall(options => uni.previewImage(options), { urls: [path], current: path })
   } catch (error) {
     if (temporaryPath) discardCompressedFile(temporaryPath)
     throw error

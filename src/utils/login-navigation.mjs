@@ -2,8 +2,10 @@
 // is separate from authentication failure and must not clear a valid session.
 export function navigateAfterLogin({ runtime, url, setLoading }) {
   setLoading(true)
+  const cancelPageLoading = runtime.beginPageLoading?.(url)
   return new Promise(resolve => {
     const fail = () => {
+      cancelPageLoading?.()
       setLoading(false)
       runtime.showToast({ title: '登录成功，页面打开失败，请重试', icon: 'none' })
       resolve(false)

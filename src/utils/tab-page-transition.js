@@ -7,6 +7,7 @@ const TRANSITION_DURATION = 180
 const MP_TRANSITION_DURATION = 200
 
 // #ifdef H5
+import { markH5PagePreloaded } from './h5-page-preload-state.mjs'
 const TAB_PAGE_LOADERS = {
   'pages/home/home': () => import('@/pages/home/home.vue'),
   'pages/map/map': () => import('@/pages/map/map.vue'),
@@ -17,24 +18,42 @@ const TAB_PAGE_LOADERS = {
   'pages-dark/shop/shop': () => import('@/pages-dark/shop/shop.vue'),
   'pages-dark/profile/profile': () => import('@/pages-dark/profile/profile.vue')
 }
-const preloadedTabRoutes = new Set()
+const preloadedTabRoutes = new Map()
 // #endif
 
 function normalizeRoute(url = '') {
   return String(url).split('?')[0].replace(/^\//, '')
 }
 
-function preloadSiblingTabPages(currentRoute) {
+export function preloadTabPage(url) {
+  // #ifdef H5
+  const route = normalizeRoute(url)
+  const loadPage = TAB_PAGE_LOADERS[route]
+  if (!loadPage) return Promise.resolve()
+  if (!preloadedTabRoutes.has(route)) {
+    const request = loadPage().then(page => {
+      markH5PagePreloaded(route)
+      return page
+    }).catch(error => {
+      preloadedTabRoutes.delete(route)
+      throw error
+    })
+    preloadedTabRoutes.set(route, request)
+  }
+  return preloadedTabRoutes.get(route)
+  // #endif
+}
+
+export function preloadSiblingTabPages(currentRoute) {
   // #ifdef H5
   const isDarkTheme = currentRoute.startsWith('pages-dark/')
   const themePrefix = isDarkTheme ? 'pages-dark/' : 'pages/'
   if (!TAB_PAGE_LOADERS[currentRoute]) return
 
   const preload = () => {
-    Object.entries(TAB_PAGE_LOADERS).forEach(([route, loadPage]) => {
+    Object.keys(TAB_PAGE_LOADERS).forEach(route => {
       if (route === currentRoute || !route.startsWith(themePrefix) || preloadedTabRoutes.has(route)) return
-      preloadedTabRoutes.add(route)
-      loadPage().catch(() => preloadedTabRoutes.delete(route))
+      void preloadTabPage(route).catch(() => {})
     })
   }
 

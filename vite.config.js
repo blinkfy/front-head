@@ -4,6 +4,7 @@ import { resolve } from 'path'
 import { pathToFileURL } from 'node:url'
 import { officialSitePlugin } from './scripts/official-site.mjs'
 import { browserRoundCodeAssetsPlugin } from './scripts/browser-roundcode-assets.mjs'
+import { h5DevCompressionPlugin } from './scripts/h5-dev-compression.mjs'
 
 // https://vitejs.dev/config/
 export default defineConfig(async ({ mode }) => {
@@ -16,6 +17,7 @@ export default defineConfig(async ({ mode }) => {
     // 官网仅作为 H5 静态页面发布，不进入小程序 / APP 的业务路由。
     ...(process.env.UNI_PLATFORM === 'h5' ? { publicDir: resolve(__dirname, 'public') } : {}),
     plugins: [
+      h5DevCompressionPlugin(),
       uni({ vueOptions: { template: { compilerOptions: { isCustomElement: tag => tag === 'smart-sort-xr' } } } }),
       smartSortRobotAssetsPlugin(),
       mpMainPackageAssetsPlugin(),

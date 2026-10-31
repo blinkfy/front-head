@@ -20,6 +20,9 @@ import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
 import { warmManifestIcons } from '@/utils/icon-preload.js'
 import { warmSmartSortRobot } from '@/utils/robot-preload.js'
 import { onAppPageReady } from '@/utils/app-page-ready.mjs'
+// #ifdef H5
+import { preloadTabPage, preloadSiblingTabPages } from '@/utils/tab-page-transition.js'
+// #endif
 import { initUiSounds, setUiSoundsActive } from '@/utils/ui-sounds.js'
 import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/device-qr-entry.mjs'
 // #ifdef APP-PLUS
@@ -66,8 +69,32 @@ export default {
     
     // 初始化全局消息总线
     initGlobalMessageBus()
+    // #ifdef H5
+    // 登录页先完成渲染，再利用空闲时间预热登录后所需资源（弱网同样保留）。
+    onAppPageReady(() => {
+      const warm = () => {
+        warmManifestIcons()
+        const route = getCurrentPages().slice(-1)[0]?.route || ''
+        if (!/^(pages|pages-dark)\/index\/index$/.test(route)) {
+          warmSmartSortRobot()
+          return
+        }
+        const home = `${ThemeManager.getTheme() === 'dark' ? 'pages-dark' : 'pages'}/home/home`
+        // 优先下载首页及其 JS/CSS 依赖，不挂载页面、不提前调用首页接口。
+        const warmRest = () => {
+          warmSmartSortRobot()
+          preloadSiblingTabPages(home)
+        }
+        void preloadTabPage(home).then(warmRest, warmRest)
+      }
+      if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(warm, { timeout: 1000 })
+      else setTimeout(warm, 200)
+    })
+    // #endif
+    // #ifndef H5
     warmManifestIcons()
     warmSmartSortRobot()
+    // #endif
     
     // 立即尝试检查主题重定向
     const theme = ThemeManager.getTheme()

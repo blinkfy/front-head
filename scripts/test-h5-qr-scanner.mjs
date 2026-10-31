@@ -106,6 +106,28 @@ function harness({ mobile = true, secure = true, getUserMedia, track, admin = fa
     videoConstraints, candidateFrame, imageClarity, PhotoGate, ScanAutoZoom, reprojectCandidate, selectSharpFrame, sharpFrameMatches,
     preparePhotoCapture: photoCapture || (async () => null),
     createNativeQrReader,
+    createBrowserQrAnalyzer: () => {
+      let closed = false
+      return { close() { closed = true }, async analyze(pixels, options = {}) {
+        if (closed) return { error: 'CANCELLED' }
+        let text = '', candidate = null
+        const decode = input => context.decoder(input.data, input.width, input.height, { inversionAttempts: 'attemptBoth' })?.data || ''
+        if (options.decode !== false) {
+          let input = pixels
+          if (options.sharpen) { input = { ...pixels, data: new Uint8ClampedArray(pixels.data) }; sharpenQrImage(input) }
+          text = decode(input)
+          if (!text && options.enhance) {
+            const enhanced = { ...pixels, data: new Uint8ClampedArray(pixels.data) }
+            sharpenQrImage(enhanced); text = decode(enhanced)
+          }
+        }
+        if (!text && options.locate) {
+          const qr = detectQrCandidate(pixels), round = !qr && detectRoundCodeCandidate(pixels)
+          candidate = qr ? { kind: 'qr', value: qr } : round ? { kind: 'round', value: round } : null
+        }
+        return { text, candidate }
+      } }
+    },
     createBrowserRoundCodeDecoder: onProgress => ({ available: Boolean(roundDecode),
       decode: pixels => { onProgress('decoding'); return roundDecode(pixels) }, close() {} }),
     prioritizeRoundCodeScanner: async () => () => {},

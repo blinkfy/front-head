@@ -9,12 +9,13 @@
       <view class="qr-disc" :aria-busy="qrState === 'loading'">
         <image v-if="qrSource" class="qr-image qr-saveable-target" :class="{ ready: qrState === 'ready' }" :src="qrSource" mode="aspectFit" @load="qrState = 'ready'" @error="qrState = 'error'" @longpress="openQrMenu" @contextmenu="suppressQrContextMenu" />
         <view v-if="qrState !== 'ready' || terminal" class="qr-placeholder" role="status">
-          <view v-if="qrState === 'loading' && !terminal" class="qr-spinner"></view>
+          <view v-if="!terminal && qrState === 'loading'" class="qr-spinner"></view>
           <ManifestIcon v-else id="camera_scan" :scale="2.6" />
           <text>{{ terminal ? '请刷新二维码' : qrState === 'error' ? '二维码暂时不可用' : '正在加载小程序码…' }}</text>
         </view>
       </view>
     </view>
+    <text v-if="qrSource && qrState === 'ready' && !terminal" class="app-code-progress" role="status">{{ preparationText }}</text>
     <view class="scan-steps">
       <view v-for="(step, index) in steps" :key="step.icon" class="scan-step">
         <ManifestIcon :id="step.icon" :scale="2.3" /><text class="step-number">{{ index + 1 }}</text>
@@ -40,12 +41,14 @@ import WechatQrDownloadMenu from '@/components/WechatQrDownloadMenu.vue'
 import { registrationApi } from '@/utils/registration-relay.js'
 import { createH5RegistrationRelay } from '@/utils/registration-relay.mjs'
 import { useGeneratedRoundCode } from '@/utils/use-generated-roundcode.js'
+import { roundCodePreparationText } from '@/utils/roundcode-preparation-progress.mjs'
 
 const props = defineProps({ dark: Boolean, disabled: Boolean, registrationAllowed: Boolean })
 const emit = defineEmits(['login', 'busy'])
 const qrSource = ref(''), qrState = ref('loading'), status = ref('loading'), message = ref('正在创建专属二维码…'), reference = ref('')
 const terminal = computed(() => ['expired', 'consumed', 'uncertain', 'cancelled'].includes(status.value))
-useGeneratedRoundCode(qrSource, () => qrState.value === 'ready' && !terminal.value && !props.disabled)
+const { state: roundCodeState, progress, phase } = useGeneratedRoundCode(qrSource, () => qrState.value !== 'error' && !terminal.value && !props.disabled)
+const preparationText = computed(() => roundCodePreparationText(roundCodeState.value, progress.value, phase.value))
 const { qrMenu, openQrMenu, closeQrMenu, downloadQr, suppressQrContextMenu } = useWechatQrSave(qrSource, () => qrState.value !== 'ready' || terminal.value || props.disabled)
 const messages = { loading: '正在创建专属二维码…', waiting: '等待微信扫码…', scanned: '已扫码，请在小程序中继续',
   authorized: '已确认，正在登录…', consuming: '正在登录…', complete: '登录成功，正在进入首页…',
@@ -98,6 +101,7 @@ defineExpose({ pause, resume })
 .scan-status { display: flex; align-items: center; gap: 14px; min-height: 68px; padding: 8px 15px; border-radius: 21px; background: #e6faf3; box-sizing: border-box; }.status-icon { flex: 0 0 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: #fff9; }.status-title { display: block; color: var(--green); font-size: 15px; font-weight: 600; line-height: 1.4; }.status-detail { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.5; }
 .qr-refresh { display: block; width: 100%; margin-top: 10px; border: 1px solid #55cbb0; border-radius: 999px; color: var(--green); background: transparent; min-height: 39px; line-height: 39px; font-size: 15px; }.qr-refresh::after { border: 0; }.qr-refresh[disabled] { opacity: .5; background: transparent; color: var(--muted); }
 .version-hint { display: block; margin: 9px 2px 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.app-code-progress { display: block; margin: -4px 0 12px; color: var(--muted); text-align: center; font-size: 12px; line-height: 1.5; }
 .panel-dark .heading-icon { background: #214d40; }.panel-dark .scan-status { background: #193d34; }.panel-dark .status-icon { background: #31594e; }.panel-dark .scan-step::after { border-color: #3a6358; }
 @keyframes qr-spin { to { transform: rotate(360deg); } }
 @keyframes leaf-drift-left { 0%, 100% { transform: translate3d(0, 0, 0) rotate(24deg); } 50% { transform: translate3d(5px, -7px, 0) rotate(40deg); } }

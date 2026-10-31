@@ -29,7 +29,7 @@ export function createLocalRoundCodeDecoder({ workerUrl, WorkerClass = globalThi
           worker = new WorkerClass(workerUrl)
           worker.onmessage = ({ data: message }) => {
             if (!pending || message?.id !== pending.id) return
-            if (message.phase) { onProgress(message.phase); return }
+            if (message.phase) { onProgress(message.phase, message.progress); return }
             const result = message.result
             if (result?.scanType === 'WX_CODE' && typeof result.rawBase64 === 'string'
                 && /^[A-Za-z0-9+/]{12,4096}={0,2}$/.test(result.rawBase64)) {

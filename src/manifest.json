@@ -115,7 +115,12 @@
             "subPackages" : true
         },
         "setting" : {
-            "urlCheck" : false
+            "urlCheck" : false,
+            "es6" : true,
+            "postcss" : true,
+            "minified" : true,
+            "minifyWXSS" : true,
+            "minifyWXML" : true
         },
         "usingComponents" : true,
         "permission" : {

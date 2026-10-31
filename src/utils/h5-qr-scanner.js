@@ -2,20 +2,16 @@ import { isPhoneBrowser, canUseBrowserCamera } from './h5-scan-entry.mjs'
 import { vibrateScan } from './haptics.mjs'
 import { playUiSound, primeUiSounds } from './ui-sounds.js'
 import { createScanDebugAccess } from './scan-debug.mjs'
-import { cameraFrame, sharpenQrImage } from './h5-camera-frame.mjs'
-import { detectRoundCodeCandidate, detectQrCandidate } from './h5-roundcode-candidate.mjs'
+import { cameraFrame } from './h5-camera-frame.mjs'
 import { videoConstraints, candidateFrame, selectSharpFrame, sharpFrameMatches, PhotoGate, ScanAutoZoom, reprojectCandidate } from './h5-scan-quality.mjs'
 import { preparePhotoCapture } from './h5-photo-capture.mjs'
 import { createNativeQrReader } from './h5-native-qr.mjs'
+import { createBrowserQrAnalyzer } from './h5-qr-analysis.js'
 import { createBrowserRoundCodeDecoder, preloadBrowserRoundCodeAssets } from './h5-roundcode-local.js'
 import { prioritizeRoundCodeScanner } from './roundcode-client.js'
 import './h5-qr-scanner.css'
 
 let activeScan = null
-let decoderPromise
-const loadDecoder = () => decoderPromise || (decoderPromise = import('jsqr')
-  .then(module => module.default)
-  .catch(error => { decoderPromise = null; throw error }))
 
 // Ordinary QR and mini-program circle codes are decoded locally.
 export function scanWithH5Camera(options = {}) {
@@ -100,6 +96,8 @@ export function scanWithH5Camera(options = {}) {
   let stream, timer, cameraTimeout, closed = false, generation = 0, imageJob = 0
   let previousCode = '', previousAt = 0, matching = 0
   let nativeReader = null
+  let frameAnalyzer = null
+  const getAnalyzer = () => frameAnalyzer || (frameAnalyzer = createBrowserQrAnalyzer())
   let roundCandidate = null, roundStable = 0, lastRoundCheck = 0
   let resumeFrameScan = null
   let hardwareZoom = false
@@ -182,6 +180,7 @@ export function scanWithH5Camera(options = {}) {
     roundDecoder?.close(); roundDecoder = null; roundBusy = false; roundActive = () => false
     roundNextAt = 0; roundAttempts = 0
     nativeReader?.close(); nativeReader = null
+    frameAnalyzer?.close(); frameAnalyzer = null
     for (const cancelWork of [...pendingWork]) cancelWork()
     photoSource = null; photoBusy = false; clearCandidate(); autoZoom.reset(Date.now()); lastZoomAt = -Infinity
     resumeFrameScan = null
@@ -285,8 +284,8 @@ export function scanWithH5Camera(options = {}) {
     return image === video ? cameraFrame(width, height, video.clientWidth, video.clientHeight, hardwareZoom ? 1 : currentZoom)
       : { left: 0, top: 0, width, height }
   }
-  function readCode(image, width, height, decoder, maxEdge, center = false, detail = false, sharpen = false) {
-    if (!context || !width || !height || typeof decoder !== 'function') return ''
+  async function readCode(image, width, height, decoder, maxEdge, center = false, detail = false, sharpen = false) {
+    if (!context || !width || !height || !decoder) return ''
     const frame = visibleFrame(image, width, height)
     const cropWidth = center ? Math.min(frame.width, frame.height) * (detail ? 0.65 : 0.8) : frame.width
     const cropHeight = center ? cropWidth : frame.height
@@ -297,8 +296,7 @@ export function scanWithH5Camera(options = {}) {
     context.drawImage(image, frame.left + (frame.width - cropWidth) / 2, frame.top + (frame.height - cropHeight) / 2,
       cropWidth, cropHeight, 0, 0, canvas.width, canvas.height)
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
-    if (sharpen) sharpenQrImage(pixels)
-    return decoder(pixels.data, canvas.width, canvas.height, { inversionAttempts: 'attemptBoth' })?.data || ''
+    return (await decoder.analyze(pixels, { sharpen })).text || ''
   }
   function pixelsIn(image, frame, maxEdge = 1536) {
     const scale = Math.min(1, maxEdge / Math.max(frame.width, frame.height))
@@ -311,18 +309,16 @@ export function scanWithH5Camera(options = {}) {
   async function readNative(image, width, height, isActive) {
     const reader = nativeReader
     if (!context || !reader?.available || !width || !height) return null
-    const pixels = pixelsIn(image, visibleFrame(image, width, height), 1280)
+    const pixels = pixelsIn(image, visibleFrame(image, width, height), image === video ? 960 : 1280)
     return reader.read(pixels, () => nativeReader === reader && isActive())
   }
-  function locateCandidate(image, width, height) {
-    const pixels = pixelsIn(image, visibleFrame(image, width, height), 1920)
-    const qr = detectQrCandidate(pixels)
-    if (qr) return { kind: 'qr', value: qr }
-    const round = detectRoundCodeCandidate(pixels)
-    return round ? { kind: 'round', value: round } : null
+  async function locateCandidate(image, width, height) {
+    const pixels = pixelsIn(image, visibleFrame(image, width, height), image === video ? 960 : 1280)
+    return (await getAnalyzer().analyze(pixels, { decode: false, locate: true })).candidate || null
   }
-  function observeCandidate(image, width, height, now) {
-    const located = locateCandidate(image, width, height), candidate = located?.value
+  async function observeCandidate(image, width, height, now, isCurrent) {
+    const located = await locateCandidate(image, width, height), candidate = located?.value
+    if (!isCurrent()) return
     const stable = candidate && candidateKind === located.kind && roundCandidate
       && Math.hypot(candidate.x - roundCandidate.x, candidate.y - roundCandidate.y) < 0.04
       && Math.abs(candidate.size - roundCandidate.size) <= roundCandidate.size * 0.2
@@ -333,23 +329,16 @@ export function scanWithH5Camera(options = {}) {
   function candidatePixels(image, width, height, candidate, remember) {
     const frame = candidateFrame(visibleFrame(image, width, height), candidate)
     if (!frame) return null
-    const pixels = pixelsIn(image, frame)
+    const pixels = pixelsIn(image, frame, image === video ? 960 : 1536)
     if (!remember) return pixels
     bestPixels = selectSharpFrame(bestPixels, pixels, frame, Date.now())
     return bestPixels?.pixels || pixels
   }
-  function readCandidate(image, width, height, candidate, decoder, remember = false) {
-    if (typeof decoder !== 'function') return ''
+  async function readCandidate(image, width, height, candidate, decoder, remember = false) {
+    if (!decoder) return ''
     const selected = candidatePixels(image, width, height, candidate, remember)
     if (!selected) return ''
-    let text = decoder(selected.data, selected.width, selected.height, { inversionAttempts: 'attemptBoth' })?.data || ''
-    if (!text) {
-      // Never sharpen the retained original frame in place.
-      const enhanced = { width: selected.width, height: selected.height, data: new Uint8ClampedArray(selected.data) }
-      sharpenQrImage(enhanced)
-      text = decoder(enhanced.data, enhanced.width, enhanced.height, { inversionAttempts: 'attemptBoth' })?.data || ''
-    }
-    return text
+    return (await decoder.analyze(selected, { enhance: true, retain: remember })).text || ''
   }
   function showDecoded(text, accept) {
     if (!debugPanel) return false
@@ -392,7 +381,7 @@ export function scanWithH5Camera(options = {}) {
       const crop = candidate ? candidateFrame(frame, { ...candidate, size: candidate.size * 0.8 }) || frame : frame
       // A small first pass is substantially faster in the WASM interpreter.
       // Album failures get one detail retry; live frames retry at a bounded cadence.
-      const sizes = album ? [192, 288] : [++roundAttempts % 3 === 0 ? 288 : 192]
+      const sizes = album ? [160, 192] : [++roundAttempts % 2 === 0 ? 192 : 160]
       for (const size of sizes) {
         const pixels = pixelsIn(image, crop, size)
         await roundPreload?.promise
@@ -500,7 +489,7 @@ export function scanWithH5Camera(options = {}) {
         if (!closed && attempt === generation) showError({ name: 'NotReadableError' })
       }, { once: true })
       await video.play()
-      const decoder = await loadDecoder().catch(() => null)
+      const decoder = getAnalyzer()
       if (closed || attempt !== generation) return
       nativeReader = createNativeQrReader({ BarcodeDetector: window.BarcodeDetector, within })
       clearTimeout(cameraTimeout)
@@ -524,9 +513,9 @@ export function scanWithH5Camera(options = {}) {
           const native = nativeReader?.available ? await readNative(bitmap, bitmap.width, bitmap.height, activeIdentity) : null
           if (!activeIdentity()) return
           if (native?.multiple) { status.textContent = '画面中有多个二维码，请一次对准一个'; return }
-          const candidate = locateCandidate(bitmap, bitmap.width, bitmap.height)
-          const text = native?.text || candidate && readCandidate(bitmap, bitmap.width, bitmap.height, candidate.value, decoder)
-            || readCode(bitmap, bitmap.width, bitmap.height, decoder, 1920)
+          const candidate = !native?.text && await locateCandidate(bitmap, bitmap.width, bitmap.height)
+          const text = native?.text || candidate?.kind === 'qr' && await readCandidate(bitmap, bitmap.width, bitmap.height, candidate.value, decoder)
+            || await readCode(bitmap, bitmap.width, bitmap.height, decoder, 1536)
           if (!activeIdentity()) return
           if (text) found(text)
           else if (candidate?.kind === 'round') {
@@ -545,7 +534,7 @@ export function scanWithH5Camera(options = {}) {
       async function scanFrame() {
         if (closed || attempt !== generation || document.hidden || photoBusy || liveBusy) return
         if (!activeIdentity()) { releaseCamera(); status.textContent = '账号已变化，请重新开启相机'; return }
-        if (cameraControlBusy || acceptingDecoded) { scheduleScan(); return }
+        if (cameraControlBusy || acceptingDecoded || roundBusy) { scheduleScan(roundBusy ? 500 : 200); return }
         liveBusy = true
         const started = Date.now()
         if (debugPanel && !debugAccess()) showDecoded('', null)
@@ -563,21 +552,25 @@ export function scanWithH5Camera(options = {}) {
               status.textContent = '画面中有多个二维码，请一次对准一个'
               return
             }
-            let text = native?.text || readCode(video, video.videoWidth, video.videoHeight, decoder, 960)
+            let text = native?.text || await readCode(video, video.videoWidth, video.videoHeight, decoder, 720)
+            if (!frameCurrent()) return
             const now = Date.now()
             let observed = false
             if (!text && !cameraControlBusy && now - lastRoundCheck >= 350) {
               lastRoundCheck = now; observed = true
-              observeCandidate(video, video.videoWidth, video.videoHeight, now)
+              await observeCandidate(video, video.videoWidth, video.videoHeight, now, frameCurrent)
+              if (!frameCurrent()) return
             }
-            if (!text && roundCandidate && now - candidateAt <= 900) {
-              text = readCandidate(video, video.videoWidth, video.videoHeight, roundCandidate, decoder, true)
+            if (!text && candidateKind === 'qr' && roundCandidate && now - candidateAt <= 900) {
+              text = await readCandidate(video, video.videoWidth, video.videoHeight, roundCandidate, decoder, true)
+              if (!frameCurrent()) return
             }
             // Keep full-frame scanning first, followed by bounded native-pixel
             // and center retries when either ordinary-QR engine misses.
-            if (!text && (++frames % 3 === 0 || preferredDetail >= 0)) {
+            if (!text && candidateKind !== 'round' && (++frames % 4 === 0 || preferredDetail >= 0) && Date.now() - started < 350) {
               const mode = preferredDetail >= 0 ? preferredDetail : detailCursor++ % 2
-              text = readCode(video, video.videoWidth, video.videoHeight, decoder, 1280, true, true, mode === 1)
+              text = await readCode(video, video.videoWidth, video.videoHeight, decoder, 1280, true, true, mode === 1)
+              if (!frameCurrent()) return
               if (text) { preferredDetail = mode; detailMisses = 0 }
               else if (++detailMisses >= 3) { preferredDetail = -1; detailMisses = 0 }
             }
@@ -612,7 +605,7 @@ export function scanWithH5Camera(options = {}) {
         } catch (error) { if (activeIdentity()) showError(error) }
         finally {
           liveBusy = false
-          if (!closed && attempt === generation) scheduleScan()
+          if (!closed && attempt === generation) scheduleScan(Math.max(200, Math.min(600, Date.now() - started)))
         }
       }
       resumeFrameScan = scanFrame
@@ -634,17 +627,20 @@ export function scanWithH5Camera(options = {}) {
       image.src = url
       await ready
       if (closed || job !== imageJob) return
-      const decoder = await loadDecoder().catch(() => null)
+      const decoder = getAnalyzer()
       if (closed || job !== imageJob) return
       nativeReader = createNativeQrReader({ BarcodeDetector: window.BarcodeDetector, within })
       const imageActive = () => !closed && job === imageJob && !document.hidden
       const native = nativeReader.available ? await readNative(image, image.naturalWidth, image.naturalHeight, imageActive) : null
       if (!imageActive()) return
       if (native?.multiple) { status.textContent = '图片中有多个二维码，请选择只包含一个码的图片'; return }
-      let text = native?.text || readCode(image, image.naturalWidth, image.naturalHeight, decoder, 1600)
-        || readCode(image, image.naturalWidth, image.naturalHeight, decoder, 2400)
-      const candidate = !text && locateCandidate(image, image.naturalWidth, image.naturalHeight)
-      if (!text && candidate?.kind === 'qr') text = readCandidate(image, image.naturalWidth, image.naturalHeight, candidate.value, decoder)
+      let text = native?.text || await readCode(image, image.naturalWidth, image.naturalHeight, decoder, 960)
+      if (!imageActive()) return
+      const candidate = !text && await locateCandidate(image, image.naturalWidth, image.naturalHeight)
+      if (!imageActive()) return
+      if (!text && candidate?.kind === 'qr') text = await readCandidate(image, image.naturalWidth, image.naturalHeight, candidate.value, decoder)
+      if (!text && candidate?.kind !== 'round') text = await readCode(image, image.naturalWidth, image.naturalHeight, decoder, 1600)
+      if (!imageActive()) return
       if (text) found(text)
       else await readRoundCode(image, image.naturalWidth, image.naturalHeight, candidate?.kind === 'round' ? candidate.value : null, imageActive, true)
     } catch (_) {

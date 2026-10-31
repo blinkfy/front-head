@@ -71,7 +71,12 @@ async function testHelper() {
   await scenario('navigation success keeps loading until page replacement, and async callback leaves it on', async () => {
     let loading = false
     let callbacks
-    const runtime = { reLaunch: options => { callbacks = options } }
+    let cancelled = 0
+    const events = []
+    const runtime = {
+      beginPageLoading(url) { events.push(['loading', url]); return () => { cancelled++ } },
+      reLaunch(options) { events.push(['navigate', options.url]); callbacks = options }
+    }
     const navigation = navigateAfterLogin({ runtime, url: '/pages/home/home', setLoading: value => { loading = value } })
     assert.equal(loading, true)
     assert.equal(await Promise.race([navigation.then(() => 'settled'), Promise.resolve('pending')]), 'pending')
@@ -79,6 +84,8 @@ async function testHelper() {
     callbacks.success()
     assert.equal(await navigation, true)
     assert.equal(loading, true)
+    assert.deepEqual(events, [['loading', '/pages/home/home'], ['navigate', '/pages/home/home']])
+    assert.equal(cancelled, 0, 'navigation success must leave the overlay until the target page renders')
   })
   await scenario('navigation failure and synchronous throw release loading without touching auth storage', async () => {
     for (const mode of ['callback', 'throw']) {
@@ -86,12 +93,15 @@ async function testHelper() {
       const storage = new Map([['token', 'valid'], ['userInfo', { id: 7 }]])
       const before = [...storage]
       const toasts = []
+      let cancelled = 0
       const runtime = {
+        beginPageLoading() { return () => { cancelled++ } },
         reLaunch(options) { if (mode === 'throw') throw new Error('sync failure'); options.fail(new Error('async failure')) },
         showToast: value => toasts.push(value)
       }
       assert.equal(await navigateAfterLogin({ runtime, url: '/home', setLoading: value => { loading = value } }), false)
       assert.equal(loading, false)
+      assert.equal(cancelled, 1, 'failed navigation must release its overlay')
       assert.deepEqual([...storage], before)
       assert.equal(toasts.length, 1)
     }

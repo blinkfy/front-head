@@ -18,6 +18,12 @@ function jpegData(bytes) {
 }
 
 async function testCore() {
+  const imageHelper = fs.readFileSync(path.join(root, 'src/utils/trash-bin-image.js'), 'utf8')
+  assert.doesNotMatch(imageHelper, /\buni\s*\[[^\]]+\]/, 'uni APIs must not be selected through dynamic property access')
+  assert.match(imageHelper, /uniCall\(options\s*=>\s*uni\.previewImage\(options\)/, 'image preview uses a static uni API reference')
+  assert.match(imageHelper, /uniCall\(options\s*=>\s*uni\.getImageInfo\(options\)/, 'image metadata lookup uses a static uni API reference')
+  assert.match(imageHelper, /uniCall\(options\s*=>\s*uni\.compressImage\(options\)/, 'image compression uses a static uni API reference')
+
   assert.equal(imageMimeFromBase64('/9j/AA=='), 'image/jpeg')
   assert.equal(normalizeImageData(' /9j/AA==\n'), 'data:image/jpeg;base64,/9j/AA==')
   assert.equal(normalizeImageData('data:image/jpg;base64,/9j/AA=='), 'data:image/jpeg;base64,/9j/AA==')

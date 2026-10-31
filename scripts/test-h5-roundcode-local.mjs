@@ -162,6 +162,13 @@ async function main() {
   assert.deepEqual(await invalid.decoder.decode({ data: new Uint8ClampedArray(4), width: 1, height: 1 }), { error: 'INVALID_IMAGE' })
   assert.equal(invalid.workers.length, 0)
 
+  const resourceProgress = []
+  const resourceHarness = makeHarness({ onProgress: (phase, fraction) => resourceProgress.push([phase, fraction]) })
+  const resourcePending = resourceHarness.decoder.decode(makePixels())
+  resourceHarness.workers[0].send({ id: resourceHarness.workers[0].messages[0].message.id, phase: 'loading', progress: 0.5 })
+  assert.deepEqual(resourceProgress, [['loading', 0.5]])
+  resourceHarness.decoder.close(); await resourcePending
+
   console.log('h5 local roundcode controller tests passed')
 }
 

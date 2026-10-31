@@ -43,6 +43,7 @@
           </view>
         </view>
         <view class="code-caption">{{ relay && sessionStatus !== 'manual' ? '扫码确认后本页自动登录' : '扫码后将在小程序内完成注册' }}<text v-if="sessionReference"> · 确认码 {{ sessionReference }}</text></view>
+        <text v-if="qrSource && qrState === 'ready' && prepareForApp" class="app-code-progress" role="status">{{ preparationText }}</text>
       </view>
 
       <view class="guide-info-column">
@@ -119,10 +120,11 @@
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { baseUrl } from '@/api/settings.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { useWechatQrSave } from '@/utils/use-wechat-qr-save.js'
+import { roundCodePreparationText } from '@/utils/roundcode-preparation-progress.mjs'
 // #ifdef APP-PLUS || H5
 import { useGeneratedRoundCode } from '@/utils/use-generated-roundcode.js'
 // #endif
@@ -137,9 +139,19 @@ const props = defineProps({ dark: Boolean, checking: Boolean, policyError: { typ
 const emit = defineEmits(['login'])
 const qrSource = ref('')
 const qrState = ref('loading')
+const appCodeState = ref('unsupported'), appProgress = ref(0), appPhase = ref('idle')
+let prepareForApp = false
+const preparationText = computed(() => roundCodePreparationText(appCodeState.value, appProgress.value, appPhase.value))
 const { qrMenu, openQrMenu, closeQrMenu, downloadQr, suppressQrContextMenu } = useWechatQrSave(qrSource, () => props.checking || qrState.value !== 'ready')
-// #ifdef APP-PLUS || H5
+// #ifdef APP-PLUS
 useGeneratedRoundCode(qrSource, () => qrState.value === 'ready' && !props.checking)
+// #endif
+// #ifdef H5
+prepareForApp = true
+const registration = useGeneratedRoundCode(qrSource, () => qrState.value !== 'error' && !props.checking)
+watch([registration.state, registration.progress, registration.phase], ([state, value, phase]) => {
+  appCodeState.value = state; appProgress.value = value; appPhase.value = phase
+}, { immediate: true })
 // #endif
 const sessionStatus = ref('')
 const sessionMessage = ref('')
@@ -239,6 +251,7 @@ watch(() => props.checking, checking => {
 .registration-code { width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 220ms ease; }.registration-code.code-ready { opacity: 1; }
 .code-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #6f8690; font-size: 14px; text-align: center; padding: 20px; }.code-spinner { width: 26px; height: 26px; border: 3px solid #d8f5eb; border-top-color: var(--green); border-radius: 50%; animation: guide-spin 1s linear infinite; }.code-error-icon { width: 38px; height: 38px; color: var(--green); }
 .code-retry { padding: 7px 15px; background: #e9faf4; border: 1px solid #b1e8d6; border-radius: 999px; color: #009b70; font: inherit; cursor: pointer; }
+.app-code-progress { display: block; margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; text-align: center; }
 .guide-leaf { position: absolute; width: 43px; height: 23px; border-radius: 2px 90% 2px 90%; background: linear-gradient(135deg, #c1eb80, #74cc7c); box-shadow: inset -6px -5px 10px #3396520d; }.guide-leaf::after { content: ''; position: absolute; top: 50%; left: 10%; width: 80%; height: 1px; transform: rotate(20deg); background: #effbd57d; }.leaf-one { left: 8%; top: 12%; transform: rotate(28deg); animation: leaf-drift-one 5s ease-in-out infinite; }.leaf-two { right: -1%; bottom: 20%; transform: rotate(-55deg); animation: leaf-drift-two 5.6s 600ms ease-in-out infinite; }
 .code-caption { margin: 4px 0 0; color: var(--muted); font-size: 16px; line-height: 1.5; text-align: center; }
 .guide-title, .step-title, .code-caption, .guide-description, .step-description, .scan-caption { padding: 0; }.guide-title { margin: 3px 0 13px; font-size: clamp(25px, 2.65vw, 38px); line-height: 1.38; font-weight: 750; letter-spacing: -.8px; }.title-leaf { font-size: .67em; white-space: nowrap; }

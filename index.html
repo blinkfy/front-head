@@ -13,7 +13,7 @@
         box-sizing: border-box;
       }
       
-      #app-loading {
+      #app-loading, #app-route-loading {
         position: fixed;
         top: 0;
         left: 0;
@@ -109,27 +109,31 @@
         border-radius: 2px;
         transition: width 0.3s ease;
         box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
-        animation: progressAnim 2s ease-in-out infinite;
       }
       
-      @keyframes progressAnim {
-        0% {
-          width: 0%;
-          transform: translateX(-100%);
-        }
-        50% {
-          width: 100%;
-          transform: translateX(0%);
-        }
-        100% {
-          width: 100%;
-          transform: translateX(100%);
-        }
+      .loading-status, .loading-detail {
+        color: #ffffff;
+        font-size: 14px;
+        text-align: center;
       }
-      
+      .loading-detail { font-size: 12px; opacity: .85; }
+      .loading-retry {
+        padding: 8px 22px;
+        border: 1px solid #ffffff;
+        border-radius: 20px;
+        background: transparent;
+        color: #ffffff;
+        cursor: pointer;
+      }
+      .loading-visual { position: relative; width: 250px; height: 250px; }
+      .loading-visual .loading-gif { opacity: 0; }
+      .loading-visual .loading-spinner { display: block; position: absolute; left: 85px; top: 85px; }
+      .loading-visual.is-loaded .loading-gif { opacity: 1; }
+      .loading-visual.is-loaded .loading-spinner { display: none; }
+
       /* 淡出动画 */
       .loading-fade-out {
-        animation: fadeOut 0.5s ease forwards;
+        animation: fadeOut 0.2s ease forwards;
       }
       
       @keyframes fadeOut {
@@ -162,66 +166,103 @@
     <!-- 原生加载动画容器 -->
     <div id="app-loading">
       <div class="loading-content">
-        <img class="loading-gif" src="/static/moveable2.gif" alt="加载中" onerror="this.style.display='none'; this.nextElementSibling.style.display='block'" />
-        <div class="loading-spinner"></div>
+        <div class="loading-visual">
+          <img class="loading-gif" src="/static/moveable2.gif" alt="加载中" decoding="async" fetchpriority="low" onload="this.parentNode.classList.add('is-loaded')" />
+          <div class="loading-spinner" aria-hidden="true"></div>
+        </div>
         <div class="loading-title">分投侠</div>
         <div class="loading-subtitle">智能垃圾分类助手</div>
-        <div class="loading-progress">
-          <div class="loading-progress-bar"></div>
+        <div class="loading-progress" role="progressbar" aria-label="启动阶段进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10">
+          <div class="loading-progress-bar" style="width: 10%"></div>
         </div>
+        <div class="loading-status" role="status" aria-live="polite">正在下载应用资源 · 进度 10%</div>
+        <div class="loading-detail">已完成 0 个资源</div>
+        <div class="loading-hint loading-detail">首次打开需要下载资源，请稍候</div>
+        <button class="loading-retry" type="button" hidden onclick="window.location.reload()">重新加载</button>
       </div>
     </div>
     
     <div id="app"></div>
     
-    <!-- Vite / uni 脚本入口：加载 src/main.js -->
-    <script type="module" src="/src/main.js"></script>
-    
+    <!-- 内联控制器先运行，入口脚本下载期间也能显示进度和错误。 -->
     <script>
-      // 检测框架加载完成并隐藏原生加载动画
       (function() {
-        let checkCount = 0;
-        const maxChecks = 100; // 最多检查10秒
-        
-        function checkAppLoaded() {
-          checkCount++;
-          
-          // 检查uni-app是否加载完成
-          const app = document.getElementById('app');
-          const hasContent = app && (app.children.length > 0 || app.innerHTML.trim() !== '');
-          
-          // 检查Vue是否挂载
-          const isVueMounted = app && app.__vue_app__;
-          
-          if (hasContent || isVueMounted || checkCount >= maxChecks) {
-            hideLoading();
-          } else {
-            setTimeout(checkAppLoaded, 100);
-          }
+        const loader = document.getElementById('app-loading');
+        const bar = loader.querySelector('.loading-progress-bar');
+        const progress = loader.querySelector('[role="progressbar"]');
+        const status = loader.querySelector('.loading-status');
+        const detail = loader.querySelector('.loading-detail');
+        const retry = loader.querySelector('.loading-retry');
+        const hint = loader.querySelector('.loading-hint');
+        let value = 10, finished = false, failed = false, resources = 0, received = 0, phaseStart = 0, observer;
+        function stage(next, label) {
+          if (finished) return;
+          value = Math.max(value, next);
+          bar.style.width = value + '%';
+          progress.setAttribute('aria-valuenow', String(value));
+          status.textContent = label + ' · 进度 ' + value + '%';
         }
-        
-        function hideLoading() {
-          const loader = document.getElementById('app-loading');
-          if (loader && !loader.classList.contains('loading-fade-out')) {
+        function fail() {
+          if (finished) return;
+          failed = true;
+          status.textContent = '加载失败，请检查网络后重试';
+          retry.hidden = false;
+        }
+        const slowTimer = setTimeout(function() {
+          if (finished) return;
+          hint.textContent = '网络较慢，仍在加载，分投侠马上就到'
+          retry.hidden = false;
+        }, 15000);
+        // 只统计已完成的资源；阶段百分比不冒充未知总量的下载百分比。
+        if (typeof PerformanceObserver !== 'undefined') {
+          try {
+            observer = new PerformanceObserver(function(list) {
+              if (finished) return;
+              const entries = list.getEntries().filter(function(entry) {
+                return ['script', 'link', 'css'].includes(entry.initiatorType);
+              });
+              resources += entries.length;
+              received += entries.reduce(function(total, entry) { return total + (entry.encodedBodySize || 0); }, 0);
+              detail.textContent = '已完成 ' + resources + ' 个资源' + (received ? ' · 已接收 ' + (received / 1024).toFixed(0) + ' KB' : '');
+              // ESM 依赖在下载中逐层发现，总数未知；按实际完成项估算，保留阶段末尾给入口执行。
+              if (!failed && value < 65) stage(10 + Math.floor(50 * resources / (resources + 20)), '正在下载应用资源');
+              else if (!failed && value < 90) {
+                const count = resources - phaseStart;
+                stage(65 + Math.floor(20 * count / (count + 8)), '正在加载首屏');
+              }
+            });
+            observer.observe({ type: 'resource', buffered: true });
+          } catch (_) { /* 旧浏览器仍显示阶段进度。 */ }
+        }
+        window.__ftxStartup = {
+          frameworkReady: function() { phaseStart = resources; stage(65, '正在加载首屏'); },
+          rendering: function() { stage(90, '正在渲染页面'); },
+          ready: function() {
+            if (finished) return;
+            stage(100, '加载完成');
+            finished = true;
+            clearTimeout(slowTimer);
+            if (observer) observer.disconnect();
+            window.removeEventListener('error', onError, true);
+            window.removeEventListener('vite:preloadError', fail);
+            window.removeEventListener('unhandledrejection', fail);
+            retry.hidden = true;
+            // 页面已完成绘制，再淡出覆盖层。
             loader.classList.add('loading-fade-out');
-            setTimeout(function() {
-              loader.style.display = 'none';
-            }, 500);
+            setTimeout(function() { loader.remove(); }, 200);
           }
+        };
+        function onError(event) {
+          const target = event.target;
+          if (target && (target.tagName === 'SCRIPT' || (target.tagName === 'LINK' && target.rel === 'stylesheet'))) fail();
+          else if (event.message) fail();
         }
-        
-        // 页面加载完成后开始检测
-        if (document.readyState === 'complete') {
-          setTimeout(checkAppLoaded, 500);
-        } else {
-          window.addEventListener('load', function() {
-            setTimeout(checkAppLoaded, 500);
-          });
-        }
-        
-        // 备用：5秒后强制隐藏
-        setTimeout(hideLoading, 5000);
+        window.addEventListener('error', onError, true);
+        window.addEventListener('vite:preloadError', fail);
+        window.addEventListener('unhandledrejection', fail);
       })();
     </script>
+    <!-- Vite / uni 脚本入口：加载 src/main.js -->
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

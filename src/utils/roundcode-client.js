@@ -126,9 +126,9 @@ export function forgetGeneratedCodeImage(url) {
 }
 
 // A registration code displayed by this client can be decoded even before account login.
-export async function registerGeneratedCodeImage(url, isCurrent = () => true) {
+export async function registerGeneratedCodeImage(url, isCurrent = () => true, onProgress) {
   // #ifdef H5
-  return browserClient.registerImage(url, isCurrent)
+  return browserClient.registerImage(url, isCurrent, onProgress)
   // #endif
   if (!foreground || scannerDepth > 0 || scanRequests > 0 || !supportsLocalTasks() || !isCurrent() || !isGeneratedCodeUrl(url, baseUrl)) return
   const stamp = Date.now()

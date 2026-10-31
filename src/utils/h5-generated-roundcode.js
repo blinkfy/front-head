@@ -2,8 +2,8 @@ import { createBrowserRoundCodeDecoder } from './h5-roundcode-local.js'
 import { createWebGeneratedCodeRegistrar } from './h5-generated-roundcode-core.mjs'
 
 // Canvas conversion stays local; only the exact decoded bytes are registered.
-export function createGeneratedImageDecoder() {
-  const decoder = createBrowserRoundCodeDecoder()
+export function createGeneratedImageDecoder(onProgress) {
+  const decoder = createBrowserRoundCodeDecoder(onProgress)
   let closed = false, image = null, cancelLoad = null
   const current = isCurrent => !closed && isCurrent()
   return {
