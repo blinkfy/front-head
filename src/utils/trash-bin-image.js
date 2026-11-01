@@ -8,6 +8,13 @@ export const resolveTrashBinImage = (value, mapType) => resolveStoredBinImage(va
 // Keep API calls static so H5 production builds retain their implementations.
 const uniCall = (invoke, options) => new Promise((resolve, reject) => invoke({ ...options, success: resolve, fail: reject }))
 
+function photoProcessingError(stage, error) {
+  return Object.assign(new Error(`${stage}，请重新选择照片`), {
+    stage, code: error?.code ?? error?.errCode,
+    detail: error?.errMsg || error?.message || error?.target?.error?.message || ''
+  })
+}
+
 function fileSystem() {
   if (uni.getFileSystemManager) return uni.getFileSystemManager()
   // #ifdef MP-ALIPAY
@@ -19,12 +26,17 @@ function fileSystem() {
 function readImageData(path) {
   // #ifdef APP-PLUS
   return new Promise((resolve, reject) => {
+    const failed = error => reject(photoProcessingError('照片文件读取失败', error))
     plus.io.resolveLocalFileSystemURL(path, entry => entry.file(file => {
       const reader = new plus.io.FileReader()
-      reader.onloadend = event => resolve(String(event.target.result || ''))
-      reader.onerror = reject
+      reader.onloadend = event => {
+        const data = String(event?.target?.result || reader.result || '')
+        if (data) resolve(data)
+        else failed(new Error('empty_image_data'))
+      }
+      reader.onerror = failed
       reader.readAsDataURL(file)
-    }, reject), reject)
+    }, failed), failed)
   })
   // #endif
   // #ifndef APP-PLUS
@@ -56,7 +68,7 @@ async function compressNativeImage(src, dimensions) {
       src, dst: `_doc/trash_bin_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`,
       overwrite: true, format: 'jpg', quality: Math.round(dimensions.quality * 100),
       width: `${dimensions.width}px`, height: `${dimensions.height}px`
-    }, result => resolve(result.target), reject))
+    }, result => resolve(result.target), error => reject(photoProcessingError('照片压缩失败', error))))
     // #endif
     // #ifndef APP-PLUS
     const result = await uniCall(options => uni.compressImage(options), {
@@ -100,10 +112,20 @@ export async function compressTrashBinImage(filePath) {
   })
   // #endif
   // #ifndef H5
-  const info = await uniCall(options => uni.getImageInfo(options), { src: filePath })
+  let info
+  try { info = await uniCall(options => uni.getImageInfo(options), { src: filePath }) }
+  catch (error) { throw photoProcessingError('照片信息读取失败', error) }
+  // #ifdef APP-PLUS
+  // Album files can be readable by the native image decoder but not by FileReader.
+  // Read Base64 only from our own compressed temporary file, never the album original.
+  return encodeBinImageWithinLimit(info.width, info.height,
+    dimensions => compressNativeImage(info.path || filePath, dimensions))
+  // #endif
+  // #ifndef APP-PLUS
   const original = normalizeImageData(await readImageData(filePath))
   if (original && imageDataBytes(original) > 0 && imageDataBytes(original) <= TRASH_BIN_IMAGE_LIMIT) return original
   return encodeBinImageWithinLimit(info.width, info.height, dimensions => compressNativeImage(filePath, dimensions))
+  // #endif
   // #endif
 }
 

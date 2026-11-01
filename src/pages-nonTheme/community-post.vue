@@ -1,5 +1,8 @@
 <template>
   <view class="post-page" :class="{ 'dark-mode': isDark }">
+    <!-- #ifdef MP-WEIXIN -->
+    <canvas canvas-id="post-image-trim" class="post-image-trim-canvas"></canvas>
+    <!-- #endif -->
     <!-- 动态背景 -->
     <view class="bg-effects">
       <view class="bg-circle c1"></view>
@@ -139,27 +142,23 @@
       </view>
     </view>
 
-    <view v-if="imagePreviewVisible" class="custom-preview" @click.self="closeImagePreview">
-      <view class="preview-topbar">
-        <text class="preview-count">{{ previewIndex + 1 }}/{{ previewImages.length }}</text>
-        <ManifestIcon class="preview-close" id="close" @click="closeImagePreview" />
-      </view>
-      <scroll-view class="preview-scroll" scroll-y>
-        <view class="preview-image-wrap">
-          <image
-            class="preview-image"
-            :class="getPreviewImageClass(previewIndex)"
-            :src="previewImages[previewIndex]"
-            mode="widthFix"
-            @click.stop
-          ></image>
+    <view v-if="imagePreviewVisible" class="community-preview" role="dialog" aria-modal="true" aria-label="图片预览">
+      <scroll-view class="community-preview-scroll" :scroll-x="previewImageSize.width > previewViewportWidth" :scroll-y="previewImageSize.height > previewViewportHeight" :scroll-left="previewScrollLeft" :scroll-top="previewScrollTop" :key="previewIndex">
+        <view class="community-preview-canvas" :style="previewCanvasStyle" @click.self="closeImagePreview">
+          <image class="community-preview-image" :style="previewImageStyle" :src="previewImages[previewIndex]" mode="aspectFit" @load="onPreviewImageLoad" />
         </view>
       </scroll-view>
-      <view class="preview-nav" v-if="previewImages.length > 1">
-        <view class="preview-nav-btn" :class="{ disabled: previewIndex <= 0 }" @click.stop="showPrevImage">上一张</view>
-        <view class="preview-nav-btn" :class="{ disabled: previewIndex >= previewImages.length - 1 }" @click.stop="showNextImage">下一张</view>
+      <view class="community-preview-count">{{ previewIndex + 1 }} / {{ previewImages.length }}</view>
+      <button class="community-preview-close" type="button" aria-label="关闭图片预览" @click="closeImagePreview">×</button>
+      <button v-if="previewIndex > 0" class="community-preview-prev" type="button" aria-label="上一张图片" @click="changePreview(-1)">‹</button>
+      <button v-if="previewIndex < previewImages.length - 1" class="community-preview-next" type="button" aria-label="下一张图片" @click="changePreview(1)">›</button>
+      <view class="community-preview-zoom">
+        <view class="community-zoom-btn" :class="{ disabled: previewZoom <= 0.5 }" role="button" aria-label="缩小图片" @tap.stop="zoomPreview(-1)">−</view>
+        <text>{{ Math.round(previewZoom * 100) }}%</text>
+        <view class="community-zoom-btn" :class="{ disabled: previewZoom >= 3 }" role="button" aria-label="放大图片" @tap.stop="zoomPreview(1)">＋</view>
       </view>
     </view>
+
   </view>
 </template>
 
@@ -169,7 +168,7 @@ import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
-import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage } from '@/pages-nonTheme/utils/community-image.js';
+import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage, takeCommunityPostSnapshot } from '@/pages-nonTheme/utils/community-image.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import { getDisplayName } from '@/utils/display-name.js';
 function requestJson(url, options = {}) {
@@ -212,10 +211,39 @@ export default {
       imagePreviewVisible: false,
       previewImages: [],
       previewIndex: 0,
+      previewZoom: 1,
+      previewViewportWidth: 0,
+      previewViewportHeight: 0,
+      previewImageWidth: 0,
+      previewImageHeight: 0,
+      previewScrollLeft: 0,
+      previewScrollTop: 0,
       postImageMeta: {}
     };
   },
   computed: {
+    previewImageSize() {
+      const viewportWidth = this.previewViewportWidth || 1;
+      const viewportHeight = this.previewViewportHeight || 1;
+      if (!this.previewImageWidth || !this.previewImageHeight) return { width: 0, height: 0 };
+      const fit = Math.min(viewportWidth / this.previewImageWidth, viewportHeight / this.previewImageHeight);
+      return {
+        width: this.previewImageWidth * fit * this.previewZoom,
+        height: this.previewImageHeight * fit * this.previewZoom
+      };
+    },
+    previewCanvasStyle() {
+      return {
+        width: `${Math.max(this.previewViewportWidth, this.previewImageSize.width)}px`,
+        height: `${Math.max(this.previewViewportHeight, this.previewImageSize.height)}px`
+      };
+    },
+    previewImageStyle() {
+      return {
+        width: `${this.previewImageSize.width}px`,
+        height: `${this.previewImageSize.height}px`
+      };
+    },
     postTag() {
       return this.post.tag || '帖子详情';
     },
@@ -269,8 +297,21 @@ export default {
     // #endif
     this.postId = Number(options.postId) || 0;
     this.communityId = Number(options.communityId) || 0;
+    const snapshot = takeCommunityPostSnapshot(this.communityId, this.postId);
+    if (snapshot) {
+      this.post = { ...this.post, ...snapshot };
+      if (this.post.images.length) {
+        this._postImagesRequested = true;
+        this.loadPostImages();
+      }
+    }
     this.loadPostDetail();
     this.loadComments();
+  },
+  onUnload() {
+    // #ifdef H5
+    window.removeEventListener('keydown', this.handlePreviewKeydown);
+    // #endif
   },
   onShow() {
     this.checkTheme();
@@ -329,10 +370,13 @@ export default {
           this.post = {
             ...this.post,
             ...found,
-            images: normalizeCommunityImages(found.images, baseUrl),
+            images: this._postImagesRequested ? this.post.images : normalizeCommunityImages(found.images, baseUrl),
             imageCount: Number(found.imageCount || (found.images && found.images.length) || 0)
           };
-          this.loadPostImages();
+          if (!this._postImagesRequested) {
+            this._postImagesRequested = true;
+            this.loadPostImages();
+          }
         } else {
           uni.showToast({ title: '帖子不存在或已删除', icon: 'none' });
         }
@@ -354,21 +398,31 @@ export default {
     },
     async loadPostImages() {
       if (!this.postId || this.post.imageCount <= 0) return;
-      const cachedImages = await getCachedCommunityImage('post', this.postId);
-      if (cachedImages && cachedImages.length) {
-        this.post.images = cachedImages;
-        this.post.imageCount = Math.max(this.post.imageCount || 0, cachedImages.length);
-        this.postImageMeta = {};
-        return;
-      }
-      this.loadingImages = true;
+      this.loadingImages = !this.post.images.length;
       try {
-        const res = await getCommunityPostImages(this.postId);
-        const data = this.extractData(res) || {};
-        this.post.images = normalizeCommunityImages(data.images || [], baseUrl);
+        let images = this.post.images.length ? [...this.post.images] : await getCachedCommunityImage('post', this.postId);
+        if (!images || !images.length) {
+          const res = await getCommunityPostImages(this.postId);
+          const data = this.extractData(res) || {};
+          images = normalizeCommunityImages(data.images || [], baseUrl);
+          if (images.length) setCachedCommunityImage('post', this.postId, images);
+        }
         this.postImageMeta = {};
-        if (this.post.images.length) setCachedCommunityImage('post', this.postId, this.post.images);
-        this.post.imageCount = Math.max(this.post.imageCount || 0, this.post.images.length);
+        this.post.images = images;
+        this.post.imageCount = Math.max(this.post.imageCount || 0, images.length);
+        this.loadingImages = false;
+        for (let index = 0; index < images.length; index++) {
+          let trimmed = images[index];
+          // #ifdef H5
+          trimmed = await this.trimPreviewPadding(trimmed);
+          // #endif
+          // #ifdef MP-WEIXIN
+          trimmed = await this.trimMiniProgramImage(trimmed);
+          // #endif
+          if (trimmed !== images[index] && this.post.images[index] === images[index]) {
+            this.post.images.splice(index, 1, trimmed);
+          }
+        }
       } catch (e) {
         // 图片加载失败不影响帖子内容展示
       } finally {
@@ -455,24 +509,144 @@ export default {
         return;
       }
 
+      // #ifdef H5
+      // 历史社区图片由 960×960 画布生成，长图两侧可能有透明留白。
+      urls = await Promise.all(urls.map(url => this.trimPreviewPadding(url)));
+      // #endif
+
       this.previewImages = urls;
+      const { windowWidth = 0, windowHeight = 0 } = uni.getSystemInfoSync();
+      this.previewViewportWidth = windowWidth;
+      this.previewViewportHeight = windowHeight;
+      // #ifdef H5
+      this.previewViewportWidth = window.innerWidth || windowWidth;
+      this.previewViewportHeight = window.innerHeight || windowHeight;
+      // #endif
+      this.previewImageWidth = 0;
+      this.previewImageHeight = 0;
       this.previewIndex = Math.min(Math.max(Number(index) || 0, 0), urls.length - 1);
+      this.previewZoom = 1;
+      this.previewScrollLeft = 0;
+      this.previewScrollTop = 0;
       this.imagePreviewVisible = true;
+      // #ifdef H5
+      window.addEventListener('keydown', this.handlePreviewKeydown);
+      // #endif
     },
+    // #ifdef H5
+    trimPreviewPadding(url) {
+      if (!url.startsWith('data:image/png;base64,')) return Promise.resolve(url);
+      return new Promise(resolve => {
+        const image = new Image();
+        image.onload = () => {
+          try {
+            // 只处理社区旧版上传生成的固定尺寸画布，保留其他图片的透明边缘。
+            if (image.naturalWidth !== 960 || image.naturalHeight !== 960) return resolve(url);
+            const canvas = document.createElement('canvas');
+            canvas.width = image.naturalWidth;
+            canvas.height = image.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
+            for (let y = 0; y < canvas.height; y++) {
+              for (let x = 0; x < canvas.width; x++) {
+                if (pixels[(y * canvas.width + x) * 4 + 3] !== 0) {
+                  left = Math.min(left, x); right = Math.max(right, x);
+                  top = Math.min(top, y); bottom = Math.max(bottom, y);
+                }
+              }
+            }
+            if (right < left || (left === 0 && top === 0 && right === 959 && bottom === 959)) return resolve(url);
+            const cropped = document.createElement('canvas');
+            cropped.width = right - left + 1;
+            cropped.height = bottom - top + 1;
+            cropped.getContext('2d').drawImage(canvas, left, top, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height);
+            resolve(cropped.toDataURL('image/png'));
+          } catch (_) {
+            resolve(url);
+          }
+        };
+        image.onerror = () => resolve(url);
+        image.src = url;
+      });
+    },
+    // #endif
+    // #ifdef MP-WEIXIN
+    async trimMiniProgramImage(url) {
+      if (!url.startsWith('data:image/png;base64,')) return url;
+      const fs = uni.getFileSystemManager();
+      const name = `post_trim_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      let sourcePath = '';
+      try {
+        sourcePath = await this.saveBase64ToTemp(url, name);
+        const info = await new Promise((resolve, reject) => uni.getImageInfo({ src: sourcePath, success: resolve, fail: reject }));
+        if (info.width !== 960 || info.height !== 960) return url;
+        const context = uni.createCanvasContext('post-image-trim', this);
+        context.clearRect(0, 0, 960, 960);
+        context.drawImage(sourcePath, 0, 0, 960, 960);
+        await new Promise(resolve => context.draw(false, resolve));
+        const image = await new Promise((resolve, reject) => uni.canvasGetImageData({
+          canvasId: 'post-image-trim', x: 0, y: 0, width: 960, height: 960, success: resolve, fail: reject
+        }, this));
+        let left = 960, top = 960, right = -1, bottom = -1;
+        for (let y = 0; y < 960; y++) {
+          for (let x = 0; x < 960; x++) {
+            if (image.data[(y * 960 + x) * 4 + 3] !== 0) {
+              left = Math.min(left, x); right = Math.max(right, x);
+              top = Math.min(top, y); bottom = Math.max(bottom, y);
+            }
+          }
+        }
+        if (right < left || (left === 0 && top === 0 && right === 959 && bottom === 959)) return url;
+        const width = right - left + 1, height = bottom - top + 1;
+        const result = await new Promise((resolve, reject) => uni.canvasToTempFilePath({
+          canvasId: 'post-image-trim', x: left, y: top, width, height,
+          destWidth: width, destHeight: height, fileType: 'png', success: resolve, fail: reject
+        }, this));
+        const data = await new Promise((resolve, reject) => fs.readFile({
+          filePath: result.tempFilePath, encoding: 'base64', success: resolve, fail: reject
+        }));
+        return `data:image/png;base64,${data.data}`;
+      } catch (_) {
+        return url;
+      } finally {
+        if (sourcePath) fs.unlink({ filePath: sourcePath, fail() {} });
+      }
+    },
+    // #endif
     closeImagePreview() {
       this.imagePreviewVisible = false;
+      // #ifdef H5
+      window.removeEventListener('keydown', this.handlePreviewKeydown);
+      // #endif
     },
-    showPrevImage() {
-      if (this.previewIndex > 0) this.previewIndex -= 1;
+    handlePreviewKeydown(event) {
+      if (!this.imagePreviewVisible) return;
+      if (event.key === 'Escape') this.closeImagePreview();
+      else if (event.key === 'ArrowLeft') this.changePreview(-1);
+      else if (event.key === 'ArrowRight') this.changePreview(1);
     },
-    showNextImage() {
-      if (this.previewIndex < this.previewImages.length - 1) this.previewIndex += 1;
+    changePreview(direction) {
+      const index = this.previewIndex + direction;
+      if (index < 0 || index >= this.previewImages.length) return;
+      this.previewIndex = index;
+      this.previewZoom = 1;
+      this.previewImageWidth = 0;
+      this.previewImageHeight = 0;
+      this.previewScrollLeft = 0;
+      this.previewScrollTop = 0;
     },
-    getPreviewImageClass(index) {
-      const ratio = this.postImageMeta[index] && this.postImageMeta[index].ratio;
-      if (ratio && ratio > 1.28) return 'preview-wide';
-      if (ratio && ratio < 0.78) return 'preview-tall';
-      return 'preview-normal';
+    zoomPreview(direction) {
+      this.previewZoom = Math.max(0.5, Math.min(3, Math.round((this.previewZoom + direction * 0.25) * 100) / 100));
+      this.$nextTick(() => {
+        this.previewScrollLeft = Math.max(0, (this.previewImageSize.width - this.previewViewportWidth) / 2);
+        this.previewScrollTop = Math.max(0, (this.previewImageSize.height - this.previewViewportHeight) / 2);
+      });
+    },
+    onPreviewImageLoad(event) {
+      this.previewImageWidth = Number(event?.detail?.width) || 0;
+      this.previewImageHeight = Number(event?.detail?.height) || 0;
     },
     saveBase64ToTemp(base64Data, name) {
       return new Promise((resolve, reject) => {
@@ -587,6 +761,7 @@ export default {
 </script>
 
 <style scoped>
+.post-image-trim-canvas { position: fixed; left: -9999px; top: 0; width: 960px; height: 960px; }
 /* ===== 主容器 ===== */
 .post-page {
   min-height: 100vh;
@@ -784,98 +959,19 @@ export default {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.custom-preview {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  background: rgba(4, 8, 7, 0.97);
-  display: flex;
-  flex-direction: column;
-}
-.preview-topbar {
-  height: calc(96rpx + env(safe-area-inset-top));
-  padding: env(safe-area-inset-top) 28rpx 0;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: #fff;
-  flex-shrink: 0;
-}
-.preview-count {
-  font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.78);
-}
-.preview-close {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 52rpx;
-  line-height: 1;
-  color: #fff;
-}
-.preview-scroll {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-}
-.preview-image-wrap {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 48rpx 28rpx 120rpx;
-  box-sizing: border-box;
-}
-.preview-image {
-  display: block;
-  width: 92vw;
-  max-width: 720px;
-}
-.preview-image.preview-tall {
-  width: 96vw;
-  max-width: none;
-}
-.preview-image.preview-wide {
-  width: 92vw;
-  max-width: 960px;
-}
-
-@media (min-width: 768px) {
-  .preview-image.preview-tall {
-    width: min(72vw, 560px);
-    max-width: 560px;
-  }
-}
-.preview-nav {
-  display: flex;
-  gap: 20rpx;
-  width: calc(100% - 64rpx);
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 20rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
-  flex-shrink: 0;
-  box-sizing: border-box;
-}
-.preview-nav-btn {
-  flex: 1;
-  height: 72rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-  font-size: 26rpx;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.preview-nav-btn.disabled {
-  opacity: 0.36;
-}
+.community-preview { position: fixed; inset: 0; z-index: 10000; background: rgba(0, 0, 0, .88); }
+.community-preview-scroll { width: 100%; height: 100%; overscroll-behavior: contain; }
+.community-preview-canvas { display: flex; align-items: center; justify-content: center; }
+.community-preview-image { display: block; flex: none; }
+.community-preview-count { position: absolute; top: calc(16px + env(safe-area-inset-top)); left: 16px; color: #fff; font-size: 14px; }
+.community-preview-close, .community-preview-prev, .community-preview-next { position: absolute; z-index: 1; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .45); color: #fff; font-size: 30px; line-height: 1; cursor: pointer; }
+.community-preview-close { top: calc(8px + env(safe-area-inset-top)); right: 8px; }
+.community-preview-prev, .community-preview-next { top: 50%; transform: translateY(-50%); }
+.community-preview-prev { left: 8px; }
+.community-preview-next { right: 8px; }
+.community-preview-zoom { position: absolute; bottom: calc(20px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 4px 10px; border-radius: 28px; background: rgba(0, 0, 0, .65); color: #fff; font-size: 14px; }
+.community-zoom-btn { display: flex; flex: none; align-items: center; justify-content: center; width: 36px; height: 36px; color: #fff; font-size: 25px; line-height: 1; cursor: pointer; }
+.community-zoom-btn.disabled { opacity: .4; }
 
 .post-actions {
   display: flex; gap: 40rpx;

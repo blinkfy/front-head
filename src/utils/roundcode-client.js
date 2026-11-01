@@ -48,8 +48,9 @@ function decode(encoded) {
   void pending.then(() => decoding.delete(pending), () => decoding.delete(pending))
   return pending
 }
-function worker(active) {
+function worker(active, onRegistering) {
   return createRoundCodeWorker({ decode, register: data => {
+    onRegistering?.()
     const pending = transport.register(data)
     registering.add(pending)
     void pending.then(() => registering.delete(pending), () => registering.delete(pending))
@@ -130,39 +131,66 @@ export async function registerGeneratedCodeImage(url, isCurrent = () => true, on
   // #ifdef H5
   return browserClient.registerImage(url, isCurrent, onProgress)
   // #endif
-  if (!foreground || scannerDepth > 0 || scanRequests > 0 || !supportsLocalTasks() || !isCurrent() || !isGeneratedCodeUrl(url, baseUrl)) return
+  if (!foreground || scannerDepth > 0 || scanRequests > 0 || !isCurrent() || !isGeneratedCodeUrl(url, baseUrl)) return { status: 'inactive' }
   const stamp = Date.now()
-  for (const [key, entry] of offered) if (entry.until <= stamp) offered.delete(key)
-  if (offered.has(url) || offered.size >= 16) return
-  const entry = { state: 'pending', until: stamp + 30000, cancelled: false }
+  for (const [key, entry] of offered) if (entry.until <= stamp && entry.state !== 'pending') offered.delete(key)
+  if (offered.has(url)) {
+    const existing = offered.get(url)
+    if (existing.state === 'registered' || existing.state === 'unsupported') return { status: existing.state }
+    if (existing.state === 'pending') {
+      if (typeof onProgress === 'function') {
+        existing.listeners.add(onProgress)
+        if (existing.progress) { try { onProgress(existing.progress.phase, existing.progress.fraction) } catch (_) {} }
+      }
+      return existing.promise.finally(() => existing.listeners.delete(onProgress))
+    }
+  }
+  if (!supportsLocalTasks()) return { status: 'unsupported' }
+  if (offered.size >= 16) return { status: 'busy' }
+  const entry = { state: 'pending', until: stamp + 30000, cancelled: false, listeners: new Set(), progress: { phase: 'image' } }
+  if (typeof onProgress === 'function') entry.listeners.add(onProgress)
   offered.set(url, entry)
   const token = identity()
   const active = () => !entry.cancelled && foreground && isCurrent() && identity() === token
-  let local
-  try {
-    const response = await transport.image(url)
+  const report = (phase, fraction) => {
     if (!active()) return
-    const task = readGeneratedCodeTask(response.header, encoded => {
-      const bytes = new Uint8Array(uni.base64ToArrayBuffer(encoded))
-      return Array.from(bytes, byte => String.fromCharCode(byte)).join('')
-    })
-    if (!task) { entry.state = 'unsupported'; entry.until = Date.now() + 30000; return }
-    const headers = response.header || {}
-    const typeKey = Object.keys(headers).find(key => key.toLowerCase() === 'content-type')
-    const mime = String(headers[typeKey] || '').split(';')[0].trim()
-    local = worker(active); entry.worker = local; ownWorkers.add(local)
-    const imageBase64 = uni.arrayBufferToBase64(response.data)
-    let result = await local.processTask({ ...task, mime, imageBase64 })
-    if (result.status === 'busy' && active() && scannerDepth === 0 && scanRequests === 0) {
-      // A camera which closed during this request may still be releasing its native handle.
-      await new Promise(resolve => setTimeout(resolve, 500))
-      if (active()) result = await local.processTask({ ...task, mime, imageBase64 })
-    }
-    if (result.status === 'registered') { entry.state = 'registered'; entry.until = task.expiresAt }
-    else if (result.status === 'unsupported') { entry.state = 'unsupported'; entry.until = Date.now() + 30000 }
-  } catch (_) { /* Registration is optional and must never interrupt code display/login. */ }
-  finally {
-    if (local) { local.stop(); ownWorkers.delete(local) }
-    if (entry.state === 'pending' && offered.get(url) === entry) offered.delete(url)
+    entry.progress = { phase, fraction }
+    for (const listener of entry.listeners) { try { listener(phase, fraction) } catch (_) {} }
   }
+  let local
+  entry.promise = (async () => {
+    try {
+      report('image')
+      const response = await transport.image(url)
+      if (!active()) { entry.state = 'inactive'; return { status: entry.state } }
+      const task = readGeneratedCodeTask(response.header, encoded => {
+        const bytes = new Uint8Array(uni.base64ToArrayBuffer(encoded))
+        return Array.from(bytes, byte => String.fromCharCode(byte)).join('')
+      })
+      if (!task) { entry.state = 'unsupported'; entry.until = Date.now() + 30000; return { status: entry.state } }
+      const headers = response.header || {}
+      const typeKey = Object.keys(headers).find(key => key.toLowerCase() === 'content-type')
+      const mime = String(headers[typeKey] || '').split(';')[0].trim()
+      local = worker(active, () => report('registering')); entry.worker = local; ownWorkers.add(local)
+      report('loading')
+      const imageBase64 = uni.arrayBufferToBase64(response.data)
+      report('decoding')
+      let result = await local.processTask({ ...task, mime, imageBase64 })
+      if (result.status === 'busy' && active() && scannerDepth === 0 && scanRequests === 0) {
+        // A camera which closed during this request may still be releasing its native handle.
+        await new Promise(resolve => setTimeout(resolve, 500))
+        if (active()) { report('decoding'); result = await local.processTask({ ...task, mime, imageBase64 }) }
+      }
+      entry.state = result.status || 'failed'
+      if (entry.state === 'registered') { entry.until = task.expiresAt; report('registered') }
+      else if (entry.state === 'unsupported') entry.until = Date.now() + 30000
+      return { status: entry.state }
+    } catch (_) { entry.state = active() ? 'failed' : 'inactive'; return { status: entry.state } }
+    finally {
+      if (local) { local.stop(); ownWorkers.delete(local) }
+      if (entry.state === 'pending') entry.state = 'inactive'
+      if (entry.state === 'inactive' && offered.get(url) === entry) offered.delete(url)
+    }
+  })()
+  return entry.promise.finally(() => { if (typeof onProgress === 'function') entry.listeners.delete(onProgress) })
 }

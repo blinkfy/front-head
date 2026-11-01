@@ -20,11 +20,11 @@ const resolverDependencies = {
 export const resolveWebRoundCode = createWebRoundCodeResolver(resolverDependencies)
 
 // Inspect without confirming login or navigating. Reuse this exact response on acceptance.
-export async function previewWebRoundCode(rawBase64, isActive = () => true) {
+export async function previewWebRoundCode(rawBase64, isActive = () => true, onPending) {
   const token = resolverDependencies.getToken()
   if (!token) throw new Error('请先登录，再识别微信圆码')
   const current = () => isActive() && resolverDependencies.getToken() === token
-  const response = await resolveWechatQrRaw(rawBase64, token)
+  const response = await resolveWechatQrRaw(rawBase64, token, { isActive: current, onPending })
   if (!current()) return null
   const text = roundCodeDebugText(response?.data)
   return { text, accept: ({ confirm } = {}) => {

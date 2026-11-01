@@ -11,7 +11,11 @@ export const registrationRuntime = {
   setStorageSync: (key, value) => uni.setStorageSync(key, value),
   removeStorageSync: key => uni.removeStorageSync(key)
 }
-export const registrationApi = createRegistrationApi({ runtime: registrationRuntime, baseUrl })
+let clientPlatform = 'h5'
+// #ifdef APP-PLUS
+clientPlatform = 'app'
+// #endif
+export const registrationApi = createRegistrationApi({ runtime: registrationRuntime, baseUrl, clientPlatform })
 const dialogs = createRegistrationDialogs(registrationRuntime)
 export const miniRegistrationRelay = createMiniRegistrationRelay({
   api: registrationApi,

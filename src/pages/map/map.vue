@@ -333,6 +333,7 @@ import AppTencentMap from '@/components/AppTencentMap.vue'
 import { nearbyDisposalPoints, validDisposalLocation } from '@/utils/nearby-disposal.mjs'
 import { isBinLocationPicker } from '@/utils/map-basemap-core.mjs'
 import { getPointFocusCenter } from '@/utils/map-point-focus.mjs'
+import { getLastMapLocation, saveLastMapLocation } from '@/utils/map-last-location.mjs'
 import { useMapBasemap } from '@/utils/use-map-basemap'
 import { useMapAdminBins, binMapLabel } from '@/utils/map-admin-bins'
 import { scanAndConnectDevice } from '@/utils/device-qr'
@@ -369,8 +370,8 @@ const mapContext = ref(null)
 const appMapRef = ref(null)
 const instance = getCurrentInstance()
 
-// 青岛市中心点坐标
-const center = ref({ latitude: 36.067108, longitude: 120.382609 })
+// 优先使用上次设备定位，没有记录时使用青岛市中心。
+const center = ref(getLastMapLocation() || { latitude: 36.067108, longitude: 120.382609 })
 const userLocation = ref({ latitude: null, longitude: null, addr: '' })
 const userMarker = ref(null)
 // 新增垃圾桶弹窗显示状态
@@ -1112,7 +1113,7 @@ async function getUserLocationOnce(coordType = 'gcj02') {
           
           if (res && typeof latitude === 'number' && typeof longitude === 'number' && 
               !isNaN(latitude) && !isNaN(longitude)) {
-            resolve({ latitude, longitude })
+            resolve(saveLastMapLocation({ latitude, longitude }))
           } else {
             if (!fallback && type === 'gcj02') tryGetLocation('wgs84', true)
             else reject(new Error('定位返回数据异常'))
@@ -1129,7 +1130,7 @@ async function getUserLocationOnce(coordType = 'gcj02') {
           }
           if (isH5 && typeof navigator !== 'undefined' && navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
-              pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+              pos => resolve(saveLastMapLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })),
               () => reject(err || new Error('浏览器定位失败')),
               { enableHighAccuracy: true, timeout: 15000 }
             )

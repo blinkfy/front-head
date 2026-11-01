@@ -234,16 +234,20 @@ function chooseImage() {
       if (!path || !props.visible || token !== imageRevision) return
       isProcessingImage.value = true; notice.value = ''; imageError.value = ''
       const previousPreview = previewSource.value
+      // #ifndef APP-PLUS
       previewSource.value = path
+      // #endif
       try {
         const image = await compressTrashBinImage(path)
         if (!props.visible || token !== imageRevision) return
         formData.value.image = image
-        // H5 uses the processed data URI; native platforms retain the accessible local thumbnail path.
-        // #ifdef H5
+        imageError.value = ''; notice.value = ''
+        // App gallery URIs may not be readable by the WebView; preview the processed image.
+        // #ifdef H5 || APP-PLUS
         previewSource.value = image
         // #endif
       } catch (error) {
+        console.warn('[bin-photo-processing] ' + JSON.stringify({ stage: error?.stage, code: error?.code ?? error?.errCode, detail: error?.detail || error?.errMsg || error?.message }))
         if (props.visible && token === imageRevision) { previewSource.value = previousPreview; notice.value = error.message || '照片处理失败，请重新选择。' }
       } finally { if (token === imageRevision) isProcessingImage.value = false }
     },

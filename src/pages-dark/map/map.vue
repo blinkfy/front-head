@@ -303,6 +303,7 @@ import AppTencentMap from '@/components/AppTencentMap.vue'
 import { nearbyDisposalPoints, validDisposalLocation } from '@/utils/nearby-disposal.mjs'
 import { isBinLocationPicker } from '@/utils/map-basemap-core.mjs'
 import { getPointFocusCenter } from '@/utils/map-point-focus.mjs'
+import { getLastMapLocation, saveLastMapLocation } from '@/utils/map-last-location.mjs'
 import { useMapBasemap } from '@/utils/use-map-basemap'
 import { useMapAdminBins, binMapLabel } from '@/utils/map-admin-bins'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
@@ -336,8 +337,8 @@ const visibleNearbyLocationOptions = computed(() => nearbyLocationOptions.value.
 const viewMode = ref(false)
 const viewLocationInfo = ref(null)
 
-// 青岛市中心点坐标
-const center = ref({ latitude: 36.067108, longitude: 120.382609 })
+// 优先使用上次设备定位，没有记录时使用青岛市中心。
+const center = ref(getLastMapLocation() || { latitude: 36.067108, longitude: 120.382609 })
 const userLocation = ref({ latitude: null, longitude: null, addr: '' })
 const userMarker = ref(null)
 
@@ -1073,7 +1074,7 @@ async function getUserLocationOnce(coordType = 'gcj02') {
             if (res && typeof latitude === 'number' && typeof longitude === 'number' && 
                 !isNaN(latitude) && !isNaN(longitude)) {
               console.log(`定位成功 (${type || 'default'}):`, latitude, longitude)
-              resolve({ latitude, longitude })
+              resolve(saveLastMapLocation({ latitude, longitude }))
             } else {
               console.warn('定位返回数据格式异常:', res)
               // 如果 res 不含坐标，认为失败
@@ -1107,7 +1108,7 @@ async function getUserLocationOnce(coordType = 'gcj02') {
               navigator.geolocation.getCurrentPosition(
                 pos => {
                   console.log('浏览器定位成功:', pos.coords.latitude, pos.coords.longitude)
-                  resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
+                  resolve(saveLastMapLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }))
                 },
                 (e) => {
                   // 最终失败，带 err 信息

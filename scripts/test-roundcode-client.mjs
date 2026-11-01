@@ -16,6 +16,9 @@ assert.equal(readGeneratedCodeTask({ 'X-Round-Code-Task': '%%%' }, fromBase64), 
 assert.equal(readGeneratedCodeTask({}, fromBase64), null)
 assert(isGeneratedCodeUrl(url + '?v=1', base))
 assert(isGeneratedCodeUrl(base + '/api/registration/sessions/r_' + 'a'.repeat(24) + '/qrcode', base))
+assert(isGeneratedCodeUrl('/api/registration/wechat-qrcode?v=1', ''))
+assert(isGeneratedCodeUrl('/api/registration/sessions/r_' + 'a'.repeat(24) + '/qrcode', ''))
+for (const bad of [url, '//evil.test/api/registration/wechat-qrcode', 'api/registration/wechat-qrcode', '/api/registration/../private']) assert(!isGeneratedCodeUrl(bad, ''))
 for (const bad of ['https://example.test.evil/api/registration/wechat-qrcode', base + '/api/registration/../private', 'file:///qr.png']) assert(!isGeneratedCodeUrl(bad, base))
 
 const requests = []
@@ -39,7 +42,7 @@ const source = (await readFile(new URL('../src/utils/roundcode-client.js', impor
   .replace(/\/\/ #ifdef H5\r?\n[\s\S]*?\/\/ #endif\r?\n/g, '')
   .replace(/^import .*\r?\n/gm, '').replace(/export (async )?function /g, '$1function ')
   + '\nglobalThis.client = { setRoundCodeClientActive, registerGeneratedCodeImage, prioritizeRoundCodeScanner };'
-function appHarness() {
+function appHarness(platform = 'android', withTask = true, ack = true) {
   const calls = [], callbacks = [], timers = new Map(); let timerId = 0
   const storage = { token: '', userInfo: { isAdmin: false } }
   const image = Uint8Array.from([137,80,78,71,13,10,26,10]).buffer
@@ -49,13 +52,13 @@ function appHarness() {
     setTimeout: (fn, delay) => { timers.set(++timerId, { fn, delay }); return timerId }, clearTimeout: id => timers.delete(id),
     setInterval: (fn, delay) => { timers.set(++timerId, { fn, delay }); return timerId }, clearInterval: id => timers.delete(id),
     decodeGeneratedImage(encoded, callback) { calls.push('decode'); callbacks.push(callback) },
-    uni: { getStorageSync: key => storage[key], getSystemInfoSync: () => ({ platform: 'android' }),
+    uni: { getStorageSync: key => storage[key], getSystemInfoSync: () => ({ platform }),
       base64ToArrayBuffer: value => { const b = Buffer.from(value, 'base64'); return Uint8Array.from(b).buffer },
       arrayBufferToBase64: value => Buffer.from(value).toString('base64'),
       request(options) {
         calls.push(options.url)
-        if (options.method === 'GET') options.success({ statusCode: 200, data: image, header: { 'Content-Type': 'image/png', 'X-Round-Code-Task': header } })
-        else options.success({ statusCode: 200, data: { code: 0, data: { registered: true, task: null } } })
+        if (options.method === 'GET') options.success({ statusCode: 200, data: image, header: { 'Content-Type': 'image/png', ...(withTask ? { 'X-Round-Code-Task': header } : {}) } })
+        else options.success({ statusCode: ack ? 200 : 503, data: { code: ack ? 0 : 503, data: { registered: ack, task: null } } })
       }
     }
   }
@@ -67,11 +70,35 @@ const countRegisters = h => h.calls.filter(x => x.endsWith('/register-generated'
 const rawResult = JSON.stringify({ scanType: 'WX_CODE', rawBase64: Buffer.from('opaque-test-payload').toString('base64') })
 {
   const h = appHarness(); h.setRoundCodeClientActive(true)
-  const pending = h.registerGeneratedCodeImage(url); await flush()
-  assert.equal(h.callbacks.length, 1); h.callbacks[0](rawResult); await pending
+  const phases = []
+  const pending = h.registerGeneratedCodeImage(url, () => true, phase => phases.push(phase)); await flush()
+  const concurrent = h.registerGeneratedCodeImage(url, () => true, phase => phases.push('observer:' + phase))
+  assert.equal(h.callbacks.length, 1); h.callbacks[0](rawResult)
+  assert.equal((await pending).status, 'registered')
+  assert.equal((await concurrent).status, 'registered')
   assert.equal(countRegisters(h), 1)
-  await h.registerGeneratedCodeImage(url); assert.equal(h.callbacks.length, 1, 'same displayed URL is bounded/deduplicated')
+  assert(phases.includes('decoding') && phases.includes('registering') && phases.includes('registered'))
+  assert.equal((await h.registerGeneratedCodeImage(url)).status, 'registered')
+  assert.equal(h.callbacks.length, 1, 'same displayed URL is bounded/deduplicated')
   h.setRoundCodeClientActive(false); assert.equal(h.timers.size, 0)
+}
+{
+  const h = appHarness('ios'); h.setRoundCodeClientActive(true)
+  assert.equal((await h.registerGeneratedCodeImage(url)).status, 'unsupported')
+  h.setRoundCodeClientActive(false)
+}
+{
+  const h = appHarness('android', false); h.setRoundCodeClientActive(true)
+  assert.equal((await h.registerGeneratedCodeImage(url)).status, 'unsupported')
+  h.setRoundCodeClientActive(false)
+}
+{
+  const phases = [], h = appHarness('android', true, false); h.setRoundCodeClientActive(true)
+  const pending = h.registerGeneratedCodeImage(url, () => true, phase => phases.push(phase)); await flush()
+  h.callbacks[0](rawResult)
+  assert.equal((await pending).status, 'failed')
+  assert(!phases.includes('registered'), 'only a successful service acknowledgement reports registration complete')
+  h.setRoundCodeClientActive(false)
 }
 for (const reason of ['hidden', 'account', 'gone']) {
   const h = appHarness(); let current = true; h.setRoundCodeClientActive(true)
@@ -79,7 +106,7 @@ for (const reason of ['hidden', 'account', 'gone']) {
   if (reason === 'hidden') h.setRoundCodeClientActive(false)
   else if (reason === 'account') h.storage.token = 'different-account'
   else current = false
-  h.callbacks[0](rawResult); await pending
+  h.callbacks[0](rawResult); assert.equal((await pending).status, 'inactive')
   assert.equal(countRegisters(h), 0, reason + ' must discard late native result')
   h.setRoundCodeClientActive(false)
 }

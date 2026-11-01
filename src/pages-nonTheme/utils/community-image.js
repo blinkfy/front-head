@@ -1,3 +1,16 @@
+let pendingPostSnapshot = null;
+
+export function setCommunityPostSnapshot(communityId, post) {
+  pendingPostSnapshot = { communityId: Number(communityId), post: { ...post, images: [...(post.images || [])] } };
+}
+
+export function takeCommunityPostSnapshot(communityId, postId) {
+  const snapshot = pendingPostSnapshot;
+  pendingPostSnapshot = null;
+  return snapshot && snapshot.communityId === Number(communityId) && Number(snapshot.post.id) === Number(postId)
+    ? snapshot.post : null;
+}
+
 export function normalizeCommunityImageUrl(image, baseUrl = '') {
   if (!image || typeof image !== 'string') return '';
 

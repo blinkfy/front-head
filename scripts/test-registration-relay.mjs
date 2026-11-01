@@ -19,7 +19,7 @@ function h5(api = {}, options = {}) {
     create: async () => result(session()), status: async () => result({ status: 'waiting' }),
     consume: async () => login, cancel: async () => result({}), ...api
   }, onState: state => states.push(state), onLogin: value => logins.push(value),
-  onUnsupported: options.onUnsupported, now: () => time,
+  onUnsupported: options.onUnsupported, prepareRefresh: options.prepareRefresh, now: () => time,
   schedule: (fn, delay) => { assert.equal(delay, 2500); timers.set(++timerId, fn); return timerId },
   unschedule: timer => timers.delete(timer) })
   return { controller, states, logins, timers, setTime: value => { time = value } }
@@ -37,6 +37,17 @@ test('request timeout and private headers do not inherit JWT', async () => {
   assert.equal(calls[2].header.Authorization, 'Bearer latest-jwt')
   assert.deepEqual(calls[2].data, { wechatCode: 'fresh-code', confirm: true })
   assert.equal(api.qrUrl(session()).includes(session().pollSecret), false)
+})
+
+test('registration API tags only APP-created sessions', async () => {
+  const calls = []
+  const runtime = { request: options => {
+    calls.push(options)
+    options.success({ statusCode: 200, data: result({ ...session(), qrUrl: session().qrUrl }) })
+  } }
+  await createRegistrationApi({ runtime, baseUrl: 'https://example.test' }).create()
+  await createRegistrationApi({ runtime, baseUrl: 'https://example.test', clientPlatform: 'app' }).create()
+  assert.deepEqual(calls.map(call => call.data), [{}, { clientPlatform: 'app' }])
 })
 
 test('route leave ignores stale status and creation responses and cancels session', async () => {
@@ -122,7 +133,7 @@ test('registration scene stays separate from device scene and module intent surv
   const state = mini(); state.controller.capture(id); await state.controller.scan()
   // App launch, theme relaunch, register->login may all capture the same scene.
   state.controller.capture(id); await state.controller.scan(); assert.equal(state.scans.length, 1)
-  assert.deepEqual(Object.keys(state.controller.getPending()).sort(), ['expiresAt', 'scanned', 'sessionId'])
+  assert.deepEqual(Object.keys(state.controller.getPending()).sort(), ['clientPlatform', 'expiresAt', 'scanned', 'sessionId'])
   await state.controller.authorize('merge-final-token', '最终保留账号')
   assert.deepEqual(state.authorizations[0], [id, 'new-code-2', 'merge-final-token'])
   assert.equal(state.controller.getPending(), null)
@@ -159,12 +170,30 @@ test('native registration dialogs keep button labels within WeChat limits and co
     }
   } })
   assert.equal(await dialogs.confirm('最终账号', id), true)
+  assert.equal(shown[0].title, '确认登录网页')
+  assert.match(shown[0].content, /登录刚才扫码的分投侠网页/)
+  assert.equal(await dialogs.confirm('最终账号', id, 'app'), true)
+  assert.equal(shown[1].title, '确认登录APP')
+  assert.match(shown[1].content, /登录刚才扫码的分投侠APP/)
   assert.equal(await dialogs.retry(), true)
-  assert.equal(shown.length, 2)
+  assert.equal(shown.length, 3)
   for (const options of shown) {
     assert.ok(Array.from(options.confirmText).length <= 4)
     assert.ok(Array.from(options.cancelText).length <= 4)
   }
+})
+
+test('mini relay forwards scanned APP platform to confirm and keeps authorization flow', async () => {
+  const confirmationArgs = [], authorizations = []
+  const state = mini({ api: {
+    scan: async () => result({ status: 'scanned', expiresAt: 10000, clientPlatform: 'app' }),
+    authorize: async (...args) => { authorizations.push(args); return result({ status: 'authorized' }) }
+  }, confirm: async (...args) => { confirmationArgs.push(args); return true } })
+  state.controller.capture(id)
+  assert.equal(await state.controller.authorize('login-token', '最终账号'), true)
+  assert.equal(state.controller.getPending(), null)
+  assert.deepEqual(confirmationArgs, [['最终账号', id, 'app']])
+  assert.deepEqual(authorizations[0], [id, 'new-code-2', 'login-token'])
 })
 
 test('native confirmation failure preserves scanned intent for retry without cancelScan', async () => {
@@ -349,6 +378,89 @@ test('consume 404 is uncertain and never downgrades or retries a possible claim'
   assert.equal(consumes, 1, 'an ambiguous consume must not trigger manual fallback or another claim')
   assert.equal(unsupported, 0)
   assert.equal(state.states.at(-1).status, 'uncertain')
+})
+
+test('staged refresh keeps the old session until the replacement image is registered', async () => {
+  const preparation = deferred(), old = session(), next = { ...session(), sessionId: 'r_' + 'c'.repeat(24),
+    qrUrl: '/api/registration/sessions/r_' + 'c'.repeat(24) + '/qrcode', expiresAt: 20000, displayExpiresAt: 15000 }
+  let creates = 0, cancels = []
+  const state = h5({ create: async () => { creates++; return result(creates === 1 ? old : next) },
+    status: async () => result({ status: 'waiting' }), cancel: async value => { cancels.push(value.sessionId) }
+  }, { prepareRefresh: async candidate => { assert.equal(candidate, next); return preparation.promise } })
+  state.controller.resume(); await tick(); assert.equal(state.states.at(-1).session.sessionId, old.sessionId)
+  const refreshing = state.controller.refresh(); await tick()
+  assert.equal(creates, 2); assert.equal(state.states.at(-1).session.sessionId, old.sessionId)
+  assert.equal(state.states.at(-1).refreshing, true); assert.deepEqual(cancels, [])
+  preparation.resolve({ status: 'registered' }); await refreshing; await tick()
+  assert.equal(state.states.some(value => value.session?.sessionId === next.sessionId), true)
+  assert.deepEqual(cancels, [old.sessionId], 'old code is revoked only after replacement is ready')
+})
+
+test('failed staged refresh preserves the old code and cancels the candidate', async () => {
+  const next = { ...session(), sessionId: 'r_' + 'd'.repeat(24), qrUrl: '/api/registration/sessions/r_' + 'd'.repeat(24) + '/qrcode' }
+  let cancels = []
+  let creates = 0
+  const state = h5({ create: async () => result(++creates === 1 ? session() : next), cancel: async value => { cancels.push(value.sessionId) } },
+    { prepareRefresh: async () => ({ status: 'failed' }) })
+  state.controller.resume(); await tick(); await state.controller.refresh()
+  assert.equal(state.states.at(-1).session.sessionId, id)
+  assert.equal(state.states.at(-1).status, 'waiting')
+  assert.deepEqual(cancels, [next.sessionId])
+})
+
+test('staged refresh honors public display expiry and old backend fields', async () => {
+  let now = 12000
+  const next = { ...session(), sessionId: 'r_' + 'e'.repeat(24), qrUrl: '/api/registration/sessions/r_' + 'e'.repeat(24) + '/qrcode',
+    expiresAt: 30000, displayExpiresAt: 11000 }
+  let creates = 0
+  const state = h5({ create: async () => result(++creates === 1 ? session() : next), status: async () => result({ status: 'waiting' }) },
+    { prepareRefresh: async () => ({ status: 'registered' }) })
+  state.controller.resume(); await tick(); state.setTime(12001); await state.controller.refresh()
+  // A freshly installed code is governed by its public display deadline.
+  assert.equal(state.states.at(-1).status, 'expired')
+  assert.equal(state.states.at(-1).session.sessionId, next.sessionId)
+  const legacy = { ...session(), sessionId: 'r_' + 'f'.repeat(24), qrUrl: '/api/registration/sessions/r_' + 'f'.repeat(24) + '/qrcode' }
+  let legacyCreates = 0
+  const legacyState = h5({ create: async () => result(++legacyCreates === 1 ? session() : legacy) }, { prepareRefresh: async () => ({ status: 'unsupported' }) })
+  legacyState.controller.resume(); await tick(); await legacyState.controller.refresh()
+  assert.equal(legacyState.states.at(-1).session.sessionId, legacy.sessionId)
+})
+
+test('pause and authorization during candidate preparation discard only the candidate', async () => {
+  for (const mode of ['pause', 'leave', 'authorized']) {
+    const preparation = deferred(), next = { ...session(), sessionId: 'r_' + (mode === 'pause' ? '1' : mode === 'leave' ? '3' : '2').repeat(24),
+      qrUrl: '/api/registration/sessions/candidate/qrcode' }
+    let cancels = [], creates = 0, statuses = 0
+    const state = h5({ create: async () => result(++creates === 1 ? session() : next),
+      status: async () => result({ status: mode === 'authorized' && ++statuses > 1 ? 'authorized' : 'waiting' }),
+      consume: async () => login,
+      cancel: async value => { cancels.push(value.sessionId) }
+    }, { prepareRefresh: async () => preparation.promise })
+    state.controller.resume(); await tick()
+    // Keep the first poll in its waiting state while the candidate is prepared.
+    if (mode === 'pause') state.controller.pause()
+    const refreshing = state.controller.refresh(); await tick()
+    if (mode === 'authorized') { await state.controller.poll(); await tick() }
+    else if (mode === 'leave') state.controller.stop()
+    else state.controller.pause()
+    preparation.resolve({ status: 'registered' }); await refreshing; await tick()
+    assert.deepEqual(cancels, mode === 'leave' ? [id, next.sessionId] : [next.sessionId])
+    if (mode === 'pause') assert.equal(state.states.at(-1).session.sessionId, id)
+    else assert.equal(state.states.some(value => value.session?.sessionId === next.sessionId), false)
+  }
+})
+
+test('uncertain consume can stage a refresh after the possible claim settles', async () => {
+  const next = { ...session(), sessionId: 'r_' + '9'.repeat(24), qrUrl: '/api/registration/sessions/candidate/qrcode' }
+  let consumes = 0, cancels = [], creates = 0
+  const state = h5({ status: async () => result({ status: creates === 1 ? 'authorized' : 'waiting' }),
+    consume: async () => { consumes++; throw new Error('response lost') },
+    create: async () => result(++creates === 1 ? session() : next), cancel: async value => { cancels.push(value.sessionId) }
+  }, { prepareRefresh: async () => ({ status: 'registered' }) })
+  state.controller.resume(); await tick(); assert.equal(state.states.at(-1).status, 'uncertain')
+  await state.controller.refresh(); await tick()
+  assert.equal(consumes, 1); assert.equal(state.states.some(value => value.session?.sessionId === next.sessionId), true)
+  assert.deepEqual(cancels, [id])
 })
 
 test('malformed create response selects manual mode and fixed QR URL contains no credentials', async () => {

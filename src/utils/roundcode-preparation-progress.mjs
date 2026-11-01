@@ -1,7 +1,8 @@
 // Stage estimates never cross a business boundary or imply registration succeeded.
 const stages = { image: [0, 5, 500], loading: [5, 65, 1800], initializing: [65, 80, 650],
   decoding: [80, 94, 650], registering: [94, 99, 450] }
-export function roundCodePreparationText(state, value, phase) {
+export function roundCodePreparationText(state, value, phase, refreshing = false) {
+  if (refreshing) return `正在刷新二维码 · ${Math.min(99, value)}%`
   if (state === 'registered') return 'APP 扫码已就绪 · 100%'
   if (!['idle', 'preparing'].includes(state)) return 'APP 扫码暂未就绪，可先用微信扫码'
   const labels = { image: '读取码图', loading: '加载资源', initializing: '初始化', decoding: '解码中', registering: '登记中' }

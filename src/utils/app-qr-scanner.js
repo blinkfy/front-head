@@ -9,7 +9,7 @@ import { startScan, startScanWithDiagnostics, isAvailable } from '@/uni_modules/
 import { prioritizeRoundCodeScanner } from './roundcode-client.js'
 // #endif
 
-let scanner
+let scanner, resolving = false
 function getScanner() {
   if (scanner) return scanner
   const runtime = { request: options => uni.request(options), showModal: options => uni.showModal(options) }
@@ -45,6 +45,8 @@ function getScanner() {
     standardScan: () => new Promise((resolve, reject) => uni.scanCode({ scanType: ['qrCode'], success: resolve,
       fail: error => /cancel/i.test(error?.errMsg || '') ? resolve(null) : reject(error) })),
     resolveRaw: resolveWechatQrRaw,
+    onResolvePending: () => { resolving = true; uni.showLoading({ title: '正在确认圆码', mask: true }) },
+    onResolveSettled: () => { if (resolving) { resolving = false; uni.hideLoading() } },
     scanApp: api.scanApp,
     authorizeApp: api.authorizeApp,
     cancelApp: api.cancelApp,
@@ -62,7 +64,10 @@ function getScanner() {
 }
 
 export function scanWithAppQbar(options = {}) {
-  void getScanner().scan().then(result => {
+  const page = getCurrentPages().slice(-1)[0]
+  const current = () => getCurrentPages().slice(-1)[0] === page
+  void getScanner().scan(current).then(result => {
+    if (!current()) return
     if (result) options.success?.(result)
     options.complete?.(result || { handled: true })
   }).catch(error => { options.fail?.(error); options.complete?.(error) })

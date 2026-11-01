@@ -20,7 +20,7 @@ export async function compressImageToBase64(filePath, maxWidth = 64, maxHeight =
         // 在 H5 环境中直接使用 Image 对象和 Canvas
         if (typeof window !== 'undefined' && window.HTMLCanvasElement) {
           // H5 环境
-          handleH5Image(filePath, imageInfo, maxWidth, maxHeight, quality, resolve, reject)
+          handleH5Image(filePath, imageInfo, maxWidth, maxHeight, quality, resolve, reject, canvasOptions)
         } else {
           // 小程序/APP 环境
           handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, reject, canvasOptions)
@@ -37,7 +37,7 @@ export async function compressImageToBase64(filePath, maxWidth = 64, maxHeight =
 /**
  * H5 环境图片处理
  */
-function handleH5Image(filePath, imageInfo, maxWidth, maxHeight, quality, resolve, reject) {
+function handleH5Image(filePath, imageInfo, maxWidth, maxHeight, quality, resolve, reject, options = {}) {
   const img = new Image()
   img.crossOrigin = 'anonymous'
   
@@ -66,13 +66,19 @@ function handleH5Image(filePath, imageInfo, maxWidth, maxHeight, quality, resolv
         }
       }
       
+      width = Math.max(1, width)
+      height = Math.max(1, height)
+      if (options.preserveAspect) {
+        canvas.width = width
+        canvas.height = height
+      }
       // 居中绘制
-      const x = (maxWidth - width) / 2
-      const y = (maxHeight - height) / 2
+      const x = (canvas.width - width) / 2
+      const y = (canvas.height - height) / 2
       
       // 清空 canvas
       ctx.fillStyle = 'transparent'
-      ctx.fillRect(0, 0, maxWidth, maxHeight)
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
       
       // 绘制图片
       ctx.drawImage(img, x, y, width, height)
@@ -117,9 +123,11 @@ function handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, re
     }
   }
 
+  width = Math.max(1, width)
+  height = Math.max(1, height)
   // 居中绘制
-  const x = (maxWidth - width) / 2
-  const y = (maxHeight - height) / 2
+  const x = options.preserveAspect ? 0 : (maxWidth - width) / 2
+  const y = options.preserveAspect ? 0 : (maxHeight - height) / 2
 
   canvas.clearRect(0, 0, maxWidth, maxHeight)
   canvas.drawImage(filePath, x, y, width, height)
@@ -129,7 +137,9 @@ function handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, re
     uni.canvasToTempFilePath(
       {
         canvasId,
-        ...(options.canvasId ? { width: maxWidth, height: maxHeight, destWidth: maxWidth, destHeight: maxHeight, fileType: 'png' } : {}),
+        ...(options.preserveAspect
+          ? { x: 0, y: 0, width, height, destWidth: width, destHeight: height, fileType: 'png' }
+          : options.canvasId ? { width: maxWidth, height: maxHeight, destWidth: maxWidth, destHeight: maxHeight, fileType: 'png' } : {}),
         success: (res) => {
           const tempFilePath = res.tempFilePath
           

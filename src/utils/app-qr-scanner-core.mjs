@@ -3,7 +3,8 @@ const tokenPattern = /^[a-f0-9]{32}$/i
 
 // Pure orchestration, separated from UTS so race/cancel/error cases can be tested.
 export function createAppQrScanner({ nativeScan, standardScan, resolveRaw, scanApp,
-  authorizeApp, cancelApp, getToken, getAccount, confirm, fallback, notify }) {
+  authorizeApp, cancelApp, getToken, getAccount, confirm, fallback, notify,
+  onResolvePending = () => {}, onResolveSettled = () => {} }) {
   let busy = false
   async function nativeOrStandard() {
     let result
@@ -23,17 +24,22 @@ export function createAppQrScanner({ nativeScan, standardScan, resolveRaw, scanA
     return result
   }
   return {
-    async scan() {
+    async scan(isActive = () => true) {
       if (busy) return null
       busy = true
       try {
         const result = await nativeOrStandard()
+        if (!isActive()) return null
         if (!result || result.scanType !== 'WX_CODE') return result
         const token = getToken()
         if (!token) { notify('请先登录APP，再扫描小程序码'); return null }
         // Opaque WX_CODE is never routed through the permissive ordinary device-ID parser.
         let resolved
-        try { resolved = await resolveRaw(result.rawBase64, token) }
+        try {
+          try { resolved = await resolveRaw(result.rawBase64, token, {
+            isActive: () => isActive() && getToken() === token, onPending: onResolvePending
+          }) } finally { onResolveSettled() }
+        }
         catch (error) {
           if (error?.statusCode === 401 || error?.code === 401) {
             notify('登录状态已失效，请先重新登录APP'); return null
@@ -47,6 +53,7 @@ export function createAppQrScanner({ nativeScan, standardScan, resolveRaw, scanA
           if (await fallback(message)) return standardScan()
           return null
         }
+        if (!isActive()) return null
         if (getToken() !== token) { notify('账号已变化，请刷新网页二维码后重新扫码'); return null }
         const data = resolved?.data
         if (data?.kind === 'device' && tokenPattern.test(data.token || '')) {
@@ -60,13 +67,16 @@ export function createAppQrScanner({ nativeScan, standardScan, resolveRaw, scanA
         }
         const id = data.sessionId
         try {
-          await scanApp(id, token)
+          const scanned = await scanApp(id, token)
+          const clientPlatform = scanned?.data?.clientPlatform === 'app' ? 'app' : 'h5'
+          if (!isActive()) return null
           if (getToken() !== token) { notify('账号已变化，请刷新网页二维码后重新扫码'); return null }
-          const accepted = await confirm(getAccount(), id)
+          const accepted = await confirm(getAccount(), id, clientPlatform)
+          if (!isActive()) return null
           if (getToken() !== token) { notify('账号已变化，请刷新网页二维码后重新扫码'); return null }
           if (!accepted) { await cancelApp(id, token).catch(() => {}); return null }
           await authorizeApp(id, token)
-          notify('已确认网页登录，请返回网页查看')
+          notify(clientPlatform === 'app' ? '已确认登录APP，请返回目标APP查看' : '已确认网页登录，请返回网页查看')
         } catch (error) {
           notify([404, 405, 501].includes(error?.httpStatus)
             ? '当前服务暂不支持APP授权，请使用微信扫码'

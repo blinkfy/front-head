@@ -5,12 +5,12 @@ const baseUrl = 'https://example.test'
 const url = baseUrl + '/api/registration/sessions/r_' + 'a'.repeat(24) + '/qrcode'
 const rawBase64 = Buffer.from('opaque-circle-payload').toString('base64')
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve() }
-function harness({ headers = true, available = true, decode, register } = {}) {
+function harness({ headers = true, available = true, decode, register, apiBase = baseUrl } = {}) {
   let time = 1000, identity = '', opened = 0, closed = 0, active = 0, maxActive = 0
   const events = [], task = { id: 'rq_' + 'b'.repeat(24), ticket: 'c'.repeat(64), expiresAt: 180000 }
   const response = { data: new ArrayBuffer(8), header: { 'Content-Type': 'image/png',
     ...(headers ? { 'X-Round-Code-Task': Buffer.from(JSON.stringify(task)).toString('base64url') } : {}) } }
-  const client = createWebGeneratedCodeRegistrar({ baseUrl, getIdentity: () => identity, now: () => time,
+  const client = createWebGeneratedCodeRegistrar({ baseUrl: apiBase, getIdentity: () => identity, now: () => time,
     decodeBase64: encoded => Buffer.from(encoded, 'base64').toString('ascii'), encodeImage: () => 'iVBORw==',
     transport: { image: async source => { events.push(['image', source]); return response },
       register: async data => { events.push(['register', data]); if (register) await register(data) } },
@@ -32,6 +32,12 @@ function harness({ headers = true, available = true, decode, register } = {}) {
     get opened() { return opened }, get closed() { return closed }, get maxActive() { return maxActive } }
 }
 const registers = h => h.events.filter(([name]) => name === 'register')
+{
+  const h = harness({ apiBase: '' })
+  assert.deepEqual(await h.client.registerImage(url.slice(baseUrl.length)), { status: 'registered' },
+    'same-origin deployment reaches decoding and registration with a root-relative image URL')
+  assert.equal(h.opened, 1); assert.equal(registers(h).length, 1)
+}
 {
   const h = harness(); assert.deepEqual(await h.client.registerImage(url), { status: 'registered' })
   assert.equal(registers(h).length, 1)

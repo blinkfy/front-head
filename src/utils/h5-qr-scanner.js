@@ -231,15 +231,16 @@ export function scanWithH5Camera(options = {}) {
     playUiSound('scanDetected')
   }
   function cancel() { finish(null) }
-  function confirmWebLogin(account, sessionId) {
+  function confirmWebLogin(account, sessionId, clientPlatform = 'h5') {
+    const target = clientPlatform === 'app' ? 'APP' : '网页'
     if (closed || document.hidden) return Promise.resolve(false)
     dismissConfirmation?.(false)
     const panel = document.createElement('aside')
     panel.className = 'ftx-web-scanner-confirm'
     panel.setAttribute('role', 'alertdialog'); panel.setAttribute('aria-modal', 'true')
-    panel.setAttribute('aria-label', '确认登录网页')
-    panel.innerHTML = `<div class="ftx-web-scanner-confirm-card"><h3 class="ftx-web-scanner-confirm-title">确认登录网页</h3><p class="ftx-web-scanner-confirm-copy"></p><div class="ftx-web-scanner-confirm-actions"><button type="button" class="ftx-web-scanner-button" data-confirm="cancel">取消</button><button type="button" class="ftx-web-scanner-button" data-confirm="accept">确认登录</button></div></div>`
-    panel.querySelector('.ftx-web-scanner-confirm-copy').textContent = `是否使用当前账号${account ? '“' + account + '”' : ''}登录刚才扫码的分投侠网页（${sessionId.slice(-6)}）？请仅确认您本人打开的网页。`
+    panel.setAttribute('aria-label', `确认登录${target}`)
+    panel.innerHTML = `<div class="ftx-web-scanner-confirm-card"><h3 class="ftx-web-scanner-confirm-title">确认登录${target}</h3><p class="ftx-web-scanner-confirm-copy"></p><div class="ftx-web-scanner-confirm-actions"><button type="button" class="ftx-web-scanner-button" data-confirm="cancel">取消</button><button type="button" class="ftx-web-scanner-button" data-confirm="accept">确认登录</button></div></div>`
+    panel.querySelector('.ftx-web-scanner-confirm-copy').textContent = `是否使用当前账号${account ? '“' + account + '”' : ''}登录刚才扫码的分投侠${target}（${sessionId.slice(-6)}）？请仅确认您本人打开的${target}。`
     confirmPanel = panel; root.append(panel)
     return new Promise(resolve => {
       dismissConfirmation = accepted => {
@@ -402,8 +403,11 @@ export function scanWithH5Camera(options = {}) {
         const { previewWebRoundCode } = await loadRoundPreview()
         if (!isCurrent()) return false
         status.textContent = '圆码已识别，正在查询连接信息…'
-        const preview = await previewWebRoundCode(result.rawBase64, isCurrent)
+        const preview = await previewWebRoundCode(result.rawBase64, isCurrent, () => {
+          if (isCurrent()) status.textContent = '圆码暂未就绪，正在快速复查…'
+        })
         if (!preview || !isCurrent()) return false
+        status.textContent = '圆码已就绪，正在处理…'
         const accept = async () => {
           acceptingDecoded = true
           try {

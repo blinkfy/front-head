@@ -127,10 +127,8 @@ for (const path of ['../src/pages/home/home.vue', '../src/pages-dark/home/home.v
     ['安全提醒', '小心玻璃边缘']
   ], `${path} final sections keep their content and order`)
 
-  assert.match(source, /<text class="recognition-preview-caption" role="status">\{\{ isProcessing \? '识别分析中 · 内容可能继续更新' : '识别完成' \}\}<\/text>/,
-    `${path} updates the existing caption in place`)
-  assert.doesNotMatch(source, /v-if="[^"]*recognition-preview-caption/,
-    `${path} does not conditionally remove the caption row`)
+  assert.match(source, /<text v-if="isProcessing" class="recognition-preview-caption" role="status">识别分析中 · 内容可能继续更新<\/text>/,
+    `${path} only renders the caption while processing, with no completed-state placeholder`)
 
   for (const target of ['H5', 'APP-PLUS', 'MP-WEIXIN']) compileHome(source, path, target)
 }

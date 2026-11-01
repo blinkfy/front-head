@@ -117,7 +117,7 @@
           </view>
           
           <view v-if="!failedPreviewPending && (classificationUi !== 'recognizing' || recognitionPreview)" class="result-details">
-            <text class="recognition-preview-caption" role="status">{{ isProcessing ? '识别分析中 · 内容可能继续更新' : '识别完成' }}</text>
+            <text v-if="isProcessing" class="recognition-preview-caption" role="status">识别分析中 · 内容可能继续更新</text>
             <view v-if="displayResultCategory" class="category-row">
               <view :class="['category-display', getCategoryClass(displayResultCategory)]">
             <ManifestIcon class="category-icon" :id="getCategoryIcon(displayResultCategory)" />

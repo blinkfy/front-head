@@ -1,12 +1,15 @@
 <template>
-  <!-- #ifdef H5 -->
+  <!-- #ifdef APP-PLUS -->
+  <app-splash v-if="showSplash" @loaded="onSplashLoaded" />
+  <!-- #endif -->
+  <!-- #ifdef H5 || APP-PLUS -->
   <H5LoginShell ref="captchaRef" :dark="false"
     v-model:username="username" v-model:password="password" v-model:show-password="showPwd"
     v-model:remember-me="rememberMe" v-model:captcha-input="captchaInput"
     :loading="isLoading" :show-captcha="showCaptcha" :captcha-hint="captchaHint"
     @login="onLogin(false)" @qr-login="onQrLogin" />
   <!-- #endif -->
-  <!-- #ifndef H5 -->
+  <!-- #ifndef H5 || APP-PLUS -->
   <view class="login-page">
     <!-- #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ -->
     <!-- 小程序/App端：使用组件启动页 -->
@@ -212,8 +215,11 @@
 
 <script setup>
 import { loginNavigationRuntime } from '@/utils/login-navigation-runtime.js'
+// #ifdef APP-PLUS
+import { resumeRememberedQrLogin } from '@/utils/remembered-qr-login.mjs'
+// #endif
 import { ref, onMounted } from 'vue'
-// #ifdef H5
+// #ifdef H5 || APP-PLUS
 import H5LoginShell from '@/components/H5LoginShell.vue'
 import { commitRegistrationLogin } from '@/utils/registration-relay.mjs'
 import { registrationRuntime } from '@/utils/registration-relay.js'
@@ -357,7 +363,13 @@ onMounted(() => {
   checkAutoLogin()
 })
 
-function checkAutoLogin() {
+async function checkAutoLogin() {
+  // #ifdef APP-PLUS
+  const page = getCurrentPages().slice(-1)[0]
+  if (await resumeRememberedQrLogin({ runtime: registrationRuntime, loadUser: () => userinfo("false"),
+    onLogin: onQrLogin, setLoading: value => { isLoading.value = value },
+    isActive: () => getCurrentPages().slice(-1)[0] === page })) return
+  // #endif
   // 原有的登录信息检查
   // #ifdef MP-WEIXIN
   if (shouldAutoWechatLogin(uni) || (miniRegistrationRelay.getPending() && uni.getStorageSync('token'))) {
@@ -414,12 +426,13 @@ function handleKeyup(event) {
   }
 }
 
-// #ifdef H5
+// #ifdef H5 || APP-PLUS
 async function onQrLogin(result) {
   if (isLoading.value) return
   isLoading.value = true
   commitRegistrationLogin(registrationRuntime, result)
   uni.setStorageSync('autoLogin', rememberMe.value)
+  uni.setStorageSync('rememberedQrLogin', rememberMe.value)
   if (!(await remindIfUnbound())) return
   uni.showToast({ title: '登录成功', icon: 'success' })
   const pendingScene = getPendingDeviceQrScene(registrationRuntime)
@@ -432,6 +445,9 @@ async function onQrLogin(result) {
 // #endif
 
 async function completeLogin(res, isauto, isWechat = false) {
+  // #ifdef H5 || APP-PLUS
+  uni.removeStorageSync('rememberedQrLogin')
+  // #endif
   loginFailCount.value = 0
   showCaptcha.value = false
   captchaInput.value = ''

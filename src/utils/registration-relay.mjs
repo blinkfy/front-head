@@ -47,7 +47,7 @@ export function handleRegistrationQrScan(scanResult, runtime) {
 }
 
 // These endpoints deliberately do not use the ordinary JWT/401 redirect interceptor.
-export function createRegistrationApi({ runtime, baseUrl }) {
+export function createRegistrationApi({ runtime, baseUrl, clientPlatform = 'h5' }) {
   const root = String(baseUrl).replace(/\/$/, '')
   const request = (method, path, data, header = {}) => new Promise((resolve, reject) => {
     runtime.request({ url: root + '/api/registration/sessions' + path, method, data,
@@ -66,7 +66,7 @@ export function createRegistrationApi({ runtime, baseUrl }) {
     undefined, { 'X-Registration-Secret': session.pollSecret })
   return {
     create: async () => {
-      const result = await request('POST', '', {})
+      const result = await request('POST', '', clientPlatform === 'app' ? { clientPlatform: 'app' } : {})
       const data = result.data
       if (!/^r_[a-f0-9]{24}$/.test(data?.sessionId || '') || !/^[a-f0-9]{64}$/.test(data?.pollSecret || '') ||
           !Number.isFinite(data?.expiresAt) || typeof data?.qrUrl !== 'string') {
@@ -93,11 +93,11 @@ const terminal = new Set(['expired', 'cancelled', 'consumed'])
 const reasonState = { SESSION_EXPIRED: 'expired', SESSION_CONSUMED: 'consumed', SESSION_CANCELLED: 'cancelled' }
 
 export function createH5RegistrationRelay({ api, onState, onLogin, now = Date.now,
-  schedule = setTimeout, unschedule = clearTimeout, onUnsupported }) {
+  schedule = setTimeout, unschedule = clearTimeout, onUnsupported, prepareRefresh }) {
   let session = null, active = false, stopped = false, epoch = 0, timer = null
   let busy = false, consumeAttempted = false, createPending = false, deferredLogin = null, loginDelivered = false
-  let unsupported = false
-  const emit = (status, message = '') => onState({ status, message, session })
+  let unsupported = false, refreshing = false
+  const emit = (status, message = '') => onState({ status, message, session, refreshing })
   const clearTimer = () => { if (timer !== null) unschedule(timer); timer = null }
   const current = (revision, target) => !stopped && revision === epoch && target === session
   function useManual(error) {
@@ -120,7 +120,8 @@ export function createH5RegistrationRelay({ api, onState, onLogin, now = Date.no
   }
   async function poll() {
     if (!active || stopped || busy || !session || terminal.has(session.status) || consumeAttempted) return
-    if (now() >= Number(session.expiresAt)) { session.status = 'expired'; emit('expired'); return }
+    const deadline = refreshing ? session.expiresAt : (session.displayExpiresAt || session.expiresAt)
+    if (now() >= Number(deadline)) { session.status = 'expired'; emit('expired'); return }
     busy = true
     const revision = epoch, target = session
     try {
@@ -152,25 +153,57 @@ export function createH5RegistrationRelay({ api, onState, onLogin, now = Date.no
     }
   }
   async function refresh() {
-    if (stopped || createPending || busy) return
-    clearTimer()
-    const old = session
-    session = null; deferredLogin = null; consumeAttempted = false; loginDelivered = false; unsupported = false
-    const revision = ++epoch
+    if (stopped || createPending || (consumeAttempted && busy)) return
+    const old = session, revision = epoch, previousConsume = consumeAttempted
+    const staged = Boolean(old && !terminal.has(old.status) && prepareRefresh)
+    const oldWasWaiting = old?.status === 'waiting'
+    let next, installed = false
     createPending = true
-    emit('loading')
-    if (old) void api.cancel(old).catch(() => {})
+    refreshing = staged
+    if (staged) emit(old.status)
+    else { clearTimer(); emit('loading') }
+    const valid = () => !stopped && epoch === revision && session === old && consumeAttempted === previousConsume
+      && !loginDelivered && (!staged || active)
     try {
       const response = await api.create()
-      const next = response.data
-      if (stopped || revision !== epoch) { void api.cancel(next).catch(() => {}); return }
-      session = next
+      next = response.data
+      if (!valid()) return
+      if (staged) {
+        const result = await prepareRefresh(next, valid)
+        if (!valid()) return
+        // A genuinely unsupported platform keeps its WeChat-only refresh path.
+        if (!['registered', 'unsupported'].includes(result?.status)) {
+          throw new Error('新二维码尚未准备好，已保留原码，请重试刷新')
+        }
+        if (oldWasWaiting && old.status !== 'waiting') return
+      }
+      clearTimer(); epoch++
+      session = next; installed = true; refreshing = false
+      deferredLogin = null; consumeAttempted = false; loginDelivered = false; unsupported = false
       emit(session.status)
+      if (old) void api.cancel(old).catch(() => {})
       if (active) void poll()
     } catch (error) {
-      if (!stopped && revision === epoch && !useManual(error)) emit('error', error.msg || error.message)
-    } finally { createPending = false }
+      if (valid()) {
+        if (staged) emit('error', error.msg || error.message)
+        else if (!useManual(error)) emit('error', error.msg || error.message)
+      }
+    } finally {
+      if (next && !installed) void api.cancel(next).catch(() => {})
+      createPending = false
+      refreshing = false
+      if (!stopped && session === old && epoch === revision) {
+        // Publish the preparation flag without discarding the old session or its scan state.
+        if (staged && !consumeAttempted && !loginDelivered) {
+          if (now() >= Number(old.expiresAt)) old.status = 'expired'
+          emit(old.status, !installed && old.status === 'waiting' && active
+            ? '刷新未完成，原二维码仍可使用，请重试刷新' : '')
+        }
+        arm()
+      }
+    }
   }
+
   return {
     refresh, poll,
     resume() {
@@ -219,8 +252,8 @@ export function createRegistrationDialogs(runtime) {
     reason: 'REGISTRATION_CONFIRM_FAILED', cause
   })
   return {
-    confirm: (account, sessionId) => show({ title: '确认登录网页',
-      content: `是否使用当前账号${account ? '“' + account + '”' : ''}登录刚才扫码的分投侠网页（${sessionId.slice(-6)}）？请仅确认您本人打开的网页。`,
+    confirm: (account, sessionId, clientPlatform = 'h5') => show({ title: clientPlatform === 'app' ? '确认登录APP' : '确认登录网页',
+      content: `是否使用当前账号${account ? '“' + account + '”' : ''}登录刚才扫码的分投侠${clientPlatform === 'app' ? 'APP' : '网页'}（${sessionId.slice(-6)}）？请仅确认您本人打开的${clientPlatform === 'app' ? 'APP' : '网页'}。`,
       confirmText: '确认登录', cancelText: '暂不登录' }),
     retry: () => show({ title: '网页登录未完成',
       content: '您已在小程序登录成功。可单独重试网页登录，或继续使用小程序。',
@@ -252,7 +285,8 @@ export function createMiniRegistrationRelay({ api, getCode, confirm, onError, no
         scanRequest = Promise.resolve(api.scan(intent.sessionId, code))
         const response = await scanRequest
         if (pending !== intent) return
-        Object.assign(intent, { expiresAt: Number(response.data.expiresAt), scanned: true })
+        Object.assign(intent, { expiresAt: Number(response.data.expiresAt),
+          clientPlatform: response.data.clientPlatform === 'app' ? 'app' : 'h5', scanned: true })
         if (terminal.has(response.data.status)) {
           pending = null
           onError(new Error('本次网页二维码已过期，请返回网页刷新后重新扫码'))
@@ -274,7 +308,7 @@ export function createMiniRegistrationRelay({ api, getCode, confirm, onError, no
       try {
         if (await scan() === false) return false
         if (!valid(intent) || !intent.scanned || !isActive()) return
-        const accepted = await confirm(account, intent.sessionId)
+        const accepted = await confirm(account, intent.sessionId, intent.clientPlatform || 'h5')
         if (!valid(intent) || !isActive()) return
         if (!accepted) { await cancel(); return }
         const code = await getCode()

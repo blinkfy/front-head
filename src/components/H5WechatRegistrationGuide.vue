@@ -140,8 +140,9 @@ const emit = defineEmits(['login'])
 const qrSource = ref('')
 const qrState = ref('loading')
 const appCodeState = ref('unsupported'), appProgress = ref(0), appPhase = ref('idle')
+const refreshing = ref(false)
 let prepareForApp = false
-const preparationText = computed(() => roundCodePreparationText(appCodeState.value, appProgress.value, appPhase.value))
+const preparationText = computed(() => roundCodePreparationText(appCodeState.value, appProgress.value, appPhase.value, refreshing.value))
 const { qrMenu, openQrMenu, closeQrMenu, downloadQr, suppressQrContextMenu } = useWechatQrSave(qrSource, () => props.checking || qrState.value !== 'ready')
 // #ifdef APP-PLUS
 useGeneratedRoundCode(qrSource, () => qrState.value === 'ready' && !props.checking)
@@ -176,8 +177,10 @@ const statusMessages = {
   cancelled: '本次扫码已取消，请刷新二维码。', loading: '正在创建本页专属二维码…'
 }
 relay = createH5RegistrationRelay({ api: registrationApi,
+  prepareRefresh: (session, current) => registration.prepareRefresh(registrationApi.qrUrl(session), current),
   onUnsupported() { sessionReference.value = ''; qrSource.value = `${registrationApi.fixedQrUrl()}?v=${++attempt}`; qrState.value = 'loading' },
   onState: state => {
+    refreshing.value = state.refreshing === true
     sessionReference.value = state.session?.sessionId?.slice(-6) || ''
     sessionStatus.value = state.status
     sessionMessage.value = state.message || statusMessages[state.status] || sessionCaption

@@ -1,5 +1,8 @@
 <template>
   <view class="publish-page" :class="{ 'dark-mode': isDark }">
+    <!-- #ifndef H5 -->
+    <canvas canvas-id="community-image-canvas" class="community-image-canvas"></canvas>
+    <!-- #endif -->
     <!-- 动态背景 -->
     <view class="bg-effects">
       <view class="bg-circle c1"></view>
@@ -314,20 +317,27 @@ export default {
       this.uploadedImages.splice(index, 1);
     },
     async getPersistentImages() {
-      const tasks = this.uploadedImages.map(async (image) => {
-        if (typeof image !== 'string') return '';
+      const images = [];
+      for (const image of this.uploadedImages) {
+        if (typeof image !== 'string') continue;
         if (image.startsWith('data:image/') || image.startsWith('http://') || image.startsWith('https://')) {
-          return image;
+          images.push(image);
+          continue;
         }
-        return compressImageToBase64(image, 960, 960, 0.76);
-      });
-      return (await Promise.all(tasks)).filter(Boolean);
+        images.push(await compressImageToBase64(image, 960, 960, 0.76, {
+          preserveAspect: true,
+          canvasId: 'community-image-canvas',
+          context: this
+        }));
+      }
+      return images.filter(Boolean);
     }
   }
 };
 </script>
 
 <style scoped>
+.community-image-canvas { position: fixed; left: -9999px; top: 0; width: 960px; height: 960px; }
 /* ===== 主容器 ===== */
 .publish-page {
   min-height: 100vh;

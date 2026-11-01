@@ -1,4 +1,5 @@
 import request from './index.js'
+import { resolveRoundCodeWithRetry } from '@/utils/roundcode-resolve-retry.mjs'
 
 /**
  * 设备连接通知
@@ -31,9 +32,9 @@ export function resolveWechatQrScene(scene) {
   })
 }
 
-export function resolveWechatQrRaw(rawBase64, token) {
-  return request({ url: '/api/device/wechat-qr/resolve-raw', method: 'POST',
-    data: { rawBase64 }, header: { Authorization: token }, needAuth: true, silent: true })
+export function resolveWechatQrRaw(rawBase64, token, options) {
+  return resolveRoundCodeWithRetry(() => request({ url: '/api/device/wechat-qr/resolve-raw', method: 'POST',
+    data: { rawBase64 }, header: { Authorization: token }, needAuth: true, silent: true }), options)
 }
 
 export function resolveWechatQrImage(imageBase64, token) {

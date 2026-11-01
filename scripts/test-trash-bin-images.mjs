@@ -204,25 +204,36 @@ async function loadPlatformModule(platform, stubs) {
 }
 
 function createPlatformHarness(platform, options = {}) {
-  const original = '/selected/original.jpg'
-  const compressed = '/selected/compressed.jpg'
-  const removed = []
+  const original = options.originalPath ?? '/selected/original.jpg'
+  const compressed = platform === 'APP_PLUS' ? '_doc/compressed.jpg' : '/selected/compressed.jpg'
+  const removed = [], readPaths = [], compressionOptions = [], infoRequests = []
   let compressCalls = 0
   let previewCalls = 0
+  let readFailureTriggered = false
   const originalData = jpegData(options.originalBytes ?? TRASH_BIN_IMAGE_LIMIT + 64)
   const compressedData = jpegData(options.compressedBytes ?? 96_000)
   const dataForPath = filePath => filePath === original ? originalData : compressedData
+  const failsRead = stage => {
+    if (options.readFailure !== stage || readFailureTriggered) return false
+    readFailureTriggered = true
+    return true
+  }
   const fileSystem = {
-    readFile(args) { args.success({ data: dataForPath(args.filePath).split(',')[1] }) },
+    readFile(args) { readPaths.push(args.filePath); args.success({ data: dataForPath(args.filePath).split(',')[1] }) },
     writeFile(args) { args.success({}) },
     unlink(args) { removed.push(args.filePath); args.success?.({}) }
   }
   const uni = {
     env: { USER_DATA_PATH: '/user' },
-    getImageInfo(args) { args.success({ width: 2200, height: 1600, path: args.src }) },
+    getImageInfo(args) {
+      infoRequests.push(args.src)
+      if (options.infoError) { args.fail(options.infoError); return }
+      args.success({ width: 2200, height: 1600, path: options.infoPath ?? args.src })
+    },
     getFileSystemManager: () => fileSystem,
     compressImage(args) {
       compressCalls += 1
+      compressionOptions.push(args)
       if (options.compressError) { args.fail(options.compressError); return }
       args.success({ tempFilePath: compressed })
     },
@@ -233,8 +244,9 @@ function createPlatformHarness(platform, options = {}) {
     }
   }
   const plus = {
-    zip: { compressImage(_args, success, fail) {
+    zip: { compressImage(args, success, fail) {
       compressCalls += 1
+      compressionOptions.push(args)
       if (options.compressError) { fail(options.compressError); return }
       success({ target: compressed })
     } },
@@ -244,19 +256,43 @@ function createPlatformHarness(platform, options = {}) {
       clear() {}
     } },
     io: {
-      resolveLocalFileSystemURL(filePath, success) {
+      resolveLocalFileSystemURL(filePath, success, fail) {
+        // Fail only the read attempt so finally can resolve and remove the temp file.
+        if (filePath === compressed && failsRead('resolve')) { fail(options.readError); return }
         success({
-          file: done => done({ path: filePath }),
+          file: (done, failed) => {
+            if (filePath === compressed && failsRead('entry')) { failed(options.readError); return }
+            done({ path: filePath })
+          },
           remove: done => { removed.push(filePath); done?.() }
         })
       },
       FileReader: class {
-        readAsDataURL(file) { this.onloadend({ target: { result: dataForPath(file?.path || original) } }) }
+        readAsDataURL(file) {
+          readPaths.push(file.path)
+          if (options.originalUnreadable && file.path === original) {
+            this.onerror({ code: 'E_ALBUM', message: 'album original is not readable' }); return
+          }
+          if (failsRead('event')) { this.onerror(options.readError); return }
+          const data = failsRead('empty') ? '' : dataForPath(file.path)
+          if (options.readerResult) { this.result = data; this.onloadend() }
+          else this.onloadend({ target: { result: data } })
+        }
       }
     }
   }
   const module = loadPlatformModule(platform, { uni, plus, my: {} })
-  return { module, original, compressed, compressCalls: () => compressCalls, previewCalls: () => previewCalls, removed, fileSystem }
+  return { module, original, compressed, compressCalls: () => compressCalls, previewCalls: () => previewCalls,
+    removed, readPaths, compressionOptions, infoRequests, fileSystem }
+}
+
+function assertPhotoError(error, stage, code, detail) {
+  assert.ok(error instanceof Error)
+  assert.equal(error.message, `${stage}，请重新选择照片`)
+  assert.equal(error.stage, stage)
+  assert.equal(error.code, code)
+  assert.equal(error.detail, detail)
+  return true
 }
 
 async function testCompressionPlatform(platform) {
@@ -267,16 +303,117 @@ async function testCompressionPlatform(platform) {
   const result = await helper.compressTrashBinImage(success.original)
   assert.ok(imageDataBytes(result) <= TRASH_BIN_IMAGE_LIMIT, `${platform} must return a within-limit image`)
   assert.equal(success.compressCalls(), 1, `${platform} should compress an oversized original once before succeeding`)
-  assert.ok(success.removed.includes(success.compressed), `${platform} should clean up compressed temporary files`)
+  assert.deepEqual(success.removed, [success.compressed], `${platform} should clean up only its compressed temporary file`)
 
-  const fail = createPlatformHarness(platform, { compressError: new Error('compress stub failure') })
-  await assert.rejects((await fail.module).compressTrashBinImage(fail.original), /compress stub failure/)
+  const fail = createPlatformHarness(platform, { compressError: Object.assign(new Error('compress stub failure'), { code: 'E_ZIP' }) })
+  await assert.rejects((await fail.module).compressTrashBinImage(fail.original), error => platform === 'APP_PLUS'
+    ? assertPhotoError(error, '照片压缩失败', 'E_ZIP', 'compress stub failure')
+    : error.message === 'compress stub failure')
   assert.equal(fail.compressCalls(), 1)
+  assert.ok(!fail.removed.includes(fail.original), `${platform} compressor failure must preserve the original`)
+
+  const infoFail = createPlatformHarness(platform, { infoError: { errCode: 'E_INFO', errMsg: 'info stub failure' } })
+  await assert.rejects((await infoFail.module).compressTrashBinImage(infoFail.original),
+    error => assertPhotoError(error, '照片信息读取失败', 'E_INFO', 'info stub failure'))
+  assert.equal(infoFail.compressCalls(), 0)
+  assert.deepEqual(infoFail.readPaths, [])
+  assert.deepEqual(infoFail.removed, [])
 
   const remainsLarge = createPlatformHarness(platform, { compressedBytes: TRASH_BIN_IMAGE_LIMIT + 80 })
   await assert.rejects((await remainsLarge.module).compressTrashBinImage(remainsLarge.original), /500KB/)
   assert.equal(remainsLarge.compressCalls(), 18, `${platform} should reject after the bounded retry limit`)
-  console.log(`${platform} compression OK success-after-compress, compressor failure, and 18 oversized retries rejected`)
+  assert.deepEqual(remainsLarge.removed, Array(18).fill(remainsLarge.compressed), `${platform} must clean every rejected temporary image, never the original`)
+
+  if (platform === 'MP') {
+    const small = createPlatformHarness(platform, { originalBytes: 128 })
+    assert.equal(await (await small.module).compressTrashBinImage(small.original), jpegData(128))
+    assert.equal(small.compressCalls(), 0, 'MP keeps the within-limit original fast path')
+    assert.deepEqual(small.readPaths, [small.original])
+    assert.deepEqual(small.removed, [])
+  }
+  console.log(`${platform} compression OK within-limit output, metadata/compressor diagnostics, cleanup, and 18 oversized retries`)
+}
+
+async function testAppAlbumAndReadFailures() {
+  const album = createPlatformHarness('APP_PLUS', {
+    originalPath: 'content://media/external/images/media/77', infoPath: '_doc/decoded-album.jpg',
+    originalUnreadable: true, originalBytes: 128
+  })
+  const image = await (await album.module).compressTrashBinImage(album.original)
+  assert.ok(imageDataBytes(image) <= TRASH_BIN_IMAGE_LIMIT)
+  assert.deepEqual(album.infoRequests, [album.original])
+  assert.equal(album.compressCalls(), 1, 'APP compresses even a small album image instead of reading the original')
+  assert.equal(album.compressionOptions[0].src, '_doc/decoded-album.jpg', 'zip must use the accessible getImageInfo path')
+  assert.match(album.compressionOptions[0].dst, /^_doc\/trash_bin_.*\.jpg$/)
+  assert.deepEqual(album.readPaths, [album.compressed], 'FileReader must read only the compressed image, never either album source path')
+  assert.deepEqual(album.removed, [album.compressed], 'album original and decoded source must be preserved')
+
+  const camera = createPlatformHarness('APP_PLUS', {
+    originalPath: '_doc/camera.jpg', infoPath: '', originalBytes: 128, readerResult: true
+  })
+  const cameraImage = await (await camera.module).compressTrashBinImage(camera.original)
+  assert.equal(cameraImage, jpegData(96_000), 'FileReader.result is supported without an event result')
+  assert.ok(imageDataBytes(cameraImage) <= TRASH_BIN_IMAGE_LIMIT)
+  assert.equal(camera.compressCalls(), 1, 'small camera photos must still use native compression')
+  assert.equal(camera.compressionOptions[0].src, camera.original, 'missing info.path falls back to the camera path')
+  assert.deepEqual(camera.readPaths, [camera.compressed])
+  assert.deepEqual(camera.removed, [camera.compressed])
+
+  for (const [readFailure, readError, code, detail] of [
+    ['resolve', { code: 'E_RESOLVE', message: 'resolve stub failure' }, 'E_RESOLVE', 'resolve stub failure'],
+    ['entry', { code: 'E_ENTRY', message: 'entry stub failure' }, 'E_ENTRY', 'entry stub failure'],
+    ['event', { errCode: 'E_READER', target: { error: { message: 'FileReader stub failure' } } }, 'E_READER', 'FileReader stub failure'],
+    ['empty', undefined, undefined, 'empty_image_data']
+  ]) {
+    const failed = createPlatformHarness('APP_PLUS', { readFailure, readError })
+    await assert.rejects((await failed.module).compressTrashBinImage(failed.original),
+      error => assertPhotoError(error, '照片文件读取失败', code, detail))
+    assert.equal(failed.compressCalls(), 1, `${readFailure} failure must reject without retrying`)
+    assert.deepEqual(failed.removed, [failed.compressed], `${readFailure} failure must clean its temp image and preserve the original`)
+    assert.ok(!failed.readPaths.includes(failed.original), `${readFailure} failure must never read the original`)
+  }
+  console.log('APP album/camera OK info.path, compressed-only reads, reader.result fallback, and resolve/entry/event/empty diagnostics with cleanup')
+}
+
+async function testAddModalPreview() {
+  const source = fs.readFileSync(path.join(root, 'src/components/AddTrashBinModal.vue'), 'utf8')
+  const chooseImage = source.match(/function chooseImage\(\) \{[\s\S]*?(?=\nfunction removeImage\()/)?.[0]
+  assert.ok(chooseImage, 'AddTrashBinModal chooseImage found')
+  const image = jpegData(128)
+  for (const platform of ['APP_PLUS', 'H5', 'MP']) {
+    let pending
+    const code = preprocess(chooseImage, { APP_PLUS: platform === 'APP_PLUS', H5: platform === 'H5', MP: platform === 'MP' }, 'js')
+    const factory = new Function('chooseAppImage', 'compressTrashBinImage', `
+      const props = { visible: true }, formLocked = { value: false }, isProcessingImage = { value: false }
+      const previewSource = { value: '' }, notice = { value: '' }, imageError = { value: '' }, formData = { value: {} }
+      let imageRevision = 0
+      ${code}
+      return { chooseImage, previewSource, formData, isProcessingImage, notice, imageError }
+    `)
+    const localPath = 'content://media/external/images/media/77'
+    const previousImage = jpegData(64)
+    let finishCompression
+    const compression = new Promise(resolve => { finishCompression = resolve })
+    const modal = factory(options => { pending = options.success({ tempFilePaths: [localPath] }) }, selected => {
+      assert.equal(selected, localPath)
+      return compression
+    })
+    modal.previewSource.value = previousImage
+    modal.chooseImage()
+    assert.equal(modal.isProcessingImage.value, true)
+    assert.equal(modal.previewSource.value, platform === 'APP_PLUS' ? previousImage : localPath,
+      `${platform} uses the correct pending preview without exposing an APP album URI`)
+    modal.imageError.value = 'late thumbnail error'
+    modal.notice.value = 'late thumbnail notice'
+    finishCompression(image)
+    await pending
+    assert.equal(modal.formData.value.image, image)
+    assert.equal(modal.previewSource.value, platform === 'MP' ? localPath : image, `${platform} chooses the correct successful preview source`)
+    assert.equal(modal.isProcessingImage.value, false)
+    assert.equal(modal.imageError.value, '', `${platform} successful processing clears stale thumbnail errors`)
+    assert.equal(modal.notice.value, '', `${platform} successful processing clears stale notices`)
+  }
+  console.log('Add modal preview OK APP pending thumbnail preservation, APP/H5 processed JPEG, MP local path, and success clears errors')
 }
 
 async function testPreviewPlatform(platform) {
@@ -298,6 +435,8 @@ async function testPreviewPlatform(platform) {
 await testCore()
 await testSfcImageFlows()
 await testBinPointPhoto()
+await testAppAlbumAndReadFailures()
+await testAddModalPreview()
 for (const platform of ['APP_PLUS', 'MP']) {
   await testCompressionPlatform(platform)
   await testPreviewPlatform(platform)

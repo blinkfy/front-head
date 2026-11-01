@@ -14,7 +14,8 @@ export function readGeneratedCodeTask(headers, decodeBase64, now = Date.now) {
 
 export function isGeneratedCodeUrl(url, baseUrl) {
   const root = String(baseUrl || '').replace(/\/$/, '')
-  if (!root || typeof url !== 'string' || !url.startsWith(root + '/api/registration/')) return false
+  // An empty base URL is a same-origin deployment; only root-relative API URLs qualify.
+  if (typeof url !== 'string' || !url.startsWith(root + '/api/registration/')) return false
   const path = url.slice(root.length).split('?')[0]
   return path === '/api/registration/wechat-qrcode' || /^\/api\/registration\/sessions\/r_[a-f0-9]{24}\/qrcode$/.test(path)
 }

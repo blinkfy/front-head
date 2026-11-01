@@ -1,5 +1,5 @@
 <template>
-  <view class="h5-login-shell" :class="{ 'shell-dark': dark }">
+  <view class="h5-login-shell" :class="{ 'shell-dark': dark, 'app-login-shell': appPlatform }">
     <view class="login-hero">
       <view class="hero-orb orb-left"></view><view class="hero-orb orb-right"></view><view class="hero-orb orb-small"></view>
       <view class="hero-brand"><view class="brand-logo"><view class="mascot-motion" :class="['mascot-' + mascotMotion, { 'motion-paused': motionPaused }]" :style="{ animationDelay: mascotDelay + 's' }" @animationend="nextMascotMotion"><image class="brand-mascot" src="/static/person.webp.png" mode="aspectFit" /></view></view>
@@ -39,6 +39,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { onShow, onHide, onResize } from '@dcloudio/uni-app'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import LoginGreenPlanet from '@/components/LoginGreenPlanet.vue'
 import CaptchaBox from '@/components/CaptchaBox.vue'
@@ -51,8 +52,17 @@ const emit = defineEmits(['update:username', 'update:password', 'update:showPass
 const usernameModel = computed({ get: () => props.username, set: value => emit('update:username', value) })
 const passwordModel = computed({ get: () => props.password, set: value => emit('update:password', value) })
 const mode = ref('account'), qrBusy = ref(false), qrAttention = ref(false), captcha = ref(null), qrPanel = ref(null), qrColumn = ref(null)
-const media = typeof window !== 'undefined' ? window.matchMedia('(min-width: 901px)') : null
-const wide = ref(media?.matches || false)
+let media = null, appPlatform = false
+const wide = ref(false)
+// #ifdef H5
+media = window.matchMedia('(min-width: 901px)')
+wide.value = media.matches
+// #endif
+// #ifdef APP-PLUS
+appPlatform = true
+wide.value = uni.getSystemInfoSync().windowWidth >= 901
+onResize(({ size }) => { wide.value = size.windowWidth >= 901 })
+// #endif
 const mascotMotion = ref('enter'), mascotDelay = ref(.2), motionPaused = ref(false)
 const idleMotions = ['bounce', 'sway', 'turn']
 const registrationAllowed = ref(false), registrationPolicyLoading = ref(false), registrationPolicyError = ref('')
@@ -63,7 +73,11 @@ function nextMascotMotion() {
   mascotDelay.value = 2.5 + Math.random() * 3
   mascotMotion.value = choices[Math.floor(Math.random() * choices.length)]
 }
-function syncMotionVisibility() { motionPaused.value = document.hidden }
+function syncMotionVisibility() {
+  // #ifdef H5
+  motionPaused.value = document.hidden
+  // #endif
+}
 function resize(event) { wide.value = event.matches }
 function submitAccount() {
   if (props.loading || qrBusy.value) return
@@ -81,10 +95,12 @@ async function selectWechat() {
   qrAttention.value = true
   clearTimeout(qrAttentionTimer)
   qrAttentionTimer = setTimeout(() => { qrAttention.value = false; qrAttentionTimer = null }, 2200)
-  uni.showToast({ title: registrationAllowed.value ? '请扫描右侧二维码登录' : '请扫描右侧二维码完成注册', icon: 'none', duration: 1800 })
+  uni.showToast({ title: registrationAllowed.value ? '请扫描二维码登录' : '请扫描二维码完成登录或注册', icon: 'none', duration: 1800 })
   await nextTick()
+  // #ifdef H5
   const element = qrColumn.value?.$el || qrColumn.value
   element?.scrollIntoView?.({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' })
+  // #endif
 }
 function openRegistration() {
   if (registrationAllowed.value) {
@@ -96,19 +112,29 @@ function openRegistration() {
 watch(() => props.loading, loading => { if (!loading) qrPanel.value?.resume() })
 onMounted(() => {
   void refreshRegistrationPolicy()
+  // #ifdef H5
   media?.addEventListener('change', resize)
   syncMotionVisibility()
   document.addEventListener('visibilitychange', syncMotionVisibility)
+  // #endif
 })
 onBeforeUnmount(() => {
   clearTimeout(qrAttentionTimer)
+  // #ifdef H5
   media?.removeEventListener('change', resize)
   document.removeEventListener('visibilitychange', syncMotionVisibility)
+  // #endif
 })
+onHide(() => { motionPaused.value = true; qrPanel.value?.pause() })
+onShow(() => { motionPaused.value = false; if (!props.loading) qrPanel.value?.resume() })
+
 defineExpose({ validate: () => captcha.value?.validate() || false, refresh: () => captcha.value?.refresh() })
 </script>
 
 <style scoped>
+/* #ifdef APP-PLUS */
+.app-login-shell { padding-top: var(--status-bar-height, 0px); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }
+/* #endif */
 .h5-login-shell { --ink: #18213a; --muted: #8793a8; --surface: #fff; --card: #ffffffb8; --input: #f7f8fb; --border: #d6dfeb; --green: #00a67b; min-height: 100vh; background: radial-gradient(ellipse at 0 65%, #e3f7ff, transparent 45%), radial-gradient(ellipse at 100% 80%, #effbed, transparent 42%), var(--surface); color: var(--ink); overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; }
 .shell-dark { --ink: #edf5f4; --muted: #a6b8bc; --surface: #101e28; --card: #142831de; --input: #1c303b; --border: #34505a; --green: #62ddb5; background: radial-gradient(ellipse at 0 65%, #173544, transparent 45%), radial-gradient(ellipse at 100% 80%, #193831, transparent 42%), var(--surface); }
 .login-hero { height: 132px; position: relative; background: radial-gradient(ellipse at 40% 15%, #40dcb7a6, transparent 52%), linear-gradient(120deg, #03b98b, #008262); overflow: hidden; }.login-hero::after { content: ''; position: absolute; top: -35%; left: -45%; width: 34%; height: 170%; pointer-events: none; transform: skewX(-22deg); background: linear-gradient(90deg, transparent, #ffffff12, transparent); animation: hero-glint 19s ease-in-out infinite; }.hero-orb { position: absolute; border: 1px solid #ffffff38; border-radius: 50%; background: #ffffff15; animation: auth-orb-green 28s ease-in-out infinite; }.orb-left { width: 200px; height: 200px; top: 54px; left: -32px; animation-delay: -6s; }.orb-right { width: 280px; height: 280px; top: -112px; right: 8%; animation-name: auth-orb-blue; animation-duration: 32s; }.orb-small { width: 64px; height: 64px; top: 29px; right: 21%; animation-delay: -11s; animation-name: auth-orb-orange; animation-duration: 36s; }

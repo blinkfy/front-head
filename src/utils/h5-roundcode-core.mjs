@@ -6,7 +6,7 @@ export function createWebRoundCodeResolver({ getToken, getAccount, resolveRaw, r
     const token = getToken()
     if (!token) throw new Error('请先登录，再识别微信圆码')
     const current = () => isActive() && getToken() === token
-    const response = await (resolveRaw || resolveImage)(imageBase64, token)
+    const response = await (resolveRaw || resolveImage)(imageBase64, token, { isActive: current })
     if (!current()) return null
     const data = response?.data
     if (data?.kind === 'device' && /^[a-f0-9]{32}$/i.test(data.token || '')) {
@@ -15,9 +15,10 @@ export function createWebRoundCodeResolver({ getToken, getAccount, resolveRaw, r
     if (data?.kind !== 'registration' || !/^r_[a-f0-9]{24}$/.test(data.sessionId || '')) {
       throw new Error('此圆码暂不支持，请扫描分投侠有效设备码或登录码')
     }
-    await scanApp(data.sessionId, token)
+    const scanned = await scanApp(data.sessionId, token)
+    const clientPlatform = scanned?.data?.clientPlatform === 'app' ? 'app' : 'h5'
     if (!current()) return null
-    const accepted = await confirm(getAccount(), data.sessionId)
+    const accepted = await confirm(getAccount(), data.sessionId, clientPlatform)
     if (!current()) return null
     if (!accepted) {
       await cancelApp(data.sessionId, token).catch(() => {})
@@ -25,7 +26,7 @@ export function createWebRoundCodeResolver({ getToken, getAccount, resolveRaw, r
     }
     await authorizeApp(data.sessionId, token)
     if (!current()) return null
-    notify('已确认网页登录，请返回目标网页查看')
+    notify(clientPlatform === 'app' ? '已确认登录APP，请返回目标APP查看' : '已确认网页登录，请返回目标网页查看')
     return { handled: true, errMsg: 'scanCode:ok' }
   }
 }

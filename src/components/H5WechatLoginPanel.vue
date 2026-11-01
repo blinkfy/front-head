@@ -2,7 +2,7 @@
   <view class="wechat-login-panel" :class="{ 'panel-dark': dark }">
     <view class="panel-heading">
       <view class="heading-icon"><ManifestIcon id="wechat" :scale="2.7" /></view>
-      <view><text class="panel-title">{{ registrationAllowed ? '微信扫码登录' : (status === 'manual' ? '微信扫码注册' : '微信扫码登录 / 注册') }}</text><text class="panel-description">{{ registrationAllowed ? '已有账号可扫码登录网页。' : (status === 'manual' ? '在小程序完成注册后，使用账号密码登录网页。' : '已有账号扫码登录；新用户可在小程序注册，确认后自动登录网页。') }}</text></view>
+      <view><text class="panel-title">{{ registrationAllowed ? '微信扫码登录' : (status === 'manual' ? '微信扫码注册' : '微信扫码登录 / 注册') }}</text><text class="panel-description">{{ registrationAllowed ? `已有账号可扫码登录${targetLabel}。` : (status === 'manual' ? '在小程序完成注册后，使用账号密码登录网页。' : `已有账号扫码登录；新用户可在小程序注册，确认后自动登录${targetLabel}。`) }}</text></view>
     </view>
     <view class="qr-halo">
       <view class="qr-leaf leaf-left"></view><view class="qr-leaf leaf-right"></view>
@@ -16,6 +16,7 @@
       </view>
     </view>
     <text v-if="qrSource && qrState === 'ready' && !terminal" class="app-code-progress" role="status">{{ preparationText }}</text>
+    <text v-if="appPlatform" class="same-device-hint">同一部手机可长按保存二维码，到微信扫一扫中从相册选图；确认后返回 APP。也可使用另一台设备扫码。</text>
     <view class="scan-steps">
       <view v-for="(step, index) in steps" :key="step.icon" class="scan-step">
         <ManifestIcon :id="step.icon" :scale="2.3" /><text class="step-number">{{ index + 1 }}</text>
@@ -24,10 +25,10 @@
     </view>
     <view class="scan-status" role="status" aria-live="polite">
       <view class="status-icon"><ManifestIcon id="camera_scan" :scale="2.1" /></view>
-      <view><text class="status-title">{{ message }}</text><text class="status-detail">{{ registrationAllowed ? `请在扫码端确认网页登录${reference ? `，核对确认码 ${reference}` : '。'}` : (status === 'manual' ? '本页保留账号密码登录，注册完成后即可使用。' : `请在扫码端确认网页登录${reference ? `，核对确认码 ${reference}` : '。'}`) }}</text></view>
+      <view><text class="status-title">{{ message }}</text><text class="status-detail">{{ registrationAllowed ? `请在扫码端确认登录${targetLabel}${reference ? `，核对确认码 ${reference}` : '。'}` : (status === 'manual' ? '本页保留账号密码登录，注册完成后即可使用。' : `请在扫码端确认登录${targetLabel}${reference ? `，核对确认码 ${reference}` : '。'}`) }}</text></view>
     </view>
-    <text v-if="!registrationAllowed" class="version-hint">若小程序未出现网页登录确认，完成注册后可用账号密码登录。</text>
-    <button class="qr-refresh" :disabled="status === 'loading' || status === 'consuming' || disabled" @click="refresh">↻　刷新二维码</button>
+    <text v-if="!registrationAllowed" class="version-hint">若小程序未出现登录确认，完成注册后可用账号密码登录。</text>
+    <button class="qr-refresh" :disabled="refreshing || status === 'loading' || status === 'consuming' || disabled" @click="refresh">↻　刷新二维码</button>
   </view>
   <WechatQrDownloadMenu :menu="qrMenu" :dark="dark" @close="closeQrMenu" @download="downloadQr" />
 </template>
@@ -45,10 +46,22 @@ import { roundCodePreparationText } from '@/utils/roundcode-preparation-progress
 
 const props = defineProps({ dark: Boolean, disabled: Boolean, registrationAllowed: Boolean })
 const emit = defineEmits(['login', 'busy'])
+let targetLabel = '网页', appPlatform = false, pageActive = true
+// #ifdef APP-PLUS
+targetLabel = 'APP'; appPlatform = true
+// #endif
+function visible() {
+  if (!pageActive) return false
+  // #ifdef H5
+  return !document.hidden
+  // #endif
+  return true
+}
 const qrSource = ref(''), qrState = ref('loading'), status = ref('loading'), message = ref('正在创建专属二维码…'), reference = ref('')
+const refreshing = ref(false)
 const terminal = computed(() => ['expired', 'consumed', 'uncertain', 'cancelled'].includes(status.value))
-const { state: roundCodeState, progress, phase } = useGeneratedRoundCode(qrSource, () => qrState.value !== 'error' && !terminal.value && !props.disabled)
-const preparationText = computed(() => roundCodePreparationText(roundCodeState.value, progress.value, phase.value))
+const { state: roundCodeState, progress, phase, prepareRefresh } = useGeneratedRoundCode(qrSource, () => qrState.value !== 'error' && !terminal.value && !props.disabled)
+const preparationText = computed(() => roundCodePreparationText(roundCodeState.value, progress.value, phase.value, refreshing.value))
 const { qrMenu, openQrMenu, closeQrMenu, downloadQr, suppressQrContextMenu } = useWechatQrSave(qrSource, () => qrState.value !== 'ready' || terminal.value || props.disabled)
 const messages = { loading: '正在创建专属二维码…', waiting: '等待微信扫码…', scanned: '已扫码，请在小程序中继续',
   authorized: '已确认，正在登录…', consuming: '正在登录…', complete: '登录成功，正在进入首页…',
@@ -57,15 +70,21 @@ const steps = [
   { icon: 'wechat', title: '微信扫码', description: '使用微信扫描上方小程序码' },
   { icon: 'mp-weixin', title: '进入小程序', description: '打开“分投侠”微信小程序' },
   { icon: 'user_profile', title: '登录或注册', description: '完成账号登录或新用户注册' },
-  { icon: 'dark_success', title: '自动登录网页', description: '确认后网页将自动进入首页' }
+  { icon: 'dark_success', title: `自动登录${targetLabel}`, description: `确认后${targetLabel}将自动进入首页` }
 ]
 let stopped = false
 let fallbackAttempt = 0
 const relay = createH5RegistrationRelay({ api: registrationApi,
+  prepareRefresh: (session, current) => prepareRefresh(registrationApi.qrUrl(session), current),
   onUnsupported() { reference.value = ''; qrSource.value = `${registrationApi.fixedQrUrl()}?v=${++fallbackAttempt}`; qrState.value = 'loading' },
   onState(state) {
+    refreshing.value = state.refreshing === true
     status.value = state.status
-    message.value = state.message || messages[state.status] || '扫码服务暂不可用，请刷新重试'
+    message.value = state.status === 'manual' && appPlatform
+      ? '扫码后请在小程序完成登录或注册，再使用账号密码登录 APP。'
+      : state.status === 'scanned' && state.session?.scannerPlatform === 'app'
+      ? `已扫码，请在扫码设备中确认登录${targetLabel}`
+      : state.message || messages[state.status] || '扫码服务暂不可用，请刷新重试'
     reference.value = state.session?.sessionId?.slice(-6) || ''
     emit('busy', state.status === 'consuming')
     if (state.status === 'loading') { qrSource.value = ''; qrState.value = 'loading' }
@@ -77,17 +96,29 @@ const relay = createH5RegistrationRelay({ api: registrationApi,
   },
   onLogin(result) { emit('login', result) }
 })
-function resume() { if (!stopped && !props.disabled && !document.hidden) relay.resume() }
+function resume() { if (!stopped && !props.disabled && visible()) relay.resume() }
 function pause() { relay.pause() }
 function stop() { if (stopped) return; stopped = true; relay.stop(); emit('busy', false) }
 function refresh() { if (!props.disabled) void relay.refresh() }
+// #ifdef H5
 function visibilityChanged() { if (document.hidden) pause(); else resume() }
+// #endif
 watch(() => props.disabled, disabled => { if (disabled) pause(); else resume() }, { flush: 'sync' })
-onShow(resume)
-onHide(pause)
+onShow(() => { pageActive = true; resume() })
+onHide(() => { pageActive = false; pause() })
 onUnload(stop)
-onMounted(() => { document.addEventListener('visibilitychange', visibilityChanged); resume() })
-onBeforeUnmount(() => { document.removeEventListener('visibilitychange', visibilityChanged); stop() })
+onMounted(() => {
+  // #ifdef H5
+  document.addEventListener('visibilitychange', visibilityChanged)
+  // #endif
+  resume()
+})
+onBeforeUnmount(() => {
+  // #ifdef H5
+  document.removeEventListener('visibilitychange', visibilityChanged)
+  // #endif
+  stop()
+})
 defineExpose({ pause, resume })
 </script>
 
@@ -101,6 +132,7 @@ defineExpose({ pause, resume })
 .scan-status { display: flex; align-items: center; gap: 14px; min-height: 68px; padding: 8px 15px; border-radius: 21px; background: #e6faf3; box-sizing: border-box; }.status-icon { flex: 0 0 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: #fff9; }.status-title { display: block; color: var(--green); font-size: 15px; font-weight: 600; line-height: 1.4; }.status-detail { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.5; }
 .qr-refresh { display: block; width: 100%; margin-top: 10px; border: 1px solid #55cbb0; border-radius: 999px; color: var(--green); background: transparent; min-height: 39px; line-height: 39px; font-size: 15px; }.qr-refresh::after { border: 0; }.qr-refresh[disabled] { opacity: .5; background: transparent; color: var(--muted); }
 .version-hint { display: block; margin: 9px 2px 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.same-device-hint { display: block; margin: 0 2px 16px; color: var(--muted); text-align: center; font-size: 12px; line-height: 1.65; }
 .app-code-progress { display: block; margin: -4px 0 12px; color: var(--muted); text-align: center; font-size: 12px; line-height: 1.5; }
 .panel-dark .heading-icon { background: #214d40; }.panel-dark .scan-status { background: #193d34; }.panel-dark .status-icon { background: #31594e; }.panel-dark .scan-step::after { border-color: #3a6358; }
 @keyframes qr-spin { to { transform: rotate(360deg); } }

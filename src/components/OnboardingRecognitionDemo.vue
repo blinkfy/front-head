@@ -97,8 +97,31 @@ function getDemoImageUrl(filename) {
   return `${baseUrl}/images/${filename}`
   // #endif
 }
-const beforeImageUrl = getDemoImageUrl('desk-packaging-before.webp')
-const afterImageUrl = getDemoImageUrl('desk-packaging-after.webp')
+const beforeImageUrl = ref(getDemoImageUrl('desk-packaging-before.webp'))
+const afterImageUrl = ref(getDemoImageUrl('desk-packaging-after.webp'))
+const preloadingImages = new Set()
+function preloadDemoImage(imageUrl) {
+  const src = imageUrl.value
+  if (preloadingImages.has(imageUrl)) return
+  preloadingImages.add(imageUrl)
+  try {
+    uni.getImageInfo({
+      src,
+      success: info => {
+        // App、小程序复用已下载的本地路径，H5 复用浏览器图片缓存。
+        if (info.path) imageUrl.value = info.path
+      },
+      // 预加载失败仍保留原地址，展示时由 image 正常重试。
+      fail: () => {}
+    })
+  } catch (_) {}
+}
+watch([() => props.stage, () => props.aiEnabled], ([stage, aiEnabled]) => {
+  if (stage === 'idle' || stage === 'exiting') return
+  // 开场介绍时就并行加载，不等对应区域高亮，也不阻塞引导操作。
+  preloadDemoImage(beforeImageUrl)
+  if (aiEnabled) preloadDemoImage(afterImageUrl)
+}, { immediate: true })
 
 const stageLevels = { idle: 0, intro: 0, scan: 1, classified: 2, advice: 3, upcycling: 4 }
 const lastContentLevel = ref(0)
