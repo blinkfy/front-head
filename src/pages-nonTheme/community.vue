@@ -22,7 +22,7 @@
           <text class="nav-title">环保社区</text>
         </view>
         <view class="nav-right">
-          <view v-if="myCommunity" class="action-icon-btn" @click="goToPublish">
+          <view v-if="myCommunity && communityChatEnabled" class="action-icon-btn" @click="goToPublish">
             <ManifestIcon class="nav-action-icon" id="post_edit" />
           </view>
         </view>
@@ -117,9 +117,9 @@
 
           <view v-for="post in posts" :key="post.id" class="post-card" @click="goToPostDetail(post)">
             <view class="post-header">
-              <image class="post-avatar" :src="getAvatarUrl(post.userAvatar)" mode="aspectFill"></image>
+              <image class="post-avatar" @click.stop="openCommunityAuthor(post)" :src="getAvatarUrl(post.userAvatar)" mode="aspectFill"></image>
               <view class="post-meta">
-                <text class="post-author">{{ getDisplayName(post) }}</text>
+                <text class="post-author" @click.stop="openCommunityAuthor(post)">{{ getDisplayName(post) }}</text>
                 <text class="post-time">{{ formatTime(post.createdAt) }}</text>
               </view>
               <view class="post-tag" :class="getTagClass(post.tag)">
@@ -159,7 +159,8 @@
                 <ManifestIcon id="comment" class="action-icon" />
                 <text class="action-count">{{ post.commentCount }}</text>
               </view>
-              <view class="action-item" @click.stop="sharePost(post)">
+              <view v-if="communityChatEnabled" class="action-item" @click.stop="sharePost(post)">
+                <ManifestIcon id="chat_forward" class="action-icon" size="42rpx" />
                 <text class="action-label">分享</text>
                 <text class="action-count">{{ post.shareCount }}</text>
               </view>
@@ -216,9 +217,10 @@
     </view>
 
     <!-- 发布 FAB 按钮 -->
-    <view class="fab" @click="goToPublish" v-if="myCommunity">
+    <view class="fab" @click="goToPublish" v-if="myCommunity && communityChatEnabled">
           <ManifestIcon class="fab-icon" id="post_edit" />
     </view>
+    <CommunityChatBridge ref="communityChatBridge" @shared="onPostShared" />
   </view>
 </template>
 
@@ -231,10 +233,12 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import { buildH5SpaPath } from '@/utils/h5-route.js';
 import { getCachedCommunityImage, normalizeCommunityImages, normalizeCommunityImageUrl, setCachedCommunityImage, setCommunityPostSnapshot } from '@/pages-nonTheme/utils/community-image.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
+import CommunityChatBridge from './components/CommunityChatBridge.vue';
+import { communitySocialEnabled } from './utils/community-social.js';
 import { getDisplayName } from '@/utils/display-name.js';
 
 export default {
-  components: { ManifestIcon },
+  components: { ManifestIcon, CommunityChatBridge },
   data() {
     return {
       loading: false,
@@ -247,6 +251,7 @@ export default {
       currentPage: 1,
       hasMore: false,
       showCommunityPicker: false,
+      communityChatEnabled: false,
       isDark: false,
       isAdmin: false,
       previewVisible: false,
@@ -295,6 +300,7 @@ export default {
     this.loadData();
   },
   onShow() {
+    this.refreshCommunityFeatures();
     this.checkTheme();
     this.checkAdmin();
     if (this.myCommunity) this.loadPosts();
@@ -306,6 +312,9 @@ export default {
   },
   methods: {
     getDisplayName,
+    async refreshCommunityFeatures() { this.communityChatEnabled = await communitySocialEnabled(); },
+    openCommunityAuthor(user) { if (this.communityChatEnabled) this.$refs.communityChatBridge.openAuthor(user); },
+    onPostShared(postId) { const post = this.posts.find(item => String(item.id) === String(postId)); if (post) post.shareCount = Number(post.shareCount || 0) + 1; },
     extractData(res) {
       return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
     },
@@ -539,7 +548,8 @@ export default {
         }
       });
     },
-    goToPublish() {
+    async goToPublish() {
+      if (!await communitySocialEnabled(true)) { uni.showToast({ title: '社区发帖已关闭', icon: 'none' }); return; }
       if (!this.myCommunity) {
         uni.showToast({ title: '请先加入社区', icon: 'none' });
         return;
@@ -839,7 +849,7 @@ export default {
       return map[tag] || 'tag-note';
     },
     sharePost(post) {
-      uni.showToast({ title: '分享功能开发中', icon: 'none' });
+      if (this.communityChatEnabled) this.$refs.communityChatBridge.share(post);
     },
     formatTime(dateStr) {
       if (!dateStr) return '';
@@ -1300,6 +1310,7 @@ export default {
 .post-actions { display: flex; gap: 40rpx; }
 .action-item { display: flex; align-items: center; gap: 8rpx; }
 .action-icon { font-size: 28rpx; }
+.action-label { font-size: 24rpx; }
 .action-count { color: #9ca3af; font-size: 24rpx; }
 .dark-mode .action-count { color: rgba(255, 255, 255, 0.5); }
 

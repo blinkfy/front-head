@@ -1,6 +1,9 @@
 <template>
     <view class="chat-container" :class="{ 'dark-theme': isDarkTheme }" @drop="onDrop" @dragover.prevent="onDragOver" @dragleave="onDragLeave"
-        :style="{ 'background': isDragOver ? 'rgba(7, 193, 96, 0.1)' : 'transparent', 'transition': 'background 0.3s ease' }">
+        :style="{ 'background': isDragOver ? 'rgba(7, 193, 96, 0.1)' : 'transparent', 'transition': 'background 0.3s ease', '--chat-status-bar-height': statusBarHeight + 'px' }">
+    <!-- #ifdef MP-WEIXIN -->
+    <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
+    <!-- #endif -->
         <!-- 拖拽提示 -->
         <view v-if="isDragOver" class="drag-overlay">
             <view class="drag-hint">
@@ -36,7 +39,10 @@
 
             <!-- 消息项 -->
             <view v-for="(msg, index) in visibleMessages" :key="msg.id" :id="'msg-' + msg.id" class="message-item"
-                :class="{ 'message-self': msg.isSelf, 'message-other': !msg.isSelf, 'message-system': msg.type === 'system' }">
+                :class="{ 'message-selecting': selectingMessages, 'message-selected': selectedMessageIds.includes(String(msg.id)), 'message-self': msg.isSelf, 'message-other': !msg.isSelf, 'message-system': msg.type === 'system' }">
+                <view v-if="selectingMessages" class="message-select-hitbox" @click.stop="toggleMessageSelection(msg)">
+                    <text v-if="msg.status === 'sent' && !msg.isWithdraw" class="message-select-check">{{ selectedMessageIds.includes(String(msg.id)) ? '●' : '○' }}</text>
+                </view>
                 <!-- 时间分隔 -->
                 <view v-if="shouldShowTime(index)" class="time-divider">
                     <text class="time-text">{{ formatTime(msg.timestamp) }}</text>
@@ -61,7 +67,7 @@
                             <text class="withdraw-text">已撤回</text>
                         </view>
                         
-                        <view class="message-bubble" :class="[getBubbleClass(msg), { 'withdraw-message': mode === 'admin' && msg.isWithdraw }]" @longpress="onMessageLongPressV2(msg)">
+                        <view class="message-bubble" :class="[getBubbleClass(msg), { 'withdraw-message': mode === 'admin' && msg.isWithdraw }]" @longpress="onMessageLongPressV2(msg)" @contextmenu.prevent="onMessageLongPressV2(msg)">
                             <!-- 引用消息 -->
                             <view v-if="msg.refId" class="ref-message-container" @click.stop="jumpToRefMessage(msg.refId)">
                                 <view class="ref-message-item" :class="[getRefMessageType(msg.refId)]">
@@ -71,7 +77,8 @@
                             </view>
 
                             <!-- AI 文本使用受限 Markdown，普通用户消息保持原有纯文本展示。 -->
-                            <ChatMarkdown v-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" :dark="isDarkTheme" />
+                            <view v-if="msg.type === 'text' && communityChatEnabled && communityPostLink(msg.content)" class="community-post-message" @click.stop="openCommunityPost(msg.content)"><ManifestIcon id="community_home" size="54rpx" /><view><text class="community-post-message-title">社区帖子</text><text class="community-post-message-note">点击查看详情</text></view></view>
+                            <ChatMarkdown v-else-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" :dark="isDarkTheme" />
                             <text v-else-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
 
                             <!-- 图片消息 -->
@@ -199,7 +206,8 @@
         </scroll-view>
 
         <!-- 底部输入区域 -->
-        <view class="input-area" :class="{ 'input-area-expanded': showMorePanel }">
+        <view v-if="!selectingMessages && groupSendBlockReason" class="group-muted-notice">{{ groupSendBlockReason }}</view>
+        <view v-if="!selectingMessages && !groupSendBlockReason" class="input-area" :class="{ 'input-area-expanded': showMorePanel }">
             <!-- 引用消息提示 -->
             <view v-if="showRefSuggestion && refMessageId" class="ref-tip-container">
                 <view class="ref-tip">
@@ -249,7 +257,7 @@
             </view>
 
             <!-- 表情面板 -->
-            <view v-if="showEmojiPanel" class="emoji-panel">
+            <view v-if="showEmojiPanel && !groupSendBlockReason" class="emoji-panel">
                 <scroll-view scroll-y class="emoji-scroll">
                     <view class="emoji-grid">
                         <view v-for="(emoji, index) in emojiList" :key="index" class="emoji-item"
@@ -265,40 +273,40 @@
             </view>
 
             <!-- 更多功能面板 -->
-            <view v-if="showMorePanel" class="more-panel">
+            <view v-if="showMorePanel && !groupSendBlockReason" class="more-panel">
                 <view class="more-grid">
                     <view class="more-item" @click="chooseImage">
-                        <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #43cea2, #185a9d);">
+                        <view class="more-icon-wrapper">
                             <ManifestIcon class="more-icon" id="image_gallery" :scale="1.5" />
                         </view>
                         <text class="more-text">图片</text>
                     </view>
                     <view class="more-item" @click="shootPhoto">
-                        <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+                        <view class="more-icon-wrapper">
                             <ManifestIcon class="more-icon" id="camera_scan" :scale="1.5" />
                         </view>
                         <text class="more-text">拍照</text>
                     </view>
                     <view class="more-item" @click="chooseVideo">
-                        <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
+                        <view class="more-icon-wrapper">
                             <ManifestIcon class="more-icon" id="video" :scale="1.5" />
                         </view>
                         <text class="more-text">视频</text>
                     </view>
                     <view class="more-item" @click="recordVideo">
-                        <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
+                        <view class="more-icon-wrapper">
                             <ManifestIcon class="more-icon" id="video" :scale="1.5" />
                         </view>
                         <text class="more-text">录像</text>
                     </view>
                     <view class="more-item" @click="chooseFile">
-                        <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #fa709a, #fee140);">
+                        <view class="more-icon-wrapper">
                             <ManifestIcon class="more-icon" id="file_document" :scale="1.5" />
                         </view>
                         <text class="more-text">文件</text>
                     </view>
                     <view class="more-item" @click="sendLocation">
-                        <view class="more-icon-wrapper" style="background: linear-gradient(135deg, #a8edea, #fed6e3);">
+                        <view class="more-icon-wrapper">
                             <ManifestIcon class="more-icon" id="map_location" :scale="1.5" />
                         </view>
                         <text class="more-text">位置</text>
@@ -330,7 +338,9 @@
                 <!-- 头部 -->
                 <view class="settings-header">
                     <text class="settings-title">聊天设置</text>
-                    <ManifestIcon class="close-btn" id="close" @click="closeSettingsModal" />
+                    <view class="close-btn" @click="closeSettingsModal">
+                        <ManifestIcon id="close" size="36rpx" />
+                    </view>
                 </view>
 
                 <!-- 用户信息 -->
@@ -351,24 +361,30 @@
                         <text class="group-members-title">群成员</text>
                         <text class="group-members-count">{{ groupInfo?.Members?.length || 0 }} 人</text>
                     </view>
+                    <input v-model="memberSearch" class="group-member-search" placeholder="搜索群成员" />
+                    <view v-if="isGroupOwner" class="group-members-loading"><ManifestIcon id="chat_group_transfer" size="28rpx" /> 点击“管理”可设置管理员或转让群主</view>
                     <view v-if="groupInfo?.Members?.length" class="group-members-grid">
-                        <view v-for="member in groupInfo.Members" :key="member.userId" class="group-member">
+                        <view v-for="member in filteredGroupMembers" :key="member.userId" class="group-member">
                             <image class="group-member-avatar" :src="getGroupMemberAvatar(member)" mode="aspectFill" />
                             <text class="group-member-name">{{ getGroupMemberName(member) }}</text>
                             <text v-if="getGroupMemberRole(member)" class="group-member-role">{{ getGroupMemberRole(member) }}</text>
+                            <text v-if="member.mute" class="group-member-role">已禁言</text>
+                            <button v-if="canRemoveGroupMember(member)" class="group-member-remove"
+                                :disabled="!!removingGroupMemberId" @click.stop="manageGroupMember(member)"><ManifestIcon id="chat_group_admin" size="24rpx" /> 管理</button>
                         </view>
                     </view>
                     <text v-else class="group-members-loading">正在加载成员...</text>
+                    <text v-if="groupInfo?.Members?.length && !filteredGroupMembers.length" class="group-members-loading">未找到匹配的成员</text>
                 </view>
 
                 <!-- 设置项列表 -->
-                <view class="settings-list">
+                <view class="settings-list" :class="{ 'settings-list-group': isGroupChat }">
+                    <view v-if="isGroupChat" class="settings-section-title settings-section-first">个人设置</view>
+                    <view class="setting-item" @click="showHistorySearch = true"><view class="setting-left"><ManifestIcon class="setting-icon" id="chat_history_search" :scale="1.1" /><text class="setting-label">查找聊天记录</text></view><ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" /></view>
                     <template v-if="isGroupChat">
-                        <view class="setting-item" @click="showGroupAnnouncement">
-                            <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="announcement" :scale="1.1" />
-                                <text class="setting-label">群公告</text>
-                            </view>
+                        <view class="setting-item" @click="editGroupAlias">
+                            <view class="setting-left"><ManifestIcon class="setting-icon" id="chat_group_alias" :scale="1.1" /><text class="setting-label">我在本群的昵称</text></view>
+                            <text class="setting-value">{{ groupInfo?.currentMember?.alias || '未设置' }}</text>
                             <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                         </view>
                         <view class="setting-item">
@@ -378,18 +394,40 @@
                             </view>
                             <switch :checked="contactSettings.top" @change="toggleTop" color="#07c160" />
                         </view>
-                        <view class="setting-item" @click="inviteGroupMembers">
+                        <view class="setting-item">
+                            <view class="setting-left"><ManifestIcon class="setting-icon" id="notification_off" :scale="1.1" /><text class="setting-label">消息免打扰</text></view>
+                            <switch :checked="contactSettings.mute" @change="toggleMute" color="#07c160" />
+                        </view>
+                        <view class="settings-section-title">群信息与管理</view>
+                        <view class="setting-item" @click="showGroupAnnouncement">
                             <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="add" :scale="1.1" />
+                                <ManifestIcon class="setting-icon" id="announcement" :scale="1.1" />
+                                <text class="setting-label">群公告</text>
+                            </view>
+                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
+                        </view>
+                        <view v-if="canManageGroup" class="setting-item" @click="inviteGroupMembers">
+                            <view class="setting-left">
+                                <ManifestIcon class="setting-icon" id="chat_member_invite" :scale="1.1" />
                                 <text class="setting-label">邀请成员</text>
                             </view>
                             <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                         </view>
+                        <view v-if="canManageGroup" class="setting-item">
+                            <view class="setting-left"><ManifestIcon class="setting-icon" id="chat_group_mute" :scale="1.1" /><text class="setting-label">全员禁言</text></view>
+                            <switch :checked="!!groupInfo?.muteAll" :disabled="groupSettingsBusy" @change="toggleGroupMuteAll" color="#07c160" />
+                        </view>
+                        <view class="settings-section-title">危险操作</view>
+                        <view class="setting-item" @click="confirmClearChat"><view class="setting-left"><ManifestIcon class="setting-icon" id="delete" :scale="1.1" /><text class="setting-label">清空我的聊天记录</text></view><ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" /></view>
                         <view class="setting-item danger" @click="confirmLeaveGroup">
                             <view class="setting-left">
                                 <ManifestIcon class="setting-icon" id="leave_group" :scale="1.1" />
                                 <text class="setting-label danger-text">退出群聊</text>
                             </view>
+                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
+                        </view>
+                        <view v-if="isGroupOwner" class="setting-item danger" @click="confirmDissolveGroup">
+                            <view class="setting-left"><ManifestIcon class="setting-icon" id="chat_group_dissolve" :scale="1.1" /><text class="setting-label danger-text">解散群聊</text></view>
                             <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                         </view>
                     </template>
@@ -447,12 +485,42 @@
                     <!-- 删除联系人 -->
                     <view class="setting-item danger" @click="confirmDeleteContact">
                         <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="delete" :scale="1.1" />
+                                <ManifestIcon class="setting-icon" id="chat_member_remove" :scale="1.1" />
                             <text class="setting-label danger-text">删除联系人</text>
                         </view>
                         <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
                     </view>
                     </template>
+                </view>
+            </view>
+        </view>
+
+        <ChatHistorySearch v-if="showHistorySearch" :group-id="isGroupChat ? String(groupId) : ''" :chat-id="String(chatId)"
+            @close="showHistorySearch = false" @select="showHistorySearch = false; showSettingsModal = false; jumpToRefMessage($event)" />
+        <view v-if="messageMenu" class="edit-note-modal" @click="messageMenu = null">
+            <view class="message-action-menu" @click.stop>
+                <view v-for="action in messageMenu.actions" :key="action.key" class="message-action-menu-item" @click="executeMessageAction(action.key)"><ManifestIcon :id="messageActionIcons[action.key]" size="40rpx" /><text>{{ action.label }}</text></view>
+                <view class="message-action-menu-item" @click="messageMenu = null"><ManifestIcon id="close" size="40rpx" /><text>取消</text></view>
+            </view>
+        </view>
+        <view v-if="selectingMessages" class="message-selection-toolbar" :style="{ paddingBottom: safeAreaBottom + 'px' }">
+            <button :disabled="messageActionBusy" @click="cancelMessageSelection">取消</button>
+            <text>{{ selectedMessageIds.length }} 条</text>
+            <button :disabled="!selectedMessageIds.length || messageActionBusy" @click="chooseForwardConversation"><ManifestIcon id="chat_forward" size="32rpx" /> 转发</button>
+            <button :disabled="!selectedMessageIds.length || messageActionBusy" @click="deleteSelectedMessages"><ManifestIcon id="delete" size="32rpx" /> 删除</button>
+        </view>
+
+        <ChatSelectionDialog :open="!!selectionMode" :title="selectionMode === 'invite' ? '邀请成员' : '转发到'"
+            :items="selectionItems" :multiple="selectionMode === 'invite'" :busy="selectionBusy"
+            @close="!selectionBusy && (selectionMode = '')" @confirm="confirmChatSelection" />
+        <view v-if="editingAnnouncement" class="edit-note-modal" @click="!savingAnnouncement && (editingAnnouncement = false)">
+            <view class="edit-note-content" @click.stop>
+                <text class="edit-note-title">编辑群公告</text>
+                <textarea v-model="announcementDraft" class="announcement-input" maxlength="500" placeholder="填写群公告，留空可清除" />
+                <text class="group-members-loading">{{ announcementDraft.length }}/500</text>
+                <view class="edit-note-buttons">
+                    <button class="cancel-btn" :disabled="savingAnnouncement" @click="editingAnnouncement = false">取消</button>
+                    <button class="confirm-btn" :disabled="savingAnnouncement" @click="saveGroupAnnouncement">{{ savingAnnouncement ? '保存中…' : '保存' }}</button>
                 </view>
             </view>
         </view>
@@ -536,13 +604,23 @@ import { mediaSendMethods, mediaPickerMethods, attachmentIngressMethods } from '
 import { imageSourceMethods, imagePreviewMethods, imageLoadingMethods, imageErrorMethods, imageRetryMethods } from '@/pages-nonTheme/chat/image-methods.js'
 import { videoPlaybackMethods, fileAccessMethods, mediaFormattingMethods } from '@/pages-nonTheme/chat/file-methods.js'
 import { historyCacheMethods, localFileCacheMethods } from '@/pages-nonTheme/chat/cache-methods.js'
+import ChatHistorySearch from '@/pages-nonTheme/components/ChatHistorySearch.vue'
+import { messageActionsMethods } from '@/pages-nonTheme/chat/message-actions-methods.js'
+import ChatSelectionDialog from '@/pages-nonTheme/components/ChatSelectionDialog.vue'
+import { groupManagementMethods } from '@/pages-nonTheme/chat/group-management-methods.js'
+import { messageSyncMethods } from '@/pages-nonTheme/chat/sync-methods.js'
+import { messageSendMethods } from '@/pages-nonTheme/chat/send-methods.js'
+import { messageBus } from '@/utils/message-event-bus.js'
+import { setActiveChatConversation, isChatEventsConnected } from '@/utils/chat-events.js'
 import { getUserProfile } from '@/api/user.js'
 import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
+import { prepareAvatarUpload } from '@/utils/upload-image.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
 import ChatMarkdown from '@/pages-nonTheme/components/ChatMarkdown.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
+import { communityPostLink, communitySocialEnabled } from './utils/community-social.js'
 import { getDisplayName } from '@/utils/display-name.js'
 
 // 本地存储 key 前缀
@@ -559,6 +637,8 @@ const chatRelationshipLabels = {
 export default {
     components: {
         ChatMarkdown,
+        ChatSelectionDialog,
+        ChatHistorySearch,
         ManifestIcon
     },
     data() {
@@ -567,6 +647,26 @@ export default {
             conversationType: 'direct',
             groupId: '',
             groupInfo: null,
+            groupSettingsBusy: false,
+            memberSearch: '',
+            showHistorySearch: false,
+            communityChatEnabled: false,
+            messageMenu: null,
+            messageActionIcons: { copy: 'chat_copy', delete: 'delete', quote: 'chat_quote', forward: 'chat_forward', select: 'chat_multi_select', transcribe: 'chat_voice_text', recall: 'chat_recall', retry: 'refresh' },
+            selectingMessages: false,
+            selectedMessageIds: [],
+            messageActionBusy: false,
+            forwardAttempt: null,
+            leavingGroup: false,
+            selectionMode: '',
+            selectionItems: [],
+            selectionBusy: false,
+            editingAnnouncement: false,
+            announcementDraft: '',
+            savingAnnouncement: false,
+            removingGroupMemberId: '',
+            lastSyncedMessageId: null,
+            lastHistoryReconcileAt: 0,
             isMentionStreaming: false,
             aiStreamingMessageId: '',
             mentionAbortController: null,
@@ -647,7 +747,11 @@ export default {
             
             // 消息轮询
             messagePollingTimer: null,
-            pollingInterval: 5000, // 5秒轮询一次
+            pollingInterval: 5000, // 断线回退和繁忙会话的已读合并间隔
+            chatEventsDirty: false,
+            chatEventsConnected: false,
+            pendingHistoryReconcile: false,
+            lastMessageCheckAt: 0,
             
             // 位置发送防重复 - 使用唯一标识
             lastLocationDataHash: '',
@@ -708,6 +812,10 @@ export default {
         }
     },
 
+    watch: {
+        inputText() { this.queueChatDraftSave() },
+        refMessageId() { this.queueChatDraftSave() }
+    },
     computed: {
         isGroupChat() {
             return this.conversationType === 'group' && !!this.groupId
@@ -811,9 +919,23 @@ export default {
             return this.generateAvatarFromName(this.chatTitle, true)
         },
 
+        isGroupOwner() { return this.isGroupChat && this.groupInfo?.currentMember?.role === 'owner' },
+        filteredGroupMembers() {
+            const keyword = this.memberSearch.trim().toLowerCase()
+            return (this.groupInfo?.Members || []).filter(member => `${this.getGroupMemberName(member)} ${member.User?.username || ''} ${member.userId}`.toLowerCase().includes(keyword))
+        },
         canManageGroup() {
             const role = this.groupInfo?.currentMember?.role
             return this.isGroupChat && (role === 'owner' || role === 'admin')
+        },
+        groupMemberAliases() {
+            return Object.fromEntries((this.groupInfo?.Members || []).filter(member => member.alias).map(member => [String(member.userId), member.alias]))
+        },
+        groupSendBlockReason() {
+            if (!this.isGroupChat) return ''
+            const member = this.groupInfo?.currentMember
+            if (member?.mute) return '你已被禁言，暂时无法发送消息'
+            return this.groupInfo?.muteAll && member?.role === 'member' ? '全员禁言中，仅群主和管理员可发言' : ''
         }
     },
 
@@ -857,6 +979,7 @@ export default {
         if (!this.chatId) {
             this.chatId = 'chat_' + this.otherUserId + '_' + Date.now()
         }
+        this.restoreChatDraft()
         this.initializeMessages()
         
         // 加载本地文件缓存
@@ -873,6 +996,15 @@ export default {
     },
 
     onShow() {
+        communitySocialEnabled().then(enabled => { this.communityChatEnabled = enabled })
+        setActiveChatConversation(this.chatId)
+        if (!this.chatEventListener) {
+            this.chatEventListener = (event = {}) => {
+                this.handleChatEvent(event)
+            }
+            messageBus.on('chat.changed', this.chatEventListener)
+            messageBus.on('chat.reconnected', this.chatEventListener)
+        }
         this.isChatPageActive = true
 
         // 每次显示页面时重新加载用户信息（确保头像更新）
@@ -901,6 +1033,13 @@ export default {
     },
     
     onHide() {
+        this.saveChatDraft()
+        setActiveChatConversation('')
+        if (this.chatEventListener) {
+            messageBus.off('chat.changed', this.chatEventListener)
+            messageBus.off('chat.reconnected', this.chatEventListener)
+            this.chatEventListener = null
+        }
         // 页面隐藏时停止轮询，节省资源
         this.isChatPageActive = false
         this.stopMessagePolling()
@@ -908,6 +1047,13 @@ export default {
     },
 
     onUnload() {
+        this.saveChatDraft()
+        setActiveChatConversation('')
+        if (this.chatEventListener) {
+            messageBus.off('chat.changed', this.chatEventListener)
+            messageBus.off('chat.reconnected', this.chatEventListener)
+            this.chatEventListener = null
+        }
         // 停止消息轮询
         this.isChatPageActive = false
         this.isChatPageDestroyed = true
@@ -940,6 +1086,12 @@ export default {
     },
 
     methods: {
+        communityPostLink,
+        async openCommunityPost(content) {
+            const url = communityPostLink(content)
+            if (url && await communitySocialEnabled(true)) uni.navigateTo({ url })
+            else uni.showToast({ title: '社区关联已关闭或链接无效', icon: 'none' })
+        },
         // ==================== 主题相关 ====================
         // 检测主题
         checkTheme() {
@@ -1093,19 +1245,59 @@ export default {
         ...localFileCacheMethods,
 
         // ==================== 消息轮询 ====================
+        handleChatEvent(event = {}) {
+            if (!this.canPollMessages() || (event.conversationId && String(event.conversationId) !== String(this.chatId))) return
+            if (event.kind === 'group.removed') {
+                this.isChatPageActive = false
+                this.stopMessagePolling()
+                if (this.leavingGroup) return
+                uni.showToast({ title: '你已退出群聊或群聊已解散', icon: 'none' })
+                uni.navigateBack()
+                return
+            }
+            if (event.kind === 'group.updated') this.loadGroupDetail()
+            if (event.kind === 'message' && event.message?.id) {
+                // Render the received record immediately. Batch HTTP catch-up/read
+                // updates on the existing timer instead of fetching for every event.
+                let atBottom = true
+                // #ifdef H5
+                const view = document.querySelector('.message-list')
+                if (view) atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 100
+                // #endif
+                this.mergeMessages([this.formatServerMessage({ ...event.message, Sender: event.message.Sender || event.sender })])
+                this.chatEventsDirty = true
+                if (atBottom) this.$nextTick(() => this.scrollToBottom())
+                return
+            }
+            this.pendingHistoryReconcile = true
+            this.chatEventsDirty = true
+            if (this.messageCacheReady && this.activeMessagePollingVersion !== this.messagePollingVersion) {
+                this.chatEventsDirty = false
+                this.pollMessages()
+            }
+        },
+
+        pollMessagesIfNeeded(pollingVersion = this.messagePollingVersion) {
+            if (this.activeMessagePollingVersion === pollingVersion) return
+            if (isChatEventsConnected() && !this.chatEventsDirty && Date.now() - this.lastMessageCheckAt < 60000) return
+            this.chatEventsDirty = false
+            this.pollMessages(pollingVersion)
+        },
+
         startMessagePolling() {
             // 清除现有的轮询
             this.stopMessagePolling()
             if (!this.canPollMessages()) return
 
             const pollingVersion = this.messagePollingVersion
+            this.lastHistoryReconcileAt = 0
             
             // 立即执行一次
             this.pollMessages(pollingVersion)
             
             // 启动定时轮询
             this.messagePollingTimer = setInterval(() => {
-                this.pollMessages(pollingVersion)
+                this.pollMessagesIfNeeded(pollingVersion)
             }, this.pollingInterval)
         },
         
@@ -1128,14 +1320,13 @@ export default {
             }
         },
 
-        getConversationHistory(params = {}) {
+        getConversationHistory(params = {}, requestOptions = {}) {
             return this.isGroupChat
-                ? chatApi.getGroupHistory(this.groupId, params)
-                : chatApi.getChatHistory({ chatId: this.chatId, ...params })
+                ? chatApi.getGroupHistory(this.groupId, params, requestOptions)
+                : chatApi.getChatHistory({ chatId: this.chatId, ...params }, requestOptions)
         },
 
         getGroupMessageBoundaryId(direction = 'latest') {
-            if (!this.isGroupChat) return null
             const ids = this.messages
                 .map(message => Number(message.id))
                 .filter(id => Number.isSafeInteger(id) && id > 0)
@@ -1145,25 +1336,9 @@ export default {
             ))
         },
 
-        getPollingHistoryParams() {
-            const params = {
-                page: 1,
-                pageSize: this.pageSize
-            }
-            if (!this.isGroupChat) return params
+        ...messageSyncMethods,
+        ...messageSendMethods,
 
-            const latestMessageId = this.getGroupMessageBoundaryId()
-            const now = Date.now()
-            // 每分钟全量校验最近一页，保证撤回等旧消息状态仍能及时同步；其余轮询只取增量。
-            const shouldReconcile = !latestMessageId || now - this.lastGroupHistoryReconcileAt >= 60 * 1000
-            if (shouldReconcile) {
-                this.lastGroupHistoryReconcileAt = now
-            } else {
-                params.afterId = latestMessageId
-            }
-            return params
-        },
-        
         async pollMessages(pollingVersion = this.messagePollingVersion) {
             if (
                 !this.canPollMessages() ||
@@ -1172,25 +1347,23 @@ export default {
             ) return
 
             this.activeMessagePollingVersion = pollingVersion
+            this.lastMessageCheckAt = Date.now()
+            this.chatEventsConnected = isChatEventsConnected()
+            if (this.pendingHistoryReconcile) {
+                this.lastHistoryReconcileAt = 0
+                this.pendingHistoryReconcile = false
+            }
             try {
                 // 静默获取最新消息（不显示加载提示）
-                const res = await this.getConversationHistory(this.getPollingHistoryParams())
+                const messageList = await this.fetchConversationUpdates(pollingVersion)
                 if (!this.canPollMessages() || pollingVersion !== this.messagePollingVersion) return
-
-                // 后端返回的data可能直接是数组，也可能是 { list: [], total: 0 }
-                let messageList = []
-                if (Array.isArray(res.data)) {
-                    messageList = res.data
-                } else if (res.data && Array.isArray(res.data.list)) {
-                    messageList = res.data.list
-                }
 
                 if (messageList.length > 0) {
                     const serverMessages = messageList.map(m => this.formatServerMessage(m))
                     
                     // 检查是否有新消息
-                    const existingIds = new Set(this.messages.map(m => m.id))
-                    const newMessages = serverMessages.filter(m => !existingIds.has(m.id))
+                    const existingIds = new Set(this.messages.map(m => String(m.id)))
+                    const newMessages = serverMessages.filter(m => !existingIds.has(String(m.id)))
                     
                     if (newMessages.length > 0) {
                         console.log(`轮询发现 ${newMessages.length} 条新消息`)
@@ -1216,7 +1389,13 @@ export default {
                 this.positionInitialChatAtBottom()
             } catch (e) {
                 if (this.canPollMessages() && pollingVersion === this.messagePollingVersion) {
-                    console.error('轮询消息失败:', e)
+                    this.chatEventsDirty = true
+                    if (this.isGroupChat && (e?.statusCode === 403 || e?.statusCode === 404)) {
+                        this.isChatPageActive = false
+                        this.stopMessagePolling()
+                        uni.showToast({ title: '群聊已不可访问', icon: 'none' })
+                        uni.navigateBack()
+                    } else console.error('轮询消息失败:', e)
                 }
                 // 轮询失败不影响用户使用，静默处理
             } finally {
@@ -1249,7 +1428,7 @@ export default {
                     // 清除本地消息中的临时ID消息(以"数字_字符串"格式的ID)
                     this.messages = this.messages.filter(localMsg => {
                         // 如果是临时ID格式(包含下划线),检查是否有对应的服务器消息
-                        if (typeof localMsg.id === 'string' && localMsg.id.includes('_')) {
+                        if (!localMsg.clientMessageId && typeof localMsg.id === 'string' && localMsg.id.includes('_')) {
                             // 检查是否可以被服务器消息替代
                             const hasDuplicate = serverMessages.some(serverMsg => {
                                 return Math.abs(serverMsg.timestamp - localMsg.timestamp) < 5000 &&
@@ -1318,6 +1497,7 @@ export default {
             
             const message = {
                 id: serverMsg.id || serverMsg.messageId,
+                clientMessageId: serverMsg.clientMessageId || null,
                 type: serverMsg.type || 'text',
                 content: content,
                 isSelf: isSelf,
@@ -1480,139 +1660,29 @@ export default {
 
         // 合并消息（去重并更新）
         mergeMessages(serverMessages) {
-            // 创建服务器消息的Map,便于查找
-            const serverMessageMap = new Map(serverMessages.map(m => [m.id, m]))
-            
-            // 清除已有服务器版本的临时ID消息
-            this.messages = this.messages.filter(localMsg => {
-                // 如果是临时ID
-                if (typeof localMsg.id === 'string' && localMsg.id.includes('_')) {
-                    // 检查是否有相同内容、类型和相近时间的服务器消息
-                    const duplicate = serverMessages.find(serverMsg => {
-                        const timeDiff = Math.abs(serverMsg.timestamp - localMsg.timestamp)
-                        const timeMatch = timeDiff < 10000 // 10秒内
-                        const typeMatch = serverMsg.type === localMsg.type
-                        const isSelfMatch = serverMsg.isSelf === localMsg.isSelf
-                        
-                        // 根据消息类型选择不同的匹配策略
-                        let contentMatch = false
-                        if (localMsg.type === 'location') {
-                            // 位置消息:比较经纬度
-                            contentMatch = serverMsg.latitude === localMsg.latitude &&
-                                          serverMsg.longitude === localMsg.longitude
-                        } else if (localMsg.type === 'image' || localMsg.type === 'video' || 
-                                   localMsg.type === 'file' || localMsg.type === 'voice') {
-                            // 媒体消息:本地content是文件路径,服务器content是URL,无法直接比较
-                            // 只通过时间+类型+发送者来匹配(如果是自己发的且时间接近,大概率是同一条)
-                            contentMatch = true
-                        } else {
-                            // 文本消息:直接比较content
-                            contentMatch = serverMsg.content === localMsg.content
-                        }
-                        
-                        const isDuplicate = timeMatch && typeMatch && contentMatch && isSelfMatch
-                        
-                        return isDuplicate
-                    })
-                    return !duplicate // 有重复则过滤掉
+            const incoming = new Map(serverMessages.map(message => [String(message.id), message]))
+            const byClientKey = new Map(serverMessages.filter(message => message.clientMessageId).map(message => [message.clientMessageId, message]))
+            const merged = new Map()
+            for (const local of this.messages) {
+                const server = incoming.get(String(local.id)) || (local.clientMessageId && byClientKey.get(local.clientMessageId))
+                let message = server || local
+                if (server && local.type === 'image' && local.content !== server.content) {
+                    this.clearLoadedOriginalImage(local.id)
+                    delete this.imageRetryNonces[local.id]
                 }
-                return true // 保留其他消息
-            })
-            
-            // 标记是否有变更
-            let hasChanges = false
-            
-            // 更新现有消息或保留本地消息
-            let updatedMessages = this.messages.map(localMsg => {
-                if (serverMessageMap.has(localMsg.id)) {
-                    const serverMsg = serverMessageMap.get(localMsg.id)
-                    
-                    // 检测状态变化 (例如撤回状态)
-                    if (localMsg.isWithdraw !== serverMsg.isWithdraw) {
-                        hasChanges = true
-                        console.log(`消息 ${localMsg.id} 状态更新: isWithdraw ${localMsg.isWithdraw} -> ${serverMsg.isWithdraw}`)
-                    }
-
-                    // 旧缓存可能没有发送者信息，服务端补齐后需触发列表更新。
-                    if (this.isGroupChat && !localMsg.isSelf &&
-                        (localMsg.senderId !== serverMsg.senderId || localMsg.senderAvatar !== serverMsg.senderAvatar)) {
-                        hasChanges = true
-                    }
-
-                    // 同一消息被服务端换成另一张图片时，绝不能继续显示旧原图缓存。
-                    if (localMsg.type === 'image' && serverMsg.type === 'image' &&
-                        localMsg.content !== serverMsg.content) {
-                        hasChanges = true
-                        this.clearLoadedOriginalImage(localMsg.id)
-                        delete this.imageRetryNonces[localMsg.id]
-                        localMsg.originalLoaded = false
-                    }
-                    
-                    // 如果是自己发送的媒体消息,保留本地的 content(blob URL)
-                    if (serverMsg.isSelf && 
-                        (serverMsg.type === 'image' || serverMsg.type === 'video' || serverMsg.type === 'file') &&
-                        localMsg.content && localMsg.content.startsWith('blob:')) {
-                        return {
-                            ...serverMsg,
-                            content: localMsg.content, // 保留本地 blob URL
-                            thumbnail: serverMsg.type === 'video' && localMsg.thumbnail?.startsWith('blob:') 
-                                ? localMsg.thumbnail 
-                                : serverMsg.thumbnail
-                        }
-                    }
-                    
-                    // 其他情况使用服务器版本（更可靠）
-                    // 服务器消息没有该本地展示状态；同一张图片刷新时保留它，
-                    // 避免轮询把已加载原图重新降级为缩略图。
-                    if (localMsg.originalLoaded &&
-                        serverMsg.type === 'image' &&
-                        localMsg.content === serverMsg.content) {
-                        return {
-                            ...serverMsg,
-                            originalLoaded: true
-                        }
-                    }
-                    return serverMsg
+                if (server && !server.isWithdraw && local.isSelf && ['image', 'video', 'file'].includes(local.type) && local.content?.startsWith('blob:')) {
+                    message = { ...server, content: local.content,
+                        thumbnail: local.type === 'video' && local.thumbnail?.startsWith('blob:') ? local.thumbnail : server.thumbnail }
+                } else if (server && local.originalLoaded && local.content === server.content) {
+                    message = { ...server, originalLoaded: true }
                 }
-                return localMsg
-            })
-            
-            // 获取已存在的消息ID
-            const existingIds = new Set(updatedMessages.map(m => m.id))
-            
-            // 添加本地没有的新消息
-            const newMessages = serverMessages.filter(m => !existingIds.has(m.id))
-            
-            // 只要有新消息、长度变化或内容变更，就更新列表
-            if (newMessages.length > 0 || updatedMessages.length !== this.messages.length || hasChanges) {
-                this.messages = [...updatedMessages, ...newMessages]
-                // 按时间排序
-                this.messages.sort((a, b) => a.timestamp - b.timestamp)
+                merged.set(String(message.id), message)
+            }
+            for (const [id, server] of incoming) if (!merged.has(id)) merged.set(id, server)
+            const messages = Array.from(merged.values()).sort((a, b) => a.timestamp - b.timestamp || (Number(a.id) || 0) - (Number(b.id) || 0))
+            if (JSON.stringify(messages) !== JSON.stringify(this.messages)) {
+                this.messages = messages
                 this.saveMessagesToStorage()
-                
-                // 调试:检查撤回消息是否正确合并
-                const withdrawnCount = this.messages.filter(m => m.isWithdraw).length
-                if (withdrawnCount > 0) {
-                    console.log(`合并后messages中有 ${withdrawnCount} 条撤回消息:`, 
-                        this.messages.filter(m => m.isWithdraw).map(m => ({
-                            id: m.id,
-                            type: m.type,
-                            isWithdraw: m.isWithdraw
-                        }))
-                    )
-                } else {
-                    // 检查新消息中是否有撤回消息
-                    const withdrawnInNew = newMessages.filter(m => m.isWithdraw).length
-                    const withdrawnInUpdated = updatedMessages.filter(m => m.isWithdraw).length
-                    console.log('合并调试:', {
-                        newMessages总数: newMessages.length,
-                        newMessages中撤回: withdrawnInNew,
-                        updatedMessages总数: updatedMessages.length,
-                        updatedMessages中撤回: withdrawnInUpdated,
-                        最终messages总数: this.messages.length,
-                        最终messages中撤回: withdrawnCount
-                    })
-                }
             }
         },
 
@@ -1628,11 +1698,12 @@ export default {
                     page: this.currentPage,
                     pageSize: this.pageSize
                 }
-                if (this.isGroupChat) {
+                {
                     const earliestMessageId = this.getGroupMessageBoundaryId('earliest')
                     if (earliestMessageId) {
                         historyParams.page = 1
-                        historyParams.beforeId = earliestMessageId
+                        if (this.isGroupChat) historyParams.beforeId = earliestMessageId
+                        else historyParams.lastMessageId = earliestMessageId
                     }
                 }
                 const res = await this.getConversationHistory(historyParams)
@@ -1648,8 +1719,8 @@ export default {
                 if (messageList.length > 0) {
                     const serverMessages = messageList.map(m => this.formatServerMessage(m))
                     // 插入到消息列表前面
-                    const existingIds = new Set(this.messages.map(m => m.id))
-                    const newMessages = serverMessages.filter(m => !existingIds.has(m.id))
+                    const existingIds = new Set(this.messages.map(m => String(m.id)))
+                    const newMessages = serverMessages.filter(m => !existingIds.has(String(m.id)))
                     this.messages = [...newMessages, ...this.messages]
                     this.messages.sort((a, b) => a.timestamp - b.timestamp)
                     this.saveMessagesToStorage()
@@ -1678,18 +1749,12 @@ export default {
             }
             this.addMessage(msg)
             this.inputText = ''
+            this.saveChatDraft()
             this.resetTextInputHeight()
 
             // 发送到服务器
             try {
-                const res = this.isGroupChat
-                    ? await chatApi.sendGroupTextMessage(this.groupId, text, this.refMessageId)
-                    : await chatApi.sendTextMessage({
-                        chatId: this.chatId,
-                        targetUserId: this.otherUserId,
-                        content: text,
-                        refId: this.refMessageId
-                    })
+                const res = await this.sendCreatedMessage(msg)
 
                 // 更新消息ID和状态
                 const newId = this.getServerMessageId(res.data)
@@ -1699,8 +1764,7 @@ export default {
                     this.updateMessageStatus(msg.id, 'sent')
                 }
                 
-                // 清除引用
-                this.clearRefMessage()
+                // The reference was consumed when the optimistic message was created.
                 if (this.shouldInvokeAi(text)) {
                     this.requestMentionAi(text)
                 }
@@ -1897,20 +1961,23 @@ export default {
         ...mediaSendMethods,
 
         createMessage(type, content, extra = {}) {
+            const clientMessageId = Date.now().toString() + '_' + Math.random().toString(36).slice(2, 14)
             return {
-                id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
+                id: clientMessageId,
+                clientMessageId,
                 type,
                 content,
                 isSelf: true,
                 timestamp: Date.now(),
                 status: 'sending',
-                refId: null,  // 引用消息ID
+                refId: this.refMessageId || null,  // Capture the reference before async work starts.
                 ...extra
             }
         },
 
         addMessage(msg) {
             this.messages.push(msg)
+            if (msg.refId && String(msg.refId) === String(this.refMessageId)) this.clearRefMessage()
             this.saveMessagesToStorage()
             this.$nextTick(() => {
                 this.scrollToBottom()
@@ -1977,6 +2044,12 @@ export default {
             const msg = this.messages.find(m => m.id === msgId)
             if (msg) {
                 msg.status = status
+                // If polling received the ack first, retain just the server copy.
+                if (newId && this.messages.some(item => item !== msg && String(item.id) === String(newId))) {
+                    this.messages = this.messages.filter(item => item !== msg)
+                    this.saveMessagesToStorage()
+                    return
+                }
                 // 如果提供了新ID(服务器返回的真实ID),则更新消息ID
                 if (newId && newId !== msgId) {
                     msg.id = newId
@@ -1986,61 +2059,23 @@ export default {
         },
 
         async resendMessage(msg) {
+            if (!msg || msg.status === 'sending') return
+            if (!msg.clientMessageId && String(msg.id).includes('_')) msg.clientMessageId = String(msg.id)
             const originalId = msg.id
             msg.status = 'sending'
             this.saveMessagesToStorage()
 
             try {
-                let res
-                switch (msg.type) {
-                    case 'text':
-                        res = this.isGroupChat
-                            ? await chatApi.sendGroupTextMessage(this.groupId, msg.content, msg.refId)
-                            : await chatApi.sendTextMessage({
-                                chatId: this.chatId,
-                                targetUserId: this.otherUserId,
-                                content: msg.content
-                            })
-                        break
-                    case 'image':
-                        res = this.isGroupChat
-                            ? await chatApi.sendGroupImageMessage(this.groupId, msg.content, msg.refId)
-                            : await chatApi.sendImageMessage(this.chatId, this.otherUserId, msg.content)
-                        break
-                    case 'voice':
-                        res = this.isGroupChat
-                            ? await chatApi.sendGroupVoiceMessage(this.groupId, msg.content, msg.duration, msg.refId)
-                            : await chatApi.sendVoiceMessage(this.chatId, this.otherUserId, msg.content, msg.duration)
-                        break
-                    case 'video':
-                        res = this.isGroupChat
-                            ? await chatApi.sendGroupVideoMessage(this.groupId, msg.content, msg.thumbnail, msg.duration, msg.refId)
-                            : await chatApi.sendVideoMessage(this.chatId, this.otherUserId, msg.content, msg.thumbnail, msg.duration)
-                        break
-                    case 'file':
-                        res = this.isGroupChat
-                            ? await chatApi.sendGroupFileMessage(this.groupId, msg.content, msg.fileName, msg.fileSize, msg.refId)
-                            : await chatApi.sendFileMessage(this.chatId, this.otherUserId, msg.content, msg.fileName, msg.fileSize)
-                        break
-                    case 'location':
-                        res = this.isGroupChat
-                            ? await chatApi.sendGroupLocationMessage(this.groupId, {
-                                locationName: msg.locationName,
-                                locationAddress: msg.locationAddress,
-                                latitude: msg.latitude,
-                                longitude: msg.longitude,
-                                refId: msg.refId
-                            })
-                            : await chatApi.sendLocationMessage(
-                                this.chatId,
-                                this.otherUserId,
-                                msg.locationName,
-                                msg.locationAddress,
-                                msg.latitude,
-                                msg.longitude
-                            )
-                        break
+                if (msg.clientMessageId) {
+                    const response = await this.getConversationHistory({ clientMessageId: msg.clientMessageId, pageSize: 1 })
+                    const rows = Array.isArray(response.data) ? response.data : response.data?.list || []
+                    const delivered = rows.find(message => message.clientMessageId === msg.clientMessageId)
+                    if (delivered) {
+                        this.mergeMessages([this.formatServerMessage(delivered)])
+                        return
+                    }
                 }
+                const res = await this.sendCreatedMessage(msg)
 
                 if (res && res.data) {
                     const newId = this.getServerMessageId(res.data)
@@ -2165,22 +2200,7 @@ export default {
 
         async sendLocationMessage(msg) {
             try {
-                const res = this.isGroupChat
-                    ? await chatApi.sendGroupLocationMessage(this.groupId, {
-                        locationName: msg.locationName,
-                        locationAddress: msg.locationAddress,
-                        latitude: msg.latitude,
-                        longitude: msg.longitude,
-                        refId: this.refMessageId
-                    })
-                    : await chatApi.sendLocationMessage(
-                        this.chatId,
-                        this.otherUserId,
-                        msg.locationName,
-                        msg.locationAddress,
-                        msg.latitude,
-                        msg.longitude
-                    )
+                const res = await this.sendCreatedMessage(msg)
 
                 const newId = this.getServerMessageId(res.data)
                 if (newId) {
@@ -2341,10 +2361,8 @@ export default {
             const mute = e.detail.value
 
             try {
-                await chatApi.updateContactMute({
-                    userId: this.otherUserId,
-                    mute: mute
-                })
+                if (this.isGroupChat) await chatApi.updateGroupSettings(this.groupId, { notificationMuted: mute })
+                else await chatApi.updateContactMute({ userId: this.otherUserId, mute })
 
                 this.contactSettings.mute = mute
                 uni.showToast({ 
@@ -2387,11 +2405,11 @@ export default {
         confirmClearChat() {
             uni.showModal({
                 title: '提示',
-                content: '确定要清空聊天记录吗？此操作不可恢复',
+                content: '仅清空你自己的聊天记录，对方或其他群成员的记录将保留。此操作不可恢复。',
                 success: async (res) => {
                     if (res.confirm) {
                         try {
-                            await chatApi.clearChatHistory(this.chatId)
+                            await (this.isGroupChat ? chatApi.clearGroupHistory(this.groupId) : chatApi.clearChatHistory(this.chatId))
                             this.messages = []
                             this.saveMessagesToStorage()
                             uni.showToast({ title: '已清空', icon: 'success' })
@@ -2408,7 +2426,7 @@ export default {
         confirmDeleteContact() {
             uni.showModal({
                 title: '警告',
-                content: '确定要删除该联系人吗？删除后将清空所有聊天记录',
+                content: '确定删除该联系人及你自己的聊天记录吗？对方的记录不受影响。',
                 confirmColor: '#ff4444',
                 success: async (res) => {
                     if (res.confirm) {
@@ -2465,6 +2483,7 @@ export default {
                 this.chatTitle = res.data.name || this.chatTitle
                 this.otherAvatar = res.data.avatar || ''
                 this.contactSettings.top = !!res.data.currentMember?.top
+                this.contactSettings.mute = !!res.data.currentMember?.notificationMuted
             } catch (e) {
                 console.error('加载群聊信息失败:', e)
             }
@@ -2475,6 +2494,7 @@ export default {
             this.groupInfo = { ...(this.groupInfo || {}), ...group }
             this.chatTitle = group.name || this.chatTitle
             this.otherAvatar = group.avatar || ''
+            if (this.groupSendBlockReason) { this.showEmojiPanel = false; this.showMorePanel = false }
         },
 
         editGroupName() {
@@ -2511,15 +2531,18 @@ export default {
                 success: async (result) => {
                     const filePath = result.tempFilePaths?.[0]
                     if (!filePath) return
+                    let prepared
                     try {
                         uni.showLoading({ title: '上传中' })
-                        const res = await chatApi.updateGroupAvatar(this.groupId, filePath)
+                        prepared = await prepareAvatarUpload(filePath)
+                        const res = await chatApi.updateGroupAvatar(this.groupId, prepared.path, undefined, prepared.file)
                         this.applyGroupInfo(res.data)
                         uni.showToast({ title: '群头像已更新', icon: 'success' })
                     } catch (error) {
                         console.error('修改群头像失败:', error)
                         uni.showToast({ title: '上传失败', icon: 'none' })
                     } finally {
+                        prepared?.cleanup()
                         uni.hideLoading()
                     }
                 }
@@ -2542,40 +2565,43 @@ export default {
             return ({ owner: '群主', admin: '管理员' })[member?.role] || ''
         },
 
-        showGroupAnnouncement() {
-            uni.showModal({
-                title: '群公告',
-                content: this.groupInfo?.announcement || '群主暂未发布公告',
-                showCancel: false
-            })
+        canRemoveGroupMember(member) {
+            if (!this.canManageGroup || !member?.userId) return false
+            if (String(member.userId) === String(this.getCurrentUserId())) return false
+            return member.role === 'member' || (this.groupInfo?.currentMember?.role === 'owner' && member.role === 'admin')
         },
 
-        async inviteGroupMembers() {
+        async confirmRemoveGroupMember(member) {
+            if (this.removingGroupMemberId || !this.canRemoveGroupMember(member)) return
+            this.removingGroupMemberId = String(member.userId)
             try {
-                const res = await chatApi.getFriends()
-                const existingIds = new Set((this.groupInfo?.Members || []).map((member) => String(member.userId)))
-                const candidates = (res.data?.list || []).filter((friend) => !existingIds.has(String(friend.id)))
-                if (!candidates.length) {
-                    uni.showToast({ title: '暂无可邀请的好友', icon: 'none' })
-                    return
-                }
-                uni.showActionSheet({
-                    itemList: candidates.map((friend) => friend.note || getDisplayName(friend)),
-                    success: async (result) => {
-                        const selected = candidates[result.tapIndex]
-                        if (!selected) return
-                        await chatApi.addGroupMembers(this.groupId, [selected.id])
-                        await this.loadGroupDetail()
-                        uni.showToast({ title: '已邀请成员', icon: 'success' })
-                    }
+                const confirmed = await new Promise((resolve) => {
+                    uni.showModal({
+                        title: '移除群成员',
+                        content: `确定将“${this.getGroupMemberName(member)}”移出群聊吗？`,
+                        confirmText: '移除',
+                        confirmColor: '#ef4444',
+                        success: (result) => resolve(result.confirm),
+                        fail: () => resolve(false)
+                    })
                 })
-            } catch (e) {
-                console.error('邀请群成员失败:', e)
-                uni.showToast({ title: '邀请失败', icon: 'none' })
+                if (!confirmed || !this.canRemoveGroupMember(member)) return
+                const res = await chatApi.removeGroupMember(this.groupId, member.userId)
+                if (res?.code !== 0) throw new Error(res?.msg || '移除失败，请重试')
+                this.groupInfo.Members = this.groupInfo.Members.filter((item) => String(item.userId) !== String(member.userId))
+                uni.showToast({ title: '已移除成员', icon: 'success' })
+            } catch (error) {
+                console.error('移除群成员失败:', error)
+                uni.showToast({ title: '移除失败，请重试', icon: 'none' })
+            } finally {
+                this.removingGroupMemberId = ''
             }
         },
 
+        ...groupManagementMethods,
+
         confirmLeaveGroup() {
+            if (this.isGroupOwner) { uni.showToast({ title: '请先在成员管理中转让群主，或解散群聊', icon: 'none' }); return }
             uni.showModal({
                 title: '退出群聊',
                 content: '退出后将不再接收该群消息，确定继续吗？',
@@ -2583,10 +2609,12 @@ export default {
                 success: async (result) => {
                     if (!result.confirm) return
                     try {
+                        this.leavingGroup = true
                         await chatApi.leaveGroup(this.groupId)
                         uni.showToast({ title: '已退出群聊', icon: 'success' })
                         setTimeout(() => uni.navigateBack(), 500)
                     } catch (e) {
+                        this.leavingGroup = false
                         console.error('退出群聊失败:', e)
                     }
                 }
@@ -2601,12 +2629,12 @@ export default {
                     if (res.tapIndex === 0) {
                         uni.showModal({
                             title: '提示',
-                            content: '确定要清空聊天记录吗？此操作不可恢复',
+                            content: '仅清空你自己的聊天记录，对方或其他群成员的记录将保留。此操作不可恢复。',
                             success: async (r) => {
                                 if (r.confirm) {
                                     // 同步清空服务器记录
                                     try {
-                                        await chatApi.clearChatHistory(this.chatId)
+                                        await (this.isGroupChat ? chatApi.clearGroupHistory(this.groupId) : chatApi.clearChatHistory(this.chatId))
                                     } catch (e) {
                                         console.error('清空服务器聊天记录失败', e)
                                     }
@@ -2650,125 +2678,7 @@ export default {
         // ==================== 拖拽和粘贴处理 ====================
         ...attachmentIngressMethods,
 
-        onMessageLongPress(msg) {
-            const items = ['复制', '删除', '引用']
-            if (msg.isSelf && msg.status === 'sent') {
-                items.push('撤回')
-            }
-
-            uni.showActionSheet({
-                itemList: items,
-                success: async (res) => {
-                    if (res.tapIndex === 0) {
-                        // 复制
-                        if (msg.type === 'text') {
-                            uni.setClipboardData({ data: msg.content })
-                        } else if (msg.type === 'location') {
-                            const locationText = `📍 ${msg.locationName}\n${msg.locationAddress}`
-                            uni.setClipboardData({ data: locationText })
-                        }
-                    } else if (res.tapIndex === 1) {
-                        // 删除（仅本地删除）
-                        try {
-                            await chatApi.deleteMessage(msg.id)
-                        } catch (e) {
-                            console.error('删除服务器消息失败', e)
-                        }
-
-                        const index = this.messages.findIndex(m => m.id === msg.id)
-                        if (index > -1) {
-                            this.messages.splice(index, 1)
-                            this.saveMessagesToStorage()
-                            uni.showToast({ title: '已删除', icon: 'none' })
-                        }
-                    } else if (res.tapIndex === 2) {
-                        // 引用
-                        this.refMessageId = msg.id
-                        this.showRefSuggestion = true
-                        uni.showToast({ title: '已选择引用消息', icon: 'success' })
-                    } else if (res.tapIndex === 3) {
-                        // 撤回（通知服务器）
-                        try {
-                            await chatApi.recallMessage(msg.id)
-
-                            const index = this.messages.findIndex(m => m.id === msg.id)
-                            if (index > -1) {
-                                this.messages.splice(index, 1)
-                                this.saveMessagesToStorage()
-                                uni.showToast({ title: '已撤回', icon: 'none' })
-                            }
-                        } catch (e) {
-                            console.error('撤回消息失败', e)
-                            uni.showToast({ title: '撤回失败', icon: 'none' })
-                        }
-                    }
-                }
-            })
-        },
-
-        onMessageLongPressV2(msg) {
-            const actions = [
-                { key: 'copy', label: '复制' },
-                { key: 'quote', label: '引用' }
-            ]
-            if (!this.isGroupChat) actions.splice(1, 0, { key: 'delete', label: '删除' })
-            if (!this.isGroupChat && msg.type === 'voice' && msg.status === 'sent') {
-                actions.push({ key: 'transcribe', label: msg.voiceText ? '重新转文字' : '转文字' })
-            }
-            if (msg.isSelf && msg.status === 'sent') {
-                actions.push({ key: 'recall', label: '撤回' })
-            }
-
-            uni.showActionSheet({
-                itemList: actions.map(item => item.label),
-                success: async (res) => {
-                    const action = actions[res.tapIndex] && actions[res.tapIndex].key
-                    if (action === 'copy') {
-                        if (msg.type === 'text') {
-                            uni.setClipboardData({ data: msg.content })
-                        } else if (msg.type === 'location') {
-                            const locationText = `位置 ${msg.locationName}\n${msg.locationAddress}`
-                            uni.setClipboardData({ data: locationText })
-                        } else if (msg.type === 'voice' && msg.voiceText) {
-                            uni.setClipboardData({ data: msg.voiceText })
-                        }
-                    } else if (action === 'delete') {
-                        try {
-                            await chatApi.deleteMessage(msg.id)
-                        } catch (e) {
-                            console.error('删除消息失败:', e)
-                        }
-
-                        const index = this.messages.findIndex(m => m.id === msg.id)
-                        if (index > -1) {
-                            this.messages.splice(index, 1)
-                            this.saveMessagesToStorage()
-                            uni.showToast({ title: '已删除', icon: 'none' })
-                        }
-                    } else if (action === 'quote') {
-                        this.refMessageId = msg.id
-                        this.showRefSuggestion = true
-                        uni.showToast({ title: '已选择引用消息', icon: 'success' })
-                    } else if (action === 'transcribe') {
-                        await this.transcribeVoiceMessage(msg)
-                    } else if (action === 'recall') {
-                        try {
-                            if (this.isGroupChat) await chatApi.recallGroupMessage(this.groupId, msg.id)
-                            else await chatApi.recallMessage(msg.id)
-                            const index = this.messages.findIndex(m => m.id === msg.id)
-                            if (index > -1) {
-                                this.messages.splice(index, 1)
-                                this.saveMessagesToStorage()
-                                uni.showToast({ title: '已撤回', icon: 'none' })
-                            }
-                        } catch (e) {
-                            console.error('撤回消息失败', e)
-                            uni.showToast({ title: '撤回失败', icon: 'none' })
-                        }
-                    }
-                }
-            })
-        },
+        ...messageActionsMethods,
 
         ...voiceTranscriptionMethods,
 
@@ -2840,8 +2750,9 @@ export default {
         // ==================== 消息引用相关 ====================
         // 获取被引用消息的预览文本
         getRefMessagePreview(refId) {
-            const refMsg = this.messages.find(m => m.id === refId)
-            if (!refMsg) return '[消息已删除]'
+            const refMsg = this.messages.find(m => String(m.id) === String(refId))
+            if (!refMsg) return '[点击加载原消息]'
+            if (refMsg.isWithdraw) return '[消息已撤回]'
             
             switch (refMsg.type) {
                 case 'text':
@@ -2863,14 +2774,15 @@ export default {
 
         // 获取被引用消息的发送者名称
         getRefMessageSenderName(refId) {
-            const refMsg = this.messages.find(m => m.id === refId)
+            const refMsg = this.messages.find(m => String(m.id) === String(refId))
             if (!refMsg) return '用户'
-            return refMsg.isSelf ? '你' : (this.contactSettings.note || this.otherUsername || this.chatTitle || '对方')
+            if (refMsg.isSelf) return '你'
+            return this.isGroupChat ? this.getMessageSenderName(refMsg) : (this.contactSettings.note || this.otherUsername || this.chatTitle || '对方')
         },
 
         // 获取被引用消息的类型，用于样式判断
         getRefMessageType(refId) {
-            const refMsg = this.messages.find(m => m.id === refId)
+            const refMsg = this.messages.find(m => String(m.id) === String(refId))
             if (!refMsg) return 'unknown'
             return refMsg.isSelf ? 'self' : 'other'
         },
@@ -2882,78 +2794,47 @@ export default {
         },
 
         // 跳转到被引用的消息
-        jumpToRefMessage(refId) {
-            const refMsg = this.messages.find(m => m.id === refId)
-            if (!refMsg) {
-                uni.showToast({ title: '消息已删除', icon: 'none' })
-                return
+        async jumpToRefMessage(refId) {
+            if (this.loadingReference) return
+            this.loadingReference = true
+            try {
+                let target = this.messages.find(message => String(message.id) === String(refId))
+                if (!target) {
+                    uni.showLoading({ title: '定位消息中' })
+                    const result = await this.getConversationHistory({ messageId: refId, pageSize: 1 })
+                    const rows = Array.isArray(result.data) ? result.data : result.data?.list || []
+                    const raw = rows.find(message => String(message.id) === String(refId))
+                    if (!raw) { uni.showToast({ title: '原消息已删除或不可访问', icon: 'none' }); return }
+                    const boundary = this.getGroupMessageBoundaryId('earliest')
+                    const loaded = [raw]
+                    let cursor = Number(refId)
+                    // Fill the intervening history, so adding an old reference does not
+                    // move the older-history cursor past an unloaded gap.
+                    while (boundary && cursor < boundary && this.isChatPageActive) {
+                        const response = await this.getConversationHistory({ afterId: cursor, pageSize: 100 })
+                        const batch = Array.isArray(response.data) ? response.data : response.data?.list || []
+                        const maximum = batch.reduce((value, message) => Math.max(value, Number(message.id) || 0), cursor)
+                        loaded.push(...batch)
+                        if (!response.incremental || maximum <= cursor) break
+                        cursor = maximum
+                    }
+                    if (!this.isChatPageActive) return
+                    this.mergeMessages(loaded.map(message => this.formatServerMessage(message)))
+                    target = this.messages.find(message => String(message.id) === String(refId))
+                }
+                this.scrollToMessage = ''
+                this.$nextTick(() => {
+                    this.scrollToMessage = `msg-${refId}`
+                    this.highlightMessageId = target.id
+                    setTimeout(() => { this.highlightMessageId = null }, 1500)
+                })
+            } catch (error) {
+                console.error('定位引用消息失败:', error)
+                uni.showToast({ title: '定位失败，请重试', icon: 'none' })
+            } finally {
+                this.loadingReference = false
+                uni.hideLoading()
             }
-
-            // 找到消息在列表中的索引
-            const messageIndex = this.messages.findIndex(m => m.id === refId)
-            if (messageIndex === -1) {
-                uni.showToast({ title: '消息未找到', icon: 'none' })
-                return
-            }
-
-            // 在下一帧检查消息位置并滚动
-            this.$nextTick(() => {
-                setTimeout(() => {
-                    const query = uni.createSelectorQuery().in(this)
-                    
-                    // 同时获取目标消息和 scroll-view 的位置信息
-                    query.select(`#message-${refId}`).boundingClientRect()
-                    query.selectViewport().scrollOffset()
-                    
-                    query.exec((results) => {
-                        if (results && results[0]) {
-                            const messageRect = results[0]
-                            const scrollOffset = results[1]
-                            
-                            // 获取 scroll-view 的高度（通常是视口高度减去输入框等高度）
-                            const viewportQuery = uni.createSelectorQuery().in(this)
-                            viewportQuery.select('.message-list').boundingClientRect()
-                            viewportQuery.exec((viewportResults) => {
-                                if (viewportResults && viewportResults[0]) {
-                                    const scrollViewRect = viewportResults[0]
-                                    const scrollViewHeight = scrollViewRect.height
-                                    const scrollViewTop = scrollViewRect.top
-                                    
-                                    // 计算消息相对于 scroll-view 的位置
-                                    const messageTop = messageRect.top - scrollViewTop
-                                    const messageBottom = messageTop + messageRect.height
-                                    
-                                    // 判断消息是否在可见范围内（留出顶部和底部的缓冲区）
-                                    const topBuffer = 100
-                                    const bottomBuffer = 100
-                                    
-                                    const isInView = messageTop >= -topBuffer && messageBottom <= scrollViewHeight + bottomBuffer
-                                    
-                                    if (!isInView) {
-                                        // 消息不在可见范围，需要滚动
-                                        // 直接使用 :scroll-into-view 进行垂直锚点跳转
-                                        this.scrollToMessage = '' // 先清空，确保能触发变更
-                                        this.$nextTick(() => {
-                                            this.scrollToMessage = `message-${refId}`
-                                            
-                                            // 1秒后清空锚点，防止影响正常的滚动交互
-                                            setTimeout(() => {
-                                                this.scrollToMessage = ''
-                                            }, 1000)
-                                        })
-                                    }
-                                }
-                            })
-                        }
-                    })
-
-                    // 高亮该消息（闪烁效果）
-                    this.highlightMessageId = refId
-                    setTimeout(() => {
-                        this.highlightMessageId = null
-                    }, 2000) // 2秒后取消高亮
-                }, 50)
-            })
         },
 
         // 生成基于用户名的头像 URL (使用第三方服务)
@@ -3026,6 +2907,7 @@ export default {
 
         getMessageSenderName(msg) {
             if (msg?.isAi) return 'AI 环保助手'
+            if (this.isGroupChat && this.groupMemberAliases?.[String(msg?.senderId)]) return this.groupMemberAliases[String(msg.senderId)]
             return msg?.senderName || getDisplayName({ nickname: msg?.senderNickname, username: msg?.senderUsername }, this.chatTitle || '群成员')
         },
 
@@ -3263,6 +3145,13 @@ page {
 .chat-header .back-icon,
 .chat-header .more-icon { filter: brightness(0) invert(1); }
 
+/* #ifdef APP-PLUS || MP-WEIXIN */
+.chat-header {
+    height: calc(44px + var(--chat-status-bar-height, 20px));
+    padding: var(--chat-status-bar-height, 20px) 15px 0;
+}
+/* #endif */
+
 // ==================== 拖拽提示 ====================
 .drag-overlay {
     position: fixed;
@@ -3335,6 +3224,12 @@ page {
     box-sizing: border-box;
 }
 
+/* #ifdef APP-PLUS || MP-WEIXIN */
+.message-list {
+    margin-top: calc(44px + var(--chat-status-bar-height, 20px));
+}
+/* #endif */
+
 /* #ifdef MP-WEIXIN */
 // 小程序的 scroll-view 必须拥有确定高度，才能由自身而不是 page 承担滚动。
 .chat-container {
@@ -3397,6 +3292,20 @@ page {
         display: inline-block;
     }
 }
+
+.message-selecting { position: relative; padding-left: 44rpx; }
+.message-selected { background: rgba(7,193,96,.08); }
+.message-select-hitbox { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 5; }
+.message-select-check { position: absolute; left: 5rpx; top: 36rpx; color: #07a96a; font-size: 36rpx; }
+.community-post-message { display: flex; align-items: center; gap: 20rpx; min-width: 300rpx; padding: 24rpx; background: var(--bg-secondary); color: var(--text-primary); }
+.community-post-message-title, .community-post-message-note { display: block; }
+.community-post-message-title { font-size: 29rpx; font-weight: 600; }
+.community-post-message-note { margin-top: 10rpx; font-size: 24rpx; color: var(--text-secondary); }
+.message-action-menu { width: 500rpx; max-width: 90vw; max-height: 80vh; overflow-y: auto; border-radius: 20rpx; background: #fff; color: #25342e; }
+.message-action-menu-item { display: flex; align-items: center; gap: 24rpx; padding: 24rpx 32rpx; text-align: left; font-size: 30rpx; border-bottom: 1rpx solid #edf0ee; }
+.message-selection-toolbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 900; display: flex; gap: 18rpx; align-items: center; justify-content: center; padding: 20rpx; background: #fff; box-shadow: 0 -2rpx 10rpx #0001; }
+.message-selection-toolbar button { display: inline-flex; align-items: center; justify-content: center; gap: 6rpx; margin: 0; font-size: 26rpx; padding: 0 22rpx; }
+.message-selection-toolbar text { font-size: 26rpx; color: #819088; }
 
 .message-item {
     margin-bottom: 30rpx;
@@ -3926,6 +3835,15 @@ page {
 }
 
 // ==================== 底部输入区域 ====================
+.group-muted-notice {
+    flex-shrink: 0;
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+    text-align: center;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    font-size: 14px;
+}
+
 .input-area {
     position: relative;
     z-index: 100;
@@ -4203,7 +4121,7 @@ page {
     transform: translateY(-50%);
     width: 80rpx;
     height: 60rpx;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #e9eeeb;
     border-radius: 40rpx 0 0 40rpx;
     display: flex;
     align-items: center;
@@ -4258,6 +4176,7 @@ page {
 }
 
 .more-icon-wrapper {
+    background: #eef2f0;
     width: 100rpx;
     height: 100rpx;
     border-radius: 24rpx;
@@ -4495,9 +4414,12 @@ page {
     }
 
     .close-btn {
-        font-size: 60rpx;
+        width: 64rpx;
+        height: 64rpx;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         color: #999;
-        line-height: 1;
     }
 }
 
@@ -4593,6 +4515,9 @@ page {
     color: #999;
 }
 
+.group-member-search { height: 64rpx; box-sizing: border-box; margin: 16rpx 0; padding: 0 18rpx; border-radius: 10rpx; background: #f3f5f4; font-size: 25rpx; }
+.announcement-input { width: 100%; height: 280rpx; margin: 24rpx 0 12rpx; box-sizing: border-box; padding: 20rpx; background: #f3f5f4; border-radius: 12rpx; font-size: 28rpx; }
+
 .group-members-grid {
     display: flex;
     flex-wrap: wrap;
@@ -4637,8 +4562,44 @@ page {
     line-height: 26rpx;
 }
 
+.group-member-remove {
+    margin: 0;
+    padding: 4rpx 12rpx;
+    border-radius: 8rpx;
+    background: #fff0f0;
+    color: #ef4444;
+    font-size: 21rpx;
+    line-height: 32rpx;
+
+    &::after {
+        border: none;
+    }
+
+    &[disabled] {
+        opacity: 0.5;
+    }
+}
+
 .settings-list {
     padding: 20rpx 0;
+}
+
+.settings-section-title {
+    padding: 22rpx 40rpx 14rpx;
+    border-top: 12rpx solid #f3f5f4;
+    background: #fff;
+    color: #7b8881;
+    font-size: 24rpx;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.settings-section-first {
+    border-top: 1rpx solid #e5ebe7;
+}
+
+.settings-list-group > .setting-item {
+    border-bottom-color: #e5ebe7;
 }
 
 .setting-item {
@@ -4748,9 +4709,17 @@ page {
                 color: #666;
             }
 
+            &::after { border: none; }
+
             &.confirm-btn {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: #16845b;
                 color: #fff;
+
+                &:active { background: #116d4b; }
+            }
+
+            &[disabled] {
+                opacity: 0.5;
             }
         }
     }

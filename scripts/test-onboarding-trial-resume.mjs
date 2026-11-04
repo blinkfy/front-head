@@ -113,6 +113,7 @@ function trialHarness(path, { pageVisible = true } = {}) {
     onboardingFocusTracker: null, onboardingStepRequestId: 0, onboardingAutoScrolling: { value: false },
     onboardingDemoStage: { value: 'idle' }, onboardingTargetRect: { value: null },
     recognitionTaskUnsubscribe: null,
+    recentResultUnsubscribe: null,
     ref: value => ({ value }), nextTick: callback => callback(), setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
     uni: { setStorageSync: (key, value) => storage.set(key, value), showToast() {} },
     chooseRecognitionImage: options => pickerCalls.push(options), acceptRecognitionImage() {},

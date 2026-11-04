@@ -133,7 +133,8 @@ defineExpose({ validate: () => captcha.value?.validate() || false, refresh: () =
 
 <style scoped>
 /* #ifdef APP-PLUS */
-.app-login-shell { padding-top: var(--status-bar-height, 0px); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }
+.app-login-shell { padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }
+.app-login-shell .login-hero { padding-top: var(--status-bar-height, 0px); box-sizing: content-box; }
 /* #endif */
 .h5-login-shell { --ink: #18213a; --muted: #8793a8; --surface: #fff; --card: #ffffffb8; --input: #f7f8fb; --border: #d6dfeb; --green: #00a67b; min-height: 100vh; background: radial-gradient(ellipse at 0 65%, #e3f7ff, transparent 45%), radial-gradient(ellipse at 100% 80%, #effbed, transparent 42%), var(--surface); color: var(--ink); overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; }
 .shell-dark { --ink: #edf5f4; --muted: #a6b8bc; --surface: #101e28; --card: #142831de; --input: #1c303b; --border: #34505a; --green: #62ddb5; background: radial-gradient(ellipse at 0 65%, #173544, transparent 45%), radial-gradient(ellipse at 100% 80%, #193831, transparent 42%), var(--surface); }
@@ -158,5 +159,15 @@ defineExpose({ validate: () => captcha.value?.validate() || false, refresh: () =
 .wechat-column-highlight { border-radius: 20px; animation: qr-column-attention 1.1s ease-in-out 2; }@keyframes qr-column-attention { 0%, 100% { box-shadow: 0 0 0 0 #00a77c00; } 45% { box-shadow: 0 0 0 5px #00a77c20, 0 0 24px #00a77c24; } }
 @media (max-width: 1100px) and (min-width: 901px) { .login-glass { width: calc(100% - 50px); padding: 28px 20px 24px; }.login-columns { gap: 23px; }.account-column { padding-left: 5px; padding-right: 5px; }.wechat-column { padding-left: 23px; } }
 @media (max-width: 900px) { .login-hero { height: 212px; }.hero-brand { flex-direction: column; gap: 0; padding-top: 25px; }.brand-copy { align-items: center; }.brand-name { font-size: 29px; margin-top: 8px; }.brand-slogan { font-size: 15px; }.brand-logo { width: 68px; height: 68px; }.brand-mascot { width: 61px; height: 61px; }.login-stage { margin-top: -26px; }.login-glass { width: calc(100% - 30px); max-width: 540px; padding: 22px 20px 25px; border-radius: 24px; }.login-columns { display: block; }.account-column { padding: 0; }.account-heading { display: none; }.account-form { margin-top: 0; }.wechat-column { padding: 0; border: 0; }.mobile-tabs { display: flex; padding: 5px; border-radius: 999px; background: #e9faf4; margin-bottom: 15px; }.mobile-tabs button { flex: 1; padding: 9px 0; margin: 0; border: 0; background: transparent; color: var(--ink); font-size: 16px; line-height: 1.7; border-radius: 999px; }.mobile-tabs button::after { border: 0; }.mobile-tabs button.selected { color: #fff; background: linear-gradient(110deg, #21cfa0, #00a577); box-shadow: 0 4px 12px #13b88b24; }.mobile-hint { display: block; text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 23px; line-height: 1.6; }.account-input { min-height: 51px; margin-bottom: 17px; border-radius: 13px; padding: 0 12px; gap: 9px; }.account-input input { font-size: 16px; height: 49px; }.account-options { margin: 3px 0 22px; }.remember-toggle { font-size: 15px; }.account-submit { min-height: 49px; font-size: 18px; }.account-caption { display: none; }.register-entry { border: 0; margin-top: 24px; padding-top: 0; font-size: 13px; }.login-footer { font-size: 12px; margin-top: 29px; padding: 0 15px; }.stage-green { left: 16px; bottom: -38px; width: 140px; height: 140px; }.shell-dark .mobile-tabs { background: #21453d; } }
+/* #ifdef APP-PLUS */
+@media (max-width: 900px) {
+  .app-login-shell .login-hero { height: 176px; }
+  .app-login-shell .hero-brand { padding-top: 14px; }
+  .app-login-shell .brand-logo { width: 60px; height: 60px; }
+  .app-login-shell .brand-mascot { width: 54px; height: 54px; }
+  .app-login-shell .brand-name { font-size: 26px; margin-top: 6px; }
+  .app-login-shell .brand-slogan { font-size: 14px; }
+}
+/* #endif */
 @media (prefers-reduced-motion: reduce) { .submit-spinner, .mascot-motion, .wechat-column-highlight, .hero-orb, .stage-orb, .login-hero::after { animation: none; } }
 </style>

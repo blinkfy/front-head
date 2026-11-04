@@ -1,0 +1,5 @@
+{
+  "deploymentTarget": "12.0",
+  "frameworks": ["UIKit.framework", "ImageIO.framework", "CoreGraphics.framework"],
+  "dependencies-pods": [{ "name": "SDWebImageWebPCoder", "version": "0.15.0" }]
+}

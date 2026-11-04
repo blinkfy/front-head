@@ -1,5 +1,8 @@
 import { config } from '@/api/config.js'
 import { prepareAppMapImage } from './map-image-preview.mjs'
+// #ifdef MP-WEIXIN
+import { compressWechatUploadImage } from './mp-upload-image.js'
+// #endif
 import { encodeBinImageWithinLimit, imageDataBytes, imageMimeFromBase64, normalizeImageData, resolveStoredBinImage, TRASH_BIN_IMAGE_LIMIT } from './trash-bin-image-core.mjs'
 
 let cachedPreviewPath = ''
@@ -60,7 +63,7 @@ function discardCompressedFile(path, original) {
   // #endif
 }
 
-async function compressNativeImage(src, dimensions) {
+async function compressNativeImage(src, dimensions, info = dimensions) {
   let path
   try {
     // #ifdef APP-PLUS
@@ -70,12 +73,19 @@ async function compressNativeImage(src, dimensions) {
       width: `${dimensions.width}px`, height: `${dimensions.height}px`
     }, result => resolve(result.target), error => reject(photoProcessingError('照片压缩失败', error))))
     // #endif
+    // #ifdef MP-WEIXIN
+    const keepAlpha = !['jpg', 'jpeg', 'image/jpeg'].includes(String(info.type || '').toLowerCase())
+    path = await compressWechatUploadImage(src, info, Math.round(dimensions.quality * 100), Math.max(dimensions.width, dimensions.height), keepAlpha)
+    if (!path && keepAlpha) throw new Error('暂时无法在保留透明背景的同时压缩此图片，请换一张图片')
+    // #endif
     // #ifndef APP-PLUS
-    const result = await uniCall(options => uni.compressImage(options), {
-      src, quality: Math.round(dimensions.quality * 100),
-      compressedWidth: dimensions.width, compressedHeight: dimensions.height
-    })
-    path = result.tempFilePath || result.apFilePath
+    if (!path) {
+      const result = await uniCall(options => uni.compressImage(options), {
+        src, quality: Math.round(dimensions.quality * 100),
+        compressedWidth: dimensions.width, compressedHeight: dimensions.height
+      })
+      path = result.tempFilePath || result.apFilePath
+    }
     // #endif
     if (!path) throw new Error('图片压缩失败，请重新选图')
     return await readImageData(path)
@@ -119,12 +129,25 @@ export async function compressTrashBinImage(filePath) {
   // Album files can be readable by the native image decoder but not by FileReader.
   // Read Base64 only from our own compressed temporary file, never the album original.
   return encodeBinImageWithinLimit(info.width, info.height,
-    dimensions => compressNativeImage(info.path || filePath, dimensions))
+    dimensions => compressNativeImage(info.path || filePath, dimensions, info))
   // #endif
   // #ifndef APP-PLUS
   const original = normalizeImageData(await readImageData(filePath))
+  // #ifdef MP-WEIXIN
+  let candidatePath
+  try {
+    const keepAlpha = !['jpg', 'jpeg', 'image/jpeg'].includes(String(info.type || '').toLowerCase())
+    candidatePath = await compressWechatUploadImage(filePath, info, 86, 1600, keepAlpha)
+    if (candidatePath) {
+      const candidate = normalizeImageData(await readImageData(candidatePath))
+      const bytes = imageDataBytes(candidate)
+      if (candidate && bytes > 0 && bytes <= TRASH_BIN_IMAGE_LIMIT && (!original || bytes < imageDataBytes(original))) return candidate
+    }
+  } catch (_) {}
+  finally { discardCompressedFile(candidatePath, filePath) }
+  // #endif
   if (original && imageDataBytes(original) > 0 && imageDataBytes(original) <= TRASH_BIN_IMAGE_LIMIT) return original
-  return encodeBinImageWithinLimit(info.width, info.height, dimensions => compressNativeImage(filePath, dimensions))
+  return encodeBinImageWithinLimit(info.width, info.height, dimensions => compressNativeImage(filePath, dimensions, info))
   // #endif
   // #endif
 }

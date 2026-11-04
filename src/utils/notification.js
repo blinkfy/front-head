@@ -41,28 +41,51 @@ import { vibrateHapticPattern } from './haptics.mjs'
  * @param {number} options.duration - 显示时长（毫秒），默认3000ms
  * @param {Function} options.onTap - 点击回调
  */
-export function showNotification(options = {}) {
-  const {
-    title = '新消息',
-    content = '',
-    icon = '💬',
-    duration = 3000,
-    onTap = null
-  } = options
+let notificationTimer = null
+let nativeNavigationReady = false
 
-  uni.showToast({
-    title: `${icon} ${title}`,
-    icon: 'none',
-    duration: Math.ceil(duration / 1000),
-    mask: false
-  })
+export function openChatNotification(data = {}) {
+  const groupId = data.groupId || (String(data.conversationId || '').startsWith('group:') ? String(data.conversationId).slice(6) : '')
+  const otherId = data.otherId || data.conversationId
+  if (!groupId && !otherId) return
+  const query = groupId
+    ? `conversationType=group&groupId=${encodeURIComponent(groupId)}&chatId=${encodeURIComponent(`group:${groupId}`)}`
+    : `chatId=${encodeURIComponent(otherId)}&userId=${encodeURIComponent(otherId)}`
+  uni.navigateTo({ url: `/pages-nonTheme/chat?${query}&title=${encodeURIComponent(data.senderName || data.title || '聊天')}` })
+}
 
-  // 如果有点击回调，添加监听
-  if (onTap && typeof onTap === 'function') {
-    // uni.showToast 不支持直接点击回调，但可以通过其他方式处理
-    // 这里预留接口供其他处理方式使用
-    console.log('点击回调已预留，可通过其他途径调用:', onTap)
+export function initChatNotificationNavigation() {
+  // #ifdef APP-PLUS
+  if (!nativeNavigationReady && typeof plus !== 'undefined' && plus.push) {
+    nativeNavigationReady = true
+    plus.push.addEventListener('click', (message) => {
+      try {
+        const payload = typeof message.payload === 'string' ? JSON.parse(message.payload) : message.payload
+        if (payload?.type === 'message') openChatNotification(payload)
+      } catch (_) {}
+    })
   }
+  // #endif
+}
+
+export function showNotification(options = {}) {
+  const { title = '新消息', content = '', icon = '💬', duration = 3000, onTap = null } = options
+  // #ifdef H5
+  if (typeof document !== 'undefined' && document.body) {
+    document.getElementById('ftx-chat-notification')?.remove()
+    if (notificationTimer) clearTimeout(notificationTimer)
+    const banner = document.createElement('button')
+    banner.id = 'ftx-chat-notification'
+    banner.type = 'button'
+    banner.textContent = `${icon} ${title}${content ? `：${content}` : ''}`
+    banner.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:16px;right:16px;max-width:440px;margin:auto;z-index:99999;padding:14px 18px;border:1px solid #e5e7eb;border-radius:14px;background:#fff;color:#1f2937;box-shadow:0 6px 24px #0002;font-size:14px;line-height:1.5;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
+    banner.addEventListener('click', () => { banner.remove(); onTap?.() })
+    document.body.appendChild(banner)
+    notificationTimer = setTimeout(() => banner.remove(), duration)
+    return
+  }
+  // #endif
+  uni.showToast({ title: `${title}${content ? `：${content}` : ''}`, icon: 'none', duration, mask: false })
 }
 
 /**
@@ -73,37 +96,17 @@ export function showNotification(options = {}) {
  * @param {string} options.username - 发送者用户名
  */
 export function showSystemNotification(options = {}) {
-  const {
-    title = '新消息',
-    content = '',
-    username = ''
-  } = options
-
-  // 优先使用本地通知（能在系统中显示）
+  const { title = '新消息', content = '', username = '', payload = {}, onTap } = options
+  // #ifdef APP-PLUS
   try {
-    // #ifndef H5
-    // 调用原生通知接口
     if (typeof plus !== 'undefined' && plus.push) {
-      plus.push.createLocalNotification({
-        title: username || title,
-        content: content || '新消息',
-        payload: {
-          type: 'message'
-        }
-      })
+      initChatNotificationNavigation()
+      plus.push.createMessage(content || '新消息', { ...payload, type: 'message' }, { title: username || title, cover: false })
       return
     }
-    // #endif
-  } catch (e) {
-    console.warn('原生通知失败:', e)
-  }
-
-  // 备选方案：使用 uni 的系统通知
-  uni.showToast({
-    title: `${username || title}: ${content || ''}`,
-    icon: 'none',
-    duration: 2
-  })
+  } catch (error) { console.warn('原生通知失败:', error) }
+  // #endif
+  showNotification({ title: username || title, content, duration: 3000, onTap })
 }
 
 /**
@@ -157,8 +160,9 @@ function playGeneratedSound(type = 'default') {
 
       // 播放完成后解决
       setTimeout(() => {
+        audioContext.close().catch(() => {})
         resolve()
-      }, currentTime * 1000)
+      }, (currentTime - now) * 1000)
       // #endif
 
       // #ifndef H5
@@ -178,13 +182,10 @@ function playGeneratedSound(type = 'default') {
  */
 export async function playNotificationSound(type = 'default') {
   try {
-    const systemInfo = uni.getSystemInfoSync()
-    
-    // 优先使用 Web Audio API（H5 环境）
-    if (systemInfo.platform === 'web') {
-      await playGeneratedSound(type)
-      return
-    }
+    // #ifdef H5
+    await playGeneratedSound(type)
+    return
+    // #endif
 
     // 其他平台尝试使用本地或网络资源
     const soundFiles = {
@@ -290,7 +291,7 @@ export async function notifyNewMessage(msgData, options = {}) {
   // 格式化消息内容
   let displayContent = content
   if (type === 'image') {
-    displayContent = '[ͼƬ]'
+    displayContent = '[图片]'
   } else if (type === 'voice') {
     displayContent = '[语音]'
   } else if (type === 'video') {
@@ -306,48 +307,16 @@ export async function notifyNewMessage(msgData, options = {}) {
     displayContent = displayContent.substring(0, 50) + '...'
   }
 
-  // 优先使用系统通知（如果启用且在APP中）
-  if (useSystemNotification) {
-    const platform = uni.getSystemInfoSync().platform
-    if (platform !== 'web') {
-      // APP环境，尝试显示系统通知
-      try {
-        showSystemNotification({
-          title: senderName,
-          content: displayContent
-        })
-      } catch (e) {
-        console.warn('系统通知显示失败，回退到 toast:', e)
-        if (show) {
-          showNotification({
-            title: senderName,
-            content: displayContent,
-            icon: '💬',
-            duration: 3000
-          })
-        }
-      }
-    } else {
-      // 浏览器环境，显示 toast
-      if (show) {
-        showNotification({
-          title: senderName,
-          content: displayContent,
-          icon: '💬',
-          duration: 3000
-        })
-      }
+  if (show) {
+    const notification = {
+      title: senderName,
+      content: displayContent,
+      duration: 3000,
+      payload: { conversationId: msgData.conversationId, groupId: msgData.groupId, otherId: msgData.otherId, senderName },
+      onTap: options.onTap || (() => openChatNotification(msgData))
     }
-  } else {
-    // 显示 toast ֪ͨ
-    if (show) {
-      showNotification({
-        title: senderName,
-        content: displayContent,
-        icon: '💬',
-        duration: 3000
-      })
-    }
+    if (useSystemNotification) showSystemNotification(notification)
+    else showNotification(notification)
   }
 
   // 播放声音

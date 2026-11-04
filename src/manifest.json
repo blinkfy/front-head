@@ -19,7 +19,8 @@
             "Maps" : {},
             "Camera" : {},
             "Barcode" : {},
-            "VideoPlayer" : {}
+            "VideoPlayer" : {},
+            "Push" : {}
         },
         "distribute" : {
             "android" : {

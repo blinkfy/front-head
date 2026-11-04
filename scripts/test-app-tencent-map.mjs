@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createAppTencentMap } from '../src/utils/app-tencent-map.mjs'
+import { createAppTencentMap, getTencentBasemapOptions, createSatelliteDetailController } from '../src/utils/app-tencent-map.mjs'
 
 const require = createRequire(import.meta.url)
 const { parse: parseSfc, compileTemplate, compileStyle } = require('@vue/compiler-sfc')
@@ -13,6 +13,10 @@ const babel = require('@babel/parser')
 const rendererTests = []
 const hookTests = []
 const sfcTests = []
+const satelliteBasemap = [
+  { type: 'satellite', features: ['base'] },
+  { type: 'vector', features: ['point', 'label'] }
+]
 function check(list, name, fn) {
   if (process.env.APP_MAP_ONLY_PAGE_LIFECYCLE === '1' && name !== 'App page hide pauses while retaining background completion; show resumes without fallback') return
   try { fn(); list.push({ name, ok: true }) }
@@ -63,22 +67,107 @@ function makeSdk() {
 }
 
 // Pure renderer behavior with SDK and clock doubles.
+check(rendererTests, 'renderer uses the original container and leaves SDK scale at its default', () => {
+  for (const satellite of [false, true]) {
+    const { sdk, maps } = makeSdk()
+    const container = {}
+    const renderer = createAppTencentMap({ sdk, container, emit() {} })
+    try {
+      renderer.update({ latitude: 25, longitude: 121, scale: 14, satellite, markers: [] })
+      assert.strictEqual(maps[0].container, container)
+      assert.equal(Object.hasOwn(maps[0].options, 'scale'), false, 'constructor must not override SDK scale')
+      assert.equal(maps[0].options.zoom, 14, 'map zoom remains independent of SDK sampling scale')
+    } finally { renderer.destroy() }
+  }
+})
+check(rendererTests, 'basemap options isolate satellite imagery and expose exactly one vector label layer', () => {
+  const options = getTencentBasemapOptions(true)
+  assert.deepEqual(options, satelliteBasemap)
+  assert.equal(options.some(layer => layer.features.includes('road')), false)
+  const vector = options.filter(layer => layer.type === 'vector')
+  assert.equal(vector.some(layer => layer.features.some(feature => ['base', 'building', 'buildings'].includes(feature))), false)
+  assert.equal(options.flatMap(layer => layer.features).filter(feature => feature === 'label').length, 1)
+  assert.ok(vector[0].features.includes('label'))
+})
+check(rendererTests, 'basemap options return fresh objects and nested arrays after caller mutation', () => {
+  const first = getTencentBasemapOptions(true), second = getTencentBasemapOptions(true)
+  assert.notStrictEqual(first, second)
+  first.forEach((layer, index) => {
+    assert.notStrictEqual(layer, second[index])
+    assert.notStrictEqual(layer.features, second[index].features)
+    layer.type = 'mutated'
+    layer.features.push('road', 'base', 'building')
+  })
+  first.push({ type: 'vector', features: ['label'] })
+  assert.deepEqual(second, satelliteBasemap)
+  assert.deepEqual(getTencentBasemapOptions(true), satelliteBasemap)
+  const vector = getTencentBasemapOptions(false), otherVector = getTencentBasemapOptions(false)
+  assert.notStrictEqual(vector, otherVector)
+  vector.type = 'mutated'
+  vector.features = ['base']
+  assert.deepEqual(otherVector, { type: 'vector' })
+  assert.deepEqual(getTencentBasemapOptions(false), { type: 'vector' })
+})
+check(rendererTests, 'renderer repeatedly switches fresh basemaps without moving the current center or zoom', () => {
+  const { sdk, maps } = makeSdk()
+  const renderer = createAppTencentMap({ sdk, container: {}, emit() {} })
+  const props = { latitude: 25, longitude: 121, scale: 14, satellite: true, markers: [] }
+  try {
+    renderer.update(props)
+    const map = maps[0]
+    assert.deepEqual(map.options.baseMap, satelliteBasemap)
+    // Retain the camera even after a user pan/zoom differs from the unchanged props.
+    const center = new sdk.LatLng(24.5, 120.3)
+    map.center = center; map.zoom = 11
+    for (const satellite of [false, true, false, true]) {
+      const before = map.calls.length
+      renderer.update({ ...props, satellite })
+      assert.equal(map.calls.length, before + 1)
+      const [method, options] = map.calls.at(-1)
+      assert.equal(method, 'basemap')
+      assert.deepEqual(options, satellite ? satelliteBasemap : { type: 'vector' })
+      assert.strictEqual(map.getCenter(), center)
+      assert.equal(map.getZoom(), 11)
+      map.fire('tilesloaded')
+      renderer.update({ ...props, satellite })
+      assert.equal(map.calls.length, before + 1, 'unchanged type does not reapply the basemap')
+      if (satellite) options[1].features.push('base')
+      else options.type = 'mutated'
+    }
+    assert.equal(maps.length, 1, 'switches reuse the original SDK map')
+  } finally { renderer.destroy() }
+})
 {
   const clock = fakeClock(), { sdk, maps, layers } = makeSdk(), events = []
   const renderer = createAppTencentMap({ sdk, container: {}, emit: event => events.push(event), assetUrl: value => `/asset/${value}`, setTimer: clock.setTimeout, clearTimer: clock.clearTimeout })
   const base = { latitude: 25, longitude: 121, scale: 14, satellite: false, markers: [] }
   renderer.update(base)
-  check(rendererTests, 'renderer setBaseMap switches vector and satellite; tilesloaded alone completes', () => {
+  check(rendererTests, 'renderer initializes vector and satellite in constructor; later switches wait for tilesloaded', () => {
     const map = maps[0]
-    assert.deepEqual(map.calls.filter(x => x[0] === 'basemap').map(x => x[1]), [{ type: 'vector' }])
+    assert.deepEqual(map.options.baseMap, { type: 'vector' })
+    assert.equal(map.calls.filter(x => x[0] === 'basemap').length, 0, 'initial vector is not redundantly set after construction')
     assert.equal(events.some(e => e.type === 'updated'), false)
+    map.fire('tilesloaded')
+    assert.deepEqual(events.filter(e => e.type === 'updated').at(-1), { type: 'updated', detail: { satellite: false } }, 'initial completion still comes from tilesloaded')
+    const completed = events.filter(e => e.type === 'updated').length
     renderer.update({ ...base, satellite: true })
-    assert.deepEqual(map.calls.filter(x => x[0] === 'basemap').at(-1)[1], { type: 'satellite', features: ['base', 'road'] })
-    assert.equal(events.some(e => e.type === 'updated'), false)
+    assert.deepEqual(map.calls.filter(x => x[0] === 'basemap').at(-1)[1], satelliteBasemap)
+    assert.equal(events.filter(e => e.type === 'updated').length, completed, 'switching does not complete before tilesloaded')
+    assert.ok(events.some(e => e.type === 'switching' && e.detail?.satellite === true), 'later switch still emits switching')
     map.fire('tilesloaded')
     assert.deepEqual(events.filter(e => e.type === 'updated').at(-1), { type: 'updated', detail: { satellite: true } })
     renderer.update({ ...base, satellite: false })
     assert.deepEqual(map.calls.filter(x => x[0] === 'basemap').at(-1)[1], { type: 'vector' })
+
+    const satelliteEvents = [], satelliteRenderer = createAppTencentMap({ sdk, container: {}, emit: event => satelliteEvents.push(event) })
+    satelliteRenderer.update({ ...base, satellite: true })
+    const satelliteMap = maps.at(-1)
+    assert.deepEqual(satelliteMap.options.baseMap, satelliteBasemap)
+    assert.equal(satelliteMap.calls.filter(x => x[0] === 'basemap').length, 0, 'initial satellite is not redundantly set after construction')
+    assert.equal(satelliteEvents.some(e => e.type === 'updated'), false)
+    satelliteMap.fire('tilesloaded')
+    assert.deepEqual(satelliteEvents.filter(e => e.type === 'updated').at(-1), { type: 'updated', detail: { satellite: true } })
+    satelliteRenderer.destroy()
   })
   check(rendererTests, 'renderer coordinates, center query and marker identity/assets', () => {
     const map = maps[0]
@@ -133,7 +222,7 @@ import { captureSatelliteReference } from '../src/utils/bin-satellite-reference.
 
 
 
-function newHookHarness({ platform = 'app-plus', options = { mode: 'select', purpose: 'bin' }, appWebMap = true, canIUse = true, suspendedState = false, deferNextTick = false } = {}) {
+function newHookHarness({ platform = 'app-plus', isH5 = false, options = { mode: 'select', purpose: 'bin' }, appWebMap = true, canIUse = true, suspendedState = false, deferNextTick = false } = {}) {
   const clock = fakeClock(), toasts = [], warnings = []
   let ready, mounted, beforeUnmount, unload, show, hide, watchCallback
   const nextTicks = []
@@ -145,12 +234,12 @@ function newHookHarness({ platform = 'app-plus', options = { mode: 'select', pur
   const uni = { showToast: value => toasts.push(value), createMapContext: () => null, canIUse: () => canIUse }
   let code = fs.readFileSync(new URL('../src/utils/use-map-basemap.js', import.meta.url), 'utf8')
   code = code.replace(/^import .*?\n/gm, '').replace('export function useMapBasemap', 'function useMapBasemap')
-  const run = new Function('getCurrentInstance','nextTick','onBeforeUnmount','onMounted','ref','watch','onReady','onUnload','onShow','onHide','createMapBasemapController','isBinLocationPicker','captureSatelliteReference','appManifest','uni','process','plus','console','setTimeout','clearTimeout', `${code}\nreturn useMapBasemap`)
+  const run = new Function('getCurrentInstance','nextTick','onBeforeUnmount','onMounted','ref','watch','onReady','onUnload','onShow','onHide','createMapBasemapController','isBinLocationPicker','captureSatelliteReference','getTencentBasemapOptions','createSatelliteDetailController','appManifest','uni','process','plus','console','setTimeout','clearTimeout', `${code}\nreturn useMapBasemap`)
   const use = run(vue.getCurrentInstance, vue.nextTick, vue.onBeforeUnmount, vue.onMounted, vue.ref, vue.watch,
-    fn => { ready = fn }, fn => { unload = fn }, fn => { show = fn }, fn => { hide = fn }, args => createMapBasemapController({ ...args, setTimer: clock.setTimeout, clearTimer: clock.clearTimeout }), isBinLocationPicker, captureSatelliteReference,
+    fn => { ready = fn }, fn => { unload = fn }, fn => { show = fn }, fn => { hide = fn }, args => createMapBasemapController({ ...args, setTimer: clock.setTimeout, clearTimer: clock.clearTimeout }), isBinLocationPicker, captureSatelliteReference, getTencentBasemapOptions, createSatelliteDetailController,
     { 'app-plus': { distribute: { sdkConfigs: { maps: { tencent: true } } } } }, uni,
     { env: { UNI_PLATFORM: platform } }, {}, { warn: (...args) => warnings.push(args) }, clock.setTimeout, clock.clearTimeout)
-  const api = use({ isH5: false, options, suspended: () => suspendedState, appWebMap })
+  const api = use({ isH5, options, suspended: () => suspendedState, appWebMap })
   return {
     api, clock, toasts, warnings, ready: () => ready?.(), mounted: () => mounted?.(),
     show: () => show?.(), hide: () => hide?.(), flushNextTick: () => { while (nextTicks.length) nextTicks.shift()() },
@@ -159,6 +248,38 @@ function newHookHarness({ platform = 'app-plus', options = { mode: 'select', pur
   }
 }
 
+check(hookTests, 'H5 repeatedly switches fresh satellite/vector options and preserves center/zoom', () => {
+  const h = newHookHarness({ platform: 'h5', isH5: true })
+  const { sdk } = makeSdk(), center = new sdk.LatLng(24.5, 120.3)
+  const map = new sdk.Map({}, { center, zoom: 11 })
+  try {
+    h.api.bindH5Map(map)
+    assert.deepEqual(map.calls.at(-1), ['basemap', satelliteBasemap])
+    assert.equal(h.api.basemapLoading.value, true)
+    map.fire('tilesloaded')
+    assert.equal(h.api.basemapLoading.value, false)
+    map.calls.at(-1)[1][1].features.push('base')
+    for (const satellite of [false, true, false, true]) {
+      const before = map.calls.length
+      h.api.setBasemap(satellite)
+      assert.equal(map.calls.length, before + 1)
+      const [method, options] = map.calls.at(-1)
+      assert.equal(method, 'basemap')
+      assert.deepEqual(options, satellite ? satelliteBasemap : { type: 'vector' })
+      assert.equal(h.api.satellite.value, satellite)
+      assert.equal(h.api.basemapLoading.value, satellite)
+      assert.strictEqual(map.getCenter(), center)
+      assert.equal(map.getZoom(), 11)
+      map.fire('tilesloaded')
+      assert.equal(h.api.basemapLoading.value, false)
+      if (satellite) options[1].features.push('base')
+      else options.type = 'mutated'
+    }
+    assert.equal(h.toasts.length, 0)
+  } finally { h.dispose() }
+  assert.equal(h.clock.pending, 0)
+  assert.equal(map.handlerCount(), 0)
+})
 check(hookTests, 'App Web cold start waits 40s before vector fallback', () => {
   const h = newHookHarness(); h.ready()
   assert.equal(h.api.satellite.value, true); assert.equal(h.api.basemapLoading.value, true)
@@ -419,11 +540,13 @@ async function verifyHostLifecycle() {
   let timerId = 0
   const timers = new Map()
   let created = 0, destroyed = 0, updates = 0
+  const rendererEmits = []
   const context = {
     window, document, parent, location: { hash: '#test-token', protocol: 'https:' },
-    createAppTencentMap() {
+    createAppTencentMap({ emit }) {
       created++
-      return { update() { updates++ }, destroy() { destroyed++ } }
+      rendererEmits.push(emit)
+      return { update() { updates++ }, emit, destroy() { destroyed++ } }
     },
     setTimeout(callback) { const id = ++timerId; timers.set(id, callback); return id },
     clearTimeout(id) { timers.delete(id) },
@@ -454,6 +577,19 @@ async function verifyHostLifecycle() {
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
   assert.equal(created, 1, 'fresh SDK completion creates a renderer')
   assert.equal(updates, 1, 'fresh renderer receives the parent packet')
+  const phase = name => posted.find(message => message.event?.type === 'phase' && message.event.detail?.phase === name)?.event.detail
+  for (const name of ['sdk_loading', 'sdk_ready']) {
+    const detail = phase(name)
+    assert.equal(Number.isFinite(detail?.elapsedMs), true, `${name} includes a numeric elapsedMs in the VM`)
+    assert.ok(detail.elapsedMs >= 0, `${name} elapsedMs is non-negative`)
+  }
+  rendererEmits[0]({ type: 'updated', detail: { satellite: false } })
+  const firstTiles = phase('first_tiles_loaded')
+  assert.equal(Number.isFinite(firstTiles?.elapsedMs), true, 'first_tiles_loaded includes a numeric elapsedMs in the VM')
+  assert.ok(firstTiles.elapsedMs >= 0, 'first_tiles_loaded elapsedMs is non-negative')
+  const updated = posted.find(message => message.event?.type === 'updated')?.event.detail
+  assert.deepEqual(Object.keys(updated).sort(), ['satellite'], 'updated payload remains unchanged')
+  assert.equal(updated.satellite, false)
   assert.equal(posted.some(message => message.event?.type === 'error'), false, 'old SDK rejection after pagehide emits no error')
 
   const requestsBeforeVisibility = scripts.length

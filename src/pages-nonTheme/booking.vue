@@ -29,6 +29,27 @@
 
     <scroll-view class="main-scroll" scroll-y>
       <view class="content-wrapper">
+        <view v-if="draftId" class="section draft-status">
+          <text v-if="draftLoading">正在加载预约草稿…</text>
+          <template v-else-if="draftError">
+            <text>{{ draftError }}</text>
+            <button :disabled="submitting" @click="loadBookingDraft()">重新加载草稿</button>
+          </template>
+          <template v-else-if="draftReceipt">
+            <text class="section-title">预约已提交</text>
+            <text>订单号：{{ draftReceipt.orderNo }}</text>
+            <text>{{ draftReceipt.appointmentDate }} {{ draftReceipt.appointmentTimeSlot }}</text>
+            <text>{{ draftReceipt.address }}</text>
+            <text>这是提交回执，最新进度请查看回收订单。</text>
+            <button @click="goToOrders">查看回收订单</button>
+          </template>
+          <template v-else-if="draftExpired">
+            <text>预约草稿{{ draft?.status === 'cancelled' ? '已取消' : '已过期' }}，尚未创建订单。</text>
+            <button :disabled="submitting" @click="recreateBookingDraft">重新准备预约</button>
+          </template>
+          <text v-else>请核对物品、重量和日期，选择可用时段后确认。当前尚未创建订单。</text>
+        </view>
+        <view v-if="!draftId || (draft && !draftLoading && !draftError && !draftReceipt && !draftExpired)" :class="{ 'booking-form-busy': submitting }">
 
         <!-- 回收物品类型网格 -->
         <view class="section">
@@ -44,6 +65,23 @@
               <text class="waste-name">{{ item.name }}</text>
               <text class="waste-price">¥{{ item.price }}/kg</text>
             </view>
+          </view>
+        </view>
+
+        <view v-if="selectedWasteItems.length" class="section">
+          <view class="section-title">预估重量（公斤）</view>
+          <view v-for="item in selectedWasteItems" :key="item.id" class="booking-weight-row">
+            <text>{{ item.name }}</text>
+            <input v-model="itemWeights[item.id]" type="digit" maxlength="8" :disabled="submitting" placeholder="公斤" />
+          </view>
+          <text class="estimate-note">填写预估重量，实际以回收员现场称重为准。</text>
+        </view>
+
+        <view v-if="unavailableWasteItems.length" class="section">
+          <view class="section-title">这些物品已暂停回收，请移除后重新选择</view>
+          <view v-for="item in unavailableWasteItems" :key="item.id" class="booking-weight-row">
+            <text>{{ item.name }}</text>
+            <button size="mini" :disabled="submitting" @click="toggleWasteType(item)">移除</button>
           </view>
         </view>
 
@@ -65,6 +103,12 @@
               <text class="date-label">明天</text>
               <text class="date-desc">{{ tomorrowStr }}</text>
             </view>
+            <picker mode="date" :value="dateValues.custom || dateValues.today" :start="dateValues.today" :end="maxBookingDate" :disabled="submitting" @change="chooseCustomDate">
+              <view :class="['date-tab', selectedDate === 'custom' ? 'active' : '']">
+                <text class="date-label">其他日期</text>
+                <text class="date-desc">{{ dateValues.custom || '未来30天' }}</text>
+              </view>
+            </picker>
           </view>
         </view>
 
@@ -154,7 +198,7 @@
         <view class="estimate-card" v-if="estimateAmount > 0">
           <view class="estimate-info">
             <text class="estimate-label">预估收益</text>
-            <text class="estimate-amount">¥{{ estimateAmount.toFixed(2) }}/kg</text>
+            <text class="estimate-amount">¥{{ estimateAmount.toFixed(2) }}</text>
           </view>
           <text class="estimate-note">实际收益以回收员现场称重为准</text>
         </view>
@@ -165,10 +209,11 @@
             :class="['submit-btn', submitting || addressBusy ? 'disabled' : '']"
             @click="submitBooking"
           >
-            <text class="submit-text">{{ submitting ? '提交中...' : '立即预约' }}</text>
+            <text class="submit-text">{{ submitting ? '提交中...' : (draftId ? '确认并提交预约' : '立即预约') }}</text>
           </view>
         </view>
 
+        </view>
       </view>
     </scroll-view>
 
@@ -176,7 +221,7 @@
 </template>
 
 <script>
-import { getWasteTypes, createBooking, getAvailableTimeSlots, estimatePrice } from '@/pages-nonTheme/api/booking.js';
+import { getWasteTypes, createBooking, getAvailableTimeSlots } from '@/pages-nonTheme/api/booking.js';
 import { getUserProfile, updateUserProfile } from '@/api/user.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import ShopRegionPicker from './components/ShopRegionPicker.vue';
@@ -184,11 +229,14 @@ import ShopAddressPicker from '@/pages-nonTheme/components/shop/ShopAddressPicke
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js';
 import { playUiSound } from '@/utils/ui-sounds.js';
 import { formatBookingDate } from './utils/booking-date.mjs';
+import { bookingDraftMethods } from './utils/booking-draft-methods.js';
 
 export default {
   components: { ManifestIcon, ShopRegionPicker, ShopAddressPicker },
   data() {
     return {
+      draftId: '', draft: null, draftLoading: false, draftError: '', draftExpired: false, draftReceipt: null, replacementRequestId: '',
+      itemWeights: {}, maxBookingDate: '',
       wasteTypes: [],
       selectedTypes: [],
       selectedDate: 'today',
@@ -198,7 +246,7 @@ export default {
       timeSlotsError: '',
       timeSlotsRequestId: 0,
       timeSlotsDate: '',
-      dateValues: { today: '', tomorrow: '' },
+      dateValues: { today: '', tomorrow: '', custom: '' },
       addressRegion: ['', '', ''],
       addressDetail: '',
       addressBusy: false,
@@ -212,13 +260,14 @@ export default {
       isDark: false
     };
   },
-  onLoad() {
+  async onLoad(options = {}) {
+    this.draftId = typeof options.draftId === 'string' ? options.draftId : '';
+    this.draftLoading = !!this.draftId;
     this.checkTheme();
     this.initDates();
-    this.loadWasteTypes();
-    this.loadTimeSlots();
-    this.loadContactPhone();
-    this.loadAddress();
+    await Promise.all([this.loadWasteTypes(), this.loadContactPhone(), this.loadAddress()]);
+    if (this.draftId) await this.loadBookingDraft();
+    else this.loadTimeSlots();
   },
   onShow() {
     this.checkTheme();
@@ -240,11 +289,17 @@ export default {
         this.addressDetail = parsed.detail;
       }
     },
+    unavailableWasteItems() {
+      return this.selectedTypes.filter(id => !this.wasteTypes.some(item => item.id === id)).map(id => ({
+        id, name: this.draft?.snapshot?.details?.find(item => Number(item.typeId) === id)?.name || `回收物品 ${id}`
+      }));
+    },
     selectedWasteItems() {
       return this.wasteTypes.filter(t => this.selectedTypes.includes(t.id));
     }
   },
   watch: {
+    itemWeights: { handler() { this.calculateEstimate(); }, deep: true },
     selectedTypes: {
       handler() {
         this.calculateEstimate();
@@ -253,6 +308,11 @@ export default {
     }
   },
   methods: {
+    ...bookingDraftMethods,
+    chooseCustomDate(event) {
+      this.dateValues.custom = event.detail.value;
+      this.selectDate('custom');
+    },
     applyLocatedAddress(selection) {
       if (this.submitting || !selection) return;
       const parsed = splitShopAddress(selection.address, selection.parts);
@@ -332,7 +392,9 @@ export default {
       const format = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
       this.todayStr = format(today);
       this.tomorrowStr = format(tomorrow);
-      this.dateValues = { today: formatBookingDate(today), tomorrow: formatBookingDate(tomorrow) };
+      this.dateValues = { today: formatBookingDate(today), tomorrow: formatBookingDate(tomorrow), custom: this.dateValues.custom || '' };
+      const last = new Date(today); last.setDate(last.getDate() + 30);
+      this.maxBookingDate = formatBookingDate(last);
     },
     async loadWasteTypes() {
       try {
@@ -383,6 +445,7 @@ export default {
         this.selectedTypes.splice(idx, 1);
       } else {
         this.selectedTypes.push(item.id);
+        if (this.itemWeights[item.id] == null) this.itemWeights[item.id] = 1;
       }
     },
     selectDate(date) {
@@ -394,75 +457,71 @@ export default {
       if (this.timeSlotsLoading || this.timeSlotsError) return;
       this.selectedTimeSlot = time;
     },
-    async calculateEstimate() {
-      if (this.selectedTypes.length === 0) {
-        this.estimateAmount = 0;
-        return;
-      }
-      const items = this.selectedWasteItems.map(t => ({
-        typeId: t.id,
-        weight: 1
-      }));
-      try {
-        const res = await estimatePrice(items);
-        const data = this.extractData(res) || {};
-        this.estimateAmount = Number(data.totalPrice || 0);
-      } catch (e) {
-        this.estimateAmount = this.selectedWasteItems.reduce((sum, t) => sum + t.price, 0);
-      }
+    calculateEstimate() {
+      // Unit prices are already loaded; typing a weight never makes an extra backend request.
+      this.estimateAmount = this.selectedWasteItems.reduce((sum, item) => {
+        const weight = Number(this.itemWeights[item.id] ?? 1);
+        return sum + (Number.isFinite(weight) && weight > 0 ? item.price * weight : 0);
+      }, 0);
     },
-    async submitBooking() {
-      if (this.submitting) return;
+    validateBookingForm() {
       if (this.dateValues.today !== formatBookingDate(new Date())) {
         this.initDates();
         this.selectedTimeSlot = '';
         this.loadTimeSlots();
         uni.showToast({ title: '日期已更新，请重新选择时段', icon: 'none' });
-        return;
+        return false;
       }
       if (this.timeSlotsLoading || this.timeSlotsError || this.timeSlotsDate !== this.dateValues[this.selectedDate]) {
         uni.showToast({ title: this.timeSlotsLoading ? '正在加载时段，请稍候' : '请先重新加载预约时段', icon: 'none' });
-        return;
+        return false;
       }
       if (this.selectedTypes.length === 0) {
         uni.showToast({ title: '请选择回收物品', icon: 'none' });
-        return;
+        return false;
       }
       if (!this.selectedTimeSlot) {
         uni.showToast({ title: '请选择时间段', icon: 'none' });
-        return;
+        return false;
       }
       if (this.addressBusy) {
         uni.showToast({ title: '请等待附近地址选择完成', icon: 'none' });
-        return;
+        return false;
       }
       if (!this.addressRegion.every(part => String(part || '').trim())) {
         uni.showToast({ title: '请完善所在地区（省、市、区）', icon: 'none' });
-        return;
+        return false;
       }
       if (!this.addressDetail.trim()) {
         uni.showToast({ title: '请输入详细地址（街道、小区及门牌号）', icon: 'none' });
-        return;
+        return false;
       }
       if (!this.contactPhone.trim()) {
         uni.showToast({ title: '请输入联系方式', icon: 'none' });
-        return;
+        return false;
       }
       if (!this.isValidPhone(this.contactPhone)) {
         uni.showToast({ title: '请输入正确的手机号', icon: 'none' });
-        return;
+        return false;
       }
+      if (this.selectedTypes.some(id => !this.wasteTypes.some(type => type.id === id))) {
+        uni.showToast({ title: '部分回收物品已停用，请重新选择', icon: 'none' }); return false;
+      }
+      if (this.selectedTypes.some(id => {
+        const weight = Number(this.itemWeights[id] ?? 1);
+        return !Number.isFinite(weight) || weight <= 0 || weight > 10000 || Math.abs(weight * 100 - Math.round(weight * 100)) > 0.00001;
+      })) {
+        uni.showToast({ title: '请填写有效的预估重量，最多两位小数', icon: 'none' }); return false;
+      }
+      return true;
+    },
+    async submitBooking() {
+      if (this.submitting) return;
+      if (this.draftId) return this.submitDraftBooking();
+      if (!this.validateBookingForm()) return;
       this.submitting = true;
-      const dateStr = this.timeSlotsDate;
       try {
-        const response = await createBooking({
-          items: this.selectedTypes.map(id => ({ typeId: id, weight: 1 })),
-          appointmentDate: dateStr,
-          appointmentTimeSlot: this.selectedTimeSlot,
-          address: this.address,
-          contactPhone: this.contactPhone.trim(),
-          notes: this.remark
-        });
+        const response = await createBooking(this.getBookingPayload());
         const booking = response?.data || response;
         playUiSound('bookingSuccess', {
           key: booking?.id != null ? `booking:${booking.id}` : undefined,
@@ -508,6 +567,12 @@ export default {
 </script>
 
 <style scoped>
+.draft-status text { display: block; margin-bottom: 12rpx; font-size: 26rpx; line-height: 1.6; overflow-wrap: anywhere; }
+.draft-status button { margin-top: 16rpx; font-size: 26rpx; }
+.booking-weight-row { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; margin-bottom: 16rpx; }
+.booking-weight-row input { width: 180rpx; height: 76rpx; line-height: 76rpx; padding: 0 16rpx; box-sizing: border-box; border: 1rpx solid #d1d5db; border-radius: 12rpx; font-size: 28rpx; text-align: right; }
+.booking-form-busy { pointer-events: none; opacity: .7; }
+
 .time-feedback { padding: 24rpx 8rpx; color: #536678; font-size: 26rpx; line-height: 1.6; text-align: center; }
 .time-retry { margin: 16rpx auto 0; width: 200rpx; border: 0; border-radius: 40rpx; background: #e4f8ee; color: #087b54; font-size: 26rpx; line-height: 72rpx; }
 .time-retry::after { border: 0; }

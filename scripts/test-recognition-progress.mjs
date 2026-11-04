@@ -306,6 +306,8 @@ function makeProcessImageContext(task, functions, options = {}) {
   let compressionStarted = false
   const refs = {
     failedPreviewPending: ref(false),
+    resultCollapsed: ref(false),
+    recentResult: ref(null),
     retryImagePath: ref(''),
     retryImageFile: ref(null),
     recognitionPreview: ref(null),
@@ -330,6 +332,8 @@ function makeProcessImageContext(task, functions, options = {}) {
   const context = {
     ...refs,
     activeRecognitionTaskId: '',
+    displayedRecentId: '',
+    recentRecognition: { save() {}, get() { return null } },
     // Audio is orthogonal to these lifecycle assertions; keep the new side effect inert in this VM.
     playUiSound() {},
     pendingUpcyclingSound: '',
@@ -411,6 +415,9 @@ function makeOnShowContext(task, functions, { pendingImage, processImage } = {})
     updateHomeAdaptiveStyle() {},
     refreshAiServiceState() {},
     restoreRecognitionTask() {},
+    restoreRecentPresentation() {},
+    homeWasHidden: false,
+    preserveResultOnReturn: false,
     // The extracted lifecycle callback normally closes over the composable result.
     // Keep that unrelated dependency inert in this isolated onShow harness.
     queueRefreshDisplayBboxes() {},

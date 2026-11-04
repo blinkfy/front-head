@@ -27,10 +27,9 @@ export function getRecognitionImageMaxDimension(filePath) {
 }
 
 export async function getRecognitionCompressionDecision(filePath, size, type = '') {
-  const maxDimension = shouldCompressRecognitionImage(size)
-    ? 0 : await getRecognitionImageMaxDimension(filePath)
   return {
-    shouldCompress: shouldCompressRecognitionImage(size, maxDimension),
+    // Try even small images; upload selection still keeps the smaller usable file.
+    shouldCompress: true,
     needsJpegConversion: needsRecognitionJpegConversion(type)
   }
 }
@@ -42,7 +41,7 @@ export function isSmallerRecognitionImage(originalSize, compressedSize) {
 
 export function shouldUseCompressedRecognitionImage(originalSize, compressedSize, needsJpegConversion = false) {
   return Number.isFinite(compressedSize) && compressedSize > 0 &&
-    (needsJpegConversion || isSmallerRecognitionImage(originalSize, compressedSize))
+    (needsJpegConversion || !originalSize || isSmallerRecognitionImage(originalSize, compressedSize))
 }
 
 export function getRecognitionImageSize(filePath, knownSize = 0) {

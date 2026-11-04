@@ -214,6 +214,7 @@
 </template>
 
 <script setup>
+import { clearChatPush } from '@/utils/chat-push.js'
 import { loginNavigationRuntime } from '@/utils/login-navigation-runtime.js'
 // #ifdef APP-PLUS
 import { resumeRememberedQrLogin } from '@/utils/remembered-qr-login.mjs'
@@ -579,6 +580,7 @@ function onLogin(isauto) {
     }
     
     uni.removeStorageSync('isAdmin')
+    clearChatPush()
     uni.removeStorageSync('token')
     
     if (err && err.msg) {

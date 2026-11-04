@@ -58,6 +58,21 @@
 
           <view class="divider"></view>
 
+          <div class="row">
+            <div class="row-label-group">
+              <view class="row-dot dot-green"></view>
+              <div>
+                <div class="label">社区互动与聊天关联</div>
+                <div class="desc">独立于 LLM：开启发帖、评论、作者联系、帖子分享和互动提醒；关闭后保留浏览、点赞与内容管理</div>
+              </div>
+            </div>
+            <view class="switch-row">
+              <switch :checked="form.communityChatEnabled" @change="form.communityChatEnabled = $event.detail.value" color="#17b27a" />
+              <text class="switch-label" :class="form.communityChatEnabled ? 'sw-on' : 'sw-off'">{{ form.communityChatEnabled ? '启用' : '关闭' }}</text>
+            </view>
+          </div>
+          <view class="divider"></view>
+
           <!-- AI 服务开关 -->
           <div class="row">
             <div class="row-label-group">
@@ -230,6 +245,7 @@ const statusCls = ref('')
 const DEFAULT_FORM = {
   allowWebRegistration: false,
   aiEnabled: true,
+  communityChatEnabled: true,
   detectorMode: 'yolo',
   model: 'qwen3.5-flash',
   recommendAlgorithm: 'qwen',
@@ -288,6 +304,7 @@ function normalizeRecommendAlgorithm(input) {
 function applyData(data) {
   form.allowWebRegistration = !!data.allowWebRegistration
   form.aiEnabled = !!data.aiEnabled
+  form.communityChatEnabled = data.communityChatEnabled !== false
   form.detectorMode = data.detectorMode === 'ai' ? 'ai' : 'yolo'
   form.model = data.model || 'qwen3.5-flash'
   form.recommendAlgorithm = normalizeRecommendAlgorithm(
@@ -345,6 +362,7 @@ function saveSettings() {
   const payload = {
     allowWebRegistration: form.allowWebRegistration,
     aiEnabled: form.aiEnabled,
+    communityChatEnabled: form.communityChatEnabled,
     detectorMode: form.detectorMode,
     model: (form.model || '').trim() || 'qwen3.5-flash',
     recommendAlgorithm: normalizeRecommendAlgorithm(form.recommendAlgorithm),

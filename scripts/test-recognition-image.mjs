@@ -42,11 +42,11 @@ globalThis.uni.getImageInfo = ({ success }) => {
 assert.equal((await getRecognitionCompressionDecision('/large.jpg', 2 * mib)).shouldCompress, true)
 assert.equal(imageInfoCalls, 0)
 assert.equal((await getRecognitionCompressionDecision('/small-bytes.jpg', 900 * 1024)).shouldCompress, true)
-assert.equal(imageInfoCalls, 1)
+assert.equal(imageInfoCalls, 0)
 globalThis.uni.getImageInfo = ({ success }) => success({ width: 640, height: 480 })
-assert.equal((await getRecognitionCompressionDecision('/small.jpg', 900 * 1024)).shouldCompress, false)
+assert.equal((await getRecognitionCompressionDecision('/small.jpg', 900 * 1024)).shouldCompress, true)
 globalThis.uni.getImageInfo = ({ fail }) => fail(new Error('unavailable'))
-assert.equal((await getRecognitionCompressionDecision('/unknown.jpg', 900 * 1024)).shouldCompress, false)
+assert.equal((await getRecognitionCompressionDecision('/unknown.jpg', 900 * 1024)).shouldCompress, true)
 const gifDecision = await getRecognitionCompressionDecision('/small.gif', 100 * 1024, 'image/gif')
 assert.equal(gifDecision.needsJpegConversion, true)
 assert.equal(shouldUseCompressedRecognitionImage(100 * 1024, 130 * 1024, gifDecision.needsJpegConversion), true)
@@ -67,6 +67,8 @@ class TestFormData {
 
 function loadApi({ platform, fetch, uploadFile, toasts }) {
   const context = {
+    setTimeout,
+    clearTimeout,
     File: TestFile,
     FormData: TestFormData,
     baseUrl: 'https://example.test',
@@ -159,7 +161,7 @@ for (const page of ['../src/pages/home/home.vue', '../src/pages-dark/home/home.v
   compileScript(descriptor, { id: page })
   assert.equal(compileTemplate({ source: descriptor.template.content, filename, id: page }).errors.length, 0)
   assert(descriptor.template.content.includes('{{ processStatus }}'))
-  assert(descriptor.scriptSetup.content.includes('业务繁忙时会自动排队，本地模型首次加载需等待，请耐心等待'))
+  assert(descriptor.scriptSetup.content.includes('uploadImageExtension(candidate.type)'))
 }
 
 console.log('recognition image tests passed')

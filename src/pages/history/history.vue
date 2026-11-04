@@ -149,7 +149,7 @@
     
     <!-- 详情弹窗 -->
     <view v-if="detailVisible" class="detail-modal" @click="closeDetail">
-      <view class="detail-content" @click.stop>
+      <view class="detail-content" :class="{ 'has-extra': detailExtra.hasContent, 'extra-long': detailExtra.isLong }" @click.stop>
         <!-- 三色球形装饰 -->
         <view class="bg-circle-green"></view>
         
@@ -158,6 +158,7 @@
           <ManifestIcon class="close-icon" id="close" />
         </view>
         
+        <scroll-view class="detail-scroll" :scroll-y="detailExtra.hasContent">
         <!-- 图片区域（按需加载，未就绪时显示占位） -->
         <view class="detail-image-section">
           <image v-if="detailItem.image" :src="detailItem.image" mode="aspectFit" class="detail-image"
@@ -204,6 +205,8 @@
             <text class="info-value">{{ detailItem.source_name }}</text>
           </view>
         </view>
+        <HistoryRecognitionExtra :extra="detailExtra" @image-error="detailExtraImageFailed = true" />
+        </scroll-view>
       </view>
     </view>
     <view v-if="imagePreviewVisible && detailItem.image" class="image-zoom-overlay" @click.stop="closeImagePreview">
@@ -215,9 +218,11 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
-import { getRecognitionHistory, deleteHistoryRecord, batchDeleteHistoryRecords, getHistoryImage } from '@/api/history'
+import { getRecognitionHistory, deleteHistoryRecord, batchDeleteHistoryRecords, getHistoryImage, getHistoryRecognitionDetail } from '@/api/history'
 import { baseUrl } from '@/api/settings'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import HistoryRecognitionExtra from '@/components/HistoryRecognitionExtra.vue'
+import { normalizeHistoryRecognitionDetail } from '@/utils/history-recognition-detail.mjs'
 import { HISTORY_IMAGE_RETENTION_DAYS, getHistoryImageState, getHistoryImageLabel } from '@/utils/history-image-state.mjs'
 
 // 页面参数接收
@@ -535,6 +540,10 @@ const detailImageLoading = ref(false)
 const detailImageFailed = ref(false)
 const detailImageState = computed(() => getHistoryImageState(detailItem.value, detailImageFailed.value))
 let detailImageRequest = 0
+const detailRecognition = ref(null)
+const detailExtraImageFailed = ref(false)
+const detailExtra = computed(() => normalizeHistoryRecognitionDetail(detailRecognition.value, detailExtraImageFailed.value))
+let detailRecognitionRequest = 0
 
 // 查看详情时仍尝试加载有图的旧记录；只有缺图或失败时才判断清理期限。
 function viewDetail(item) {
@@ -543,6 +552,21 @@ function viewDetail(item) {
   detailImageFailed.value = false
   detailVisible.value = true
   loadDetailImage(item)
+  loadDetailRecognition(item)
+}
+
+async function loadDetailRecognition(item) {
+  const requestId = ++detailRecognitionRequest
+  detailRecognition.value = null
+  detailExtraImageFailed.value = false
+  if (item.hasDetails !== true) return
+  try {
+    const res = await getHistoryRecognitionDetail(item.id)
+    if (!detailVisible.value || requestId !== detailRecognitionRequest) return
+    if (res?.code === 0) detailRecognition.value = res.data?.details || null
+  } catch (_) {
+    // 补充内容失败不影响原有图片和基础字段。
+  }
 }
 
 async function loadDetailImage(item) {
@@ -602,6 +626,8 @@ function closeDetail() {
   imagePreviewVisible.value = false
   detailVisible.value = false
   detailImageRequest++
+  detailRecognitionRequest++
+  detailRecognition.value = null
   detailImageLoading.value = false
 }
 
@@ -1822,4 +1848,44 @@ function handleBackupNavigation() {
 .detail-content::-webkit-scrollbar-thumb:hover {
   background: rgba(16, 185, 129, 0.5);
 }
+
+/* 仅有补充内容时增加滚动空间；关闭按钮留在滚动区外。 */
+.detail-content.has-extra {
+  height: 88vh;
+  max-height: 88vh;
+  box-sizing: border-box;
+  padding-top: 88rpx;
+  overflow: hidden;
+}
+.has-extra .detail-scroll {
+  height: 100%;
+  min-height: 0;
+}
+.extra-long .detail-image-section {
+  box-sizing: border-box;
+  min-height: 0;
+  height: min(20vh, 140px);
+  max-height: min(20vh, 140px);
+  padding: 8rpx;
+  margin-bottom: 12rpx;
+}
+.extra-long .detail-image {
+  height: min(18vh, 124px);
+  max-height: min(18vh, 124px);
+}
+.extra-long .detail-image-ph {
+  gap: 4rpx;
+  width: 100%;
+}
+.extra-long .detail-info { gap: 10rpx; }
+.extra-long .info-item {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  padding: 12rpx 16rpx;
+}
+.extra-long .info-label { flex-shrink: 0; }
+.extra-long .info-value { min-width: 0; max-width: 70%; text-align: right; overflow-wrap: anywhere; }
+.extra-long .confidence-bar { flex: 1; max-width: 70%; }
 </style>

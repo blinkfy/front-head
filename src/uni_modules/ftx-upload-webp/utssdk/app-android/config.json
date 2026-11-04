@@ -1,0 +1,4 @@
+{
+  "minSdkVersion": "21",
+  "dependencies": ["androidx.exifinterface:exifinterface:1.4.2"]
+}

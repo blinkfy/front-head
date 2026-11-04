@@ -2,6 +2,7 @@ import { getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } 
 import { onReady, onUnload, onShow, onHide } from '@dcloudio/uni-app'
 import { createMapBasemapController, isBinLocationPicker } from './map-basemap-core.mjs'
 import { captureSatelliteReference } from './bin-satellite-reference.mjs'
+import { getTencentBasemapOptions, createSatelliteDetailController } from './app-tencent-map.mjs'
 // #ifdef APP-PLUS
 import appManifest from '../manifest.json'
 // #endif
@@ -10,6 +11,7 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
   const satellite = ref(isBinLocationPicker(options))
   const basemapLoading = ref(false)
   let h5Map = null, nativeCallbacks = null, disposed = false
+  let h5Detail = null
   const page = getCurrentInstance()?.root
   const isApp = ['app', 'app-plus'].includes(process.env.UNI_PLATFORM)
   let appReady = false
@@ -66,7 +68,8 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
             map.on('error', failed)
             map.on('bounds_changed', changed)
           }
-          map.setBaseMap(enabled ? { type: 'satellite', features: ['base', 'road'] } : { type: 'vector' })
+          h5Detail?.setActive(enabled)
+          map.setBaseMap(getTencentBasemapOptions(enabled))
           return cleanup
         } catch (error) { cleanup(); throw error }
       }
@@ -88,7 +91,11 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
     if (isApp && satellite.value !== !!enabled) { lastAppWebUpdate = null; lastAppWebError = null }
     controller.request(enabled)
   }
-  function bindH5Map(map) { h5Map = map; controller.request(satellite.value) }
+  function bindH5Map(map, container) {
+    h5Map = map
+    h5Detail = createSatelliteDetailController({ sdk: container?.ownerDocument?.defaultView?.TMap, map, container })
+    controller.request(satellite.value)
+  }
   function getSatelliteReference(location, containerId) {
     // #ifdef H5
     if (isH5 && !disposed && isBinLocationPicker(options)) return captureSatelliteReference({
@@ -152,7 +159,7 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
   }, { flush: 'post' })
   function dispose() {
     if (disposed) return
-    disposed = true; controller.dispose(); nativeCallbacks = null; h5Map = null
+    disposed = true; controller.dispose(); h5Detail?.destroy(); h5Detail = null; nativeCallbacks = null; h5Map = null
   }
   onBeforeUnmount(dispose)
   onUnload(dispose)

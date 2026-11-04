@@ -80,7 +80,7 @@ function getStringBytes(value) {
   return String(value || '').length * 2
 }
 
-function buildRecord(conversationKey, messages) {
+function buildRecord(conversationKey, messages, lastSyncedMessageId) {
   let cachedMessages = (Array.isArray(messages) ? messages : [])
     .slice(-MAX_MESSAGES_PER_CONVERSATION)
     .map(toCachedMessage)
@@ -93,6 +93,7 @@ function buildRecord(conversationKey, messages) {
 
   return {
     conversationKey,
+    lastSyncedMessageId,
     payload,
     count: cachedMessages.length,
     byteSize: getStringBytes(payload),
@@ -119,7 +120,7 @@ function writeRecord(database, record) {
   })
 }
 
-export async function loadChatHistoryCache(conversationKey) {
+export async function loadChatHistoryCache(conversationKey, withSyncCursor = false) {
   const database = await openDatabase()
   if (!database || !conversationKey) return null
 
@@ -127,13 +128,14 @@ export async function loadChatHistoryCache(conversationKey) {
   if (!record?.payload) return null
   try {
     const messages = JSON.parse(record.payload)
-    return Array.isArray(messages) ? messages : null
+    if (!Array.isArray(messages)) return null
+    return withSyncCursor ? { messages, lastSyncedMessageId: record.lastSyncedMessageId ?? null } : messages
   } catch (error) {
     return null
   }
 }
 
-export function saveChatHistoryCache(conversationKey, messages) {
+export function saveChatHistoryCache(conversationKey, messages, lastSyncedMessageId = null) {
   if (!conversationKey || !canUseIndexedDb()) return Promise.resolve(false)
 
   const previous = writeQueues.get(conversationKey) || Promise.resolve()
@@ -142,7 +144,7 @@ export function saveChatHistoryCache(conversationKey, messages) {
     .then(async () => {
       const database = await openDatabase()
       if (!database) return false
-      return writeRecord(database, buildRecord(conversationKey, messages))
+      return writeRecord(database, buildRecord(conversationKey, messages, lastSyncedMessageId))
     })
 
   writeQueues.set(conversationKey, task)

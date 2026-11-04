@@ -16,7 +16,9 @@ export const historyCacheMethods = {
     async loadMessagesFromStorage() {
             // #ifdef H5
             try {
-                let cachedMessages = await loadChatHistoryCache(this.storageKey)
+                const snapshot = await loadChatHistoryCache(this.storageKey, true)
+                let cachedMessages = snapshot?.messages
+                if (snapshot?.lastSyncedMessageId != null) this.lastSyncedMessageId = snapshot.lastSyncedMessageId
                 // 迁移旧版 localStorage 缓存，迁移后释放会导致 QuotaExceededError 的旧存储空间。
                 if (!Array.isArray(cachedMessages)) {
                     const legacyCache = uni.getStorageSync(this.storageKey)
@@ -24,13 +26,13 @@ export const historyCacheMethods = {
                         const parsedMessages = JSON.parse(legacyCache)
                         if (Array.isArray(parsedMessages)) {
                             cachedMessages = parsedMessages
-                            this.messages = cachedMessages
+                            this.messages = cachedMessages.map(message => message.status === 'sending' ? { ...message, status: 'failed' } : message)
                             await saveChatHistoryCache(this.storageKey, cachedMessages)
                         }
                     }
                 }
                 if (Array.isArray(cachedMessages)) {
-                    this.messages = cachedMessages
+                    this.messages = cachedMessages.map(message => message.status === 'sending' ? { ...message, status: 'failed' } : message)
                     await this.restoreCachedOriginalImages()
                     uni.removeStorageSync(this.storageKey)
                 }
@@ -42,15 +44,14 @@ export const historyCacheMethods = {
             try {
                 const stored = uni.getStorageSync(this.storageKey)
                 if (stored) {
-                    this.messages = JSON.parse(stored)
+                    this.messages = JSON.parse(stored).map(message => message.status === 'sending' ? { ...message, status: 'failed' } : message)
+                    const cursor = uni.getStorageSync(`${this.storageKey}_sync_cursor`)
+                    if (/^\d+$/.test(String(cursor))) this.lastSyncedMessageId = Number(cursor)
                     await this.restoreCachedOriginalImages()
                 }
-                // 同时从服务器加载最新消息(服务器数据会覆盖本地的临时数据)
-                this.loadMessagesFromServer()
             } catch (e) {
                 console.error('读取聊天记录失败', e)
                 this.messages = []
-                this.loadMessagesFromServer()
             }
         },
 // 已查看过的原图在 H5 复用浏览器缓存；小程序 / APP 则优先恢复 saveFile 的持久文件。
@@ -92,7 +93,7 @@ export const historyCacheMethods = {
         },
     saveMessagesToStorage() {
             // #ifdef H5
-            saveChatHistoryCache(this.storageKey, this.messages).catch(e => {
+            saveChatHistoryCache(this.storageKey, this.messages, this.lastSyncedMessageId).catch(e => {
                 console.warn('保存 IndexedDB 聊天缓存失败，当前聊天不受影响。', e)
             })
             return
@@ -119,6 +120,7 @@ export const historyCacheMethods = {
                 })
                 
                 uni.setStorageSync(this.storageKey, JSON.stringify(messagesToSave))
+                if (this.lastSyncedMessageId != null) uni.setStorageSync(`${this.storageKey}_sync_cursor`, this.lastSyncedMessageId)
             } catch (e) {
                 console.error('保存聊天记录失败', e)
                 // 如果还是失败,尝试只保存最近的消息
@@ -140,6 +142,8 @@ export const historyCacheMethods = {
                         return msg
                     })
                     uni.setStorageSync(this.storageKey, JSON.stringify(recentMessages))
+                    // Trimming the cache loses the older coverage boundary.
+                    uni.removeStorageSync(`${this.storageKey}_sync_cursor`)
                 } catch (e2) {
                     console.error('保存最近聊天记录也失败', e2)
                 }

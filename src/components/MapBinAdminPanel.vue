@@ -51,6 +51,9 @@
         <view v-for="(report, index) in visibleReports" :key="index" class="report mpwx-view">
           <text class="report-reason">{{ report.reason || '未填写原因' }}</text>
           <text class="muted">{{ report.createdAt || '' }} · {{ report.userId || '匿名用户' }}</text>
+          <view v-if="reportPhotoSources(report).length" class="report-photos mpwx-view">
+            <image v-for="(photo, photoIndex) in reportPhotoSources(report)" :key="photoIndex" class="report-photo-thumbnail" :src="photo.src" mode="aspectFill" @click.stop="previewReportPhoto(photo.path)" />
+          </view>
         </view>
       </view>
       <view v-if="editing" class="form mpwx-view">
@@ -108,7 +111,7 @@ import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
 import { config } from '@/api/config.js'
 import { resolveBinPointImage } from '@/utils/trash-bin-image-core.mjs'
 import { binPointPhotoKey, getBinPointPhoto } from '@/utils/bin-point-photo.js'
-import { previewTrashBinImage } from '@/utils/trash-bin-image'
+import { previewTrashBinImage, resolveTrashBinImage } from '@/utils/trash-bin-image'
 const props = defineProps({ bin: { type: Object, required: true }, dark: Boolean })
 const emit = defineEmits(['updated'])
 const reports = computed(() => binReports(props.bin))
@@ -175,6 +178,14 @@ async function previewBinImage() {
     await previewTrashBinImage(value)
   }
   catch (error) { uni.showToast({ title: '图片预览失败', icon: 'none' }) }
+}
+function reportPhotoSources(report) {
+  return (Array.isArray(report?.photos) ? report.photos : []).filter(path => typeof path === 'string' && /^\/?images\/bin-reports\/[^/]+\.(?:jpg|png|webp)$/i.test(path)).map(path => ({ path, src: resolveTrashBinImage(path) }))
+}
+async function previewReportPhoto(path) {
+  if (!/^\/?images\/bin-reports\/[^/]+\.(?:jpg|png|webp)$/i.test(String(path || ''))) return
+  try { await previewTrashBinImage(path) }
+  catch (_) { uni.showToast({ title: '图片预览失败', icon: 'none' }) }
 }
 async function submit(id, action, onSuccess) {
   if (busy.value || imageProcessing.value) return
@@ -270,6 +281,8 @@ function save() {
 .keep-reports { color: #637184; background: #edf1f4; }
 .confirm-clear { color: #ffffff; background: #d95757; }
 .report { display: flex; flex-direction: column; gap: 8rpx; padding: 16rpx 0; border-bottom: 1rpx solid #e8edf1; word-break: break-all; }
+.report-photos { display: flex; gap: 12rpx; margin-top: 4rpx; }
+.report-photo-thumbnail { width: 112rpx; height: 112rpx; border-radius: 10rpx; background: #edf1f4; }
 .report-reason { color: #334355; font-size: 23rpx; line-height: 1.45; }
 .muted { color: #98a3af; font-size: 19rpx; }
 .form-heading { margin-bottom: 18rpx; }

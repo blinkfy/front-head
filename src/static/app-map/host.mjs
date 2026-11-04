@@ -12,6 +12,8 @@ let renderer = null
 let disposed = false
 let initializationStarted = false
 let lifecycleVersion = 0
+let loadStartedAt = Date.now()
+let firstTilesReported = false
 
 function showError(message) {
   errorElement.textContent = message
@@ -21,6 +23,7 @@ function showError(message) {
 
 function send(type, detail = {}) {
   if (disposed || !token) return
+  if (type === 'phase') detail = { ...detail, elapsedMs: Date.now() - loadStartedAt }
   const targetOrigin = parentOrigin === undefined || parentOrigin === 'null' ? '*' : parentOrigin
   parent.postMessage({ channel, token, event: { type, detail } }, targetOrigin)
 }
@@ -104,6 +107,10 @@ async function initialize() {
         return value
       },
       emit: event => {
+        if (event?.type === 'updated' && !firstTilesReported) {
+          firstTilesReported = true
+          send('phase', { phase: 'first_tiles_loaded', satellite: !!latestPacket?.satellite })
+        }
         send(event?.type, event?.detail || {})
       }
     })
@@ -142,6 +149,8 @@ function onPageHide() {
 function onPageShow() {
   if (!disposed || document.hidden) return
   disposed = false
+  loadStartedAt = Date.now()
+  firstTilesReported = false
   errorElement.style.display = 'none'
   container.style.display = ''
   window.addEventListener('message', onMessage)
@@ -154,12 +163,25 @@ function onVisibilityChange() {
   if (!document.hidden) onPageShow()
 }
 
-window.addEventListener('message', onMessage)
-window.addEventListener('pagehide', onPageHide)
-window.addEventListener('pageshow', onPageShow)
-document.addEventListener('visibilitychange', onVisibilityChange)
+if (token.startsWith('sdk-preload:') && location.protocol === 'http:' && location.hostname === '127.0.0.1') {
+  // Download only; do not execute the SDK or create a map/WebGL context.
+  const key = decodeURIComponent(token.slice('sdk-preload:'.length))
+  const link = document.createElement('link')
+  link.rel = 'preload'
+  link.as = 'script'
+  link.href = `https://map.qq.com/api/gljs?v=1.exp&key=${encodeURIComponent(key)}`
+  link.fetchPriority = 'low'
+  link.onload = () => parent.postMessage({ channel: 'app-map-sdk-preload', phase: 'loaded' }, '*')
+  link.onerror = () => parent.postMessage({ channel: 'app-map-sdk-preload', phase: 'failed' }, '*')
+  document.head.appendChild(link)
+} else {
+  window.addEventListener('message', onMessage)
+  window.addEventListener('pagehide', onPageHide)
+  window.addEventListener('pageshow', onPageShow)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 
-if (!['http:', 'https:'].includes(location.protocol)) {
-  showError('地图页面仅支持通过 HTTP 或 HTTPS 加载。')
+  if (!['http:', 'https:'].includes(location.protocol)) {
+    showError('地图页面仅支持通过 HTTP 或 HTTPS 加载。')
+  }
+  send('frame-ready', {})
 }
-send('frame-ready', {})

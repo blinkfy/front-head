@@ -1,5 +1,8 @@
 <template>
   <view class="home-page" :class="[tabPageClass, { 'waste-guide-open': showGuideModal, 'onboarding-demo-reading': showAppOnboarding && onboardingDemoFinished }]" :style="homeAdaptiveStyle">
+    <!-- #ifdef MP-WEIXIN -->
+    <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
+    <!-- #endif -->
     <!-- 背景装饰 -->
     <view class="bg-decoration">
       <view class="bg-circle circle-1"></view>
@@ -94,16 +97,20 @@
       />
 
       <!-- 识别结果区域 -->
-      <view v-if="resultImage && !onboardingDemoVisible" class="result-card" :aria-busy="isProcessing">
+      <view v-if="resultImage && !resultCollapsed && !onboardingDemoVisible" class="result-card" :aria-busy="isProcessing">
         <view v-if="!failedPreviewPending && (classificationUi !== 'recognizing' || recognitionPreview)" class="result-header">
           <view class="result-title"><ManifestIcon id="accuracy_target" /> 识别结果</view>
+          <view v-if="!isProcessing" class="result-header-actions">
+            <text v-if="recentResult" class="result-collapse-toggle" role="button" tabindex="0" @click="collapseRecentResult" @keydown.enter.prevent="collapseRecentResult" @keydown.space.prevent="collapseRecentResult">收起 ⌃</text>
           <view v-if="!isProcessing" class="confidence-badge">
             <text class="confidence-text">{{ resultConfidence }}</text>
           </view>
+          </view>
         </view>
         
-        <view class="result-image-wrap" :class="{ 'recognition-photo-active': isProcessing }">
+        <view class="result-image-wrap" :class="{ 'recognition-photo-active': isProcessing }" @tap="!isProcessing && (showResultImagePreview = true)">
           <image :key="bboxImage.key" :data-bbox-key="bboxImage.key" :src="bboxImage.src" class="result-image" mode="aspectFit" @load="bboxImage.onLoad" @error="bboxImage.onError" />
+          <view v-if="!isProcessing" class="result-image-expand">查看大图</view>
           <view v-if="isProcessing" class="recognition-photo-scan"></view>
           <view v-if="classificationUi !== 'recognizing' && !failedPreviewPending && displayBboxes.length" class="recognition-bbox-layer">
             <view
@@ -192,12 +199,18 @@
       </view>
 
       <!-- 默认欢迎区域 -->
-      <view v-if="classificationUi === 'initial' && !onboardingDemoVisible && !failedPreviewPending && (!retryImagePath || robotEntryReturning || robotAtEntry)" class="welcome-section">
-        <view class="tips-card" @click="onAddImage">
+      <view v-if="!onboardingDemoVisible && (resultCollapsed || (classificationUi === 'initial' && !failedPreviewPending && (!retryImagePath || robotEntryReturning || robotAtEntry)))" class="welcome-section">
+        <view class="tips-card" @click="!resultCollapsed && onAddImage()">
           <SmartSortRobot3D class="smart-sort-entry-source" v-if="!robotEntryReturning && !robotAtEntry" :state="robotState" :active="robotPageActive" :overlay-active="showAppOnboarding" />
           <view v-else class="smart-sort-return-target smart-sort-entry-source"></view>
-          <text class="tips-title">开始智能分类</text>
-          <text class="tips-desc">上传图片，AI将为您识别垃圾类型</text>
+          <text class="tips-title">{{ resultCollapsed && recentResult ? '随时再拍，分类更轻松' : '开始智能分类' }}</text>
+          <view v-if="resultCollapsed && recentResult" class="recent-result-entry" role="button" tabindex="0" aria-label="查看上次识别结果" @click.stop="expandRecentResult" @keydown.enter.prevent="expandRecentResult" @keydown.space.prevent="expandRecentResult">
+            <text class="recent-result-summary">{{ recentResultSummary }}</text>
+            <view class="recent-result-divider" aria-hidden="true"></view>
+            <text class="recent-result-link">回看结果</text>
+            <view class="recent-result-chevron" aria-hidden="true"></view>
+          </view>
+          <text v-else class="tips-desc">上传图片，AI将为您识别垃圾类型</text>
         </view>
 
         <!-- 垃圾分类指南 -->
@@ -355,16 +368,20 @@
         <text class="tabbar-label">我的</text>
       </view>
     </view>
+    <RecognitionImagePreview v-if="showResultImagePreview && resultImage" :src="resultImage" :boxes="failedPreviewPending ? [] : rawBboxes" :space="recognizeBBoxSpace" @close="showResultImagePreview = false" />
   </view>
 </template>
 
 <script setup>
+import { recentRecognition } from '@/utils/recent-recognition.js'
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch, getCurrentInstance } from 'vue'
 import { trackOnboardingFocus, queryOnboardingRects, getOnboardingViewport, getOnboardingScrollTop } from '@/utils/onboarding-focus.mjs'
 import { onPageScroll, onShow, onHide, onUnload, onResize } from '@dcloudio/uni-app'
 import { recognizeImage } from '@/api/recognize'
 import { useRecognitionBboxes } from '@/utils/use-recognition-bboxes'
+import RecognitionImagePreview from '@/components/RecognitionImagePreview.vue'
 import { getRecognitionCompressionDecision, getRecognitionImageSize, isSmallerRecognitionImage, shouldUseCompressedRecognitionImage } from '@/utils/recognition-image.mjs'
+import { compressUploadImageBlob, compressNativeUploadImage, discardUploadImage, uploadImageExtension } from '@/utils/upload-image.js'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { scanAndConnectDevice } from '@/utils/device-qr'
@@ -408,6 +425,68 @@ import { getRecognitionFailureCopy } from '@/utils/recognition-failure-copy.mjs'
 
 const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages/home/home')
 const resultImage = ref('')
+const showResultImagePreview = ref(false)
+const resultCollapsed = ref(false)
+const recentResult = ref(null)
+let displayedRecentId = ''
+let homeWasHidden = false
+let preserveResultOnReturn = false
+let recentResultUnsubscribe = null
+const recentResultSummary = computed(() => {
+  const items = extractRecognizedItems(recentResult.value?.result)
+  return items.length ? `${items[0]}${items.length > 1 ? `等${items.length}件` : ''}` : (recentResult.value?.result?.labels?.[0]?.name || '识别结果')
+})
+
+function resetRecentPresentation() {
+  recentResult.value = null
+  displayedRecentId = ''
+  resultCollapsed.value = false
+  preserveResultOnReturn = false
+  clearOtherOwnerRecognition()
+}
+
+function collapseRecentResult() {
+  if (isProcessing.value || !recentResult.value) return
+  resultCollapsed.value = true
+  robotFeedbackActive.value = false
+  robotEntryReturning.value = false
+  robotAtEntry.value = false
+  robotState.value = 'idle'
+  nextTick(() => uni.pageScrollTo({ scrollTop: 0, duration: 200 }))
+}
+
+function expandRecentResult() {
+  const entry = recentRecognition.get()
+  if (!entry || isProcessing.value) return
+  recentResult.value = entry
+  displayedRecentId = entry.id
+  // Rebuild advice from the saved response; never submit another recognition/image job.
+  applyRecognitionResult(entry.result, false, true)
+  failedPreviewPending.value = false
+  retryImagePath.value = ''
+  classificationUi.value = 'complete'
+  resultCollapsed.value = false
+  nextTick(() => queueRefreshDisplayBboxes())
+}
+
+function restoreRecentPresentation() {
+  const entry = recentRecognition.get()
+  recentResult.value = entry
+  if (!entry) {
+    if (displayedRecentId) resetRecentPresentation()
+    return
+  }
+  if (isProcessing.value || getRecognitionTask()?.status === 'pending') return
+  if (displayedRecentId !== entry.id || !resultImage.value || failedPreviewPending.value) {
+    applyRecognitionResult(entry.result, false, true)
+    displayedRecentId = entry.id
+    failedPreviewPending.value = false
+    retryImagePath.value = ''
+    classificationUi.value = 'complete'
+  }
+  if (!homeWasHidden || !preserveResultOnReturn) collapseRecentResult()
+}
+
 const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
@@ -489,6 +568,7 @@ function onUpcyclingImageLoaded() {
 }
 const upcyclingTaskId = ref('')
 let upcyclingPollTimer = 0
+let upcyclingPollRevision = 0
 const imageLoading = ref(false)
 const aiEnabledUpcyclingImage = ref(false)
 const rawBboxes = ref([])
@@ -862,6 +942,10 @@ const compressionConfig = {
 }
 
 onMounted(() => {
+  recentResultUnsubscribe = recentRecognition.subscribe((entry, reason) => {
+    recentResult.value = entry
+    if (!entry) resetRecentPresentation()
+  })
   updateHomeAdaptiveStyle()
   recognitionTaskUnsubscribe = subscribeRecognitionTask((task, reason) => {
     if (reason === 'owner-changed') {
@@ -984,6 +1068,9 @@ onShow(() => {
   robotPageActive.value = true
   refreshAiServiceState()
   restoreRecognitionTask()
+  restoreRecentPresentation()
+  homeWasHidden = false
+  preserveResultOnReturn = false
   queueRefreshDisplayBboxes()
   // #ifdef MP-WEIXIN
   if (pendingCameraImage) {
@@ -1006,12 +1093,15 @@ onShow(() => {
 })
 
 onHide(() => {
+  homeWasHidden = true
   pageVisible = false
   robotPageActive.value = false
   stopElapsedClock()
 })
 
 onUnload(() => {
+  recentResultUnsubscribe?.()
+  recentResultUnsubscribe = null
   clearTimeout(onboardingTrialTimer)
   onboardingTrialState.value = 'idle'
   pageVisible = false
@@ -1022,6 +1112,8 @@ onUnload(() => {
 })
 
 onBeforeUnmount(() => {
+  recentResultUnsubscribe?.()
+  recentResultUnsubscribe = null
   clearTimeout(onboardingTrialTimer)
   onboardingTrialState.value = 'idle'
   onboardingFocusTracker?.stop()
@@ -1124,7 +1216,7 @@ function handleRecognitionProgress(taskId, snapshot) {
   }
 }
 
-function applyRecognitionResult(res, showSuccessToast = false) {
+function applyRecognitionResult(res, showSuccessToast = false, restored = false) {
   const label = Array.isArray(res && res.labels) ? res.labels[0] : null
   const rawImage = String((res && res.result_img_base64) || '')
   resultImage.value = /^data:image\//i.test(rawImage)
@@ -1136,13 +1228,14 @@ function applyRecognitionResult(res, showSuccessToast = false) {
     targetConfidence.value = confidenceValue
     resultConfidence.value = '0%'
     resultDesc.value = label.describe
-    setTimeout(() => animateNumber(confidenceValue, 800), 300)
+    if (restored) resultConfidence.value = confidenceValue + '%'
+    else setTimeout(() => animateNumber(confidenceValue, 800), 300)
   } else {
     resultCategory.value = '未识别到'
     resultConfidence.value = ''
     resultDesc.value = '未检测到任何标签信息'
   }
-  applyEnhancedRecognitionData(res)
+  applyEnhancedRecognitionData(res, restored)
   aiEnabled.value = !!(res && res.aiSettings && res.aiSettings.aiEnabled === true)
   processStatus.value = '识别完成！'
   if (showSuccessToast) uni.showToast({ title: '识别完成！', icon: 'success' })
@@ -1154,6 +1247,7 @@ function restoreRecognitionTask(task = getRecognitionTask()) {
   retryImageFile.value = task.source?.selectedFile || null
   recognitionPreview.value = task.preview && Object.keys(task.preview).length ? task.preview : null
   if (task.status === 'pending') {
+    resultCollapsed.value = false
     startElapsedClock(task.startedAt || Date.now())
     if (retryImagePath.value && !resultImage.value) resultImage.value = retryImagePath.value
     failedPreviewPending.value = false
@@ -1192,7 +1286,7 @@ function restoreRecognitionTask(task = getRecognitionTask()) {
   }
 }
 
-function applyEnhancedRecognitionData(recognizeData) {
+function applyEnhancedRecognitionData(recognizeData, restored = false) {
   if (!recognizeData || typeof recognizeData !== 'object') {
     resetEnhancedRecognition()
     return
@@ -1241,9 +1335,9 @@ function applyEnhancedRecognitionData(recognizeData) {
     recognizeData.achievementInfo &&
     recognizeData.achievementInfo.newlyUnlocked
   ) ? recognizeData.achievementInfo.newlyUnlocked : []
-  enqueueAchievementUnlocks(unlocks)
+  if (!restored) enqueueAchievementUnlocks(unlocks)
   // 识别成功后如果有新成就解锁，显示弹窗提示
-  if (unlocks.length) {
+  if (!restored && unlocks.length) {
     showAchievementUnlockModal(takeAchievementUnlocks())
   }
 
@@ -1257,6 +1351,7 @@ function applyEnhancedRecognitionData(recognizeData) {
 
 function goAiChatFromResult() {
   if (!aiServiceEnabled.value || !resultImage.value) return
+  preserveResultOnReturn = true
   // seed 已由 applyEnhancedRecognitionData → saveSeed 正确写入，
   // 只需清除"已消费"标记，确保 ai-chat 能重新加载本次识别结果
   // #ifndef H5
@@ -1270,6 +1365,7 @@ function goAiChatFromResult() {
 
 function goAiAssistant() {
   if (!aiServiceEnabled.value) return
+  preserveResultOnReturn = true
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 
@@ -1283,6 +1379,7 @@ function previewUpcyclingImage() {
 }
 
 function stopUpcyclingPoll() {
+  upcyclingPollRevision++
   if (upcyclingPollTimer) {
     clearTimeout(upcyclingPollTimer)
     upcyclingPollTimer = 0
@@ -1291,6 +1388,8 @@ function stopUpcyclingPoll() {
 
 async function startUpcyclingPoll() {
   stopUpcyclingPoll()
+  const revision = upcyclingPollRevision
+  const resultId = displayedRecentId
   const taskId = upcyclingTaskId.value
   if (!taskId) return
 
@@ -1298,8 +1397,10 @@ async function startUpcyclingPoll() {
   let retries = 0
 
   const poll = async () => {
+    if (revision !== upcyclingPollRevision) return
     if (retries >= maxRetries) {
       console.warn('[upcycling poll] 轮询超时')
+      recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: '' })
       upcyclingTaskId.value = ''
       imageLoading.value = false
       return
@@ -1319,8 +1420,10 @@ async function startUpcyclingPoll() {
         })
       })
 
+      if (revision !== upcyclingPollRevision) return
       if (res && res.code === 0 && res.data) {
         if (res.data.status === 'done' && res.data.url) {
+          recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: res.data.url })
           pendingUpcyclingSound = pageVisible ? taskId : ''
           upcyclingImageUrl.value = res.data.url
           upcyclingTaskId.value = ''
@@ -1329,6 +1432,7 @@ async function startUpcyclingPoll() {
           return
         } else if (res.data.status === 'failed') {
           console.warn('[upcycling poll] 效果图生成失败')
+          recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: '' })
           upcyclingTaskId.value = ''
           imageLoading.value = false
           return
@@ -1339,7 +1443,7 @@ async function startUpcyclingPoll() {
       console.warn('[upcycling poll] 请求失败:', e)
     }
 
-    upcyclingPollTimer = setTimeout(poll, 2000)
+    if (revision === upcyclingPollRevision) upcyclingPollTimer = setTimeout(poll, 2000)
   }
 
   poll()
@@ -1350,100 +1454,16 @@ function getBaseUrl() {
   // 使用顶部静态导入的 baseUrl，避免 require 在小程序中无法解析 @ 别名
   return baseUrl || ''
 }
-function compressImage(filePath, quality = 0.8, maxWidth = 1024) {
-  return new Promise((resolve, reject) => {
-    if (typeof document === 'undefined') {
-      reject(new Error('当前环境不支持canvas压缩'))
-      return
-    }
-    
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    const img = new Image()
-    
-    img.onload = function() {
-      try {
-        let { width, height } = img
-        const originalWidth = width
-        const originalHeight = height
-        
-        if (Math.max(width, height) > maxWidth) {
-          const scale = maxWidth / Math.max(width, height)
-          width = Math.round(width * scale)
-          height = Math.round(height * scale)
-        }
-        
-        canvas.width = width
-        canvas.height = height
-        ctx.imageSmoothingEnabled = true
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(img, 0, 0, width, height)
-        
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              console.log('图片压缩完成:', {
-                originalSize: `${originalWidth}x${originalHeight}`,
-                compressedSize: `${width}x${height}`,
-                compressedMb: (blob.size / 1024 / 1024).toFixed(2) + 'MB'
-              })
-              resolve(blob)
-            } else {
-              reject(new Error('图片压缩失败'))
-            }
-          },
-          'image/jpeg',
-          quality
-        )
-      } catch (drawError) {
-        reject(new Error('图片绘制失败'))
-      }
-    }
-    
-    img.onerror = () => reject(new Error('图片加载失败'))
-    img.crossOrigin = 'anonymous'
-    img.src = filePath
-  })
+function compressImage(filePath, quality = 0.82, maxWidth = 800) {
+  return compressUploadImageBlob(filePath, quality, maxWidth)
 }
 
 function compressImageMiniProgram(filePath, quality = 80, maxSize = 800) {
-  return new Promise((resolve, reject) => {
-    uni.getImageInfo({
-      src: filePath,
-      success: (info) => {
-        const { width: originalWidth, height: originalHeight } = info
-        let targetWidth = originalWidth
-        let targetHeight = originalHeight
-        const maxOriginalSize = Math.max(originalWidth, originalHeight)
-        
-        if (maxOriginalSize > maxSize) {
-          const scale = maxSize / maxOriginalSize
-          targetWidth = Math.round(originalWidth * scale)
-          targetHeight = Math.round(originalHeight * scale)
-        }
-        
-        uni.compressImage({
-          src: filePath,
-          quality: quality,
-          compressedWidth: targetWidth,
-          compressedHeight: targetHeight,
-          success: (res) => resolve(res.tempFilePath),
-          fail: () => resolve(filePath)
-        })
-      },
-      fail: () => {
-        uni.compressImage({
-          src: filePath,
-          quality: quality,
-          success: (res) => resolve(res.tempFilePath),
-          fail: () => resolve(filePath)
-        })
-      }
-    })
-  })
+  return compressNativeUploadImage(filePath, quality, maxSize)
 }
 
 async function processImage(filePath, selectedFile = null) {
+  resultCollapsed.value = false
   failedPreviewPending.value = false
   const taskId = beginRecognitionTask('正在准备图片...', { filePath, selectedFile })
   playUiSound('recognitionStart', { key: taskId, page: 'pages/home/home' })
@@ -1456,6 +1476,8 @@ async function processImage(filePath, selectedFile = null) {
   robotFeedbackActive.value = true
   robotState.value = 'uploading'
   resultImage.value = filePath
+  let ownedNativePath = ''
+  let ownedBlobUrl = ''
   try {
     isProcessing.value = true
     resetEnhancedRecognition()
@@ -1480,15 +1502,16 @@ async function processImage(filePath, selectedFile = null) {
           compressedBlob = candidate
           const timestamp = Date.now()
           const randomId = Math.random().toString(36).substring(2, 8)
-          compressedFile = new File([candidate], `compressed_${timestamp}_${randomId}.jpg`, { type: 'image/jpeg' })
+          compressedFile = new File([candidate], `compressed_${timestamp}_${randomId}.${uploadImageExtension(candidate.type)}`, { type: candidate.type })
         }
       } else if (shouldCompress) {
         processStatus.value = '正在优化...'
         updateRecognitionTask(taskId, processStatus.value)
         const { quality, maxSize } = compressionConfig.miniProgram
         const candidate = await compressImageMiniProgram(filePath, quality, maxSize)
+        if (candidate !== filePath) ownedNativePath = candidate
         const candidateSize = candidate === filePath ? 0 : await getRecognitionImageSize(candidate)
-        if (isSmallerRecognitionImage(originalSize, candidateSize)) compressedFile = candidate
+        if (!originalSize || isSmallerRecognitionImage(originalSize, candidateSize)) compressedFile = candidate
       }
     } catch (compressError) {
       console.warn('图片压缩失败，使用原图:', compressError)
@@ -1498,7 +1521,8 @@ async function processImage(filePath, selectedFile = null) {
     
     if (!isRecognitionTaskCurrent(taskId)) return
     if (isH5Platform.value && compressedBlob) {
-      resultImage.value = URL.createObjectURL(compressedBlob)
+      ownedBlobUrl = URL.createObjectURL(compressedBlob)
+      resultImage.value = ownedBlobUrl
     } else {
       resultImage.value = typeof compressedFile === 'string' ? compressedFile : filePath
     }
@@ -1512,6 +1536,9 @@ async function processImage(filePath, selectedFile = null) {
     robotState.value = 'processing'
     const res = await recognitionRequest
     if (!isRecognitionTaskCurrent(taskId)) return
+    recentRecognition.save(taskId, res)
+    displayedRecentId = taskId
+    recentResult.value = recentRecognition.get()
     completeRecognitionTask(taskId, res)
     // 同步广播可能被其它首页消费并清理；当前页仍须展示已确认属于自己的结果。
     if (activeRecognitionTaskId !== taskId || !pageVisible) return
@@ -1583,6 +1610,14 @@ async function processImage(filePath, selectedFile = null) {
       uni.showToast({ title: '网络错误', icon: 'none' })
     }
   } finally {
+    if (ownedNativePath) {
+      if (resultImage.value === ownedNativePath) resultImage.value = filePath
+      discardUploadImage(ownedNativePath, filePath)
+    }
+    if (ownedBlobUrl) {
+      if (resultImage.value === ownedBlobUrl) resultImage.value = filePath
+      URL.revokeObjectURL(ownedBlobUrl)
+    }
     if (activeRecognitionTaskId === taskId) {
       stopElapsedClock()
       isProcessing.value = false
@@ -1631,6 +1666,7 @@ function navigateTo(url) {
   uni.navigateTo({ url })
 }
 function goHistory() {
+  preserveResultOnReturn = true
   uni.navigateTo({ url: '/pages/history/history?from=home' })
 }
 
@@ -1709,7 +1745,16 @@ function closeAchievementModal() {
 </script>
 
 <style scoped>
-.recognition-preview-caption { display: block; color: #64748b; font-size: 24rpx; line-height: 1.5; margin-bottom: 16rpx; }
+.recent-result-entry { display: flex; align-items: center; justify-content: center; gap: 12rpx; min-height: 48rpx; max-width: 100%; cursor: pointer; }
+.recent-result-summary { flex: 0 1 auto; min-width: 0; max-width: 58%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 24rpx; line-height: 1.5; color: #43816f; }
+.recent-result-divider { flex: 0 0 4rpx; width: 4rpx; height: 4rpx; border-radius: 50%; background: #43816f; opacity: .55; }
+.recent-result-link { flex-shrink: 0; white-space: nowrap; font-size: 24rpx; line-height: 1.5; font-weight: 500; color: #087b5d; }
+.recent-result-chevron { flex: 0 0 8rpx; width: 8rpx; height: 8rpx; margin-left: -4rpx; border-top: 2rpx solid #087b5d; border-right: 2rpx solid #087b5d; transform: rotate(45deg); opacity: .75; }
+.recent-result-entry:focus-visible { outline: 2rpx solid #087b5d; outline-offset: 4rpx; }
+.result-header-actions { display: flex; align-items: center; gap: 20rpx; }
+.result-collapse-toggle { font-size: 24rpx; color: #07875f; padding: 8rpx 0 8rpx 12rpx; cursor: pointer; }
+
+.recognition-preview-caption { display: block; text-align: center; color: #64748b; font-size: 24rpx; line-height: 1.5; margin-bottom: 16rpx; }
 /* 页面基础 */
 .home-page {
   min-height: 100vh;
@@ -2407,6 +2452,7 @@ function closeAchievementModal() {
   align-items: center;
   width: 100%;
 }
+.result-image-expand { position: absolute; right: 12rpx; bottom: 12rpx; z-index: 19; padding: 8rpx 16rpx; border-radius: 20rpx; background: rgba(0, 0, 0, .55); color: #fff; font-size: 22rpx; }
 
 .result-image {
   width: 100%;

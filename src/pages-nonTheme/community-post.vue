@@ -28,11 +28,12 @@
       <view class="content-wrapper">
 
         <!-- 帖子内容 -->
-        <view class="post-card">
+        <view v-if="postError" class="community-detail-error">{{ postError }}</view>
+        <view v-if="post.id && !postError" class="post-card">
           <view class="post-header">
-            <image class="post-avatar" :src="getAvatarUrl(post.userAvatar)" mode="aspectFill"></image>
+            <image class="post-avatar" @click.stop="openCommunityAuthor(post)" :src="getAvatarUrl(post.userAvatar)" mode="aspectFill"></image>
             <view class="post-meta">
-              <text class="post-author">{{ getDisplayName(post) }}</text>
+              <text class="post-author" @click.stop="openCommunityAuthor(post)">{{ getDisplayName(post) }}</text>
               <text class="post-time">{{ formatTime(post.createdAt) }}</text>
             </view>
             <view class="post-tag" :class="getTagClass(post.tag)">
@@ -74,43 +75,51 @@
           </view>
 
           <view class="post-actions">
+            <view v-if="!isWeixin" class="action-item" @click="$refs.communityChatBridge.share(post)"><ManifestIcon id="chat_forward" class="action-icon" size="42rpx" /><text class="action-label">分享</text></view>
             <view class="action-item" @click="toggleLike">
               <ManifestIcon id="thumbs_up" class="action-icon" />
               <text class="action-count">{{ post.likeCount }}</text>
             </view>
             <view class="action-item" @click="focusComment">
               <ManifestIcon id="comment" class="action-icon" />
-              <text class="action-count">{{ comments.length }}</text>
+              <text class="action-count">{{ post.commentCount || 0 }}</text>
             </view>
           </view>
         </view>
 
         <!-- 评论列表 -->
-        <view class="comments-section">
+        <view v-if="post.id && !postError" class="comments-section">
           <view class="section-header">
             <text class="section-title">评论</text>
-            <text class="section-count">{{ comments.length }}条</text>
+            <text class="section-count">{{ post.commentCount || 0 }}条</text>
           </view>
 
-          <view class="loading-wrap" v-if="loadingComments">
+          <view class="loading-wrap" v-if="loadingComments && !comments.length">
             <view class="loading-spinner"></view>
           </view>
 
           <view class="comments-list" v-else>
             <view v-for="(comment, idx) in comments" :key="comment.id" class="comment-item">
-              <image class="comment-avatar" :src="getAvatarUrl(comment.userAvatar)" mode="aspectFill"></image>
+              <image class="comment-avatar" @click.stop="openCommunityAuthor(comment)" :src="getAvatarUrl(comment.userAvatar)" mode="aspectFill"></image>
               <view class="comment-content">
                 <view class="comment-header">
                   <view class="comment-meta-left">
-                    <text class="comment-author">{{ getDisplayName(comment) }}</text>
+                    <text class="comment-author" @click.stop="openCommunityAuthor(comment)">{{ getDisplayName(comment) }}</text>
                     <text class="comment-time">{{ formatTime(comment.createdAt) }}</text>
                   </view>
                   <view v-if="isAdmin" class="comment-admin-delete" @click.stop="confirmDeleteComment(comment)">删除</view>
                 </view>
                 <text class="comment-text">{{ comment.content }}</text>
+                <text v-if="!isWeixin" class="community-reply-button" @click="startReply(comment)">回复</text>
+                <view v-for="reply in comment.replies || []" :key="reply.id" class="community-reply-row">
+                  <text class="community-reply-author" @click="openCommunityAuthor(reply)">{{ getDisplayName(reply) }}</text>
+                  <text>：{{ reply.content }}</text>
+                </view>
+                <text v-if="(comment.replies || []).length < comment.replyTotal" class="community-reply-button" @click="loadMoreReplies(comment)">{{ comment.replyLoading ? '加载中…' : '更多回复' }}</text>
               </view>
             </view>
 
+            <text v-if="commentsHasMore || commentsError" class="community-comment-more" @click="loadComments(false)">{{ commentsError || (loadingComments ? '加载中…' : '加载更多评论') }}</text>
             <view class="empty-comments" v-if="comments.length === 0">
               <text>暂无评论，快来抢沙发！</text>
             </view>
@@ -121,15 +130,18 @@
     </scroll-view>
 
     <!-- 底部评论输入 -->
-    <view class="comment-bar" v-if="!isWeixin">
+    <view class="comment-bar" v-if="!isWeixin && post.id && !postError">
+      <view v-if="replyTo" class="community-reply-target" @click="replyTo = null; replyName = ''">回复 {{ replyName }} · 取消</view>
       <view class="comment-input-wrapper">
         <textarea
           id="comment-input-field"
+          :focus="commentFocused" @blur="commentFocused = false"
           name="comment-input-field"
           autocomplete="off"
           v-model="commentText"
           class="comment-input"
-          placeholder="写下你的评论..."
+          :placeholder="replyTo ? `回复 ${replyName}` : '写下你的评论...'"
+          maxlength="2000"
           placeholder-class="input-placeholder"
           :auto-height="true"
           :show-confirm-bar="false"
@@ -137,7 +149,7 @@
           cursor-spacing="20"
         />
         <view class="send-btn" @click="submitComment">
-          <text>发送</text>
+          <text>{{ submittingComment ? '发送中…' : '发送' }}</text>
         </view>
       </view>
     </view>
@@ -159,6 +171,7 @@
       </view>
     </view>
 
+    <CommunityChatBridge ref="communityChatBridge" @shared="post.shareCount = Number(post.shareCount || 0) + 1" />
   </view>
 </template>
 
@@ -169,7 +182,9 @@ import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage, takeCommunityPostSnapshot } from '@/pages-nonTheme/utils/community-image.js';
-import ManifestIcon from '@/components/ManifestIcon.vue';
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import CommunityChatBridge from './components/CommunityChatBridge.vue'
+import { getCommunityPostDetail, communitySocialEnabled } from './utils/community-social.js';
 import { getDisplayName } from '@/utils/display-name.js';
 function requestJson(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -184,7 +199,7 @@ function requestJson(url, options = {}) {
   })
 }
 export default {
-  components: { ManifestIcon },
+  components: { ManifestIcon, CommunityChatBridge },
   data() {
     return {
       postId: 0,
@@ -202,12 +217,14 @@ export default {
       },
       comments: [],
       loadingComments: false,
+      commentsPage: 0, commentsHasMore: false, commentsError: '', postError: '', submittingComment: false, replyName: '',
       loadingImages: false,
       commentText: '',
+      commentFocused: false,
       replyTo: null,
       isDark: false,
       isAdmin: false,
-      isWeixin: false,
+      isWeixin: true,
       imagePreviewVisible: false,
       previewImages: [],
       previewIndex: 0,
@@ -288,23 +305,9 @@ export default {
   onLoad(options) {
     this.checkTheme();
     this.checkAdmin();
-    // #ifdef MP-WEIXIN
-    this.isWeixin = true;
     this.checkAvailability();
-    // #endif
-    // #ifndef MP-WEIXIN
-    this.isWeixin = false;
-    // #endif
     this.postId = Number(options.postId) || 0;
     this.communityId = Number(options.communityId) || 0;
-    const snapshot = takeCommunityPostSnapshot(this.communityId, this.postId);
-    if (snapshot) {
-      this.post = { ...this.post, ...snapshot };
-      if (this.post.images.length) {
-        this._postImagesRequested = true;
-        this.loadPostImages();
-      }
-    }
     this.loadPostDetail();
     this.loadComments();
   },
@@ -314,11 +317,27 @@ export default {
     // #endif
   },
   onShow() {
+    this.checkAvailability();
     this.checkTheme();
     this.checkAdmin();
   },
   methods: {
     getDisplayName,
+    openCommunityAuthor(user) { if (!this.isWeixin) this.$refs.communityChatBridge.openAuthor(user); },
+    startReply(comment) { this.replyTo = comment.id; this.replyName = getDisplayName(comment); this.focusComment(); },
+    async loadMoreReplies(comment) {
+      if (comment.replyLoading) return;
+      const account = uni.getStorageSync('token') || '';
+      comment.replyLoading = true;
+      try {
+        const page = (comment.replyPage || 1) + 1;
+        const res = await getComments(this.postId, page, 10, comment.id);
+        if (account !== (uni.getStorageSync('token') || '')) return;
+        if (res?.code !== 0) throw new Error(res?.msg || '加载失败');
+        comment.replies.push(...(res.data?.comments || [])); comment.replyPage = page; comment.replyTotal = Number(res.data?.total || 0);
+      } catch (e) { uni.showToast({ title: e.message || '加载回复失败', icon: 'none' }); }
+      finally { comment.replyLoading = false; }
+    },
     extractData(res) {
       return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
     },
@@ -327,15 +346,7 @@ export default {
       this.isDark = theme === 'dark';
     },
     async checkAvailability() {
-      try {
-        const payload = await requestJson(`${baseUrl}/api/ai/settings`)
-        const settings = payload && payload.code === 0 ? payload.data : null
-        if (!settings || settings.aiEnabled !== false) {
-          this.isWeixin = false
-        }
-      } catch (err) {
-        console.warn('[community-publish] check Availability failed:', err)
-      }
+      this.isWeixin = !await communitySocialEnabled();
     },
     async checkAdmin() {
       const cached = !!uni.getStorageSync('isAdmin');
@@ -360,44 +371,38 @@ export default {
       }
     },
     async loadPostDetail() {
-      if (!this.postId || !this.communityId) return;
+      if (!this.postId) return;
+      const account = uni.getStorageSync('token') || '';
       try {
-        const res = await getCommunityPosts(this.communityId, null, 'latest', 1, 50, false);
-        const data = this.extractData(res) || {};
-        const list = Array.isArray(data.posts) ? data.posts : [];
-        const found = list.find((item) => Number(item.id) === Number(this.postId));
-        if (found) {
-          this.post = {
-            ...this.post,
-            ...found,
-            images: this._postImagesRequested ? this.post.images : normalizeCommunityImages(found.images, baseUrl),
-            imageCount: Number(found.imageCount || (found.images && found.images.length) || 0)
-          };
-          if (!this._postImagesRequested) {
-            this._postImagesRequested = true;
-            this.loadPostImages();
-          }
-        } else {
-          uni.showToast({ title: '帖子不存在或已删除', icon: 'none' });
-        }
-      } catch (e) {
-        console.error('获取帖子详情失败:', e);
-      }
+        const res = await getCommunityPostDetail(this.postId);
+        if (account !== (uni.getStorageSync('token') || '')) return;
+        if (res?.code !== 0 || !res.data) throw new Error(res?.msg || '帖子不可见');
+        this.post = { ...res.data, images: [] };
+        this.communityId = res.data.communityId;
+        this.postError = '';
+        this.loadPostImages();
+      } catch (e) { this.postError = e.message || '帖子不存在或当前不可见'; this.post.id = 0; }
     },
-    async loadComments() {
+    async loadComments(reset = true) {
+      if (this.loadingComments) return;
       this.loadingComments = true;
+      const page = reset ? 1 : this.commentsPage + 1;
+      const account = uni.getStorageSync('token') || '';
       try {
-        const res = await getComments(this.postId, 1, 50);
-        const data = this.extractData(res) || {};
-        this.comments = data.comments || [];
-      } catch (e) {
-        console.error('获取评论失败:', e);
-        this.comments = [];
-      }
-      this.loadingComments = false;
+        const res = await getComments(this.postId, page, 20);
+        if (account !== (uni.getStorageSync('token') || '')) return;
+        if (res?.code !== 0) throw new Error(res?.msg || '加载失败');
+        const data = res.data || {};
+        this.comments = reset ? data.comments || [] : [...this.comments, ...(data.comments || [])];
+        this.commentsPage = page;
+        this.commentsHasMore = page < Number(data.totalPages || 0);
+        this.commentsError = '';
+      } catch (e) { this.commentsError = '加载失败，点击重试'; }
+      finally { this.loadingComments = false; }
     },
     async loadPostImages() {
       if (!this.postId || this.post.imageCount <= 0) return;
+      const account = uni.getStorageSync('token') || '';
       this.loadingImages = !this.post.images.length;
       try {
         let images = this.post.images.length ? [...this.post.images] : await getCachedCommunityImage('post', this.postId);
@@ -407,6 +412,7 @@ export default {
           images = normalizeCommunityImages(data.images || [], baseUrl);
           if (images.length) setCachedCommunityImage('post', this.postId, images);
         }
+        if (account !== (uni.getStorageSync('token') || '')) return;
         this.postImageMeta = {};
         this.post.images = images;
         this.post.imageCount = Math.max(this.post.imageCount || 0, images.length);
@@ -481,6 +487,7 @@ export default {
       }
     },
     focusComment() {
+      this.commentFocused = true;
       uni.createSelectorQuery().select('.comment-input').boundingClientRect((rect) => {
         if (rect) {
           uni.pageScrollTo({ scrollTop: rect.top - 100, duration: 300 });
@@ -488,19 +495,26 @@ export default {
       }).exec();
     },
     async submitComment() {
+      if (this.isWeixin || this.submittingComment) return;
       if (!this.commentText.trim()) {
         uni.showToast({ title: '请输入评论内容', icon: 'none' });
         return;
       }
       const text = this.commentText.trim();
+      const account = uni.getStorageSync('token') || '';
       try {
-        await addComment(this.postId, text, this.replyTo);
+        this.submittingComment = true;
+        const result = await addComment(this.postId, text, this.replyTo);
+        if (account !== (uni.getStorageSync('token') || '')) return;
+        if (result?.code !== 0) throw new Error(result?.msg || '评论失败');
+        this.replyTo = null; this.replyName = ''; this.post.commentCount = Number(this.post.commentCount || 0) + 1;
         uni.showToast({ title: '评论成功', icon: 'success' });
         this.commentText = '';
         await this.loadComments();
       } catch (e) {
         uni.showToast({ title: e.message || '评论失败', icon: 'none' });
       }
+      this.submittingComment = false;
     },
     async previewImage(images, index) {
       let urls = normalizeCommunityImages(images, baseUrl);
@@ -761,6 +775,13 @@ export default {
 </script>
 
 <style scoped>
+.community-detail-error { padding: 60rpx 24rpx; color: #7b8881; text-align: center; }
+.community-reply-button, .community-reply-author { color: #16845b; font-size: 25rpx; }
+.community-reply-button { display: block; margin-top: 12rpx; }
+.community-reply-row { margin-top: 12rpx; padding: 12rpx 16rpx; background: #f3f5f4; border-radius: 8rpx; font-size: 26rpx; overflow-wrap: anywhere; }
+.community-comment-more { display: block; padding: 24rpx; color: #16845b; text-align: center; }
+.community-reply-target { padding: 8rpx 4rpx 16rpx; font-size: 24rpx; color: #16845b; }
+
 .post-image-trim-canvas { position: fixed; left: -9999px; top: 0; width: 960px; height: 960px; }
 /* ===== 主容器 ===== */
 .post-page {
@@ -981,6 +1002,7 @@ export default {
 .dark-mode .post-actions { border-top-color: rgba(255, 255, 255, 0.08); }
 .action-item { display: flex; align-items: center; gap: 8rpx; }
 .action-icon { font-size: 32rpx; }
+.action-label { font-size: 24rpx; }
 .action-count { color: #9ca3af; font-size: 26rpx; }
 .dark-mode .action-count { color: rgba(255, 255, 255, 0.5); }
 

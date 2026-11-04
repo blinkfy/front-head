@@ -191,6 +191,10 @@
 					}
 				},
 				{
+					"path": "community-notifications",
+					"style": { "navigationStyle": "custom" }
+				},
+				{
 					"path": "community-post",
 					"style": {
 						"navigationStyle": "custom"

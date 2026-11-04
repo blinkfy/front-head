@@ -114,11 +114,11 @@ export function addComment(postId, content, parentId = null) {
   });
 }
 
-export function getComments(postId, page = 1, limit = 20) {
+export function getComments(postId, page = 1, limit = 20, parentId = null) {
   return request({
     url: '/api/community/post/comments',
     method: 'GET',
-    data: { postId, page, limit },
+    data: { postId, page, limit, ...(parentId ? { parentId } : {}) },
     needAuth: true
   });
 }

@@ -1,5 +1,8 @@
 <template>
   <view :class="['edit-profile-container', { 'dark-theme': isDarkTheme }]">
+    <!-- #ifdef MP-WEIXIN -->
+    <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
+    <!-- #endif -->
     <!-- 隐藏的 Canvas 用于头像处理 -->
     <canvas id="avatar-canvas" canvas-id="avatar-canvas" class="avatar-canvas"></canvas>
 
@@ -531,11 +534,16 @@ async function processAvatar(tempFilePath) {
   try {
     uni.showLoading({ title: '压缩头像中...' })
 
-    // 压缩图片到 64x64 并转换为 Base64
-    const base64Avatar = await compressImageToBase64(tempFilePath, 64, 64, 0.8)
+    // 头像最长边 256，不放大小图；H5 优先 WebP，保留透明背景
+    let base64Avatar
+    let validation
+    for (const maxSize of [256, 128, 64]) {
+      base64Avatar = await compressImageToBase64(tempFilePath, maxSize, maxSize, 0.8, { preferWebp: true, preserveAspect: true })
+      validation = validateAvatarSize(base64Avatar)
+      if (validation.isValid) break
+    }
 
     // 验证头像大小
-    const validation = validateAvatarSize(base64Avatar)
     if (!validation.isValid) {
       uni.hideLoading()
       uni.showToast({
@@ -1304,8 +1312,8 @@ onBeforeUnmount(() => {
   position: fixed;
   left: -10000px;
   top: 0;
-  width: 128px;
-  height: 128px;
+  width: 256px;
+  height: 256px;
   pointer-events: none;
 }
 

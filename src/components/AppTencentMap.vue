@@ -11,7 +11,9 @@ import manifest from '../manifest.json'
 import { baseUrl } from '@/api/settings.js'
 import { getCurrentInstance } from 'vue'
 import { onHide, onShow, onUnload } from '@dcloudio/uni-app'
-import { startLocalMapServer, stopLocalMapServer } from '@/uni_modules/ftx-map-local-server'
+// #ifdef APP-PLUS
+import { startLocalMapServer, stopLocalMapServer } from '../utils/app-map-local-server-app.js'
+// #endif
 let serial = 0
 export default {
   props: {
@@ -58,6 +60,7 @@ export default {
   },
   methods: {
     prepareLocalMapServer() {
+      // #ifdef APP-PLUS
       if (!this.isAndroidMap || this.localMapBase) return
       try {
         const url = startLocalMapServer()
@@ -72,12 +75,15 @@ export default {
         console.warn('[app-map-basemap] local_server_unavailable; rebuild Android base with ftx-map-local-server')
         this.$nextTick(() => this.$emit('error', { detail: { code: 'local_server_unavailable', satellite: this.enableSatellite } }))
       }
+      // #endif
     },
     releaseLocalMapServer() {
+      // #ifdef APP-PLUS
       if (!this.localMapBase) return
       const url = this.localMapBase
       this.localMapBase = ''
       try { stopLocalMapServer(url) } catch (_) { /* Old bases can lack native methods. */ }
+      // #endif
     },
     moveToLocation(options = {}) {
       if (this.rendererFallback) {

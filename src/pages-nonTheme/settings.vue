@@ -152,6 +152,9 @@
 </template>
 
 <script setup>
+import { clearChatPush } from '@/utils/chat-push.js'
+import { recentRecognition } from '@/utils/recent-recognition.js'
+import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
 import { ref, onMounted } from 'vue'
 import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
@@ -257,6 +260,9 @@ function handleConfirm() {
     } else if (confirmAction.value === 'logout') {
         // 退出登录
         try {
+            clearRecognitionTask()
+            recentRecognition.clear('logout')
+            clearChatPush()
             uni.removeStorageSync('token')
             uni.removeStorageSync('isAdmin')
             uni.setStorageSync('autoLogin', false)

@@ -5,24 +5,15 @@
   <!-- #ifndef H5 -->
   <view :class="['md-body', variant ? `md-body--${variant}` : '']">
     <ChatMarkdown
-      v-if="useNativeRenderer"
       class="md-native"
       :markdown="markdown"
     />
-    <mp-html
-      v-if="mpHtmlReady && !useNativeRenderer"
-      :content="renderedHtml"
-      :selectable="false"
-      :lazy-load="true"
-      :preview-img="false"
-    />
-    <text v-else-if="!useNativeRenderer" class="md-text">{{ plainText }}</text>
   </view>
   <!-- #endif -->
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { renderMarkdown } from '@/pages-nonTheme/utils/renderMarkdown'
 // #ifndef H5
 import ChatMarkdown from '@/pages-nonTheme/components/ChatMarkdown.vue'
@@ -47,47 +38,7 @@ const props = defineProps({
   }
 })
 
-// Native streaming and explicitly selected completed messages use the view-based Markdown renderer.
-const useNativeRenderer = computed(() => props.streaming || props.nativeRenderer)
-
 const renderedHtml = computed(() => renderMarkdown(props.markdown || ''))
-
-// #ifndef H5
-// 小程序专用状态：mp-html 组件是否可用
-const mpHtmlReady = ref(false)
-
-onMounted(() => {
-  // #ifndef H5
-  // 检测 mp-html 组件是否可用
-  try {
-    const hasNativePlugin = typeof uni.requireNativePlugin === 'function'
-    mpHtmlReady.value = hasNativePlugin
-  } catch (_) {
-    mpHtmlReady.value = false
-  }
-  // #endif
-})
-// #endif
-
-// 小程序专用：提取纯文本用于降级显示
-// #ifdef H5
-const plainText = computed(() => '')
-// #endif
-// #ifndef H5
-const plainText = computed(() => {
-  if (!props.markdown) return ''
-  return props.markdown
-    .replace(/#{1,6}\s*/g, '')
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/\*(.*?)\*/g, '$1')
-    .replace(/`(.*?)`/g, '$1')
-    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-    .replace(/^\s*[-*+]\s*/gm, '')
-    .replace(/^\s*\d+\.\s*/gm, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-})
-// #endif
 </script>
 
 <style scoped>
@@ -213,15 +164,6 @@ const plainText = computed(() => {
   margin: 0;
 }
 
-/* 小程序降级纯文本样式 */
-.md-text {
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--text-primary, #1a1a1a);
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-
 /* #ifdef APP-PLUS */
 .md-native {
   font-size: inherit;
@@ -229,13 +171,6 @@ const plainText = computed(() => {
   color: inherit;
 }
 /* #endif */
-
-/* reasoning variant 下的纯文本样式 */
-.md-body.md-body--reasoning .md-text {
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--text-secondary, #6B7280);
-}
 
 /* ── reasoning variant（深度思考折叠区内）：更紧凑、更浅 ── */
 .md-body.md-body--reasoning {

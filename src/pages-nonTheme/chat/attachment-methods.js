@@ -8,14 +8,8 @@ export const mediaSendMethods = {
 
             // 上传到服务器
             try {
-                const res = this.isGroupChat
-                    ? await chatApi.sendGroupVoiceMessage(this.groupId, filePath, duration, this.refMessageId)
-                    : await chatApi.sendVoiceMessage(
-                        this.chatId,
-                        this.otherUserId,
-                        filePath,
-                        duration
-                    )
+                const res = await this.sendCreatedMessage(msg)
+
 
                 if (res.data) {
                     const newId = this.getServerMessageId(res.data)
@@ -44,13 +38,8 @@ export const mediaSendMethods = {
 
             // 上传到服务器
             try {
-                const res = this.isGroupChat
-                    ? await chatApi.sendGroupImageMessage(this.groupId, filePath, this.refMessageId)
-                    : await chatApi.sendImageMessage(
-                        this.chatId,
-                        this.otherUserId,
-                        filePath
-                    )
+                const res = await this.sendCreatedMessage(msg)
+
                 
                 if (res.data) {
                     const newId = this.getServerMessageId(res.data)
@@ -90,16 +79,8 @@ export const mediaSendMethods = {
                 const onProgress = (progress) => {
                     this.uploadProgress[msg.id] = progress
                 }
-                const res = this.isGroupChat
-                    ? await chatApi.sendGroupVideoMessage(this.groupId, filePath, thumbnail, duration, this.refMessageId, onProgress)
-                    : await chatApi.sendVideoMessage(
-                        this.chatId,
-                        this.otherUserId,
-                        filePath,
-                        thumbnail,
-                        duration,
-                        onProgress
-                    )
+                const res = await this.sendCreatedMessage(msg, onProgress)
+
 
                 if (res.data) {
                     const newId = this.getServerMessageId(res.data)
@@ -143,16 +124,8 @@ export const mediaSendMethods = {
                 const onProgress = (progress) => {
                     this.uploadProgress[msg.id] = progress
                 }
-                const res = this.isGroupChat
-                    ? await chatApi.sendGroupFileMessage(this.groupId, filePath, fileName, fileSize, this.refMessageId, onProgress)
-                    : await chatApi.sendFileMessage(
-                        this.chatId,
-                        this.otherUserId,
-                        filePath,
-                        fileName,
-                        fileSize,
-                        onProgress
-                    )
+                const res = await this.sendCreatedMessage(msg, onProgress)
+
 
                 if (res.data) {
                     const newId = this.getServerMessageId(res.data)

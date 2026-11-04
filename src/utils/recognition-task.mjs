@@ -5,8 +5,7 @@ const listeners = new Set()
 
 function currentOwner() {
   try {
-    const runtime = typeof uni !== 'undefined' ? uni : globalThis.uni
-    return String(runtime?.getStorageSync('token') || '')
+    return typeof uni !== 'undefined' ? String(uni.getStorageSync('token') || '') : ''
   } catch (_) { return '' }
 }
 

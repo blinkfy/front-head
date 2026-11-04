@@ -1,0 +1,5 @@
+{
+  "minSdkVersion": "21",
+  "dependencies": ["com.huawei.hms:push:6.13.0.301"],
+  "project": { "repositories": ["maven { url 'https://developer.huawei.com/repo/' }"] }
+}

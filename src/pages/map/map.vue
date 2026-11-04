@@ -1,5 +1,8 @@
 <template>
   <view class="map-page" :class="[tabPageClass, { 'nearby-panel-open': showNearbyDisposal && nearbyPanelHeight > 0, 'nearby-panel-closing': nearbyPanelClosing }]" :style="{ '--nearby-panel-height': nearbyPanelHeight + 'px' }">
+    <!-- #ifdef MP-WEIXIN -->
+    <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
+    <!-- #endif -->
     <!-- 顶部导航栏 -->
     <view :animation="tabPageAnimation" class="map-header tab-page-motion" :style="{ paddingTop: (statusBarHeight + 10) + 'px' }">
       <view class="header-decoration">
@@ -8,6 +11,7 @@
         <view class="deco-circle c3"></view>
       </view>
       <view class="header-content">
+        <button v-if="viewMode" class="header-back" @click="handleBack">返回</button>
         <view class="header-title"><ManifestIcon id="nearby_map" /> 垃圾桶地图</view>
         <text class="header-subtitle">查找附近的垃圾分类投放点</text>
       </view>
@@ -140,24 +144,25 @@
     </view>
 
     <view v-if="isMapAdmin && !selectMode && !viewMode" class="admin-map-legend">{{ isH5 ? '灰：未通过 · 蓝：普通桶 · 绿：智能桶 · 橙色提示：有报错' : '灰色：未通过审核 · 橙色提示：有报错' }}</view>
-    <!-- 底部信息卡（H5 与 小程序/APP 都用，非选择模式且非查看模式才显示） -->
-    <view v-if="selectedMarker && !selectMode && !viewMode" class="info-card" :class="{ 'admin-info-card': isMapAdmin }">
+    <!-- 地图点选与聊天跳转共用同一张点位信息卡。 -->
+    <view v-if="selectedMarker && !selectMode" class="info-card" :class="{ 'admin-info-card': isMapAdmin && !viewMode }">
       <view class="info-header">
         <view class="info-title-wrapper">
           <view class="info-icon" :class="selectedMarker.type === 'smart' ? 'smart' : 'normal'">
-            <ManifestIcon v-if="selectedMarker.type === 'smart'" id="device_connect" />
+            <ManifestIcon v-if="selectedMarker.sharedLocation" id="map_location" />
+            <ManifestIcon v-else-if="selectedMarker.type === 'smart'" id="device_connect" />
             <ManifestIcon v-else id="normal_bin_marker" />
           </view>
           <view class="info-title-content">
             <text class="info-title">{{ selectedMarker.title }}</text>
-            <text class="info-distance">{{ selectedMarker.distance || '附近' }}</text>
+            <text class="info-distance">{{ selectedMarker.distance || (viewMode ? '地点详情' : '附近') }}</text>
           </view>
         </view>
         <ManifestIcon class="info-close" id="close" @click="closeInfo" />
       </view>
       
       <view class="info-body">
-        <text class="info-name">{{ selectedMarker.name }}</text>
+        <text v-if="!selectedMarker.sharedLocation" class="info-name">{{ selectedMarker.name }}</text>
         <text class="info-desc" v-if="selectedMarker.desc">{{ selectedMarker.desc }}</text>
       </view>
       
@@ -166,16 +171,16 @@
           <ManifestIcon class="btn-icon" id="dark_navigation" />
           <text>导航</text>
         </button>
-        <button class="info-btn secondary" @click="openHistoryImage(selectedMarker)">
+        <button v-if="!selectedMarker.sharedLocation" class="info-btn secondary" @click="openHistoryImage(selectedMarker)">
           <ManifestIcon class="btn-icon" id="camera_scan" />
           <text>查看</text>
         </button>
-        <button class="info-btn danger" @click="reportErrorMarker(selectedMarker)">
+        <button v-if="!selectedMarker.sharedLocation" class="info-btn danger" @click="reportErrorMarker(selectedMarker)">
           <ManifestIcon class="btn-icon" id="dark_alert" />
           <text>报错</text>
         </button>
       </view>
-      <MapBinAdminPanel v-if="isMapAdmin" :bin="selectedMarker" @updated="refreshAdminMarker" />
+      <MapBinAdminPanel v-if="isMapAdmin && !viewMode" :bin="selectedMarker" @updated="refreshAdminMarker" />
     </view>
 
     <!-- 垃圾桶问题上报弹窗 -->
@@ -193,7 +198,7 @@
           <ManifestIcon id="normal_bin_marker" class="report-point-icon" />
           <view class="report-point-copy">
             <text class="report-point-label">反馈点位</text>
-            <text class="report-point-name">{{ reportTarget?.title || '垃圾桶点位' }}</text>
+            <text class="report-point-name">{{ reportTarget?.name || reportTarget?.title || '垃圾桶点位' }}</text>
           </view>
         </view>
         <view class="report-reason-heading">
@@ -208,10 +213,11 @@
           :auto-height="false"
         />
         <text class="report-counter">{{ reportReason.length }}/200</text>
+        <ReportPhotoPicker v-model:photos="reportPhotos" :disabled="reportSubmitting" @processing="reportPhotoProcessing = $event" />
         <view class="report-actions">
           <view class="report-cancel" @click="closeReportModal">取消</view>
-          <view class="report-submit" :class="{ disabled: !reportReason.trim() || reportSubmitting }" @click="submitReport">
-            {{ reportSubmitting ? '提交中…' : '提交反馈' }}
+          <view class="report-submit" :class="{ disabled: !reportReason.trim() || reportSubmitting || reportPhotoProcessing }" @click="submitReport">
+            {{ reportPhotoProcessing ? '照片处理中…' : reportSubmitting ? '提交中…' : '提交反馈' }}
           </view>
         </view>
       </view>
@@ -241,21 +247,6 @@
         <button class="select-btn cancel" @click="cancelSelect">取消</button>
         <button class="select-btn secondary" @click="pickCenterLocation">选取中心点</button>
         <button class="select-btn confirm" @click="confirmSelect" :disabled="!selectedLocation">确定</button>
-      </view>
-    </view>
-    <!-- 查看位置模式：显示位置信息 -->
-    <view v-if="viewMode && viewLocationInfo" class="view-location-panel">
-      <view class="view-location-header">
-        <text class="location-name">{{ viewLocationInfo.name }}</text>
-        <ManifestIcon class="location-close" id="close" @click="handleBack" />
-      </view>
-      <view class="location-details">
-        <text class="location-address">{{ viewLocationInfo.address }}</text>
-        <text class="location-coords">{{ viewLocationInfo.latitude.toFixed(6) }}, {{ viewLocationInfo.longitude.toFixed(6) }}</text>
-      </view>
-      <view class="location-actions">
-        <button class="location-btn navigate-btn" @click="navigateToLocation">导航到这里</button>
-        <button class="location-btn back-btn" @click="handleBack">返回</button>
       </view>
     </view>
     <!-- 右下角扫码和新增连体按钮 -->
@@ -317,13 +308,14 @@
 <script setup>
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { resolveTrashBinImage, previewTrashBinImage } from '../../utils/trash-bin-image'
-import { ref, onMounted, computed, getCurrentInstance, nextTick } from 'vue'
-import { onLoad, onReady, onShow } from '@dcloudio/uni-app'
+import { ref, onMounted, onBeforeUnmount, computed, getCurrentInstance, nextTick } from 'vue'
+import { onLoad, onReady, onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { mapConfig } from '../../api/map-config.js'
 import { reportDeviceError, reverseGeocoder, searchPlaces, getTrashBinImage } from '../../api/map.js'
 import AddTrashBinModal from '../../components/AddTrashBinModal.vue'
 import ManifestIcon from '../../components/ManifestIcon.vue'
 import MapBinAdminPanel from '@/components/MapBinAdminPanel.vue'
+import ReportPhotoPicker from '@/components/ReportPhotoPicker.vue'
 import NearbyDisposalPanel from '@/components/NearbyDisposalPanel.vue'
 // #ifdef APP-PLUS
 import AppNearbyDisposalPanel from '@/components/AppNearbyDisposalPanel.vue'
@@ -333,6 +325,9 @@ import AppTencentMap from '@/components/AppTencentMap.vue'
 import { nearbyDisposalPoints, validDisposalLocation } from '@/utils/nearby-disposal.mjs'
 import { isBinLocationPicker } from '@/utils/map-basemap-core.mjs'
 import { getPointFocusCenter } from '@/utils/map-point-focus.mjs'
+import { getViewLocationMarkers } from '@/utils/map-view-location.mjs'
+import { resolveMapViewCard } from '@/utils/map-view-card.mjs'
+import request from '@/api/index.js'
 import { getLastMapLocation, saveLastMapLocation } from '@/utils/map-last-location.mjs'
 import { useMapBasemap } from '@/utils/use-map-basemap'
 import { useMapAdminBins, binMapLabel } from '@/utils/map-admin-bins'
@@ -361,6 +356,7 @@ const visibleNearbyLocationOptions = computed(() => nearbyLocationOptions.value.
 // 查看位置模式（从聊天消息点击进入）
 const viewMode = ref(false)
 const viewLocationInfo = ref(null)
+const viewPoint = ref(null)
 
 // 状态栏高度
 const statusBarHeight = ref((uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()).statusBarHeight || 0)
@@ -380,6 +376,8 @@ const showReportModal = ref(false)
 const reportTarget = ref(null)
 const reportReason = ref('')
 const reportSubmitting = ref(false)
+const reportPhotos = ref([])
+const reportPhotoProcessing = ref(false)
 const floatingActionsOffset = ref({ x: 0, y: 0 })
 const floatingActionsDragStart = ref(null)
 const isDraggingFloatingActions = ref(false)
@@ -424,6 +422,7 @@ function appSelectionMarkers() {
 }
 
 const markers = computed(() => {
+  if (viewMode.value) return getViewLocationMarkers(viewLocationInfo.value)
   const list = selectMode.value ? appSelectionMarkers() : trashPoints.value.map(p => ({
     id: p.id,
     latitude: typeof p.latitude === 'number' ? p.latitude : parseFloat(p.latitude),
@@ -448,6 +447,20 @@ const markers = computed(() => {
 
 const mapContainerId = `trash-map-${Math.random().toString(36).slice(2)}`
 let tmapInstance = null
+let h5SdkScript = null, h5LogoStyle = null, h5Disposed = false, tmapSelectionMarker = null
+function disposeH5Map() {
+  if (!isH5 || h5Disposed) return
+  h5Disposed = true
+  clearTimeout(viewportReloadTimer)
+  if (h5SdkScript) { h5SdkScript.onload = h5SdkScript.onerror = null; h5SdkScript.remove() }
+  try { tmapInstance?.destroy() } finally {
+    h5LogoStyle?.remove()
+    tmapInstance = tmapBinLayer = tmapSelectionMarker = null
+    tmapMarkers = []
+  }
+}
+onBeforeUnmount(disposeH5Map)
+onUnload(disposeH5Map)
 let tmapMarkers = [] // 存放 H5 创建的辅助 marker（如查看位置标记）
 let tmapBinLayer = null // 垃圾桶点位单一 MultiMarker 图层（避免每点一个图层）
 
@@ -563,6 +576,16 @@ function uncoveredRects(viewport, loaded) {
 
 // 处理页面参数
 const pageOptions = {}
+let mapPageDisposed = false
+let mapViewEpoch = 0
+let viewLookupScope = '', viewOwner = null, viewInvalidated = false
+function mapViewOwner() {
+  try { return String(uni.getStorageSync('token') || '') } catch (_) { return '' }
+}
+function mapViewScope() { return `${mapViewEpoch}|${mapViewOwner()}` }
+onHide(() => { mapViewEpoch++ })
+onUnload(() => { mapPageDisposed = true })
+onBeforeUnmount(() => { mapPageDisposed = true })
 const mapScale = ref(12)
 const { satellite, basemapLoading, setBasemap, bindH5Map, getSatelliteReference, onNativeMapUpdated, onNativeMapError, onNativeMapRegionChange } = useMapBasemap({ isH5, options: pageOptions, appWebMap: true, suspended: () => showAddModal.value })
 
@@ -986,12 +1009,12 @@ function onMapClick(lat, lng) {
   // 如果是H5，在地图上标记选中位置
   if (isH5 && tmapInstance && window.TMap) {
     // 清除之前的选择标记
-    if (window.selectLocationMarker) {
-      window.selectLocationMarker.setMap(null)
+    if (tmapSelectionMarker) {
+      tmapSelectionMarker.setMap(null)
     }
     
     // 添加新的选择标记
-    window.selectLocationMarker = new window.TMap.MultiMarker({
+    tmapSelectionMarker = new window.TMap.MultiMarker({
       map: tmapInstance,
       styles: {
         selected: new window.TMap.MarkerStyle({
@@ -1010,6 +1033,51 @@ function onMapClick(lat, lng) {
   }
 }
 
+function ensureH5Sdk() {
+  if (!isH5 || h5Disposed || h5SdkScript) return
+  const script = document.createElement('script')
+  h5SdkScript = script
+  script.src = `https://map.qq.com/api/gljs?v=1.exp&key=${mapConfig.qqMapKey}`
+  script.onerror = () => {
+    uni.showToast({ title: '地图加载失败', icon: 'none', duration: 3000 })
+  }
+  script.onload = () => initTMap()
+  document.head.appendChild(script)
+}
+
+async function initializeViewedPoint() {
+  if (mapPageDisposed || !viewMode.value || viewInvalidated) return
+  const owner = mapViewOwner(), scope = mapViewScope()
+  if (viewOwner !== null && owner !== viewOwner) {
+    viewInvalidated = true
+    viewPoint.value = null; viewLocationInfo.value = null; selectedMarker.value = null
+    showReportModal.value = false; reportTarget.value = null; reportReason.value = ''; reportPhotos.value = []
+    uni.showToast({ title: '登录状态已变化，请重新打开点位', icon: 'none' })
+    return
+  }
+  viewOwner = owner
+  if (viewPoint.value || viewLookupScope === scope) return
+  viewLookupScope = scope
+  try {
+    const result = await resolveMapViewCard(pageOptions, id => request({ url: `/api/ai/chat/disposal-point/${id}`, needAuth: true, silent: true, timeout: 6000 }))
+    if (mapPageDisposed || scope !== mapViewScope()) return
+    viewPoint.value = result.point
+    viewLocationInfo.value = result.location
+    center.value = { latitude: result.location.latitude, longitude: result.location.longitude }
+    onH5MarkerClicked(0, result.point)
+    if (result.reportRequested) reportErrorMarker(selectedMarker.value, result.reportReason)
+  } catch (error) {
+    if (mapPageDisposed || scope !== mapViewScope()) return
+    uni.showToast({ title: error?.message || error?.msg || '地点暂不可用', icon: 'none' })
+  } finally {
+    if (viewLookupScope === scope) viewLookupScope = ''
+  }
+  if (mapPageDisposed || scope !== mapViewScope()) return
+  uni.setNavigationBarTitle({ title: '查看位置' })
+  ensureH5Sdk()
+}
+onShow(() => { if (viewMode.value) void initializeViewedPoint() })
+
 onMounted(async () => {
   if (!isH5) {
     nextTick(() => ensureMapContext())
@@ -1022,38 +1090,12 @@ onMounted(async () => {
     selectMode.value = true
   }
   
-  // 检查是否为查看位置模式
-  if (options.mode === 'view' && options.lat && options.lng) {
+  if (options.mode === 'view') {
     viewMode.value = true
-    const lat = parseFloat(options.lat)
-    const lng = parseFloat(options.lng)
-    const name = decodeURIComponent(options.name || '位置')
-    const address = decodeURIComponent(options.address || '')
-    
-    viewLocationInfo.value = {
-      latitude: lat,
-      longitude: lng,
-      name: name,
-      address: address
-    }
-    
-    // 设置地图中心到该位置
-    center.value = { latitude: lat, longitude: lng }
-    
-    // 设置页面标题为"查看位置"
-    uni.setNavigationBarTitle({
-      title: '查看位置'
-    })
+    await initializeViewedPoint()
+    return
   }
-  if (isH5) {
-    const script = document.createElement('script')
-    script.src = `https://map.qq.com/api/gljs?v=1.exp&key=${mapConfig.qqMapKey}`
-    script.onerror = () => {
-      uni.showToast({ title: '地图加载失败', icon: 'none', duration: 3000 })
-    }
-    script.onload = () => initTMap()
-    document.head.appendChild(script)
-  }
+  ensureH5Sdk()
   // 如果是查看位置模式，跳过定位和加载垃圾桶列表
   if (viewMode.value) {
     return
@@ -1148,6 +1190,7 @@ async function getUserLocationOnce(coordType = 'gcj02') {
 }
 
 function initTMap() {
+  if (h5Disposed) return
   if (!window.TMap && !window.tmap) {
     uni.showToast({ title: '地图初始化失败', icon: 'none', duration: 3000 })
     return
@@ -1162,9 +1205,11 @@ function initTMap() {
       center: new window.TMap.LatLng(center.value.latitude, center.value.longitude),
       mapStyleId: 'style1'
     })
+    tmapInstance = map
     
     // 隐藏腾讯地图Logo和版权信息
     const style = document.createElement('style')
+    h5LogoStyle = style
     style.innerHTML = `
       .tmap-logo-container,
       .tmap-logo,
@@ -1215,9 +1260,11 @@ function initTMap() {
       const point = selectedLocation.value || center.value
       onMapClick(point.latitude, point.longitude)
     }
-    bindH5Map(map)
+    bindH5Map(map, document.getElementById(mapContainerId))
     initH5Markers()
   } catch (error) {
+    tmapInstance?.destroy()
+    tmapInstance = null
     uni.showToast({ title: '地图初始化失败', icon: 'none', duration: 3000 })
   }
 }
@@ -1236,7 +1283,7 @@ function onH5MarkerClicked(index, point) {
   selectedMarker.value = {
     ...point,
     id: point.id,
-    title: binMapLabel(point),
+    title: point.sharedLocation ? point.name : binMapLabel(point),
     name: point.name,
     type: point.type,
     latitude: point.latitude,
@@ -1247,6 +1294,7 @@ function onH5MarkerClicked(index, point) {
 }
 
 function onMarkerTap(e) {
+  if (viewMode.value && viewPoint.value) { onH5MarkerClicked(0, viewPoint.value); return }
   const markerId = e && (e.markerId || e.markerId === 0 ? e.markerId : e.detail?.markerId);
   const point = trashPoints.value.find(p => String(p.id) === String(markerId));
   if (!point) return;
@@ -1333,10 +1381,12 @@ async function openHistoryImage(m) {
   }
 }
 
-function reportErrorMarker(m) {
+function reportErrorMarker(m, reason = '') {
   if (!m) return
   reportTarget.value = m
-  reportReason.value = ''
+  reportReason.value = typeof reason === 'string' ? reason.trim().slice(0, 200) : ''
+  reportPhotos.value = []
+  reportPhotoProcessing.value = false
   showReportModal.value = true
 }
 
@@ -1345,25 +1395,30 @@ function closeReportModal() {
   showReportModal.value = false
   reportTarget.value = null
   reportReason.value = ''
+  reportPhotos.value = []
+  reportPhotoProcessing.value = false
 }
 
 function submitReport() {
   const reason = reportReason.value.trim()
-  if (!reason || reportSubmitting.value || !reportTarget.value) return
+  if (!reason || reportSubmitting.value || reportPhotoProcessing.value || !reportTarget.value) return
   callReport(reportTarget.value, reason)
 }
 
 async function callReport(m, reason = '') {
+  if (reportPhotoProcessing.value) return
   reportSubmitting.value = true
   try {
     const deviceId = m.deviceId || m.id || `${m.latitude},${m.longitude}`
-    await reportDeviceError(deviceId, reason)
-    uni.showToast({ title: '上报成功，感谢反馈', icon: 'success' })
+    const result = await reportDeviceError(deviceId, reason, reportPhotos.value)
+    uni.showToast({ title: result?.msg || '反馈已收到，感谢反馈', icon: 'none' })
     if (isMapAdmin.value) loadTrashBinList()
     selectedMarker.value = null
     showReportModal.value = false
     reportTarget.value = null
     reportReason.value = ''
+    reportPhotos.value = []
+    reportPhotoProcessing.value = false
   } catch (err) {
     const msg = (err && err.msg) ? err.msg : (err && err.message) ? err.message : '上报失败'
     uni.showToast({ title: msg, icon: 'none' })
@@ -1566,6 +1621,7 @@ function initH5Markers() {
           height: 48
         }]
       })
+      multi.on('click', () => { if (viewPoint.value) onH5MarkerClicked(0, viewPoint.value) })
       
       tmapMarkers.push({
         id: 'view-location',
@@ -1712,6 +1768,19 @@ function goProfile() {
   position: relative;
   z-index: 1;
 }
+
+.header-back {
+  position: absolute;
+  right: 0;
+  top: 6rpx;
+  padding: 0 22rpx;
+  line-height: 58rpx;
+  font-size: 26rpx;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 30rpx;
+}
+.header-back::after { border: none; }
 
 .header-title {
   display: block;
@@ -2648,7 +2717,10 @@ function goProfile() {
 .report-dialog {
   width: 620rpx;
   max-width: calc(100vw - 64rpx);
+  max-height: calc(100vh - 64rpx);
   padding: 32rpx;
+  box-sizing: border-box;
+  overflow-y: auto;
   border-radius: 28rpx;
   background: #ffffff;
   box-shadow: 0 24rpx 72rpx rgba(15, 23, 42, 0.24);

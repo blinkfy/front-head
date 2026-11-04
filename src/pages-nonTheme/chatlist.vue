@@ -27,6 +27,7 @@
 		<!-- 用户列表 -->
 		<scroll-view ref="userScroll" class="user-list" scroll-y :scroll-top="scrollTop" :style="{ height: listHeight, backgroundColor: 'var(--list-bg)', paddingTop: headerOffset + 'px' }" @scrolltolower="loadMore"
 			refresher-enabled :refresher-triggered="isRefreshing" @refresherrefresh="onRefresh" @click.stop @click="handleContainerClick">
+            <CommunityActivityEntry :enabled="communityChatEnabled" :active="isPageActive" />
 			<!-- 加载中 -->
 			<view class="loading-wrap" v-if="(isSearching ? searchLoading : loading) && filteredUserList.length === 0">
 				<view class="loading-spinner"></view>
@@ -41,11 +42,10 @@
 
 			<!-- 用户列表 -->
 			<view class="user-item" :class="{ 'has-unread': user.unreadCount > 0 }" 
-				v-for="(user, index) in filteredUserList" :key="getConversationKey(user)" @click="openChat(user)"
+				v-for="(user, index) in filteredUserList" :key="getConversationKey(user)" @click="openChat(user)" @longpress="showConversationActions(user)" @contextmenu.prevent="showConversationActions(user)"
 				:style="{ animationDelay: index * 0.05 + 's' }">
 				<view class="avatar-wrap">
 					<image class="avatar" :src="getUserAvatar(user)" mode="aspectFill"></image>
-					<view class="online-dot" :class="{ online: user.isOnline }"></view>
 					<view class="unread-badge" v-if="user.unreadCount > 0">
 						{{ user.unreadCount > 99 ? '99+' : user.unreadCount }}
 					</view>
@@ -82,12 +82,8 @@
 		<!-- 底部操作栏 -->
 		<view class="bottom-bar" :style="{ paddingBottom: safeAreaBottom + 'px' }" @click.stop  @click="handleContainerClick">
 			<view class="stat-item">
-				<text class="stat-value">{{ totalUsers }}</text>
-				<text class="stat-label">总用户</text>
-			</view>
-			<view class="stat-item">
-				<text class="stat-value">{{ onlineUsers }}</text>
-				<text class="stat-label">在线</text>
+				<text class="stat-value">{{ totalConversations }}</text>
+				<text class="stat-label">会话总数</text>
 			</view>
 			<view class="stat-item">
 				<text class="stat-value">{{ totalUnread }}</text>
@@ -102,12 +98,14 @@ import * as chatApi from '@/pages-nonTheme/api/chat'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
-import { triggerMessageNotification } from '@/utils/message-event-bus.js'
+import { messageBus } from '@/utils/message-event-bus.js'
+import { isChatEventsConnected } from '@/utils/chat-events.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import CommunityActivityEntry from './components/CommunityActivityEntry.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { getDisplayName } from '@/utils/display-name.js'
 export default {
-	components: { ManifestIcon },
+	components: { ManifestIcon, CommunityActivityEntry },
 	data() {
 		return {
 			statusBarHeight: 20,
@@ -138,12 +136,15 @@ export default {
 			isDarkTheme: false,
 			scrollTop: 0,
 			aiEnabled: true,
+            communityChatEnabled: false,
 			
 			// 本地缓存相关
 			cacheKey: '', // 存储 key = `chatlist_${userId}`
 			lastRefreshTime: 0, // 上次刷新时间
 			refreshInterval: 10000, // 10秒刷新一次第一页
 			refreshTimer: null, // 定时器
+            chatRefreshTimer: null,
+            chatListDirty: false,
 			isPageActive: false // 页面激活状态
 		}
 	},
@@ -181,12 +182,8 @@ computed: {
 			})
 		},
 
-		totalUsers() {
+		totalConversations() {
 			return Number.isFinite(this.listTotal) ? this.listTotal : this.userList.length
-		},
-
-		onlineUsers() {
-			return this.userList.filter(u => u.isOnline).length
 		},
 
 		totalUnread() {
@@ -217,6 +214,18 @@ computed: {
 	},
 
 	onShow() {
+        if (!this.chatEventListener) {
+            this.chatEventListener = (event = {}) => {
+                if (!this.isPageActive) return
+                if (['conversation.hidden', 'contact.deleted', 'group.removed'].includes(event.kind)) {
+                    this.userList = this.userList.filter(user => String(user.otherId) !== String(event.conversationId))
+                    this.saveToCache()
+                }
+                this.scheduleChatRefresh()
+            }
+            messageBus.on('chat.changed', this.chatEventListener)
+            messageBus.on('chat.reconnected', this.chatEventListener)
+        }
 		this.isPageActive = true
 		this.syncAccountContext()
 		this.refreshAiVisibility()
@@ -229,6 +238,11 @@ computed: {
 	},
 
 	onHide() {
+        if (this.chatEventListener) {
+            messageBus.off('chat.changed', this.chatEventListener)
+            messageBus.off('chat.reconnected', this.chatEventListener)
+            this.chatEventListener = null
+        }
 		// 页面隐藏时标记为不活跃
 		this.isPageActive = false
 		this.invalidatePendingRequests()
@@ -236,6 +250,11 @@ computed: {
 	},
 	
 	onUnload() {
+        if (this.chatEventListener) {
+            messageBus.off('chat.changed', this.chatEventListener)
+            messageBus.off('chat.reconnected', this.chatEventListener)
+            this.chatEventListener = null
+        }
 		// 页面卸载时标记为不活跃并停止定时刷新
 		this.isPageActive = false
 		this.invalidatePendingRequests()
@@ -443,11 +462,27 @@ computed: {
 			
 			// 设置新的定时器，每 10 秒刷新一次第一页
 			this.refreshTimer = setInterval(() => {
-				if (!this.isPageActive || this.isSearching) return
-				console.log('定时刷新第一页，当前时间:', new Date().toLocaleTimeString())
-				this.refreshFirstPage()
+				this.refreshChatListIfNeeded()
 			}, this.refreshInterval)
 		},
+
+        scheduleChatRefresh() {
+            this.chatListDirty = true
+            if (this.chatRefreshTimer || !this.isPageActive || this.isSearching) return
+            const delay = Math.max(100, this.refreshInterval - (Date.now() - this.lastRefreshTime))
+            this.chatRefreshTimer = setTimeout(() => {
+                this.chatRefreshTimer = null
+                this.refreshChatListIfNeeded()
+            }, delay)
+        },
+
+        async refreshChatListIfNeeded() {
+            if (!this.isPageActive || this.isSearching || this.loading || this.loadingMore) return
+            if (isChatEventsConnected() && !this.chatListDirty && Date.now() - this.lastRefreshTime < 60000) return
+            if (Date.now() - this.lastRefreshTime < this.refreshInterval) return
+            this.chatListDirty = false
+            if (!await this.refreshFirstPage() && this.isPageActive) this.chatListDirty = true
+        },
 		
 		/**
 		 * 统一排序用户列表（置顶优先，其次按时间倒序）
@@ -511,6 +546,8 @@ computed: {
 		 * 停止定时刷新
 		 */
 		stopPeriodicRefresh() {
+            if (this.chatRefreshTimer) clearTimeout(this.chatRefreshTimer)
+            this.chatRefreshTimer = null
 			if (this.refreshTimer !== null) {
 				clearInterval(this.refreshTimer)
 				this.refreshTimer = null
@@ -586,34 +623,9 @@ computed: {
 						updatedCount++
 						const existingUser = existingUserMap.get(userId)
 						
-						// 检测是否有新消息（未读消息增加或最新消息内容改变）
-						const hadUnread = existingUser.unreadCount > 0
-						const hasNewUnread = newUser.unreadCount > 0
-						const isNewMessage = !hadUnread && hasNewUnread
-						const messageChanged = existingUser.latestContent?.id !== newUser.latestContent?.id
-						
-						// 如果有新消息，发送系统通知
-						if ((isNewMessage || messageChanged) && newUser.latestContent) {
-							const senderName = newUser.note || getDisplayName(newUser)
-							const msgContent = newUser.latestContent.content || '[消息]'
-							
-							triggerMessageNotification({
-								senderName: senderName,
-								content: msgContent,
-								type: 'text'
-							}, {
-								playSound: true,
-								vibrate: true,
-								showNotification: true
-							}).catch(e => {
-								console.warn('聊天列表消息通知失败:', e)
-							})
-						}
-						
-						// 更新用户信息（最后一条消息、在线状态等）
+						// 更新会话信息（最后一条消息、未读数量等）
 						Object.assign(existingUser, {
 							latestContent: newUser.latestContent,
-							isOnline: newUser.isOnline,
 							unreadCount: newUser.unreadCount,
 							avatar: newUser.avatar,
 							username: newUser.username,
@@ -988,6 +1000,29 @@ computed: {
 		},
 
 		// 打开聊天
+        showConversationActions(user) {
+            uni.showActionSheet({ itemList: [user.top ? '取消置顶' : '置顶聊天', '删除会话'],
+                success: async ({ tapIndex }) => {
+                    try {
+                        if (tapIndex === 0) {
+                            if (user.conversationType === 'group') await chatApi.updateGroupTop(user.groupId, !user.top)
+                            else await chatApi.updateContactTop({ userId: user.otherId, top: !user.top })
+                            user.top = !user.top
+                            this.sortUserList()
+                            this.saveToCache()
+                        } else if (tapIndex === 1) {
+                            const result = await new Promise(resolve => uni.showModal({ title: '删除会话', content: '仅从会话列表移除，聊天记录和联系人将保留。有新消息时会重新显示。', success: resolve, fail: () => resolve({ confirm: false }) }))
+                            if (!result.confirm) return
+                            await chatApi.hideConversation(user.otherId)
+                            this.userList = this.userList.filter(item => String(item.otherId) !== String(user.otherId))
+                            this.saveToCache()
+                            await this.refreshList()
+                        }
+                    } catch (_) { uni.showToast({ title: '操作失败，请重试', icon: 'none' }) }
+                }
+            })
+        },
+
 		openChat(user) {
 			this.markLocalChatRead(user.otherId)
 			if (user.conversationType === 'group' && user.groupId) {
@@ -1016,7 +1051,7 @@ computed: {
 				})
 				const payload = response?.data
 				const settings = payload && payload.code === 0 ? payload.data : null
-				if (settings) this.aiEnabled = settings.aiEnabled !== false
+				if (settings) { this.aiEnabled = settings.aiEnabled !== false; this.communityChatEnabled = settings.communityChatEnabled !== false }
 			} catch (error) {
 				console.warn('[chatlist] check AI settings failed:', error)
 			}
@@ -1058,6 +1093,7 @@ computed: {
 
 		// 格式化最后一条消息
 		formatLastMessage(message) {
+            if (message?.isWithdraw) return '[消息已撤回]'
 			if (!message) return '暂无消息'
 
 			// message 可能是对象或字符串
@@ -1612,24 +1648,6 @@ computed: {
 			border-radius: 12px;
 			transition: all 0.3s ease;
 			box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-		}
-
-		.online-dot {
-			position: absolute;
-			bottom: 2px;
-			right: 2px;
-			width: 12px;
-			height: 12px;
-			border-radius: 50%;
-			background-color: #ccc;
-			border: 2px solid var(--bg-secondary);
-			transition: all 0.3s ease;
-			box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-
-			&.online {
-				background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-				animation: pulse 2s infinite;
-			}
 		}
 
 		.unread-badge {

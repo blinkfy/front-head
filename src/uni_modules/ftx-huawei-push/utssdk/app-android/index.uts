@@ -1,0 +1,14 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import HuaweiPushBridge from 'ftx.push.HuaweiPushBridge'
+
+export function getHuaweiPushToken(callback: (result: string) => void): void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) { callback('{"error":"UNAVAILABLE"}'); return }
+  HuaweiPushBridge.getToken(context!, callback)
+}
+
+export function deleteHuaweiPushToken(callback: (result: string) => void): void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) { callback('{"error":"UNAVAILABLE"}'); return }
+  HuaweiPushBridge.deleteToken(context!, callback)
+}

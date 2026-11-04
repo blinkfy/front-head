@@ -17,8 +17,11 @@
 <script>
 import { ThemeManager } from '@/utils/theme.js'
 import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
+import { setChatEventsActive } from '@/utils/chat-events.js'
 import { warmManifestIcons } from '@/utils/icon-preload.js'
 import { warmSmartSortRobot } from '@/utils/robot-preload.js'
+import { recentRecognition } from '@/utils/recent-recognition.js'
+import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
 import { onAppPageReady } from '@/utils/app-page-ready.mjs'
 // #ifdef H5
 import { preloadTabPage, preloadSiblingTabPages } from '@/utils/tab-page-transition.js'
@@ -27,6 +30,12 @@ import { initUiSounds, setUiSoundsActive } from '@/utils/ui-sounds.js'
 import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/device-qr-entry.mjs'
 // #ifdef APP-PLUS
 import { checkAppUpdate } from '@/utils/app-update.js'
+import { getHuaweiPushToken, deleteHuaweiPushToken } from '@/uni_modules/ftx-huawei-push'
+import { installChatPush, syncChatPush } from '@/utils/chat-push.js'
+import { encodeUploadWebp } from '@/uni_modules/ftx-upload-webp'
+import { installAppWebpEncoder } from '@/utils/app-upload-webp-core.mjs'
+import { setAppMapPreloadActive, disposeAppMapPreload } from '@/utils/app-map-preload-app.js'
+import { disposeLocalMapServerPool } from '@/utils/app-map-local-server-app.js'
 // #endif
 // #ifdef APP-PLUS || H5
 import { setRoundCodeClientActive } from '@/utils/roundcode-client.js'
@@ -63,6 +72,10 @@ export default {
   onLaunch: function (options) {
     console.log('App Launch')
     initUiSounds()
+    // #ifdef APP-PLUS
+    installAppWebpEncoder(encodeUploadWebp)
+    installChatPush(getHuaweiPushToken, deleteHuaweiPushToken)
+    // #endif
     // #ifdef MP-WEIXIN
     captureRegistrationEntry(options)
     // #endif
@@ -132,13 +145,17 @@ export default {
     // #endif
   },
   onShow: function (options) {
+    setChatEventsActive(true)
+    if (recentRecognition.foreground()) clearRecognitionTask()
     // #ifdef MP-WEIXIN
     captureRegistrationEntry(options)
     void offerRegistrationRetry()
     // #endif
     setUiSoundsActive(true)
     // #ifdef APP-PLUS
+    syncChatPush(uni.getStorageSync('token') || '', true)
     uni.$emit('smart-sort-robot:visibility', true)
+    setAppMapPreloadActive(true)
     // #endif
     // #ifdef APP-PLUS || H5
     setRoundCodeClientActive(true)
@@ -150,11 +167,20 @@ export default {
     // Missing-page recovery must happen synchronously in mini-programs.
     if (target) uni.reLaunch({ url: target })
   },
-  beforeUnmount() { this._disposeSplash?.() },
+  beforeUnmount() {
+    this._disposeSplash?.()
+    // #ifdef APP-PLUS
+    disposeAppMapPreload()
+    disposeLocalMapServerPool()
+    // #endif
+  },
   onHide: function () {
+    setChatEventsActive(false)
+    recentRecognition.background()
     setUiSoundsActive(false)
     // #ifdef APP-PLUS
     uni.$emit('smart-sort-robot:visibility', false)
+    setAppMapPreloadActive(false)
     // #endif
     // #ifdef APP-PLUS || H5
     setRoundCodeClientActive(false)
@@ -206,6 +232,12 @@ export default {
 uni-actionsheet {
   position: relative;
   z-index: 1000000;
+}
+
+/* Keep framework image previews above page dialogs and action sheets. */
+#u-a-p {
+  position: relative;
+  z-index: 1000001;
 }
 
 :root {

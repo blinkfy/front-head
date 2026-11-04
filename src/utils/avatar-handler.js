@@ -1,3 +1,8 @@
+import { encodeUploadCanvas, compressNativeUploadImage, readUploadImageData, discardUploadImage } from './upload-image.js'
+// #ifdef MP-WEIXIN
+import { compressWechatUploadImage } from './mp-upload-image.js'
+// #endif
+
 /**
  * 头像处理工具
  * 提供头像压缩、编码、识别等功能
@@ -12,6 +17,26 @@
  * @returns {Promise<string>} Base64 字符串
  */
 export async function compressImageToBase64(filePath, maxWidth = 64, maxHeight = 64, quality = 0.8, canvasOptions = {}) {
+  // #ifdef APP-PLUS
+  if (canvasOptions.preferWebp) {
+    const path = await compressNativeUploadImage(filePath, Math.round(quality * 100), Math.min(maxWidth, maxHeight), true)
+    try { return await readUploadImageData(path) }
+    finally { discardUploadImage(path, filePath) }
+  }
+  // #endif
+  // #ifdef MP-WEIXIN
+  if (canvasOptions.preferWebp) {
+    try {
+      const info = await new Promise((resolve, reject) => uni.getImageInfo({ src: filePath, success: resolve, fail: reject }))
+      const path = await compressWechatUploadImage(info.path || filePath, info, Math.round(quality * 100), Math.min(maxWidth, maxHeight), true)
+      if (path) {
+        try { return await readUploadImageData(path) }
+        finally { discardUploadImage(path, filePath) }
+      }
+    } catch (_) {}
+    // Retain the existing PNG canvas and avatar byte-limit checks on older clients.
+  }
+  // #endif
   return new Promise((resolve, reject) => {
     // 获取图片信息
     uni.getImageInfo({
@@ -84,7 +109,9 @@ function handleH5Image(filePath, imageInfo, maxWidth, maxHeight, quality, resolv
       ctx.drawImage(img, x, y, width, height)
       
       // 转换为 Base64
-      const base64 = canvas.toDataURL('image/png', quality)
+      const base64 = options.preferWebp
+        ? encodeUploadCanvas(canvas, quality, true)
+        : canvas.toDataURL('image/png', quality)
       resolve(base64)
     } catch (error) {
       console.error('H5 图片处理失败:', error)
@@ -142,6 +169,11 @@ function handleNativeImage(filePath, imageInfo, maxWidth, maxHeight, resolve, re
           : options.canvasId ? { width: maxWidth, height: maxHeight, destWidth: maxWidth, destHeight: maxHeight, fileType: 'png' } : {}),
         success: (res) => {
           const tempFilePath = res.tempFilePath
+          if (options.preferWebp) {
+            readUploadImageData(tempFilePath).then(resolve, reject)
+              .finally(() => discardUploadImage(tempFilePath, filePath))
+            return
+          }
           
           // 检查是否支持 getFileSystemManager（小程序/APP）
           if (typeof uni.getFileSystemManager === 'function') {
@@ -263,7 +295,8 @@ export function base64ToBlobUrl(base64String) {
     }
 
     const byteArray = new Uint8Array(byteNumbers)
-    const blob = new Blob([byteArray], { type: 'image/png' })
+    const mime = /^data:(image\/[^;,]+)[;,]/i.exec(base64String)?.[1] || 'image/png'
+    const blob = new Blob([byteArray], { type: mime })
 
     return URL.createObjectURL(blob)
   } catch (error) {

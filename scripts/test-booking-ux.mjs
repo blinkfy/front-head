@@ -52,6 +52,7 @@ function createBookingHarness() {
   const toasts = []
   let createBookingCalls = 0
   const context = {
+    bookingDraftMethods: {},
     getAvailableTimeSlots(date) {
       const result = deferred()
       requests.push({ date, ...result })
@@ -77,9 +78,9 @@ function createBookingHarness() {
   const source = readFileSync(filename, 'utf8')
   const { descriptor, errors } = parse(source, { filename: filename.pathname })
   assert.equal(errors.length, 0, 'booking.vue parses')
-  const executable = descriptor.script.content
+  const executable = `const bookingDraftMethods = this.bookingDraftMethods;\n${descriptor.script.content
     .replace(/^import .*\r?\n/gm, '')
-    .replace(/export default\s*/, 'this.bookingComponent = ')
+    .replace(/export default\s*/, 'this.bookingComponent = ')}`
   runInNewContext(executable, context, { filename: 'booking.vue' })
   return {
     component: context.bookingComponent,

@@ -5,5 +5,6 @@ export const NON_THEME_ONLY_ICON_IDS = [
   'sound_toggle', 'speed_challenge', 'streak_mode', 'thumbs_up', 'smart_bin_marker', 'announcement',
   'empty_chat', 'empty_state', 'file_document', 'leave_group', 'about_app', 'account_management',
   'clear_cache', 'customer_service', 'dark_mode', 'discount_coupon', 'shopping_bag', 'rank_first',
-  'rank_second', 'rank_third', 'device_recycle', 'device_start'
+  'rank_second', 'rank_third', 'device_recycle', 'device_start',
+  'chat_copy', 'chat_quote', 'chat_forward', 'chat_multi_select', 'chat_voice_text', 'chat_recall', 'chat_history_search', 'chat_group_alias', 'chat_member_invite', 'chat_member_remove', 'chat_group_admin', 'chat_group_transfer', 'chat_group_mute', 'chat_group_dissolve', 'chat_friend_request', 'chat_group_create'
 ]

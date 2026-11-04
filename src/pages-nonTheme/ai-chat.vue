@@ -3,6 +3,7 @@
     <view class="ambient ambient-one"></view>
     <view class="ambient ambient-two"></view>
 
+    <ChatActionInbox ref="actionInboxRef" />
     <!-- ===== 侧边栏：对话历史 ===== -->
     <view :class="['sidebar', historyDrawerOpen ? 'drawer-open' : '']">
       <view class="sidebar-top">
@@ -89,11 +90,22 @@
           </view>
         </view>
         <view class="header-actions">
+          <button class="action-inbox-trigger" @tap="actionInboxRef?.openInbox()">待办</button>
           <view class="btn ghost" @tap="goBack">返回识别页<ManifestIcon class="compact-back-icon" id="back" :scale="1.1" /></view>
         </view>
       </view>
 
       <!-- 消息列表 -->
+      <view v-if="recoverableRuns.length" class="run-recovery">
+        <text class="run-recovery-notice">有回答未接收完整，可查询原结果。</text>
+        <view v-for="item in recoverableRuns" :key="item.requestId" class="run-recovery-item">
+          <text>{{ item.sessionId === activeSessionId ? '本会话' : '其他会话' }} · {{ item.status === 'pending' ? '发送结果待确认' : '回答进度待确认' }}</text>
+          <button :disabled="!!recoveringRun || isStreaming" @tap="recoverRun(item)">{{ recoveringRun === item.requestId ? '查询中…' : '查询回答' }}</button>
+          <button v-if="['pending', 'executing'].includes(item.status)" :disabled="!!recoveringRun" @tap="stopPendingRun(item)">停止</button>
+          <button v-if="item.status !== 'executing'" :disabled="!!recoveringRun || isStreaming" @tap="dismissRun(item)">关闭</button>
+        </view>
+        <text v-if="runNotice" class="run-recovery-notice">{{ runNotice }}</text>
+      </view>
       <scroll-view
         class="messages"
         scroll-y
@@ -154,10 +166,10 @@
                 </view>
               </view>
               <!-- #ifdef H5 -->
-              <MarkdownBody v-if="msg.role !== 'user' && !recognitionSeedSummaries[idx]" :markdown="msg.content || 'AI 暂未返回内容。'" />
+              <MarkdownBody v-if="msg.role !== 'user' && !recognitionSeedSummaries[idx] && !hasChecklistMessage(msg) && businessMessageMarkdown(msg)" :markdown="businessMessageMarkdown(msg)" />
               <!-- #endif -->
               <!-- #ifndef H5 -->
-              <MarkdownBody v-if="msg.role !== 'user' && !recognitionSeedSummaries[idx]" :markdown="msg.content || 'AI 暂未返回内容。'" :native-renderer="true" />
+              <MarkdownBody v-if="msg.role !== 'user' && !recognitionSeedSummaries[idx] && !hasChecklistMessage(msg) && businessMessageMarkdown(msg)" :markdown="businessMessageMarkdown(msg)" :native-renderer="true" />
               <!-- #endif -->
               <view v-if="recognitionSeedSummaries[idx]" class="seed-summary">
                 <text class="seed-summary-title">本次识别概览</text>
@@ -183,6 +195,9 @@
                   {{ isSeedSummaryExpanded(idx) ? '收起详细建议' : '查看完整分类与投放建议' }}
                 </view>
               </view>
+              <ChatSearchSources v-if="msg.role === 'assistant'" :value="msg.search" />
+              <ChatDisposalPoints v-if="msg.role === 'assistant'" :value="msg.disposalPoints" :busy-id="openingDisposalId" @open="openDisposalPoint" />
+              <ChatBusinessCards v-if="msg.role === 'assistant'" :value="msg.businessCards" :session-id="activeSessionId" :message-id="msg.id" :chat-busy="isStreaming || imagePreparing" :page-epoch="businessPageEpoch" @checklist="buildSelectedChecklist" />
             </view>
           </view>
         </view>
@@ -213,7 +228,7 @@
                   <MarkdownBody variant="reasoning" :markdown="streamingReasoning" :streaming="true" />
                 </view>
               </view>
-              <MarkdownBody :markdown="streamingText" :streaming="true" />
+              <MarkdownBody v-if="streamingText" :markdown="streamingText" :streaming="true" />
               <view class="typing-dots">
                 <view class="typing-dot"></view>
                 <view class="typing-dot"></view>
@@ -224,10 +239,13 @@
         </view>
 
         <view v-if="showInlineSuggestions" class="inline-suggestions">
-          <view class="inline-suggestions-title">可以继续问</view>
+          <view class="inline-suggestions-header">
+            <text class="inline-suggestions-title">快捷提问</text>
+            <button v-if="quickActions.length > 6" class="quick-actions-toggle" @tap="showAllQuickActions = !showAllQuickActions">{{ showAllQuickActions ? '收起' : '更多' }}</button>
+          </view>
           <view class="inline-suggestions-grid">
             <view
-              v-for="item in quickActions"
+              v-for="item in visibleQuickActions"
               :key="`inline_${item.label}`"
               class="inline-suggestion-card"
               @tap="applyQuickPrompt(item.prompt)"
@@ -236,6 +254,7 @@
               <text class="inline-suggestion-hint">{{ item.hint }}</text>
             </view>
           </view>
+          <text class="quick-actions-note">点选填入，可修改后发送</text>
         </view>
       </scroll-view>
 
@@ -278,6 +297,19 @@
               >
                 <text class="deep-think-text">{{ deepThinkLabel }}</text>
               </view>
+              <view
+                :class="['deep-think-btn', 'search-toggle', isSearchEnabled ? 'active' : '']"
+                role="switch"
+                tabindex="0"
+                :aria-checked="isSearchEnabled"
+                :aria-label="isSearchEnabled ? '联网搜索已开启，按需查找资料' : '联网搜索已关闭'"
+                :title="isSearchEnabled ? '按需联网查找资料' : '仅使用已有知识回答'"
+                @tap="isSearchEnabled = !isSearchEnabled"
+                @keydown.enter.prevent="isSearchEnabled = !isSearchEnabled"
+                @keydown.space.prevent="isSearchEnabled = !isSearchEnabled"
+              >
+                <text class="deep-think-text">联网搜索</text>
+              </view>
             </view>
 
             <view class="composer-right">
@@ -302,16 +334,40 @@
 
 <script setup>
 import { chooseAppImage } from '@/utils/image-picker.js'
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { onHide, onUnload } from '@dcloudio/uni-app'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { onHide, onUnload, onShow } from '@dcloudio/uni-app'
 import { baseUrl } from '@/api/settings'
 import MarkdownBody from '@/pages-nonTheme/components/MarkdownBody.vue'
+import ChatSearchSources from '@/pages-nonTheme/components/ChatSearchSources.vue'
+import ChatDisposalPoints from '@/pages-nonTheme/components/ChatDisposalPoints.vue'
+import ChatBusinessCards from '@/pages-nonTheme/components/ChatBusinessCards.vue'
+import ChatActionInbox from '@/pages-nonTheme/components/ChatActionInbox.vue'
+import { normalizeChatDisposalPoints, createDisposalActions } from '@/pages-nonTheme/utils/ai-chat-disposal.mjs'
+import { buildChatQuickActions } from '@/pages-nonTheme/utils/ai-chat-prompts.mjs'
+import { normalizeChatBusinessCards, businessMessageMarkdown } from '@/pages-nonTheme/utils/ai-chat-business.mjs'
+import { mergeChatSearch, finalizeChatSearch } from '@/pages-nonTheme/utils/ai-chat-search.mjs'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { parseRecognitionSeedSummary } from '@/pages-nonTheme/utils/recognition-seed-display.mjs'
 import { compressChatImage, dataUrlByteLength, MAX_IMAGE_BYTES } from '@/pages-nonTheme/utils/chat-image-compression.js'
 import { resolveChatPreviewSource } from '@/pages-nonTheme/utils/chat-image-preview.js'
 import { SEED_IMAGE_BINDING_KEY, seedImageFingerprint, resolveCachedSeedImage, cachedSeedSession, findCachedSeedMessage } from '@/pages-nonTheme/utils/ai-chat-image-cache.mjs'
+import { getUserLocationOnce } from '@/utils/location.js'
+import request from '@/api/index.js'
+import { createChatEnvironment } from '@/pages-nonTheme/utils/ai-chat-environment.mjs'
+import { fetchAiCapabilities, fetchChatRuns, findChatRun, cancelChatRun, newActionRequestId } from '@/api/ai-actions.js'
+import { createRunLedger, runStorageKey, applyRunSnapshot } from './utils/ai-chat-runs.mjs'
+
+let chatCoordinateSystem = 'gcj02'
+// #ifdef H5
+chatCoordinateSystem = 'wgs84'
+// #endif
+const chatEnvironment = createChatEnvironment({
+  coordinateSystem: chatCoordinateSystem,
+  locate: () => getUserLocationOnce(chatCoordinateSystem),
+  reverseGeocode: origin => request({ url: '/api/map/reverse-geocoder', data: origin, needAuth: true, silent: true, timeout: 6000 }),
+  loadNearby: origin => request({ url: '/api/trash-bin/list', data: { ...origin, radius: 5000, pageSize: 20 }, silent: true, timeout: 6000 })
+})
 
 // ─── Storage 工具 ────────────────────────────────────────
 function getStorage(key) {
@@ -368,11 +424,40 @@ const promptText   = ref('')
 const messageList  = ref([])          // { role, content, imageBase64, createdAt }[]
 const conversationList = ref([])      // 侧边栏渲染用的排序列表
 const activeSessionId = ref('')
+const actionInboxRef = ref(null)
+const pendingRuns = ref([]), recoveringRun = ref(''), runNotice = ref(''), activeRun = ref(null)
+let runLedger = null, runCapabilityPromise = null, runOwner = '', pageDisposed = false, requestedRunStop = false
+let sendEpoch = 0
+const businessPageEpoch = ref(0)
 const editingSessionId = ref('')      // 当前处于行内重命名的 sessionId
 const editingTitle = ref('')          // 当前行内重命名的输入文本
 const isStreaming   = ref(false)
+const recoverableRuns = computed(() => pendingRuns.value.filter(item => !['failed', 'cancelled'].includes(item.status) && !(isStreaming.value && activeRun.value?.requestId === item.requestId)))
 const streamingText = ref('')
 const streamingReasoning = ref('')   // 流式推理内容
+const streamingSearch = ref(null)
+const openingDisposalId = ref('')
+let openRouteWindow
+// #ifdef H5
+openRouteWindow = () => {
+  const target = window.open('', '_blank')
+  if (target) target.opener = null
+  return target
+}
+// #endif
+const openPointAction = createDisposalActions({
+  getScope: pointActionScope,
+  isCurrent: scope => !pageDisposed && scope === pointActionScope(),
+  loadPoint: id => request({ url: `/api/ai/chat/disposal-point/${id}`, needAuth: true, silent: true, timeout: 6000 }),
+  navigateTo: options => uni.navigateTo(options),
+  openLocation: options => uni.openLocation(options),
+  openRouteWindow,
+  notify: message => uni.showToast({ title: message, icon: 'none' }),
+  onBusy: id => { openingDisposalId.value = id }
+})
+function pointActionScope() { return `${getStorage('token') || ''}|${activeSessionId.value}|${businessPageEpoch.value}` }
+function openDisposalPoint(point, action) { return openPointAction(point, action, isDark.value) }
+const isSearchEnabled = ref(true)
 const streamingMessageId = ref('')
 const messagesScrollTop = ref(0)
 const shouldAutoFollowMessages = ref(true)
@@ -385,6 +470,10 @@ const imagePreparing = ref(false)
 const imagePreviewPreparing = ref(false)
 const pickedImageName    = ref('')
 const isDeepThinking = ref(false)    // DeepSeek风格：深度思考开关
+// 输入和快捷提问时提前准备；prepare 会合并进行中的请求并复用 5 分钟缓存。
+watch(promptText, value => {
+  if (value.trim() && !isStreaming.value && getStorage('token')) void chatEnvironment.prepare()
+})
 const isNarrowScreen = ref(false)    // 超小屏（≤480px）标识
 const reasoningCollapsed = ref({})   // 折叠状态按会话ID和稳定消息ID隔离
 const expandedSeedSummaries = ref({})
@@ -409,28 +498,9 @@ const deepThinkLabel = computed(() =>
     : (isDeepThinking.value ? '深度思考已开启' : '深度思考')
 )
 
-const quickActions = [
-  {
-    label: '分类依据',
-    hint: '逐项解释为什么这样分类',
-    prompt: '逐项解释这次识别结果的分类依据，并指出最容易分错的地方。'
-  },
-  {
-    label: '投放步骤',
-    hint: '告诉我正确投放顺序和注意事项',
-    prompt: '给我一个清晰的投放步骤，说明要不要清洗、拆分和沥干。'
-  },
-  {
-    label: '变废为宝',
-    hint: '给出能马上执行的再利用方案',
-    prompt: '给我一个低门槛、现在就能做的变废为宝方案，材料和步骤尽量具体。'
-  },
-  {
-    label: '易错对比',
-    hint: '帮我区分相似垃圾',
-    prompt: '列出和它容易混淆的垃圾，并用简短规则帮我快速区分。'
-  }
-]
+const showAllQuickActions = ref(false)
+const quickActions = computed(() => buildChatQuickActions(messageList.value))
+const visibleQuickActions = computed(() => showAllQuickActions.value ? quickActions.value : quickActions.value.slice(0, 6))
 
 const conversationCount = computed(() => conversationList.value.length)
 const activeMessageCount = computed(() => messageList.value.length + (isStreaming.value ? 1 : 0))
@@ -526,7 +596,9 @@ function handleMessageImageError(index) {
 
 let conversationMap = new Map()       // sessionId -> conversation object
 let abortCtrl = null
+let pendingMessagePreparation = null
 let wsSocket = null                   // WebSocket 连接（小程序/App 流式）
+let streamStopRequested = false
 let messagesScrollSeed = 1000000
 const AUTO_SCROLL_BOTTOM_THRESHOLD = 96
 
@@ -579,6 +651,7 @@ function formatMessageTime(isoText) {
   return sameDay ? `${hh}:${mm}` : `${date.getMonth() + 1}/${date.getDate()} ${hh}:${mm}`
 }
 function applyQuickPrompt(prompt) {
+  if (isStreaming.value || imagePreparing.value || recoveringRun.value) return
   const nextPrompt = String(prompt || '').trim()
   if (!nextPrompt) return
   const current = String(promptText.value || '').trim()
@@ -801,6 +874,7 @@ function onRenameConversation(sessionId) {
 }
 
 function onDeleteConversation(sessionId) {
+  if (isStreaming.value || recoveringRun.value) { uni.showToast({ title: '请先停止或核实当前任务', icon: 'none' }); return }
   const conversation = conversationMap.get(sessionId)
   if (!conversation) return
 
@@ -810,7 +884,9 @@ function onDeleteConversation(sessionId) {
     confirmColor: '#EF4444',
     success: (res) => {
       if (res.confirm) {
+        if (isStreaming.value || recoveringRun.value) return
         conversationMap.delete(sessionId)
+        if (ensureRunLedger()) for (const item of runLedger.items().filter(value => value.sessionId === sessionId)) updateRunLedger(() => runLedger.remove(item.requestId), pendingRuns.value.filter(value => value.requestId !== item.requestId))
         
         // 异步同步给后端进行永久删除与标记
         const token = getStorage('token') || ''
@@ -889,7 +965,7 @@ function setActiveSession(sessionId) {
     scrollMessagesToBottom(true)
   })
 }
-function pushMessageToActive(role, content, imageBase64, createdAt, reasoning, localImagePath, messageId) {
+function pushMessageToActive(role, content, imageBase64, createdAt, reasoning, localImagePath, messageId, search, disposalPoints, businessCards) {
   const conversation = ensureConversation(activeSessionId.value)
   const msg = {
     id: messageId || createMessageId(),
@@ -898,7 +974,10 @@ function pushMessageToActive(role, content, imageBase64, createdAt, reasoning, l
     imageBase64: typeof imageBase64 === 'string' ? imageBase64 : '',
     hasImage: !!imageBase64,
     createdAt: createdAt || new Date().toISOString(),
-    reasoning: role === 'assistant' ? (reasoning || '') : undefined
+    reasoning: role === 'assistant' ? (reasoning || '') : undefined,
+    search: role === 'assistant' ? finalizeChatSearch(search) : undefined,
+    disposalPoints: role === 'assistant' ? normalizeChatDisposalPoints(disposalPoints) : undefined,
+    businessCards: role === 'assistant' ? normalizeChatBusinessCards(businessCards) : undefined
   }
   // 小程序端：本地文件路径存到 _localImagePath 供 <image> 渲染
   if (localImagePath && typeof localImagePath === 'string') {
@@ -928,7 +1007,7 @@ function ensureWelcomeMessageIfEmpty() {
 // （WeChat mini-program 对超大 inline base64 src 可能静默失败，
 //  且 base64 有 2MB 限制，大图必须走本地文件路径）
 function convertSeedImagesToTempFiles(sessionId) {
-  // #ifndef H5
+  // #ifdef MP
   try {
     const conversation = conversationMap.get(sessionId)
     if (!conversation) return
@@ -1033,24 +1112,27 @@ function clearPickedImage() {
 }
 function onPickImage() {
   if (imagePreparing.value || isStreaming.value) return
+  const owner = String(getStorage('token') || ''), epoch = sendEpoch
+  const current = () => !pageDisposed && owner === String(getStorage('token') || '') && epoch === sendEpoch
   chooseAppImage({
     count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'],
     success: async res => {
+      if (!current()) return
       const path = res.tempFilePaths?.[0]
       if (!path) return
       imagePreparing.value = true
       uni.showLoading({ title: '正在处理图片', mask: true })
       try {
         const image = await compressChatImage(path)
+        if (!current()) return
         if (!image.dataUrl || dataUrlByteLength(image.dataUrl) > MAX_IMAGE_BYTES) throw new Error('图片需压缩到500KB以内')
         pickedImageDataUrl.value = image.dataUrl
         pickedImageLocalPath.value = image.filePath || ''
         pickedImageName.value = '已添加图片'
       } catch (error) {
-        uni.showToast({ title: error?.message || '图片处理失败，请重试', icon: 'none' })
+        if (current()) uni.showToast({ title: error?.message || '图片处理失败，请重试', icon: 'none' })
       } finally {
-        imagePreparing.value = false
-        uni.hideLoading()
+        if (current()) { imagePreparing.value = false; uni.hideLoading() }
       }
     }, fail: () => {}
   })
@@ -1084,11 +1166,13 @@ function toggleHistoryDrawer() {
 
 // ─── 对话列表事件 ─────────────────────────────────────────
 function onSelectConversation(id) {
+  if (isStreaming.value || recoveringRun.value) { uni.showToast({ title: '请先停止或核实当前任务', icon: 'none' }); return }
   if (id === activeSessionId.value) return
   setActiveSession(id)
   if (isMobileViewport()) closeHistoryDrawer()
 }
 function onNewChat() {
+  if (isStreaming.value || recoveringRun.value) { uni.showToast({ title: '请先停止或核实当前任务', icon: 'none' }); return }
   const current = ensureConversation(activeSessionId.value)
   if (!current.messages.length) {
     promptText.value = ''
@@ -1174,6 +1258,9 @@ function hydrateConversations(historyData) {
       role: item.role === 'assistant' ? 'assistant' : 'user',
       content,
       reasoning: item.role === 'assistant' ? String(item.reasoning || '') : '',
+      search: item.role === 'assistant' ? finalizeChatSearch(item.search) : undefined,
+      disposalPoints: item.role === 'assistant' ? normalizeChatDisposalPoints(item.disposalPoints) : undefined,
+      businessCards: item.role === 'assistant' ? normalizeChatBusinessCards(item.businessCards) : undefined,
       hasImage: !!item.hasImage,
       recognitionHistoryId: item.recognitionHistoryId || null,
       imageAvailable: !!item.imageAvailable,
@@ -1260,6 +1347,7 @@ function appendCachedSeedMessages(conversation, seedPayload, seedImage) {
       recognitionHistoryId: Number(seedPayload.historyId) > 0 ? Number(seedPayload.historyId) : null,
       hasImage: !!seedImage || Number(seedPayload.historyId) > 0,
       imageExpired: !!createdAt && Date.now() - new Date(createdAt).getTime() > 180 * 86400000,
+      _seedFingerprint: seedImageFingerprint(seedPayload),
       _pendingPersist: true
     })
   }
@@ -1268,6 +1356,7 @@ function appendCachedSeedMessages(conversation, seedPayload, seedImage) {
       id: createMessageId(),
       role: 'assistant', content: seedText, imageBase64: '',
       createdAt: createdAt || new Date().toISOString(),
+      _seedFingerprint: seedImageFingerprint(seedPayload),
       _pendingPersist: true
     })
   }
@@ -1300,9 +1389,13 @@ function ensureSessionId() {
 }
 
 // ─── SSE 流式对话（仅 H5） ────────────────────────────────
-async function streamChat({ text, imageBase64, history, seedMessages, enableThinking }) {
+async function streamChat({ text, imageBase64, history, seedMessages, enableThinking, enableSearch, clientContext, recognitionSelection = [], runRequest = null, onRun = () => {}, isCurrent = () => !pageDisposed }) {
+  let disposalPoints = []
+  let businessCards = []
+  streamStopRequested = false
   // #ifdef H5
-  abortCtrl = new AbortController()
+  const requestAbortCtrl = new AbortController()
+  abortCtrl = requestAbortCtrl
   // #endif
   isStreaming.value = true
   streamingText.value = ''
@@ -1311,8 +1404,8 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
   const response = await fetch(`${baseUrl}/api/ai/chat/stream`, {
     method: 'POST',
     headers: buildAuthHeaders(true),
-    body: JSON.stringify({ text, imageBase64, history, seedMessages, sessionId: activeSessionId.value, enableThinking }),
-    signal: abortCtrl.signal
+    body: JSON.stringify({ workflowVersion: 1, text, imageBase64, history, seedMessages, recognitionSelection, sessionId: activeSessionId.value, enableThinking, enableSearch, clientContext, ...runRequest }),
+    signal: requestAbortCtrl.signal
   })
 
   const contentType = String(response.headers.get('Content-Type') || '').toLowerCase()
@@ -1332,6 +1425,8 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
   let reasoning = ''   // 累积推理内容
   let pending = ''
   let errorMessage = ''
+  let receivedDone = false
+  let runSnapshot = null
   const reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8')
 
@@ -1350,7 +1445,11 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
           else if (line.startsWith('data:')) data = safeJsonParse(line.slice(5).trim())
         }
         if (!data) continue
-        if (eventName === 'delta') {
+        if (!isCurrent()) { requestAbortCtrl.abort(); throw Object.assign(new Error('页面或账号已变化'), { name: 'AbortError' }) }
+        if (eventName === 'run' || eventName === 'snapshot') {
+          runSnapshot = { ...data, sessionId: runRequest?.sessionId || data.sessionId, requestId: runRequest?.requestId || data.requestId }
+          onRun(data)
+        } else if (eventName === 'delta') {
           full = data.full || (full + (data.chunk || ''))
           streamingText.value = full
           scheduleMessagesAutoScroll()
@@ -1359,7 +1458,15 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
           reasoning = (reasoning || '') + (data.chunk || '')
           streamingReasoning.value = reasoning
           scheduleMessagesAutoScroll()
+        } else if (eventName === 'search') {
+          streamingSearch.value = mergeChatSearch(streamingSearch.value, data)
+          scheduleMessagesAutoScroll()
         } else if (eventName === 'done') {
+          if (runRequest) { runSnapshot = data; onRun(data) }
+          disposalPoints = normalizeChatDisposalPoints(data.disposalPoints)
+          businessCards = normalizeChatBusinessCards(data.businessCards)
+          receivedDone = true
+          streamingSearch.value = mergeChatSearch(streamingSearch.value, data.search)
           full = data.content || full
           // done 事件中若包含 reasoning，优先取完整值
           if (data.reasoning) reasoning = data.reasoning
@@ -1374,27 +1481,31 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
   } catch (err) {
     if (err && err.name === 'AbortError') {
       const abortedText = full ? `${full}\n\n（已停止）` : '已停止当前回答。'
-      streamingText.value = ''
-      streamingReasoning.value = ''
-      isStreaming.value = false
-      return { content: abortedText, aborted: true }
+      if (isCurrent()) { streamingText.value = ''; streamingReasoning.value = ''; isStreaming.value = false }
+      return { content: abortedText, reasoning, search: finalizeChatSearch(streamingSearch.value, true), aborted: true }
     }
     throw err
   } finally {
     reader.releaseLock()
   }
 
+  if (!isCurrent()) return { aborted: true }
   if (errorMessage) {
+    if (runRequest) throw new Error(errorMessage)
     streamingText.value = ''
     streamingReasoning.value = ''
     isStreaming.value = false
-    return { content: `请求失败：${errorMessage}`, aborted: false }
+    return { content: full ? `${full}\n\n（回答已中断：${errorMessage}）` : `请求失败：${errorMessage}`, reasoning, search: finalizeChatSearch(streamingSearch.value, true), aborted: true }
+  }
+  if (runRequest && runSnapshot && !receivedDone) return { aborted: true, runSnapshot }
+  if (!receivedDone) {
+    return { content: full.trim() ? `${full}\n\n（回答已中断，请重试）` : '回答已中断，请重试。', reasoning, search: finalizeChatSearch(streamingSearch.value, true), aborted: true }
   }
   if (!full.trim()) full = 'AI 暂未返回内容。'
   streamingText.value = ''
   streamingReasoning.value = ''
   isStreaming.value = false
-  return { content: full, reasoning, aborted: false }
+  return { content: full, reasoning, search: finalizeChatSearch(streamingSearch.value), disposalPoints, businessCards, aborted: false, runSnapshot }
   // #endif
 
   // #ifndef H5
@@ -1419,35 +1530,32 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
     let reasoning = ''
     let errorMessage = ''
     let resolved = false
+    let socket = null
 
     const finish = (result) => {
       if (resolved) return
       resolved = true
-      isStreaming.value = false
-      streamingText.value = ''
-      streamingReasoning.value = ''
-      if (wsSocket) {
-        try { wsSocket.close() } catch (_) {}
-        wsSocket = null
+      if (isCurrent()) { isStreaming.value = false; streamingText.value = ''; streamingReasoning.value = '' }
+      if (socket) {
+        try { socket.close() } catch (_) {}
+        if (wsSocket === socket) wsSocket = null
       }
-      resolve(result)
+      resolve({ ...result, search: finalizeChatSearch(streamingSearch.value, result.aborted === true) })
     }
 
     const fail = (err) => {
       if (resolved) return
       resolved = true
-      isStreaming.value = false
-      streamingText.value = ''
-      streamingReasoning.value = ''
-      if (wsSocket) {
-        try { wsSocket.close() } catch (_) {}
-        wsSocket = null
+      if (isCurrent()) { isStreaming.value = false; streamingText.value = ''; streamingReasoning.value = '' }
+      if (socket) {
+        try { socket.close() } catch (_) {}
+        if (wsSocket === socket) wsSocket = null
       }
       reject(err)
     }
 
     try {
-      wsSocket = uni.connectSocket({
+      socket = uni.connectSocket({
         url: wsUrl,
         success: () => { console.log('[ai-chat] ws connecting...') },
         fail: (err) => {
@@ -1455,32 +1563,49 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
           fail(new Error('WebSocket 连接失败'))
         }
       })
+      wsSocket = socket
     } catch (e) {
       fail(new Error('WebSocket 连接异常'))
       return
     }
 
-    wsSocket.onOpen(() => {
+    socket.onOpen(() => {
+      if (resolved) return
+      if (!isCurrent()) { finish({ aborted: true }); return }
       console.log('[ai-chat] ws connected, sending chat request')
-      wsSocket.send({
+      socket.send({
         data: JSON.stringify({
           type: 'chat',
+          workflowVersion: 1,
           text,
           imageBase64,
           history,
           seedMessages,
+          recognitionSelection,
+          clientContext,
           sessionId: activeSessionId.value,
-          enableThinking
+          enableThinking,
+          enableSearch,
+          ...runRequest
         })
       })
     })
 
-    wsSocket.onMessage((res) => {
+    socket.onMessage((res) => {
+      if (resolved) return
+      if (!isCurrent()) { finish({ aborted: true }); return }
       let data
       try { data = JSON.parse(res.data) } catch (_) { return }
       if (!data || !data.type) return
 
       switch (data.type) {
+        case 'run':
+          onRun(data)
+          break
+        case 'snapshot':
+          onRun(data)
+          finish({ aborted: true, runSnapshot: data })
+          break
         case 'connected':
           // 连接确认，等待 chat 请求
           break
@@ -1497,13 +1622,21 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
           streamingText.value = full
           scheduleMessagesAutoScroll()
           break
+        case 'search':
+          streamingSearch.value = mergeChatSearch(streamingSearch.value, data)
+          scheduleMessagesAutoScroll()
+          break
         case 'usage':
           // token 用量，可忽略
           break
         case 'done':
+          if (runRequest) onRun(data)
+          disposalPoints = normalizeChatDisposalPoints(data.disposalPoints)
+          businessCards = normalizeChatBusinessCards(data.businessCards)
+          streamingSearch.value = mergeChatSearch(streamingSearch.value, data.search)
           full = data.content || full
           if (data.reasoning) reasoning = data.reasoning
-          finish({ content: full || 'AI 暂未返回内容。', reasoning, aborted: false })
+          finish({ content: full || 'AI 暂未返回内容。', reasoning, disposalPoints, businessCards, aborted: false, runSnapshot: runRequest ? data : null })
           break
         case 'error':
           const code = Number(data.code)
@@ -1513,17 +1646,19 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
       }
     })
 
-    wsSocket.onError((err) => {
+    socket.onError((err) => {
       console.error('[ai-chat] ws error:', err)
       if (!resolved) fail(new Error('WebSocket 连接异常'))
     })
 
-    wsSocket.onClose((res) => {
+    socket.onClose((res) => {
       console.log('[ai-chat] ws closed:', res)
       if (!resolved) {
-        // 如果有部分内容，返回它；否则报错
-        if (full.trim()) {
-          finish({ content: full, reasoning, aborted: true })
+        // 未收到 done 的断流不能当作成功，也不能将种子消息标为已保存。
+        if (streamStopRequested) {
+          finish({ content: full.trim() ? `${full}\n\n（已停止）` : '已停止当前回答。', reasoning, aborted: true })
+        } else if (full.trim()) {
+          finish({ content: `${full}\n\n（回答已中断，请重试）`, reasoning, aborted: true })
         } else {
           fail(new Error('WebSocket 连接已关闭'))
         }
@@ -1539,6 +1674,8 @@ function extractHistoryForRequest() {
     .slice(-10)
     .map(item => {
       const entry = { role: item.role, content: item.content }
+      if (item.role === 'assistant' && Array.isArray(item.businessCards) && item.businessCards.length) entry.businessCards = normalizeChatBusinessCards(item.businessCards)
+      if (item.role === 'assistant' && Array.isArray(item.disposalPoints) && item.disposalPoints.length) entry.disposalPoints = normalizeChatDisposalPoints(item.disposalPoints)
       if (item.imageExpired) return entry
       if (item.role === 'user' && item.hasImage && /^\d+$/.test(String(item.id))) { entry.messageId = item.id; return entry }
       if (item.role === 'user' && item.recognitionHistoryId) { entry.recognitionHistoryId = item.recognitionHistoryId; return entry }
@@ -1573,64 +1710,263 @@ async function extractPendingPersistMessages() {
   return pending.map(item => ({
     role: item.role, content: item.content,
     reasoning: item.role === 'assistant' ? item.reasoning : undefined,
+    businessCards: item.role === 'assistant' ? normalizeChatBusinessCards(item.businessCards) : undefined,
     hasImage: (!item.imageExpired && !!item.imageBase64) || !!item.recognitionHistoryId,
     recognitionHistoryId: item.recognitionHistoryId || undefined,
     imageBase64: item.role === 'user' && !item.imageExpired && !item.recognitionHistoryId ? item.imageBase64 : undefined
   })).filter(item => String(item.content || '').trim())
 }
 
-function markPendingPersistMessagesSaved() {
-  const conversation = ensureConversation(activeSessionId.value)
+function markPendingPersistMessagesSaved(sessionId = activeSessionId.value, ids = null) {
+  const conversation = ensureConversation(sessionId)
   let changed = false
   conversation.messages.forEach((item) => {
-    if (item && item._pendingPersist) {
+    if (item && item._pendingPersist && (!ids || ids.includes(String(item.id)))) {
       item._pendingPersist = false
       changed = true
     }
   })
   if (changed) {
-    messageList.value = conversation.messages.slice()
+    if (activeSessionId.value === sessionId) messageList.value = conversation.messages.slice()
     const binding = safeJsonParse(getStorage(SEED_IMAGE_BINDING_KEY))
-    if (binding?.sessionId === activeSessionId.value && binding.owner === cachedImageOwner()) {
+    if (binding?.sessionId === sessionId && binding.owner === cachedImageOwner() && !conversation.messages.some(item => item?._pendingPersist)) {
       setStorage(SEED_IMAGE_BINDING_KEY, JSON.stringify({ ...binding, pending: false }))
     }
   }
 }
 
-async function onSend() {
+function hasChecklistMessage(message) {
+  return Array.isArray(message?.businessCards) && message.businessCards.some(card => card?.type === 'checklist') && normalizeChatBusinessCards(message.businessCards).some(card => card.type === 'checklist')
+}
+function buildSelectedChecklist(ids) {
   if (isStreaming.value || imagePreparing.value) return
-  const rawText = promptText.value.trim()
-  const sendingImage = pickedImageDataUrl.value
-  const displayImage = pickedImageLocalPath.value || sendingImage
+  return onSend({ recognitionSelection: ids })
+}
+function ensureRunLedger() {
+  const owner = String(getStorage('token') || '')
+  if (runOwner && owner !== runOwner) {
+    sendEpoch++
+    if (abortCtrl) abortCtrl.abort()
+    if (wsSocket) { try { wsSocket.close() } catch (_) {} }
+    wsSocket = null
+    runLedger = null; runCapabilityPromise = null; activeRun.value = null
+    pendingRuns.value = []; recoveringRun.value = ''; runNotice.value = ''; requestedRunStop = false
+    if (pendingMessagePreparation) pendingMessagePreparation.canceled = true
+    pendingMessagePreparation = null
+    promptText.value = ''; clearPickedImage(); closeHistoryDrawer(); businessPageEpoch.value++
+    if (imagePreparing.value) { imagePreparing.value = false; uni.hideLoading() }
+    isStreaming.value = false; streamingText.value = ''; streamingReasoning.value = ''; streamingSearch.value = null
+    conversationMap = new Map()
+    activeSessionId.value = createSessionId()
+    setStorage(SESSION_KEY, activeSessionId.value)
+    renderActiveMessages(); syncConversationList(); updateHeader()
+  }
+  if (!owner) { runOwner = ''; return null }
+  if (owner !== runOwner || !runLedger) {
+    runOwner = owner
+    runCapabilityPromise = null
+    const key = runStorageKey(baseUrl, owner)
+    runLedger = createRunLedger({ key, read: name => { const value = getStorage(name); return typeof value === 'string' ? safeJsonParse(value) : value }, write: (name, value) => {
+      // #ifdef H5
+      localStorage.setItem(name, JSON.stringify(value))
+      // #endif
+      // #ifndef H5
+      uni.setStorageSync(name, value)
+      // #endif
+    } })
+    pendingRuns.value = runLedger.items()
+  }
+  return runLedger
+}
+function updateRunLedger(operation, fallback) {
+  try { pendingRuns.value = operation() }
+  catch (_) { if (fallback) pendingRuns.value = fallback; runNotice.value = '本地状态未更新，原任务编号仍保留，可稍后查询结果。' }
+}
+async function supportsRuns() {
+  if (!ensureRunLedger()) return false
+  const owner = runOwner
+  if (!runCapabilityPromise) runCapabilityPromise = fetchAiCapabilities().then(response => response?.code === 0 && response?.data?.runVersion === 1).catch(() => false)
+  return await runCapabilityPromise && !pageDisposed && owner === String(getStorage('token') || '')
+}
+function runIsCurrent(owner) { return !pageDisposed && owner === String(getStorage('token') || '') && owner === runOwner }
+function applyRecoveredRun(item, state) {
+  const conversation = ensureConversation(item.sessionId)
+  conversation.messages = applyRunSnapshot(conversation.messages, item, state, normalizeChatBusinessCards, normalizeChatDisposalPoints, finalizeChatSearch)
+  if (state.userMessageId) {
+    const binding = safeJsonParse(getStorage(SEED_IMAGE_BINDING_KEY))
+    const restoredIds = item.seedFingerprint && binding?.fingerprint === item.seedFingerprint && binding.sessionId === item.sessionId && binding.owner === cachedImageOwner()
+      ? conversation.messages.filter(message => message._pendingPersist && message._seedFingerprint === item.seedFingerprint).map(message => String(message.id)) : []
+    const ids = [...(item.seedLocalIds || []), ...restoredIds]
+    if (ids.length) markPendingPersistMessagesSaved(item.sessionId, ids)
+  }
+  if (activeRun.value?.requestId === item.requestId) activeRun.value = { ...activeRun.value, status: state.status }
+  if (['completed', 'failed', 'cancelled'].includes(state.status)) updateRunLedger(() => runLedger.remove(item.requestId), pendingRuns.value.filter(value => value.requestId !== item.requestId))
+  else updateRunLedger(() => runLedger.update(item.requestId, { runId: state.runId, status: state.status, userMessageId: state.userMessageId }))
+  refreshConversationMeta(conversation)
+  syncConversationList()
+  if (activeSessionId.value === item.sessionId) { renderActiveMessages(); updateHeader(); nextTick(() => scrollMessagesToBottom(true)) }
+}
+async function recoverRun(item) {
+  if (recoveringRun.value || isStreaming.value || !ensureRunLedger()) return
+  const owner = runOwner
+  recoveringRun.value = item.requestId
+  runNotice.value = ''
+  try {
+    const response = await findChatRun(item.requestId)
+    if (!runIsCurrent(owner)) return
+    if (response?.code !== 0) throw new Error('任务状态暂不可用')
+    applyRecoveredRun(item, response.data)
+    if (response.data.status === 'completed' && activeSessionId.value !== item.sessionId) setActiveSession(item.sessionId)
+    runNotice.value = response.data.status === 'completed' ? '原回答已恢复。' : response.data.status === 'failed' ? '上次回答失败，没有可恢复的内容，请重新发送问题。' : response.data.status === 'cancelled' ? '上次回答已停止，没有可恢复的内容。' : response.data.uncertain ? '回答结果暂时无法确认，可稍后再查询；不会自动重发。' : 'AI 仍在回答，请稍后再查询。'
+    uni.showToast({ title: runNotice.value, icon: 'none', duration: 3000 })
+  } catch (error) {
+    if (!runIsCurrent(owner)) return
+    if (Number(error?.statusCode || error?.data?.code) === 410) updateRunLedger(() => runLedger.remove(item.requestId), pendingRuns.value.filter(value => value.requestId !== item.requestId))
+    runNotice.value = error?.msg || error?.message || '暂时无法核实原任务，请稍后再查；不会重新发送。'
+    uni.showToast({ title: runNotice.value, icon: 'none', duration: 3000 })
+  } finally { if (runIsCurrent(owner)) recoveringRun.value = '' }
+}
+async function stopPendingRun(item) {
+  if (recoveringRun.value || !ensureRunLedger()) return
+  const owner = runOwner
+  recoveringRun.value = item.requestId
+  try {
+    const found = item.runId ? { data: { runId: item.runId, status: item.status } } : await findChatRun(item.requestId)
+    if (!runIsCurrent(owner)) return
+    const state = found?.data
+    if (!state?.runId) throw new Error('尚未找到原任务；收到任务编号后才能确认停止')
+    if (activeRun.value?.requestId === item.requestId) requestedRunStop = false
+    if (state.status === 'completed') { applyRecoveredRun(item, state); return }
+    const response = await cancelChatRun(state.runId)
+    if (!runIsCurrent(owner)) return
+    applyRecoveredRun(item, response.data)
+    runNotice.value = response.data.status === 'cancelled' ? '已确认停止本次任务。' : '任务状态已更新，请查看结果。'
+    if (activeRun.value?.requestId === item.requestId) {
+      // Detach only after the server confirms the authoritative state.
+      if (abortCtrl) abortCtrl.abort()
+      if (wsSocket) { try { wsSocket.close() } catch (_) {} }
+    }
+  } catch (error) {
+    if (runIsCurrent(owner)) runNotice.value = error?.msg || error?.message || '停止结果尚未确认，请稍后核实原任务。'
+  } finally {
+    if (runIsCurrent(owner)) {
+      recoveringRun.value = ''
+      if (requestedRunStop && activeRun.value?.runId) { requestedRunStop = false; void stopPendingRun(activeRun.value) }
+    }
+  }
+}
+function dismissRun(item) {
+  if (recoveringRun.value || isStreaming.value || item.status === 'executing' || !ensureRunLedger()) return
+  const owner = runOwner
+  const remove = () => { if (runIsCurrent(owner)) updateRunLedger(() => runLedger.remove(item.requestId), pendingRuns.value.filter(value => value.requestId !== item.requestId)) }
+  if (item.status === 'pending') uni.showModal({ title: '关闭待核实提示', content: '关闭提示不会停止可能已开始的任务，也不会重新发送。若服务端已收到任务，下次进入页面仍可查询。', success: result => { if (result.confirm) remove() } })
+  else remove()
+}
+async function initializeRuns() {
+  if (!await supportsRuns()) return
+  const owner = runOwner
+  try {
+    const response = await fetchChatRuns()
+    if (!runIsCurrent(owner) || response?.code !== 0) return
+    pendingRuns.value = runLedger.merge(response.data?.items || [])
+    const item = pendingRuns.value.find(value => value.sessionId === activeSessionId.value)
+    if (item) await recoverRun(item)
+  } catch (_) { /* Retain locally known IDs for explicit recovery. */ }
+}
+async function onSend(options = {}) {
+  ensureRunLedger()
+  if (isStreaming.value || imagePreparing.value || recoveringRun.value) return
+  const recognitionSelection = Array.isArray(options.recognitionSelection) ? [...new Set(options.recognitionSelection)].filter(id => /^[1-9]\d{0,15}$/.test(String(id))).slice(0, 5) : []
+  const rawText = recognitionSelection.length ? '将选中的识别记录整理成投放清单' : promptText.value.trim()
+  const sendingImage = recognitionSelection.length ? '' : pickedImageDataUrl.value
+  const displayImage = sendingImage ? (pickedImageLocalPath.value || sendingImage) : ''
+  const enableSearch = isSearchEnabled.value
   if (!rawText && !sendingImage) { uni.showToast({ title: '请先输入问题或选择图片', icon: 'none' }); return }
   streamingMessageId.value = createMessageId()
   isStreaming.value = true
   streamingText.value = '正在准备消息…'
   streamingReasoning.value = ''
+  streamingSearch.value = null
   let messageSent = false
+  let pendingRun = null
+  const sendingSessionId = activeSessionId.value
+  const sendingOwner = String(getStorage('token') || '')
+  const epoch = ++sendEpoch
+  const seedIds = ensureConversation(sendingSessionId).messages.filter(item => item._pendingPersist && String(item.content || '').trim()).slice(0, 6).map(item => String(item.id))
+  const preparation = { canceled: false }
+  pendingMessagePreparation = preparation
   try {
     if (sendingImage && dataUrlByteLength(sendingImage) > MAX_IMAGE_BYTES) throw new Error('图片需压缩到500KB以内')
     const seedMessagesForPersist = await extractPendingPersistMessages()
     const historyForApi = extractHistoryForRequest()
+    const clientContext = getStorage('token') ? await chatEnvironment.forRequest() : {}
+    const useRuns = await supportsRuns()
+    if (preparation.canceled || pageDisposed || sendingOwner !== String(getStorage('token') || '') || sendingSessionId !== activeSessionId.value) return
+    pendingMessagePreparation = null
     const userText = rawText || '请基于这张图继续补充具体物品分类和可执行的变废为宝方案。'
-    pushMessageToActive('user', userText, sendingImage, new Date().toISOString(), undefined, displayImage)
+    const userLocalId = createMessageId()
+    if (useRuns) {
+      const binding = safeJsonParse(getStorage(SEED_IMAGE_BINDING_KEY))
+      const seedFingerprint = binding?.sessionId === sendingSessionId && binding.owner === cachedImageOwner() && ensureConversation(sendingSessionId).messages.some(item => seedIds.includes(String(item.id)) && item._seedFingerprint === binding.fingerprint) ? binding.fingerprint : ''
+      const candidate = { requestId: newActionRequestId(), sessionId: sendingSessionId, status: 'pending', userLocalId, assistantLocalId: streamingMessageId.value, seedLocalIds: seedIds, seedFingerprint, userText, createdAt: new Date().toISOString() }
+      pendingRuns.value = runLedger.add(candidate)
+      pendingRun = candidate
+      activeRun.value = pendingRun
+      requestedRunStop = false
+    }
+    pushMessageToActive('user', userText, sendingImage, new Date().toISOString(), undefined, displayImage, userLocalId)
     messageSent = true
-    promptText.value = ''
-    clearPickedImage()
-    const streamed = await streamChat({ text: userText, imageBase64: sendingImage, history: historyForApi, seedMessages: seedMessagesForPersist, enableThinking: isDeepThinking.value })
+    if (!recognitionSelection.length) { promptText.value = ''; clearPickedImage() }
+    const streamed = await streamChat({ text: userText, imageBase64: sendingImage, history: historyForApi, seedMessages: seedMessagesForPersist, enableThinking: isDeepThinking.value, enableSearch, clientContext, recognitionSelection,
+      runRequest: pendingRun ? { runVersion: 1, requestId: pendingRun.requestId, sessionId: sendingSessionId } : null,
+      isCurrent: () => !pageDisposed && epoch === sendEpoch && sendingOwner === String(getStorage('token') || ''),
+      onRun: state => {
+        if (!pendingRun || !runIsCurrent(sendingOwner)) return
+        activeRun.value = { ...pendingRun, runId: state.runId, status: state.status }
+        if (state.userMessageId) markPendingPersistMessagesSaved(sendingSessionId, seedIds)
+        updateRunLedger(() => runLedger.update(pendingRun.requestId, { runId: state.runId, userMessageId: state.userMessageId, status: state.status }))
+        if (requestedRunStop && state.status === 'executing') void stopPendingRun({ ...pendingRun, runId: state.runId, status: state.status })
+      } })
+    if (pendingRun) {
+      if (runIsCurrent(sendingOwner) && epoch === sendEpoch && streamed.runSnapshot) applyRecoveredRun(pendingRun, streamed.runSnapshot)
+      if (runIsCurrent(sendingOwner) && epoch === sendEpoch && streamed.aborted && !['cancelled', 'failed'].includes(activeRun.value?.status) && pendingRuns.value.some(item => item.requestId === pendingRun.requestId)) runNotice.value = '回答连接已中断，可点击“查询回答”获取原结果；不会自动重发。'
+      return
+    }
+    if (pageDisposed || epoch !== sendEpoch || sendingOwner !== String(getStorage('token') || '')) return
     if (!streamed.aborted) markPendingPersistMessagesSaved()
-    pushMessageToActive('assistant', streamed.content || 'AI 暂未返回内容。', '', new Date().toISOString(), streamed.reasoning || '', '', streamingMessageId.value)
+    pushMessageToActive('assistant', streamed.content || 'AI 暂未返回内容。', '', new Date().toISOString(), streamed.reasoning || '', '', streamingMessageId.value, streamed.search, streamed.disposalPoints, streamed.businessCards)
   } catch (error) {
-    if (messageSent) pushMessageToActive('assistant', error?.name === 'AbortError' ? '已停止当前回答。' : `请求异常：${error?.message || error}`, '', new Date().toISOString(), '')
+    if (pageDisposed || epoch !== sendEpoch || sendingOwner !== String(getStorage('token') || '')) return
+    if (preparation.canceled) return
+    if (pendingRun) {
+      if (runIsCurrent(sendingOwner) && !['cancelled', 'failed'].includes(activeRun.value?.status) && pendingRuns.value.some(item => item.requestId === pendingRun.requestId)) runNotice.value = `${error?.name === 'AbortError' ? '连接已结束' : String(error?.message || '连接或执行中断').slice(0, 160)}；可点击“查询回答”核实原任务，不会自动重发。`
+      return
+    }
+    if (messageSent) pushMessageToActive('assistant', error?.name === 'AbortError' ? '已停止当前回答。' : `请求异常：${error?.message || error}`, '', new Date().toISOString(), '', '', streamingMessageId.value, finalizeChatSearch(streamingSearch.value, true))
     else uni.showToast({ title: error?.message || '消息准备失败', icon: 'none' })
   } finally {
-    isStreaming.value = false
-    streamingText.value = ''
-    streamingReasoning.value = ''
+    if (activeRun.value?.requestId === pendingRun?.requestId) activeRun.value = null
+    if (pendingMessagePreparation === preparation) pendingMessagePreparation = null
+    if (!preparation.canceled && epoch === sendEpoch && !pageDisposed) {
+      isStreaming.value = false
+      streamingText.value = ''
+      streamingReasoning.value = ''
+      streamingSearch.value = null
+    }
   }
 }
 
 function onStop() {
+  if (pendingMessagePreparation) {
+    pendingMessagePreparation.canceled = true
+    pendingMessagePreparation = null
+    isStreaming.value = false
+    streamingText.value = ''
+    streamingReasoning.value = ''
+    return
+  }
+  if (activeRun.value) { requestedRunStop = true; void stopPendingRun(activeRun.value); return }
+  streamStopRequested = true
   // #ifdef H5
   if (abortCtrl) abortCtrl.abort()
   // #endif
@@ -1640,9 +1976,7 @@ function onStop() {
     try { wsSocket.close() } catch (_) {}
     wsSocket = null
   }
-  isStreaming.value = false
-  streamingText.value = ''
-  streamingReasoning.value = ''
+  // 等待关闭回调落盘停止结果后再开放发送，避免旧请求清理下一条回答。
   // #endif
 }
 
@@ -1664,14 +1998,18 @@ function updateComposerOverlayHeight() {
 }
 
 onMounted(async () => {
+  const mountOwner = String(getStorage('token') || '')
   initSystemInfo()
   isDark.value = getStorage('app_theme') === 'dark'
   const canUseAiChat = await guardAiChatAccess()
-  if (!canUseAiChat) return
+  if (!canUseAiChat || pageDisposed || mountOwner !== String(getStorage('token') || '')) return
+  ensureRunLedger()
+  if (getStorage('token')) void chatEnvironment.prepare()
 
   // #ifdef H5
   onStorageHandler = (event) => {
     if (!event || event.key === 'app_theme') isDark.value = getStorage('app_theme') === 'dark'
+    if (event?.key === 'token') ensureRunLedger()
   }
   window.addEventListener('storage', onStorageHandler)
 
@@ -1700,6 +2038,7 @@ onMounted(async () => {
 
   let historyData = { items: [], sessionMetas: {} }
   try { historyData = await loadHistoryItems() } catch (_) {}
+  if (pageDisposed || mountOwner !== String(getStorage('token') || '')) return
   hydrateConversations(historyData)
   restoreCachedSeedImage()
 
@@ -1721,6 +2060,7 @@ onMounted(async () => {
   syncConversationList()
   renderActiveMessages()
   updateHeader()
+  void initializeRuns()
   promptText.value = ''
   clearPickedImage()
   nextTick(() => {
@@ -1740,10 +2080,14 @@ onMounted(async () => {
   })
 })
 
-onHide(closeHistoryDrawer)
-onUnload(closeHistoryDrawer)
+onHide(() => { businessPageEpoch.value++; closeHistoryDrawer() })
+onUnload(() => { pageDisposed = true; closeHistoryDrawer() })
+onShow(() => { if (runOwner && runOwner !== String(getStorage('token') || '')) ensureRunLedger() })
 
 onBeforeUnmount(() => {
+  pageDisposed = true
+  chatEnvironment.dispose()
+  if (pendingMessagePreparation) pendingMessagePreparation.canceled = true
   closeHistoryDrawer()
   if (abortCtrl) abortCtrl.abort()
   if (wsSocket) {
@@ -1769,6 +2113,18 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
+.shell .inline-suggestions-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.shell .quick-actions-toggle { margin: 0 0 4px; padding: 0 8px; line-height: 24px; font-size: 12px; color: var(--accent); background: transparent; }
+.shell .quick-actions-toggle::after { border: 0; }
+.shell .quick-actions-note { display: block; margin-top: 6px; font-size: 11px; line-height: 16px; color: var(--text-tertiary); }
+.shell .run-recovery { flex-shrink: 0; max-height: 128px; overflow-y: auto; padding: 6px 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-light); }
+.shell .run-recovery-item { display: flex; align-items: center; gap: 6px; min-height: 32px; font-size: 12px; color: var(--text-secondary); }
+.shell .run-recovery-item > text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell .run-recovery-item button { flex-shrink: 0; margin: 0; padding: 0 8px; line-height: 26px; font-size: 12px; color: var(--accent); background: var(--bg-primary); border-radius: 7px; }
+.shell .run-recovery-item button::after { border: 0; }
+.shell .run-recovery-notice { display: block; padding: 3px 0; font-size: 11px; line-height: 17px; color: var(--text-secondary); }
+.shell .action-inbox-trigger { margin: 0; padding: 0 10px; font-size: 12px; line-height: 32px; border-radius: 9px; color: var(--text-primary); background: var(--bg-secondary); }
+.shell .action-inbox-trigger::after { border: 0; }
 /* DeepSeek风格CSS变量定义 */
 .shell {
   /* 主背景色 - 纯白/浅灰 */
@@ -3274,6 +3630,8 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 }
 .shell .composer-left { display: flex; align-items: center; gap: 8px; }
 .shell .composer-right { display: flex; align-items: center; gap: 8px; }
+.shell .search-toggle { flex-shrink: 0; }
+.shell .search-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* 深度思考按钮 */
 .shell .deep-think-btn {
@@ -3834,6 +4192,9 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
   .shell .composer-card {
     border-radius: 17px;
   }
+  .shell .composer-left { gap: 4px; }
+  .shell .deep-think-btn { padding: 5px 7px; }
+  .shell .composer-right { gap: 5px; }
   .shell .suggestion-pill {
     padding: 6px 11px;
     font-size: 11px;

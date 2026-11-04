@@ -1,0 +1,11 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import UploadWebPBridge from 'ftx.upload.UploadWebPBridge'
+
+export function encodeUploadWebp(options: string, callback: (result: string) => void): void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) {
+    callback('{"error":"UNAVAILABLE"}')
+    return
+  }
+  UploadWebPBridge.encode(context!, options, callback)
+}

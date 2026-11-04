@@ -43,7 +43,7 @@ export function sendTextMessage(params) {
  * @param {string} targetUserId - 接收方用户ID
  * @param {string} filePath - 图片本地路径
  */
-export function sendImageMessage(chatId, targetUserId, filePath) {
+export function sendImageMessage(chatId, targetUserId, filePath, options = {}) {
   const token = getToken()
   return new Promise((resolve, reject) => {
     uni.uploadFile({
@@ -51,6 +51,7 @@ export function sendImageMessage(chatId, targetUserId, filePath) {
       filePath: filePath,
       name: 'file',
       formData: {
+        ...options,
         chatId: chatId,
         targetUserId: targetUserId
       },
@@ -78,7 +79,7 @@ export function sendImageMessage(chatId, targetUserId, filePath) {
  * @param {string} filePath - 语音文件路径
  * @param {number} duration - 语音时长（秒）
  */
-export function sendVoiceMessage(chatId, targetUserId, filePath, duration) {
+export function sendVoiceMessage(chatId, targetUserId, filePath, duration, options = {}) {
   const token = getToken()
   return new Promise((resolve, reject) => {
     uni.uploadFile({
@@ -86,6 +87,7 @@ export function sendVoiceMessage(chatId, targetUserId, filePath, duration) {
       filePath: filePath,
       name: 'file',
       formData: {
+        ...options,
         chatId: chatId,
         targetUserId: targetUserId,
         duration: duration
@@ -124,7 +126,7 @@ export function transcribeVoiceMessage(messageId) {
  * @param {number} duration - 视频时长（秒）
  * @param {function} onProgress - 上传进度回调
  */
-export function sendVideoMessage(chatId, targetUserId, filePath, thumbnailPath, duration, onProgress) {
+export function sendVideoMessage(chatId, targetUserId, filePath, thumbnailPath, duration, onProgress, options = {}) {
   const token = getToken()
   return new Promise((resolve, reject) => {
     const uploadTask = uni.uploadFile({
@@ -132,6 +134,7 @@ export function sendVideoMessage(chatId, targetUserId, filePath, thumbnailPath, 
       filePath: filePath,
       name: 'file',
       formData: {
+        ...options,
         chatId: chatId,
         targetUserId: targetUserId,
         thumbnail: thumbnailPath,
@@ -170,7 +173,7 @@ export function sendVideoMessage(chatId, targetUserId, filePath, thumbnailPath, 
  * @param {number} fileSize - 文件大小（字节）
  * @param {function} onProgress - 上传进度回调
  */
-export function sendFileMessage(chatId, targetUserId, filePath, fileName, fileSize, onProgress) {
+export function sendFileMessage(chatId, targetUserId, filePath, fileName, fileSize, onProgress, options = {}) {
   const token = getToken()
   return new Promise((resolve, reject) => {
     const uploadTask = uni.uploadFile({
@@ -178,6 +181,7 @@ export function sendFileMessage(chatId, targetUserId, filePath, fileName, fileSi
       filePath: filePath,
       name: 'file',
       formData: {
+        ...options,
         chatId: chatId,
         targetUserId: targetUserId,
         fileName: fileName,
@@ -216,7 +220,7 @@ export function sendFileMessage(chatId, targetUserId, filePath, fileName, fileSi
  * @param {number} latitude - 纬度
  * @param {number} longitude - 经度
  */
-export function sendLocationMessage(chatId, targetUserId, locationName, locationAddress, latitude, longitude) {
+export function sendLocationMessage(chatId, targetUserId, locationName, locationAddress, latitude, longitude, options = {}) {
   return request({
     url: '/api/chat/send/location',
     method: 'POST',
@@ -226,7 +230,8 @@ export function sendLocationMessage(chatId, targetUserId, locationName, location
       locationName,
       locationAddress,
       latitude,
-      longitude
+      longitude,
+      ...options
     },
     needAuth: true
   })
@@ -240,11 +245,12 @@ export function sendLocationMessage(chatId, targetUserId, locationName, location
  * @param {number} params.pageSize - 每页数量
  * @param {string} params.lastMessageId - 最后一条消息ID（用于分页）
  */
-export function getChatHistory(params) {
+export function getChatHistory(params, requestOptions = {}) {
   return request({
     url: '/api/chat/history',
     method: 'GET',
     data: params,
+    silent: !!requestOptions.silent,
     needAuth: true
   })
 }
@@ -255,7 +261,7 @@ export function getChatHistory(params) {
  * @param {number} params.page - 页码
  * @param {number} params.pageSize - 每页数量
  */
-export function getChatUserList(params) {
+export function getChatUserList(params, requestOptions = {}) {
   // 构建查询字符串；keyword 可能包含中文、空格、& 或 /，必须逐项编码。
   const queryStr = Object.keys(params || {})
     .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key] ?? ''))}`)
@@ -264,6 +270,7 @@ export function getChatUserList(params) {
   return request({
     url: `/api/chat/chatlist${queryStr ? '?' + queryStr : ''}`,
     method: 'GET',
+    silent: !!requestOptions.silent,
     needAuth: true
   })
 }
@@ -404,10 +411,23 @@ export function deleteContact(params) {
   })
 }
 
+export const deleteChatMessages = messageIds => request({ url: '/api/chat/messages/delete', method: 'POST', data: { messageIds }, needAuth: true })
+export const deleteGroupMessages = (groupId, messageIds) => request({ url: `/api/chat/groups/${groupId}/messages/delete`, method: 'POST', data: { messageIds }, needAuth: true })
+export const clearGroupHistory = groupId => request({ url: `/api/chat/groups/${groupId}/history/clear`, method: 'POST', needAuth: true })
+export const forwardChatMessages = data => request({ url: '/api/chat/messages/forward', method: 'POST', data, needAuth: true })
+
+export const updateGroupMemberRole = (groupId, userId, role) => request({ url: `/api/chat/groups/${groupId}/members/${userId}/role`, method: 'PATCH', data: { role }, needAuth: true })
+export const transferGroupOwnership = (groupId, userId) => request({ url: `/api/chat/groups/${groupId}/transfer`, method: 'POST', data: { userId }, needAuth: true })
+export const updateGroupSettings = (groupId, data) => request({ url: `/api/chat/groups/${groupId}/settings`, method: 'PATCH', data, needAuth: true })
+export const updateGroupMemberMute = (groupId, userId, mute) => request({ url: `/api/chat/groups/${groupId}/members/${userId}/settings`, method: 'PATCH', data: { mute }, needAuth: true })
+export const updateGroupModeration = (groupId, muteAll) => request({ url: `/api/chat/groups/${groupId}/moderation`, method: 'PATCH', data: { muteAll }, needAuth: true })
+export const dissolveGroup = groupId => request({ url: `/api/chat/groups/${groupId}`, method: 'DELETE', needAuth: true })
+export const hideConversation = conversationId => request({ url: `/api/chat/conversations/${encodeURIComponent(conversationId)}`, method: 'DELETE', needAuth: true })
+
 // Friend request APIs
-export function searchChatUsers(keyword) {
+export function searchChatUsers(keyword, options = {}) {
   return request({
-    url: `/api/chat/users/search?keyword=${encodeURIComponent(keyword || '')}`,
+    url: `/api/chat/users/search?keyword=${encodeURIComponent(keyword || '')}${options.cursor ? `&cursor=${encodeURIComponent(options.cursor)}` : ''}${options.pageSize ? `&pageSize=${encodeURIComponent(options.pageSize)}` : ''}`,
     method: 'GET',
     needAuth: true
   })
@@ -468,12 +488,13 @@ export function updateGroup(groupId, data) {
   return request({ url: `/api/chat/groups/${groupId}`, method: 'PATCH', data, needAuth: true })
 }
 
-export function updateGroupAvatar(groupId, filePath, onProgress) {
+export function updateGroupAvatar(groupId, filePath, onProgress, file) {
   const token = getToken()
   return new Promise((resolve, reject) => {
     const uploadTask = uni.uploadFile({
       url: `${getBaseUrl()}/api/chat/groups/${groupId}/avatar${token ? `?token=${encodeURIComponent(token)}` : ''}`,
       filePath,
+      ...(file ? { file } : {}),
       name: 'file',
       success: (res) => {
         try {
@@ -513,7 +534,7 @@ export function updateGroupTop(groupId, top) {
   return request({ url: `/api/chat/groups/${groupId}/top`, method: 'PUT', data: { top }, needAuth: true })
 }
 
-export function getGroupHistory(groupId, params = {}) {
+export function getGroupHistory(groupId, params = {}, requestOptions = {}) {
   const query = Object.entries(params)
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
@@ -521,15 +542,16 @@ export function getGroupHistory(groupId, params = {}) {
   return request({
     url: `/api/chat/groups/${groupId}/history${query ? `?${query}` : ''}`,
     method: 'GET',
+    silent: !!requestOptions.silent,
     needAuth: true
   })
 }
 
-export function sendGroupTextMessage(groupId, content, refId = null) {
+export function sendGroupTextMessage(groupId, content, refId = null, clientMessageId) {
   return request({
     url: `/api/chat/groups/${groupId}/messages/text`,
     method: 'POST',
-    data: { content, refId },
+    data: { content, refId, clientMessageId },
     needAuth: true
   })
 }
@@ -549,7 +571,7 @@ function uploadGroupMessage(groupId, type, filePath, formData = {}, onProgress) 
       url: `${getBaseUrl()}/api/chat/groups/${groupId}/messages/${type}${token ? `?token=${encodeURIComponent(token)}` : ''}`,
       filePath,
       name: 'file',
-      formData,
+      formData: Object.fromEntries(Object.entries(formData).filter(([, value]) => value !== undefined && value !== null)),
       success: (res) => {
         try {
           const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
@@ -567,17 +589,17 @@ function uploadGroupMessage(groupId, type, filePath, formData = {}, onProgress) 
   })
 }
 
-export const sendGroupImageMessage = (groupId, filePath, refId = null) =>
-  uploadGroupMessage(groupId, 'image', filePath, { refId })
+export const sendGroupImageMessage = (groupId, filePath, refId = null, clientMessageId) =>
+  uploadGroupMessage(groupId, 'image', filePath, { refId, clientMessageId })
 
-export const sendGroupVoiceMessage = (groupId, filePath, duration, refId = null) =>
-  uploadGroupMessage(groupId, 'voice', filePath, { duration, refId })
+export const sendGroupVoiceMessage = (groupId, filePath, duration, refId = null, clientMessageId) =>
+  uploadGroupMessage(groupId, 'voice', filePath, { duration, refId, clientMessageId })
 
-export const sendGroupVideoMessage = (groupId, filePath, thumbnail, duration, refId = null, onProgress) =>
-  uploadGroupMessage(groupId, 'video', filePath, { thumbnail, duration, refId }, onProgress)
+export const sendGroupVideoMessage = (groupId, filePath, thumbnail, duration, refId = null, onProgress, clientMessageId) =>
+  uploadGroupMessage(groupId, 'video', filePath, { thumbnail, duration, refId, clientMessageId }, onProgress)
 
-export const sendGroupFileMessage = (groupId, filePath, fileName, fileSize, refId = null, onProgress) =>
-  uploadGroupMessage(groupId, 'file', filePath, { fileName, fileSize, refId }, onProgress)
+export const sendGroupFileMessage = (groupId, filePath, fileName, fileSize, refId = null, onProgress, clientMessageId) =>
+  uploadGroupMessage(groupId, 'file', filePath, { fileName, fileSize, refId, clientMessageId }, onProgress)
 
 export function sendGroupLocationMessage(groupId, data) {
   return request({

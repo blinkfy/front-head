@@ -9,7 +9,7 @@
       <view class="contact-tabs">
         <view v-for="tab in tabs" :key="tab.key" class="contact-tab"
           :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">
-          <text>{{ tab.label }}</text>
+          <ManifestIcon :id="tab.icon" size="30rpx" /><text>{{ tab.label }}</text>
           <view v-if="tab.key === 'requests' && pendingRequestCount" class="request-dot">{{ pendingRequestCount }}</view>
         </view>
       </view>
@@ -45,8 +45,8 @@
               <text class="contact-subtitle">{{ request.message || '请求添加你为好友' }}</text>
             </view>
             <view v-if="request.status === 'pending'" class="request-actions">
-              <button class="small-btn ghost" @click.stop="handleFriendRequest(request, 'reject')">拒绝</button>
-              <button class="small-btn primary" @click.stop="handleFriendRequest(request, 'accept')">同意</button>
+              <button class="small-btn ghost" :disabled="request.busy" @click.stop="handleFriendRequest(request, 'reject')">拒绝</button>
+              <button class="small-btn primary" :disabled="request.busy" @click.stop="handleFriendRequest(request, 'accept')">同意</button>
             </view>
             <text v-else class="request-status">{{ requestStatusLabel(request.status) }}</text>
           </view>
@@ -69,7 +69,7 @@
 
       <template v-else-if="activeTab === 'find'">
         <view class="search-card">
-          <input v-model="searchKeyword" class="user-search-input" placeholder="输入用户名搜索用户" confirm-type="search" @confirm="searchUsers" />
+          <input v-model="searchKeyword" class="user-search-input" placeholder="搜索昵称、用户名或用户ID" confirm-type="search" @confirm="searchUsers" />
           <button class="search-button" :loading="searching" @click="searchUsers">搜索</button>
         </view>
         <view v-if="searchResults.length" class="contact-list search-results">
@@ -79,18 +79,21 @@
               <text class="contact-name">{{ getDisplayName(user) }}</text>
               <text class="contact-subtitle">{{ user.bio || `ID: ${user.id}` }}</text>
             </view>
-            <text v-if="user.isFriend" class="request-status">已是好友</text>
+            <text v-if="user.isFriend" class="request-status">已是联系人</text>
             <text v-else-if="user.requestStatus === 'pending'" class="request-status">已申请</text>
             <button v-else-if="user.requestStatus === 'incoming'" class="small-btn ghost" @click.stop="activeTab = 'requests'">待处理</button>
-            <button v-else class="small-btn primary" @click.stop="requestFriend(user)">添加</button>
+            <button v-else class="small-btn primary" :disabled="pendingFriendIds.includes(String(user.id))" :loading="pendingFriendIds.includes(String(user.id))" @click.stop="requestFriend(user)"><ManifestIcon id="chat_member_invite" size="26rpx" /> 添加</button>
           </view>
         </view>
-        <view v-else-if="hasSearched" class="compact-empty">没有找到匹配的用户</view>
+        <view v-if="searchError" class="compact-empty">{{ searchError }}</view>
+        <button v-if="searchHasMore" class="search-load-more" :loading="searching" :disabled="searching" @click="loadMoreUsers">加载更多</button>
+        <view v-else-if="searching && !searchResults.length" class="compact-empty">正在搜索...</view>
+        <view v-else-if="hasSearched && !searchResults.length && !searchError" class="compact-empty">没有找到匹配的用户</view>
       </template>
 
       <template v-else>
         <view class="create-group-card">
-          <text class="card-title">创建群聊</text>
+          <view class="card-title"><ManifestIcon id="chat_group_create" size="36rpx" /> 创建群聊</view>
           <input v-model="groupName" class="group-name-input" placeholder="填写群名称" maxlength="60" />
           <text class="select-tip">选择联系人加入群聊</text>
           <view v-if="groupContactCandidates.length" class="member-picker">
@@ -101,7 +104,7 @@
             </view>
           </view>
           <view v-else class="compact-empty">暂无可邀请的联系人</view>
-          <button class="create-group-button" :loading="creatingGroup" @click="createNewGroup">创建群聊</button>
+          <button class="create-group-button" :loading="creatingGroup" :disabled="creatingGroup" @click="createNewGroup">创建群聊</button>
         </view>
 
         <view class="section-title">我加入的群聊</view>
@@ -135,10 +138,10 @@ export default {
       statusBarHeight: 20,
       activeTab: 'friends',
       tabs: [
-        { key: 'friends', label: '联系人' },
-        { key: 'requests', label: '新朋友' },
-        { key: 'find', label: '找人' },
-        { key: 'groups', label: '群聊' }
+        { key: 'friends', label: '联系人', icon: 'contacts' },
+        { key: 'requests', label: '新朋友', icon: 'chat_friend_request' },
+        { key: 'find', label: '找人', icon: 'search' },
+        { key: 'groups', label: '群聊', icon: 'chat_group_create' }
       ],
       loading: false,
       searching: false,
@@ -149,6 +152,12 @@ export default {
       groups: [],
       searchKeyword: '',
       searchResults: [],
+      searchHasMore: false,
+      searchCursor: null,
+      searchVersion: 0,
+      activeSearchKeyword: '',
+      searchError: '',
+      pendingFriendIds: [],
       hasSearched: false,
       groupName: '',
       selectedFriendIds: [],
@@ -173,6 +182,8 @@ export default {
       if (enabled) this.refreshAll()
     })
   },
+  onHide() { this.searchVersion++; this.searching = false },
+  onUnload() { this.searchVersion++; this.searching = false },
   methods: {
     getDisplayName,
     async ensureAiAvailable() {
@@ -225,50 +236,72 @@ export default {
         this.loading = false
       }
     },
-    async searchUsers() {
-      const keyword = this.searchKeyword.trim()
+    async searchUsers(reset = true) {
+      const fresh = reset !== false
+      if (!fresh && (this.searching || !this.searchHasMore)) return
+      const keyword = fresh ? this.searchKeyword.trim() : this.activeSearchKeyword
       if (!keyword) {
-        uni.showToast({ title: '请输入用户名', icon: 'none' })
+        uni.showToast({ title: '请输入昵称、用户名或用户ID', icon: 'none' })
         return
       }
+      const version = fresh ? ++this.searchVersion : this.searchVersion
+      if (fresh) {
+        this.activeSearchKeyword = keyword
+        this.searchResults = []
+        this.searchCursor = null
+        this.searchHasMore = false
+      }
+      const cursor = this.searchCursor
       this.searching = true
+      this.searchError = ''
       this.hasSearched = true
       try {
-        const result = await chatApi.searchChatUsers(keyword)
-        this.searchResults = result.data?.list || []
+        const result = await chatApi.searchChatUsers(keyword, { cursor: fresh ? null : cursor, pageSize: 20 })
+        if (version !== this.searchVersion) return
+        const rows = result.data?.list || []
+        const combined = fresh ? rows : [...this.searchResults, ...rows]
+        this.searchResults = [...new Map(combined.map(user => [String(user.id), user])).values()]
+        this.searchCursor = result.data?.nextCursor ?? null
+        this.searchHasMore = !!result.data?.hasMore && this.searchCursor != null && String(this.searchCursor) !== String(cursor)
       } catch (error) {
-        console.error('搜索用户失败:', error)
+        if (version === this.searchVersion) this.searchError = fresh ? '搜索失败，请重试' : '加载失败，可再次点击加载更多'
       } finally {
-        this.searching = false
+        if (version === this.searchVersion) this.searching = false
       }
     },
-    requestFriend(user) {
-      uni.showModal({
-        title: `添加 ${getDisplayName(user)}`,
-        editable: true,
-        placeholderText: '输入申请说明（可选）',
-        success: async (result) => {
-          if (!result.confirm) return
-          try {
-            await chatApi.sendFriendRequest(user.id, result.content || '')
-            user.requestStatus = 'pending'
-            uni.showToast({ title: '好友申请已发送', icon: 'success' })
-            this.refreshAll()
-          } catch (error) {
-            console.error('发送好友申请失败:', error)
-          }
-        }
-      })
+    loadMoreUsers() { return this.searchUsers(false) },
+    async requestFriend(user) {
+      const id = String(user.id)
+      if (user.isFriend || this.pendingFriendIds.includes(id)) return
+      this.pendingFriendIds.push(id)
+      try {
+        const result = await new Promise(resolve => uni.showModal({ title: `添加 ${getDisplayName(user)}`, editable: true,
+          placeholderText: '输入申请说明（可选）', success: resolve, fail: () => resolve({ confirm: false }) }))
+        if (!result.confirm) return
+        const response = await chatApi.sendFriendRequest(user.id, result.content || '')
+        const status = response.data?.status || 'pending'
+        user.isFriend = status === 'accepted'
+        user.requestStatus = status === 'incoming' ? 'incoming' : status === 'accepted' ? '' : 'pending'
+        if (status === 'incoming') this.activeTab = 'requests'
+        uni.showToast({ title: status === 'incoming' ? '对方已申请添加你，请在新朋友中处理' : status === 'accepted' ? '已是联系人' : '好友申请已发送', icon: status === 'incoming' ? 'none' : 'success' })
+        await this.refreshAll()
+      } catch (error) { console.error('发送好友申请失败:', error) }
+      finally { this.pendingFriendIds = this.pendingFriendIds.filter(value => value !== id) }
     },
     async handleFriendRequest(request, action) {
+      if (request.busy || request.status !== 'pending') return
+      request.busy = true
       try {
         await chatApi.respondToFriendRequest(request.id, action)
         request.status = action === 'accept' ? 'accepted' : 'rejected'
+        const userId = request.user?.id || request.fromUserId
+        const found = this.searchResults.find(user => String(user.id) === String(userId))
+        if (found) { found.isFriend = action === 'accept'; found.requestStatus = '' }
         if (action === 'accept') await this.refreshAll()
         uni.showToast({ title: action === 'accept' ? '已添加好友' : '已拒绝申请', icon: 'success' })
       } catch (error) {
         console.error('处理好友申请失败:', error)
-      }
+      } finally { request.busy = false }
     },
     toggleSelectedFriend(friendId) {
       const index = this.selectedFriendIds.indexOf(friendId)
@@ -276,6 +309,7 @@ export default {
       else this.selectedFriendIds.splice(index, 1)
     },
     async createNewGroup() {
+      if (this.creatingGroup) return
       const name = this.groupName.trim()
       if (!name) {
         uni.showToast({ title: '请填写群名称', icon: 'none' })
@@ -360,7 +394,7 @@ export default {
 .icon-button { width: 80rpx; height: 80rpx; display: flex; align-items: center; justify-content: center; font-size: 44rpx; color: #365260; }
 .refresh-contact-icon { transform: scale(0.72); }
 .contact-tabs { display: flex; padding: 0 18rpx; }
-.contact-tab { position: relative; flex: 1; height: 70rpx; display: flex; align-items: center; justify-content: center; font-size: 26rpx; color: #7a8790; }
+.contact-tab { gap: 8rpx; position: relative; flex: 1; height: 70rpx; display: flex; align-items: center; justify-content: center; font-size: 26rpx; color: #7a8790; }
 .contact-tab.active { color: #068a68; font-weight: 700; }
 .contact-tab.active::after { content: ''; position: absolute; bottom: 0; width: 48rpx; height: 6rpx; border-radius: 6rpx; background: #0aa77a; }
 .request-dot { min-width: 28rpx; height: 28rpx; padding: 0 6rpx; margin-left: 6rpx; border-radius: 14rpx; background: #ef4444; color: #fff; font-size: 18rpx; line-height: 28rpx; text-align: center; }
@@ -391,15 +425,16 @@ export default {
 .request-actions { display: flex; gap: 12rpx; }
 .small-btn { margin: 0; min-width: 94rpx; height: 54rpx; padding: 0 16rpx; border-radius: 8rpx; font-size: 23rpx; line-height: 54rpx; }
 .small-btn::after { border: 0; }
-.small-btn.primary { background: #0aa77a; color: #fff; }
+.small-btn.primary { background: #16845b; color: #fff; }
 .small-btn.ghost { background: #edf5f3; color: #4b6470; }
 .request-status { color: #8b98a2; font-size: 23rpx; white-space: nowrap; }
 
 .search-card { display: flex; gap: 14rpx; padding: 16rpx; }
 .user-search-input, .group-name-input { flex: 1; height: 70rpx; box-sizing: border-box; padding: 0 18rpx; border: 1rpx solid #d9e3e1; border-radius: 8rpx; font-size: 26rpx; background: #fbfdfc; }
-.search-button { width: 116rpx; height: 70rpx; margin: 0; border: 0; border-radius: 8rpx; background: #0aa77a; color: #fff; font-size: 26rpx; line-height: 70rpx; }
+.search-button { width: 116rpx; height: 70rpx; margin: 0; border: 0; border-radius: 8rpx; background: #16845b; color: #fff; font-size: 26rpx; line-height: 70rpx; }
 .search-button::after, .create-group-button::after { border: 0; }
 .search-results { margin-top: 18rpx; }
+.search-load-more { margin: 24rpx auto; color: #0a8965; font-size: 26rpx; }
 
 .create-group-card { padding: 24rpx; }
 .card-title { display: block; margin-bottom: 18rpx; font-size: 30rpx; font-weight: 700; }
@@ -410,5 +445,5 @@ export default {
 .picker-name { flex: 1; font-size: 26rpx; }
 .member-check { width: 32rpx; height: 32rpx; border: 2rpx solid #cbd5d9; border-radius: 50%; color: #fff; font-size: 22rpx; text-align: center; line-height: 30rpx; }
 .member-check.selected { background: #0aa77a; border-color: #0aa77a; }
-.create-group-button { margin-top: 26rpx; height: 78rpx; border-radius: 8rpx; background: #0aa77a; color: #fff; font-size: 28rpx; line-height: 78rpx; }
+.create-group-button { margin-top: 26rpx; height: 78rpx; border-radius: 8rpx; background: #16845b; color: #fff; font-size: 28rpx; line-height: 78rpx; }
 </style>

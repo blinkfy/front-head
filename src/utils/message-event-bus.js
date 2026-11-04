@@ -99,7 +99,8 @@ export async function triggerMessageNotification(msgData, options = {}) {
     await notifyNewMessage(msgData, {
       playSound,
       vibrate,
-      showNotification
+      showNotification,
+      onTap: options.onTap
     })
   } catch (e) {
     console.error('触发消息通知失败:', e)

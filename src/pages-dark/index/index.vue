@@ -135,6 +135,7 @@
 </template>
 
 <script setup>
+import { clearChatPush } from '@/utils/chat-push.js'
 import { loginNavigationRuntime } from '@/utils/login-navigation-runtime.js'
 // #ifdef APP-PLUS
 import { resumeRememberedQrLogin } from '@/utils/remembered-qr-login.mjs'
@@ -473,6 +474,7 @@ function onLogin(isauto) {
     
     // 登录失败时，清除所有权限相关标记
     uni.removeStorageSync('isAdmin')
+    clearChatPush()
     uni.removeStorageSync('token')
     
     // 优先展示后端返回的提示信息（如果有）

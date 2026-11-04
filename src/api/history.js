@@ -15,6 +15,18 @@ export async function getHistoryImage(id) {
   })
 }
 
+/** 获取已保存的识别补充内容，不触发再次识别。 */
+export async function getHistoryRecognitionDetail(id) {
+  return await request({
+    url: `/api/recognition_history/detail/${id}`,
+    method: 'GET',
+    silent: true,
+    header: {
+      'Authorization': `Bearer ${uni.getStorageSync('token')}`
+    }
+  })
+}
+
 /**
  * 获取用户识别历史记录
  * @param {Object} params - 查询参数

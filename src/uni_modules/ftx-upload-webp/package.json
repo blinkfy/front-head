@@ -1,0 +1,10 @@
+{
+  "id": "ftx-upload-webp",
+  "displayName": "分投侠上传图片 WebP 编码",
+  "version": "0.1.0",
+  "description": "Background WebP encoding with bounded image decoding for Android and iOS",
+  "uni_modules": {
+    "dependencies": [], "encrypt": [],
+    "platforms": { "client": { "App": { "app-android": "y", "app-ios": "y" } } }
+  }
+}

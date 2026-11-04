@@ -58,14 +58,15 @@ import { toMapDisplayPoint } from '@/utils/map-display-point.mjs'
   }
 
   // 上报设备信息错误（用于用户报错垃圾桶位置/信息）
-  export function reportDeviceError(deviceId, reason = '') {
+  export function reportDeviceError(deviceId, reason = '', photos = []) {
     // 使用项目统一请求封装，需后端实现 /api/device/report_error
     return request({
       url: '/api/device/report_error',
       method: 'POST',
       data: {
         device_id: deviceId,
-        reason
+        reason,
+        photos: Array.isArray(photos) ? photos : []
       },
       needAuth: true
     })

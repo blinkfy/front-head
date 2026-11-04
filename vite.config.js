@@ -36,6 +36,9 @@ export default defineConfig(async ({ mode }) => {
     ],
     resolve: {
       alias: {
+        ...(process.env.UNI_PLATFORM === 'h5' ? {
+          '../utils/app-map-local-server-app.js': resolve(__dirname, 'src/utils/app-map-local-server-h5.js')
+        } : {}),
         '@': resolve(__dirname, 'src'),
         'mp-html': resolve(__dirname, 'node_modules/mp-html/src/uni-app/components/mp-html/mp-html.vue')
       }

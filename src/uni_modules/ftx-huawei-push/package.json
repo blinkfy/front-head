@@ -1,0 +1,10 @@
+{
+  "id": "ftx-huawei-push",
+  "displayName": "分投侠华为直连推送",
+  "version": "0.1.0",
+  "description": "Huawei device token bridge; no uniCloud dependency",
+  "uni_modules": {
+    "dependencies": [], "encrypt": [],
+    "platforms": { "client": { "App": { "app-android": "y", "app-ios": "y" } } }
+  }
+}

@@ -1,5 +1,5 @@
 <template>
-  <view class="publish-page" :class="{ 'dark-mode': isDark }">
+  <view class="publish-page" :class="{ 'dark-mode': isDark, 'draft-mode': !!draftId }">
     <!-- #ifndef H5 -->
     <canvas canvas-id="community-image-canvas" class="community-image-canvas"></canvas>
     <!-- #endif -->
@@ -21,19 +21,42 @@
           <text class="nav-title">发布信息</text>
         </view>
         <view
-          v-if="!isWeixin"
+          v-if="!isWeixin && (!draftId || (!draftLoading && !draftError && !draftExpired && !draftReceipt && draft))"
           :class="['nav-right', 'publish-btn', submitting ? 'disabled' : '']"
           @click="handlePublish"
         >
-          <text>发布</text>
+          <text>{{ submitting ? '处理中' : (draftId ? '确认发布' : '发布') }}</text>
         </view>
-        <view v-else class="nav-right publish-btn disabled">
+        <view v-else-if="isWeixin" class="nav-right publish-btn disabled">
           <text>未开放</text>
         </view>
       </view>
     </view>
 
+    <view v-if="isWeixin" class="content-wrapper"><view class="section">社区发帖已关闭，请返回浏览社区。</view></view>
+
     <view class="content-wrapper" v-if="!isWeixin">
+      <view v-if="draftId" class="section community-draft-state">
+        <text v-if="draftLoading">正在读取帖子草稿…</text>
+        <template v-else-if="draftError">
+          <text>{{ draftError }}</text>
+          <button :disabled="submitting" @click="loadCommunityDraft()">重新读取</button>
+        </template>
+        <template v-else-if="draftReceipt">
+          <text>帖子已发布 · 编号 {{ draftReceipt.id }}</text>
+          <text>这是本次发布回执；帖子的后续状态请到社区查看。</text>
+        </template>
+        <template v-else-if="draftExpired">
+          <text>草稿{{ draft?.status === 'cancelled' ? '已取消' : '已过期' }}，尚未发布。</text>
+          <button :disabled="submitting" @click="recreateCommunityDraft">使用原内容创建新草稿</button>
+        </template>
+        <template v-else>
+          <text>{{ draft?.snapshot?.communityName || '社区' }} · 草稿尚未发布</text>
+          <text>请核对实际经历和图片。保存后可从聊天待办继续编辑，草稿有效期24小时。</text>
+          <button :disabled="submitting || !draft" @click="saveCommunityDraft(false)">保存草稿</button>
+        </template>
+      </view>
+      <view v-if="!draftId || (draft && !draftLoading && !draftError && !draftReceipt && !draftExpired)" :class="{ 'community-form-busy': submitting }">
       <!-- 分类标签选择 -->
       <view class="section">
         <view class="section-title">选择分类</view>
@@ -108,8 +131,9 @@
           <text class="tips-title">发布须知</text>
           <text class="tips-text">1. 请遵守社区规范，文明发言</text>
           <text class="tips-text">2. 图片大小不超过5MB</text>
-          <text class="tips-text">3. 支持 jpg、png 格式</text>
+          <text class="tips-text">3. 支持 jpg、png、webp 格式；图片会压缩后上传，总量过大时请减少图片</text>
         </view>
+      </view>
       </view>
     </view>
 
@@ -132,6 +156,8 @@ import { userinfo } from '@/api/user.js';
 import { compressImageToBase64 } from '@/utils/avatar-handler.js';
 import { baseUrl } from '@/api/settings';
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { communitySocialEnabled } from './utils/community-social.js'
+import { communityDraftMethods } from './utils/community-draft-methods.js'
 
 function requestJson(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -155,6 +181,8 @@ export default {
       content: '',
       uploadedImages: [],
       submitting: false,
+      draftId: '', draft: null, draftLoading: false, draftError: '', draftExpired: false, draftReceipt: null,
+      draftLoadVersion: 0, pageClosed: false, replacementRequestId: '',
       tagOptions: ['心得', '技巧', '活动', '求助', '晒单'],
       visibilityScope: 'community',
       visibilityOptions: [
@@ -169,13 +197,7 @@ export default {
   onLoad(options) {
     this.checkTheme();
     this.checkAdmin();
-    // #ifdef MP-WEIXIN
-    this.isWeixin = true;
     this.checkAvailability();
-    // #endif
-    // #ifndef MP-WEIXIN
-    this.isWeixin = false;
-    // #endif
     if (options && options.token) {
       try {
         uni.setStorageSync('token', options.token);
@@ -197,26 +219,23 @@ export default {
     if (!this.communityId) {
       this.communityId = Number(this.getQueryValue('communityId')) || 0;
     }
+    this.draftId = typeof options.draftId === 'string' ? options.draftId : '';
+    if (this.draftId) this.loadCommunityDraft();
   },
+  onUnload() { this.pageClosed = true; this.draftLoadVersion++; },
   onShow() {
+    this.checkAvailability();
     this.checkTheme();
     this.checkAdmin();
   },
   methods: {
+    ...communityDraftMethods,
     checkTheme() {
       const theme = uni.getStorageSync('app_theme');
       this.isDark = theme === 'dark';
     },
     async checkAvailability() {
-      try {
-        const payload = await requestJson(`${baseUrl}/api/ai/settings`)
-        const settings = payload && payload.code === 0 ? payload.data : null
-        if (!settings || settings.aiEnabled !== false) {
-          this.isWeixin = false
-        }
-      } catch (err) {
-        console.warn('[community-publish] check Availability failed:', err)
-      }
+      this.isWeixin = !await communitySocialEnabled();
     },
     async checkAdmin() {
       const cached = !!uni.getStorageSync('isAdmin');
@@ -256,10 +275,12 @@ export default {
       return this.getQueryValue('token') || ''
     },
     handleCancel() {
+      if (this.submitting) return;
+      if (this.draftReceipt) { uni.navigateBack(); return; }
       if (this.content.trim() || this.uploadedImages.length > 0) {
         uni.showModal({
           title: '提示',
-          content: '确定放弃编辑吗？',
+          content: this.draftId ? '离开后未保存的修改会丢失，已保存的草稿可从聊天待办继续编辑。' : '确定放弃编辑吗？',
           success: (res) => {
             if (res.confirm) {
               uni.navigateBack();
@@ -272,6 +293,7 @@ export default {
     },
     async handlePublish() {
       if (this.submitting) return;
+      if (this.draftId) return this.saveCommunityDraft(true);
       if (!this.content.trim()) {
         uni.showToast({ title: '请输入帖子内容', icon: 'none' });
         return;
@@ -308,6 +330,7 @@ export default {
         sizeType: ['compressed'],
         sourceType: ['album', 'camera'],
         success: (res) => {
+          if (this.pageClosed || this.submitting) return;
           const tempPaths = res.tempFilePaths || [];
           this.uploadedImages = [...this.uploadedImages, ...tempPaths].slice(0, 9);
         }
@@ -325,6 +348,7 @@ export default {
           continue;
         }
         images.push(await compressImageToBase64(image, 960, 960, 0.76, {
+          preferWebp: true,
           preserveAspect: true,
           canvasId: 'community-image-canvas',
           context: this
@@ -337,6 +361,10 @@ export default {
 </script>
 
 <style scoped>
+.community-draft-state { padding: 24rpx; border-radius: 20rpx; background: rgba(128, 128, 128, .08); }
+.community-draft-state text { display: block; font-size: 26rpx; line-height: 1.7; overflow-wrap: anywhere; }
+.community-draft-state button { margin-top: 16rpx; font-size: 26rpx; }
+.community-form-busy { pointer-events: none; opacity: .7; }
 .community-image-canvas { position: fixed; left: -9999px; top: 0; width: 960px; height: 960px; }
 /* ===== 主容器 ===== */
 .publish-page {
@@ -371,6 +399,8 @@ export default {
 .dark-mode .cancel-text { color: rgba(255, 255, 255, 0.7); }
 .nav-left, .nav-right { flex: 0 0 120rpx; box-sizing: border-box; }
 .nav-right { display: flex; align-items: center; justify-content: flex-end; }
+.draft-mode .nav-left, .draft-mode .nav-right { flex-basis: 160rpx; }
+.draft-mode .publish-btn { padding: 12rpx 16rpx; justify-content: center; white-space: nowrap; }
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
   width: 56rpx; height: 56rpx;
