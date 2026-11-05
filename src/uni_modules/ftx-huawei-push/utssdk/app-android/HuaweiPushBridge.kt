@@ -1,14 +1,17 @@
 package ftx.push
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Bundle
 import com.huawei.hms.aaid.HmsInstanceId
+import com.huawei.hms.common.ApiException
 import com.huawei.hms.push.HmsMessageService
 import org.json.JSONObject
 import java.util.concurrent.Executors
+import java.security.MessageDigest
 
 object HuaweiPushBridge {
     private val worker = Executors.newSingleThreadExecutor()
@@ -16,6 +19,31 @@ object HuaweiPushBridge {
     private const val appId = "119662995"
     private var pending: ((String) -> Unit)? = null
     private var latestToken: String? = null
+
+    @Suppress("DEPRECATION")
+    private fun tokenFailure(context: Context, error: Exception): String {
+        // Public diagnostics only. Exception messages can contain SDK payloads.
+        val result = JSONObject().put("error", "TOKEN_UNAVAILABLE")
+            .put("exceptionType", error.javaClass.simpleName)
+            .put("packageName", context.packageName)
+            .put("expectedAppId", appId)
+        if (error is ApiException) result.put("hmsCode", error.statusCode)
+        try {
+            val info = context.packageManager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
+            result.put("manifestAppId", info.metaData?.get("com.huawei.hms.client.appid")?.toString() ?: "MISSING")
+        } catch (_: Exception) { /* Keep the original failure available. */ }
+        try {
+            val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+            val info = context.packageManager.getPackageInfo(context.packageName, flags)
+            val signatures = if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners else info.signatures
+            val certificate = signatures?.firstOrNull()
+            if (certificate != null) {
+                val digest = MessageDigest.getInstance("SHA-256").digest(certificate.toByteArray())
+                result.put("certificateSha256", digest.joinToString(":") { "%02X".format(it.toInt() and 0xff) })
+            }
+        } catch (_: Exception) { /* Signing diagnostics must not mask the SDK error. */ }
+        return result.toString()
+    }
 
     fun tokenReceived(token: String?) {
         if (token.isNullOrEmpty()) return
@@ -38,7 +66,7 @@ object HuaweiPushBridge {
                 val token = HmsInstanceId.getInstance(context).getToken(appId, "HCM")
                 if (token.isNullOrEmpty()) "{\"error\":\"TOKEN_PENDING\"}"
                 else JSONObject().put("token", token).toString()
-            } catch (_: Exception) { "{\"error\":\"TOKEN_UNAVAILABLE\"}" }
+            } catch (error: Exception) { tokenFailure(context, error) }
             main.post {
                 if (result.contains("TOKEN_PENDING")) {
                     if (!latestToken.isNullOrEmpty()) {

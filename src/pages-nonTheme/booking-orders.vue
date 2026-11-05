@@ -15,14 +15,14 @@
         </view>
         <view class="nav-title-wrap">
           <view class="title-icon-pill"><ManifestIcon id="reservation_order_table" /></view>
-          <text class="nav-title">回收订单</text>
+          <text class="nav-title">{{ detailOrderId ? '回收订单详情' : '回收订单' }}</text>
         </view>
         <view class="nav-right"></view>
       </view>
     </view>
 
     <!-- 状态筛选（横向滚动） -->
-    <view class="filter-bar">
+    <view class="filter-bar" v-if="!detailOrderId">
       <scroll-view class="filter-tabs" scroll-x enable-flex>
         <view
           v-for="tab in statusTabs"
@@ -83,6 +83,10 @@
               <text class="amount-label">预估收益</text>
               <text class="amount-value">¥{{ order.estimateAmount.toFixed(2) }}</text>
             </view>
+            <view v-if="order.status === 'completed' && order.actualPrice !== null" class="order-info">
+              <view class="info-row"><text class="info-label">结算金额</text><text class="info-value">¥{{ order.actualPrice.toFixed(2) }}</text></view>
+            </view>
+            <view v-if="order.cancelReason" class="order-info"><view class="info-row"><text class="info-label">取消原因</text><text class="info-value">{{ order.cancelReason }}</text></view></view>
 
             <!-- 操作按钮 -->
             <view class="order-actions" v-if="order.status === 'pending' || order.status === 'scheduled' || order.status === 'confirmed' || order.status === 'picking'">
@@ -138,7 +142,7 @@
 </template>
 
 <script>
-import { getBookingList, cancelBooking } from '@/pages-nonTheme/api/booking.js';
+import { getBookingList, getBookingDetail, cancelBooking } from '@/pages-nonTheme/api/booking.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 
 export default {
@@ -148,6 +152,7 @@ export default {
       loading: false,
       loadingMore: false,
       orders: [],
+      detailOrderId: '',
       currentStatus: 'all',
       currentPage: 1,
       hasMore: false,
@@ -163,7 +168,8 @@ export default {
       isDark: false
     };
   },
-  onLoad() {
+  onLoad(options = {}) {
+    this.detailOrderId = /^\d+$/.test(String(options.orderId || '')) ? options.orderId : '';
     this.checkTheme();
     this.loadOrders();
   },
@@ -194,10 +200,10 @@ export default {
       this.currentPage = 1;
       try {
         const status = this.currentStatus === 'all' ? null : this.currentStatus;
-        const res = await getBookingList(status, 1, 20);
+        const res = this.detailOrderId ? await getBookingDetail(this.detailOrderId) : await getBookingList(status, 1, 20);
         const data = this.extractData(res) || {};
-        this.orders = this.formatOrders(data.orders || []);
-        this.hasMore = (data.page || 1) < (data.totalPages || 1);
+        this.orders = this.formatOrders(this.detailOrderId ? [data] : (data.orders || []));
+        this.hasMore = !this.detailOrderId && (data.page || 1) < (data.totalPages || 1);
       } catch (e) {
         console.error('获取订单失败:', e);
         this.orders = [];
@@ -232,6 +238,8 @@ export default {
         timeSlot: o.appointmentTimeSlot || o.timeSlot || '',
         address: o.address || '',
         status: o.status || 'pending',
+        actualPrice: o.actualPrice == null ? null : Number(o.actualPrice),
+        cancelReason: o.cancelReason || '',
         estimateAmount: Number(o.totalPrice || o.estimateAmount || 0)
       }));
     },

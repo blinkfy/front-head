@@ -195,6 +195,10 @@
 					"style": { "navigationStyle": "custom" }
 				},
 				{
+					"path": "system-notifications",
+					"style": { "navigationStyle": "custom" }
+				},
+				{
 					"path": "community-post",
 					"style": {
 						"navigationStyle": "custom"

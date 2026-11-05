@@ -1,3 +1,16 @@
+// Only explicit public fields may leave the native bridge through diagnostic logs.
+function nativeFailureDetails(result) {
+  const details = {}
+  if (Number.isInteger(result.hmsCode) && result.hmsCode > 0 && result.hmsCode <= 2147483647) details.hmsCode = result.hmsCode
+  if (['ApiException', 'IllegalArgumentException', 'IllegalStateException', 'SecurityException',
+    'NullPointerException', 'RuntimeException', 'IOException', 'Exception'].includes(result.exceptionType)) details.exceptionType = result.exceptionType
+  if (typeof result.packageName === 'string' && /^[A-Za-z][\w]*(?:\.[A-Za-z][\w]*){1,20}$/.test(result.packageName) && result.packageName.length <= 160) details.packageName = result.packageName
+  if (typeof result.expectedAppId === 'string' && /^\d{1,20}$/.test(result.expectedAppId)) details.expectedAppId = result.expectedAppId
+  if (typeof result.manifestAppId === 'string' && /^(?:appid=\d{1,20}|MISSING)$/.test(result.manifestAppId)) details.manifestAppId = result.manifestAppId
+  if (typeof result.certificateSha256 === 'string' && /^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/.test(result.certificateSha256)) details.certificateSha256 = result.certificateSha256
+  return details
+}
+
 // Serialized identity transitions prevent a slow old login from reclaiming a device.
 export function createPushRegistration({ request, getToken, deleteToken, readBinding, writeBinding, now = Date.now, onStatus = () => {} }) {
   let identity = '', generation = 0, nextAttempt = 0, disabled = false, chain = Promise.resolve()
@@ -39,7 +52,7 @@ export function createPushRegistration({ request, getToken, deleteToken, readBin
       const result = await nativeResult(getToken)
       if (version !== generation) return
       if (!result.token) {
-        report(stage, nativeErrors.has(result.error) ? result.error : 'TOKEN_UNAVAILABLE')
+        report(stage, nativeErrors.has(result.error) ? result.error : 'TOKEN_UNAVAILABLE', nativeFailureDetails(result))
         if (result.error === 'UNSUPPORTED') disabled = true
         return
       }

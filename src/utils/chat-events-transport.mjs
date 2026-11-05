@@ -55,7 +55,7 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
                             previouslyConnected = true
                             onConnected?.({ ...event, reconnected })
                         }
-                        else if (event.type === 'chat.changed' || event.type === 'community.changed') onEvent(event)
+                        else if (event.type === 'chat.changed' || event.type === 'community.changed' || event.type === 'notification.changed') onEvent(event)
                     } catch (_) {}
                 })
                 current.onClose(disconnected)

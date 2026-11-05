@@ -121,6 +121,15 @@ async function registrationDiagnostics() {
     { error: 'UNSUPPORTED', expected: { stage: 'native-token', status: 'UNSUPPORTED' } },
     { error: 'NOTIFICATIONS_DISABLED', expected: { stage: 'native-token', status: 'NOTIFICATIONS_DISABLED' } },
     { error: 'TOKEN_UNAVAILABLE', expected: { stage: 'native-token', status: 'TOKEN_UNAVAILABLE' } },
+    { error: 'TOKEN_UNAVAILABLE', details: { hmsCode: 6003, exceptionType: 'ApiException', packageName: 'uni.app.UNI0B093BC',
+      expectedAppId: '119662995', manifestAppId: 'appid=119662995', certificateSha256: Array(32).fill('AB').join(':'),
+      message: 'private_sdk_payload', token: 'private_device_token', clientSecret: 'private_client_secret' },
+      expected: { stage: 'native-token', status: 'TOKEN_UNAVAILABLE', hmsCode: 6003, exceptionType: 'ApiException',
+        packageName: 'uni.app.UNI0B093BC', expectedAppId: '119662995', manifestAppId: 'appid=119662995',
+        certificateSha256: Array(32).fill('AB').join(':') } },
+    { error: 'TOKEN_UNAVAILABLE', details: { hmsCode: 'private_code', exceptionType: 'private_exception',
+      packageName: 'private_package?token=private_value', expectedAppId: 'private_app', manifestAppId: 'private_manifest',
+      certificateSha256: 'private_certificate' }, expected: { stage: 'native-token', status: 'TOKEN_UNAVAILABLE' } },
     { error: 'sensitive-native-error-with-token', expected: { stage: 'native-token', status: 'TOKEN_UNAVAILABLE' } },
     { httpStatus: 503, expected: { stage: 'binding', status: 'REQUEST_FAILED', httpStatus: 503 } },
     { expected: { stage: 'binding', status: 'READY' } }
@@ -134,7 +143,7 @@ async function registrationDiagnostics() {
         if (item.httpStatus) throw Object.assign(new Error('do not log token or JWT'), { pushHttpStatus: item.httpStatus })
         return {}
       },
-      getToken: cb => cb(json(item.error ? { error: item.error } : { token: 'private_device_token' })),
+      getToken: cb => cb(json(item.error ? { ...item.details, error: item.error, token: undefined } : { token: 'private_device_token' })),
       deleteToken: cb => cb(json({ ok: true })),
       readBinding: () => binding,
       writeBinding: value => { binding = value },

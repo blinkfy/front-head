@@ -2462,6 +2462,13 @@ body {
     min-width: 0;
   }
 }
+/* #ifdef APP-PLUS */
+.admin-btn {
+  box-sizing: border-box;
+  flex: 0 0 calc(50% - 7rpx);
+  min-width: 0;
+}
+/* #endif */
 </style>
 
 

@@ -208,7 +208,7 @@
             <text class="recent-result-link">回看结果</text>
             <view class="recent-result-chevron" aria-hidden="true"></view>
           </view>
-          <text v-else class="welcome-desc">上传图片，AI将为您识别垃圾类型<br/>共同践行绿色环保理念</text>
+          <text v-else class="welcome-desc">上传图片，AI将为您识别垃圾类型</text>
         </view>
         
         <!-- 垃圾分类指南卡片 -->
@@ -3039,6 +3039,26 @@ function closeAchievementModal() {
 
 /* 底部导航栏*/
 @media (max-width: 768px) {
+  .home-container {
+    box-sizing: border-box;
+    padding-top: 24rpx;
+  }
+
+  .header-section {
+    margin-top: 12rpx;
+    margin-bottom: 28rpx;
+  }
+
+  .main-title { margin-bottom: 16rpx; }
+  .title-icon { width: 56rpx; height: 56rpx; }
+  .title-text { font-size: 48rpx; }
+  .subtitle { font-size: 24rpx; }
+  .upload-section, .device-connection-banner { margin-bottom: 24rpx; }
+  .welcome-section { flex: 0 0 auto; gap: 20rpx; }
+  .welcome-card { box-sizing: border-box; padding: 18rpx 32rpx; }
+  .guide-cards { gap: 14rpx; }
+  .guide-card { padding: 18rpx; }
+
   .category-row {
     align-items: flex-start;
     flex-direction: column;
