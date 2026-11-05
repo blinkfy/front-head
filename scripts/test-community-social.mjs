@@ -57,6 +57,7 @@ function compileAffectedSfcFiles() {
     'src/pages-admin/admin-ai-settings.vue',
     'src/pages-nonTheme/components/CommunityChatBridge.vue',
     'src/pages-nonTheme/components/CommunityActivityEntry.vue',
+    'src/pages-nonTheme/components/CommunityPostMessage.vue',
     'src/pages-nonTheme/components/ChatSelectionDialog.vue'
   ]
   for (const relativePath of files) {
@@ -74,16 +75,30 @@ function compileAffectedSfcFiles() {
 }
 
 function testStrictCommunityPostLinks() {
-  const communityPostLink = getNamedFunction('src/pages-nonTheme/utils/community-social.js', 'communityPostLink')
-  assert.equal(communityPostLink('【社区帖子】\n示例\n/pages-nonTheme/community-post?postId=12&communityId=34'),
+  const communityPostCard = getNamedFunction('src/pages-nonTheme/utils/community-social.js', 'communityPostCard')
+  const communityPostLink = getNamedFunction('src/pages-nonTheme/utils/community-social.js', 'communityPostLink', { communityPostCard })
+  const card = { kind: 'community_post', version: 1, postId: 12, communityId: 34, title: '我的社区帖子', author: { id: 5, name: '邻居' }, tag: '心得' }
+  const message = { type: 'others', content: JSON.stringify(card) }
+  assert.equal(communityPostLink(message),
     '/pages-nonTheme/community-post?postId=12&communityId=34')
+  assert.equal(communityPostLink({ type: 'text', storedType: 'others', content: '旧版可读文字', communityPost: card }), communityPostLink(message))
   for (const value of [
+    { type: 'text', content: '【社区帖子】\n示例\n/pages-nonTheme/community-post?postId=12&communityId=34' },
+    { type: 'text', content: JSON.stringify(card) },
+    { type: 'text', content: JSON.stringify(card), communityPost: card },
+    { type: 'others', content: JSON.stringify({ ...card, postId: 0 }) },
+    { type: 'others', content: JSON.stringify({ ...card, version: 2 }) },
+    { type: 'others', content: '{invalid' },
     '【社区帖子】\n示例\nhttps://attacker.invalid/',
-    '【社区帖子】\n示例\n/pages-nonTheme/community-post?postId=0&communityId=34',
-    '【社区帖子】\n示例\n/pages-nonTheme/community-post?postId=12&communityId=34&next=https://attacker.invalid',
-    '【社区帖子】\n示例\n/pages-nonTheme/community-post?communityId=34&postId=12',
     null
   ]) assert.equal(communityPostLink(value), '', 'untrusted or malformed link is rejected')
+  const format = getComponentMethod('src/pages-nonTheme/chat.vue', 'formatServerMessage', { communityPostCard, getDisplayName: () => '发送人', baseUrl: '' })
+  const normalized = format.call({ getCurrentUserId: () => 7 }, { id: 99, senderId: 7, sendTime: new Date().toISOString(),
+    type: 'text', storedType: 'others', communityPost: card, content: '旧版可读文字' })
+  assert.equal(normalized.type, 'others')
+  assert.equal(communityPostLink(JSON.parse(JSON.stringify(normalized))), communityPostLink(message), 'typed metadata survives normal message cache serialization')
+  const ordinary = format.call({ getCurrentUserId: () => 7 }, { ...message, type: 'text' })
+  assert.equal(ordinary.type, 'text', 'user-entered card JSON stays text after formatting')
 }
 
 async function testCommunitySettingIsIndependentOfLlm() {
@@ -221,6 +236,26 @@ async function testAuthorContactState() {
   assert.equal(bridge.authorContactState, 'new', 'a stale lookup cannot change the next author card')
 }
 
+function testHistoricalPostShareWithoutFeatureGate() {
+  const communityPostCard = getNamedFunction('src/pages-nonTheme/utils/community-social.js', 'communityPostCard')
+  const communityPostLink = getNamedFunction('src/pages-nonTheme/utils/community-social.js', 'communityPostLink', { communityPostCard })
+  const opened = [], toasts = []
+  const open = getComponentMethod('src/pages-nonTheme/chat.vue', 'openCommunityPost', {
+    communityPostLink,
+    uni: { navigateTo: value => opened.push(value.url), showToast: value => toasts.push(value.title) },
+    communitySocialEnabled: () => { throw new Error('historical shares must not depend on the feature switch') }
+  })
+  open({ type: 'others', content: JSON.stringify({ kind: 'community_post', version: 1, postId: 14, communityId: 41,
+    title: '分享时的帖子标题', author: { id: 2, name: '作者' }, tag: '心得' }) })
+  assert.deepEqual(opened, ['/pages-nonTheme/community-post?postId=14&communityId=41'])
+  open('【社区帖子】\nhttps://example.com')
+  assert.equal(opened.length, 1, 'malformed messages cannot navigate')
+  assert.equal(toasts.length, 1)
+  const { descriptor } = loadSfc('src/pages-nonTheme/chat.vue')
+  assert.match(descriptor.template.content, /CommunityPostMessage v-if="msg.type === 'others'"/, 'typed post cards render without a switch gate')
+  assert.match(descriptor.script.content, /components:\s*\{[^}]*CommunityPostMessage/, 'post card component is registered')
+}
+
 async function main() {
   compileAffectedSfcFiles()
   testStrictCommunityPostLinks()
@@ -229,6 +264,7 @@ async function main() {
   await testShareRetryIdempotencyAndAccountFence()
   await testStaleConversationSearchFence()
   await testAuthorContactState()
+  testHistoricalPostShareWithoutFeatureGate()
   console.log('community social checks passed: affected SFCs, strict links, independent settings, share retry/account fence, stale search fence')
 }
 

@@ -8,7 +8,7 @@
 				</view>
 				<view class="nav-title">用户消息</view>
 			<view class="nav-right">
-				<ManifestIcon v-if="aiEnabled" class="add-icon" id="add" :scale="1.1" @click.stop="openContacts" />
+				<ManifestIcon v-if="communityChatEnabled" class="add-icon" id="add" :scale="1.1" @click.stop="openContacts" />
 				<ManifestIcon class="search-icon nav-white-icon" id="search" :scale="1.1" @click="toggleSearch" />
 				</view>
 			</view>
@@ -135,7 +135,6 @@ export default {
 			listUnreadTotal: null,
 			isDarkTheme: false,
 			scrollTop: 0,
-			aiEnabled: true,
             communityChatEnabled: false,
 			
 			// 本地缓存相关
@@ -228,7 +227,7 @@ computed: {
         }
 		this.isPageActive = true
 		this.syncAccountContext()
-		this.refreshAiVisibility()
+		this.refreshCommunityVisibility()
 		
 		// 初始化加载/刷新
 		this.refreshList()
@@ -1040,7 +1039,7 @@ computed: {
 			})
 		},
 
-		async refreshAiVisibility() {
+		async refreshCommunityVisibility() {
 			try {
 				const response = await new Promise((resolve, reject) => {
 					uni.request({
@@ -1051,14 +1050,15 @@ computed: {
 				})
 				const payload = response?.data
 				const settings = payload && payload.code === 0 ? payload.data : null
-				if (settings) { this.aiEnabled = settings.aiEnabled !== false; this.communityChatEnabled = settings.communityChatEnabled !== false }
+				if (settings) this.communityChatEnabled = settings.communityChatEnabled !== false
 			} catch (error) {
-				console.warn('[chatlist] check AI settings failed:', error)
+				console.warn('[chatlist] check community chat settings failed:', error)
 			}
-			return this.aiEnabled
+			return this.communityChatEnabled
 		},
 
 		openContacts() {
+			if (!this.communityChatEnabled) return
 			uni.navigateTo({ url: '/pages-nonTheme/chat-contacts' })
 		},
 

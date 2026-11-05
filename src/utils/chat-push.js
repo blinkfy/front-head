@@ -1,5 +1,6 @@
 import { baseUrl } from '@/api/settings.js'
 import { createPushRegistration } from './chat-push-registration.mjs'
+import { appConsole } from './app-console.mjs'
 
 let registration
 export function installChatPush(getToken, deleteToken) {
@@ -18,14 +19,22 @@ export function installChatPush(getToken, deleteToken) {
         }, () => callback('{"error":"NOTIFICATIONS_DISABLED"}'))
       } catch (_) { callback('{"error":"NOTIFICATIONS_UNAVAILABLE"}') }
     }), deleteToken,
+    // Diagnostics contain only stage/status; never log JWTs, tokens or vendor payloads.
+    onStatus: status => console.info('[chat-push]', JSON.stringify(status)),
     readBinding: () => uni.getStorageSync(key) || null,
     writeBinding: value => value ? uni.setStorageSync(key, value) : uni.removeStorageSync(key),
     request: (method, path, jwt, data) => new Promise((resolve, reject) => uni.request({
       url: `${baseUrl}${path}`, method, data, header: { Authorization: `Bearer ${jwt}` }, timeout: 7000,
-      success: res => res.statusCode === 200 && res.data?.code === 0 ? resolve(res.data.data) : reject(new Error('Push unavailable')),
+      success: res => res.statusCode === 200 && res.data?.code === 0 ? resolve(res.data.data) : reject(Object.assign(new Error('Push unavailable'), { pushHttpStatus: res.statusCode })),
       fail: reject
     }))
   })
 }
-export function syncChatPush(jwt, force = false) { return registration?.sync(jwt, force) }
-export function clearChatPush() { return registration?.logout() }
+export function syncChatPush(jwt, force = false) {
+  appConsole.setIdentity(jwt)
+  return registration?.sync(jwt, force)
+}
+export function clearChatPush() {
+  appConsole.setIdentity('')
+  return registration?.logout()
+}

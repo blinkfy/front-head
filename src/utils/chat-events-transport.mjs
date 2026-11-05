@@ -73,7 +73,11 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
             if (timer) clearTimer(timer)
             timer = null
             if (active) tick()
-            else { close(); identity = ''; retryAt = 0; previouslyConnected = false }
+            else {
+                // Best effort: mark background before close; server heartbeat expiry covers lost frames.
+                try { if (authenticated) socket?.send({ data: JSON.stringify({ type: 'background' }) }) } catch (_) {}
+                close(); identity = ''; retryAt = 0; previouslyConnected = false
+            }
         }
     }
 }

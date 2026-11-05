@@ -115,12 +115,44 @@ async function tokenRotationAndRenewal() {
   assert.equal(puts.at(-1), token)
 }
 
+async function registrationDiagnostics() {
+  const cases = [
+    { capability: false, expected: { stage: 'capabilities', status: 'DISABLED' } },
+    { error: 'UNSUPPORTED', expected: { stage: 'native-token', status: 'UNSUPPORTED' } },
+    { error: 'NOTIFICATIONS_DISABLED', expected: { stage: 'native-token', status: 'NOTIFICATIONS_DISABLED' } },
+    { error: 'TOKEN_UNAVAILABLE', expected: { stage: 'native-token', status: 'TOKEN_UNAVAILABLE' } },
+    { error: 'sensitive-native-error-with-token', expected: { stage: 'native-token', status: 'TOKEN_UNAVAILABLE' } },
+    { httpStatus: 503, expected: { stage: 'binding', status: 'REQUEST_FAILED', httpStatus: 503 } },
+    { expected: { stage: 'binding', status: 'READY' } }
+  ]
+  for (const item of cases) {
+    const statuses = []
+    let binding = null
+    const manager = createPushRegistration({
+      request: async method => {
+        if (method === 'GET') return { huawei: item.capability !== false }
+        if (item.httpStatus) throw Object.assign(new Error('do not log token or JWT'), { pushHttpStatus: item.httpStatus })
+        return {}
+      },
+      getToken: cb => cb(json(item.error ? { error: item.error } : { token: 'private_device_token' })),
+      deleteToken: cb => cb(json({ ok: true })),
+      readBinding: () => binding,
+      writeBinding: value => { binding = value },
+      onStatus: status => statuses.push(status)
+    })
+    await manager.sync('private_jwt')
+    assert.deepEqual(statuses, [item.expected])
+    assert.doesNotMatch(json(statuses), /private_|sensitive-native|do not log/)
+  }
+}
+
 async function main() {
   const cases = [
     ['same identity avoids HTTP polling', noPollingForSameIdentity],
     ['account switch fences stale awaits', staleAwaitAndAccountSwitch],
     ['logout revocation and bind retry', logoutRevocationAndRetry],
-    ['token rotation and renewal', tokenRotationAndRenewal]
+    ['token rotation and renewal', tokenRotationAndRenewal],
+    ['safe stage diagnostics', registrationDiagnostics]
   ]
   for (const [name, run] of cases) { await run(); console.log(`PASS ${name}`) }
   console.log('Frontend Huawei push registration tests passed.')

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import vm from 'node:vm'
 import { readFile } from 'node:fs/promises'
 import { vibrateHaptic, vibrateHapticPattern, vibrateScan } from '../src/utils/haptics.mjs'
 
@@ -43,5 +44,26 @@ await vibrateHapticPattern(2, { plus: { device: { vibrate: duration => doubleCal
 assert.deepEqual(doubleCalls, [100, 100])
 const notificationSource = await readFile(new URL('../src/utils/notification.js', import.meta.url), 'utf8')
 assert.match(notificationSource, /if \(vibrate\)\s*\{\s*vibrateNotification\(0\)/)
+
+// A slow or unavailable audio callback must never delay message vibration.
+let releaseSound
+const slowSound = new Promise(resolve => { releaseSound = resolve })
+const alerts = []
+// Locate the exported function without depending on the source file's newline style.
+const sourceTail = notificationSource.slice(notificationSource.indexOf('export async function notifyNewMessage')).split(/\r?\n\/\*\*/)[0]
+const notify = vm.runInNewContext(sourceTail.replace('export ', '') + '; notifyNewMessage', {
+  showSystemNotification: () => alerts.push('notification'),
+  showNotification: () => alerts.push('banner'),
+  playNotificationSound: () => { alerts.push('sound'); return slowSound },
+  vibrateNotification: () => alerts.push('vibration'),
+  openChatNotification() {}
+})
+const pendingNotice = notify({ content: 'message' })
+assert.deepEqual(alerts, ['notification', 'vibration', 'sound'], 'vibration happens immediately while audio is pending')
+releaseSound()
+await pendingNotice
+alerts.length = 0
+await notify({ content: 'silent' }, { playSound: false, vibrate: false, showNotification: false })
+assert.deepEqual(alerts, [], 'muted options remain respected')
 
 console.log('haptics dispatch, fallback, scan pulse, and bounded notification pattern passed')

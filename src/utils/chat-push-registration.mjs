@@ -1,6 +1,10 @@
 // Serialized identity transitions prevent a slow old login from reclaiming a device.
-export function createPushRegistration({ request, getToken, deleteToken, readBinding, writeBinding, now = Date.now }) {
+export function createPushRegistration({ request, getToken, deleteToken, readBinding, writeBinding, now = Date.now, onStatus = () => {} }) {
   let identity = '', generation = 0, nextAttempt = 0, disabled = false, chain = Promise.resolve()
+  const report = (stage, status, extra = {}) => {
+    try { onStatus({ stage, status, ...extra }) } catch (_) {}
+  }
+  const nativeErrors = new Set(['UNSUPPORTED', 'UNAVAILABLE', 'TOKEN_PENDING', 'TOKEN_UNAVAILABLE', 'NOTIFICATIONS_DISABLED', 'NOTIFICATIONS_UNAVAILABLE', 'INVALID_RESULT'])
   const nativeResult = fn => new Promise(resolve => fn(raw => {
     try { resolve(JSON.parse(raw)) } catch (_) { resolve({ error: 'INVALID_RESULT' }) }
   }))
@@ -21,27 +25,43 @@ export function createPushRegistration({ request, getToken, deleteToken, readBin
     if ((!changed && !force) || now() < nextAttempt) return chain
     nextAttempt = now() + 300000
     const version = generation
+    let stage = 'cleanup'
     chain = chain.catch(() => {}).then(async () => {
       if (version !== generation) return
       const previous = readBinding()
       if (previous && previous.jwt !== jwt && !await remove(previous)) return
       if (version !== generation || !jwt) return
+      stage = 'capabilities'
       const capability = await request('GET', '/api/chat/push/capabilities', jwt)
-      if (!capability?.huawei || version !== generation) return
+      if (version !== generation) return
+      if (!capability?.huawei) { report(stage, 'DISABLED'); return }
+      stage = 'native-token'
       const result = await nativeResult(getToken)
-      if (result.error === 'UNSUPPORTED') { disabled = true; return }
-      if (!result.token || version !== generation) return
+      if (version !== generation) return
+      if (!result.token) {
+        report(stage, nativeErrors.has(result.error) ? result.error : 'TOKEN_UNAVAILABLE')
+        if (result.error === 'UNSUPPORTED') disabled = true
+        return
+      }
       if (previous?.jwt === jwt && previous.token === result.token && now() - previous.boundAt < 86400000) {
+        report('binding', 'READY')
         nextAttempt = now() + 300000
         return
       }
       // Persist before binding so a failed response can still be cleaned up on logout.
       const binding = { jwt, token: result.token }
       writeBinding(binding)
+      stage = 'binding'
       await request('PUT', '/api/chat/push/device', jwt, { token: result.token })
       writeBinding({ ...binding, boundAt: now() })
-      if (version === generation) nextAttempt = now() + 300000
-    }).catch(() => {})
+      if (version === generation) {
+        nextAttempt = now() + 300000
+        report(stage, 'READY')
+      }
+    }).catch(error => {
+      if (version === generation) report(stage, 'REQUEST_FAILED',
+        Number.isInteger(error?.pushHttpStatus) ? { httpStatus: error.pushHttpStatus } : {})
+    })
     return chain
   }
   function logout() {

@@ -161,7 +161,7 @@ export default {
       hasSearched: false,
       groupName: '',
       selectedFriendIds: [],
-      aiEnabled: true,
+      communityChatEnabled: true,
       accessDenied: false
     }
   },
@@ -178,7 +178,7 @@ export default {
     this.statusBarHeight = systemInfo.statusBarHeight || 20
   },
   onShow() {
-    this.ensureAiAvailable().then((enabled) => {
+    this.ensureCommunityChatAvailable().then((enabled) => {
       if (enabled) this.refreshAll()
     })
   },
@@ -186,7 +186,7 @@ export default {
   onUnload() { this.searchVersion++; this.searching = false },
   methods: {
     getDisplayName,
-    async ensureAiAvailable() {
+    async ensureCommunityChatAvailable() {
       try {
         const response = await new Promise((resolve, reject) => {
           uni.request({
@@ -197,8 +197,8 @@ export default {
         })
         const payload = response?.data
         const settings = payload && payload.code === 0 ? payload.data : null
-        if (settings && settings.aiEnabled === false) {
-          this.aiEnabled = false
+        if (settings && settings.communityChatEnabled === false) {
+          this.communityChatEnabled = false
           this.loading = false
           if (!this.accessDenied) {
             this.accessDenied = true
@@ -209,9 +209,9 @@ export default {
           return false
         }
       } catch (error) {
-        console.warn('[chat-contacts] check AI settings failed:', error)
+        console.warn('[chat-contacts] check community chat settings failed:', error)
       }
-      this.aiEnabled = true
+      this.communityChatEnabled = true
       this.accessDenied = false
       return true
     },

@@ -32,6 +32,7 @@ import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegac
 import { checkAppUpdate } from '@/utils/app-update.js'
 import { getHuaweiPushToken, deleteHuaweiPushToken } from '@/uni_modules/ftx-huawei-push'
 import { installChatPush, syncChatPush } from '@/utils/chat-push.js'
+import { appConsole } from '@/utils/app-console.mjs'
 import { encodeUploadWebp } from '@/uni_modules/ftx-upload-webp'
 import { installAppWebpEncoder } from '@/utils/app-upload-webp-core.mjs'
 import { setAppMapPreloadActive, disposeAppMapPreload } from '@/utils/app-map-preload-app.js'
@@ -70,6 +71,10 @@ export default {
   },
 // #endif
   onLaunch: function (options) {
+    // #ifdef APP-PLUS
+    appConsole.setIdentity(uni.getStorageSync('token') || '')
+    appConsole.install(console)
+    // #endif
     console.log('App Launch')
     initUiSounds()
     // #ifdef APP-PLUS

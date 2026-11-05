@@ -77,7 +77,7 @@
                             </view>
 
                             <!-- AI 文本使用受限 Markdown，普通用户消息保持原有纯文本展示。 -->
-                            <view v-if="msg.type === 'text' && communityChatEnabled && communityPostLink(msg.content)" class="community-post-message" @click.stop="openCommunityPost(msg.content)"><ManifestIcon id="community_home" size="54rpx" /><view><text class="community-post-message-title">社区帖子</text><text class="community-post-message-note">点击查看详情</text></view></view>
+                            <CommunityPostMessage v-if="msg.type === 'others'" :card="communityPostCard(msg)" @open="openCommunityPost(msg)" />
                             <ChatMarkdown v-else-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" :dark="isDarkTheme" />
                             <text v-else-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
 
@@ -620,7 +620,8 @@ import { triggerMessageNotification } from '@/utils/message-event-bus.js'
 import ChatMarkdown from '@/pages-nonTheme/components/ChatMarkdown.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
-import { communityPostLink, communitySocialEnabled } from './utils/community-social.js'
+import { communityPostCard, communityPostLink } from './utils/community-social.js'
+import CommunityPostMessage from './components/CommunityPostMessage.vue'
 import { getDisplayName } from '@/utils/display-name.js'
 
 // 本地存储 key 前缀
@@ -637,6 +638,7 @@ const chatRelationshipLabels = {
 export default {
     components: {
         ChatMarkdown,
+        CommunityPostMessage,
         ChatSelectionDialog,
         ChatHistorySearch,
         ManifestIcon
@@ -650,7 +652,6 @@ export default {
             groupSettingsBusy: false,
             memberSearch: '',
             showHistorySearch: false,
-            communityChatEnabled: false,
             messageMenu: null,
             messageActionIcons: { copy: 'chat_copy', delete: 'delete', quote: 'chat_quote', forward: 'chat_forward', select: 'chat_multi_select', transcribe: 'chat_voice_text', recall: 'chat_recall', retry: 'refresh' },
             selectingMessages: false,
@@ -996,7 +997,6 @@ export default {
     },
 
     onShow() {
-        communitySocialEnabled().then(enabled => { this.communityChatEnabled = enabled })
         setActiveChatConversation(this.chatId)
         if (!this.chatEventListener) {
             this.chatEventListener = (event = {}) => {
@@ -1087,10 +1087,11 @@ export default {
 
     methods: {
         communityPostLink,
-        async openCommunityPost(content) {
-            const url = communityPostLink(content)
-            if (url && await communitySocialEnabled(true)) uni.navigateTo({ url })
-            else uni.showToast({ title: '社区关联已关闭或链接无效', icon: 'none' })
+        communityPostCard,
+        openCommunityPost(message) {
+            const url = communityPostLink(message)
+            if (url) uni.navigateTo({ url })
+            else uni.showToast({ title: '帖子链接无效', icon: 'none' })
         },
         // ==================== 主题相关 ====================
         // 检测主题
@@ -1458,6 +1459,7 @@ export default {
 
         // 格式化服务器返回的消息
         formatServerMessage(serverMsg) {
+            const postCard = communityPostCard(serverMsg)
             const currentUserId = this.getCurrentUserId()
             const isSelf = !serverMsg.isAi && (currentUserId
                 ? String(serverMsg.senderId) === String(currentUserId)
@@ -1498,8 +1500,8 @@ export default {
             const message = {
                 id: serverMsg.id || serverMsg.messageId,
                 clientMessageId: serverMsg.clientMessageId || null,
-                type: serverMsg.type || 'text',
-                content: content,
+                type: postCard ? 'others' : serverMsg.type || 'text',
+                content: postCard ? JSON.stringify(postCard) : content,
                 isSelf: isSelf,
                 isAi: !!serverMsg.isAi,
                 senderId: serverMsg.senderId,
@@ -2755,6 +2757,8 @@ export default {
             if (refMsg.isWithdraw) return '[消息已撤回]'
             
             switch (refMsg.type) {
+                case 'others':
+                    return communityPostCard(refMsg) ? `[社区帖子] ${communityPostCard(refMsg).title}` : '[消息]'
                 case 'text':
                     return refMsg.content.substring(0, 50) + (refMsg.content.length > 50 ? '...' : '')
                 case 'image':
@@ -3297,10 +3301,6 @@ page {
 .message-selected { background: rgba(7,193,96,.08); }
 .message-select-hitbox { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 5; }
 .message-select-check { position: absolute; left: 5rpx; top: 36rpx; color: #07a96a; font-size: 36rpx; }
-.community-post-message { display: flex; align-items: center; gap: 20rpx; min-width: 300rpx; padding: 24rpx; background: var(--bg-secondary); color: var(--text-primary); }
-.community-post-message-title, .community-post-message-note { display: block; }
-.community-post-message-title { font-size: 29rpx; font-weight: 600; }
-.community-post-message-note { margin-top: 10rpx; font-size: 24rpx; color: var(--text-secondary); }
 .message-action-menu { width: 500rpx; max-width: 90vw; max-height: 80vh; overflow-y: auto; border-radius: 20rpx; background: #fff; color: #25342e; }
 .message-action-menu-item { display: flex; align-items: center; gap: 24rpx; padding: 24rpx 32rpx; text-align: left; font-size: 30rpx; border-bottom: 1rpx solid #edf0ee; }
 .message-selection-toolbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 900; display: flex; gap: 18rpx; align-items: center; justify-content: center; padding: 20rpx; background: #fff; box-shadow: 0 -2rpx 10rpx #0001; }

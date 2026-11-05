@@ -319,14 +319,13 @@ export async function notifyNewMessage(msgData, options = {}) {
     else showNotification(notification)
   }
 
-  // 播放声音
-  if (playSound) {
-    await playNotificationSound('default')
-  }
-
-  // 振动反馈
+  // 立即振动，不等待音频加载或播放回调。
   if (vibrate) {
     vibrateNotification(0) // 短振
+  }
+
+  if (playSound) {
+    await playNotificationSound('default')
   }
 }
 

@@ -22,6 +22,10 @@
         </div>
       </section>
 
+      <!-- #ifdef APP-PLUS -->
+      <AdminConsolePanel v-if="adminVerified" />
+      <!-- #endif -->
+
       <!-- 状态横幅 -->
       <view v-if="statusText" class="status-banner" :class="statusCls">
         <ManifestIcon class="status-icon" :id="statusCls === 'ok' ? 'confirm' : statusCls === 'err' ? 'cancel' : 'help'" />
@@ -63,7 +67,7 @@
               <view class="row-dot dot-green"></view>
               <div>
                 <div class="label">社区互动与聊天关联</div>
-                <div class="desc">独立于 LLM：开启发帖、评论、作者联系、帖子分享和互动提醒；关闭后保留浏览、点赞与内容管理</div>
+                <div class="desc">独立于 LLM：开启发帖、评论、作者联系、帖子分享、互动提醒及联系人、新朋友、找人、群聊管理；关闭后保留浏览、点赞、内容管理及已有会话聊天</div>
               </div>
             </div>
             <view class="switch-row">
@@ -230,6 +234,10 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref, computed } from 'vue'
+import { onShow, onHide } from '@dcloudio/uni-app'
+// #ifdef APP-PLUS
+import AdminConsolePanel from './components/AdminConsolePanel.vue'
+// #endif
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
@@ -237,6 +245,8 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 
 let unbindThemeWatcher = null
 
+const adminVerified = ref(false)
+let authVersion = 0
 const currentTheme = ref('light')
 const loading = ref(false)
 const statusText = ref('')
@@ -415,23 +425,20 @@ function goToTestMap() {
   uni.navigateTo({ url: '/pages-admin/test-map' })
 }
 async function adminAuth(){
+  const version = ++authVersion
+  adminVerified.value = false
   const token = uni.getStorageSync('token')
   if (!token) {
     uni.setStorageSync('autoLogin', false)
     uni.navigateTo({ url: '/pages/index/index' })
-  }
-  const localAdminFlag = uni.getStorageSync('isAdmin')
-  if (!localAdminFlag) {
-    uni.showToast({ title: '无权限访问', icon: 'none' })
-    setTimeout(() => {
-      goBack()
-    }, 1000)
+    return false
   }
   try {
     const response = await userinfo('false')
-    console.log(response)
-    if (response && response.data && response.data.isAdmin){
-    
+    if (version !== authVersion || token !== uni.getStorageSync('token')) return false
+    if (response && response.data && response.data.isAdmin === true){
+      adminVerified.value = true
+      return true
     } else {
       // 权限验证失败，清除本地伪造的 isAdmin 标记
       uni.removeStorageSync('isAdmin')
@@ -439,19 +446,24 @@ async function adminAuth(){
       goBack()
     }
   } catch (err) {
+    if (version !== authVersion || token !== uni.getStorageSync('token')) return false
     console.error('权限验证失败:', err)
     uni.showToast({ title: '权限验证失败，请重新登录', icon: 'none' })
     setTimeout(() => {
       goBack()
     }, 1000)
   }
+  return false
 }
+
+onShow(async () => {
+  if (await adminAuth()) loadSettings()
+})
+onHide(() => { adminVerified.value = false; authVersion++ })
 
 onMounted(() => {
   currentTheme.value = applyStoredTheme()
   unbindThemeWatcher = bindThemeStorageSync()
-  adminAuth()
-  loadSettings()
 })
 
 onBeforeUnmount(() => {

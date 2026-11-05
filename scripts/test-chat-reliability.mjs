@@ -678,9 +678,9 @@ async function testTransportAccountIsolation() {
   const connectionEvents = []
   const transport = createChatEventsTransport({ getToken: () => token, getBaseUrl: () => 'https://example.test',
     connectSocket: () => {
-      const socket = { handlers: {}, closeCount: 0, onMessage(callback) { this.handlers.message = callback },
+      const socket = { handlers: {}, closeCount: 0, operations: [], onMessage(callback) { this.handlers.message = callback },
         onClose(callback) { this.handlers.close = callback }, onError(callback) { this.handlers.error = callback },
-        close() { this.closeCount++ }, send() {} }
+        close() { this.operations.push('close'); this.closeCount++ }, send(options) { this.operations.push(JSON.parse(options.data).type) } }
       sockets.push(socket)
       return socket
     }, onEvent: event => events.push(event), onConnected: event => connectionEvents.push(event),
@@ -728,6 +728,7 @@ async function testTransportAccountIsolation() {
   assert.equal(events.length, 0, 'events from a disconnected socket are ignored after reconnect')
   Date.now = realNow
   transport.setActive(false)
+  assert.deepEqual(reconnected.operations.slice(-2), ['background', 'close'], 'deactivation reports background before closing the socket')
   reconnected.handlers.message({ data: JSON.stringify({ type: 'chat.changed' }) })
   assert.equal(events.length, 0, 'logout stops the reconnected socket')
   transport.setActive(true)
