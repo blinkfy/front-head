@@ -43,7 +43,7 @@
           </view>
 
           <view class="post-content">
-            <text class="content-text">{{ post.content }}</text>
+            <CommunityPostBody :content="post.content" />
           </view>
 
           <view class="image-loading-card" v-if="loadingImages">
@@ -184,6 +184,7 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage, takeCommunityPostSnapshot } from '@/pages-nonTheme/utils/community-image.js';
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import CommunityChatBridge from './components/CommunityChatBridge.vue'
+import CommunityPostBody from './components/CommunityPostBody.vue'
 import { getCommunityPostDetail, communitySocialEnabled } from './utils/community-social.js';
 import { getDisplayName } from '@/utils/display-name.js';
 function requestJson(url, options = {}) {
@@ -199,7 +200,7 @@ function requestJson(url, options = {}) {
   })
 }
 export default {
-  components: { ManifestIcon, CommunityChatBridge },
+  components: { ManifestIcon, CommunityChatBridge, CommunityPostBody },
   data() {
     return {
       postId: 0,
@@ -419,7 +420,7 @@ export default {
         this.loadingImages = false;
         for (let index = 0; index < images.length; index++) {
           let trimmed = images[index];
-          // #ifdef H5
+          // #ifdef H5 || APP-PLUS
           trimmed = await this.trimPreviewPadding(trimmed);
           // #endif
           // #ifdef MP-WEIXIN
@@ -523,7 +524,7 @@ export default {
         return;
       }
 
-      // #ifdef H5
+      // #ifdef H5 || APP-PLUS
       // 历史社区图片由 960×960 画布生成，长图两侧可能有透明留白。
       urls = await Promise.all(urls.map(url => this.trimPreviewPadding(url)));
       // #endif
@@ -547,7 +548,7 @@ export default {
       window.addEventListener('keydown', this.handlePreviewKeydown);
       // #endif
     },
-    // #ifdef H5
+    // #ifdef H5 || APP-PLUS
     trimPreviewPadding(url) {
       if (!url.startsWith('data:image/png;base64,')) return Promise.resolve(url);
       return new Promise(resolve => {
@@ -913,9 +914,8 @@ export default {
   border-color: rgba(248, 113, 113, 0.22);
 }
 
-.post-content { margin-bottom: 24rpx; }
-.content-text { color: #374151; font-size: 28rpx; line-height: 1.8; }
-.dark-mode .content-text { color: rgba(255, 255, 255, 0.9); }
+.post-content { margin-bottom: 24rpx; color: #374151; }
+.dark-mode .post-content { color: rgba(255, 255, 255, 0.9); }
 .image-loading-card {
   height: 160rpx;
   border-radius: 16rpx;

@@ -137,7 +137,7 @@
             </view>
 
             <view class="post-content">
-              <text class="content-text">{{ post.content }}</text>
+              <text class="content-text">{{ post.summary }}</text>
             </view>
 
             <view class="post-images" v-if="post.imageCount > 0">
@@ -235,6 +235,7 @@ import { getCachedCommunityImage, normalizeCommunityImages, normalizeCommunityIm
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import CommunityChatBridge from './components/CommunityChatBridge.vue';
 import { communitySocialEnabled } from './utils/community-social.js';
+import { communityPostSummary } from './utils/community-markdown.mjs';
 import { getDisplayName } from '@/utils/display-name.js';
 
 export default {
@@ -601,7 +602,7 @@ export default {
       let pending = this._previewTrimPending.get(url);
       if (!pending) {
         let process = () => Promise.resolve(url);
-        // #ifdef H5
+        // #ifdef H5 || APP-PLUS
         process = () => this.trimPreviewPadding(url);
         // #endif
         // #ifdef MP-WEIXIN
@@ -621,7 +622,7 @@ export default {
         this.previewUrls.splice(index, 1, result);
       });
     },
-    // #ifdef H5
+    // #ifdef H5 || APP-PLUS
     trimPreviewPadding(url) {
       if (!url.startsWith('data:image/png;base64,')) return Promise.resolve(url);
       return new Promise(resolve => {
@@ -779,6 +780,7 @@ export default {
     normalizePosts(posts) {
       return (posts || []).map((post) => ({
         ...post,
+        summary: communityPostSummary(post.content),
         images: normalizeCommunityImages(post.images, baseUrl),
         imageCount: Number(post.imageCount || (post.images && post.images.length) || 0)
       }));

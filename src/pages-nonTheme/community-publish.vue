@@ -74,9 +74,13 @@
 
       <!-- 多行文本输入 -->
       <view class="section">
-        <view class="section-title">帖子内容</view>
+        <view class="section-title">帖子内容
+          <button class="preview-toggle" :disabled="submitting || (!previewContent && !content.trim())" @click="previewContent = !previewContent">{{ previewContent ? '编辑' : '预览' }}</button>
+        </view>
         <view class="textarea-card">
+          <CommunityPostBody v-if="previewContent" :content="content" />
           <textarea
+            v-else
             v-model="content"
             class="content-textarea"
             placeholder="分享你的环保心得、技巧或经验..."
@@ -156,6 +160,7 @@ import { userinfo } from '@/api/user.js';
 import { compressImageToBase64 } from '@/utils/avatar-handler.js';
 import { baseUrl } from '@/api/settings';
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import CommunityPostBody from './components/CommunityPostBody.vue'
 import { communitySocialEnabled } from './utils/community-social.js'
 import { communityDraftMethods } from './utils/community-draft-methods.js'
 
@@ -173,12 +178,13 @@ function requestJson(url, options = {}) {
 }
 
 export default {
-  components: { ManifestIcon },
+  components: { ManifestIcon, CommunityPostBody },
   data() {
     return {
       communityId: 0,
       selectedTag: '心得',
       content: '',
+      previewContent: false,
       uploadedImages: [],
       submitting: false,
       draftId: '', draft: null, draftLoading: false, draftError: '', draftExpired: false, draftReceipt: null,
@@ -220,7 +226,10 @@ export default {
       this.communityId = Number(this.getQueryValue('communityId')) || 0;
     }
     this.draftId = typeof options.draftId === 'string' ? options.draftId : '';
-    if (this.draftId) this.loadCommunityDraft();
+    if (this.draftId) {
+      this.previewContent = true;
+      this.loadCommunityDraft();
+    }
   },
   onUnload() { this.pageClosed = true; this.draftLoadVersion++; },
   onShow() {
@@ -444,6 +453,11 @@ export default {
   margin-bottom: 20rpx;
 }
 .dark-mode .section-title { color: #fff; }
+.preview-toggle { margin: 0 0 0 auto; padding: 4rpx 16rpx; color: #177954; background: #edf7f1; font-size: 25rpx; line-height: 1.6; }
+.preview-toggle::after { border: 0; }
+.dark-mode .preview-toggle { color: #9ae4be; background: #243b32; }
+.textarea-card { color: #1f2937; }
+.dark-mode .textarea-card { color: #f3f4f6; }
 .section-title::before {
   content: '';
   width: 6rpx; height: 28rpx;

@@ -213,7 +213,7 @@ assert.equal(hidden.state.busyProductId.value, '', 'page epoch watcher releases 
 const publishPath = '../src/pages-nonTheme/community-publish.vue'
 const publishDescriptor = parse(read(publishPath), { filename: publishPath }).descriptor
 const publishScript = publishDescriptor.script.content
-const publishContext = { ManifestIcon: {}, communityDraftMethods: {}, createPost: async () => { publishContext.plainCreates++ }, plainCreates: 0,
+const publishContext = { ManifestIcon: {}, CommunityPostBody: {}, communityDraftMethods: {}, createPost: async () => { publishContext.plainCreates++ }, plainCreates: 0,
   setTimeout() {}, console: { error() {} }, uni: { showToast() {}, navigateBack() {} } }
 runInNewContext(`${publishScript.replace(/^import .*\r?\n/gm, '').replace('export default', 'this.component =')}`, publishContext)
 const plainState = { draftId: '', submitting: false, communityId: 7, content: '普通页面帖子', uploadedImages: [], selectedTag: '心得', isAdmin: false,
