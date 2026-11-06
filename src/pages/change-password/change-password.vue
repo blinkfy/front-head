@@ -62,6 +62,9 @@ import { ref, onMounted } from 'vue'
 import { changePassword, getUserProfile } from '@/api/user'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { evaluatePassword } from '@/utils/password-strength.mjs'
+// #ifdef APP-PLUS || H5 || MP-WEIXIN
+import { quickLogin as biometricLogin } from '@/utils/quick-login.js'
+// #endif
 const username = ref('')
 const profileError = ref(false)
 const profileLoading = ref(true)
@@ -142,6 +145,10 @@ async function onChangePassword() {
       new_password: newPassword.value
     })
     if (res && res.code === 0) {
+      // #ifdef APP-PLUS || H5 || MP-WEIXIN
+      await biometricLogin.forgetBinding()
+      uni.removeStorageSync('savedUser')
+      // #endif
       uni.showToast({ title: res.msg, icon: 'success' }, 1500)
       setTimeout(() => {
         uni.navigateBack()

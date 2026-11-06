@@ -137,6 +137,10 @@
 					}
 				},
 				{
+					"path": "voice-call",
+					"style": { "navigationStyle": "custom", "disableScroll": true, "app-plus": { "popGesture": "none" } }
+				},
+				{
 					"path": "chat",
 					"style": {
 						"navigationStyle": "custom"
@@ -199,6 +203,10 @@
 					"style": { "navigationStyle": "custom" }
 				},
 				{
+					"path": "live-location",
+					"style": { "navigationStyle": "custom" }
+				},
+				{
 					"path": "community-post",
 					"style": {
 						"navigationStyle": "custom"
@@ -210,6 +218,9 @@
 						"navigationStyle": "custom"
 					}
 				},
+				{ "path": "collector-apply", "style": { "navigationStyle": "custom" } },
+				{ "path": "collector-workbench", "style": { "navigationStyle": "custom" } },
+				{ "path": "collector-order-detail", "style": { "navigationStyle": "custom" } },
 				{
 					"path": "booking",
 					"style": {
@@ -252,6 +263,7 @@
 			"root": "pages-admin",
 			"name": "pages-admin",
 			"pages": [
+				{ "path": "recycling", "style": { "navigationStyle": "custom", "navigationBarTitleText": "回收运营" } },
 				{ "path": "shop-management", "style": { "navigationStyle": "custom", "navigationBarTitleText": "商城管理" } },
 				{
 					"path": "admin-ai-settings",

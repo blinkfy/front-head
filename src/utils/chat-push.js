@@ -1,5 +1,6 @@
 import { baseUrl } from '@/api/settings.js'
 import { createPushRegistration } from './chat-push-registration.mjs'
+import { getOrCreatePushInstallationId } from './chat-push-installation.mjs'
 import { appConsole } from './app-console.mjs'
 
 let registration
@@ -19,6 +20,8 @@ export function installChatPush(getToken, deleteToken) {
         }, () => callback('{"error":"NOTIFICATIONS_DISABLED"}'))
       } catch (_) { callback('{"error":"NOTIFICATIONS_UNAVAILABLE"}') }
     }), deleteToken,
+    getInstallationId: () => getOrCreatePushInstallationId(
+      key => uni.getStorageSync(key), (key, value) => uni.setStorageSync(key, value)),
     // Diagnostics contain only stage/status; never log JWTs, tokens or vendor payloads.
     onStatus: status => console.info('[chat-push]', JSON.stringify(status)),
     readBinding: () => uni.getStorageSync(key) || null,

@@ -28,6 +28,7 @@
 		<scroll-view ref="userScroll" class="user-list" scroll-y :scroll-top="scrollTop" :style="{ height: listHeight, backgroundColor: 'var(--list-bg)', paddingTop: headerOffset + 'px' }" @scrolltolower="loadMore"
 			refresher-enabled :refresher-triggered="isRefreshing" @refresherrefresh="onRefresh" @click.stop @click="handleContainerClick">
             <SystemNotificationEntry :active="isPageActive" />
+            <RealtimeActivityEntry show-notification-setting />
             <CommunityActivityEntry :enabled="communityChatEnabled" :active="isPageActive" />
 			<!-- 加载中 -->
 			<view class="loading-wrap" v-if="(isSearching ? searchLoading : loading) && filteredUserList.length === 0">
@@ -102,12 +103,13 @@ import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { messageBus } from '@/utils/message-event-bus.js'
 import { isChatEventsConnected } from '@/utils/chat-events.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import RealtimeActivityEntry from '@/components/RealtimeActivityEntry.vue'
 import CommunityActivityEntry from './components/CommunityActivityEntry.vue'
 import SystemNotificationEntry from './components/SystemNotificationEntry.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { getDisplayName } from '@/utils/display-name.js'
 export default {
-	components: { ManifestIcon, CommunityActivityEntry, SystemNotificationEntry },
+	components: { ManifestIcon, CommunityActivityEntry, SystemNotificationEntry, RealtimeActivityEntry },
 	data() {
 		return {
 			statusBarHeight: 20,

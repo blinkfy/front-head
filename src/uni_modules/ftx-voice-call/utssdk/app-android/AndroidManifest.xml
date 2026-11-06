@@ -1,0 +1,42 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+  <application>
+    <activity android:name="ftx.voice.BusinessNotificationActivity" android:exported="true" android:excludeFromRecents="true" android:launchMode="singleTop" android:theme="@android:style/Theme.NoDisplay">
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="fentouxia" android:host="notification" />
+      </intent-filter>
+    </activity>
+    <service android:name="ftx.voice.RealtimeService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="microphone|camera|location|specialUse">
+      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled persistent instant-message and incoming-call reception with a visible stop action; no idle microphone, camera, location or wake lock." />
+    </service>
+    <activity android:name="ftx.voice.CallNotificationActivity" android:exported="true" android:excludeFromRecents="true" android:launchMode="singleTop" android:theme="@android:style/Theme.Material.NoActionBar" android:showWhenLocked="true" android:turnScreenOn="true">
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="fentouxia" android:host="incoming-call" />
+      </intent-filter>
+    </activity>
+    <activity android:name="ftx.voice.VideoCallActivity" android:exported="false" android:theme="@android:style/Theme.Material.NoActionBar"
+      android:launchMode="singleTop" android:supportsPictureInPicture="true" android:resizeableActivity="true"
+      android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden" />
+  </application>
+</manifest>

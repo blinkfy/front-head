@@ -638,16 +638,13 @@ async function testNotifications() {
     createElement() { return { style: {}, addEventListener(name, callback) { this[name] = callback }, remove() { this.removed = true } } },
     getElementById(id) { return elements.get(id) || null }
   }
-  let audioContexts = 0
-  let nativeAudioContexts = 0
-  const audioContext = { currentTime: 0, destination: {}, createOscillator() { return { frequency: {}, connect() {}, start() {}, stop() {} } },
-    createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} } },
-    close() { this.closed = true; return { catch() {} } } }
-  const context = { document, window: { AudioContext: function MockAudioContext() { audioContexts++; return audioContext } },
+  const feedbackCalls = []
+  const context = { document,
     uni: { showToast: options => toasts.push(options), navigateTo: options => navigations.push(options),
-      getSystemInfoSync: () => ({ platform: 'native-mock' }), createInnerAudioContext() { nativeAudioContexts++; return {} } },
+      getSystemInfoSync: () => ({ platform: 'native-mock' }) },
+    receiveChatFeedback: options => { feedbackCalls.push(options); return Promise.resolve(true) },
     setTimeout: (callback, duration) => { timers.push({ callback, duration }); return timers.length }, clearTimeout() {},
-    vibrateHapticPattern: async () => {}, console, setInterval, clearInterval }
+    console, setInterval, clearInterval }
   vm.runInNewContext(`${source}\nglobalThis.notificationExports={showNotification,notifyNewMessage,openChatNotification,playNotificationSound}`, context)
   const { showNotification, notifyNewMessage, openChatNotification, playNotificationSound } = context.notificationExports
   notifyNewMessage({ senderName: 'Ada', content: 'hello' }, { showNotification: false, useSystemNotification: true, playSound: false, vibrate: false })
@@ -661,11 +658,11 @@ async function testNotifications() {
   assert.match(navigations[0].url, /conversationType=group/)
   assert.match(navigations[0].url, /groupId=g%201/)
   await playNotificationSound('default')
-  assert.equal(audioContexts, 1, 'H5 sound path uses Web Audio without relying on web platform detection')
-  assert.equal(nativeAudioContexts, 0, 'H5 sound path does not create a native audio player')
-  assert.equal(timers[1].duration, 350, 'generated sound schedules completion after its tones')
-  timers[1].callback()
-  assert.equal(audioContext.closed, true, 'Web Audio context closes after the sound completes')
+  assert.equal(feedbackCalls.length, 2, 'notification audio delegates to shared chat feedback instead of generating its own tones')
+  assert.equal(feedbackCalls[0].sound, false)
+  assert.equal(feedbackCalls[0].vibrate, false)
+  assert.equal(feedbackCalls[0].quiet, undefined, 'disabled notification audio still enters the shared policy')
+  assert.equal(feedbackCalls[1].vibrate, false, 'playNotificationSound requests sound without duplicate vibration')
 }
 
 async function testTransportAccountIsolation() {
@@ -743,22 +740,51 @@ function testChatEventsReconnectNotification() {
   const source = fs.readFileSync(filename, 'utf8')
   astFor(source, filename)
   const emitted = []
+  const feedbackCalls = [], notificationCalls = []
+  const catchupChecks = [], catchupActive = []
+  const voiceCallsSeen = [], voiceLifecycle = []
+  const voiceCalls = { handle: event => voiceCallsSeen.push(event), connection: (...args) => voiceLifecycle.push(['connection', ...args]),
+    setActive: value => voiceLifecycle.push(['active', value]) }
   let config
   const executable = source.replace(/^import .*$/gm, '').replace(/^export function /gm, 'function ')
   const context = {
     baseUrl: 'https://example.test',
     messageBus: { emit: (event, payload) => emitted.push({ event, payload }) },
-    triggerMessageNotification: async () => {},
-    initChatNotificationNavigation() {},
+    triggerMessageNotification: async (message, options) => { notificationCalls.push({ message, options }) },
+    syncChatPush() {},
+    showNotification() {}, initChatNotificationNavigation() {}, userNotificationUrl: () => '',
     createChatEventsTransport(options) { config = options; return { isConnected: () => false, setActive() {} } },
-    uni: { getStorageSync: () => '', connectSocket() {} }, setInterval, clearInterval, console
+    createNotificationCatchup() { return { check() { catchupChecks.push(true) }, setActive(value) { catchupActive.push(value) }, seen() { return true } } },
+    receiveChatFeedback: options => feedbackCalls.push(options), setChatFeedbackActive() {},
+    voiceCalls, installVoiceCallSender() {},
+    uni: { getStorageSync: key => key === 'token' ? 'acct' : key === 'userInfo' ? { id: 'self' } : '', connectSocket() {} }, setInterval, clearInterval, console
   }
-  vm.runInNewContext(`${executable}\nglobalThis.__testExports={isChatEventsConnected,setChatEventsActive,setActiveChatConversation}`, context)
+  vm.runInNewContext(`${executable}\nglobalThis.__testExports={isChatEventsConnected,setChatEventsActive,setActiveChatConversation,notifyChatEvent}`, context)
   config.onConnected({ reconnected: false })
   assert.equal(emitted.length, 0, 'first connection does not emit chat.reconnected')
   config.onConnected({ reconnected: true })
   assert.equal(emitted.length, 1)
   assert.equal(emitted[0].event, 'chat.reconnected', 'only a reconnect emits the chat.reconnected event')
+  assert.equal(catchupChecks.length, 2, 'existing socket connections trigger the rate-limited catch-up check')
+  context.__testExports.setChatEventsActive(true)
+  context.__testExports.setActiveChatConversation('chat-current')
+  context.__testExports.notifyChatEvent({ kind: 'message', conversationId: 'chat-current',
+    message: { id: 'm-current', senderId: 'other', type: 'text', content: 'hello' } })
+  assert.equal(notificationCalls.length, 1)
+  assert.equal(notificationCalls[0].options.quiet, true, 'current conversation receives a quiet chat cue')
+  assert.equal(notificationCalls[0].options.vibrate, false, 'current conversation does not vibrate')
+  assert.equal(notificationCalls[0].options.showNotification, false, 'current conversation does not show a duplicate notification')
+  config.onEvent({ type: 'notification.changed', notification: { id: 'order-1', recipientId: 'self', title: 'Order', content: 'updated' } })
+  assert.equal(feedbackCalls.length, 0, 'pure system notification events do not add chat audio')
+  const voiceEvent = { type: 'voice.incoming', callId: 'test-call', peer: { id: 'other' } }
+  config.onEvent(voiceEvent)
+  assert.deepEqual(voiceCallsSeen, [voiceEvent], 'chat-events delegates voice signaling to the installed call controller')
+  config.onConnected({ reconnected: false, voiceCallVersion: 1 })
+  assert.ok(voiceLifecycle.some(([kind, connected, version]) => kind === 'connection' && connected === true && version === 1),
+    'chat-events exposes negotiated server capability to the call controller')
+  context.__testExports.setChatEventsActive(false)
+  assert.deepEqual(catchupActive, [true, false], 'catch-up follows the existing app lifecycle')
+  assert.ok(voiceLifecycle.some(([kind, value]) => kind === 'active' && value === false), 'call controller follows app foreground lifecycle')
 }
 
 async function testRealtimePollingGates() {

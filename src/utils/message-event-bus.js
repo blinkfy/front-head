@@ -100,6 +100,7 @@ export async function triggerMessageNotification(msgData, options = {}) {
       playSound,
       vibrate,
       showNotification,
+      quiet: options.quiet,
       onTap: options.onTap
     })
   } catch (e) {

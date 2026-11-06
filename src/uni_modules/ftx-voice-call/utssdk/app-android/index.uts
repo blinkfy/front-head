@@ -1,0 +1,67 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import VoiceCallBridge from 'ftx.voice.VoiceCallBridge'
+import RealtimeBridge from 'ftx.voice.RealtimeBridge'
+import VideoCallActivity from 'ftx.voice.VideoCallActivity'
+
+let listener: ((event: string) => void) | null = null
+let socketListener: ((event: string) => void) | null = null
+let locationListener: ((event: string) => void) | null = null
+// on-prefix + a single callback keeps one app-lifetime JS callback alive.
+export function onVoicePeerEvent(callback: (event: string) => void): void { listener = callback }
+export function voiceRtcAvailable(): boolean { return true }
+export function videoRtcAvailable(): boolean { return true }
+export function openVoicePeer(options: string): void {
+  const context = UTSAndroid.getUniActivity() ?? UTSAndroid.getAppContext()
+  if (context == null) {
+    const input = JSON.parseObject(options)
+    listener?.(JSON.stringify({ type: 'error', callId: input?.getString('callId') ?? '', reason: 'unavailable' }))
+    return
+  }
+  VoiceCallBridge.open(context!, options, (event: string) => { listener?.(event) })
+}
+export function signalVoicePeer(callId: string, event: string): void { VoiceCallBridge.signal(callId, event) }
+export function controlVoicePeer(callId: string, options: string): void { VoiceCallBridge.control(callId, options) }
+export function closeVoicePeer(callId: string): void { VoiceCallBridge.close(callId) }
+export function realtimeAvailable(): boolean { return true }
+export function realtimeSocketAlive(): boolean { return RealtimeBridge.alive() }
+export function realtimeBackgroundMask(): number { return RealtimeBridge.backgroundMask().toDouble() }
+export function realtimeVideoVisible(): boolean { return VideoCallActivity.visible }
+export function onRealtimeSocketEvent(callback: (event: string) => void): void { socketListener = callback }
+export function onRealtimeLocationEvent(callback: (event: string) => void): void { locationListener = callback }
+export function openRealtimeSocket(url: string, channel: string): void {
+  const context = UTSAndroid.getAppContext()
+  if (context != null) RealtimeBridge.open(context!, url, (event: string) => { socketListener?.(JSON.stringify({ channel, event })) })
+  else socketListener?.(JSON.stringify({ channel, event: '{"type":"close","code":1006}' }))
+}
+export function sendRealtimeSocket(event: string): void { RealtimeBridge.send(event) }
+export function closeRealtimeSocket(): void { RealtimeBridge.close() }
+export function setRealtimeForeground(value: boolean): void { RealtimeBridge.setForeground(value) }
+export function watchRealtimeLocation(channel: string): number {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) { locationListener?.(JSON.stringify({ channel, event: '{"error":2}' })); return -1 }
+  return RealtimeBridge.watchLocation(context!, (event: string) => { locationListener?.(JSON.stringify({ channel, event })) }).toDouble()
+}
+export function clearRealtimeLocation(id: number): void { RealtimeBridge.clearLocation(id.toInt()) }
+export function showVoicePeerVideo(callId: string): void {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity != null) VoiceCallBridge.showVideo(activity!, callId)
+}
+export function takeRealtimeRoute(): string {
+  const activity = UTSAndroid.getUniActivity()
+  const intent = activity?.getIntent()
+  const route = intent?.getStringExtra('ftx_realtime_route') ?? ''
+  intent?.removeExtra('ftx_realtime_route')
+  return route
+}
+export function realtimeMessagingPaused(): boolean {
+  const context = UTSAndroid.getAppContext()
+  return context != null && RealtimeBridge.messagesPaused(context!)
+}
+export function realtimeSocketSuspended(): boolean { return RealtimeBridge.suspended() }
+export function configureRealtimeMessaging(options: string): void {
+  const context = UTSAndroid.getAppContext()
+  if (context != null) RealtimeBridge.configureMessaging(context!, options)
+}
+export function takeIncomingCallAcceptance(callId: string): boolean { return RealtimeBridge.takeIncomingAcceptance(callId) }
+export function controlNativeAnsweredCall(callId: string, options: string): void { RealtimeBridge.controlNative(callId, options) }
+export function stopIncomingCallAlert(callId: string): void { RealtimeBridge.stopIncomingAlert(callId) }

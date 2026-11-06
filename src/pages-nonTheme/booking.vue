@@ -51,12 +51,52 @@
         </view>
         <view v-if="!draftId || (draft && !draftLoading && !draftError && !draftReceipt && !draftExpired)" :class="{ 'booking-form-busy': submitting }">
 
+        <!-- 地址输入 -->
+        <view class="section">
+          <view class="section-title">回收地址</view>
+          <view class="input-card booking-address-card">
+            <view class="address-field-group">
+              <text class="address-field-label">所在地区</text>
+              <ShopRegionPicker v-model="addressRegion" :disabled="submitting || addressBusy" />
+            </view>
+            <view class="address-field-group address-detail-group">
+              <text class="address-field-label">详细地址</text>
+              <input
+                v-model="addressDetail"
+                class="input-field address-detail-input"
+                placeholder="街道、小区、楼栋及门牌号"
+                placeholder-class="input-placeholder"
+                :disabled="submitting || addressBusy"
+              />
+            </view>
+            <ShopAddressPicker
+              :model-value="address"
+              :auto-locate="addressReady"
+              :disabled="submitting"
+              @select="applyLocatedAddress"
+              @busy-change="addressBusy = $event"
+            />
+          </view>
+        </view>
+
+        <view class="section">
+          <view class="section-title">回收服务覆盖</view>
+          <view v-if="catalogLoading" class="time-feedback">正在核验该地址的服务排班…</view>
+          <view v-else-if="catalogError" class="time-feedback">{{ catalogError }}<button @click="loadServiceAreas">重新加载</button></view>
+          <text v-else-if="!bookingPoint" class="estimate-note">请点击地图选址确认上门位置，系统将按圆形或多边形边界匹配服务范围。修改地址后需重新选址。</text>
+          <text v-else-if="!selectedServiceArea" class="estimate-note">该上门位置暂无已审核服务范围与排班覆盖，暂不能预约。</text>
+          <text v-else class="estimate-note">该地址匹配 {{ matchingAreas.length }} 个服务范围，请继续选择品类、日期与可用时段。</text>
+        </view>
+
+        <RecyclingServiceMap v-if="bookingPoint && matchingAreas.length" :areas="matchingAreas" :point="bookingPoint" readonly />
+
         <!-- 回收物品类型网格 -->
         <view class="section">
           <view class="section-title">选择回收物品</view>
+          <text v-if="!allowedWasteTypes.length" class="estimate-note">地址有服务覆盖后，将显示该地区回收员支持的品类。</text>
           <view class="waste-grid">
             <view
-              v-for="item in wasteTypes"
+              v-for="item in allowedWasteTypes"
               :key="item.id"
               :class="['waste-card', selectedTypes.includes(item.id) ? 'selected' : '']"
               @click="toggleWasteType(item)"
@@ -78,7 +118,7 @@
         </view>
 
         <view v-if="unavailableWasteItems.length" class="section">
-          <view class="section-title">这些物品已暂停回收，请移除后重新选择</view>
+          <view class="section-title">这些物品在当前地址暂无服务，请移除后重新选择</view>
           <view v-for="item in unavailableWasteItems" :key="item.id" class="booking-weight-row">
             <text>{{ item.name }}</text>
             <button size="mini" :disabled="submitting" @click="toggleWasteType(item)">移除</button>
@@ -120,7 +160,7 @@
             <text>{{ timeSlotsError }}</text>
             <button class="time-retry" @click="loadTimeSlots">重新加载</button>
           </view>
-          <view v-else-if="!timeSlots.length" class="time-feedback">当天暂无可预约时段，可以选择其他日期。</view>
+          <view v-else-if="!timeSlots.length" class="time-feedback">当天暂无符合所选品类的排班，可以选择其他日期。</view>
           <view v-else class="time-grid">
             <view
               v-for="slot in timeSlots"
@@ -132,36 +172,8 @@
               @click="slot.available && selectTimeSlot(slot.time)"
             >
               <text class="time-text">{{ slot.time }}</text>
-              <text class="time-status">{{ slot.available ? '可预约' : '已约满' }}</text>
+              <text class="time-status">{{ slot.available ? '可预约' : '暂无名额' }}</text>
             </view>
-          </view>
-        </view>
-
-        <!-- 地址输入 -->
-        <view class="section">
-          <view class="section-title">回收地址</view>
-          <view class="input-card booking-address-card">
-            <view class="address-field-group">
-              <text class="address-field-label">所在地区</text>
-              <ShopRegionPicker v-model="addressRegion" :disabled="submitting || addressBusy" />
-            </view>
-            <view class="address-field-group address-detail-group">
-              <text class="address-field-label">详细地址</text>
-              <input
-                v-model="addressDetail"
-                class="input-field address-detail-input"
-                placeholder="街道、小区、楼栋及门牌号"
-                placeholder-class="input-placeholder"
-                :disabled="submitting || addressBusy"
-              />
-            </view>
-            <ShopAddressPicker
-              :model-value="address"
-              :auto-locate="addressReady"
-              :disabled="submitting"
-              @select="applyLocatedAddress"
-              @busy-change="addressBusy = $event"
-            />
           </view>
         </view>
 
@@ -214,6 +226,13 @@
         </view>
 
         </view>
+        <button class="collector-entry" @click="goCollectorApply">
+          <view class="collector-entry-copy">
+            <text class="collector-entry-title">成为回收员</text>
+            <text class="collector-entry-note">申请提供上门回收服务</text>
+          </view>
+          <text class="collector-entry-arrow">›</text>
+        </button>
       </view>
     </scroll-view>
 
@@ -222,9 +241,12 @@
 
 <script>
 import { getWasteTypes, createBooking, getAvailableTimeSlots } from '@/pages-nonTheme/api/booking.js';
+import { recyclingCatalog, mutationData } from './api/recycling.js';
 import { getUserProfile, updateUserProfile } from '@/api/user.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import ShopRegionPicker from './components/ShopRegionPicker.vue';
+import RecyclingServiceMap from './components/RecyclingServiceMap.vue';
+import { containsPoint, normalizePoint, gcj02ToWgs84 } from './utils/recycling-geometry.mjs';
 import ShopAddressPicker from '@/pages-nonTheme/components/shop/ShopAddressPicker.vue';
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js';
 import { playUiSound } from '@/utils/ui-sounds.js';
@@ -232,12 +254,12 @@ import { formatBookingDate } from './utils/booking-date.mjs';
 import { bookingDraftMethods } from './utils/booking-draft-methods.js';
 
 export default {
-  components: { ManifestIcon, ShopRegionPicker, ShopAddressPicker },
+  components: { ManifestIcon, ShopRegionPicker, ShopAddressPicker, RecyclingServiceMap },
   data() {
     return {
       draftId: '', draft: null, draftLoading: false, draftError: '', draftExpired: false, draftReceipt: null, replacementRequestId: '',
       itemWeights: {}, maxBookingDate: '',
-      wasteTypes: [],
+      wasteTypes: [], serviceAreas: [], serviceAreaId: null, catalogError: '', catalogLoading: false, bookingInitialized: false, addressCoordinates: null, bookingWrites: {},
       selectedTypes: [],
       selectedDate: 'today',
       selectedTimeSlot: '',
@@ -245,7 +267,7 @@ export default {
       timeSlotsLoading: false,
       timeSlotsError: '',
       timeSlotsRequestId: 0,
-      timeSlotsDate: '',
+      timeSlotsDate: '', timeSlotsSelectionKey: '',
       dateValues: { today: '', tomorrow: '', custom: '' },
       addressRegion: ['', '', ''],
       addressDetail: '',
@@ -265,9 +287,10 @@ export default {
     this.draftLoading = !!this.draftId;
     this.checkTheme();
     this.initDates();
-    await Promise.all([this.loadWasteTypes(), this.loadContactPhone(), this.loadAddress()]);
+    await Promise.all([this.loadWasteTypes(), this.loadContactPhone(), this.loadAddress(), this.loadServiceAreas()]);
+    this.bookingInitialized = true;
     if (this.draftId) await this.loadBookingDraft();
-    else this.loadTimeSlots();
+    else this.syncServiceCoverage();
   },
   onShow() {
     this.checkTheme();
@@ -279,6 +302,12 @@ export default {
   },
   onUnload() { this.timeSlotsRequestId++; },
   computed: {
+    selectedServiceArea() { return this.serviceAreas.find(area => Number(area.id) === Number(this.serviceAreaId)); },
+    addressRegionComplete() { return this.addressRegion.length === 3 && this.addressRegion.every(part => String(part || '').trim()); },
+    bookingSelectionKey() { return JSON.stringify([this.serviceAreaId, this.address, this.bookingPoint, this.dateValues[this.selectedDate], [...this.selectedTypes].map(Number).sort((a, b) => a - b)]); },
+    bookingPoint() { const p = this.addressCoordinates; return p?.address === this.address && p.coordinateSystem === 'wgs84' ? normalizePoint(p) : null; },
+    matchingAreas() { return this.bookingPoint ? this.serviceAreas.filter(area => area.geometry && containsPoint(area.geometry, this.bookingPoint)) : []; },
+    allowedWasteTypes() { const ids = [...new Set(this.matchingAreas.flatMap(area => area.typeIds || []))]; return this.wasteTypes.filter(item => ids.map(Number).includes(Number(item.id))); },
     address: {
       get() {
         return composeShopAddress(this.addressRegion, this.addressDetail);
@@ -290,25 +319,40 @@ export default {
       }
     },
     unavailableWasteItems() {
-      return this.selectedTypes.filter(id => !this.wasteTypes.some(item => item.id === id)).map(id => ({
+      return this.selectedTypes.filter(id => !this.allowedWasteTypes.some(item => Number(item.id) === Number(id))).map(id => ({
         id, name: this.draft?.snapshot?.details?.find(item => Number(item.typeId) === id)?.name || `回收物品 ${id}`
       }));
     },
     selectedWasteItems() {
-      return this.wasteTypes.filter(t => this.selectedTypes.includes(t.id));
+      return this.allowedWasteTypes.filter(t => this.selectedTypes.includes(t.id));
     }
   },
   watch: {
+    addressRegion: { handler() { this.syncServiceCoverage(); }, deep: true },
+    address(value) { if (this.addressCoordinates && this.addressCoordinates.address !== value) this.addressCoordinates = null; this.syncServiceCoverage(); },
     itemWeights: { handler() { this.calculateEstimate(); }, deep: true },
     selectedTypes: {
       handler() {
         this.calculateEstimate();
+        if (this.bookingInitialized && !this.draftLoading && !this.submitting) this.loadTimeSlots();
       },
       deep: true
     }
   },
   methods: {
     ...bookingDraftMethods,
+    async loadServiceAreas() {
+      this.catalogError = ''; this.catalogLoading = true;
+      try { const catalog = await recyclingCatalog(); this.serviceAreas = catalog.areas || []; }
+      catch (e) { this.catalogError = e.message || '服务覆盖加载失败'; this.serviceAreas = []; }
+      finally { this.catalogLoading = false; this.syncServiceCoverage(); }
+    },
+    syncServiceCoverage() {
+      const matched = this.matchingAreas[0];
+      this.serviceAreaId = matched?.id || null;
+      this.calculateEstimate();
+      if (this.bookingInitialized && !this.draftLoading && !this.submitting) this.loadTimeSlots();
+    },
     chooseCustomDate(event) {
       this.dateValues.custom = event.detail.value;
       this.selectDate('custom');
@@ -318,6 +362,11 @@ export default {
       const parsed = splitShopAddress(selection.address, selection.parts);
       this.addressRegion = parsed.region;
       this.addressDetail = parsed.detail;
+      let point = normalizePoint({ latitude: Number(selection.latitude), longitude: Number(selection.longitude) });
+      if (point && selection.coordinateSystem === 'gcj02') point = gcj02ToWgs84(point);
+      else if (selection.coordinateSystem !== 'wgs84') point = null;
+      this.addressCoordinates = point && selection.latitude != null && selection.longitude != null ? { ...point, address: this.address, coordinateSystem: 'wgs84' } : null;
+      this.syncServiceCoverage();
       uni.setStorageSync('bookingAddress', this.address);
     },
     extractData(res) {
@@ -382,6 +431,7 @@ export default {
         }
       }
     },
+    goCollectorApply() { uni.navigateTo({ url: '/pages-nonTheme/collector-apply' }); },
     goToOrders() {
       uni.navigateTo({ url: '/pages-nonTheme/booking-orders' });
     },
@@ -418,9 +468,12 @@ export default {
       this.timeSlotsError = '';
       this.timeSlots = [];
       this.selectedTimeSlot = '';
-      this.timeSlotsDate = '';
+      this.timeSlotsDate = ''; this.timeSlotsSelectionKey = '';
+      const selectionKey = this.bookingSelectionKey;
+      if (!this.serviceAreaId) { this.timeSlotsLoading = false; this.timeSlotsError = this.bookingPoint ? '该上门位置暂无已审核范围与排班覆盖' : '请通过地图选择上门位置'; return; }
+      if (!this.selectedTypes.length) { this.timeSlotsLoading = false; this.timeSlotsError = '请先选择回收物品，再查询可预约时段'; return; }
       try {
-        const res = await getAvailableTimeSlots(dateStr);
+        const res = await getAvailableTimeSlots(dateStr, this.serviceAreaId, this.selectedTypes, { addressLat: this.bookingPoint.latitude, addressLng: this.bookingPoint.longitude, addressCoordinateSystem: 'wgs84' });
         if (requestId !== this.timeSlotsRequestId) return;
         const data = this.extractData(res);
         this.timeSlots = Array.isArray(data)
@@ -429,7 +482,7 @@ export default {
               time: slot.slot || slot.time || ''
             }))
           : [];
-        this.timeSlotsDate = dateStr;
+        this.timeSlotsDate = dateStr; this.timeSlotsSelectionKey = selectionKey;
       } catch (e) {
         if (requestId !== this.timeSlotsRequestId) return;
         console.error('获取时间段失败:', e);
@@ -465,6 +518,9 @@ export default {
       }, 0);
     },
     validateBookingForm() {
+      if (!this.selectedServiceArea) { uni.showToast({ title: this.bookingPoint ? '该上门位置暂无有效范围与排班覆盖' : '请通过地图选择上门位置', icon: 'none' }); return false; }
+      if (this.selectedServiceArea.bounds && (!this.addressCoordinates || this.addressCoordinates.address !== this.address)) { uni.showToast({ title: '该区域需地图核验地址，请重新定位或地图选址', icon: 'none' }); return false; }
+      if (this.selectedTypes.some(id => !this.allowedWasteTypes.some(type => Number(type.id) === Number(id)))) { uni.showToast({ title: '所选品类不在该区域服务范围，请重新选择', icon: 'none' }); return false; }
       if (this.dateValues.today !== formatBookingDate(new Date())) {
         this.initDates();
         this.selectedTimeSlot = '';
@@ -472,7 +528,7 @@ export default {
         uni.showToast({ title: '日期已更新，请重新选择时段', icon: 'none' });
         return false;
       }
-      if (this.timeSlotsLoading || this.timeSlotsError || this.timeSlotsDate !== this.dateValues[this.selectedDate]) {
+      if (this.timeSlotsLoading || this.timeSlotsError || this.timeSlotsDate !== this.dateValues[this.selectedDate] || this.timeSlotsSelectionKey !== this.bookingSelectionKey) {
         uni.showToast({ title: this.timeSlotsLoading ? '正在加载时段，请稍候' : '请先重新加载预约时段', icon: 'none' });
         return false;
       }
@@ -488,7 +544,7 @@ export default {
         uni.showToast({ title: '请等待附近地址选择完成', icon: 'none' });
         return false;
       }
-      if (!this.addressRegion.every(part => String(part || '').trim())) {
+      if (!this.selectedServiceArea.geometry && !this.addressRegion.every(part => String(part || '').trim())) {
         uni.showToast({ title: '请完善所在地区（省、市、区）', icon: 'none' });
         return false;
       }
@@ -521,8 +577,9 @@ export default {
       if (!this.validateBookingForm()) return;
       this.submitting = true;
       try {
-        const response = await createBooking(this.getBookingPayload());
+        const response = await createBooking(mutationData(this.bookingWrites, 'create', this.getBookingPayload()));
         const booking = response?.data || response;
+        delete this.bookingWrites.create;
         playUiSound('bookingSuccess', {
           key: booking?.id != null ? `booking:${booking.id}` : undefined,
           page: 'pages-nonTheme/booking'
@@ -632,7 +689,7 @@ export default {
   filter: saturate(1.2) brightness(1.08) drop-shadow(0 0 4rpx rgba(255, 255, 255, 0.4));
 }
 .nav-left, .nav-right { flex: 0 0 80rpx; }
-.orders-nav-right { flex-basis: 160rpx; }
+.nav-left, .orders-nav-right { flex-basis: 160rpx; }
 .nav-right { display: flex; justify-content: flex-end; }
 .nav-title-wrap { display: flex; align-items: center; gap: 12rpx; flex: 1; justify-content: center; }
 .title-icon-pill {
@@ -854,5 +911,21 @@ export default {
 .submit-btn:active:not(.disabled) { transform: scale(0.98); }
 .submit-btn.disabled { opacity: 0.6; }
 .submit-text { color: #fff; font-size: 32rpx; font-weight: 700; letter-spacing: 2rpx; }
+
+.collector-entry {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; margin: 48rpx 0 0; padding: 28rpx 4rpx 0;
+  border: 0; border-top: 1rpx solid rgba(148, 163, 184, 0.2); border-radius: 0;
+  background: transparent; text-align: left; line-height: 1.5;
+}
+.collector-entry::after { border: 0; }
+.collector-entry-copy { display: flex; flex-direction: column; gap: 6rpx; }
+.collector-entry-title { color: #64748b; font-size: 26rpx; font-weight: 500; }
+.collector-entry-note { color: #94a3b8; font-size: 22rpx; }
+.collector-entry-arrow { color: #94a3b8; font-size: 36rpx; padding-left: 24rpx; }
+.collector-entry:active { opacity: 0.65; }
+.dark-mode .collector-entry { border-top-color: rgba(148, 163, 184, 0.22); }
+.dark-mode .collector-entry-title { color: #cbd5e1; }
+.dark-mode .collector-entry-note, .dark-mode .collector-entry-arrow { color: #94a3b8; }
 
 </style>

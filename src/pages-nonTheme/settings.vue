@@ -65,10 +65,20 @@
                         <ManifestIcon class="item-icon" id="sound_toggle" />
                         <view class="item-info">
                             <text class="item-title">交互音效</text>
-                            <text class="item-desc">{{ soundEnabled ? '已开启，识别与操作完成时轻声反馈' : '已关闭，操作保持安静' }}</text>
+                            <text class="item-desc">{{ soundEnabled ? '已开启，含聊天提示音，聊天跟随系统模式' : '已关闭提示音，聊天振动跟随系统模式' }}</text>
                         </view>
                     </view>
                     <view class="toggle-switch" :class="{ active: soundEnabled }"><view class="toggle-dot"></view></view>
+                </view>
+                <view v-if="isAndroid" class="setting-item" @click="toggleBackgroundMessages" role="switch" tabindex="0" aria-label="后台消息接收" :aria-checked="backgroundMessagesEnabled" @keydown.enter.prevent="toggleBackgroundMessages" @keydown.space.prevent="toggleBackgroundMessages">
+                    <view class="item-left">
+                        <ManifestIcon class="item-icon" id="notification" />
+                        <view class="item-info">
+                            <text class="item-title">后台消息接收</text>
+                            <text class="item-desc">{{ backgroundMessagesEnabled ? '在后台接收消息和来电，常驻通知显示接收状态' : '已关闭，开启后可在后台接收消息和来电' }}</text>
+                        </view>
+                    </view>
+                    <view class="toggle-switch" :class="{ active: backgroundMessagesEnabled }"><view class="toggle-dot"></view></view>
                 </view>
             </view>
 
@@ -153,18 +163,57 @@
 
 <script setup>
 import { clearChatPush } from '@/utils/chat-push.js'
+import { syncAndroidMessagingPreference } from '@/utils/android-realtime.js'
 import { recentRecognition } from '@/utils/recent-recognition.js'
 import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
+import { readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '@/utils/background-message-preference.mjs'
 
 const soundEnabled = ref(areUiSoundsEnabled())
+const isAndroid = ref(false)
+const backgroundMessagesEnabled = ref(readBackgroundMessagesEnabled())
+const refreshBackgroundMessages = () => { backgroundMessagesEnabled.value = readBackgroundMessagesEnabled() }
+uni.$on('chat:background-messages-changed', refreshBackgroundMessages)
+uni.$on('chat:background-messages-state', refreshBackgroundMessages)
+onUnmounted(() => {
+    uni.$off('chat:background-messages-changed', refreshBackgroundMessages)
+    uni.$off('chat:background-messages-state', refreshBackgroundMessages)
+})
 function toggleUiSounds() {
     soundEnabled.value = !soundEnabled.value
     setUiSoundsEnabled(soundEnabled.value)
+    syncAndroidMessagingPreference()
     if (soundEnabled.value) { primeUiSounds(); playUiSound('confirm', { page: 'pages-nonTheme/settings' }) }
+}
+function setBackgroundMessagesEnabled(enabled) {
+    backgroundMessagesEnabled.value = enabled
+    writeBackgroundMessagesEnabled(enabled)
+}
+function toggleBackgroundMessages() {
+    const enabled = !backgroundMessagesEnabled.value
+    if (!enabled) {
+        setBackgroundMessagesEnabled(false)
+        return
+    }
+    try {
+        const Version = plus.android.importClass('android.os.Build$VERSION')
+        if (Number(Version.SDK_INT) < 33) {
+            setBackgroundMessagesEnabled(true)
+            return
+        }
+        plus.android.requestPermissions(['android.permission.POST_NOTIFICATIONS'], result => {
+            if (result.granted?.includes('android.permission.POST_NOTIFICATIONS')) {
+                setBackgroundMessagesEnabled(true)
+            } else {
+                uni.showToast({ title: '未获得通知权限，无法开启后台消息接收', icon: 'none' })
+            }
+        }, () => uni.showToast({ title: '通知权限不可用，无法开启', icon: 'none' }))
+    } catch (e) {
+        uni.showToast({ title: '通知权限不可用，无法开启', icon: 'none' })
+    }
 }
 const isDarkTheme = ref(ThemeManager.getTheme() === 'dark')
 const showConfirmModal = ref(false)
@@ -290,6 +339,9 @@ function handleConfirm() {
 
 onMounted(() => {
     checkTheme()
+    // #ifdef APP-PLUS
+    isAndroid.value = typeof plus !== 'undefined' && plus.os?.name === 'Android'
+    // #endif
 })
 </script>
 

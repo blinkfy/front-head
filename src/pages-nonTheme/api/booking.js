@@ -50,20 +50,20 @@ export function getBookingDetail(orderId) {
   });
 }
 
-export function cancelBooking(orderId, reason = '') {
+export function cancelBooking(orderId, reason = '', options = {}) {
   return request({
     url: '/api/booking/cancel',
     method: 'POST',
-    data: { orderId, reason },
+    data: { orderId, reason, ...options },
     needAuth: true
   });
 }
 
-export function getAvailableTimeSlots(date) {
+export function getAvailableTimeSlots(date, serviceAreaId, typeIds = [], address = {}) {
   return request({
     url: '/api/booking/time-slots',
     method: 'GET',
-    data: { date },
+    data: { date, serviceAreaId, ...address, ...(typeIds.length ? { typeIds: typeIds.join(',') } : {}) },
     needAuth: true
   });
 }

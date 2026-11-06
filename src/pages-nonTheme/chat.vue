@@ -24,9 +24,18 @@
             </view>
         </view>
 
+        <view v-if="!isGroupChat && (liveLocationState.offers[String(otherUserId)] || (liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId)))" class="location-share-entry" @click="openLiveLocation">
+            <ManifestIcon id="map_location" size="26px" />
+            <view class="location-share-copy"><text class="location-share-title">{{ liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId) ? '正在共享实时位置' : '对方正在共享实时位置' }}</text><text class="location-share-subtitle">点击进入位置共享页面</text></view>
+            <text class="location-share-arrow">›</text>
+        </view>
+
+        <RealtimeActivityEntry :show-location="false" />
+
         <!-- 消息列表区域 -->
         <scroll-view class="message-list" scroll-y :scroll-top="scrollTop" :scroll-into-view="scrollToMessage"
             @scrolltoupper="loadMoreMessages">
+            <BookingChatContext v-if="!isGroupChat" :target-user-id="otherUserId || chatId" :initial-order-id="bookingOrderId" :refresh-token="bookingContextRefresh" :dark="isDarkTheme" />
             <!-- 加载更多提示 -->
             <view class="load-more" v-if="hasMoreMessages">
                 <text class="load-more-text" @click="loadMoreMessages">{{ isLoadingMore ? '加载中...' : '点击加载更多' }}</text>
@@ -275,6 +284,20 @@
             <!-- 更多功能面板 -->
             <view v-if="showMorePanel && !groupSendBlockReason" class="more-panel">
                 <view class="more-grid">
+                    <view v-if="!isGroupChat && voiceCallState.supported" class="more-item" @click="startVoiceCall()">
+                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
+                        <text class="more-text">语音通话</text>
+                    </view>
+                    <view v-if="!isGroupChat && voiceCallState.videoSupported" class="more-item" @click="startVoiceCall('video')">
+                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_video_call" :scale="1.5" /></view>
+                        <text class="more-text">视频通话</text>
+                    </view>
+                    <!-- #ifndef APP-PLUS || H5 -->
+                    <view v-if="!isGroupChat" class="more-item" @click="showCallSupport">
+                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
+                        <text class="more-text">通话说明</text>
+                    </view>
+                    <!-- #endif -->
                     <view class="more-item" @click="chooseImage">
                         <view class="more-icon-wrapper">
                             <ManifestIcon class="more-icon" id="image_gallery" :scale="1.5" />
@@ -310,6 +333,10 @@
                             <ManifestIcon class="more-icon" id="map_location" :scale="1.5" />
                         </view>
                         <text class="more-text">位置</text>
+                    </view>
+                    <view v-if="!isGroupChat && liveLocationState.supported" class="more-item" @click="openLiveLocation">
+                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="nearby_map" :scale="1.5" /></view>
+                        <text class="more-text">实时位置</text>
                     </view>
                 </view>
             </view>
@@ -598,6 +625,7 @@
 
 <script>
 import { chooseAppImage } from '@/utils/image-picker.js'
+import BookingChatContext from './components/BookingChatContext.vue'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { audioInitializationMethods, voiceRecordingMethods, voicePlaybackMethods, voiceTranscriptionMethods } from '@/pages-nonTheme/chat/audio-methods.js'
 import { mediaSendMethods, mediaPickerMethods, attachmentIngressMethods } from '@/pages-nonTheme/chat/attachment-methods.js'
@@ -617,6 +645,10 @@ import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { prepareAvatarUpload } from '@/utils/upload-image.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
+import { setChatFeedbackBlocked } from '@/utils/chat-feedback.js'
+import RealtimeActivityEntry from '@/components/RealtimeActivityEntry.vue'
+import { voiceCalls, voiceCallState } from '@/utils/voice-call.js'
+import { liveLocationState } from '@/utils/live-location.js'
 import ChatMarkdown from '@/pages-nonTheme/components/ChatMarkdown.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
@@ -636,7 +668,7 @@ const chatRelationshipLabels = {
 }
 
 export default {
-    components: {
+    components: { RealtimeActivityEntry, BookingChatContext,
         ChatMarkdown,
         CommunityPostMessage,
         ChatSelectionDialog,
@@ -645,6 +677,7 @@ export default {
     },
     data() {
         return {
+            bookingOrderId: '', bookingContextRefresh: 0,
             chatId: '', // 聊天会话ID
             conversationType: 'direct',
             groupId: '',
@@ -702,6 +735,8 @@ export default {
             pageSize: 20, // 每页加载数量
 
             // 输入相关
+            voiceCallState,
+            liveLocationState,
             inputText: '',
             inputPlaceholder: '输入消息...',
             inputTextLineCount: 1,
@@ -712,6 +747,7 @@ export default {
             // 语音录制
             isRecording: false,
             isCancelVoice: false,
+            chatFeedbackOwner: `chat-media:${Date.now()}:${Math.random()}`,
             recordingDuration: 0,
             recordingTimer: null,
             recorderManager: null,
@@ -814,6 +850,8 @@ export default {
     },
 
     watch: {
+        isRecording() { this.syncChatFeedbackMedia() },
+        playingVoiceId() { this.syncChatFeedbackMedia() },
         inputText() { this.queueChatDraftSave() },
         refMessageId() { this.queueChatDraftSave() }
     },
@@ -941,6 +979,7 @@ export default {
     },
 
     onLoad(options) {
+        this.bookingOrderId = /^\d+$/.test(String(options.bookingOrderId || '')) ? options.bookingOrderId : ''
         console.log('=== chat页面 onLoad 触发 ===', 'chatId:', options.chatId)
         
         // 检测主题
@@ -997,7 +1036,9 @@ export default {
     },
 
     onShow() {
-        setActiveChatConversation(this.chatId)
+        this.bookingContextRefresh++
+        this.syncChatFeedbackMedia()
+        setActiveChatConversation(this.isGroupChat ? this.chatId : String(this.otherUserId || this.chatId))
         if (!this.chatEventListener) {
             this.chatEventListener = (event = {}) => {
                 this.handleChatEvent(event)
@@ -1047,6 +1088,7 @@ export default {
     },
 
     onUnload() {
+        setChatFeedbackBlocked(this.chatFeedbackOwner, false)
         this.saveChatDraft()
         setActiveChatConversation('')
         if (this.chatEventListener) {
@@ -1086,6 +1128,29 @@ export default {
     },
 
     methods: {
+        openLiveLocation() {
+            const offer = liveLocationState.offers[String(this.otherUserId)]
+            const name = this.contactSettings.note || this.otherUsername || this.chatTitle || '联系人'
+            uni.navigateTo({ url: `/pages-nonTheme/live-location?peerId=${encodeURIComponent(this.otherUserId)}&name=${encodeURIComponent(name)}${offer ? `&sessionId=${encodeURIComponent(offer.sessionId)}` : ''}` })
+            this.showMorePanel = false
+        },
+        showCallSupport() {
+            uni.showModal({
+                title: '语音与视频通话',
+                content: '当前小程序暂不支持直接语音、视频通话。可以在分投侠 App 登录同一账号后，与使用 App 或支持通话的网页版联系人通话。',
+                confirmText: '查看 App', cancelText: '知道了',
+                success: result => { if (result.confirm) uni.navigateTo({ url: '/pages-nonTheme/about' }) }
+            })
+        },
+        startVoiceCall(mode = 'audio') {
+            try {
+                voiceCalls.start({ id: this.otherUserId, name: this.contactSettings.note || this.otherUsername || this.chatTitle }, mode)
+                this.showMorePanel = false
+            } catch (error) { uni.showToast({ title: error.message || '暂时无法发起通话', icon: 'none' }) }
+        },
+        syncChatFeedbackMedia() {
+            setChatFeedbackBlocked(this.chatFeedbackOwner, !this.isChatPageDestroyed && !!(this.isRecording || this.playingVoiceId))
+        },
         communityPostLink,
         communityPostCard,
         openCommunityPost(message) {
@@ -2034,9 +2099,10 @@ export default {
                 type: msgData.type || 'text',
                 fileName: msgData.fileName
             }, {
-                playSound: true,      // 播放声音
-                vibrate: true,        // 振动反馈
-                showNotification: true // 显示 toast
+                playSound: !this.contactSettings.mute,
+                vibrate: false,
+                quiet: true,
+                showNotification: false
             }).catch(e => {
                 console.warn('消息通知失败:', e)
             })
@@ -3148,6 +3214,20 @@ page {
 
 .chat-header .back-icon,
 .chat-header .more-icon { filter: brightness(0) invert(1); }
+
+.location-share-entry {
+    display: flex; align-items: center; gap: 10px; flex: none;
+    margin-top: 64px; padding: 12px 18px; background: #e6f2eb; color: #227451;
+}
+.location-share-copy { flex: 1; min-width: 0; }
+.location-share-title { display: block; font-size: 14px; font-weight: 600; }
+.location-share-subtitle { display: block; margin-top: 3px; font-size: 11px; color: #668574; }
+.location-share-arrow { font-size: 24px; }
+.dark-theme .location-share-entry { background: #233d2e; color: #c0e4ce; }
+.location-share-entry + .message-list { margin-top: 0; }
+/* #ifdef APP-PLUS || MP-WEIXIN */
+.location-share-entry { margin-top: calc(44px + var(--chat-status-bar-height, 20px)); }
+/* #endif */
 
 /* #ifdef APP-PLUS || MP-WEIXIN */
 .chat-header {

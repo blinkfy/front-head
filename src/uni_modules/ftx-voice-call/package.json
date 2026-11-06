@@ -1,0 +1,5 @@
+{
+  "id": "ftx-voice-call", "displayName": "分投侠 P2P 音视频通话", "version": "0.5.2",
+  "description": "Android background WebRTC/PiP and live location; STUN only, no TURN or media server",
+  "uni_modules": { "dependencies": [], "encrypt": [], "platforms": { "client": { "App": { "app-android": "y", "app-ios": "y" }, "H5-mobile": "y", "H5-pc": "y" } } }
+}

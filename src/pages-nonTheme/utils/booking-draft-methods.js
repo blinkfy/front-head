@@ -19,7 +19,11 @@ export const bookingDraftMethods = {
       const payload = draft.payload || {}
       this.remark = payload.notes || ''
       if (payload.address) this.address = payload.address
+      if (Array.isArray(payload.addressRegion) && payload.addressRegion.length === 3) this.addressRegion = [...payload.addressRegion]
       if (payload.contactPhone) this.contactPhone = payload.contactPhone
+      this.syncServiceCoverage()
+      if (payload.addressCoordinateSystem === 'wgs84' && payload.addressLat != null && payload.addressLng != null) this.addressCoordinates = { address: this.address, latitude: Number(payload.addressLat), longitude: Number(payload.addressLng), coordinateSystem: 'wgs84' }; else this.addressCoordinates = null
+      this.syncServiceCoverage()
       this.selectedTypes = (payload.items || []).map(item => Number(item.typeId))
       this.itemWeights = Object.fromEntries((payload.items || []).map(item => [item.typeId, item.weight]))
       this.selectedDate = 'today'
@@ -36,7 +40,8 @@ export const bookingDraftMethods = {
     finally { this.draftLoading = false }
   },
   getBookingPayload() {
-    return { items: this.selectedTypes.map(typeId => ({ typeId, weight: Number(this.itemWeights[typeId] ?? 1) })),
+    const coordinate = this.addressCoordinates?.address === this.address ? this.addressCoordinates : null
+    return { serviceAreaId: this.serviceAreaId, ...(this.addressRegion.length === 3 && this.addressRegion.every(part => String(part || '').trim()) ? { addressRegion: this.addressRegion.map(part => String(part || '').trim()) } : {}), ...(coordinate ? { addressLat: coordinate.latitude, addressLng: coordinate.longitude, addressCoordinateSystem: coordinate.coordinateSystem } : {}), items: this.selectedTypes.map(typeId => ({ typeId, weight: Number(this.itemWeights[typeId] ?? 1) })),
       appointmentDate: this.timeSlotsDate, appointmentTimeSlot: this.selectedTimeSlot,
       address: this.address, contactPhone: this.contactPhone.trim(), notes: this.remark }
   },

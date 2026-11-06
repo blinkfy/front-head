@@ -1370,5 +1370,68 @@
     "category": "05_chat",
     "recommended_size": 64,
     "file": "icons/chat_group_create_64.webp"
+  },
+  {
+    "id": "ai_chat_action_table",
+    "zh_name": "AI 执行动作表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/ai_chat_action_table_64.webp"
+  },
+  {
+    "id": "ai_setting_table",
+    "zh_name": "AI 设置表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/ai_setting_table_64.webp"
+  },
+  {
+    "id": "booking_slot_table",
+    "zh_name": "预约并发锁表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/booking_slot_table_64.webp"
+  },
+  {
+    "id": "chat_push_device_table",
+    "zh_name": "聊天推送设备表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/chat_push_device_table_64.webp"
+  },
+  {
+    "id": "community_notification_table",
+    "zh_name": "社区互动通知表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/community_notification_table_64.webp"
+  },
+  {
+    "id": "group_message_deletion_table",
+    "zh_name": "群消息删除记录表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/group_message_deletion_table_64.webp"
+  },
+  {
+    "id": "user_notification_table",
+    "zh_name": "用户业务通知表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/user_notification_table_64.webp"
+  },
+  {
+    "id": "chat_voice_call",
+    "zh_name": "语音通话",
+    "category": "05_chat",
+    "recommended_size": 64,
+    "file": "icons/chat_voice_call_64.webp"
+  },
+  {
+    "id": "chat_video_call",
+    "zh_name": "视频通话",
+    "category": "05_chat",
+    "recommended_size": 64,
+    "file": "icons/chat_video_call_64.webp"
   }
 ]

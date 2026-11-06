@@ -41,6 +41,28 @@
           </view>
           <ManifestIcon class="item-arrow" id="chevron_right" size="28rpx" />
         </view>
+        <!-- #ifdef APP-PLUS || H5 || MP-WEIXIN -->
+        <view class="setting-item">
+          <ManifestIcon class="item-icon" id="password" size="44rpx" />
+          <view class="item-info">
+            <text class="item-title">{{ biometricLabel }}</text>
+            <text class="item-desc">{{ biometricDescription }}</text>
+          </view>
+          <switch :key="biometricSwitchVersion" class="login-switch" :checked="biometricState.enabled" :disabled="biometricBusy || (!biometricSupport.supported && !biometricState.enabled)" :color="isDarkTheme ? '#5B8DEE' : '#059669'" :aria-label="biometricLabel" @change="toggleBiometric" />
+        </view>
+        <view v-if="biometricState.enabled && !biometricBound && biometricSupport.supported && biometricSupport.enrolled" class="setting-item">
+          <view class="item-info"><text class="item-desc">验证后即可使用</text></view>
+          <button class="retry-btn" :disabled="biometricBusy || !profile.id" @click="enableBiometric">完成授权</button>
+        </view>
+        <view v-if="quickLoginPlatform === 'web' && biometricState.enabled && !biometricBound && biometricState.previousCredentialId && biometricSupport.enrolled" class="setting-item">
+          <view class="item-info"><text class="item-desc">原通行密钥已删除或不可用？</text></view>
+          <button class="retry-btn" :disabled="biometricBusy || !profile.id" @click="createNewPasskey">创建新密钥</button>
+        </view>
+        <view v-if="biometricRevokePending" class="setting-item">
+          <view class="item-info"><text class="item-desc">已关闭，授权撤销待同步</text></view>
+          <button class="retry-btn" :disabled="biometricBusy" @click="syncBiometricRevocations">同步撤销</button>
+        </view>
+        <!-- #endif -->
       </view>
 
       <view class="settings-section">
@@ -82,13 +104,18 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow, onHide } from '@dcloudio/uni-app'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getUserProfile, getWechatLoginSettings } from '@/api/user'
 import { ThemeManager } from '@/utils/theme.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { baseUrl } from '@/api/settings.js'
+// #ifdef APP-PLUS || H5 || MP-WEIXIN
+import { onBeforeUnmount } from 'vue'
+import { quickLogin as biometricLogin, quickLoginPlatform } from '@/utils/quick-login.js'
+import { biometricErrorMessage } from '@/utils/biometric-login-core.mjs'
+// #endif
 // #ifdef MP-WEIXIN
 import { updateWechatLoginSettings } from '@/api/user'
 // #endif
@@ -106,6 +133,61 @@ function readCachedProfile() {
 }
 
 const profile = ref(readCachedProfile())
+// #ifdef APP-PLUS || H5 || MP-WEIXIN
+const biometricState = ref(biometricLogin.state())
+const biometricSupport = ref({ supported: false, enrolled: false })
+const biometricLabel = ref('指纹或面容登录')
+const biometricBusy = ref(false)
+const biometricSwitchVersion = ref(0)
+let biometricActive = true, biometricGeneration = 0
+const biometricBound = computed(() => Boolean(biometricState.value.credentialId) && String(biometricState.value.userId) === String(profile.value.id))
+const biometricRevokePending = computed(() => Boolean(biometricLogin.syncRevocations) && (biometricState.value.pendingRevocations || []).some(item => String(item.userId) === String(profile.value.id)))
+const biometricDescription = computed(() => {
+  if (!biometricSupport.value.supported) return quickLoginPlatform === 'web' ? '当前浏览器暂不支持' : '当前设备暂不支持'
+  if (!biometricSupport.value.enrolled) return '请先在系统设置中录入指纹或面容'
+  if (!biometricState.value.enabled) return '已关闭'
+  return biometricBound.value ? '登录时优先验证' : '待完成授权'
+})
+async function loadBiometric() {
+  const generation = biometricGeneration
+  biometricState.value = biometricLogin.state()
+  const support = await biometricLogin.capability()
+  if (!biometricActive || generation !== biometricGeneration) return
+  biometricSupport.value = support
+  biometricLabel.value = support.label || '指纹或面容登录'
+  if (biometricRevokePending.value && biometricLogin.syncRevocations) void syncBiometricRevocations(false)
+}
+async function toggleBiometric(event, options = {}) {
+  if (biometricBusy.value || !profile.value.id) return
+  const generation = biometricGeneration
+  const isActive = () => biometricActive && biometricGeneration === generation
+  biometricBusy.value = true
+  try {
+    const result = await biometricLogin.setEnabled(event.detail.value, uni.getStorageSync('token'), profile.value, isActive, options)
+    if (isActive()) uni.showToast({ title: result?.revocationPending ? '本机已关闭，授权撤销待同步' : event.detail.value ? '快捷登录已开启' : '快捷登录已关闭', icon: 'none' })
+  } catch (error) {
+    const message = biometricErrorMessage(error)
+    if (message && isActive()) uni.showToast({ title: message, icon: 'none' })
+  } finally {
+    biometricState.value = biometricLogin.state()
+    biometricSwitchVersion.value++
+    biometricBusy.value = false
+  }
+}
+function enableBiometric() { return toggleBiometric({ detail: { value: true } }) }
+function createNewPasskey() { return toggleBiometric({ detail: { value: true } }, { forceCreate: true }) }
+async function syncBiometricRevocations(notify = true) {
+  if (biometricBusy.value || !biometricLogin.syncRevocations) return
+  biometricBusy.value = true
+  try {
+    const result = await biometricLogin.syncRevocations(uni.getStorageSync('token'), profile.value.id)
+    if (notify && biometricActive) uni.showToast({ title: result?.revocationPending ? '暂未同步成功，请稍后重试' : '授权已撤销', icon: 'none' })
+  } finally { biometricState.value = biometricLogin.state(); biometricBusy.value = false }
+}
+function stopBiometric() { biometricActive = false; biometricGeneration++; biometricLogin.cancel() }
+onBeforeUnmount(stopBiometric)
+onHide(stopBiometric)
+// #endif
 const username = computed(() => profile.value.username || '')
 const avatarFailed = ref(false)
 const avatarUrl = computed(() => typeof profile.value.avatar === 'string' && profile.value.avatar
@@ -219,8 +301,14 @@ onShow(() => {
   isDarkTheme.value = ThemeManager.getTheme() === 'dark'
   profile.value = readCachedProfile()
   avatarFailed.value = false
-  loadProfile()
   loadWechatSettings()
+  // #ifdef APP-PLUS || H5 || MP-WEIXIN
+  biometricActive = true
+  void loadProfile().then(() => { if (biometricActive) void loadBiometric() })
+  // #endif
+  // #ifndef APP-PLUS || H5 || MP-WEIXIN
+  void loadProfile()
+  // #endif
 })
 </script>
 

@@ -1,0 +1,8 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import BiometricLoginBridge from 'ftx.biometric.BiometricLoginBridge'
+
+export function biometricRequest(options: string, callback: (result: string) => void): void {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) { callback('{"error":"UNAVAILABLE"}'); return }
+  BiometricLoginBridge.request(activity!, options, callback)
+}

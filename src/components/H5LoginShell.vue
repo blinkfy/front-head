@@ -23,6 +23,7 @@
               <view v-if="showCaptcha" class="captcha-section"><text>验证码</text><component :is="dark ? CaptchaDark : CaptchaBox" ref="captcha" :model-value="captchaInput" @update:model-value="emit('update:captchaInput', $event)" @confirm="submitAccount" /><text v-if="captchaHint" class="captcha-hint">{{ captchaHint }}</text></view>
               <view class="account-options"><button type="button" class="remember-toggle" role="checkbox" :aria-checked="rememberMe" @click="emit('update:rememberMe', !rememberMe)"><view class="remember-check" :class="{ checked: rememberMe }"><text v-if="rememberMe">✓</text></view><text>记住我</text></button></view>
               <button form-type="submit" class="account-submit" :disabled="loading || qrBusy"><ManifestIcon v-if="!loading" id="submit_action" :scale="1.8" /><view v-else class="submit-spinner"></view><text>{{ loading || qrBusy ? '正在登录…' : '登 录' }}</text></button>
+              <slot name="biometric"></slot>
               <text class="account-caption">已有账号可直接登录</text>
               <view class="register-entry"><text>还没有账号？</text><button type="button" @click="openRegistration">{{ registrationAllowed ? '立即注册 ›' : (wide ? '扫码注册 ›' : '切换到微信扫码注册') }}</button></view>
             </form>

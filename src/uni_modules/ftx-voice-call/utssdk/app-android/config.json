@@ -1,0 +1,1 @@
+{ "minSdkVersion": "23", "dependencies": ["io.github.webrtc-sdk:android:150.7871.01", "com.squareup.okhttp3:okhttp:4.12.0"] }

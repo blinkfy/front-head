@@ -38,6 +38,7 @@
     <scroll-view class="main-scroll" scroll-y @scrolltolower="loadMore">
       <view class="content-wrapper">
 
+        <view v-if="loadError" class="empty-state" @click="loadOrders"><text class="empty-text">{{ loadError }}，点击重试</text></view>
         <!-- 加载中 -->
         <view class="loading-wrap" v-if="loading && orders.length === 0">
           <view class="loading-spinner"></view>
@@ -88,11 +89,14 @@
             </view>
             <view v-if="order.cancelReason" class="order-info"><view class="info-row"><text class="info-label">取消原因</text><text class="info-value">{{ order.cancelReason }}</text></view></view>
 
+            <view v-if="order.collectorName" class="order-info"><view class="info-row"><text class="info-label">服务人员</text><text class="info-value">{{ order.collectorName }} {{ order.collectorPhone }}</text></view></view>
+            <view v-if="detailOrderId && order.events?.length" class="order-info"><view v-for="(event, index) in order.events" :key="event.id || index" class="info-row"><text class="info-label">{{ eventLabel(event.eventType || event.type) }}</text><text class="info-value">{{ event.reason || event.createdAt || '' }}</text></view></view>
             <!-- 操作按钮 -->
-            <view class="order-actions" v-if="order.status === 'pending' || order.status === 'scheduled' || order.status === 'confirmed' || order.status === 'picking'">
-              <view class="action-btn cancel-btn" @click="showCancelModal(order)">
-                <text>取消订单</text>
-              </view>
+            <view class="order-actions">
+              <view v-if="order.assignmentVersion && order.collectorId" class="action-btn" @click="contactCollector(order)"><text>{{ contacting ? '联系中…' : '联系回收员' }}</text></view>
+              <view v-if="order.status === 'pending' || order.status === 'confirmed'" class="action-btn cancel-btn" @click="showCancelModal(order)"><text>取消订单</text></view>
+              <view v-if="order.status === 'picking'" class="action-btn" @click="contactPlatform"><text>联系平台</text></view>
+              <view v-if="!detailOrderId" class="action-btn" @click="viewDetail(order)"><text>查看详情</text></view>
             </view>
           </view>
         </view>
@@ -115,7 +119,7 @@
     </scroll-view>
 
     <!-- 取消订单弹窗 -->
-    <view class="modal-overlay" v-if="showCancelDialog" @click="showCancelDialog = false">
+    <view class="modal-overlay" v-if="showCancelDialog" @click="!cancelling && (showCancelDialog = false)">
       <view class="modal-content" @click.stop>
         <view class="modal-header">
           <text class="modal-title">取消订单</text>
@@ -124,7 +128,7 @@
           <textarea
             v-model="cancelReason"
             class="cancel-textarea"
-            placeholder="请输入取消原因（选填）"
+            :placeholder="currentCancelOrder?.status === 'confirmed' ? '已接单取消请填写原因' : '请输入取消原因（选填）'"
             placeholder-class="textarea-placeholder"
           ></textarea>
         </view>
@@ -133,7 +137,7 @@
             <text>暂不取消</text>
           </view>
           <view class="modal-btn confirm" @click="confirmCancel">
-            <text>确认取消</text>
+            <text>{{ cancelling ? '取消中…' : '确认取消' }}</text>
           </view>
         </view>
       </view>
@@ -144,12 +148,13 @@
 <script>
 import { getBookingList, getBookingDetail, cancelBooking } from '@/pages-nonTheme/api/booking.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
+import { openBookingChat, openPlatformSupport, mutationData } from './api/recycling.js';
 
 export default {
   components: { ManifestIcon },
   data() {
     return {
-      loading: false,
+      loading: false, loadError: '', contacting: false, cancelling: false, writes: {}, loadedOnce: false,
       loadingMore: false,
       orders: [],
       detailOrderId: '',
@@ -161,7 +166,7 @@ export default {
       showCancelDialog: false,
       statusTabs: [
         { label: '全部', value: 'all' },
-        { label: '待上门', value: 'pending' },
+        { label: '进行中', value: 'active' },
         { label: '已完成', value: 'completed' },
         { label: '已取消', value: 'cancelled' }
       ],
@@ -175,6 +180,7 @@ export default {
   },
   onShow() {
     this.checkTheme();
+    if (this.loadedOnce) this.loadOrders();
   },
   methods: {
     extractData(res) {
@@ -196,7 +202,8 @@ export default {
       uni.navigateTo({ url: '/pages-nonTheme/booking' });
     },
     async loadOrders() {
-      this.loading = true;
+      if (this.loading) return;
+      this.loading = true; this.loadError = '';
       this.currentPage = 1;
       try {
         const status = this.currentStatus === 'all' ? null : this.currentStatus;
@@ -205,11 +212,12 @@ export default {
         this.orders = this.formatOrders(this.detailOrderId ? [data] : (data.orders || []));
         this.hasMore = !this.detailOrderId && (data.page || 1) < (data.totalPages || 1);
       } catch (e) {
+        this.loadError = e.message || '订单加载失败';
         console.error('获取订单失败:', e);
         this.orders = [];
         this.hasMore = false;
       }
-      this.loading = false;
+      this.loading = false; this.loadedOnce = true;
     },
     async loadMore() {
       if (this.loadingMore || !this.hasMore) return;
@@ -228,6 +236,7 @@ export default {
     },
     formatOrders(rawOrders) {
       return rawOrders.map(o => ({
+        ...o,
         id: o.id,
         orderNo: o.orderNo || `BK${Date.now()}`,
         items: (o.items || []).map((item) => ({
@@ -249,30 +258,37 @@ export default {
     },
     getStatusText(status) {
       const map = {
-        pending: '待上门',
-        scheduled: '待上门',
-        confirmed: '已确认',
-        picking: '回收中',
+        pending: '待接单',
+        confirmed: '已接单',
+        picking: '上门中',
         completed: '已完成',
         cancelled: '已取消'
       };
       return map[status] || '未知';
     },
+    eventLabel(type) { return ({ created: '提交预约', accepted: '已接单', started: '开始上门', completed: '回收完成', cancelled: '订单取消', assigned: '平台指派', released: '退回大厅', mapped: '核对区域' }[type] || '订单更新'); },
+    viewDetail(order) { uni.navigateTo({ url: `/pages-nonTheme/booking-orders?orderId=${order.id}` }); },
+    async contactCollector(order) { if (this.contacting) return; this.contacting = true; try { await openBookingChat(order, this.writes); } catch (e) { uni.showToast({ title: e.message || '联系失败，请刷新订单', icon: 'none' }); } finally { this.contacting = false; } },
+    async contactPlatform() { if (this.contacting) return; this.contacting = true; try { await openPlatformSupport(); } catch (e) { uni.showToast({ title: e.message || '平台联系失败', icon: 'none' }); } finally { this.contacting = false; } },
     showCancelModal(order) {
+      if (this.cancelling) return;
       this.currentCancelOrder = order;
       this.cancelReason = '';
       this.showCancelDialog = true;
     },
     async confirmCancel() {
-      if (!this.currentCancelOrder) return;
+      if (!this.currentCancelOrder || this.cancelling) return;
+      if (this.currentCancelOrder.status === 'confirmed' && !this.cancelReason.trim()) { uni.showToast({ title: '已接单取消请填写原因', icon: 'none' }); return; }
+      this.cancelling = true;
       try {
-        await cancelBooking(this.currentCancelOrder.id, this.cancelReason);
+        await cancelBooking(this.currentCancelOrder.id, this.cancelReason.trim(), mutationData(this.writes, `cancel:${this.currentCancelOrder.id}`, { version: this.currentCancelOrder.version, reason: this.cancelReason.trim() }));
         uni.showToast({ title: '取消成功', icon: 'success' });
+        delete this.writes[`cancel:${this.currentCancelOrder.id}`];
         this.showCancelDialog = false;
         this.loadOrders();
       } catch (e) {
         uni.showToast({ title: e.message || '取消失败', icon: 'none' });
-      }
+      } finally { this.cancelling = false; }
     }
   }
 };
@@ -432,12 +448,12 @@ export default {
   border-radius: 50%;
   display: inline-block;
 }
-.status-pending, .status-scheduled {
+.status-pending {
   background: rgba(245, 158, 11, 0.12);
   color: #f59e0b;
 }
-.status-pending::before, .status-scheduled::before { background: #f59e0b; }
-.dark-mode .status-pending, .dark-mode .status-scheduled {
+.status-pending::before { background: #f59e0b; }
+.dark-mode .status-pending {
   background: rgba(245, 158, 11, 0.2);
   color: #fbbf24;
 }

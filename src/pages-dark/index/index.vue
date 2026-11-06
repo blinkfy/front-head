@@ -5,7 +5,11 @@
     v-model:username="username" v-model:password="password" v-model:show-password="showPwd"
     v-model:remember-me="rememberMe" v-model:captcha-input="captchaInput"
     :loading="isLoading" :show-captcha="showCaptcha" :captcha-hint="captchaHint"
-    @login="onLogin(false)" @qr-login="onQrLogin" />
+    @login="onLogin(false)" @qr-login="onQrLogin">
+    <!-- #ifdef H5 || APP-PLUS -->
+    <template #biometric><button v-if="biometricAvailable" class="biometric-login-entry" :disabled="isLoading" @click.stop.prevent="onBiometricLogin">{{ biometricLabel }}</button></template>
+    <!-- #endif -->
+  </H5LoginShell>
   <!-- #endif -->
   <!-- #ifndef H5 || APP-PLUS -->
   <view class="login-bg">
@@ -114,6 +118,7 @@
       </form>
         <!-- #ifdef MP-WEIXIN -->
         <WechatLoginEntry :pending="wechatBindPending" :loading="isLoading" :dark="true" @login="onWechatLogin" />
+        <button v-if="biometricAvailable" class="biometric-login-entry" :disabled="isLoading" @click.stop="onBiometricLogin">{{ biometricLabel }}</button>
         <!-- #endif -->
     </view>
     <!-- #ifdef MP-WEIXIN -->
@@ -139,6 +144,9 @@ import { clearChatPush } from '@/utils/chat-push.js'
 import { loginNavigationRuntime } from '@/utils/login-navigation-runtime.js'
 // #ifdef APP-PLUS
 import { resumeRememberedQrLogin } from '@/utils/remembered-qr-login.mjs'
+// #endif
+// #ifdef APP-PLUS || H5 || MP-WEIXIN
+import { useBiometricLogin } from '@/utils/use-biometric-login.js'
 // #endif
 import { ref, onMounted } from 'vue'
 // #ifdef H5 || APP-PLUS
@@ -173,6 +181,13 @@ const password = ref('')
 const showPwd = ref(false)
 const rememberMe = ref(true)
 const isLoading = ref(false)
+// #ifdef APP-PLUS || H5 || MP-WEIXIN
+const { available: biometricAvailable, label: biometricLabel, login: onBiometricLogin,
+  prefer: preferBiometricLogin, afterLogin: offerBiometricLogin } = useBiometricLogin({
+  loading: isLoading,
+  onLogin: result => completeLogin(result, true, false, true)
+})
+// #endif
 const wechatBindPending = ref(false)
 // #ifdef MP-WEIXIN
 const wechatFlow = createWechatLoginFlow({ runtime: uni, login: wechatLogin })
@@ -264,6 +279,9 @@ const getParticleStyle = (index) => {
 
 // 页面加载时检查是否有保存的登录信息
 onMounted(async () => {
+  // #ifdef APP-PLUS || H5 || MP-WEIXIN
+  if (await preferBiometricLogin()) return
+  // #endif
   // #ifdef APP-PLUS
   const page = getCurrentPages().slice(-1)[0]
   if (await resumeRememberedQrLogin({ runtime: registrationRuntime, loadUser: () => userinfo("false"),
@@ -321,6 +339,7 @@ async function onQrLogin(result) {
   commitRegistrationLogin(registrationRuntime, result)
   uni.setStorageSync('autoLogin', rememberMe.value)
   uni.setStorageSync('rememberedQrLogin', rememberMe.value)
+  if (!(await offerBiometricLogin(result.token, result.userInfo || uni.getStorageSync('userInfo')))) { isLoading.value = false; return }
   if (!(await remindIfUnbound())) return
   uni.showToast({ title: '登录成功', icon: 'success' })
   const pendingScene = getPendingDeviceQrScene(registrationRuntime)
@@ -332,7 +351,7 @@ async function onQrLogin(result) {
 }
 // #endif
 
-async function completeLogin(res, isauto, isWechat = false) {
+async function completeLogin(res, isauto, isWechat = false, isBiometric = false) {
   // #ifdef H5 || APP-PLUS
   uni.removeStorageSync('rememberedQrLogin')
   // #endif
@@ -358,7 +377,7 @@ async function completeLogin(res, isauto, isWechat = false) {
   let loggedInUser = null
   // 获取并保存完整的用户信息
   try {
-    const userInfoRes = await userinfo("false")
+    const userInfoRes = res.userInfo ? { data: res.userInfo } : await userinfo("false")
     if (userInfoRes && userInfoRes.data) {
       loggedInUser = userInfoRes.data
       uni.setStorageSync('userInfo', userInfoRes.data)
@@ -375,7 +394,10 @@ async function completeLogin(res, isauto, isWechat = false) {
   wechatSession = true
   rememberWechatLogin(uni, res, rememberMe.value)
   // #endif
-  if (wechatSession) {
+  if (isBiometric) {
+    uni.removeStorageSync('savedUser')
+    uni.setStorageSync('autoLogin', rememberMe.value)
+  } else if (wechatSession) {
     uni.removeStorageSync('savedUser')
     uni.setStorageSync('autoLogin', rememberMe.value)
   } else if (rememberMe.value) {
@@ -389,6 +411,7 @@ async function completeLogin(res, isauto, isWechat = false) {
     uni.removeStorageSync('savedUser')
   }
   // #ifdef H5 || APP-PLUS
+  if (!(await offerBiometricLogin(res.token, loggedInUser))) { isLoading.value = false; return }
   if (!(await remindIfUnbound())) return
   // #endif
   // #ifdef MP-WEIXIN
@@ -403,6 +426,7 @@ async function completeLogin(res, isauto, isWechat = false) {
   if (!wechatPageActive) return
   await confirmRegistrationLogin(res.token, loggedInUser?.username || username.value, () => wechatPageActive)
   if (!wechatPageActive) return
+  if (!(await offerBiometricLogin(res.token, loggedInUser))) { isLoading.value = false; return }
   // #endif
   const pendingScene = getPendingDeviceQrScene(loginNavigationRuntime)
   const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, true) : ''
@@ -514,6 +538,8 @@ function onRegister() {
 </script>
 
 <style scoped>
+.biometric-login-entry { margin: 14px auto 0; padding: 5px 16px; font-size: 14px; line-height: 1.8; color: #8bc9ff; background: transparent; }
+.biometric-login-entry::after { border: 0; }
 .registration-relay-notice { position: relative; margin: 20rpx; padding: 20rpx; border-radius: 16rpx; background: rgba(128, 188, 155, .18); text-align: center; font-size: 26rpx; }
 .registration-relay-actions { display: flex; justify-content: center; gap: 16rpx; margin-top: 16rpx; }
 /* 主背景 */

@@ -1,0 +1,44 @@
+.recycle-page { min-height:100vh; background:#f2f6f3; color:#203b2d; padding-bottom:calc(32rpx + env(safe-area-inset-bottom)); box-sizing:border-box; font-size:28rpx; }
+.recycle-page .recycle-nav { position:sticky; top:0; z-index:5; background:#16845b; color:#fff; }
+.recycle-page .recycle-nav-row { display:flex; height:48px; align-items:center; justify-content:space-between; font-weight:600; font-size:34rpx; }
+.recycle-page .recycle-back { background:transparent; color:#fff; margin:0; width:100rpx; padding:0; font-size:56rpx; line-height:48px; }
+.recycle-page .recycle-back::after { border:0; }
+.recycle-page .recycle-nav-spacer { width:100rpx; }
+.recycle-page .recycle-body { max-width:960px; margin:auto; padding:24rpx; }
+.recycle-page .recycle-card { background:#fff; padding:28rpx; margin-bottom:22rpx; border-radius:20rpx; border:1rpx solid #e2ebe5; }
+.recycle-page .recycle-heading { display:block; font-size:32rpx; font-weight:650; margin-bottom:16rpx; }
+.recycle-page .recycle-copy { display:block; line-height:1.7; margin:12rpx 0; overflow-wrap:anywhere; }
+.recycle-page .recycle-muted { color:#6c8174; font-size:25rpx; line-height:1.6; }
+.recycle-page .recycle-label { display:block; font-weight:500; margin:24rpx 0 12rpx; }
+.recycle-page input, .recycle-page textarea, .recycle-page .recycle-select { box-sizing:border-box; width:100%; min-height:84rpx; padding:20rpx; border:1rpx solid #cbdcd1; border-radius:12rpx; background:#f8faf8; color:inherit; font-size:28rpx; }
+.recycle-page textarea { min-height:140rpx; height:160rpx; }
+.recycle-page .recycle-row { display:flex; align-items:center; justify-content:space-between; gap:18rpx; margin:14rpx 0; }
+.recycle-page .recycle-row > text:first-child { min-width:0; overflow-wrap:anywhere; }
+.recycle-page .recycle-row-wrap { flex-wrap:wrap; }
+.recycle-page .recycle-grow { flex:1; min-width:0; }
+.recycle-page .recycle-pills { display:flex; flex-wrap:wrap; gap:14rpx; margin:14rpx 0; }
+.recycle-page .recycle-pill { margin:0; padding:12rpx 22rpx; line-height:1.5; font-size:26rpx; color:#456050; background:#eef3ef; border-radius:30rpx; }
+.recycle-page .recycle-pill::after { border:0; }
+.recycle-page .recycle-pill.selected { background:#d9f3e6; color:#087346; box-shadow:inset 0 0 0 2rpx #16845b; }
+.recycle-page .recycle-primary, .recycle-page .recycle-secondary, .recycle-page .recycle-danger { margin:18rpx 0 0; padding:0 24rpx; font-size:28rpx; line-height:80rpx; border-radius:12rpx; }
+.recycle-page .recycle-primary { background:#16845b; color:#fff; }
+.recycle-page .recycle-secondary { background:#eaf2ed; color:#167348; }
+.recycle-page .recycle-danger { background:#fff0ee; color:#b43d30; }
+.recycle-page button[disabled] { opacity:.5; }
+.recycle-page .recycle-status { color:#087346; background:#e4f5ec; padding:6rpx 16rpx; border-radius:30rpx; font-size:24rpx; white-space:nowrap; flex-shrink:0; }
+.recycle-page .recycle-error { padding:22rpx; background:#fff0eb; color:#ad3a29; border-radius:12rpx; margin-bottom:20rpx; line-height:1.6; overflow-wrap:anywhere; }
+.recycle-page .recycle-empty { text-align:center; padding:60rpx 20rpx; color:#6c8174; }
+.recycle-page .recycle-divider { border-top:1rpx solid #e3ece6; margin:24rpx 0; }
+.recycle-page .recycle-tabs { position:sticky; top:var(--recycle-nav-height,48px); display:flex; flex-wrap:wrap; gap:12rpx; background:#f2f6f3; padding:10rpx 0 20rpx; z-index:2; }
+.recycle-page .recycle-event { padding:12rpx 0; border-bottom:1rpx solid #e8eee9; font-size:25rpx; line-height:1.6; }
+.recycle-page .recycle-small-input { width:180rpx; }
+.recycle-page.recycle-dark { background:#101d17; color:#e1eee6; }
+.recycle-dark .recycle-nav { background:#183c2b; }
+.recycle-dark .recycle-card { background:#1c3025; border-color:#31513e; }
+.recycle-dark input, .recycle-dark textarea, .recycle-dark .recycle-select { background:#14271c; border-color:#42644e; }
+.recycle-dark .recycle-muted, .recycle-dark .recycle-empty { color:#adc3b5; }
+.recycle-dark .recycle-pill, .recycle-dark .recycle-secondary { background:#294936; color:#c6e6d2; }
+.recycle-dark .recycle-pill.selected, .recycle-dark .recycle-status { background:#1c5c3b; color:#d4f6e0; }
+.recycle-dark .recycle-error, .recycle-dark .recycle-danger { background:#4c2c26; color:#ffd2c7; }
+.recycle-dark .recycle-tabs { background:#101d17; }
+.recycle-dark .recycle-divider, .recycle-dark .recycle-event { border-color:#35533f; }

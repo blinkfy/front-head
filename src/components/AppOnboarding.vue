@@ -14,7 +14,7 @@
       <view class="tour-top">
         <view class="step-badge">{{ currentIndex + 1 }} / {{ visibleSteps.length }}</view>
         <text v-if="displayedIndex === 0 && demoStage !== 'idle'" class="example-badge">效果示例 · 自动演示</text>
-        <button class="close-btn" type="button" aria-label="关闭新用户引导" @click="dismiss">×</button>
+        <button class="close-btn" type="button" aria-label="关闭新用户引导" @click="requestDismiss">×</button>
       </view>
 
       <view class="tip-image-box" v-if="displayedStep.tipImage">
@@ -29,11 +29,10 @@
       <view class="hint-line" :class="currentStep.arrow"></view>
 
       <view class="tour-actions">
+        <view v-if="demoBrowsing" class="solid-btn" role="button" tabindex="0" @keydown.enter.prevent="tryRecognition" @keydown.space.prevent="tryRecognition" @click="tryRecognition">试拍一张</view>
+        <view v-else class="solid-btn" role="button" tabindex="0" @keydown.enter.prevent="nextStep" @keydown.space.prevent="nextStep" @click="nextStep">{{ isLastStep ? '知道了' : (displayedIndex === 0 ? '下一个功能' : '下一步') }}</view>
         <view v-if="demoBrowsing" class="ghost-btn" role="button" tabindex="0" @keydown.enter.prevent="nextStep" @keydown.space.prevent="nextStep" @click="nextStep">继续引导</view>
         <view v-else-if="isLastStep" class="ghost-btn" @click="moreInfo">查看更多</view>
-        <view v-else class="ghost-btn" @click="dismiss">跳过</view>
-        <view v-if="demoBrowsing" class="solid-btn" role="button" tabindex="0" @keydown.enter.prevent="tryRecognition" @keydown.space.prevent="tryRecognition" @click="tryRecognition">试拍一张</view>
-        <view v-else class="solid-btn" role="button" tabindex="0" @keydown.enter.prevent="nextStep" @keydown.space.prevent="nextStep" @click="nextStep">{{ isLastStep ? '知道了' : 'OK' }}</view>
         <view v-if="demoBrowsing && !guideLeaving" class="replay-btn" @click="startDemo">重播</view>
       </view>
     </view>
@@ -161,6 +160,7 @@ const demoTimers = new Set()
 const tip1Loaded = ref(false)
 let introTimer = null
 let exitAction = null
+let dismissConfirmPending = false
 const introDemo = computed(() => currentIndex.value === 0 && (demoStage.value === 'intro' || (demoStage.value === 'exiting' && lastDemoStage.value === 'intro')))
 const compactDemo = computed(() => currentIndex.value === 0 && demoStage.value !== 'idle' && !introDemo.value)
 const demoCopy = {
@@ -533,6 +533,25 @@ function leaveDemo(action) {
 
 function moreInfo() {
   emit('goGuide')
+}
+
+function requestDismiss() {
+  if (dismissConfirmPending || !props.visible || !props.active || guideLeaving.value) return
+  dismissConfirmPending = true
+  try {
+    uni.showModal({
+      title: '关闭新用户引导？',
+      content: '关闭后，可在「设置 → 新用户引导」中重新打开。',
+      showCancel: true,
+      confirmText: '确定',
+      cancelText: '取消',
+      confirmColor: props.dark ? '#0891b2' : '#059669',
+      success: result => {
+        if (result.confirm && props.visible && props.active && !guideLeaving.value) dismiss()
+      },
+      complete: () => { dismissConfirmPending = false }
+    })
+  } catch (_) { dismissConfirmPending = false }
 }
 
 function dismiss() {

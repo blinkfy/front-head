@@ -1,5 +1,5 @@
 // A single account-bound connection shared by all pages. HTTP polling is the fallback.
-export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket, onEvent, onConnected,
+export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket, onEvent, onConnected, onDisconnected,
     setTimer = setTimeout, clearTimer = clearTimeout }) {
     let active = false, socket = null, identity = '', generation = 0, timer = null
     let retryAt = 0, attempts = 0, lastPong = 0, lastPing = 0, authenticated = false
@@ -9,6 +9,7 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
         const previous = socket
         socket = null
         authenticated = false
+        onDisconnected?.()
         try { previous?.close({ code: 1000, reason: 'Session changed' }) } catch (_) {}
     }
     function tick() {
@@ -23,8 +24,9 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
             attempts = 0
         }
         const now = Date.now()
+        if (socket?.isAlive?.() || socket?.isSuspended?.()) lastPong = now // Android native heartbeat survives suspended JS.
         if (socket && now - lastPong > 45000) { close(); retryAt = now + 1000 }
-        if (socket && authenticated && now - lastPing > 20000) {
+        if (socket && authenticated && !socket.isSuspended?.() && now - lastPing > 20000) {
             lastPing = now
             socket.send({ data: JSON.stringify({ type: 'ping' }), fail: () => close() })
         }
@@ -55,7 +57,7 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
                             previouslyConnected = true
                             onConnected?.({ ...event, reconnected })
                         }
-                        else if (event.type === 'chat.changed' || event.type === 'community.changed' || event.type === 'notification.changed') onEvent(event)
+                        else if (event.type === 'chat.changed' || event.type === 'community.changed' || event.type === 'notification.changed' || String(event.type || '').startsWith('voice.') || String(event.type || '').startsWith('location.')) onEvent(event)
                     } catch (_) {}
                 })
                 current.onClose(disconnected)
@@ -65,8 +67,12 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
         timer = setTimer(tick, 1000)
     }
     return {
+        send(event) {
+            if (!active || !authenticated || !socket || identity !== String(getToken() || '') || (!socket.isAlive?.() && Date.now() - lastPong > 45000)) return false
+            try { socket.send({ data: JSON.stringify(event), fail: () => close() }); return true } catch (_) { close(); return false }
+        },
         isConnected() {
-            return active && authenticated && !!socket && identity === String(getToken() || '') && Date.now() - lastPong <= 45000
+            return active && authenticated && !!socket && identity === String(getToken() || '') && (socket.isAlive?.() || Date.now() - lastPong <= 45000)
         },
         setActive(value) {
             active = !!value

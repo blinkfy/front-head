@@ -11,7 +11,7 @@
       <view v-for="item in items" :key="item.id" class="notice-card" :class="{ unread: !item.readAt }" @click="openOrder(item)">
         <view class="notice-title"><text>{{ item.title }}</text><view v-if="!item.readAt" class="notice-dot" /></view>
         <text class="notice-content">{{ item.content }}</text>
-        <view class="notice-meta"><text>{{ timeLabel(item.createdAt) }}</text><text>查看订单 ›</text></view>
+        <view class="notice-meta"><text>{{ timeLabel(item.createdAt) }}</text><text>查看详情 ›</text></view>
       </view>
       <view v-if="error" class="notice-status" @click="loadMore">{{ error }}</view>
       <view v-else-if="loading" class="notice-status">加载中…</view>

@@ -42,7 +42,7 @@ const query = ref(''), selected = ref(''), error = ref(''), places = ref([])
 const selectedParts = ref({})
 const busy = computed(() => locating.value || opened.value)
 const mapId = `shop-address-map-${Math.random().toString(36).slice(2)}`
-let map, marker, coords, revision = 0, disposed = false
+let map, marker, coords, selectedCoordinates = null, revision = 0, disposed = false
 let leafletPromise
 let autoLocateAttempted = false
 watch(busy, value => emit('busy-change', value), { flush: 'sync' })
@@ -59,7 +59,11 @@ function update(value) {
   if (!address || address.length > 500 || /^[-+]?\d+(?:\.\d+)?\s*,\s*[-+]?\d+(?:\.\d+)?$/.test(address)) throw new Error('未能获取详细地址，请手动填写')
   if (!disposed && !props.disabled) {
     emit('update:modelValue', address)
-    emit('select', { address, parts: selection.parts || {} })
+    let coordinateSystem = 'gcj02'
+    // #ifdef H5
+    coordinateSystem = 'wgs84'
+    // #endif
+    emit('select', { address, parts: selection.parts || {}, latitude: selection.latitude, longitude: selection.longitude, coordinateSystem })
   }
 }
 function showError(reason) {
@@ -132,7 +136,7 @@ async function choose() {
     if (coords && active(token) && opened.value && !selected.value) {
       try {
         const current = await resolveAddress(coords.latitude, coords.longitude)
-        if (active(token) && opened.value && !selected.value) { selected.value = current.address; selectedParts.value = current.parts }
+        if (active(token) && opened.value && !selected.value) { selected.value = current.address; selectedParts.value = current.parts; selectedCoordinates = { latitude: coords.latitude, longitude: coords.longitude } }
       } catch (_) { /* 附近地点列表仍可选择，不覆盖其加载结果。 */ }
     }
     return
@@ -144,7 +148,7 @@ async function choose() {
     const current = await getCoords().catch(() => null)
     if (!active(token)) return
     const result = await new Promise((resolve, reject) => uni.chooseLocation({ ...(current || {}), success: resolve, fail: reject }))
-    if (active(token)) update({ address: joinAddress(result), parts: result.address_component || {} })
+    if (active(token)) update({ address: joinAddress(result), parts: result.address_component || {}, latitude: result.latitude, longitude: result.longitude })
   } catch (reason) { if (active(token)) showError(reason) }
   finally { if (token === revision) locating.value = false }
   // #endif
@@ -179,7 +183,7 @@ async function pickPoint(latitude, longitude) {
   placeMarker(latitude, longitude)
   try {
     const result = await resolveAddress(latitude, longitude)
-    if (active(token)) { selected.value = result.address; selectedParts.value = result.parts }
+    if (active(token)) { selected.value = result.address; selectedParts.value = result.parts; selectedCoordinates = { latitude, longitude } }
   }
   catch (reason) { if (active(token)) showError(reason) }
   finally { if (token === revision) searching.value = false }
@@ -198,6 +202,7 @@ async function search() {
     if (!results?.length) { error.value = '未找到该地址，请换个关键词'; return }
     const place = results[0]
     if (map) { map.setView([Number(place.lat), Number(place.lon)], 16); placeMarker(Number(place.lat), Number(place.lon)) }
+    selectedCoordinates = { latitude: Number(place.lat), longitude: Number(place.lon) }
     selected.value = place.display_name || ''
     selectedParts.value = place.address || {}
     // #endif
@@ -211,15 +216,15 @@ async function search() {
   } catch (reason) { if (active(token)) showError(reason) }
   finally { if (token === revision) searching.value = false }
 }
-function selectPlace(place) { selected.value = joinAddress(place); selectedParts.value = place.ad_info || {} }
+function selectPlace(place) { selected.value = joinAddress(place); selectedParts.value = place.ad_info || {}; selectedCoordinates = place.location ? { latitude: Number(place.location.lat), longitude: Number(place.location.lng) } : null }
 function confirm() {
   if (props.disabled || searching.value) return
-  try { update({ address: selected.value, parts: selectedParts.value }); close() } catch (reason) { showError(reason) }
+  try { update({ address: selected.value, parts: selectedParts.value, ...(selectedCoordinates || {}) }); close() } catch (reason) { showError(reason) }
 }
 function close() {
   ++revision; opened.value = false; searching.value = false; locating.value = false; initializing.value = false
   if (map) map.remove()
-  map = null; marker = null
+  map = null; marker = null; selectedCoordinates = null
 }
 onBeforeUnmount(() => { disposed = true; close() })
 </script>

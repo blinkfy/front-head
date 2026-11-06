@@ -166,11 +166,11 @@
     <view :animation="tabPageAnimation" v-if="isAdmin" class="admin-section tab-page-motion">
       <view class="menu-heading">
         <view class="menu-title">管理员功能</view>
-        <view class="admin-shop-link" role="button" @click="goShopManagement">商城管理 ›</view>
       </view>
       <view class="admin-grid">
         <view class="admin-item" @click="goFileManagement"><ManifestIcon id="file_manager" /> 文件管理</view>
         <view class="admin-item" @click="go2048"><ManifestIcon id="admin_2048" /> 2048后台</view>
+        <view class="admin-item" @click="goCallCheck"><ManifestIcon id="settings" /> 通话环境检测</view>
         <view class="admin-item" @click="goDbMonitor"><ManifestIcon id="database" /> 数据库</view>
         <view class="admin-item" @click="goAdminAISettings"><ManifestIcon id="ai_settings" /> 服务设置</view>
         <view class="admin-item" @click="goDigitalTwin"><ManifestIcon id="digital_twin" /> 数字孪生</view>
@@ -178,6 +178,7 @@
         <view class="admin-item" @click="goCollectionPlanning"><ManifestIcon id="cleanup_plan" /> 清运规划</view>
         <view class="admin-item" @click="goCommunityDashboard"><ManifestIcon id="community_dashboard" /> 社区仪表板</view>
       </view>
+      <view class="admin-business-row"><view class="admin-item" @click="goRecyclingAdmin"><ManifestIcon id="recycling_booking" /> 回收运营</view><view class="admin-item" @click="goShopManagement"><ManifestIcon id="mystery_bag" /> 商城管理</view></view>
     </view>
 
     <!-- 底部导航栏-->
@@ -583,6 +584,7 @@ const goToShop = () => { closePointsInfo(); uni.redirectTo({ url: '/pages/shop/s
 
 function goHistory() { uni.navigateTo({ url: '/pages/history/history' }) }
 function goToOrders() { uni.navigateTo({ url: '/pages-nonTheme/shop-orders' }) }
+async function goRecyclingAdmin() { if (await verifyAdminPermission()) uni.navigateTo({ url: '/pages-admin/recycling' }) }
 function goRanking() { uni.navigateTo({ url: '/pages/ranking/ranking' }) }
 function goSettings() { uni.navigateTo({ url: '/pages-nonTheme/settings' }) }
 function goGuide() { uni.navigateTo({ url: '/pages/guide/guide' }) }
@@ -607,6 +609,20 @@ async function verifyAdminPermission() {
     uni.showToast({ title: '权限验证失败', icon: 'none' })
     return false
   }
+}
+
+function goCallCheck() {
+  verifyAdminPermission().then(hasPermission => {
+    if (hasPermission) {
+      const target = baseUrl.replace(/\/$/, '') + '/call-check.html'
+      // #ifdef H5
+      window.location.assign(target)
+      // #endif
+      // #ifndef H5
+      uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(target)}` })
+      // #endif
+    }
+  })
 }
 
 function goFileManagement() {
@@ -1661,6 +1677,8 @@ function goShop() { navigateBottomTab('profile', 'shop', '/pages/shop/shop') }
   z-index: 10;
 }
 
+.admin-business-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16rpx; margin-top: 16rpx; }
+.admin-business-row > view { min-width: 0; box-sizing: border-box; }
 .admin-shop-link {
   flex-shrink: 0;
   padding: 8rpx 0 8rpx 16rpx;

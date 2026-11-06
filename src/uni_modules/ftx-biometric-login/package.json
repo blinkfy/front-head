@@ -1,0 +1,10 @@
+{
+  "id": "ftx-biometric-login",
+  "displayName": "分投侠系统生物认证登录",
+  "version": "0.1.0",
+  "description": "Biometric-gated device signing keys for APP login",
+  "uni_modules": {
+    "dependencies": [], "encrypt": [],
+    "platforms": { "client": { "App": { "app-android": "y", "app-ios": "y" } } }
+  }
+}

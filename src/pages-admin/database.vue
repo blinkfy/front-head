@@ -275,6 +275,12 @@
                         </view>
                     </view>
 
+                    <view v-if="getTableMeta(currentTable)?.description" class="table-description">
+                        <text>{{ getTableMeta(currentTable).description }}</text>
+                        <view v-if="currentTable === 'AiSetting'" class="action-text-btn settings-link"
+                            @click="openAiSettings">前往 AI 服务设置</view>
+                    </view>
+
                     <!-- 数据列表 -->
                     <view class="data-list">
                         <view v-if="tableData.length > 0" class="data-item"
@@ -458,17 +464,19 @@
                                         :key="field.key">
                                         <text class="data-label">{{ field.label }}:</text>
                                         <rich-text class="data-value"
-                                            :nodes="highlightText(String(field.value || '-'))"></rich-text>
+                                            :nodes="highlightText(String(field.value ?? '-'))"></rich-text>
                                     </view>
                                 </template>
                             </view>
 
                             <!-- 操作按钮 -->
-                            <view class="data-item-actions" v-if="canEditCurrentTable()">
-                                <view class="item-action-btn edit" @click.stop="handleEdit(item)">
+                            <view class="data-item-actions" v-if="canEditCurrentTable() || !isSpecialTable(currentTable)">
+                                <view v-if="!isSpecialTable(currentTable)" class="item-action-btn detail"
+                                    @click.stop="recordDetail = item"><text>查看</text></view>
+                                <view v-if="canEditCurrentTable()" class="item-action-btn edit" @click.stop="handleEdit(item)">
                                     <ManifestIcon id="post_edit" :scale="1.5" />
                                 </view>
-                                <view class="item-action-btn delete" @click.stop="handleDelete(item)">
+                                <view v-if="canEditCurrentTable()" class="item-action-btn delete" @click.stop="handleDelete(item)">
                                     <ManifestIcon id="delete" :scale="1.5" />
                                 </view>
                             </view>
@@ -525,6 +533,26 @@
 
             </view>
         </scroll-view>
+
+        <!-- 完整记录详情：直接使用本页已加载的数据，不额外请求后端。 -->
+        <view v-if="recordDetail" class="modal-overlay" @click="recordDetail = null">
+            <view class="modal-container" @click.stop>
+                <view class="modal-header">
+                    <text class="modal-title">{{ getCurrentTableLabel() }}详情</text>
+                    <view class="modal-close" @click="recordDetail = null"><ManifestIcon id="close" /></view>
+                </view>
+                <scroll-view class="modal-body" scroll-y>
+                    <view v-for="field in getRecordDetailFields(recordDetail)" :key="field.key" class="record-detail-field">
+                        <text class="form-label">{{ field.label }}</text>
+                        <text class="record-detail-value" selectable>{{ field.value }}</text>
+                    </view>
+                </scroll-view>
+                <view class="modal-footer">
+                    <view class="modal-btn cancel" @click="recordDetail = null"><text>关闭</text></view>
+                    <view v-if="canEditCurrentTable()" class="modal-btn confirm" @click="editDetailRecord"><text>编辑</text></view>
+                </view>
+            </view>
+        </view>
 
         <!-- 编辑/新增弹窗 -->
         <view class="modal-overlay" v-if="showEditModal" @click="closeEditModal">
@@ -942,6 +970,7 @@ const isRefreshing = ref(false)
 const lastUpdateTime = ref(Date.now())
 const currentTable = ref('User')
 const showEditModal = ref(false)
+const recordDetail = ref(null)
 const editMode = ref('add') // 'add' 或 'edit'
 const editForm = ref({})
 const editInitialForm = ref({})
@@ -1080,6 +1109,16 @@ const legacyTableCatalog = [
     { name: 'CommunityDailyStat', label: '社区日统计表', icon: 'community_daily_stat_table' },
     { name: 'AiChatMessage', label: 'AI 对话表', icon: 'ai_chat_message_table' },
     { name: 'AiSessionMeta', label: 'AI 会话元数据表', icon: 'ai_conversation_table' },
+    { name: 'AiChatAction', label: 'AI 执行动作表', icon: 'ai_chat_action_table' },
+    { name: 'AiSetting', label: 'AI 设置表', icon: 'ai_setting_table', editable: false,
+        description: '配置快照仅供查看，请前往 AI 服务设置修改，同步运行配置和本地配置文件。' },
+    { name: 'BookingSlot', label: '预约并发锁表', icon: 'booking_slot_table', editable: false,
+        description: '预约并发控制使用的锁记录，并非可预约时段或容量配置。由系统维护，仅供查看。' },
+    { name: 'ChatPushDevice', label: '聊天推送设备表', icon: 'chat_push_device_table', editable: false,
+        description: 'App 自动维护的推送绑定，可查看用户、设备摘要和有效期，原始推送凭证不展示。' },
+    { name: 'CommunityNotification', label: '社区互动通知表', icon: 'community_notification_table' },
+    { name: 'GroupMessageDeletion', label: '群消息删除记录表', icon: 'group_message_deletion_table' },
+    { name: 'UserNotification', label: '用户业务通知表', icon: 'user_notification_table' },
     { name: 'ShopRecommendation', label: '商品推荐表', icon: 'product_recommendation_table' },
     { name: 'AchievementUnlock', label: '成就解锁表', icon: 'achievement_unlock_table' },
     { name: 'ChallengeRecord', label: '挑战记录表', icon: 'challenge_record_table' },
@@ -1228,8 +1267,12 @@ function mergeTablesFromStats(statsTables = []) {
             return {
                 ...rawTable,
                 name,
-                label: rawTable?.label || `${formatGenericFieldLabel(name)}表`,
+                label: rawTable?.label === `${formatGenericFieldLabel(name)}表`
+                    ? (catalogEntry?.label || rawTable.label)
+                    : (rawTable?.label || catalogEntry?.label || `${formatGenericFieldLabel(name)}表`),
                 icon: catalogEntry?.icon || 'database',
+                editable: rawTable?.editable !== false && catalogEntry?.editable !== false,
+                description: rawTable?.description || catalogEntry?.description || '',
                 unmappedIcon: !catalogEntry?.icon,
                 count: Number(rawTable?.count || 0),
                 primaryKeys: Array.isArray(rawTable?.primaryKeys) ? rawTable.primaryKeys : []
@@ -1436,6 +1479,7 @@ function onGenericEnumChange(field, e) {
 }
 
 function shouldHideGenericPreviewField(key = '', value) {
+    if (currentTable.value === 'ChatPushDevice' && key === 'token') return true
     const normalizedKey = String(key || '').toLowerCase()
     if (/(image|avatar|photo|picture|pic|base64|blob|url)$/i.test(normalizedKey)) return true
     if (normalizedKey.includes('image') || normalizedKey.includes('base64')) return true
@@ -1449,12 +1493,36 @@ function getGenericPreviewFields(item = {}) {
         .slice(0, 4)
     return entries.map(([key, value]) => ({
         key,
-        label: formatGenericFieldLabel(key),
+        label: getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key),
         value: typeof value === 'object' && value !== null ? JSON.stringify(value) : value
     }))
 }
 
+function getRecordDetailFields(item = {}) {
+    const timeLabels = { createdAt: '创建时间', updatedAt: '更新时间', deletedAt: '删除时间' }
+    return Object.entries(item)
+        .filter(([key]) => !(currentTable.value === 'ChatPushDevice' && key === 'token'))
+        .map(([key, value]) => ({
+            key,
+            label: timeLabels[key] || getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key),
+            value: value === null || value === undefined ? '未设置'
+                : (typeof value === 'object' ? JSON.stringify(value, null, 2)
+                    : (typeof value === 'boolean' ? (value ? '是' : '否') : String(value)))
+        }))
+}
+
+function editDetailRecord() {
+    const item = recordDetail.value
+    recordDetail.value = null
+    if (item && canEditCurrentTable()) handleEdit(item)
+}
+
+function openAiSettings() {
+    uni.navigateTo({ url: '/pages-admin/admin-ai-settings' })
+}
+
 function selectTable(table) {
+    recordDetail.value = null
     const tableName = typeof table === 'string' ? table : table.name
     currentTable.value = tableName
     currentPage.value = 1  // 重置到第一页
@@ -3294,6 +3362,40 @@ onUnmounted(() => {
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: 12rpx;
+}
+
+.table-description {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 24rpx;
+    line-height: 1.6;
+    margin-bottom: 24rpx;
+    overflow-wrap: anywhere;
+}
+
+.settings-link {
+    display: inline-block;
+    margin-top: 12rpx;
+}
+
+.item-action-btn.detail {
+    color: #40e0ff;
+    font-size: 22rpx;
+}
+
+.record-detail-field {
+    padding: 20rpx 0;
+    border-bottom: 1px solid rgba(64, 224, 255, 0.15);
+}
+
+.record-detail-value {
+    display: block;
+    margin-top: 12rpx;
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 24rpx;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .action-text-btn {

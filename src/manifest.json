@@ -2,8 +2,8 @@
     "name" : "分投侠",
     "appid" : "__UNI__0B093BC",
     "description" : "",
-    "versionName" : "1.4.9",
-    "versionCode" : 111,
+    "versionName" : "1.4.10",
+    "versionCode" : 116,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,

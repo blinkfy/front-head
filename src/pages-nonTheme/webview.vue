@@ -260,7 +260,9 @@ onMounted(() => {
       }
 
       // 根据 URL 设置标题
-      if (decodedUrl.includes('/files')) {
+      if (decodedUrl.includes('/call-check.html')) {
+        title.value = '通话环境检测'
+      } else if (decodedUrl.includes('/files')) {
         title.value = '文件管理'
       } else if (decodedUrl.includes('/2048')) {
         title.value = '2048 游戏'

@@ -30,6 +30,7 @@ import { initUiSounds, setUiSoundsActive } from '@/utils/ui-sounds.js'
 import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/device-qr-entry.mjs'
 // #ifdef APP-PLUS
 import { checkAppUpdate } from '@/utils/app-update.js'
+import { initBusinessNotificationNavigation, resumeBusinessNotification } from '@/utils/business-notification.js'
 import { getHuaweiPushToken, deleteHuaweiPushToken } from '@/uni_modules/ftx-huawei-push'
 import { installChatPush, syncChatPush } from '@/utils/chat-push.js'
 import { appConsole } from '@/utils/app-console.mjs'
@@ -80,6 +81,7 @@ export default {
     // #ifdef APP-PLUS
     installAppWebpEncoder(encodeUploadWebp)
     installChatPush(getHuaweiPushToken, deleteHuaweiPushToken)
+    initBusinessNotificationNavigation()
     // #endif
     // #ifdef MP-WEIXIN
     captureRegistrationEntry(options)
@@ -159,6 +161,8 @@ export default {
     setUiSoundsActive(true)
     // #ifdef APP-PLUS
     syncChatPush(uni.getStorageSync('token') || '', true)
+    initBusinessNotificationNavigation()
+    void resumeBusinessNotification()
     uni.$emit('smart-sort-robot:visibility', true)
     setAppMapPreloadActive(true)
     // #endif
@@ -234,6 +238,11 @@ export default {
 
 /* #ifdef H5 */
 /* Framework action sheets must sit above page dialogs, including photo entry in map forms. */
+/* Confirmation dialogs must also appear above the onboarding overlay. */
+uni-modal {
+  z-index: 1000000;
+}
+
 uni-actionsheet {
   position: relative;
   z-index: 1000000;

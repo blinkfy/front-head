@@ -12,7 +12,7 @@ function nativeFailureDetails(result) {
 }
 
 // Serialized identity transitions prevent a slow old login from reclaiming a device.
-export function createPushRegistration({ request, getToken, deleteToken, readBinding, writeBinding, now = Date.now, onStatus = () => {} }) {
+export function createPushRegistration({ request, getToken, deleteToken, readBinding, writeBinding, getInstallationId = () => null, now = Date.now, onStatus = () => {} }) {
   let identity = '', generation = 0, nextAttempt = 0, disabled = false, chain = Promise.resolve()
   const report = (stage, status, extra = {}) => {
     try { onStatus({ stage, status, ...extra }) } catch (_) {}
@@ -24,7 +24,12 @@ export function createPushRegistration({ request, getToken, deleteToken, readBin
   async function remove(binding) {
     let removed = !binding
     if (binding?.jwt && binding?.token) {
-      try { await request('DELETE', '/api/chat/push/device', binding.jwt, { token: binding.token }); removed = true } catch (_) { /* Native revocation is also attempted. */ }
+      try {
+        await request('DELETE', '/api/chat/push/device', binding.jwt, {
+          token: binding.token, ...(binding.previousToken ? { previousToken: binding.previousToken } : {})
+        })
+        removed = true
+      } catch (_) { /* Native revocation is also attempted. */ }
     }
     const result = await nativeResult(deleteToken)
     if (removed || result.ok) writeBinding(null)
@@ -56,17 +61,26 @@ export function createPushRegistration({ request, getToken, deleteToken, readBin
         if (result.error === 'UNSUPPORTED') disabled = true
         return
       }
-      if (previous?.jwt === jwt && previous.token === result.token && now() - previous.boundAt < 86400000) {
+      stage = 'binding'
+      const installationId = getInstallationId()
+      if (previous?.jwt === jwt && previous.token === result.token &&
+          (previous.installationId || null) === installationId && now() - previous.boundAt < 86400000) {
         report('binding', 'READY')
         nextAttempt = now() + 300000
         return
       }
       // Persist before binding so a failed response can still be cleaned up on logout.
-      const binding = { jwt, token: result.token }
+      // Remember the last unacknowledged token too, so a failed rotation can be
+      // cleaned up on retry/logout. Only the authenticated user's rows may be removed.
+      const previousToken = previous?.previousToken || (previous?.token !== result.token ? previous?.token : null)
+      const binding = { jwt, token: result.token,
+        ...(installationId ? { installationId } : {}), ...(previousToken ? { previousToken } : {}) }
       writeBinding(binding)
-      stage = 'binding'
-      await request('PUT', '/api/chat/push/device', jwt, { token: result.token })
-      writeBinding({ ...binding, boundAt: now() })
+      await request('PUT', '/api/chat/push/device', jwt, {
+        token: result.token, ...(installationId ? { installationId } : {}),
+        ...(previousToken ? { previousToken } : {})
+      })
+      writeBinding({ jwt, token: result.token, ...(installationId ? { installationId } : {}), boundAt: now() })
       if (version === generation) {
         nextAttempt = now() + 300000
         report(stage, 'READY')

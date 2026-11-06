@@ -9,12 +9,12 @@ export async function resolveLocationAddress(latitude, longitude) {
     success: response => response.statusCode === 200 ? resolve(response.data) : reject(new Error('地址服务暂不可用')),
     fail: reject
   }))
-  return { address: data?.display_name || '', parts: data?.address || {} }
+  return { address: data?.display_name || '', parts: data?.address || {}, latitude, longitude }
   // #endif
   // #ifndef H5
   const response = await reverseGeocoder(latitude, longitude)
   const result = response?.data?.result || response?.data
-  return { address: result?.address || result?.formatted_addresses?.recommend || '', parts: result?.address_component || {} }
+  return { address: result?.address || result?.formatted_addresses?.recommend || '', parts: result?.address_component || {}, latitude, longitude }
   // #endif
 }
 

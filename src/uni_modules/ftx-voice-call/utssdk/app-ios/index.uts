@@ -1,0 +1,27 @@
+export function onVoicePeerEvent(callback: (event: string) => void): void {}
+export function voiceRtcAvailable(): boolean { return false }
+export function videoRtcAvailable(): boolean { return false }
+export function openVoicePeer(options: string): void {}
+export function signalVoicePeer(callId: string, event: string): void {}
+export function controlVoicePeer(callId: string, options: string): void {}
+export function closeVoicePeer(callId: string): void {}
+export function realtimeAvailable(): boolean { return false }
+export function realtimeSocketAlive(): boolean { return false }
+export function realtimeBackgroundMask(): number { return 0 }
+export function realtimeVideoVisible(): boolean { return false }
+export function onRealtimeSocketEvent(callback: (event: string) => void): void {}
+export function onRealtimeLocationEvent(callback: (event: string) => void): void {}
+export function openRealtimeSocket(url: string, channel: string): void {}
+export function sendRealtimeSocket(event: string): void {}
+export function closeRealtimeSocket(): void {}
+export function setRealtimeForeground(value: boolean): void {}
+export function watchRealtimeLocation(channel: string): number { return -1 }
+export function clearRealtimeLocation(id: number): void {}
+export function showVoicePeerVideo(callId: string): void {}
+export function takeRealtimeRoute(): string { return '' }
+export function realtimeMessagingPaused(): boolean { return false }
+export function configureRealtimeMessaging(options: string): void {}
+export function realtimeSocketSuspended(): boolean { return false }
+export function takeIncomingCallAcceptance(callId: string): boolean { return false }
+export function controlNativeAnsweredCall(callId: string, options: string): void {}
+export function stopIncomingCallAlert(callId: string): void {  }
