@@ -157,11 +157,23 @@ async function main() {
   assert.ok(callLocalElement && callRemoteElement)
   assert.equal(callLocalElement.parentNode, localHost, 'initial video elements mount into the call page hosts')
   assert.equal(callRemoteElement.parentNode, remoteHost)
+  const localPane = new Element('local-pane'), remotePane = new Element('remote-pane')
+  for (const pane of [localPane, remotePane]) {
+    pane.classList = { contains: value => value === 'video-pane' }
+    pane.style.setProperty = (name, value) => { pane.style[name] = value }
+  }
+  localPane.appendChild(localHost); remotePane.appendChild(remoteHost)
+  callLocalElement.videoWidth = 360; callLocalElement.videoHeight = 640
+  callRemoteElement.videoWidth = 1280; callRemoteElement.videoHeight = 720
+  callLocalElement.onloadedmetadata(); callRemoteElement.onresize()
+  assert.equal(localPane.style['--call-video-ratio'], '0.5625', 'portrait camera keeps its actual preview ratio')
+  assert.equal(remotePane.style['--call-video-ratio'], String(1280 / 720), 'landscape camera keeps its actual preview ratio')
   media.unmountVideo('camera-race')
   assert.equal(callLocalElement.parentNode, context.document.body, 'unmount keeps the local video element connected under body')
   assert.equal(callRemoteElement.parentNode, context.document.body, 'unmount keeps the remote video element connected under body')
   media.mountVideo('camera-race')
   assert.equal(callLocalElement.parentNode, localHost, 'remount restores the local video element to its host')
+  assert.equal(localPane.style['--call-video-ratio'], '0.5625', 'remount restores camera geometry without awaiting another resize')
   assert.equal(callRemoteElement.parentNode, remoteHost, 'remount restores the remote video element to its host')
   await assert.rejects(media.pictureInPicture('camera-race'), /不支持视频小窗/,
     'PiP request rejects cleanly when the browser reports PiP unavailable')

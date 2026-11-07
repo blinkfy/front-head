@@ -7,10 +7,9 @@
   <title>分投侠通话</title>
   <link rel="stylesheet" href="./style.css">
 </head>
-<body>
+<body class="entry-loading">
   <main class="shell">
-    <header><span class="brand-mark">分</span><span>分投侠</span><span class="secure">安全通话</span></header>
-    <section id="content" class="card"><div class="spinner"></div><h1>正在连接通话</h1><p>请稍候</p></section>
+    <section id="content" class="card"><div class="spinner"></div><h1>正在打开</h1><p>请稍候</p></section>
   </main>
   <script>
     setTimeout(function () {
@@ -18,12 +17,12 @@
       if (content && content.querySelector('.spinner')) content.innerHTML = '<h1>通话页面加载超时</h1><p>请检查网络后重新打开。</p><button onclick="location.reload()">重新加载</button>'
     }, 12000)
     window.addEventListener('error', function (event) {
-      if (event.target && event.target.tagName === 'SCRIPT') {
+      if (event.target && event.target.matches && event.target.matches('script[data-call-entry]')) {
         var content = document.querySelector('#content')
         if (content) content.innerHTML = '<h1>通话页面资源加载失败</h1><p>请检查网络后重新打开。</p><button onclick="location.reload()">重新加载</button>'
       }
     }, true)
   </script>
-  <script type="module" src="./app.js"></script>
+  <script type="module" data-call-entry src="./app.js"></script>
 </body>
 </html>

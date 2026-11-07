@@ -4,6 +4,7 @@ const features = {
   microphone: { label: '麦克风', scope: 'scope.record', app: 'microphoneAuthorized', android: ['RECORD_AUDIO'] },
   camera: { label: '相机', scope: 'scope.camera', app: 'cameraAuthorized', android: ['CAMERA'] },
   location: { label: '定位', scope: 'scope.userLocation', app: 'locationAuthorized', android: ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION'], any: true },
+  address: { label: '收货地址', scope: 'scope.address' },
   notification: { label: '通知', app: 'notificationAuthorized', android: ['POST_NOTIFICATIONS'], minSdk: 33 },
   album: { label: '相册', scope: 'scope.writePhotosAlbum', app: 'albumAuthorized', android: ['WRITE_EXTERNAL_STORAGE'], maxSdk: 28 }
 }

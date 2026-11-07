@@ -15,6 +15,22 @@ let openingPage = false
 let nativeState = null
 let nativeOwner = ''
 const pages = () => { try { return getCurrentPages() } catch (_) { return [] } }
+export const openVoiceCallPage = () => {
+  if (openingPage) return
+  // #ifdef APP-PLUS
+  if (voiceCallState.cameraSupported && ['connecting', 'connected'].includes(voiceCallState.phase)) {
+    voiceCallMedia.showNativeVideo(voiceCallState.callId)
+    return
+  }
+  // #endif
+  const stack = pages()
+  const index = stack.findIndex(page => page.route === 'pages-nonTheme/voice-call')
+  if (index === stack.length - 1 && index >= 0) return
+  openingPage = true
+  const complete = () => { openingPage = false }
+  if (index >= 0) uni.navigateBack({ delta: stack.length - index - 1, complete })
+  else uni.navigateTo({ url: '/pages-nonTheme/voice-call', complete })
+}
 const busyMedia = () => {
   if (nativeState && nativeOwner === (uni.getStorageSync('token') || '')) return true
   if (pages().some(page => page.route === 'pages-nonTheme/voice-scan' || page.$vm?.isRecording || page.$vm?.playingVoiceId)) return true
@@ -42,7 +58,7 @@ const controller = createVoiceCallController({
     Object.assign(voiceCallState, state)
     // #ifdef H5
     updateWebCallAlert(state, { sound: areUiSoundsEnabled(), open: () => {
-      if (pages().slice(-1)[0]?.route !== 'pages-nonTheme/voice-call') uni.navigateTo({ url: '/pages-nonTheme/voice-call' })
+      openVoiceCallPage()
     } })
     // #endif
     const usingAudio = ['connecting', 'connected'].includes(state.phase)

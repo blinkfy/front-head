@@ -1,4 +1,6 @@
 const numericId = value => /^[1-9]\d{0,9}$/.test(String(value || '')) ? String(value) : ''
+export const validRecordingCallId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{12,80}$/.test(value)
+export const recordingPlayable = row => row?.status === 'saved' || (row?.status === 'interrupted' && row.size > 0)
 export const recordingPreferenceKey = owner => `chat:call-recording:auto:${owner}`
 export const recordingCatalogKey = owner => `chat:call-recording:catalog:${owner}`
 export function recordingIdentity(runtime = uni) {
@@ -30,7 +32,12 @@ export function recordingRow(value, owner) {
       !Number.isFinite(value.durationMs) || value.durationMs < 0 || !['saved', 'recording', 'interrupted'].includes(value.status)) return null
   return { id: value.id, owner, name: String(value.name || '通话录音').slice(0, 80), peerName: String(value.peerName || '联系人').slice(0, 80),
     mode: value.mode === 'video' ? 'video' : 'audio', createdAt: value.createdAt, size: value.size,
+    ...(validRecordingCallId(value.callId) ? { callId: value.callId } : {}),
     durationMs: value.durationMs, status: value.status, mimeType: String(value.mimeType || 'audio/webm').slice(0, 80) }
+}
+export function matchesRecording(row, query) {
+  const needle = query.trim().toLowerCase()
+  return !needle || [row.name, row.peerName, row.mode === 'video' ? '视频通话' : '语音通话'].some(text => String(text || '').toLowerCase().includes(needle))
 }
 export function readRecordingCatalog(runtime = uni) {
   const { owner, admin } = recordingIdentity(runtime)

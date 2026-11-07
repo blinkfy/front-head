@@ -1,3 +1,6 @@
+// #ifdef MP-WEIXIN
+import { miniIncomingCalls, installMiniIncomingSender } from './mini-call-incoming.js'
+// #endif
 import { realtimeActivityCard } from './realtime-activity.mjs'
 import { webCallsAvailable, refreshWebCallAlert } from './web-call-support.js'
 import { baseUrl } from '@/api/settings.js'
@@ -13,6 +16,7 @@ import { voiceCalls, installVoiceCallSender } from './voice-call.js'
 import { liveLocations, liveLocationState, installLiveLocationSender } from './live-location.js'
 import { realtimePermissionPending } from './realtime-permissions.js'
 import { webLocationAvailable } from './live-location-tracker.js'
+import { miniLocationAvailable } from './mini-location.js'
 import { connectChatEventsSocket, androidBackgroundMask, androidVideoVisible, setAndroidRealtimeForeground, handleAndroidRealtimeReturn, syncAndroidMessagingPreference } from './android-realtime.js'
 
 let activityMessages = false
@@ -76,6 +80,9 @@ export function notifyChatEvent(event) {
 const transport = createChatEventsTransport({
     getToken: token, getBaseUrl: () => baseUrl, connectSocket: connectChatEventsSocket,
     onEvent(event) {
+        // #ifdef MP-WEIXIN
+        if (miniIncomingCalls.handle(event)) return
+        // #endif
         if (String(event.type || '').startsWith('voice.')) { voiceCalls.handle(event); return }
         if (String(event.type || '').startsWith('location.')) {
             const known = liveLocationState.offers[String(event.from?.id)]?.sessionId === event.sessionId
@@ -118,8 +125,15 @@ const transport = createChatEventsTransport({
         messageBus.emit('chat.changed', event)
         notifyChatEvent(event)
     },
-    onDisconnected() { activityMessages = false; voiceCalls.connection(false); liveLocations.connection(false) },
+    onDisconnected() {
+        // #ifdef MP-WEIXIN
+        miniIncomingCalls.connection(null)
+        // #endif
+        activityMessages = false; voiceCalls.connection(false); liveLocations.connection(false) },
     onConnected(event) {
+        // #ifdef MP-WEIXIN
+        miniIncomingCalls.connection(event)
+        // #endif
         activityMessages = event.activityMessagesVersion === 1
         voiceCalls.connection(true, event.voiceCallVersion, event.videoCallVersion)
         liveLocations.connection(true, event.liveLocationVersion)
@@ -129,6 +143,9 @@ const transport = createChatEventsTransport({
 })
 
 installVoiceCallSender(event => transport.send(event))
+// #ifdef MP-WEIXIN
+installMiniIncomingSender(event => transport.send(event))
+// #endif
 installLiveLocationSender(event => transport.send(event))
 
 export function isChatEventsConnected() { return transport.isConnected() }
@@ -146,7 +163,13 @@ export function setChatEventsActive(active) {
     const background = foreground ? 0 : androidBackgroundMask()
     setAndroidRealtimeForeground(foreground)
     voiceCalls.setActive(foreground || webCallsAvailable() || !!(background & 1))
-    liveLocations.setActive(foreground || webLocationAvailable() || !!(background & 2))
+    liveLocations.setActive(foreground || webLocationAvailable() || miniLocationAvailable() || !!(background & 2))
+    // #ifdef MP-WEIXIN
+    liveLocations.setVisible(foreground)
+    // #endif
+    // #ifdef MP-WEIXIN
+    miniIncomingCalls.foreground(foreground && !delegated)
+    // #endif
     setChatFeedbackActive(foreground)
     catchup.setActive(foreground)
     initChatNotificationNavigation()
@@ -155,6 +178,12 @@ export function setChatEventsActive(active) {
     if (!foreground) currentConversation = ''
 }
 
+uni.$on('location:mode-changed', () => {
+    if (miniLocationAvailable() && liveLocationState.phase === 'sharing') {
+        liveLocations.setVisible(false)
+        liveLocations.setVisible(foreground)
+    }
+})
 uni.$on('chat:background-messages-changed', () => { syncAndroidMessagingPreference() })
 uni.$on('realtime:permission-changed', () => setChatEventsActive(requestedActive))
 

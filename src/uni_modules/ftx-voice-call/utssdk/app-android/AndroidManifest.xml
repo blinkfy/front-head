@@ -36,7 +36,8 @@
       </intent-filter>
     </activity>
     <activity android:name="ftx.voice.VideoCallActivity" android:exported="false" android:theme="@android:style/Theme.Material.NoActionBar"
-      android:launchMode="singleTop" android:supportsPictureInPicture="true" android:resizeableActivity="true"
+      android:launchMode="singleTask" android:taskAffinity="${applicationId}.voiceCall" android:excludeFromRecents="true"
+      android:supportsPictureInPicture="true" android:resizeableActivity="true"
       android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden" />
   </application>
 </manifest>

@@ -274,7 +274,9 @@ import { baseUrl } from '@/api/settings.js'
 import { searchPlaces } from '@/api/map.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { nicknameError } from '@/utils/wechat-profile.mjs'
-import { getCurrentAddress } from '@/utils/location-address.js'
+import { getCurrentAddress, resolveLocationAddress } from '@/utils/location-address.js'
+import { getUserLocationOnce } from '@/utils/location.js'
+import { chooseMiniLocation, isLocationCancelled } from '@/utils/mini-location.js'
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js'
 
 const isDarkTheme = ref(false)
@@ -619,7 +621,10 @@ function getAppCurrentLocation() {
 function fillCurrentLocation() {
   uni.showLoading({ title: '定位中...' })
   const useNativeLocation = isAppPlusPlatform() && typeof plus !== 'undefined'
-  const locationTask = useNativeLocation
+  const isWeixinMiniProgram = uni.getSystemInfoSync().uniPlatform === 'mp-weixin'
+  const locationTask = isWeixinMiniProgram
+    ? getUserLocationOnce('gcj02', { interactive: true, isCurrent: () => !pageUnmounted && !isSaving.value }).then(point => resolveLocationAddress(point.latitude, point.longitude, point.accuracy))
+    : useNativeLocation
     ? getAppCurrentLocation()
     : new Promise((resolve, reject) => {
         if (typeof uni.getLocation !== 'function') {
@@ -636,6 +641,7 @@ function fillCurrentLocation() {
 
   locationTask
     .then((res) => {
+      if (pageUnmounted || isSaving.value) return
       const locationText = formatLocationResult(res)
       const lat = res && (res.latitude || (res.coords && res.coords.latitude))
       const lng = res && (res.longitude || (res.coords && res.coords.longitude))
@@ -670,6 +676,7 @@ function fillCurrentLocation() {
       }
     })
     .catch((err) => {
+      if (pageUnmounted || isSaving.value || isLocationCancelled(err)) return
       console.warn('获取当前位置失败:', err)
       const message = isAppPlusPlatform()
         ? '定位失败，请检查系统定位权限'
@@ -683,7 +690,10 @@ function fillCurrentLocation() {
 
 function getCurrentCoords() {
   const useNativeLocation = isAppPlusPlatform() && typeof plus !== 'undefined'
-  const locationTask = useNativeLocation
+  const isWeixinMiniProgram = uni.getSystemInfoSync().uniPlatform === 'mp-weixin'
+  const locationTask = isWeixinMiniProgram
+    ? getUserLocationOnce('gcj02', { interactive: true, isCurrent: () => !pageUnmounted && !isSaving.value })
+    : useNativeLocation
     ? getAppCurrentLocation()
     : new Promise((resolve, reject) => {
         if (typeof uni.getLocation !== 'function') {
@@ -783,7 +793,21 @@ function selectLocation() {
   }
 
   // 小程序端使用 uni 自带的地图选择
-  if (typeof uni.chooseLocation === 'function') {
+  if (uniPlatform === 'mp-weixin') {
+    chooseMiniLocation({ isCurrent: () => !pageUnmounted && !isSaving.value }).then((res) => {
+      if (pageUnmounted || isSaving.value) return
+      const address = String(res.address || '').trim()
+      const name = String(res.name || '').trim()
+      const full = address && name && !address.includes(name) ? `${address} ${name}` : address || name
+      if (!full) {
+        uni.showToast({ title: '未获取到详细地址，请手动输入', icon: 'none' })
+        return
+      }
+      formData.location = full
+    }).catch((error) => {
+      if (!pageUnmounted && !isSaving.value && !isLocationCancelled(error)) uni.showToast({ title: '定位失败，请手动输入', icon: 'none' })
+    })
+  } else if (typeof uni.chooseLocation === 'function') {
     uni.chooseLocation({
       success: (res) => {
         if (pageUnmounted || isSaving.value) return
@@ -796,8 +820,8 @@ function selectLocation() {
         }
         formData.location = full
       },
-      fail: () => {
-        uni.showToast({ title: '定位失败，请手动输入', icon: 'none' })
+      fail: (error) => {
+        if (!isLocationCancelled(error)) uni.showToast({ title: '定位失败，请手动输入', icon: 'none' })
       }
     })
   } else {

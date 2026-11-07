@@ -140,6 +140,12 @@
 					"path": "web-call",
 					"style": { "navigationStyle": "custom" }
 				},
+                // #ifdef MP-WEIXIN
+                {
+                    "path": "incoming-call",
+                    "style": { "navigationStyle": "custom", "disableScroll": true }
+                },
+                // #endif
 				{
 					"path": "voice-call",
 					"style": { "navigationStyle": "custom", "disableScroll": true, "app-plus": { "popGesture": "none" } }

@@ -1,35 +1,41 @@
 <template>
-  <view v-if="currentOrder" class="booking-chat-context" :class="{ dark }">
-    <view class="booking-chat-row"><text class="booking-chat-title">预约联系 · {{ statusText(currentOrder.status) }}</text><text class="booking-chat-link" @click="openOrder">查看预约 ›</text></view>
-    <picker v-if="orders.length > 1" :range="orders" range-key="orderNo" :value="selectedIndex" @change="selectedIndex = Number($event.detail.value)"><view class="booking-chat-copy">订单 {{ currentOrder.orderNo }} · 切换预约⌄</view></picker>
-    <text v-else class="booking-chat-copy">订单 {{ currentOrder.orderNo }}</text>
-    <text class="booking-chat-copy">{{ currentOrder.appointmentDate }} {{ currentOrder.appointmentTimeSlot }}</text>
+  <view class="booking-chat-card" role="button" :aria-disabled="disabled" @click.stop="openOrder">
+    <ManifestIcon id="recycling_booking" size="54rpx" />
+    <view class="booking-chat-copy">
+      <text class="booking-chat-title">预约联系</text>
+      <text class="booking-chat-detail">{{ statusText(order.status) }} · {{ order.appointmentDate }} {{ order.appointmentTimeSlot }}</text>
+      <text class="booking-chat-number">订单 {{ order.orderNo }}</text>
+      <view class="booking-chat-action"><text>查看预约</text><text class="booking-chat-arrow">›</text></view>
+    </view>
   </view>
-  <view v-else-if="error && initialOrderId" class="booking-chat-context" :class="{ dark }" @click="load"><text class="booking-chat-copy">预约信息暂不可用，点击重试</text></view>
 </template>
+
 <script>
-import { bookingChatContext, bookingStatusText } from '../api/recycling.js'
-import { messageBus } from '@/utils/message-event-bus.js'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import { bookingStatusText } from '../api/recycling.js'
+
 export default {
-  props: { targetUserId: { type: [String, Number], default: '' }, initialOrderId: { type: [String, Number], default: '' }, refreshToken: Number, dark: Boolean },
-  data: () => ({ orders: [], selectedIndex: 0, error: false, revision: 0, listener: null }),
-  computed: { currentOrder() { return this.orders[this.selectedIndex] || null } },
-  watch: { targetUserId: { immediate: true, handler() { this.load() } }, refreshToken() { this.load() } },
-  mounted() { this.listener = event => { if (event?.notification?.kind === 'booking' || event?.type === 'chat.reconnected') this.load() }; messageBus.on('notification.changed', this.listener); messageBus.on('chat.reconnected', this.listener) },
-  beforeUnmount() { this.revision++; messageBus.off('notification.changed', this.listener); messageBus.off('chat.reconnected', this.listener) },
+  components: { ManifestIcon },
+  props: { order: { type: Object, required: true }, disabled: Boolean },
   methods: {
     statusText: bookingStatusText,
-    async load() { const revision = ++this.revision; if (!/^\d+$/.test(String(this.targetUserId || ''))) { this.orders = []; return } const account = uni.getStorageSync('token'); this.error = false; try { const data = await bookingChatContext(this.targetUserId); if (revision !== this.revision || account !== uni.getStorageSync('token')) return; const currentId = this.currentOrder?.id || this.initialOrderId; this.orders = data.orders || []; this.selectedIndex = Math.max(0, this.orders.findIndex(order => String(order.id) === String(currentId))) } catch (_) { if (revision === this.revision) { this.orders = []; this.error = true } } },
-    openOrder() { const order = this.currentOrder; if (!order) return; uni.navigateTo({ url: order.role === 'collector' ? `/pages-nonTheme/collector-order-detail?id=${order.id}` : `/pages-nonTheme/booking-orders?orderId=${order.id}` }) }
+    openOrder() {
+      if (this.disabled) return
+      const { id, role } = this.order
+      const url = role === 'collector' ? `/pages-nonTheme/collector-order-detail?id=${id}` : `/pages-nonTheme/booking-orders?orderId=${id}`
+      uni.navigateTo({ url })
+    }
   }
 }
 </script>
+
 <style scoped>
-.booking-chat-context { margin:0 8rpx 22rpx; padding:22rpx; border-radius:16rpx; background:#e7f4ec; color:#28523a; border:1rpx solid #c8e3d0; }
-.booking-chat-row { display:flex; align-items:center; justify-content:space-between; gap:18rpx; }
-.booking-chat-title { font-size:26rpx; font-weight:600; }
-.booking-chat-link { font-size:25rpx; color:#087346; white-space:nowrap; }
-.booking-chat-copy { display:block; font-size:23rpx; line-height:1.7; margin-top:6rpx; }
-.dark { background:#203e2d; color:#dbefe2; border-color:#375e45; }
-.dark .booking-chat-link { color:#8bddae; }
+.booking-chat-card { display: flex; align-items: flex-start; gap: 20rpx; width: 450rpx; max-width: 100%; box-sizing: border-box; margin: 0 auto; padding: 24rpx; border-radius: 18rpx; color: var(--text-primary); background: var(--bg-secondary); }
+.booking-chat-copy { flex: 1; min-width: 0; }
+.booking-chat-title, .booking-chat-detail, .booking-chat-number { display: block; line-height: 1.5; }
+.booking-chat-title { font-size: 29rpx; font-weight: 600; }
+.booking-chat-detail { margin-top: 10rpx; font-size: 25rpx; overflow-wrap: anywhere; }
+.booking-chat-number { margin-top: 6rpx; font-size: 23rpx; color: var(--text-secondary); word-break: break-all; }
+.booking-chat-action { display: flex; align-items: center; justify-content: space-between; margin-top: 16rpx; padding-top: 14rpx; border-top: 1rpx solid var(--border-color, #e6ebe8); font-size: 23rpx; color: var(--text-secondary); }
+.booking-chat-arrow { font-size: 30rpx; }
 </style>

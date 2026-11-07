@@ -2,6 +2,7 @@
   <view class="address-tools">
     <view class="address-actions">
       <button class="address-action" :disabled="disabled || busy" @click="choose"><ManifestIcon id="map_location" />地图选址</button>
+      <button v-if="isWeixinMiniProgram" class="address-action" :disabled="disabled || busy" @click="chooseAddressBook">微信收货地址</button>
     </view>
     <text class="address-hint">{{ locating ? '正在获取当前位置…' : '请核对地址并补充楼栋、单元及门牌号' }}</text>
     <text v-if="error" class="address-error" role="alert">{{ error }}</text>
@@ -34,6 +35,7 @@ import { getUserLocationOnce } from '@/utils/location'
 import { locationErrorMessage } from '@/utils/location-error.mjs'
 import { searchPlaces } from '@/api/map'
 import { getCurrentAddress, resolveLocationAddress } from '@/utils/location-address'
+import { chooseMiniLocation, chooseMiniAddress, isLocationCancelled } from '@/utils/mini-location.js'
 
 const props = defineProps({ modelValue: { type: String, default: '' }, disabled: Boolean, autoLocate: Boolean })
 const emit = defineEmits(['update:modelValue', 'busy-change', 'select'])
@@ -42,6 +44,9 @@ const initializing = ref(false)
 const query = ref(''), selected = ref(''), error = ref(''), places = ref([])
 const selectedParts = ref({})
 const busy = computed(() => locating.value || opened.value)
+const isWeixinMiniProgram = computed(() => {
+  try { return uni.getSystemInfoSync().uniPlatform === 'mp-weixin' } catch (_) { return false }
+})
 const mapId = `shop-address-map-${Math.random().toString(36).slice(2)}`
 let map, marker, coords, selectedCoordinates = null, revision = 0, disposed = false
 let leafletPromise
@@ -64,7 +69,8 @@ function update(value) {
     // #ifdef H5
     coordinateSystem = 'wgs84'
     // #endif
-    emit('select', { address, parts: selection.parts || {}, latitude: selection.latitude, longitude: selection.longitude, accuracy: selection.accuracy, coordinateSystem })
+    emit('select', { address, parts: selection.parts || {}, latitude: selection.latitude, longitude: selection.longitude, accuracy: selection.accuracy, coordinateSystem,
+      ...(selection.source === 'address-book' ? { source: 'address-book', recipientName: selection.recipientName, recipientPhone: selection.recipientPhone } : {}) })
   }
 }
 function showError(reason, stage) {
@@ -143,14 +149,31 @@ async function choose() {
   const token = ++revision
   locating.value = true
   try {
+    if (platform === 'mp-weixin') {
+      const result = await chooseMiniLocation({ isCurrent: () => active(token) })
+      if (active(token)) update({ ...result, address: joinAddress(result), parts: {} })
+      return
+    }
     if (typeof uni.chooseLocation !== 'function') throw new Error('当前环境不支持地图选址')
     const current = await getCoords().catch(() => null)
     if (!active(token)) return
     const result = await new Promise((resolve, reject) => uni.chooseLocation({ ...(current || {}), success: resolve, fail: reject }))
     if (active(token)) update({ address: joinAddress(result), parts: result.address_component || {}, latitude: result.latitude, longitude: result.longitude })
-  } catch (reason) { if (active(token)) showError(reason) }
+  } catch (reason) { if (active(token) && !isLocationCancelled(reason)) showError(reason) }
   finally { if (token === revision) locating.value = false }
   // #endif
+}
+
+async function chooseAddressBook() {
+  if (!isWeixinMiniProgram.value || props.disabled || busy.value) return
+  const token = ++revision
+  locating.value = true
+  error.value = ''
+  try {
+    const result = await chooseMiniAddress({ isCurrent: () => active(token) })
+    if (active(token)) update({ ...result, source: 'address-book' })
+  } catch (reason) { if (active(token) && !isLocationCancelled(reason)) showError(reason) }
+  finally { if (token === revision) locating.value = false }
 }
 // #ifdef H5
 function loadLeaflet() {

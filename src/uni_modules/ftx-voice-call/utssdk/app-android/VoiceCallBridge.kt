@@ -127,7 +127,7 @@ object VoiceCallBridge {
                 }
                 s.peerName = input.optString("peerName", "联系人").take(80)
                 val recording = CallRecordingFiles.forSession(s.context, s.peerName, input.optString("entryMode", if (video) "video" else "audio"),
-                    input.optString("recordingOwner")) { state ->
+                    input.optString("recordingOwner"), s.id) { state ->
                     worker.execute {
                         if (valid(s)) updateVideo(s)
                         if (valid(s) || state.optBoolean("saved")) emit(s, "recording", state)
@@ -210,7 +210,7 @@ object VoiceCallBridge {
                             if (origin == null || origin.isFinishing || origin.isDestroyed) { worker.execute { cameraUnavailable(s) }; return@post }
                             VideoCallActivity.markLaunching()
                             origin.startActivity(Intent(origin, VideoCallActivity::class.java)
-                                .putExtra("callId", id).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+                                .putExtra("callId", id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                         } catch (_: Throwable) { VideoCallActivity.cancelLaunching(); worker.execute { cameraUnavailable(s) } }
                     }
                 }
@@ -310,7 +310,7 @@ object VoiceCallBridge {
         val s = current ?: return
         if (s.id == id && valid(s) && s.video && !VideoCallActivity.visible) {
             VideoCallActivity.markLaunching()
-            try { activity.startActivity(Intent(activity, VideoCallActivity::class.java).putExtra("callId", id).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)) }
+            try { activity.startActivity(Intent(activity, VideoCallActivity::class.java).putExtra("callId", id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
             catch (_: Exception) { VideoCallActivity.cancelLaunching() }
         }
     }

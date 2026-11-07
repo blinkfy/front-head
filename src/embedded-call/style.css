@@ -102,23 +102,53 @@ header {
   opacity:.45;
   cursor:default
 }
-.video-grid {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:10px;
-  margin:18px 0
-}
-.video-pane {
-  position:relative;
-  min-height:120px;
-  aspect-ratio:4/3;
-  background:#17251e;
-  border-radius:14px;
-  overflow:hidden
-}
-.video-grid[hidden] {
+.video-grid[hidden], .video-pane[hidden] {
   display:none
 }
+.card.video-call {
+  position:fixed;
+  z-index:1;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
+  border:0;
+  border-radius:0;
+  background:#101916;
+  color:white
+}
+.video-grid, .video-pane, .video-feed {
+  position:absolute;
+  inset:0
+}
+.video-pane {
+  padding:0;
+  border:0;
+  overflow:hidden;
+  background:#101916;
+  color:#e2ece5;
+  font:inherit;
+  cursor:pointer
+}
+.video-pane:focus-visible {
+  outline:2px solid #95dfba;
+  outline-offset:-3px
+}
+.video-preview {
+  inset:calc(env(safe-area-inset-top, 0px) + 12px) 12px auto auto;
+  z-index:2;
+  width:min(clamp(78px, 22vw, 136px), calc(30dvh * var(--call-video-ratio, .75)));
+  aspect-ratio:var(--call-video-ratio, .75);
+  border:1px solid #ffffff4d;
+  border-radius:12px;
+  background:#283b31;
+  font-size:12px
+}
+.video-feed { pointer-events:none }
+.camera-off .video-feed { visibility:hidden }
+.camera-placeholder { display:none }
+.camera-off .camera-placeholder { display:inline }
 .recording {
   margin:16px auto 0;
   padding:10px 14px;
@@ -150,29 +180,63 @@ header {
   margin-top:20px;
   text-align:left
 }
+.manager-tools, .manager-selection {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  justify-content:space-between;
+  margin-top:14px
+}
+.manager-selection[hidden] { display:none }
+.manager-selection { position:fixed; bottom:0; left:0; right:0; z-index:5; margin:0; padding:12px 18px calc(env(safe-area-inset-bottom, 0px) + 12px); background:#fff; border-top:1px solid #dbe9e0; align-items:center }
+.manager-selection .danger { min-width:120px }
+.manager-selecting { padding-bottom:90px }
+.manager-search {
+  flex:1;
+  min-width:145px;
+  padding:8px 10px;
+  border:1px solid #dbe9e0;
+  border-radius:9px;
+  background:#f3f8f5;
+  font:inherit
+}
+.manager-tools .button, .manager-selection .button { padding:8px 11px; font-size:13px }
 .row {
+  position:relative;
   padding:14px;
   border:1px solid #e0ebe3;
   border-radius:14px
 }
+.row-selected { border-color:#70ac8b; background:#f0f8f3 }
+.row-heading { display:flex; align-items:center; gap:12px }
 .row-title {
+  display:block;
+  flex:1;
+  min-width:0;
   font-weight:650;
   overflow-wrap:anywhere
 }
+.row-title input { margin:0 8px 0 0; accent-color:#16835e }
 .row-meta {
   font-size:13px;
   color:#738278;
   margin:5px 0 10px
 }
-.row-actions {
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap
-}
-.row-actions .button {
-  padding:8px 11px;
-  font-size:13px
-}
+.row-menu { flex:none }
+.row-menu summary { display:flex; align-items:center; justify-content:center; width:40px; height:40px; margin:-6px -6px -6px 0; cursor:pointer; list-style:none; color:#718178 }
+.more-dots { display:flex; align-items:center; justify-content:center; gap:3px; width:15px; height:8px; flex:none }
+.more-dot { display:block; flex:none; width:3px; height:3px; border-radius:50%; background:currentColor }
+.row-menu summary::-webkit-details-marker { display:none }
+.row-menu-items { position:absolute; right:10px; top:44px; z-index:3; display:grid; min-width:140px; padding:6px; border:1px solid #dbe9e0; border-radius:12px; background:#fff; box-shadow:0 6px 20px #1233231a }
+.row-menu-items .button { padding:12px 16px; border-radius:6px; font-size:14px; font-weight:500; text-align:left; background:transparent; color:#315b43 }
+.row-menu-items .danger { color:#b84f49 }
+.row-menu-items .button:hover { background:#f1f6f3 }
+.row-playback { display:flex; align-items:center; gap:12px; margin-top:16px }
+.row-play { display:flex; align-items:center; justify-content:center; flex:none; border:0; width:42px; height:42px; border-radius:50%; background:#e6f1ea; color:#23734f; cursor:pointer }
+.play-triangle { width:0; height:0; margin-left:3px; border-top:7px solid transparent; border-bottom:7px solid transparent; border-left:10px solid currentColor }
+.row-duration { font-variant-numeric:tabular-nums }
+.row-play-hint { margin-left:auto; font-size:12px; color:#738278 }
+.has-player .row-playback { display:none }
 .row audio {
   width:100%;
   margin-top:10px
@@ -185,7 +249,106 @@ header {
   .card {
     padding:28px 17px
   }
-  .video-grid {
-    grid-template-columns:1fr
-  }
 }
+
+/* Keep the lightweight entry in the same visual system as the App call page. */
+.call-surface { background:#f3f6f4; padding:0 }
+.call-surface header { display:none }
+.card.call-screen {
+  position:fixed;
+  inset:0;
+  height:100vh;
+  height:100dvh;
+  margin:0;
+  padding:calc(env(safe-area-inset-top, 0px) + 24px) 20px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  border:0;
+  border-radius:0;
+  box-shadow:none;
+  background:#f3f6f4;
+  color:#243730;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  overflow:auto
+}
+.call-heading { position:relative; z-index:3; width:100%; padding-top:5vh; pointer-events:none }
+.call-screen .card-title { margin:0 0 14px; font-size:14px; font-weight:500; color:#78867e }
+.call-screen .peer { margin:0; font-size:27px; line-height:1.35; font-weight:650; color:inherit }
+.call-screen .status { margin:12px 0 0; min-height:0; font-size:15px; line-height:1.6; color:#677e71 }
+.call-screen .call-duration { margin:10px 0 0; font-size:17px; line-height:1.4; font-variant-numeric:tabular-nums }
+.call-screen[data-phase="connected"] .status { display:none }
+.call-avatar { display:grid; place-items:center; flex:none; width:104px; height:104px; margin:32px 0 12px; border-radius:30px; background:#deebe3; color:#32684e; font-size:42px; font-weight:500 }
+.call-notices { position:relative; z-index:3; max-width:360px; font-size:13px }
+.call-screen .recording { margin:16px 0 0; padding:6px 12px; font-size:12px; line-height:1.5; border-radius:20px; color:#8d443c; background:#f2e7e3; font-variant-numeric:tabular-nums }
+.call-screen .error { margin:12px 0; line-height:1.6; overflow-wrap:anywhere }
+.call-footer { position:relative; z-index:3; width:100%; margin-top:auto; padding-top:24px }
+.call-screen .actions { display:flex; align-items:start; justify-content:center; flex-wrap:wrap; gap:20px 8px; max-width:400px; margin:0 auto; width:100% }
+.call-action { appearance:none; display:flex; align-items:center; flex-direction:column; gap:10px; width:calc((100% - 32px) / 5); min-width:58px; padding:0; border:0; background:none; color:inherit; font-family:inherit; font-size:12px; font-weight:400; line-height:1.4; cursor:pointer; -webkit-tap-highlight-color:transparent }
+.action-circle { display:grid; place-items:center; flex:none; width:54px; height:54px; border:1px solid #e0e8e2; border-radius:50%; color:#40554b; background:#fff; transition:background .15s,transform .15s }
+.action-label { display:block; min-height:17px }
+.call-action.selected .action-circle { background:#dcece3; color:#237653; border-color:#d0e3d7 }
+.call-action.danger .action-circle { color:#fff; background:#c84f4b; border-color:transparent }
+.call-action.accept .action-circle { color:#fff; background:#19835f; border-color:transparent }
+.call-action.end-call { width:100%; margin-top:4px }
+.call-action.end-call .action-circle { width:66px; height:66px }
+.call-action.end-call svg { width:30px; height:30px }
+.call-action:active .action-circle { transform:scale(.94) }
+.call-action:focus-visible { outline:2px solid #19835f; outline-offset:5px; border-radius:8px }
+.call-action:disabled { opacity:.45; cursor:default }
+.call-back { display:block; margin:22px auto 0; padding:8px 14px; border:0; background:transparent; color:#6f8076; font:inherit; font-size:13px; cursor:pointer }
+.call-screen .call-note { margin:20px 0 0; font-size:12px }
+.call-screen[data-phase="connected"] .call-note { display:none }
+.card.call-screen.video-call { overflow:hidden; background:#101916; color:#fff }
+.video-call .call-heading { align-self:flex-start; width:calc(100% - 120px); max-width:420px; padding-top:0; text-align:left }
+.video-call .call-heading .card-title { margin-bottom:8px; color:#c4d0c9 }
+.video-call .call-heading .peer { font-size:23px }
+.video-call .call-heading .status { color:#e1e9e4 }
+.video-call .call-heading .card-title, .video-call .call-heading .peer, .video-call .call-heading .status, .video-call .call-heading .call-duration { text-shadow:0 1px 5px #000 }
+.video-call .call-avatar { display:none }
+.video-call .call-notices { align-self:flex-start; text-align:left }
+.video-call .recording { color:#ffcccc; background:#17231fbb }
+.video-call .error { color:#fff; background:#17231fcc; padding:8px 12px; border-radius:10px }
+.video-call .action-circle { color:#fff; background:#192821b8; border-color:#ffffff26 }
+.video-call .call-action.selected .action-circle { color:#fff; background:#246f51d9; border-color:#ffffff26 }
+.video-call .call-action.danger .action-circle { background:#c84f4b; border-color:transparent }
+.video-call .call-action.accept .action-circle { background:#19835f; border-color:transparent }
+.video-call .action-label { color:#fff; text-shadow:0 1px 4px #000 }
+.video-call .call-back { color:#d1ddd5; text-shadow:0 1px 4px #000 }
+.video-controls-hidden .call-heading, .video-controls-hidden .call-footer, .video-controls-hidden .error { visibility:hidden; pointer-events:none }
+@media(max-height:500px) {
+  .call-screen .call-heading { padding-top:0 }
+  .call-screen .call-avatar { width:64px; height:64px; margin:12px 0; border-radius:20px; font-size:28px }
+  .call-screen .call-footer { padding-top:12px }
+  .call-screen .call-action.end-call { width:58px; margin-top:0 }
+  .call-screen .call-action.end-call .action-circle { width:54px; height:54px }
+  .call-screen .call-back { margin-top:10px }
+}
+@media(prefers-reduced-motion:reduce) {
+  .action-circle { transition:none }
+}
+
+.dialog-mask { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:#10191666 }
+.inline-dialog { width:100%; max-width:360px; padding:24px; border-radius:18px; background:#fff; color:#243730; box-shadow:0 18px 60px #0002; text-align:left }
+.inline-dialog .dialog-title { margin:0 0 18px; font-size:18px; font-weight:650 }
+.dialog-message { margin:0 0 20px; font-size:14px; line-height:1.7; overflow-wrap:anywhere }
+.dialog-input { box-sizing:border-box; width:100%; height:46px; padding:0 12px; border:1px solid #dce7df; border-radius:8px; background:#f3f6f4; color:inherit; font:inherit; font-size:15px }
+.dialog-input:focus { outline:2px solid #19835f; outline-offset:1px }
+.dialog-error { margin:8px 0 0; font-size:13px; color:#ac3f39 }
+.dialog-buttons { display:flex; gap:12px; margin-top:24px }
+.dialog-buttons button { flex:1; min-height:42px; padding:8px; border:0; border-radius:8px; font:inherit; font-size:15px; cursor:pointer }
+.dialog-cancel { background:#eef2ef; color:#5a6f62 }
+.dialog-confirm { background:#19835f; color:#fff }
+.dialog-confirm.danger { background:#c84f4b }
+
+.manager-surface { background:#f3f6f4; padding:0 }
+.manager-surface header { display:none }
+.card.manager-screen { margin:0; min-height:100vh; min-height:100dvh; padding:24px 18px; border:0; border-radius:0; box-shadow:none; background:#f3f6f4 }
+.manager-screen .card-title { margin:0 0 8px; text-align:left; font-size:23px }
+.manager-screen > .card-copy { text-align:left; font-size:13px }
+.manager-screen .row { background:#fff; border-color:#e1e9e3; box-shadow:none; border-radius:14px }
+.manager-screen .manager-tools .button { font-size:14px; padding:10px 14px; background:#e4eee7; color:#315b43 }
+.manager-screen .actions > .button { background:transparent; color:#6f8076; font-size:13px; font-weight:400 }
+
+.entry-loading { padding:0; background:#f3f6f4 }
+.entry-loading .card { margin:0; min-height:100vh; min-height:100dvh; border:0; border-radius:0; box-shadow:none; background:#f3f6f4; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:32px 20px }
+.entry-loading .spinner { margin:0 0 16px }

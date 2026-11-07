@@ -1,8 +1,11 @@
+import { showDialog, dialogOpen } from './dialog.js'
+import { callAction } from './icons.js'
 import { createVoiceCallController, VOICE_END_LABELS } from '../utils/voice-call-core.mjs'
 import { voiceCallMedia } from '../utils/voice-call-media.js'
 import { createChatEventsTransport } from '../utils/chat-events-transport.mjs'
 import { stripWebCallTicket, webCallTarget } from '../utils/web-call-entry.mjs'
 import { listWebRecordings, readWebRecording, renameWebRecording, deleteWebRecording } from '../utils/web-recording-storage.mjs'
+import { matchesRecording, validRecordingCallId, recordingPlayable } from '../utils/call-recording-preference.mjs'
 
 const content = document.querySelector('#content')
 const base = location.origin
@@ -10,6 +13,9 @@ let token = '', owner = '', isAdmin = false, controller, transport, state = {}, 
 let recordBridge = '', recordOwner = '', disposed = false, managerRows = []
 let callUi, callTimer, leaving = false, incomingRing = '', ringBlocked = false
 let playingUrl = '', playbackRevision = 0
+let incomingCallId = '', incomingTimer
+let managerCallId = '', managerQuery = '', managerSelecting = false, managerDeleting = false
+const managerSelection = new Set()
 const ringtone = new Audio('./ringtone.mp3')
 ringtone.loop = true
 ringtone.preload = 'none'
@@ -23,7 +29,8 @@ const endpoint = path => `${base}/api/web-call/${path}`
 
 function stopPlayback() {
   playbackRevision++
-  content.querySelector('audio')?.remove()
+  const audio = content.querySelector('audio')
+  if (audio) { audio.pause(); audio.closest('.row')?.classList.remove('has-player'); audio.remove() }
   if (playingUrl) URL.revokeObjectURL(playingUrl)
   playingUrl = ''
 }
@@ -67,22 +74,52 @@ function showError(error, title = '暂时无法打开通话') {
 function button(label, action, kind = 'secondary', disabled = false) {
   return `<button class="button ${kind}" data-action="${action}" ${disabled ? 'disabled' : ''}>${label}</button>`
 }
+let selfIsMain = false, videoControlsHidden = false
 function setupCallUi() {
+  document.body.classList.remove('entry-loading')
+  document.body.classList.add('call-surface')
+  content.classList.add('call-screen')
   content.innerHTML = `
-    <h1 class="card-title"></h1><p class="peer"></p><p class="status"></p>
+    <div class="call-heading"><p class="card-title"></p><h1 class="peer"></h1><p class="status" aria-live="polite"></p>
+      <p class="call-duration" hidden></p></div>
+    <div class="call-avatar" aria-hidden="true"></div>
     <div class="video-grid" hidden>
-      <div class="video-pane" id="call-video-remote"></div>
-      <div class="video-pane" id="call-video-local"></div>
+      <button class="video-pane" type="button" data-action="remote-video">
+        <span class="video-feed" id="call-video-remote"></span><span class="camera-placeholder">对方已关闭摄像头</span>
+      </button>
+      <button class="video-pane" type="button" data-action="local-video">
+        <span class="video-feed" id="call-video-local"></span><span class="camera-placeholder">摄像头已关闭</span>
+      </button>
     </div>
-    <p class="call-duration card-copy" hidden></p><p class="recording" hidden></p>
-    <p class="error" hidden></p><div class="actions"></div><p class="card-copy call-note"></p>
-    ${button('返回小程序', 'back')}
+    <div class="call-notices"><p class="recording" hidden></p><p class="error" role="status" hidden></p></div>
+    <div class="call-footer"><div class="actions"></div><p class="card-copy call-note"></p>
+      <button class="call-back" data-action="back">返回小程序</button></div>
   `
   callUi = Object.fromEntries(['card-title', 'peer', 'status', 'video-grid', 'call-duration', 'recording', 'error', 'actions', 'call-note']
     .map(name => [name, content.querySelector('.' + name)]))
+  callUi.remoteVideo = content.querySelector('[data-action="remote-video"]')
+  callUi.localVideo = content.querySelector('[data-action="local-video"]')
+  callUi.avatar = content.querySelector('.call-avatar')
+}
+function renderVideo(visible) {
+  if (!visible) { selfIsMain = false; videoControlsHidden = false }
+  content.classList.toggle('video-call', visible)
+  content.classList.toggle('video-controls-hidden', visible && videoControlsHidden)
+  callUi['video-grid'].hidden = !visible
+  if (!visible) return
+  const mainIsLocal = state.cameraEnabled && (!state.remoteCameraEnabled || selfIsMain)
+  const primaryLabel = videoControlsHidden ? '显示通话控件' : '隐藏通话控件'
+  callUi.remoteVideo.hidden = !state.remoteCameraEnabled
+  callUi.localVideo.hidden = !state.cameraEnabled
+  callUi.remoteVideo.classList.toggle('video-preview', mainIsLocal)
+  callUi.localVideo.classList.toggle('video-preview', !mainIsLocal)
+  callUi.remoteVideo.classList.toggle('camera-off', !state.remoteCameraEnabled)
+  callUi.localVideo.classList.toggle('camera-off', !state.cameraEnabled)
+  callUi.remoteVideo.setAttribute('aria-label', mainIsLocal ? '将对方画面放大' : primaryLabel)
+  callUi.localVideo.setAttribute('aria-label', mainIsLocal ? primaryLabel : '将自己画面放大')
 }
 function updateClock() {
-  callUi['call-duration'].textContent = state.startedAt ? '通话时长 ' + duration(Date.now() - state.startedAt) : ''
+  callUi['call-duration'].textContent = state.startedAt ? duration(Date.now() - state.startedAt) : ''
   callUi.recording.textContent = state.recordingStartedAt ? '● 正在录音 ' + duration(Date.now() - state.recordingStartedAt) : ''
 }
 function updateRingtone(retry = false) {
@@ -102,32 +139,35 @@ function updateRingtone(retry = false) {
 }
 function renderCall() {
   const phase = state.phase || 'idle', peerName = state.peer?.name || target?.name || '联系人'
-  const idleLabel = voiceCallMedia.supported() ? (state.supported ? '已连接，可以开始通话' : '正在连接通话服务…') : '当前浏览器不支持通话'
+  const idleLabel = incomingCallId ? '正在接听来电…' : voiceCallMedia.supported() ? (state.supported ? '已连接，可以开始通话' : '正在连接通话服务…') : '当前浏览器不支持通话'
   const labels = { idle: idleLabel, calling: '正在呼叫…', incoming: '对方邀请你通话', connecting: '正在建立连接…',
     connected: '通话中', ended: VOICE_END_LABELS[state.reason] || '通话已结束' }
   let actions = ''
-  if (phase === 'idle' || phase === 'ended') actions += target?.mode === 'video'
-    ? button('发起视频通话', 'start-video', 'primary', !state.videoSupported)
-    : button('发起语音通话', 'start-audio', 'primary', !state.supported) + button('视频通话', 'start-video', 'secondary', !state.videoSupported)
+  if ((phase === 'idle' && !incomingCallId) || phase === 'ended') actions += target?.mode === 'video'
+    ? callAction('发起视频通话', 'start-video', 'camera', { kind: 'accept', disabled: !state.videoSupported })
+    : callAction('发起语音通话', 'start-audio', 'phone', { kind: 'accept', disabled: !state.supported }) +
+      callAction('视频通话', 'start-video', 'camera', { disabled: !state.videoSupported })
   if (phase === 'incoming') {
-    actions += button('接听', 'accept', 'primary') + button('拒绝', 'reject', 'danger')
-    if (ringBlocked) actions += button('开启来电铃声', 'ring')
+    actions += callAction('拒绝', 'reject', 'hangup', { kind: 'danger' }) + callAction('接听', 'accept', 'phone', { kind: 'accept' })
+    if (ringBlocked) actions += callAction('开启来电铃声', 'ring', 'speaker')
   }
   if (['calling', 'connecting', 'connected'].includes(phase)) {
-    if (phase === 'connected') actions += button(state.muted ? '开启麦克风' : '静音', 'mute')
-    if (phase === 'connected' && state.playbackBlocked) actions += button('开启通话声音', 'resume')
-    if (phase === 'connected' && state.cameraSupported) actions += button(state.cameraEnabled ? '关闭摄像头' : '开启摄像头', 'camera')
-    if (phase === 'connected' && state.canSwitchCamera) actions += button('切换镜头', 'switch-camera')
-    actions += button(phase === 'calling' ? '取消呼叫' : '挂断', 'hangup', 'danger')
+    if (phase === 'connected') actions += callAction(state.muted ? '开启麦克风' : '静音', 'mute', 'mic', { off: state.muted, selected: state.muted })
+    if (phase === 'connected' && state.playbackBlocked) actions += callAction('开启通话声音', 'resume', 'speaker')
+    if (phase === 'connected' && state.cameraSupported) actions += callAction(state.cameraEnabled ? '关闭摄像头' : '开启摄像头', 'camera', 'camera', { off: !state.cameraEnabled, selected: state.cameraEnabled })
+    if (phase === 'connected' && state.canSwitchCamera && state.cameraEnabled) actions += callAction('切换镜头', 'switch-camera', 'switch-camera')
+    if (phase === 'connected' && state.recordingSupported) actions += callAction(state.recording ? '停止录音' : '开始录音', 'record', 'record', { selected: state.recording })
+    actions += callAction(phase === 'calling' ? '取消呼叫' : '挂断', 'hangup', 'hangup', { kind: 'danger end-call' })
   }
-  if (phase === 'connected' && state.recordingSupported) actions += button(state.recording ? '停止录音' : '开始录音', 'record', state.recording ? 'danger' : 'secondary')
   const mode = phase === 'idle' ? target?.mode : state.mode
   const title = mode === 'video' ? '视频通话' : '语音通话'
-  document.title = `${title} · ${peerName} · 分投侠`
+  document.title = `${title} · ${peerName}`
   callUi['card-title'].textContent = title
+  content.dataset.phase = phase
   callUi.peer.textContent = peerName
+  callUi.avatar.textContent = Array.from(peerName)[0] || '聊'
   callUi.status.textContent = labels[phase]
-  callUi['video-grid'].hidden = !['connecting', 'connected'].includes(phase) || !(state.cameraEnabled || state.remoteCameraEnabled)
+  renderVideo(['connecting', 'connected'].includes(phase) && !!(state.cameraEnabled || state.remoteCameraEnabled))
   callUi['call-duration'].hidden = phase !== 'connected'
   callUi.recording.hidden = !state.recording
   callUi.error.textContent = state.recordingError || state.mediaError || ''
@@ -139,26 +179,83 @@ function renderCall() {
   updateRingtone()
 }
 function duration(value) { const n = Math.max(0, Math.round((value || 0) / 1000)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}` }
-function renderManager(rows) {
+function setupManager() {
+  document.body.classList.remove('entry-loading')
+  document.title = '通话录音'
+  document.body.classList.add('manager-surface')
+  content.classList.add('manager-screen')
+  content.innerHTML = `<h1 class="card-title">通话录音</h1><p class="card-copy">录音仅保存在此微信网页中。</p>
+    <div class="manager-tools"><input type="search" class="manager-search" aria-label="搜索录音" placeholder="搜索录音名称或联系人">
+      ${managerCallId ? button('查看全部', 'clear-filter') : ''}${button('选择', 'select-mode')}</div>
+    <div class="manager-selection" hidden></div><p class="error" id="file-error" hidden></p>
+    <div class="list"></div><div class="actions">${button('返回小程序', 'back')}</div>`
+  content.querySelector('.manager-search').addEventListener('input', event => {
+    managerQuery = event.target.value
+    managerSelection.clear()
+    renderManager()
+  })
+}
+function visibleManagerRows() {
+  return managerRows.filter(row => (!managerCallId || row.callId === managerCallId) && matchesRecording(row, managerQuery))
+}
+function renderManager(rows = managerRows) {
   stopPlayback()
   managerRows = rows
-  const selectedId = params().get('recordingId')
-  const cards = rows.map(row => {
+  const visible = visibleManagerRows()
+  const eligible = visible.filter(row => row.status !== 'recording')
+  const selected = eligible.filter(row => managerSelection.has(row.id)).length
+  const cards = visible.map(row => {
     const id = row.id
-    const status = { saved: '', recording: ' · 正在录制', interrupted: ' · 录制中断' }[row.status]
-    const saved = row.status === 'saved' ? button('播放', `play:${id}`) + button('导出', `download:${id}`) : ''
-    const editable = row.status !== 'recording' ? button('重命名', `rename:${id}`) + button('删除', `delete:${id}`, 'danger') : ''
-    return `<article class="row" id="recording-${id}">
-      <div class="row-title">${escapeHtml(row.name)}</div>
-      <div class="row-meta">${new Date(row.createdAt).toLocaleString()} · ${duration(row.durationMs)} · ${Math.ceil(row.size / 1024)} KB${status}</div>
-      <div class="row-actions">${saved}${editable}</div><div id="audio-${id}"></div>
+    const status = { saved: '', recording: ' · 正在录制', interrupted: ' · 录制中断，已保留部分声音' }[row.status]
+    const saved = recordingPlayable(row)
+      ? `<div class="row-playback"><button class="row-play" aria-label="播放" data-action="play:${id}"><span class="play-triangle"></span></button><span class="row-duration">${duration(row.durationMs)}</span><span class="row-play-hint">点击播放</span></div><div id="audio-${id}"></div>` : ''
+    const editable = row.status !== 'recording' && !managerSelecting ? `<details class="row-menu"><summary aria-label="更多操作 · ${escapeHtml(row.name)}"><span class="more-dots" aria-hidden="true"><span class="more-dot"></span><span class="more-dot"></span><span class="more-dot"></span></span></summary>
+      <div class="row-menu-items">${button('重命名', `rename:${id}`)}${recordingPlayable(row) ? button('导出录音', `download:${id}`) : ''}
+        ${button('选择录音', `select:${id}`)}${button('删除录音', `delete:${id}`, 'danger')}</div></details>` : ''
+    const checkbox = managerSelecting && row.status !== 'recording'
+      ? `<input type="checkbox" data-recording-id="${id}" ${managerSelection.has(id) ? 'checked' : ''} ${managerDeleting ? 'disabled' : ''}>` : ''
+    return `<article class="row ${managerSelection.has(id) ? 'row-selected' : ''}" id="recording-${id}">
+      <div class="row-heading"><label class="row-title">${checkbox}${escapeHtml(row.name)}</label>${editable}</div>
+      <div class="row-meta">${escapeHtml(row.peerName)} · ${new Date(row.createdAt).toLocaleString()} · ${duration(row.durationMs)} · ${Math.ceil(row.size / 1024)} KB${status}</div>
+      ${managerSelecting ? '' : saved}
     </article>`
   }).join('')
-  content.innerHTML = `<h1 class="card-title">通话录音</h1><p class="card-copy">录音仅保存在此微信网页中。</p>
-    <p class="error" id="file-error" hidden></p>
-    ${cards ? `<div class="list">${cards}</div>` : '<div class="empty">暂无录音</div>'}
-    <div class="actions">${button('返回小程序', 'back')}</div>`
-  if (selectedId) document.getElementById('recording-' + selectedId)?.scrollIntoView({ block: 'center' })
+  content.querySelector('.list').innerHTML = cards || '<div class="empty">没有匹配的录音</div>'
+  const select = content.querySelector('[data-action="select-mode"]')
+  content.classList.toggle('manager-selecting', managerSelecting)
+  select.textContent = managerSelecting ? '完成' : '选择'
+  select.disabled = managerDeleting
+  const bar = content.querySelector('.manager-selection')
+  bar.hidden = !managerSelecting
+  bar.innerHTML = managerSelecting ? button(selected && selected === eligible.length ? '取消全选' : '全选', 'select-all', 'secondary', !eligible.length || managerDeleting)
+    + button(managerDeleting ? '正在删除…' : selected ? `删除（${selected}）` : '删除', 'delete-selected', 'danger', !selected || managerDeleting) : ''
+}
+function updateManagerSelection() {
+  const eligible = visibleManagerRows().filter(row => row.status !== 'recording')
+  const count = eligible.filter(row => managerSelection.has(row.id)).length
+  content.querySelector('[data-action="select-all"]').textContent = count && count === eligible.length ? '取消全选' : '全选'
+  const remove = content.querySelector('[data-action="delete-selected"]')
+  remove.textContent = count ? `删除（${count}）` : '删除'; remove.disabled = !count
+}
+async function removeManagerRows(rows) {
+  if (!rows.length || managerDeleting || dialogOpen()) return
+  const confirmed = await showDialog({ title: '删除录音', message: rows.length === 1 ? `确定删除“${rows[0].name}”？删除后无法恢复。` : `确定删除选中的 ${rows.length} 条录音？删除后无法恢复。`, danger: true, confirmLabel: '删除' })
+  if (!confirmed || disposed) return
+  managerDeleting = true
+  const errorText = content.querySelector('#file-error')
+  errorText.hidden = true
+  renderManager()
+  const failures = []
+  try {
+    for (const row of rows) {
+      try { await deleteWebRecording(owner, row.id); managerSelection.delete(row.id) }
+      catch (error) { failures.push(error.message) }
+    }
+    managerRows = await refreshCatalog(true)
+    if (failures.length) throw new Error(`${failures.length} 条录音删除失败 · ${failures[0]}`)
+    managerSelecting = false
+  } catch (error) { errorText.textContent = error.message; errorText.hidden = false }
+  finally { managerDeleting = false; if (!disposed) renderManager() }
 }
 async function performManagerAction(action, row) {
   const errorText = document.querySelector('#file-error')
@@ -177,7 +274,10 @@ async function performManagerAction(action, row) {
         const audio = new Audio(playingUrl)
         audio.controls = true
         slot.append(audio)
-        void audio.play().catch(() => {})
+        slot.closest('.row').classList.add('has-player')
+        void audio.play().catch(error => {
+          if (error.name !== 'AbortError') { errorText.textContent = '请点击播放器继续播放'; errorText.hidden = false }
+        })
       } else {
         const extension = /mp4|aac/.test(row.mimeType) ? 'm4a' : /ogg/.test(row.mimeType) ? 'ogg' : 'webm'
         const name = row.name.replace(/[\\/:*?"<>|]/g, '_') + '.' + extension
@@ -194,13 +294,10 @@ async function performManagerAction(action, row) {
         setTimeout(() => URL.revokeObjectURL(url), 60000)
       }
     } else if (action === 'rename') {
-      const name = prompt('录音名称', row.name); if (name == null) return
+      const name = await showDialog({ title: '重命名录音', value: row.name, confirmLabel: '保存' }); if (name == null || disposed) return
       await renameWebRecording(owner, row.id, name)
       renderManager(await refreshCatalog(true))
-    } else if (action === 'delete' && confirm(`删除“${row.name}”？`)) {
-      await deleteWebRecording(owner, row.id)
-      renderManager(await refreshCatalog(true))
-    }
+    } else if (action === 'delete') await removeManagerRows([row])
   } catch (error) {
     errorText.textContent = error.message || '录音操作失败'
     errorText.hidden = false
@@ -241,10 +338,29 @@ async function boot() {
   if (manager) {
     if (!isAdmin || recordOwner !== owner || !/^[A-Za-z0-9_-]{16,80}$/.test(recordBridge)) throw new Error('此录音管理链接无效或权限不足')
     void miniSdk().catch(() => {})
+    if (validRecordingCallId(p.get('callId'))) managerCallId = p.get('callId')
+    setupManager()
     renderManager(await refreshCatalog(true))
+    if (p.get('recordingId')) {
+      document.getElementById('recording-' + p.get('recordingId'))?.scrollIntoView({ block: 'center' })
+      const row = managerRows.find(item => item.id === p.get('recordingId'))
+      if (row && ['play', 'rename', 'delete'].includes(p.get('action'))) void performManagerAction(p.get('action'), row)
+    }
+    content.addEventListener('change', event => {
+      const id = event.target.dataset.recordingId
+      if (!id || !managerSelecting || managerDeleting) return
+      if (event.target.checked) managerSelection.add(id)
+      else managerSelection.delete(id)
+      event.target.closest('.row').classList.toggle('row-selected', event.target.checked)
+      updateManagerSelection()
+    })
+    content.addEventListener('toggle', event => {
+      if (event.target.matches('.row-menu[open]')) content.querySelectorAll('.row-menu[open]').forEach(menu => { if (menu !== event.target) menu.open = false })
+    }, true)
     document.addEventListener('click', event => {
       const raw = event.target.closest('[data-action]')?.dataset.action
-      if (!raw) return
+      if (!raw || managerDeleting || dialogOpen()) return
+      content.querySelectorAll('.row-menu[open]').forEach(menu => { menu.open = false })
       if (raw === 'back') {
         if (leaving) return
         leaving = true
@@ -252,8 +368,19 @@ async function boot() {
         void syncCatalogBeforeReturn().then(returnToMini)
         return
       }
+      if (raw === 'clear-filter') { managerCallId = ''; managerSelection.clear(); event.target.closest('[data-action]').remove(); renderManager(); return }
+      if (raw === 'select-mode') { managerSelecting = !managerSelecting; managerSelection.clear(); renderManager(); return }
+      if (raw === 'select-all') {
+        const rows = visibleManagerRows().filter(row => row.status !== 'recording')
+        const clear = rows.every(row => managerSelection.has(row.id))
+        managerSelection.clear()
+        if (!clear) rows.forEach(row => managerSelection.add(row.id))
+        renderManager(); return
+      }
+      if (raw === 'delete-selected') { void removeManagerRows(visibleManagerRows().filter(row => managerSelection.has(row.id))); return }
       const split = raw.indexOf(':'), action = raw.slice(0, split), id = raw.slice(split + 1)
       const row = managerRows.find(item => item.id === id)
+      if (row && action === 'select') { managerSelecting = true; managerSelection.clear(); managerSelection.add(id); renderManager(); return }
       if (row) void performManagerAction(action, row)
     })
     addEventListener('pagehide', () => { disposed = true; stopPlayback() }, { once: true })
@@ -263,12 +390,33 @@ async function boot() {
   if (!target) throw new Error('通话链接信息无效')
   setupCallUi()
   callTimer = setInterval(updateClock, 1000)
-  transport = voiceConnection(event => controller.handle(event), event => controller.connection(true, event.voiceCallVersion, event.videoCallVersion), () => controller.connection(false))
+  incomingCallId = /^[A-Za-z0-9_-]{12,80}$/.test(p.get('incomingCallId') || '') ? p.get('incomingCallId') : ''
+  let initialCallPending = true
+  if (incomingCallId) initialCallPending = false
+  transport = voiceConnection(event => {
+    controller.handle(event)
+    if (incomingCallId && event.type === 'voice.incoming') {
+      clearTimeout(incomingTimer)
+      if (event.callId === incomingCallId && String(event.peer?.id) === target.peerId) void controller.accept()
+      incomingCallId = ''
+      return
+    }
+    if (event.type !== 'voice.ready' || !state.supported || !initialCallPending) return
+    initialCallPending = false
+    if (state.phase === 'idle') {
+      try { controller.start({ id: target.peerId, name: target.name }, target.mode) }
+      catch (error) { callUi.error.textContent = error.message; callUi.error.hidden = false }
+    }
+  }, event => controller.connection(true, event.voiceCallVersion, event.videoCallVersion), () => controller.connection(false))
   controller = createVoiceCallController({ media: voiceCallMedia, send: event => transport.send(event), getOwner: () => token, getSelfId: () => owner,
     changed(value) { state = value; renderCall() },
     getRecording: () => ({ owner, admin: isAdmin, auto: recordOwner === owner && !!recordBridge && p.get('recordingAuto') === '1' }),
     onRecordingSaved: () => { void refreshCatalog(true).catch(() => {}) } })
   controller.setActive(true); transport.setActive(true)
+  if (incomingCallId) incomingTimer = setTimeout(() => {
+    if (!incomingCallId || disposed || state.phase !== 'idle') return
+    incomingCallId = ''; state.mediaError = '来电已结束或未能接通，请返回小程序重试'; renderCall()
+  }, 12000)
   void miniSdk().catch(() => {})
   renderCall()
   document.addEventListener('click', event => {
@@ -287,11 +435,18 @@ async function boot() {
       else if (action === 'resume') controller.control({ resumePlayback: true })
       else if (action === 'ring') updateRingtone(true)
       else if (action === 'back') void leaveCall()
+      else if (action === 'local-video' || action === 'remote-video') {
+        const local = action === 'local-video'
+        const mainIsLocal = state.cameraEnabled && (!state.remoteCameraEnabled || selfIsMain)
+        if (local === mainIsLocal) videoControlsHidden = !videoControlsHidden
+        else selfIsMain = local
+        renderVideo(true)
+      }
     } catch (error) { state.mediaError = error.message; renderCall() }
   })
   addEventListener('pagehide', () => {
     disposed = true
-    clearInterval(callTimer)
+    clearInterval(callTimer); clearTimeout(incomingTimer)
     controller.end('background')
     controller.setActive(false)
     transport.setActive(false)

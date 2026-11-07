@@ -306,6 +306,7 @@
 </template>
 
 <script setup>
+import { getUserLocationOnce as getSharedUserLocationOnce } from '@/utils/location.js'
 import { ensureFeaturePermission } from '@/utils/feature-permission.js'
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { resolveTrashBinImage, previewTrashBinImage } from '../../utils/trash-bin-image'
@@ -1143,6 +1144,10 @@ onReady(() => {
 })
 
 async function getUserLocationOnce(coordType = 'gcj02') {
+  // #ifdef MP-WEIXIN
+  return saveLastMapLocation(await getSharedUserLocationOnce(coordType))
+  // #endif
+
   return new Promise((resolve, reject) => {
     let actualCoordType = coordType
     try {

@@ -396,6 +396,7 @@ function preprocessTracker(platform) {
 function loadTracker(platform, context) {
   context.androidRealtimeAvailable ??= () => false
   context.watchAndroidRealtimeLocation ??= () => () => {}
+  context.miniLocationAvailable ??= () => false
   vm.createContext(context)
   vm.runInContext(preprocessTracker(platform), context)
   return context.liveLocationTracker

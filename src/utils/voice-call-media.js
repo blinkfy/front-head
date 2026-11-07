@@ -24,6 +24,15 @@ const closeTracks = stream => stream?.getTracks().forEach(track => track.stop())
 const cameraConstraints = facingMode => ({ facingMode: facingMode === 'user' ? 'user' : { exact: facingMode },
   width: { ideal: 640, max: 960 }, height: { ideal: 480, max: 720 }, frameRate: { ideal: 24, max: 24 } })
 
+// #ifdef H5
+function updateVideoAspect(video) {
+  if (video?.videoWidth > 0 && video.videoHeight > 0) {
+    const pane = video.parentNode?.parentNode
+    if (pane?.classList?.contains('video-pane')) pane.style.setProperty('--call-video-ratio', String(video.videoWidth / video.videoHeight))
+  }
+}
+// #endif
+
 export const voiceCallMedia = {
   primeRecording(callId, recording) {
     // #ifdef H5
@@ -162,8 +171,11 @@ export const voiceCallMedia = {
     const local = video ? document.createElement('video') : null
     if (local) {
       local.autoplay = true; local.muted = true; local.setAttribute('playsinline', ''); local.dataset.callVideo = 'local'
-      local.style.cssText = 'width:100%;height:100%;object-fit:cover;transform:scaleX(-1)'; local.srcObject = stream
+      local.style.cssText = 'width:100%;height:100%;object-fit:contain;background:#101916;transform:scaleX(-1)'; local.srcObject = stream
       void local.play().catch(() => {})
+    }
+    if (video) for (const element of [local, audio]) {
+      element.onresize = element.onloadedmetadata = () => updateVideoAspect(element)
     }
     let remoteSet = false, closed = false, chain = Promise.resolve()
     let videoSender = null, cameraEnabled = stream.getVideoTracks().some(track => track.readyState === 'live'), cameraDesired = cameraEnabled, facingMode = 'user', requestedFacing = 'user'
@@ -184,7 +196,7 @@ export const voiceCallMedia = {
     recordingContexts.delete(callId)
     const recorder = options.recording?.admin ? createWebCallRecording({
       local: stream, remote: remoteStream, storage: webRecordingStorage,
-      metadata: { ...options.recording, peerName: options.peerName, mode: options.entryMode },
+      metadata: { ...options.recording, peerName: options.peerName, mode: options.entryMode, callId },
       isCurrent, changed: onEvent, initialContext: recordingContext
     }) : null
     let cameras = []
@@ -355,6 +367,7 @@ export const voiceCallMedia = {
       peer.remote.style.position = ''; peer.remote.style.left = ''; peer.remote.style.width = '100%'; peer.remote.style.height = '100%'
       if (peer.local.parentNode !== hosts.local) hosts.local.appendChild(peer.local)
       if (peer.remote.parentNode !== hosts.remote) hosts.remote.appendChild(peer.remote)
+      updateVideoAspect(peer.local); updateVideoAspect(peer.remote)
     }
     // #endif
   },

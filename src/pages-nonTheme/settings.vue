@@ -70,6 +70,18 @@
                     </view>
                     <view class="toggle-switch" :class="{ active: soundEnabled }"><view class="toggle-dot"></view></view>
                 </view>
+                <!-- #ifdef MP-WEIXIN -->
+                <view class="setting-item" @click="toggleMiniLocationMode" role="switch" :aria-checked="miniLocationEnhanced">
+                    <view class="item-left">
+                        <ManifestIcon class="item-icon" id="map_location" />
+                        <view class="item-info">
+                            <text class="item-title">增强定位</text>
+                            <text class="item-desc">{{ miniLocationEnhanced ? '使用实时位置更新；异常时可关闭，切换兼容定位' : '兼容模式：定时获取位置，保留地图选址和手动填写' }}</text>
+                        </view>
+                    </view>
+                    <view class="toggle-switch" :class="{ active: miniLocationEnhanced }"><view class="toggle-dot"></view></view>
+                </view>
+                <!-- #endif -->
                 <view v-if="isAndroid" class="setting-item" @click="retryNotificationPermission" role="button" tabindex="0" @keydown.enter.prevent="retryNotificationPermission" @keydown.space.prevent="retryNotificationPermission">
                     <view class="item-left">
                         <ManifestIcon class="item-icon" id="notification" />
@@ -193,6 +205,13 @@ import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
 import { canConfigureBackgroundMessages, readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '@/utils/background-message-preference.mjs'
+
+// #ifdef MP-WEIXIN
+import { readMiniLocationEnhanced, writeMiniLocationEnhanced } from '@/utils/mini-location.js'
+const miniLocationEnhanced = ref(readMiniLocationEnhanced())
+function toggleMiniLocationMode() { miniLocationEnhanced.value = writeMiniLocationEnhanced(!miniLocationEnhanced.value) }
+onShow(() => { miniLocationEnhanced.value = readMiniLocationEnhanced() })
+// #endif
 
 const soundEnabled = ref(areUiSoundsEnabled())
 const isAndroid = ref(false)

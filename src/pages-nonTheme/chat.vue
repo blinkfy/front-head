@@ -38,21 +38,20 @@
         <!-- 消息列表区域 -->
         <scroll-view class="message-list" scroll-y :scroll-top="scrollTop" :scroll-into-view="scrollToMessage"
             @scrolltoupper="loadMoreMessages">
-            <BookingChatContext v-if="!isGroupChat" :target-user-id="otherUserId || chatId" :initial-order-id="bookingOrderId" :refresh-token="bookingContextRefresh" :dark="isDarkTheme" />
             <!-- 加载更多提示 -->
             <view class="load-more" v-if="hasMoreMessages">
                 <text class="load-more-text" @click="loadMoreMessages">{{ isLoadingMore ? '加载中...' : '点击加载更多' }}</text>
             </view>
 
             <!-- 空消息提示 -->
-            <view v-if="messages.length === 0" class="empty-tip">
+            <view v-if="timelineMessages.length === 0 && !bookingContextError" class="empty-tip">
                 <text class="empty-text">暂无消息，开始聊天吧</text>
             </view>
 
             <!-- 消息项 -->
-            <view v-for="(msg, index) in visibleMessages" :key="msg.id" :id="'msg-' + msg.id" class="message-item"
-                :class="{ 'message-selecting': selectingMessages, 'message-selected': selectedMessageIds.includes(String(msg.id)), 'message-self': msg.isSelf, 'message-other': !msg.isSelf, 'message-system': msg.type === 'system' }">
-                <view v-if="selectingMessages" class="message-select-hitbox" @click.stop="toggleMessageSelection(msg)">
+            <view v-for="(msg, index) in timelineMessages" :key="msg.id" :id="'msg-' + msg.id" class="message-item"
+                :class="{ 'message-selecting': selectingMessages && !msg.bookingOrder, 'message-selected': selectedMessageIds.includes(String(msg.id)), 'message-self': msg.isSelf, 'message-other': !msg.isSelf, 'message-system': msg.type === 'system' }">
+                <view v-if="selectingMessages && !msg.bookingOrder" class="message-select-hitbox" @click.stop="toggleMessageSelection(msg)">
                     <text v-if="msg.status === 'sent' && !msg.isWithdraw" class="message-select-check">{{ selectedMessageIds.includes(String(msg.id)) ? '●' : '○' }}</text>
                 </view>
                 <!-- 时间分隔 -->
@@ -60,8 +59,9 @@
                     <text class="time-text">{{ formatTime(msg.timestamp) }}</text>
                 </view>
 
+                <BookingChatContext v-if="msg.bookingOrder" :order="msg.bookingOrder" :disabled="selectingMessages" />
                 <!-- 系统消息(撤回提示等) -->
-                <view v-if="msg.type === 'system'" class="system-message">
+                <view v-else-if="msg.type === 'system'" class="system-message">
                     <text class="system-text">{{ msg.content }}</text>
                 </view>
 
@@ -89,7 +89,8 @@
                             </view>
 
                             <!-- AI 文本使用受限 Markdown，普通用户消息保持原有纯文本展示。 -->
-                            <RealtimeActivityMessage v-if="realtimeActivityCard(msg)" :card="realtimeActivityCard(msg)" :self="msg.isSelf" @open="openRealtimeActivity(msg)" />
+                            <RealtimeActivityMessage v-if="realtimeActivityCard(msg)" :card="realtimeActivityCard(msg)" :self="msg.isSelf"
+                                :recording="localCallRecording(msg)" @open="openRealtimeActivity(msg)" @open-recording="openCallRecording(msg)" />
                             <CommunityPostMessage v-else-if="msg.type === 'others'" :card="communityPostCard(msg)" @open="openCommunityPost(msg)" />
                             <ChatMarkdown v-else-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" :dark="isDarkTheme" />
                             <text v-else-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
@@ -212,6 +213,10 @@
                     <image v-if="msg.isSelf" class="avatar" :src="userAvatarUrl"
                         mode="aspectFill" @error="onUserAvatarError" />
                 </view>
+            </view>
+
+            <view v-if="bookingContextError" class="load-more">
+                <text class="load-more-text" @click="loadBookingContext">预约信息暂不可用，点击重试</text>
             </view>
 
             <!-- 底部占位 -->
@@ -640,6 +645,7 @@ import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { chooseAppImage } from '@/utils/image-picker.js'
 import BookingChatContext from './components/BookingChatContext.vue'
+import { bookingChatContext } from './api/recycling.js'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { audioInitializationMethods, voiceRecordingMethods, voicePlaybackMethods, voiceTranscriptionMethods } from '@/pages-nonTheme/chat/audio-methods.js'
 import { mediaSendMethods, mediaPickerMethods, attachmentIngressMethods } from '@/pages-nonTheme/chat/attachment-methods.js'
@@ -661,10 +667,13 @@ import { prepareAvatarUpload } from '@/utils/upload-image.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
 import { setChatFeedbackBlocked } from '@/utils/chat-feedback.js'
 import { embeddedWebCallUrl, requestWebCallTicket } from '@/utils/web-call-entry.mjs'
-import { appendRecordingBridge } from '@/utils/call-recordings.js'
+import { appendRecordingBridge, listCallRecordings } from '@/utils/call-recordings.js'
+import { recordingIdentity, validRecordingCallId, recordingPlayable } from '@/utils/call-recording-preference.mjs'
 import RealtimeActivityEntry from '@/components/RealtimeActivityEntry.vue'
-import { voiceCalls, voiceCallState } from '@/utils/voice-call.js'
+import { voiceCalls, voiceCallState, openVoiceCallPage } from '@/utils/voice-call.js'
 import { liveLocationState } from '@/utils/live-location.js'
+import { chooseMiniLocation, isLocationCancelled } from '@/utils/mini-location.js'
+import { locationErrorMessage } from '@/utils/location-error.mjs'
 import ChatMarkdown from '@/pages-nonTheme/components/ChatMarkdown.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
@@ -695,7 +704,7 @@ export default {
     },
     data() {
         return {
-            bookingOrderId: '', bookingContextRefresh: 0,
+            bookingOrderId: '', bookingOrders: [], bookingContextRevision: 0, bookingContextError: false,
             chatId: '', // 聊天会话ID
             conversationType: 'direct',
             groupId: '',
@@ -727,6 +736,7 @@ export default {
             userAvatar: '',
             otherAvatar: '', // 对方头像
             otherUsername: '', // 对方原始用户名
+            locationChoosing: false,
             otherUserId: '', // 对方用户ID
             loadingUserProfile: false,
             hasSyncedUserProfile: false,
@@ -755,6 +765,10 @@ export default {
 
             // 输入相关
             voiceCallState,
+            callRecordingIndex: {},
+            callRecordingOwner: '',
+            callRecordingRevision: 0,
+            callRecordingListener: null,
             liveLocationState,
             inputText: '',
             inputPlaceholder: '输入消息...',
@@ -903,6 +917,22 @@ export default {
                 }
                 return msg
             })
+        },
+
+        timelineMessages() {
+            const messages = this.visibleMessages
+            if (!this.bookingOrders.length) return messages
+
+            const oldest = this.hasMoreMessages ? messages[0]?.timestamp : undefined
+            const cards = []
+            for (const order of this.bookingOrders) {
+                const timestamp = order.acceptedAt ? new Date(order.acceptedAt).getTime() : NaN
+                if (!Number.isFinite(timestamp)) continue
+                // Older cards enter with their history. Keep the order used to open this chat accessible.
+                if (oldest != null && timestamp < oldest && String(order.id) !== String(this.bookingOrderId)) continue
+                cards.push({ id: `booking-${order.id}`, timestamp, bookingOrder: order })
+            }
+            return [...messages, ...cards].sort((a, b) => a.timestamp - b.timestamp)
         },
 
         // 当前预览的消息
@@ -1055,17 +1085,24 @@ export default {
     },
 
     onShow() {
-        this.bookingContextRefresh++
         this.syncChatFeedbackMedia()
+        if (!this.callRecordingListener) {
+            this.callRecordingListener = () => { void this.refreshCallRecordings() }
+            uni.$on('call-recordings:changed', this.callRecordingListener)
+        }
+        void this.refreshCallRecordings()
         setActiveChatConversation(this.isGroupChat ? this.chatId : String(this.otherUserId || this.chatId))
         if (!this.chatEventListener) {
             this.chatEventListener = (event = {}) => {
-                this.handleChatEvent(event)
+                if (event.notification?.kind === 'booking' || (!event.type && !event.kind)) this.loadBookingContext()
+                if (event.type !== 'notification.changed') this.handleChatEvent(event)
             }
             messageBus.on('chat.changed', this.chatEventListener)
             messageBus.on('chat.reconnected', this.chatEventListener)
+            messageBus.on('notification.changed', this.chatEventListener)
         }
         this.isChatPageActive = true
+        this.loadBookingContext()
 
         // 每次显示页面时重新加载用户信息（确保头像更新）
         this.loadUserInfo()
@@ -1108,6 +1145,7 @@ export default {
         if (this.chatEventListener) {
             messageBus.off('chat.changed', this.chatEventListener)
             messageBus.off('chat.reconnected', this.chatEventListener)
+            messageBus.off('notification.changed', this.chatEventListener)
             this.chatEventListener = null
         }
         // 页面隐藏时停止轮询，节省资源
@@ -1117,6 +1155,8 @@ export default {
     },
 
     onUnload() {
+        this.callRecordingRevision++
+        if (this.callRecordingListener) uni.$off('call-recordings:changed', this.callRecordingListener)
         this.$refs.appConfirmDialog?.cancelAll()
         this.cancelRecord()
         setChatFeedbackBlocked(this.chatFeedbackOwner, false)
@@ -1125,6 +1165,7 @@ export default {
         if (this.chatEventListener) {
             messageBus.off('chat.changed', this.chatEventListener)
             messageBus.off('chat.reconnected', this.chatEventListener)
+            messageBus.off('notification.changed', this.chatEventListener)
             this.chatEventListener = null
         }
         // 停止消息轮询
@@ -1159,6 +1200,26 @@ export default {
     },
 
     methods: {
+        async loadBookingContext() {
+            const peer = this.otherUserId || this.chatId
+            if (this.isGroupChat || !/^\d+$/.test(String(peer))) return
+
+            const revision = ++this.bookingContextRevision
+            const token = uni.getStorageSync('token')
+            const isCurrent = () => this.isChatPageActive && !this.isChatPageDestroyed &&
+                revision === this.bookingContextRevision && token === uni.getStorageSync('token') &&
+                peer === (this.otherUserId || this.chatId)
+            try {
+                const data = await bookingChatContext(peer)
+                if (!isCurrent()) return
+                this.bookingOrders = data.orders || []
+                this.bookingContextError = false
+            } catch (_) {
+                if (!isCurrent()) return
+                this.bookingOrders = []
+                this.bookingContextError = Boolean(this.bookingOrderId)
+            }
+        },
         openLiveLocation() {
             const offer = liveLocationState.offers[String(this.otherUserId)]
             const name = this.contactSettings.note || this.otherUsername || this.chatTitle || '联系人'
@@ -1183,7 +1244,7 @@ export default {
                 }
                 url = appendRecordingBridge(embeddedWebCallUrl(baseUrl, target, ticket))
                 this.showMorePanel = false
-                uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(url)}&title=${encodeURIComponent('网页通话')}` })
+                uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(url)}&title=${encodeURIComponent(mode === 'video' ? '视频通话' : '语音通话')}` })
             } finally { this.webCallOpening = false; uni.hideLoading() }
         },
         showCallSupport() {
@@ -1204,6 +1265,38 @@ export default {
             setChatFeedbackBlocked(this.chatFeedbackOwner, !this.isChatPageDestroyed && !!(this.isRecording || this.playingVoiceId))
         },
         realtimeActivityCard,
+        async refreshCallRecordings() {
+            const revision = ++this.callRecordingRevision
+            const identity = recordingIdentity()
+            if (this.isGroupChat || !identity.admin) { this.callRecordingIndex = {}; this.callRecordingOwner = ''; return }
+            const rows = await listCallRecordings().catch(() => [])
+            if (revision !== this.callRecordingRevision) return
+            const current = recordingIdentity()
+            const index = Object.create(null)
+            this.callRecordingOwner = ''
+            if (current.admin && current.owner === identity.owner) {
+                for (const row of rows) {
+                    if (row.owner !== current.owner || !recordingPlayable(row) || !validRecordingCallId(row.callId)) continue
+                    if (index[row.callId]) index[row.callId].count++
+                    else index[row.callId] = { count: 1, name: row.name }
+                }
+                this.callRecordingOwner = current.owner
+            }
+            this.callRecordingIndex = index
+        },
+        localCallRecording(message) {
+            const card = realtimeActivityCard(message)
+            if (!card?.connected || card.activity !== 'call') return null
+            const recording = this.callRecordingIndex[card.sessionId]
+            if (!recording) return null
+            const { admin, owner } = recordingIdentity()
+            const peer = String(this.otherUserId)
+            return admin && owner === this.callRecordingOwner && ((String(card.fromId) === owner && String(card.toId) === peer) ||
+                (String(card.toId) === owner && String(card.fromId) === peer)) ? recording : null
+        },
+        openCallRecording(message) {
+            if (this.localCallRecording(message)) uni.navigateTo({ url: `/pages-nonTheme/call-recordings?callId=${realtimeActivityCard(message).sessionId}` })
+        },
         openRealtimeActivity(message) {
             const card = realtimeActivityCard(message)
             const ownId = String(this.getCurrentUserId())
@@ -1215,7 +1308,7 @@ export default {
                 // Always join this exact session. An expired record never starts a new share.
                 uni.navigateTo({ url: `/pages-nonTheme/live-location?peerId=${encodeURIComponent(peerId)}&name=${encodeURIComponent(name)}&sessionId=${encodeURIComponent(card.sessionId)}` })
             } else if (['calling', 'incoming', 'connecting', 'connected'].includes(voiceCallState.phase)) {
-                if (String(voiceCallState.peer?.id) === peerId) uni.navigateTo({ url: '/pages-nonTheme/voice-call' })
+                if (String(voiceCallState.peer?.id) === peerId) openVoiceCallPage()
                 else uni.showToast({ title: '请先结束当前通话', icon: 'none' })
             } else {
                 // #ifdef APP-PLUS || H5
@@ -2279,41 +2372,33 @@ export default {
             // #endif
             
             // #ifdef MP-WEIXIN
-            // 微信小程序：直接尝试调用选择位置，由系统自动处理权限
-            uni.chooseLocation({
-                success: (res) => {
-                    // 选择成功，发送位置消息
-                    const msg = this.createMessage('location', '', {
-                        locationName: res.name || '位置分享',
-                        locationAddress: res.address || '',
-                        latitude: res.latitude,
-                        longitude: res.longitude
-                    })
-                    this.addMessage(msg)
-                    this.sendLocationMessage(msg)
-                    uni.showToast({ title: '位置已发送', icon: 'success' })
-                },
-                fail: (err) => {
-                    console.error('选择位置失败', err)
-                    // 判断是否是用户取消
-                    if (err.errMsg && err.errMsg.includes('cancel')) {
-                        // 用户取消，不显示提示
-                        return
-                    }
-                    // 权限被拒绝或其他错误
-                    showAppModal(this, {
-                        title: '提示',
-                        content: '需要获取位置权限才能发送位置，请在设置中开启',
-                        confirmText: '去设置',
-                        showCancel: true,
-                        success: (modalRes) => {
-                            if (modalRes.confirm) {
-                                uni.openSetting()
-                            }
+            if (this.locationChoosing) return
+            this.locationChoosing = true
+            const owner = uni.getStorageSync('token') || ''
+            const peer = this.otherUserId
+            const page = getCurrentPages().slice(-1)[0]
+            const isCurrent = () => getCurrentPages().slice(-1)[0] === page && owner === (uni.getStorageSync('token') || '') && peer === this.otherUserId
+            chooseMiniLocation({ isCurrent }).then(res => {
+                const msg = this.createMessage('location', '', {
+                    locationName: res.name || '位置分享', locationAddress: res.address || '',
+                    latitude: res.latitude, longitude: res.longitude
+                })
+                this.addMessage(msg)
+                this.sendLocationMessage(msg)
+            }).catch(error => {
+                if (!isCurrent() || isLocationCancelled(error)) return
+                showAppModal(this, {
+                    title: '暂时无法选择位置',
+                    content: `${locationErrorMessage(error)}。也可在地图中手动选点。`,
+                    confirmText: '打开地图', showCancel: true,
+                    success: result => {
+                        if (result.confirm && isCurrent()) {
+                            const page = this.theme === 'dark' ? '/pages-dark/map/map?mode=select' : '/pages/map/map?mode=select'
+                            uni.navigateTo({ url: page })
                         }
-                    })
-                }
-            })
+                    }
+                })
+            }).finally(() => { this.locationChoosing = false })
             this.showMorePanel = false
             // #endif
         },
@@ -2841,9 +2926,8 @@ export default {
         },
 
         scrollToBottom() {
-            if (this.messages.length > 0) {
-                this.scrollToMessage = 'msg-' + this.messages[this.messages.length - 1].id
-            }
+            const last = this.timelineMessages[this.timelineMessages.length - 1]
+            if (last) this.scrollToMessage = 'msg-' + last.id
         },
 
         // 图片加载成功
@@ -2867,8 +2951,8 @@ export default {
         shouldShowTime(index) {
             if (index === 0) return true
 
-            const current = this.visibleMessages[index]
-            const prev = this.visibleMessages[index - 1]
+            const current = this.timelineMessages[index]
+            const prev = this.timelineMessages[index - 1]
 
             return current.timestamp - prev.timestamp > 300000 // 5分钟
         },

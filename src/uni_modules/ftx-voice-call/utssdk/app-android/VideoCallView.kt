@@ -26,7 +26,9 @@ import org.json.JSONObject
 import org.webrtc.EglBase
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
+import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Dedicated native Activity owns both renderers and system picture-in-picture.
 // All methods are called on the Android main thread.
@@ -36,18 +38,31 @@ internal class VideoCallView(
     private val onControl: (JSONObject) -> Unit, private val onHangup: () -> Unit
 ) {
     private val main = Handler(Looper.getMainLooper())
-    private val pipHidden = mutableListOf<View>()
-    private var local: SurfaceViewRenderer? = null
-    private var remote: SurfaceViewRenderer? = null
+    private val chrome = mutableListOf<View>()
+    private var stage: FrameLayout? = null
+    private var mainFrameWidth = 0
+    private var mainFrameHeight = 0
+    private var previewFrameWidth = 0
+    private var previewFrameHeight = 0
+    private var mainRenderer: SurfaceViewRenderer? = null
+    private var previewRenderer: SurfaceViewRenderer? = null
     private var remoteTrack: VideoTrack? = null
-    private var remotePlaceholder: TextView? = null
-    private var localPlaceholder: TextView? = null
+    private var remoteSink: VideoSink? = null
+    private var localSink: SurfaceViewRenderer? = null
+    private var mainPlaceholder: TextView? = null
+    private var previewPlaceholder: TextView? = null
+    private var preview: FrameLayout? = null
+    private var mainTapTarget: View? = null
+    private var heading: LinearLayout? = null
+    private var audioInfo: LinearLayout? = null
+    private var audioStatus: TextView? = null
     private var status: TextView? = null
     private var muteButton: CallAction? = null
     private var speakerButton: CallAction? = null
     private var cameraButton: CallAction? = null
     private var switchButton: CallAction? = null
     private var recordButton: TextView? = null
+    private var recordingBadge: TextView? = null
     private var recording = false
     private var recordingSince = 0L
     private var recordingSupported = false
@@ -58,7 +73,13 @@ internal class VideoCallView(
     private var speaker = true
     private var cameraEnabled = true
     private var remoteCameraEnabled = true
+    private var frontCamera = true
     private var firstRemoteFrame = false
+    private var selfIsMain = false
+    private var controlsHidden = false
+    private var inPip = false
+    private val showSelfInMain get() = cameraEnabled && (!remoteCameraEnabled || (selfIsMain && !inPip))
+    private val hasVideo get() = cameraEnabled || remoteCameraEnabled
     private var connectedAt = 0L
     private val ticker = object : Runnable {
         override fun run() {
@@ -70,7 +91,9 @@ internal class VideoCallView(
             if (recording) {
                 val seconds = ((System.currentTimeMillis() - recordingSince) / 1000).coerceAtLeast(0)
                 recordButton?.text = "停止录音 · %02d:%02d".format(seconds / 60, seconds % 60)
+                recordingBadge?.text = "● 录音中 · %02d:%02d".format(seconds / 60, seconds % 60)
             }
+            audioStatus?.text = status?.text
             main.postDelayed(this, 1000)
         }
     }
@@ -81,55 +104,107 @@ internal class VideoCallView(
     private fun background(color: Int, radius: Int = 24) = GradientDrawable().apply {
         setColor(color); cornerRadius = dp(radius).toFloat()
     }
+    private fun rendererEvents(small: Boolean) = object : RendererCommon.RendererEvents {
+        override fun onFirstFrameRendered() {}
+        override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) {
+            val rotatedWidth = if (rotation % 180 == 0) width else height
+            val rotatedHeight = if (rotation % 180 == 0) height else width
+            main.post {
+                if (!released) {
+                    if (small) { previewFrameWidth = rotatedWidth; previewFrameHeight = rotatedHeight }
+                    else { mainFrameWidth = rotatedWidth; mainFrameHeight = rotatedHeight }
+                    layoutVideo()
+                }
+            }
+        }
+    }
+    private fun layoutVideo() {
+        val root = stage ?: return
+        if (root.width <= 0 || root.height <= 0) return
+        fun fit(view: View?, width: Int, height: Int, maxWidth: Int, maxHeight: Int, gravity: Int) {
+            if (view == null || width <= 0 || height <= 0) return
+            val scale = minOf(maxWidth.toDouble() / width, maxHeight.toDouble() / height)
+            val targetWidth = (width * scale).toInt().coerceAtLeast(1)
+            val targetHeight = (height * scale).toInt().coerceAtLeast(1)
+            val params = view.layoutParams as FrameLayout.LayoutParams
+            if (params.width == targetWidth && params.height == targetHeight && params.gravity == gravity) return
+            params.width = targetWidth; params.height = targetHeight; params.gravity = gravity
+            view.layoutParams = params
+        }
+        // SurfaceViewRenderer's scaling flag only affects measurement. MATCH_PARENT
+        // still forces a portrait EGL viewport, which crops a landscape frame.
+        fit(mainRenderer, mainFrameWidth, mainFrameHeight, root.width, root.height, Gravity.CENTER)
+        fit(preview, previewFrameWidth, previewFrameHeight,
+            minOf(dp(144), (root.width * 0.32).toInt()).coerceAtLeast(1),
+            minOf(dp(160), (root.height * 0.3).toInt()).coerceAtLeast(1), Gravity.TOP or Gravity.END)
+    }
     fun show() {
         check(!activity.isFinishing && !activity.isDestroyed)
         val root = FrameLayout(activity).apply { setBackgroundColor(Color.rgb(16, 25, 22)) }
-        val renderer = SurfaceViewRenderer(activity)
-        remote = renderer
-        renderer.init(egl, object : RendererCommon.RendererEvents {
-            override fun onFirstFrameRendered() { main.post { if (!released) { firstRemoteFrame = true; refresh() } } }
-            override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) {}
-        })
-        renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
-        root.addView(renderer, FrameLayout.LayoutParams(-1, -1))
-        remotePlaceholder = text("正在等待对方画面", 16f)
-        root.addView(remotePlaceholder, FrameLayout.LayoutParams(-1, -1))
+        stage = root
+        root.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) layoutVideo()
+        }
+        mainRenderer = SurfaceViewRenderer(activity).apply {
+            init(egl, rendererEvents(false))
+            setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+            root.addView(this, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        }
+        mainPlaceholder = text("正在等待对方画面", 16f).also { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
+        mainTapTarget = View(activity).apply {
+            isFocusable = true
+            setOnClickListener { controlsHidden = !controlsHidden; refreshChrome() }
+            root.addView(this, FrameLayout.LayoutParams(-1, -1))
+        }
+        audioInfo = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            setPadding(dp(24), 0, dp(24), 0)
+            addView(text(peerName, 26f))
+            addView(text("语音通话中", 15f), LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
+            audioStatus = text("正在连接…", 15f).also {
+                addView(it, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+            }
+            root.addView(this, FrameLayout.LayoutParams(-1, -1))
+        }
 
         val heading = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        heading.addView(text(peerName, 20f))
-        status = text("正在连接…")
+        this.heading = heading
+        heading.addView(text(peerName, 20f).apply { setShadowLayer(5f, 0f, 1f, Color.BLACK) })
+        status = text("正在连接…").apply { setShadowLayer(5f, 0f, 1f, Color.BLACK) }
         heading.addView(status)
         root.addView(heading, FrameLayout.LayoutParams(-1, dp(74), Gravity.TOP).apply { topMargin = dp(18) })
-        pipHidden.add(heading)
+        chrome.add(heading)
 
-        val preview = FrameLayout(activity).apply { setBackgroundColor(Color.rgb(35, 54, 45)) }
-        val self = SurfaceViewRenderer(activity)
-        local = self
-        self.init(egl, null); self.setZOrderMediaOverlay(true); self.setMirror(true)
-        self.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
-        preview.addView(self, FrameLayout.LayoutParams(-1, -1))
-        localPlaceholder = text("摄像头已关闭", 12f)
-        preview.addView(localPlaceholder, FrameLayout.LayoutParams(-1, -1))
-        root.addView(preview, FrameLayout.LayoutParams(dp(104), dp(145), Gravity.TOP or Gravity.END).apply {
-            topMargin = dp(104); rightMargin = dp(16)
-        })
-        localTrack.addSink(self)
-        pipHidden.add(preview)
+        preview = FrameLayout(activity).apply {
+            setBackgroundColor(Color.rgb(35, 54, 45))
+            isFocusable = true
+            setOnClickListener { selfIsMain = !selfIsMain; bindVideo(); refresh() }
+            previewRenderer = SurfaceViewRenderer(activity).also { renderer ->
+                renderer.init(egl, rendererEvents(true))
+                renderer.setZOrderMediaOverlay(true)
+                renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+                addView(renderer, FrameLayout.LayoutParams(-1, -1))
+            }
+            previewPlaceholder = text("摄像头已关闭", 12f).also { addView(it, FrameLayout.LayoutParams(-1, -1)) }
+            root.addView(this, FrameLayout.LayoutParams(dp(96), dp(128), Gravity.TOP or Gravity.END).apply {
+                topMargin = dp(72); rightMargin = dp(12)
+            })
+        }
 
         val controls = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-            setPadding(dp(16), dp(20), dp(16), dp(24)); setBackgroundColor(Color.argb(225, 23, 35, 31))
+            setPadding(dp(10), 0, dp(10), dp(12))
         }
         val tools = LinearLayout(activity).apply { gravity = Gravity.CENTER }
         recordButton = text("开始录音", 13f).apply {
             visibility = View.GONE
-            background = background(Color.rgb(43, 66, 54), 14)
+            background = background(Color.argb(184, 29, 45, 37), 14)
             setOnClickListener { onControl(JSONObject().put("recordingEnabled", !recording)) }
         }
         controls.addView(recordButton, LinearLayout.LayoutParams(dp(154), dp(36)).apply { bottomMargin = dp(8) })
-        controls.addView(tools, LinearLayout.LayoutParams(-1, dp(88)))
-        fun button(kind: String, label: String, action: () -> Unit): CallAction {
-            val view = CallAction(activity, kind, label, false, action)
+        controls.addView(tools, LinearLayout.LayoutParams(-1, dp(70)))
+        fun button(kind: String, label: String, danger: Boolean = false, action: () -> Unit): CallAction {
+            val view = CallAction(activity, kind, label, danger, action)
             tools.addView(view, LinearLayout.LayoutParams(0, -1, 1f))
             return view
         }
@@ -137,31 +212,75 @@ internal class VideoCallView(
         speakerButton = button("speaker", "免提") { onControl(JSONObject().put("speaker", !speaker)) }
         cameraButton = button("camera", "关闭摄像头") { onControl(JSONObject().put("cameraEnabled", !cameraEnabled)) }
         switchButton = button("switch", "切换镜头") { onControl(JSONObject().put("switchCamera", true)) }
-        val hangup = CallAction(activity, "hangup", "挂断", true) { if (!released) onHangup() }
-        controls.addView(hangup, LinearLayout.LayoutParams(dp(96), dp(88)).apply { topMargin = dp(18); gravity = Gravity.CENTER_HORIZONTAL })
+        button("hangup", "挂断", danger = true) { if (!released) onHangup() }
         root.addView(controls, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
-        pipHidden.add(controls)
+        chrome.add(controls)
         val minimize = text("最小化", 13f).apply {
             setOnClickListener { (activity as? VideoCallActivity)?.minimize() }; contentDescription = "最小化通话"
-            background = background(Color.rgb(43, 66, 54), 14)
+            background = background(Color.argb(184, 29, 45, 37), 14)
         }
         root.addView(minimize, FrameLayout.LayoutParams(dp(76), dp(38), Gravity.TOP or Gravity.END).apply { topMargin = dp(24); rightMargin = dp(12) })
-        pipHidden.add(minimize)
+        chrome.add(minimize)
+        recordingBadge = text("● 录音中", 12f).apply {
+            background = background(Color.argb(170, 23, 35, 31), 9)
+            setTextColor(Color.rgb(255, 204, 204))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            root.addView(this, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = dp(16); leftMargin = dp(12) })
+        }
         activity.setContentView(root)
         activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        refresh(); main.post(ticker)
+        bindVideo(); refresh(); main.post(ticker)
     }
-    fun setPip(value: Boolean) { for (view in pipHidden) view.visibility = if (value) View.GONE else View.VISIBLE }
+    fun setPip(value: Boolean) {
+        if (inPip == value) return
+        val wasSelf = showSelfInMain
+        inPip = value
+        if (wasSelf != showSelfInMain) bindVideo()
+        layoutVideo(); refresh()
+    }
     fun setRemoteTrack(track: VideoTrack?) {
         if (released || track === remoteTrack) return
-        remote?.let { renderer ->
-            remoteTrack?.removeSink(renderer); remoteTrack = track; track?.addSink(renderer)
+        remoteSink?.let { remoteTrack?.removeSink(it) }
+        remoteSink = null
+        remoteTrack = track
+        bindVideo()
+        refresh()
+    }
+    private fun bindVideo() {
+        val large = mainRenderer ?: return
+        val small = previewRenderer ?: return
+        // Keep the surfaces in their original Z-order and route frames to the new slots.
+        localSink?.let { localTrack.removeSink(it) }
+        remoteSink?.let { remoteTrack?.removeSink(it) }
+        firstRemoteFrame = false
+        large.clearImage()
+        small.clearImage()
+        val self = if (showSelfInMain) large else small
+        val other = if (showSelfInMain) small else large
+        self.setMirror(frontCamera)
+        other.setMirror(false)
+        localSink = self
+        localTrack.addSink(self)
+        remoteSink = remoteTrack?.let { track ->
+            val firstFrame = AtomicBoolean(true)
+            val sink = object : VideoSink {
+                override fun onFrame(frame: org.webrtc.VideoFrame) {
+                    other.onFrame(frame)
+                    if (firstFrame.getAndSet(false)) main.post {
+                        if (!released && remoteSink === this) { firstRemoteFrame = true; refresh() }
+                    }
+                }
+            }
+            track.addSink(sink)
+            sink
         }
     }
     fun update(muted: Boolean, speaker: Boolean, camera: Boolean, remoteCamera: Boolean, front: Boolean, connected: Boolean = false,
                canSwitch: Boolean = false, recordingState: JSONObject? = null) {
         if (released) return
+        val wasSelf = showSelfInMain
         this.canSwitchCamera = canSwitch; this.muted = muted; this.speaker = speaker; cameraEnabled = camera; remoteCameraEnabled = remoteCamera
+        if (wasSelf != showSelfInMain) bindVideo()
         if (connected && connectedAt == 0L) connectedAt = SystemClock.elapsedRealtime()
         recordingSupported = recordingState?.optBoolean("recordingSupported") == true
         recording = recordingState?.optBoolean("recording") == true
@@ -169,18 +288,26 @@ internal class VideoCallView(
         val error = recordingState?.optString("recordingError").orEmpty()
         if (error.isNotEmpty() && error != lastRecordingError) android.widget.Toast.makeText(activity, error, android.widget.Toast.LENGTH_SHORT).show()
         lastRecordingError = error
-        local?.setMirror(front); refresh()
+        frontCamera = front
+        localSink?.setMirror(front)
+        if (!cameraEnabled && !remoteCameraEnabled) controlsHidden = false
+        refresh()
     }
     private fun refresh() {
-        local?.visibility = if (cameraEnabled) View.VISIBLE else View.INVISIBLE
-        localPlaceholder?.visibility = if (cameraEnabled) View.GONE else View.VISIBLE
-        remote?.visibility = if (remoteCameraEnabled) View.VISIBLE else View.INVISIBLE
-        remotePlaceholder?.visibility = if (remoteCameraEnabled && firstRemoteFrame) View.GONE else View.VISIBLE
-        remotePlaceholder?.text = if (remoteCameraEnabled) "正在等待对方画面" else "对方已关闭摄像头"
-        if (!cameraEnabled && !remoteCameraEnabled) {
-            remotePlaceholder?.text = peerName.take(1) + "\n语音通话中"
-            remotePlaceholder?.textSize = 28f
-        } else remotePlaceholder?.textSize = 16f
+        val selfLarge = showSelfInMain
+        val remoteMessage = if (remoteCameraEnabled) "正在等待对方画面" else "对方已关闭摄像头"
+        val mainEnabled = if (selfLarge) cameraEnabled else remoteCameraEnabled
+        val previewEnabled = if (selfLarge) remoteCameraEnabled else cameraEnabled
+        mainRenderer?.visibility = if (mainEnabled) View.VISIBLE else View.INVISIBLE
+        previewRenderer?.visibility = if (previewEnabled) View.VISIBLE else View.INVISIBLE
+        mainPlaceholder?.apply {
+            text = if (selfLarge) "摄像头已关闭" else remoteMessage
+            visibility = if (!hasVideo || (mainEnabled && (selfLarge || firstRemoteFrame))) View.GONE else View.VISIBLE
+        }
+        previewPlaceholder?.apply {
+            text = if (selfLarge) remoteMessage else "摄像头已关闭"
+            visibility = if (previewEnabled && (!selfLarge || firstRemoteFrame)) View.GONE else View.VISIBLE
+        }
         muteButton?.update(if (muted) "麦克风已关闭" else "静音", muted, muted)
         speakerButton?.update(if (speaker) "免提已开启" else "免提", speaker)
         cameraButton?.update(if (cameraEnabled) "关闭摄像头" else "开启摄像头", cameraEnabled, !cameraEnabled)
@@ -189,16 +316,28 @@ internal class VideoCallView(
         switchButton?.alpha = if (cameraEnabled) 1f else 0.4f
         recordButton?.visibility = if (recordingSupported && connectedAt != 0L) View.VISIBLE else View.GONE
         if (!recording) recordButton?.text = "开始录音"
+        refreshChrome()
+    }
+    private fun refreshChrome() {
+        for (view in chrome) view.visibility = if (inPip || controlsHidden) View.GONE else View.VISIBLE
+        heading?.visibility = if (inPip || controlsHidden || !hasVideo) View.GONE else View.VISIBLE
+        audioInfo?.visibility = if (hasVideo) View.GONE else View.VISIBLE
+        preview?.visibility = if (!inPip && cameraEnabled && remoteCameraEnabled) View.VISIBLE else View.GONE
+        preview?.contentDescription = if (showSelfInMain) "将对方画面放大" else "将自己画面放大"
+        mainTapTarget?.visibility = if (inPip || !hasVideo) View.GONE else View.VISIBLE
+        mainTapTarget?.contentDescription = if (controlsHidden) "显示通话控件" else "隐藏通话控件"
+        recordingBadge?.visibility = if (!inPip && controlsHidden && recording) View.VISIBLE else View.GONE
     }
     fun release() {
         if (released) return
         released = true; main.removeCallbacks(ticker)
-        try { local?.let { localTrack.removeSink(it) } } catch (_: Exception) {}
-        try { remote?.let { remoteTrack?.removeSink(it) } } catch (_: Exception) {}
-        try { local?.release() } catch (_: Exception) {}
-        try { remote?.release() } catch (_: Exception) {}
-        remoteTrack = null; local = null; remote = null
-        pipHidden.clear()
+        try { localSink?.let { localTrack.removeSink(it) } } catch (_: Exception) {}
+        try { remoteSink?.let { remoteTrack?.removeSink(it) } } catch (_: Exception) {}
+        try { mainRenderer?.release() } catch (_: Exception) {}
+        try { previewRenderer?.release() } catch (_: Exception) {}
+        remoteTrack = null; localSink = null; remoteSink = null; mainRenderer = null; previewRenderer = null
+        stage = null
+        chrome.clear()
     }
 }
 
@@ -211,18 +350,19 @@ private class CallAction(activity: Activity, kind: String, label: String, danger
     private val caption = TextView(activity)
     init {
         orientation = VERTICAL; gravity = Gravity.CENTER
-        icon.setImageDrawable(glyph); icon.setPadding(dp(15), dp(15), dp(15), dp(15))
-        icon.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (danger) Color.rgb(200, 79, 75) else Color.rgb(44, 61, 52)) }
-        addView(icon, LayoutParams(dp(60), dp(60)))
+        icon.setImageDrawable(glyph); icon.setPadding(dp(11), dp(11), dp(11), dp(11))
+        icon.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (danger) Color.rgb(200, 79, 75) else Color.argb(164, 25, 40, 33)) }
+        addView(icon, LayoutParams(dp(46), dp(46)))
         caption.textSize = 12f; caption.setTextColor(Color.rgb(229, 238, 232)); caption.gravity = Gravity.CENTER
-        addView(caption, LayoutParams(-1, dp(26)))
+        caption.setShadowLayer(4f, 0f, 1f, Color.BLACK)
+        addView(caption, LayoutParams(-1, dp(24)))
         caption.text = label; contentDescription = label
         setOnClickListener { if (isEnabled) action() }
         isFocusable = true
     }
     fun update(label: String, selected: Boolean, off: Boolean = false) {
         caption.text = label; contentDescription = label
-        icon.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (selected) Color.rgb(52, 92, 69) else Color.rgb(44, 61, 52)) }
+        icon.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (selected) Color.argb(220, 46, 98, 71) else Color.argb(164, 25, 40, 33)) }
         glyph.off = off; glyph.invalidateSelf()
     }
 }

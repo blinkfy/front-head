@@ -73,7 +73,7 @@ export async function readWebRecording(owner, id) {
     let result
     request.onsuccess = () => {
       const row = request.result
-      if (row?.owner !== owner || row.status !== 'saved') return
+      if (row?.owner !== owner || recordingInProgress(row) || !['saved', 'recording', 'interrupted'].includes(row.status)) return
       const chunks = tx.objectStore('chunks').getAll(chunkRange(id))
       chunks.onsuccess = () => { result = new Blob(chunks.result.map(chunk => chunk.blob), { type: row.mimeType }) }
     }

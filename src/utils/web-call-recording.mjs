@@ -49,7 +49,7 @@ export function createWebCallRecording({ local, remote, metadata, storage, chang
         let resolveDone
         run = { id, startedAt, encoder, context, destination, nodes, bytes: 0, count: 0, writes: Promise.resolve(),
           done: new Promise(resolve => { resolveDone = resolve }), resolveDone, stopping: false, failed: false,
-          pending: 0, timer: null, stoppedAt: 0, stopNotice: '' }
+          pending: 0, timer: null, stoppedAt: 0, stopNotice: '', committedBytes: 0, committedCount: 0, committedDuration: 0 }
         active = run
         encoder.ondataavailable = event => {
           if (!event.data?.size || run.failed) return
@@ -62,21 +62,19 @@ export function createWebCallRecording({ local, remote, metadata, storage, chang
           }
           run.bytes += event.data.size
           run.pending++
-          const index = run.count++
-          run.writes = run.writes.then(() => storage.append(id, index, event.data, metadata.owner)).catch(() => {
-            run.failed = true; report(false, { recordingError: '本地空间不足或保存失败，录音已停止' }); void stop()
+          const index = run.count++, chunkDuration = now() - startedAt
+          run.writes = run.writes.then(async () => {
+            if (run.writeFailed) return
+            await storage.append(id, index, event.data, metadata.owner)
+            run.committedBytes += event.data.size
+            run.committedCount++
+            run.committedDuration = chunkDuration
+          }).catch(() => {
+            run.failed = true; run.writeFailed = true; report(false, { recordingError: '本地空间不足或保存失败，录音已停止' }); void stop()
           }).finally(() => { run.pending-- })
         }
-        encoder.onerror = () => { run.failed = true; report(false, { recordingError: '录音失败，通话不受影响' }); void stop() }
-        encoder.onstop = async () => {
-          await run.writes
-          try {
-            if (run.count && !run.failed) await storage.finish(id, { size: run.bytes, durationMs: (run.stoppedAt || now()) - startedAt, status: 'saved' }, metadata.owner)
-            else await storage.remove(id, metadata.owner, true)
-            report(false, { saved: run.count > 0 && !run.failed, recordingError: run.failed ? '录音未能完整保存' : run.stopNotice })
-          } catch (_) { report(false, { recordingError: '录音保存失败，请检查本地存储空间' }) }
-          finally { cleanup(run); if (active === run) active = null; run.resolveDone() }
-        }
+        encoder.onerror = () => { run.failed = true; report(false, { recordingError: '录制中断，正在保存已有声音' }); void stop() }
+        encoder.onstop = () => finish(run)
         encoder.start(1000)
         run.timer = setTimeout(() => { run.stopNotice = '录音达到一小时上限，已保存'; void stop() }, maxDuration)
         report(true)
@@ -93,6 +91,19 @@ export function createWebCallRecording({ local, remote, metadata, storage, chang
       }
     })().finally(() => { starting = null })
     return starting
+  }
+  async function finish(run) {
+    if (run.finalizing) return run.done
+    run.finalizing = true
+    await run.writes
+    try {
+      if (run.committedCount) await storage.finish(run.id, { size: run.committedBytes,
+        durationMs: run.failed ? run.committedDuration : (run.stoppedAt || now()) - run.startedAt,
+        status: run.failed ? 'interrupted' : 'saved' }, metadata.owner)
+      else await storage.remove(run.id, metadata.owner, true)
+      report(false, { saved: run.committedCount > 0, recordingError: run.failed ? '录制中断，已保留部分声音' : run.stopNotice })
+    } catch (_) { report(false, { recordingError: '录音保存失败，请检查本地存储空间' }) }
+    finally { cleanup(run); if (active === run) active = null; run.resolveDone() }
   }
   function cleanup(run) {
     clearTimeout(run.timer)
@@ -112,9 +123,8 @@ export function createWebCallRecording({ local, remote, metadata, storage, chang
       try {
         if (run.encoder.state !== 'inactive') run.encoder.stop()
       } catch (_) {
-        cleanup(run); active = null
-        report(false, { recordingError: '录音未能完整保存' })
-        run.resolveDone()
+        run.failed = true
+        void finish(run)
       }
     }
     return run.done

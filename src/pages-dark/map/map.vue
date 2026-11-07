@@ -273,6 +273,7 @@
 </template>
 
 <script setup>
+import { getUserLocationOnce as getSharedUserLocationOnce } from '@/utils/location.js'
 import { ensureFeaturePermission } from '@/utils/feature-permission.js'
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { resolveTrashBinImage, previewTrashBinImage } from '../../utils/trash-bin-image'
@@ -1067,6 +1068,10 @@ onMounted(async () => {
   }
 })
 async function getUserLocationOnce(coordType = 'gcj02') {
+  // #ifdef MP-WEIXIN
+  return saveLastMapLocation(await getSharedUserLocationOnce(coordType))
+  // #endif
+
   // 返回对象 { latitude, longitude } 或 抛错
   return new Promise((resolve, reject) => {
     // 检测当前平台，APP端可能不支持gcj02，支付宝小程序不支持type参数

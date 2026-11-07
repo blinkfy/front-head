@@ -5,12 +5,17 @@
       <view class="heading"><text class="title">实时位置</text><text class="subtitle">与 {{ peer.name || '联系人' }}</text></view>
       <text v-if="state.phase === 'sharing'" class="live-tag">{{ state.paused ? '位置更新已暂停' : '共享中' }}</text>
     </view>
-    <view class="privacy-note"><view class="green-dot"></view><text>{{ appRealtime ? '共享期间可切换应用，可随时在通知栏停止' : webRealtime ? '可返回聊天继续共享；浏览器切后台可能暂停更新，关闭网页则退出' : '仅在本页共享我的位置，退出即停止' }}</text></view>
+    <view class="privacy-note"><view class="green-dot"></view><text>{{ appRealtime ? '共享期间可切换应用，可随时在通知栏停止' : webRealtime ? '可返回聊天继续共享；浏览器切后台可能暂停更新，关闭网页则退出' : miniRealtime ? '小程序内可继续共享；切到后台暂停定位，返回后尝试恢复' : '仅在本页共享我的位置，退出即停止' }}</text></view>
     <view class="map-stage">
       <!-- #ifdef APP-PLUS || H5 -->
       <AppTencentMap v-if="!localError && state.selfPoint && state.phase === 'sharing'" ref="map" class="live-map"
         :latitude="center.latitude" :longitude="center.longitude" :scale="16" :markers="markers" :user-location="selfDisplay"
         @error="mapError = true" @updated="mapError = false" />
+      <!-- #endif -->
+      <!-- #ifdef MP-WEIXIN -->
+      <map v-if="!localError && state.selfPoint && state.phase === 'sharing'" id="live-location-map" class="live-map"
+        :latitude="center.latitude" :longitude="center.longitude" :scale="16" :markers="miniMarkers" :include-points="includePoints"
+        @error="mapError = true" />
       <!-- #endif -->
       <view v-if="localError || !state.selfPoint || state.phase !== 'sharing'" class="map-empty">
         <ManifestIcon id="map_location" size="64px" />
@@ -31,7 +36,7 @@
       </view>
       <text v-if="!localError && distanceLabel" class="distance">{{ distanceLabel }}</text>
       <text v-if="state.phase === 'sharing' && state.paused" class="waiting-note">位置更新已暂停；可重新获取位置并恢复本次共享。</text>
-      <text v-else-if="state.phase === 'sharing'" class="waiting-note">移动时最快约 5 秒更新；静止时约 30 秒，以系统定位为准。</text>
+      <text v-else-if="state.phase === 'sharing'" class="waiting-note">{{ miniRealtime && !miniEnhanced ? '兼容定位约 15 秒采样；静止时约 30 秒发送，以系统定位为准。' : '移动时最快约 5 秒更新；静止时约 30 秒，以系统定位为准。' }}</text>
       <text v-if="state.phase === 'sharing' && !state.peerJoined" class="waiting-note">对方当前未共享位置，点击聊天顶部的入口可加入。双方都退出后结束本次共享。</text>
       <text v-if="state.phase === 'ended'" class="end-note">{{ statusCopy }}</text>
       <button v-if="!preparing && (state.reason === 'permission_denied' || localError.includes('权限'))" class="locate minimize-button" @click="recoverLocationPermission">检查定位权限</button>
@@ -55,6 +60,7 @@ import { androidRealtimeAvailable, androidBackgroundMask } from '@/utils/android
 import { liveLocationTracker, webLocationAvailable } from '@/utils/live-location-tracker.js'
 import { realtimePermissionPending } from '@/utils/realtime-permissions.js'
 import { openFeaturePermissionSettings } from '@/utils/feature-permission.js'
+import { miniLocationAvailable, readMiniLocationEnhanced } from '@/utils/mini-location.js'
 import { realtimeRouteName } from '@/utils/realtime-route.mjs'
 
 export default {
@@ -64,10 +70,10 @@ export default {
     // #endif
   },
   data() { return { state: liveLocationState, peer: { id: '', name: '' }, center: { latitude: 39.908, longitude: 116.397 },
-    initializedCenter: false, darkTheme: ThemeManager.getTheme() === 'dark', mapError: false, now: Date.now(), timer: null, localError: '', ownedId: '', appRealtime: androidRealtimeAvailable(), webRealtime: webLocationAvailable(), minimized: false,
+    initializedCenter: false, darkTheme: ThemeManager.getTheme() === 'dark', mapError: false, now: Date.now(), timer: null, localError: '', ownedId: '', appRealtime: androidRealtimeAvailable(), webRealtime: webLocationAvailable(), miniRealtime: miniLocationAvailable(), miniEnhanced: readMiniLocationEnhanced(), minimized: false,
     preparing: true, prepared: false, entryClosed: false, pageVisible: true, entryOwner: '', requestedSession: '', readyTimer: null } },
   computed: {
-    canMinimize() { return this.appRealtime || this.webRealtime },
+    canMinimize() { return this.appRealtime || this.webRealtime || this.miniRealtime },
     selfDisplay() { return this.state.selfPoint ? wgs84ToGcj02(this.state.selfPoint.latitude, this.state.selfPoint.longitude) : {} },
     markers() {
       if (!this.state.peerPoint || this.state.phase !== 'sharing') return []
@@ -75,6 +81,12 @@ export default {
       return [{ id: 2, ...point, title: this.peer.name || '对方', iconPath: '/static/location-person.png', width: 36, height: 44,
         anchor: { x: 0.5, y: 1 }, callout: { content: this.peer.name || '对方', display: 'ALWAYS', color: '#fff', bgColor: '#168362', padding: 7, borderRadius: 8 } }]
     },
+    miniMarkers() {
+      if (!this.state.selfPoint) return this.markers
+      return [{ id: 1, ...this.selfDisplay, iconPath: '/static/location-person.png', width: 30, height: 37,
+        callout: { content: '我', display: 'ALWAYS', color: '#fff', bgColor: '#317ad8', padding: 7, borderRadius: 8 } }, ...this.markers]
+    },
+    includePoints() { return this.state.selfPoint ? [this.selfDisplay, ...this.markers.map(({ latitude, longitude }) => ({ latitude, longitude }))] : [] },
     statusTitle() { return this.state.paused ? '位置更新已暂停' : this.localError ? '位置共享未进行' : this.preparing ? '请允许定位权限' : !this.ownedId ? '正在连接位置服务' : this.state.phase === 'ended' ? '位置共享未进行' : this.state.locating ? '正在获取我的位置' : '正在进入位置共享' },
     statusCopy() { return this.state.paused ? (this.state.locating ? '正在恢复并获取新位置…' : '定位更新已暂停，返回后会尝试恢复，也可点击重新获取位置并共享。') : this.localError || (this.preparing ? '授权完成后开始共享，等待授权期间不会判定定位失败。' : !this.ownedId ? '正在等待聊天连接就绪…' : LOCATION_END_LABELS[this.state.reason]) || '正在定位，首次定位或室内信号较弱时可能需要稍等。' },
     distanceLabel() {
@@ -102,8 +114,8 @@ export default {
     }
     catch (error) { this.preparing = false; this.localError = error.message || '暂时无法进入位置共享' }
   },
-  onShow() { this.pageVisible = true; this.now = Date.now(); if (!this.timer) this.timer = setInterval(() => { this.now = Date.now() }, 1000); this.tryEnter() },
-  onHide() { this.pageVisible = false; clearInterval(this.timer); this.timer = null; if (!this.webRealtime && !realtimePermissionPending() && !(this.appRealtime && (androidBackgroundMask() & 2))) this.stop() },
+  onShow() { this.miniEnhanced = readMiniLocationEnhanced(); this.pageVisible = true; this.now = Date.now(); if (!this.timer) this.timer = setInterval(() => { this.now = Date.now() }, 1000); this.tryEnter() },
+  onHide() { this.pageVisible = false; clearInterval(this.timer); this.timer = null; if (!this.webRealtime && !this.miniRealtime && !realtimePermissionPending() && !(this.appRealtime && (androidBackgroundMask() & 2))) this.stop() },
   onUnload() { this.entryClosed = true; clearTimeout(this.readyTimer); clearInterval(this.timer); this.timer = null; if (!(this.canMinimize && this.ownedId && this.state.phase === 'sharing')) this.stop() },
   onBackPress() { if (!this.minimized && this.canMinimize && this.state.phase === 'sharing') { this.minimize(); return true }; if (!this.minimized) this.stop(); return false },
   methods: {
@@ -165,6 +177,9 @@ export default {
     recenter() {
       this.center = { ...this.selfDisplay }
       this.$refs.map?.moveToLocation({ ...this.selfDisplay })
+      // #ifdef MP-WEIXIN
+      uni.createMapContext('live-location-map', this).moveToLocation({ ...this.selfDisplay })
+      // #endif
     },
     pointLabel(point, self) {
       if (this.localError) return '未进入位置共享'

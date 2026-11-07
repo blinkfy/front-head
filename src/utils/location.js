@@ -8,6 +8,7 @@ export async function getUserLocationOnce(coordType = null, { interactive = fals
   // 返回对象 { latitude, longitude } 或 抛错
   return new Promise((resolve, reject) => {
     const resolveCoordinates = (point, accuracy) => {
+      if (!isCurrent()) { reject(Object.assign(new Error('定位已取消'), { code: 'cancelled' })); return }
       const metres = typeof accuracy === 'number' || typeof accuracy === 'string' && accuracy.trim() !== '' ? Number(accuracy) : NaN
       resolve({ ...point, ...(includeAccuracy && Number.isFinite(metres) && metres >= 0 ? { accuracy: metres } : {}) })
     }

@@ -287,14 +287,14 @@ onMounted(() => {
         if (query.recordOwner && query.recordBridge) recordingBridge = { owner: query.recordOwner, bridge: query.recordBridge }
         if (query.view === 'recordings') title.value = '通话录音'
         else {
-          title.value = '网页通话'
+          title.value = '通话'
           delegatedCall = true
           setChatEventsDelegated(true)
         }
       }
       // #endif
       if (decodedUrl.includes('/web/#/pages-nonTheme/web-call?')) {
-        title.value = '网页通话'
+        title.value = '通话'
         // #ifdef MP-WEIXIN
         delegatedCall = true
         setChatEventsDelegated(true)

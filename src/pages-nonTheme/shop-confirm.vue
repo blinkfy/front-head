@@ -245,6 +245,10 @@ function applyAddress(address, parts = {}) {
 }
 function applyLocatedAddress(selection) {
   if (!locked.value) applyAddress(selection.address, selection.parts)
+  if (!locked.value && selection.source === 'address-book') {
+    if (selection.recipientName) form.recipientName = String(selection.recipientName)
+    if (selection.recipientPhone) form.recipientPhone = String(selection.recipientPhone)
+  }
 }
 
 async function submit() {

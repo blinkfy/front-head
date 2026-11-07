@@ -1,5 +1,5 @@
 <template>
-  <view class="call-page" :class="{ dark: darkTheme, 'video-mode': videoActive }">
+  <view class="call-page" :class="{ dark: darkTheme, 'video-mode': videoActive, 'video-controls-hidden': videoActive && videoControlsHidden }">
     <text class="page-title">{{ (['connecting', 'connected'].includes(state.phase) ? videoActive : isVideo) ? '视频通话' : '语音通话' }}</text>
     <view class="peer">
       <view v-if="!videoActive" class="avatar"><text>{{ peerInitial }}</text></view>
@@ -10,14 +10,21 @@
     </view>
     <!-- #ifdef H5 -->
     <view v-if="cameraSupported && ['connecting', 'connected'].includes(state.phase)" v-show="videoActive" class="video-stage">
-      <view id="call-video-remote" class="remote-video" v-show="state.remoteCameraEnabled"></view>
-      <text v-if="!state.remoteCameraEnabled" class="video-placeholder">对方已关闭摄像头</text>
-      <view class="local-preview">
-        <view id="call-video-local" class="local-video" v-show="state.cameraEnabled"></view>
-        <text v-if="!state.cameraEnabled" class="video-placeholder local-placeholder">摄像头已关闭</text>
-        <text v-else class="self-label">我</text>
+      <view class="video-pane" :class="{ 'video-preview': mainIsLocal }" v-show="state.remoteCameraEnabled" role="button" tabindex="0"
+        :aria-label="mainIsLocal ? '将对方画面放大' : videoControlsHidden ? '显示通话控件' : '隐藏通话控件'"
+        @click="tapVideo(false)" @keydown.enter.prevent="tapVideo(false)" @keydown.space.prevent="tapVideo(false)">
+        <view id="call-video-remote" class="video-feed" :class="{ 'camera-off': !state.remoteCameraEnabled }"></view>
+        <text v-if="!state.remoteCameraEnabled" class="video-placeholder">对方已关闭摄像头</text>
+      </view>
+      <view class="video-pane" :class="{ 'video-preview': !mainIsLocal }" v-show="state.cameraEnabled" role="button" tabindex="0"
+        :aria-label="!mainIsLocal ? '将自己画面放大' : videoControlsHidden ? '显示通话控件' : '隐藏通话控件'"
+        @click="tapVideo(true)" @keydown.enter.prevent="tapVideo(true)" @keydown.space.prevent="tapVideo(true)">
+        <view id="call-video-local" class="video-feed" :class="{ 'camera-off': !state.cameraEnabled }"></view>
+        <text v-if="!state.cameraEnabled" class="video-placeholder">摄像头已关闭</text>
+        <text v-else-if="!mainIsLocal" class="self-label">我</text>
       </view>
     </view>
+    <text v-if="videoActive && videoControlsHidden && state.recording" class="video-recording-badge">● 录音中 · {{ recordingTime }}</text>
     <!-- #endif -->
     <button v-if="state.playbackBlocked && ['connecting', 'connected'].includes(state.phase)" class="playback-button"
       @click="resumePlayback">{{ isVideo ? '点击播放声音和画面' : '点击播放通话声音' }}</button>
@@ -61,7 +68,7 @@ import { androidRealtimeAvailable, androidBackgroundMask } from '@/utils/android
 
 export default {
   components: { VoiceCallIcon },
-  data() { return { state: voiceCallState, ringtoneState: webCallRingtoneState, now: Date.now(), tick: null, darkTheme: ThemeManager.getTheme() === 'dark', routeAudio: canRouteVoiceAudio(), appRealtime: androidRealtimeAvailable(), webRealtime: webCallsAvailable(), canNotify: webCallNotificationsAvailable(), notificationsGranted: false, canPip: voiceCallMedia.canPictureInPicture(), minimized: false, incomingCallId: '', incomingOpenedAt: 0, incomingListener: null, minimizeListener: null } },
+  data() { return { state: voiceCallState, ringtoneState: webCallRingtoneState, now: Date.now(), tick: null, darkTheme: ThemeManager.getTheme() === 'dark', routeAudio: canRouteVoiceAudio(), appRealtime: androidRealtimeAvailable(), webRealtime: webCallsAvailable(), canNotify: webCallNotificationsAvailable(), notificationsGranted: false, canPip: voiceCallMedia.canPictureInPicture(), minimized: false, incomingCallId: '', incomingOpenedAt: 0, incomingListener: null, minimizeListener: null, selfIsMain: false, videoControlsHidden: false } },
   computed: {
     recordingTime() {
       const seconds = Math.max(0, Math.floor((this.now - this.state.recordingStartedAt) / 1000))
@@ -72,6 +79,7 @@ export default {
     isVideo() { return this.state.mode === 'video' },
     cameraSupported() { return this.state.cameraSupported || this.isVideo },
     videoActive() { return this.cameraSupported && (this.state.cameraEnabled || this.state.remoteCameraEnabled) && ['connecting', 'connected'].includes(this.state.phase) },
+    mainIsLocal() { return this.state.cameraEnabled && (!this.state.remoteCameraEnabled || this.selfIsMain) },
     peerInitial() { return (this.state.peer?.name || '聊').slice(0, 1) },
     statusText() {
       if (this.incomingCallId && this.state.callId !== this.incomingCallId && ['idle', 'ended'].includes(this.state.phase))
@@ -85,6 +93,9 @@ export default {
   },
   watch: {
     'state.phase'() { this.attachVideo() },
+    videoActive(active) {
+      if (!active) { this.selfIsMain = false; this.videoControlsHidden = false }
+    },
     'state.mediaError'(value) { if (value) uni.showToast({ title: value, icon: 'none' }) }
   },
   onLoad(options) {
@@ -105,6 +116,10 @@ export default {
   onUnload() { uni.$off('voice-call:minimize', this.minimizeListener); uni.$off('voice-call:notification-opened', this.incomingListener); clearInterval(this.tick); this.tick = null; unmountCallVideo(this.state.callId); if (!this.minimized) voiceCalls.end(this.state.phase === 'calling' ? 'cancelled' : this.state.phase === 'incoming' ? 'rejected' : 'hangup') },
   onBackPress() { if (this.minimized) return false; if (this.state.phase === 'connected' && this.canMinimize) { this.minimize(); return true }; if (['calling', 'incoming', 'connecting', 'connected'].includes(this.state.phase)) { this.end(this.state.phase === 'calling' ? 'cancelled' : this.state.phase === 'incoming' ? 'rejected' : 'hangup'); return true }; return false },
   methods: {
+    tapVideo(local) {
+      if (local === this.mainIsLocal) this.videoControlsHidden = !this.videoControlsHidden
+      else this.selfIsMain = local
+    },
     enableRingtone() { primeWebCallRingtone() },
     attachVideo() { this.$nextTick(() => { if (this.cameraSupported) mountCallVideo(this.state.callId) }) },
     async enableNotifications() {
@@ -171,10 +186,30 @@ button::after { border: 0; }
 .connected-controls .hangup-action { grid-column: 1 / -1; padding-top: 4px; }
 .connected-controls .danger { width: 68px; height: 68px; }
 .round[disabled] { opacity: 0.45; }
-.video-stage { position: relative; width: 100%; height: 40vh; min-height: 160px; max-height: 520px; flex: 1; border-radius: 20px; overflow: hidden; background: #101916; }
-.remote-video, .local-video { position: absolute; inset: 0; }
-.local-preview { position: absolute; right: 12px; top: 12px; width: 96px; height: 128px; border: 1px solid rgba(255,255,255,0.25); border-radius: 12px; overflow: hidden; background: #283b31; }
+/* #ifdef H5 */
+.call-page.video-mode { position: fixed; inset: 0; height: auto; min-height: 0; z-index: 10; padding: calc(env(safe-area-inset-top, 0px) + 16px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); background: #101916; color: #fff; }
+.video-mode .page-title, .video-mode .peer, .video-mode .route-hint { position: relative; color: #fff; text-shadow: 0 1px 4px #000, 0 1px 10px #000; pointer-events: none; }
+.video-mode .page-title, .video-mode .peer, .video-mode .route-hint, .video-mode .playback-button, .video-mode .record-button, .video-mode .connected-controls { z-index: 1; }
+.video-mode .peer { margin-bottom: auto; padding: 4px 0; }
+.video-mode .peer-name { max-width: min(55vw, 340px); font-size: 20px; }
+.video-mode .status { margin-top: 4px; }
+.video-mode .playback-button, .video-mode .record-button { position: relative; margin-top: 6px; }
+.video-mode .connected-controls { position: relative; display: flex; justify-content: center; gap: 8px; padding-top: 12px; margin-top: 0; max-width: 480px; pointer-events: none; }
+.video-mode .action { flex: 1 1 0; gap: 4px; text-shadow: 0 1px 4px #000, 0 1px 8px #000; }
+.video-mode .hangup-action { padding-top: 0; }
+.video-mode .round { width: 46px; height: 46px; pointer-events: auto; }
+.video-mode .neutral { background: rgba(16, 25, 22, .56); border-color: rgba(255,255,255,.24); color: #fff; }
+.video-mode .neutral.selected { background: rgba(25, 99, 69, .85); }
+.video-mode.video-controls-hidden > :not(.video-stage):not(.video-recording-badge) { display: none; }
+.video-stage, .video-pane, .video-feed { position: absolute; inset: 0; }
+.video-pane { overflow: hidden; background: #101916; cursor: pointer; }
+.video-pane:focus-visible { outline: 2px solid #95dfba; outline-offset: -3px; }
+.video-preview { inset: calc(env(safe-area-inset-top, 0px) + 12px) 12px auto auto; z-index: 2; width: min(clamp(78px, 22vw, 136px), calc(30dvh * var(--call-video-ratio, .75))); aspect-ratio: var(--call-video-ratio, .75); border: 1px solid rgba(255,255,255,.3); border-radius: 12px; background: #283b31; }
+.video-feed { pointer-events: none; }
+.video-feed.camera-off { visibility: hidden; }
 .video-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #e2ece5; font-size: 15px; }
-.local-placeholder { font-size: 12px; }
+.video-preview .video-placeholder { font-size: 12px; padding: 4px; text-align: center; }
 .self-label { position: absolute; left: 8px; bottom: 6px; color: white; font-size: 12px; text-shadow: 0 1px 3px #000; }
+.video-recording-badge { position: absolute; z-index: 1; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; padding: 5px 8px; border-radius: 8px; background: rgba(20, 26, 23, .62); color: #ffcccc; font-size: 12px; pointer-events: none; }
+/* #endif */
 </style>

@@ -75,7 +75,7 @@ class VideoCallActivity : Activity() {
         else window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         val id = intent.getStringExtra("callId") ?: ""
-        if (!VoiceCallBridge.attachVideo(this, id)) { released = true; finish(); return }
+        if (!VoiceCallBridge.attachVideo(this, id)) { cancelLaunching(); released = true; finish(); return }
         attachedCallId = id; current = WeakReference(this)
     }
     override fun onNewIntent(value: Intent) {
@@ -83,12 +83,19 @@ class VideoCallActivity : Activity() {
         val id = value.getStringExtra("callId") ?: return
         if (id != attachedCallId && !VoiceCallBridge.attachVideo(this, id)) return
         intent = value; attachedCallId = id; current = WeakReference(this); released = false
+        VoiceCallBridge.pipChanged(id, Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode)
     }
     override fun onResume() {
         super.onResume()
         resumed = true
         window.decorView.post { drainCameraAction() }
-        if (!released && attachedCallId.isNotEmpty()) { current = WeakReference(this); visible = true; RealtimeBridge.setForeground(true) }
+        if (!released && attachedCallId.isNotEmpty()) {
+            current = WeakReference(this)
+            val pip = Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode
+            visible = !pip
+            VoiceCallBridge.pipChanged(attachedCallId, pip)
+            if (!pip) RealtimeBridge.setForeground(true)
+        }
     }
     override fun onPause() {
         resumed = false
@@ -127,14 +134,16 @@ class VideoCallActivity : Activity() {
     @Deprecated("Deprecated in Android") override fun onBackPressed() { minimize() }
     override fun onPictureInPictureModeChanged(value: Boolean, config: Configuration) {
         super.onPictureInPictureModeChanged(value, config); enteringPip = false; VoiceCallBridge.pipChanged(attachedCallId, value)
+        if (current?.get() === this) visible = !value && resumed
     }
     // Stopping a surface during a PiP/fullscreen transition is not a hangup.
     // The explicit hangup action or a finishing Activity owns call cleanup.
     override fun onDestroy() {
+        val ownsCallSurface = current?.get() === this
         VoiceCallBridge.detachVideo(this, attachedCallId)
         cameraAction = null; cameraRequestPending = false
         if (current?.get() === this) { current = null; visible = false }
-        if (!released && isFinishing && !isChangingConfigurations) VoiceCallBridge.videoClosed(attachedCallId)
+        if (ownsCallSurface && !released && isFinishing && !isChangingConfigurations) VoiceCallBridge.videoClosed(attachedCallId)
         super.onDestroy()
     }
 }

@@ -3,7 +3,7 @@
     "appid" : "__UNI__0B093BC",
     "description" : "",
     "versionName" : "1.4.10",
-    "versionCode" : 123,
+    "versionCode" : 127,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -126,10 +126,16 @@
         "usingComponents" : true,
         "permission" : {
             "scope.userLocation" : {
-                "desc" : "用于显示您在地图上的位置"
+                "desc" : "用于显示附近设施、选择地址及由您主动开启的前台实时位置共享"
             }
         },
-        "requiredPrivateInfos" : [ "getLocation", "chooseLocation" ]
+        "requiredPrivateInfos" : [
+            "getLocation",
+            "chooseLocation",
+            "choosePoi",
+            "onLocationChange",
+            "startLocationUpdate"
+        ]
     },
     "mp-alipay" : {
         "usingComponents" : true,

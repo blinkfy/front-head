@@ -1,6 +1,7 @@
-// Dedicated watch handles; no global location update service or storage writes.
+// Dedicated watch handles; no location storage writes.
 import { androidRealtimeAvailable, watchAndroidRealtimeLocation } from './android-realtime.js'
 import { ensureFeaturePermission } from './feature-permission.js'
+import { miniLocationAvailable, watchMiniLocation } from './mini-location.js'
 export function webLocationAvailable() {
   // #ifdef H5
   return !!(globalThis.isSecureContext && navigator.geolocation?.watchPosition)
@@ -14,7 +15,7 @@ export const liveLocationTracker = {
     if (!await ensureFeaturePermission('location', options)) throw Object.assign(new Error('请允许定位权限后重试'), { code: 'permission_denied' })
   },
   managesTimeout() { return androidRealtimeAvailable() },
-  canResume() { return webLocationAvailable() },
+  canResume() { return webLocationAvailable() || miniLocationAvailable() },
   initialTimeout() { return webLocationAvailable() ? 45000 : 20000 },
   supported() {
     // #ifdef APP-PLUS
@@ -23,11 +24,17 @@ export const liveLocationTracker = {
     // #ifdef H5
     return !!(globalThis.isSecureContext && navigator.geolocation?.watchPosition)
     // #endif
-    // #ifndef APP-PLUS || H5
+    // #ifdef MP-WEIXIN
+    return miniLocationAvailable()
+    // #endif
+    // #ifndef APP-PLUS || H5 || MP-WEIXIN
     return false
     // #endif
   },
   watch(success, failure) {
+    // #ifdef MP-WEIXIN
+    return watchMiniLocation(success, failure)
+    // #endif
     let stopped = false, id, refreshTimer = null, refreshRevision = 0
     // #ifdef H5
     const scheduleRefresh = () => {

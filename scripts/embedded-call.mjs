@@ -77,3 +77,10 @@ export function embeddedCallPlugin() {
     }
   }
 }
+
+// Build the standalone entry without rebuilding the full H5 app.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const outdir = path.resolve(process.argv[2] || path.join(root, 'dist/build/h5/call'))
+  bundle(outdir).then(() => console.log('Standalone call page built: ' + outdir))
+    .catch(error => { console.error(error); process.exitCode = 1 })
+}

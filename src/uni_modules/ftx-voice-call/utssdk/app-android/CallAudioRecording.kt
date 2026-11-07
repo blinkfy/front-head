@@ -5,23 +5,26 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.media.MediaPlayer
+import android.media.AudioAttributes
 import android.content.ContentValues
 import android.os.Environment
 import android.provider.MediaStore
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.os.StatFs
 import org.json.JSONArray
 import org.json.JSONObject
 import org.webrtc.audio.JavaAudioDeviceModule
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 import kotlin.math.min
@@ -34,19 +37,27 @@ object CallRecordingFiles {
     private const val ROOT = "ftx-call-recordings"
     private val idPattern = Regex("^[a-f0-9]{32}$")
     private val ownerPattern = Regex("^[0-9]{1,32}$")
-    private val io = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "ftx-recording-files").apply { isDaemon = true } }
+    private val io by lazy { Handler(HandlerThread("ftx-recording-files").apply { start() }.looper) }
     private val main = Handler(Looper.getMainLooper())
+    private data class Playback(val owner: String, val id: String, val session: String, val player: MediaPlayer,
+                                var ended: Boolean = false, var failed: Boolean = false)
+    private var playback: Playback? = null
 
     @JvmStatic fun configure(optionsJSON: String) {
         val input = try { JSONObject(optionsJSON) } catch (_: Throwable) { JSONObject() }
         val owner = input.optString("owner").takeIf { ownerPattern.matches(it) } ?: ""
-        config = Config(owner, input.optBoolean("admin"), input.optBoolean("auto"))
+        val previous = config
+        val next = Config(owner, input.optBoolean("admin"), input.optBoolean("auto"))
+        config = next
+        if (previous.admin && (!next.admin || previous.owner != next.owner)) {
+            io.post { if (playback?.owner == previous.owner) releasePlayback() }
+        }
     }
 
-    @JvmStatic fun forSession(ctx: Context, peerName: String, mode: String, expectedOwner: String,
+    @JvmStatic fun forSession(ctx: Context, peerName: String, mode: String, expectedOwner: String, callId: String,
                               onState: (JSONObject) -> Unit): CallAudioRecording {
         val current = config.takeIf { it.owner == expectedOwner } ?: Config("", false, false)
-        return CallAudioRecording(ctx.applicationContext, peerName, mode, current, onState)
+        return CallAudioRecording(ctx.applicationContext, peerName, mode, callId, current, onState)
     }
 
     private fun ownerDir(ctx: Context, owner: String): File = File(File(ctx.noBackupFilesDir, ROOT), owner)
@@ -57,7 +68,75 @@ object CallRecordingFiles {
         if (!temp.renameTo(file)) { temp.delete(); throw IllegalStateException("录音目录保存失败") }
     }
 
-    @JvmStatic fun operation(ctx: Context, requestJSON: String): String {
+    private fun releasePlayback() {
+        val current = playback ?: return
+        playback = null
+        current.player.release()
+    }
+
+    private fun playbackState(current: Playback, result: JSONObject) {
+        if (current.failed) {
+            releasePlayback()
+            throw IllegalStateException("系统无法解码这段录音")
+        }
+        val player = current.player
+        val duration = player.duration.coerceAtLeast(0)
+        result.put("durationMs", duration).put("positionMs", if (current.ended) duration else player.currentPosition.coerceIn(0, duration))
+            .put("playing", !current.ended && player.isPlaying).put("ended", current.ended)
+    }
+
+    private fun startPlayback(owner: String, id: String, request: JSONObject, audio: File, result: JSONObject) {
+        val session = request.optString("session").takeIf { Regex("^[A-Za-z0-9_-]{12,80}$").matches(it) }
+            ?: throw IllegalArgumentException("播放器编号无效")
+        releasePlayback()
+        val player = MediaPlayer()
+        val current = Playback(owner, id, session, player)
+        try {
+            player.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            // The media service can read an opened descriptor for app-private files.
+            FileInputStream(audio).use { player.setDataSource(it.fd) }
+            player.prepare()
+            if (!permits(owner)) throw IllegalStateException("登录账号已变更")
+            player.setOnCompletionListener { current.ended = true }
+            player.setOnErrorListener { _, _, _ -> current.failed = true; true }
+            player.start()
+            playbackState(current, result)
+            playback = current
+        } catch (error: Exception) {
+            if (playback === current) playback = null
+            player.release()
+            throw IllegalStateException("录音无法播放，请检查文件是否完整", error)
+        }
+    }
+
+    private fun controlPlayback(owner: String, id: String, request: JSONObject, action: String, result: JSONObject) {
+        val current = playback?.takeIf { it.owner == owner && it.id == id && it.session == request.optString("session") }
+        if (action == "playback-stop") {
+            if (current != null) releasePlayback()
+            return
+        }
+        if (current == null) throw IllegalStateException("播放器已关闭")
+        if (current.failed) { playbackState(current, result); return }
+        var seekPosition: Int? = null
+        when (action) {
+            "playback-status" -> Unit
+            "playback-pause" -> if (current.player.isPlaying) current.player.pause()
+            "playback-resume" -> { current.ended = false; current.player.start() }
+            "playback-seek" -> {
+                val position = request.optInt("positionMs").coerceIn(0, current.player.duration.coerceAtLeast(0))
+                if (Build.VERSION.SDK_INT >= 26) current.player.seekTo(position.toLong(), MediaPlayer.SEEK_CLOSEST)
+                else current.player.seekTo(position)
+                current.ended = false
+                seekPosition = position
+            }
+            else -> throw IllegalArgumentException("操作无效")
+        }
+        playbackState(current, result)
+        seekPosition?.let { result.put("positionMs", it) }
+    }
+
+    private fun operation(ctx: Context, requestJSON: String): String {
         val cfg = config
         val result = JSONObject()
         try {
@@ -65,7 +144,8 @@ object CallRecordingFiles {
             val request = JSONObject(requestJSON)
             if (request.optString("owner") != cfg.owner) throw IllegalStateException("登录账号已变更")
             val dir = ownerDir(ctx.applicationContext, cfg.owner)
-            if (request.optString("action") == "list") {
+            val action = request.optString("action")
+            if (action == "list") {
                 val rows = JSONArray()
                 val files = if (dir.isDirectory) dir.listFiles().orEmpty() else emptyArray()
                 val staleBefore = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(2)
@@ -85,16 +165,22 @@ object CallRecordingFiles {
             } else {
                 val id = request.optString("id")
                 if (!idPattern.matches(id)) throw IllegalArgumentException("录音编号无效")
+                if (action.startsWith("playback-") && action != "playback-start") {
+                    controlPlayback(cfg.owner, id, request, action, result)
+                    return result.toString()
+                }
                 val metaFile = File(dir, "$id.json")
                 val audio = File(dir, "$id.m4a")
                 val meta = readMeta(metaFile) ?: throw IllegalArgumentException("录音不存在")
                 if (meta.optString("owner") != cfg.owner || !audio.isFile) throw IllegalArgumentException("录音不存在")
-                when (request.optString("action")) {
+                when (action) {
                     "delete" -> {
+                        if (playback?.let { it.owner == cfg.owner && it.id == id } == true) releasePlayback()
                         if (!audio.delete()) throw IllegalStateException("无法删除录音")
                         metaFile.delete()
                         result.put("ok", true)
                     }
+                    "playback-start" -> startPlayback(cfg.owner, id, request, audio, result)
                     "file" -> result.put("path", audio.absolutePath).put("mimeType", "audio/mp4").put("name", meta.optString("name", "通话录音.m4a"))
                     "rename" -> {
                         val name = request.optString("name").trim().take(80)
@@ -110,7 +196,7 @@ object CallRecordingFiles {
     }
 
     @JvmStatic fun perform(ctx: Context, requestJSON: String, callback: (String) -> Unit) {
-        io.execute {
+        io.post {
             val value = operation(ctx.applicationContext, requestJSON)
             main.post { try { callback(value) } catch (_: Exception) {} }
         }
@@ -162,6 +248,7 @@ class CallAudioRecording internal constructor(
     private val context: Context,
     private val peerName: String,
     private val mode: String,
+    private val callId: String,
     private val config: CallRecordingFiles.Config,
     private val onState: (JSONObject) -> Unit
 ) {
@@ -249,6 +336,18 @@ class CallAudioRecording internal constructor(
         var outputFile: File? = null
         var partial: File? = null
         var metaTemp: File? = null
+        var containerFinalized = false
+        var encodedDuration = 0L
+        fun persistRecording() {
+            val target = outputFile ?: throw IllegalStateException("录音文件不存在")
+            val source = partial ?: throw IllegalStateException("录音文件不存在")
+            if (!target.isFile && !source.renameTo(target)) throw IllegalStateException("录音文件保存失败")
+            CallRecordingFiles.saveMetadata(File(dir, "$id.json"), JSONObject().put("id", id).put("owner", owner)
+                .put("peerName", peerName.take(80)).put("mode", mode.take(16)).put("createdAt", startMillis).put("callId", callId)
+                .put("durationMs", encodedDuration).put("size", target.length()).put("mimeType", "audio/mp4")
+                .put("name", "${peerName.take(60)}的通话录音").put("status", "saved"))
+            saved = true
+        }
         try {
             if (!dir.exists() && !dir.mkdirs()) throw IllegalStateException("无法创建录音目录")
             val stats = StatFs(dir.absolutePath)
@@ -287,6 +386,7 @@ class CallAudioRecording internal constructor(
                             out.limit(info.offset + info.size)
                             writer.writeSampleData(trackIndex, out, info)
                             written = true
+                            encodedDuration = max(encodedDuration, info.presentationTimeUs / 1000L + FRAME_SAMPLES * 1000L / OUT_RATE)
                             if (partial.length() >= MAX_BYTES) throw IllegalStateException("录音超过文件大小上限")
                         }
                         receivedEos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
@@ -351,24 +451,23 @@ class CallAudioRecording internal constructor(
             }
             if (!receivedEos || !written) throw IllegalStateException("录音未能完整保存")
             writer.stop()
+            containerFinalized = true
             muxerStarted = false
             writer.release()
             muxer = null
             encoder.stop()
             encoder.release()
             codec = null
-            if (!partial.renameTo(outputFile)) throw IllegalStateException("录音文件保存失败")
-            val duration = cursor * 1000L / OUT_RATE
-            CallRecordingFiles.saveMetadata(File(dir, "$id.json"), JSONObject().put("id", id).put("owner", owner)
-                .put("peerName", peerName.take(80)).put("mode", mode.take(16)).put("createdAt", startMillis)
-                .put("durationMs", duration).put("size", outputFile.length()).put("mimeType", "audio/mp4")
-                .put("name", "${peerName.take(60)}的通话录音").put("status", "saved"))
-            saved = true
+            persistRecording()
         } catch (e: Throwable) {
             error = e.message ?: "录音保存失败"
         } finally {
             try { codec?.stop() } catch (_: Throwable) {}; try { codec?.release() } catch (_: Throwable) {}
-            try { if (muxerStarted) muxer?.stop() } catch (_: Throwable) {}; try { muxer?.release() } catch (_: Throwable) {}
+            try { if (muxerStarted) { muxer?.stop(); containerFinalized = true } } catch (_: Throwable) {}
+            try { muxer?.release() } catch (_: Throwable) {}
+            if (!saved && containerFinalized && encodedDuration > 0L) {
+                try { persistRecording(); error = "录制中断，已保存已有声音" } catch (_: Throwable) {}
+            }
             if (!saved) { partial?.delete(); metaTemp?.delete(); outputFile?.delete() }
             synchronized(lock) {
                 running.set(false)
