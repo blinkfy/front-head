@@ -1,3 +1,4 @@
+import { realtimeActivityCard } from './realtime-activity.mjs'
 import { webCallsAvailable, refreshWebCallAlert } from './web-call-support.js'
 import { baseUrl } from '@/api/settings.js'
 import { syncChatPush } from './chat-push.js'
@@ -10,8 +11,13 @@ import { createNotificationCatchup } from './notification-catchup.mjs'
 import { receiveChatFeedback, setChatFeedbackActive } from './chat-feedback.js'
 import { voiceCalls, installVoiceCallSender } from './voice-call.js'
 import { liveLocations, liveLocationState, installLiveLocationSender } from './live-location.js'
+import { realtimePermissionPending } from './realtime-permissions.js'
+import { webLocationAvailable } from './live-location-tracker.js'
 import { connectChatEventsSocket, androidBackgroundMask, androidVideoVisible, setAndroidRealtimeForeground, handleAndroidRealtimeReturn, syncAndroidMessagingPreference } from './android-realtime.js'
 
+let activityMessages = false
+let delegated = false
+let requestedActive = false
 let foreground = false
 let currentConversation = ''
 const seen = new Map()
@@ -61,7 +67,7 @@ export function notifyChatEvent(event) {
     try { if (message.type !== 'text' && typeof content === 'string') content = JSON.parse(content) } catch (_) {}
     triggerMessageNotification({
         senderName: event.title || event.sender?.nickname || event.sender?.username || '新消息',
-        content: typeof content === 'string' ? content : '', type: message.type,
+        content: realtimeActivityCard(message) ? (event.notificationBody || message.content) : typeof content === 'string' ? content : '', type: message.type,
         fileName: content?.fileName || content?.name,
         conversationId: event.conversationId, groupId: event.groupId, otherId: event.otherId
     }, { showNotification: !inConversation, vibrate: !inConversation, quiet: inConversation }).catch(() => {})
@@ -74,10 +80,14 @@ const transport = createChatEventsTransport({
         if (String(event.type || '').startsWith('location.')) {
             const known = liveLocationState.offers[String(event.from?.id)]?.sessionId === event.sessionId
             liveLocations.handle(event)
-            if (event.type === 'location.offer' && !known && foreground &&
+            if (event.type === 'location.offer' && (event.messageFallback === true || (!activityMessages && !known)) && foreground &&
                 liveLocationState.offers[String(event.from?.id)]?.sessionId === event.sessionId &&
                 String(event.from.id) !== currentConversation) {
                 const account = uni.getStorageSync('token') || ''
+                const key = `${account}:location-offer:${event.sessionId}`
+                if (seen.has(key)) return
+                seen.set(key, true)
+                if (seen.size > 500) seen.delete(seen.keys().next().value)
                 showNotification({ title: `${event.from.name || '联系人'}正在共享位置`, content: '点击进入，同时共享我的位置', icon: '',
                     onTap: () => {
                         if ((uni.getStorageSync('token') || '') !== account) return
@@ -108,8 +118,9 @@ const transport = createChatEventsTransport({
         messageBus.emit('chat.changed', event)
         notifyChatEvent(event)
     },
-    onDisconnected() { voiceCalls.connection(false); liveLocations.connection(false) },
+    onDisconnected() { activityMessages = false; voiceCalls.connection(false); liveLocations.connection(false) },
     onConnected(event) {
+        activityMessages = event.activityMessagesVersion === 1
         voiceCalls.connection(true, event.voiceCallVersion, event.videoCallVersion)
         liveLocations.connection(true, event.liveLocationVersion)
         void catchup.check()
@@ -122,34 +133,47 @@ installLiveLocationSender(event => transport.send(event))
 
 export function isChatEventsConnected() { return transport.isConnected() }
 
+export function setChatEventsDelegated(value) {
+    delegated = !!value
+    setChatEventsActive(requestedActive)
+}
+
 export function setChatEventsActive(active) {
-    foreground = !!active || androidVideoVisible()
+    requestedActive = !!active
+    active = requestedActive && !delegated
+    foreground = !!active || androidVideoVisible() || (!delegated && realtimePermissionPending())
     syncAndroidMessagingPreference()
     const background = foreground ? 0 : androidBackgroundMask()
+    setAndroidRealtimeForeground(foreground)
     voiceCalls.setActive(foreground || webCallsAvailable() || !!(background & 1))
-    liveLocations.setActive(foreground || !!(background & 2))
+    liveLocations.setActive(foreground || webLocationAvailable() || !!(background & 2))
     setChatFeedbackActive(foreground)
     catchup.setActive(foreground)
     initChatNotificationNavigation()
-    setAndroidRealtimeForeground(foreground)
-    transport.setActive(foreground || webCallsAvailable() || !!background)
+    transport.setActive(foreground || webCallsAvailable() || webLocationAvailable() || !!background)
     if (active) handleAndroidRealtimeReturn()
     if (!foreground) currentConversation = ''
 }
 
 uni.$on('chat:background-messages-changed', () => { syncAndroidMessagingPreference() })
+uni.$on('realtime:permission-changed', () => setChatEventsActive(requestedActive))
 
 // #ifdef H5
 if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
         setChatEventsActive(!document.hidden)
+        liveLocations.setVisible(!document.hidden)
         refreshWebCallAlert()
     })
-    window.addEventListener('pagehide', () => {
+    window.addEventListener('pagehide', event => {
         voiceCalls.setActive(false)
-        liveLocations.setActive(false)
+        if (event?.persisted) liveLocations.setVisible(false)
+        else liveLocations.setActive(false)
         transport.setActive(false)
     })
-    window.addEventListener('pageshow', () => setChatEventsActive(!document.hidden))
+    window.addEventListener('pageshow', () => {
+        setChatEventsActive(!document.hidden)
+        liveLocations.setVisible(!document.hidden)
+    })
 }
 // #endif

@@ -86,23 +86,25 @@ assert.equal(createBiometricLoginManager({ runtime: enabled.runtime, native: ena
 // Exercise the actual login-page controller with a tiny lifecycle adapter.
 const composable = readFileSync(new URL('../src/utils/use-biometric-login.js', import.meta.url), 'utf8')
   .replace(/^import .*\r?\n/gm, '').replace('export function ', 'function ')
-async function pageFixture({ state, token = '', autoLogin = true, probe, loginResult, loginError, probeWait, onLoginWait, platform = 'app', capabilityWait, support = { supported: true, enrolled: true, label: '指纹登录' } } = {}) {
-  let attempts = 0, navigations = 0, cancel = 0, disposed, hidden, shown
-  const context = { ref: value => ({ value }), nextTick: async () => {}, quickLoginPlatform: platform, onBeforeUnmount: fn => { disposed = fn },
+async function pageFixture({ state, token = '', autoLogin = true, probe, loginResult, loginError, probeWait, onLoginWait, platform = 'app', capabilityWait, systemAuthentication = false, pages = [{}], support = { supported: true, enrolled: true, label: '指纹登录' } } = {}) {
+  let attempts = 0, navigations = 0, cancel = 0, suspend = 0, resume = 0, disposed, hidden, shown
+  const context = { ref: value => ({ value }), nextTick: async () => {}, quickLoginPlatform: platform, getCurrentPages: () => pages, onBeforeUnmount: fn => { disposed = fn },
     onHide: fn => { hidden = fn }, onShow: fn => { shown = fn },
     biometricErrorMessage, biometricApi: async () => { await probeWait; if (probe instanceof Error || probe?.code) throw probe; return probe },
     biometricLogin: { state: () => state, capability: async () => { await capabilityWait; return support },
-      cancel: () => { cancel++ }, login: async () => { attempts++; if (loginError) throw loginError; return loginResult }, afterLogin: async () => {} },
+      suspendSystemAuthentication: () => { suspend++; return systemAuthentication }, resumeSystemAuthentication: () => { resume++ },
+      cancel: () => { cancel++ }, login: async () => { attempts++; await loginResult?.wait; if (loginError) throw loginError; return loginResult?.value || loginResult }, afterLogin: async () => {} },
     uni: { getStorageSync: key => key === 'token' ? token : autoLogin, removeStorageSync: () => { token = '' }, showToast() {} } }
   vm.runInNewContext(composable + '\nglobalThis.use = useBiometricLogin', context)
   const loading = { value: false }
   const controller = context.use({ loading, onLogin: async () => { navigations++; await onLoginWait } })
-  return { controller, loading, counts: () => ({ attempts, navigations, cancel }), dispose: () => disposed(), hide: () => hidden(), show: () => shown() }
+  return { controller, loading, counts: () => ({ attempts, navigations, cancel, suspend, resume }), dispose: () => disposed(), hide: () => hidden(), show: () => shown(),
+    replacePage: page => { pages = [page] } }
 }
 const bound = { enabled: true, credentialId: 'key' }
 const resumed = await pageFixture({ state: bound, token: 'session', probe: { data: { id: 1 } } })
 assert.equal(await resumed.controller.prefer(), true)
-assert.deepEqual(resumed.counts(), { attempts: 0, navigations: 1, cancel: 0 })
+assert.deepEqual(resumed.counts(), { attempts: 0, navigations: 1, cancel: 0, suspend: 0, resume: 0 })
 const unauthenticated = await pageFixture({ state: bound, loginResult: { token: 'new' } })
 await unauthenticated.controller.prefer(); await unauthenticated.controller.prefer()
 assert.equal(unauthenticated.counts().attempts, 1)
@@ -112,6 +114,8 @@ assert.equal(cancelled.loading.value, false)
 assert.equal(cancelled.counts().navigations, 0)
 cancelled.dispose()
 assert.equal(cancelled.counts().cancel, 1)
+assert.equal(cancelled.counts().suspend, 0)
+assert.equal(cancelled.counts().resume, 0)
 const expired = await pageFixture({ state: bound, token: 'old', probe: { code: 401 }, loginResult: { token: 'new' } })
 await expired.controller.prefer()
 assert.equal(expired.counts().attempts, 1)
@@ -136,6 +140,40 @@ const hiddenRequest = hidden.controller.prefer()
 hidden.hide(); hidden.show(); releaseProbe()
 await hiddenRequest
 assert.equal(hidden.counts().navigations, 0, 'a hidden page cannot complete a stale login even after it becomes visible again')
+assert.equal(hidden.counts().cancel, 1, 'ordinary page hide still deactivates and cancels login work')
+assert.equal(hidden.counts().suspend, 1)
+assert.equal(hidden.counts().resume, 1)
+let releaseSystemLogin
+const systemHidden = await pageFixture({ state: bound, systemAuthentication: true,
+  loginResult: { wait: new Promise(resolve => { releaseSystemLogin = resolve }), value: { token: 'native-token' } } })
+const systemLoginRequest = systemHidden.controller.login()
+await new Promise(resolve => setImmediate(resolve))
+systemHidden.hide(); systemHidden.show()
+assert.equal(systemHidden.counts().cancel, 0, 'a system-auth hide suspends instead of cancelling the login')
+assert.equal(systemHidden.counts().suspend, 1)
+assert.equal(systemHidden.counts().resume, 1)
+releaseSystemLogin(); await systemLoginRequest
+assert.equal(systemHidden.counts().navigations, 1, 'the system-auth login may finish after foreground resume')
+let releaseUnloadLogin
+const systemUnload = await pageFixture({ state: bound, systemAuthentication: true,
+  loginResult: { wait: new Promise(resolve => { releaseUnloadLogin = resolve }), value: { token: 'late-token' } } })
+const systemUnloadRequest = systemUnload.controller.login()
+await new Promise(resolve => setImmediate(resolve))
+systemUnload.dispose()
+assert.equal(systemUnload.counts().cancel, 1, 'unmount still forcibly cancels an active system prompt')
+releaseUnloadLogin(); await systemUnloadRequest
+assert.equal(systemUnload.counts().navigations, 0)
+const oldPage = {}, newPage = {}
+const replacedPage = await pageFixture({ state: bound, systemAuthentication: true, pages: [oldPage],
+  loginResult: { wait: new Promise(resolve => { releaseUnloadLogin = resolve }), value: { token: 'old-page-token' } } })
+replacedPage.show() // Capture the owning page before the login prompt starts.
+const replacedPageLogin = replacedPage.controller.login()
+await new Promise(resolve => setImmediate(resolve))
+replacedPage.replacePage(newPage)
+replacedPage.hide()
+assert.equal(replacedPage.counts().cancel, 1, 'an onHide caused by navigation to a different page cancels the old login')
+releaseUnloadLogin(); await replacedPageLogin
+assert.equal(replacedPage.counts().navigations, 0, 'a stale old-page result cannot navigate after page ownership changes')
 let releaseCapability
 const staleCapability = await pageFixture({ state: bound, platform: 'web', support: { supported: false, enrolled: false },
   capabilityWait: new Promise(resolve => { releaseCapability = resolve }) })
@@ -170,7 +208,8 @@ for (const platform of ['app', 'h5', 'mp-weixin']) {
   assert.equal(quickLogin.includes("from './passkey-client-core.mjs'"), platform === 'h5')
   assert.equal(quickLogin.includes("from './soter-client-core.mjs'"), platform === 'mp-weixin')
   for (const file of ['src/pages/index/index.vue', 'src/pages-dark/index/index.vue', 'src/pages/change-password/change-password.vue',
-    'src/pages-dark/change-password/change-password.vue', 'src/pages-nonTheme/account-security.vue', 'src/components/H5LoginShell.vue']) {
+    'src/pages-dark/change-password/change-password.vue', 'src/pages-nonTheme/account-security.vue', 'src/components/H5LoginShell.vue',
+    'src/components/WechatLoginEntry.vue']) {
     const source = readFileSync(new URL('../' + file, import.meta.url), 'utf8')
     const { descriptor, errors } = parse(preJs(preHtml(source)), { filename: file })
     assert.deepEqual(errors, [], `${platform} ${file} parse`)
@@ -182,4 +221,4 @@ for (const platform of ['app', 'h5', 'mp-weixin']) {
     }
   }
 }
-console.log('Biometric frontend: one-time offer, settings, fallback, stale/failed enrollment, server isolation, session resume, auto-priority, cancellation, 3-platform SFC compilation passed.')
+console.log('Biometric frontend: one-time offer, settings, fallback, stale/failed enrollment, server isolation, session resume, lifecycle suspend/cancel, auto-priority, cancellation, 3-platform SFC compilation passed.')

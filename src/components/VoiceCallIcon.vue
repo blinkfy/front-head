@@ -21,4 +21,11 @@ export default { props: { kind: { type: String, default: 'phone' }, off: Boolean
 .speaker .shape::after { content: ''; position: absolute; left: 4px; top: -5px; border-top: 10px solid transparent; border-bottom: 10px solid transparent; border-right: 9px solid currentColor; }
 .speaker .detail { position: absolute; left: 17px; top: 5px; width: 9px; height: 20px; border-right: 2px solid currentColor; border-radius: 50%; }
 .slash { position: absolute; left: 14px; top: 0; height: 31px; border-left: 2px solid currentColor; transform: rotate(-42deg); }
+.camera .shape, .switch-camera .shape { position: absolute; left: 2px; top: 7px; width: 18px; height: 16px; border: 2px solid currentColor; border-radius: 4px; box-sizing: border-box; }
+.camera .detail { position: absolute; top: 10px; right: 1px; width: 7px; height: 10px; background: currentColor; clip-path: polygon(100% 0, 100% 100%, 0 70%, 0 30%); }
+.switch-camera .shape { left: 3px; width: 24px; }
+.switch-camera .detail { position: absolute; left: 10px; top: 11px; width: 9px; height: 8px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: skewY(-15deg); }
+.switch-camera .detail::before, .switch-camera .detail::after { content: ''; position: absolute; width: 4px; height: 4px; border-top: 2px solid currentColor; border-right: 2px solid currentColor; }
+.switch-camera .detail::before { right: -1px; top: -4px; transform: rotate(45deg); }
+.switch-camera .detail::after { left: -1px; bottom: -4px; transform: rotate(225deg); }
 </style>

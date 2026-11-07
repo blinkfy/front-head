@@ -1,3 +1,4 @@
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { fetchAiAction, updateAiAction, confirmAiAction, createCommunityPostDraft, newActionRequestId } from '@/api/ai-actions.js'
 
 const errorText = error => error?.msg || error?.message || '网络暂不可用，请重试核实同一草稿'
@@ -72,7 +73,7 @@ export const communityDraftMethods = {
     } catch (error) {
       if (this.pageClosed) return
       if (Number(error?.statusCode || error?.status || error?.code) === 409) await this.loadCommunityDraft()
-      if (!this.pageClosed) uni.showModal({ title: '请核实帖子草稿', content: errorText(error), showCancel: false })
+      if (!this.pageClosed) showAppModal(this, { title: '请核实帖子草稿', content: errorText(error), showCancel: false })
     } finally { if (!this.pageClosed) this.submitting = false }
   },
   async recreateCommunityDraft() {
@@ -88,7 +89,7 @@ export const communityDraftMethods = {
       await this.loadCommunityDraft(response)
       if (!this.pageClosed) uni.redirectTo({ url: `/pages-nonTheme/community-publish?draftId=${encodeURIComponent(this.draftId)}` })
     } catch (error) {
-      if (!this.pageClosed) uni.showModal({ title: '无法重新创建草稿', content: errorText(error), showCancel: false })
+      if (!this.pageClosed) showAppModal(this, { title: '无法重新创建草稿', content: errorText(error), showCancel: false })
     } finally { if (!this.pageClosed) this.submitting = false }
   }
 }

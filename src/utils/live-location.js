@@ -3,7 +3,7 @@ import { createLiveLocationController } from './live-location-core.mjs'
 import { liveLocationTracker } from './live-location-tracker.js'
 let sender = () => false
 export const liveLocationState = reactive({ supported: false, phase: 'idle', sessionId: '', peer: null, selfPoint: null,
-  peerPoint: null, peerJoined: false, locating: false, reason: '', offers: {} })
+  peerPoint: null, peerJoined: false, locating: false, paused: false, reason: '', offers: {} })
 export const liveLocations = createLiveLocationController({
   send: value => sender(value), tracker: liveLocationTracker,
   getOwner: () => uni.getStorageSync('token') || '',

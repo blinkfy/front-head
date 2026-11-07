@@ -2,9 +2,12 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
+import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 
 const sourcePath = fileURLToPath(new URL('../src/utils/chat-events.js', import.meta.url))
 const source = fs.readFileSync(sourcePath, 'utf8')
+const require = createRequire(import.meta.url)
 
 function preprocess(input, platform) {
   const output = [], stack = []
@@ -31,7 +34,9 @@ function preprocess(input, platform) {
 
 function harness({ platform, web = true, backgroundMask = 0 }) {
   const calls = { voice: [], location: [], transport: [], feedback: [], catchup: [], foreground: [], refresh: 0,
-    mask: [], videoVisible: 0, androidReturn: 0, listeners: {}, uniEvents: [] }
+    mask: [], videoVisible: 0, androidReturn: 0, listeners: {}, uniEvents: [], lifecycle: [], visible: [], notifications: [], bus: [] }
+  let permissionPending = false
+  let eventHandlers = null
   const transport = {
     setActive(value) { calls.transport.push(value) }, isConnected: () => false,
     send: () => true
@@ -41,21 +46,31 @@ function harness({ platform, web = true, backgroundMask = 0 }) {
     baseUrl: 'https://example.test',
     webCallsAvailable: () => web, refreshWebCallAlert: () => calls.refresh++,
     syncChatPush() {},
-    messageBus: { emit() {} }, triggerMessageNotification: async () => {},
+    messageBus: { emit(name, event) { calls.bus.push([name, event]) } }, triggerMessageNotification: async () => {},
+    realtimeActivityCard: () => null,
     initChatNotificationNavigation() {}, showNotification() {}, userNotificationUrl: () => '',
     createNotificationCatchup: () => ({ setActive(value) { calls.catchup.push(value) }, check: async () => {}, seen: () => true }),
     receiveChatFeedback: async () => {}, setChatFeedbackActive(value) { calls.feedback.push(value) },
     voiceCalls: { setActive(value) { calls.voice.push(value) }, handle() {}, connection() {} },
     installVoiceCallSender() {},
-    liveLocationState: { offers: {} }, liveLocations: { setActive(value) { calls.location.push(value) }, handle() {}, connection() {} },
+    liveLocationState: { offers: {} }, liveLocations: {
+      setActive(value) { calls.location.push(value); calls.lifecycle.push('location-active') },
+      setVisible(value) { calls.visible.push(value) }, handle(event) {
+        if (event.type === 'location.offer') this.state.offers[String(event.from.id)] = { sessionId: event.sessionId }
+      }, connection() {}, state: null
+    },
     installLiveLocationSender() {},
-    createChatEventsTransport: () => transport,
+    createChatEventsTransport: handlers => { eventHandlers = handlers; return transport },
     connectChatEventsSocket() {}, androidBackgroundMask: () => { calls.mask.push(true); return backgroundMask },
     androidVideoVisible: () => { calls.videoVisible++; return false },
-    setAndroidRealtimeForeground(value) { calls.foreground.push(value) },
+    realtimePermissionPending: () => permissionPending,
+    webLocationAvailable: () => platform === 'H5' && web,
+    setAndroidRealtimeForeground(value) { calls.foreground.push(value); calls.lifecycle.push('native-foreground') },
     handleAndroidRealtimeReturn() { calls.androidReturn++ }, syncAndroidMessagingPreference() {},
-    uni: { getStorageSync: () => '', setStorageSync() {}, request() {}, navigateTo() {}, $on(name, callback) { calls.uniEvents.push([name, callback]) } }
+    uni: { getStorageSync: key => key === 'token' ? 'test-token' : key === 'userInfo' ? { id: 2 } : '', setStorageSync() {}, request() {}, navigateTo() {}, $on(name, callback) { calls.uniEvents.push([name, callback]) } },
+    showNotification: notification => calls.notifications.push(notification)
   }
+  context.liveLocations.state = context.liveLocationState
   if (platform === 'H5') {
     const document = { hidden: false, handlers: {}, addEventListener(name, callback) { this.handlers[name] = callback } }
     const window = { handlers: {}, addEventListener(name, callback) { this.handlers[name] = callback } }
@@ -67,32 +82,52 @@ function harness({ platform, web = true, backgroundMask = 0 }) {
   }
   vm.createContext(context)
   const compiled = preprocess(source, platform)
-  vm.runInContext(`${compiled}\nglobalThis.__chatEvents = { setChatEventsActive, isChatEventsConnected }`, context, { filename: sourcePath })
-  return { api: context.__chatEvents, calls, ...context.__surfaces }
+  vm.runInContext(`${compiled}\nglobalThis.__chatEvents = { setChatEventsActive, setChatEventsDelegated, isChatEventsConnected, setActiveChatConversation }`, context, { filename: sourcePath })
+  return { api: context.__chatEvents, calls, handlers: eventHandlers, setPermissionPending: value => { permissionPending = value }, ...context.__surfaces }
 }
 
 function last(values) { return values.at(-1) }
 
 function testH5Lifecycle() {
+  const bfcache = harness({ platform: 'H5', web: true })
+  bfcache.api.setChatEventsActive(true)
+  const locationCallsBeforeBfcacheHide = bfcache.calls.location.length
+  bfcache.window.handlers.pagehide({ persisted: true })
+  assert.equal(bfcache.calls.location.length, locationCallsBeforeBfcacheHide,
+    'BFCache pagehide preserves the live-location session')
+  assert.equal(last(bfcache.calls.visible), false, 'BFCache pagehide pauses location visibility for restoration')
+
   const { api, calls, document, window } = harness({ platform: 'H5', web: true })
   api.setChatEventsActive(false)
   assert.equal(last(calls.voice), true, 'H5 background retains voice calls for browser incoming calls')
   assert.equal(last(calls.transport), true, 'H5 background retains the existing signaling transport')
-  assert.equal(last(calls.location), false, 'H5 background stops live location sessions')
+  assert.equal(last(calls.location), true, 'H5 background retains live location sessions')
   assert.equal(last(calls.foreground), false)
 
   document.hidden = true
   document.handlers.visibilitychange()
+  assert.equal(last(calls.visible), false, 'hidden visibility pauses live location tracking')
   assert.equal(last(calls.voice), true, 'hidden visibility state retains H5 voice calls')
   assert.equal(last(calls.transport), true, 'hidden visibility state retains H5 signaling')
-  assert.equal(last(calls.location), false)
+  assert.equal(last(calls.location), true)
   assert.equal(calls.refresh, 1, 'visibility changes refresh the active web call alert')
 
   document.hidden = false
   document.handlers.visibilitychange()
+  assert.equal(last(calls.visible), true, 'visible visibility resumes live location tracking')
   assert.equal(last(calls.voice), true, 'visible visibilitychange restores voice calls')
   assert.equal(last(calls.transport), true, 'visible visibilitychange restores signaling')
   assert.equal(last(calls.location), true, 'visible visibilitychange restores live location')
+
+  const permission = harness({ platform: 'H5', web: false })
+  permission.setPermissionPending(true)
+  permission.api.setChatEventsActive(false)
+  assert.equal(last(permission.calls.foreground), true, 'permission prompt temporarily retains foreground lifecycle')
+  assert.equal(last(permission.calls.location), true, 'permission prompt does not end location sharing')
+  assert.equal(last(permission.calls.transport), true, 'permission prompt does not close the signaling socket')
+  permission.setPermissionPending(false)
+  permission.calls.uniEvents.find(([name]) => name === 'realtime:permission-changed')[1]()
+  assert.equal(last(permission.calls.location), false, 'permission completion releases the temporary foreground hold')
 
   window.handlers.pagehide()
   assert.equal(last(calls.voice), false, 'pagehide explicitly stops voice calls')
@@ -100,6 +135,7 @@ function testH5Lifecycle() {
   assert.equal(last(calls.transport), false, 'pagehide explicitly stops the signaling transport')
 
   window.handlers.pageshow()
+  assert.equal(last(calls.visible), true, 'pageshow restores foreground live location tracking')
   assert.equal(last(calls.voice), true, 'pageshow restores H5 voice calls')
   assert.equal(last(calls.transport), true, 'pageshow restores signaling')
   assert.equal(last(calls.location), true, 'pageshow restores foreground live location sessions')
@@ -117,8 +153,83 @@ function testAndroidBackgroundMask() {
   assert.equal(last(bitTwo.calls.voice), false, 'Android background mask bit 2 does not retain voice calls')
   assert.equal(last(bitTwo.calls.location), true, 'Android background mask bit 2 retains location')
   assert.equal(last(bitTwo.calls.transport), true)
+  assert.ok(bitTwo.calls.lifecycle.indexOf('native-foreground') < bitTwo.calls.lifecycle.indexOf('location-active'),
+    'native foreground state is updated before location capability can be announced')
+}
+
+function testDelegatedWebCallLifecycle() {
+  const foreground = harness({ platform: 'MP', web: false })
+  foreground.api.setChatEventsActive(true)
+  foreground.api.setChatEventsDelegated(true)
+  assert.equal(last(foreground.calls.transport), false, 'delegating the web-call page pauses the outer mini-app socket')
+  foreground.api.setChatEventsActive(true)
+  assert.equal(last(foreground.calls.transport), false, 'App onShow cannot reactivate the outer socket while delegated')
+  foreground.api.setChatEventsDelegated(false)
+  assert.equal(last(foreground.calls.transport), true, 'releasing delegation restores the requested foreground state')
+
+  const background = harness({ platform: 'MP', web: false })
+  background.api.setChatEventsActive(false)
+  background.api.setChatEventsDelegated(true)
+  assert.equal(last(background.calls.transport), false)
+  background.api.setChatEventsDelegated(false)
+  assert.equal(last(background.calls.transport), false, 'releasing delegation while backgrounded keeps the socket closed')
+}
+
+function testActivityMessageVersionKeepsSingleLocationNotification() {
+  const current = harness({ platform: 'H5', web: true })
+  current.api.setChatEventsActive(true)
+  current.handlers.onConnected({ activityMessagesVersion: 1 })
+  const offer = { type: 'location.offer', from: { id: 9, name: 'Peer' }, sessionId: 'session_1234567890' }
+  current.handlers.onEvent(offer)
+  assert.equal(current.calls.notifications.length, 0, 'server activity cards suppress the legacy location.offer toast')
+  const changed = { type: 'chat.changed', kind: 'message', conversationId: '9', message: { id: 101, senderId: 9, type: 'others' } }
+  current.handlers.onEvent(changed)
+  assert.ok(current.calls.bus.some(([name, event]) => name === 'chat.changed' && event === changed),
+    'new activity messages continue through the existing chat.changed notification')
+
+  const legacy = harness({ platform: 'H5', web: true })
+  legacy.api.setChatEventsActive(true)
+  legacy.handlers.onConnected({ activityMessagesVersion: 0 })
+  legacy.handlers.onEvent(offer)
+  assert.equal(legacy.calls.notifications.length, 1, 'older servers retain the location offer toast fallback')
+  assert.match(legacy.calls.notifications[0].content, /点击进入/)
+
+  const fallback = harness({ platform: 'H5', web: true })
+  fallback.api.setChatEventsActive(true)
+  fallback.handlers.onConnected({ activityMessagesVersion: 1 })
+  const recovered = { ...offer, sessionId: 'session_fallback_1234', messageFallback: true }
+  fallback.handlers.onEvent(recovered)
+  fallback.handlers.onEvent(recovered)
+  assert.equal(fallback.calls.notifications.length, 1,
+    'messageFallback bypasses new-server activity suppression but seen session id prevents replay duplicates')
+
+  const inConversation = harness({ platform: 'H5', web: true })
+  inConversation.api.setChatEventsActive(true)
+  inConversation.handlers.onConnected({ activityMessagesVersion: 1 })
+  inConversation.api.setActiveChatConversation('9')
+  inConversation.handlers.onEvent({ ...recovered, sessionId: 'session_current_1234' })
+  assert.equal(inConversation.calls.notifications.length, 0, 'fallback does not toast for the open conversation')
+}
+
+function testWebviewCompilation() {
+  const { preprocess } = require('@dcloudio/uni-cli-shared/lib/preprocess')
+  const source = fs.readFileSync(fileURLToPath(new URL('../src/pages-nonTheme/webview.vue', import.meta.url)), 'utf8')
+  const parsed = parse(source, { filename: 'src/pages-nonTheme/webview.vue' })
+  assert.equal(parsed.errors.length, 0, 'webview SFC parses')
+  for (const [platform, context] of [['H5', { H5: true }], ['MP-WEIXIN', { MP: true, MP_WEIXIN: true }]]) {
+    const scriptSetup = parsed.descriptor.scriptSetup
+    const script = preprocess(scriptSetup.content, context, { type: 'js' })
+    const compiledScript = compileScript({ ...parsed.descriptor, scriptSetup: { ...scriptSetup, content: script } }, { id: `webview-${platform}` })
+    assert.ok(compiledScript.content.length > 0, `webview script compiles for ${platform}`)
+    const template = preprocess(parsed.descriptor.template.content, context, { type: 'html' })
+    const compiledTemplate = compileTemplate({ source: template, filename: 'webview.vue', id: `webview-${platform}` })
+    assert.deepEqual(compiledTemplate.errors, [], `webview template compiles for ${platform}`)
+  }
 }
 
 testH5Lifecycle()
 testAndroidBackgroundMask()
-console.log('Chat-events H5 and Android lifecycle tests passed.')
+testDelegatedWebCallLifecycle()
+testActivityMessageVersionKeepsSingleLocationNotification()
+testWebviewCompilation()
+console.log('Chat-events H5, Android, delegated web-call, activity message compatibility, and webview compilation tests passed.')

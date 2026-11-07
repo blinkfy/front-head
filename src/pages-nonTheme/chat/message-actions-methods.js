@@ -1,3 +1,4 @@
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { getDisplayName } from '@/utils/display-name.js'
 
@@ -38,7 +39,7 @@ export const messageActionsMethods = {
             this.selectedMessageIds = [String(message.id)]
             this.chooseForwardConversation()
         } else if (action === 'delete') {
-            const result = await new Promise(resolve => uni.showModal({ title: '删除消息', content: '仅删除你自己的记录，对方或其他群成员的记录将保留。', success: resolve, fail: () => resolve({ confirm: false }) }))
+            const result = await new Promise(resolve => showAppModal(this, { title: '删除消息', content: '仅删除你自己的记录，对方或其他群成员的记录将保留。', success: resolve, fail: () => resolve({ confirm: false }) }))
             if (!result.confirm) return
             try {
                 if (message.status === 'sent') await this.deleteMessageIds([String(message.id)])
@@ -65,7 +66,7 @@ export const messageActionsMethods = {
     deleteMessageIds(ids) { return this.isGroupChat ? chatApi.deleteGroupMessages(this.groupId, ids) : chatApi.deleteChatMessages(ids) },
     async deleteSelectedMessages() {
         if (!this.selectedMessageIds.length || this.messageActionBusy) return
-        const result = await new Promise(resolve => uni.showModal({ title: '删除消息', content: `确定删除自己的这 ${this.selectedMessageIds.length} 条消息记录吗？`, success: resolve, fail: () => resolve({ confirm: false }) }))
+        const result = await new Promise(resolve => showAppModal(this, { title: '删除消息', content: `确定删除自己的这 ${this.selectedMessageIds.length} 条消息记录吗？`, success: resolve, fail: () => resolve({ confirm: false }) }))
         if (!result.confirm) return
         this.messageActionBusy = true
         try {

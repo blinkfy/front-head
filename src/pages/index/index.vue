@@ -178,8 +178,7 @@
           </view>
         </form>
         <!-- #ifdef MP-WEIXIN -->
-        <WechatLoginEntry :pending="wechatBindPending" :loading="isLoading" @login="onWechatLogin" />
-        <button v-if="biometricAvailable" class="biometric-login-entry" :disabled="isLoading" @click.stop="onBiometricLogin">{{ biometricLabel }}</button>
+        <WechatLoginEntry :pending="wechatBindPending" :loading="isLoading" :biometric-available="biometricAvailable" :biometric-label="biometricLabel" @login="onWechatLogin" @biometric-login="onBiometricLogin" />
         <!-- #endif -->
       </view>
       
@@ -385,6 +384,9 @@ onMounted(() => {
 })
 
 async function checkAutoLogin() {
+  const loginPage = getCurrentPages().slice(-1)[0]
+  const loginOptions = loginPage?.options || loginPage?.$page?.options || {}
+  if (String(loginOptions.manualLogin || '') === '1') return
   // #ifdef APP-PLUS || H5 || MP-WEIXIN
   if (await preferBiometricLogin()) return
   // #endif

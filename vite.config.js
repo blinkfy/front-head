@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { officialSitePlugin } from './scripts/official-site.mjs'
 import { browserRoundCodeAssetsPlugin } from './scripts/browser-roundcode-assets.mjs'
 import { h5DevCompressionPlugin } from './scripts/h5-dev-compression.mjs'
+import { embeddedCallPlugin } from './scripts/embedded-call.mjs'
 
 // https://vitejs.dev/config/
 export default defineConfig(async ({ mode }) => {
@@ -22,6 +23,7 @@ export default defineConfig(async ({ mode }) => {
       smartSortRobotAssetsPlugin(),
       mpMainPackageAssetsPlugin(),
       officialSitePlugin(),
+      embeddedCallPlugin(),
       browserRoundCodeAssetsPlugin(),
       // APP 的 IIFE 不支持动态分包；在输出阶段内联，保留 H5/AMD 的分包行为。
       {

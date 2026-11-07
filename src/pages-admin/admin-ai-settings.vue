@@ -17,14 +17,8 @@
             <ManifestIcon class="btn-icon" id="refresh" :class="{ spinning: loading }" /> 读取
           </button>
           <button class="btn btn-chat" @click="goToAiChat" type="button">AI 聊天</button>
-          <button class="btn btn-test" @click="goToTest" type="button">Test</button>
-          <button class="btn btn-map" @click="goToTestMap" type="button">Test Map</button>
         </div>
       </section>
-
-      <!-- #ifdef APP-PLUS -->
-      <AdminConsolePanel v-if="adminVerified" />
-      <!-- #endif -->
 
       <!-- 状态横幅 -->
       <view v-if="statusText" class="status-banner" :class="statusCls">
@@ -228,6 +222,21 @@
         </div>
       </section>
 
+      <view v-if="adminVerified" class="diagnostic-tools">
+        <button class="diagnostic-toggle" @click="diagnosticsExpanded = !diagnosticsExpanded" :aria-expanded="diagnosticsExpanded" type="button">
+          <text>开发与诊断</text><text>{{ diagnosticsExpanded ? '收起 −' : '展开 +' }}</text>
+        </button>
+        <view v-if="diagnosticsExpanded">
+        <view class="diagnostic-links">
+          <button class="diagnostic-link" @click="goCallCheck" type="button">通话环境检测</button>
+          <button class="diagnostic-link" @click="goToTest" type="button">API 测试</button>
+          <button class="diagnostic-link" @click="goToTestMap" type="button">地图功能测试</button>
+        </view>
+        <!-- #ifdef APP-PLUS -->
+        <view class="diagnostic-console"><AdminConsolePanel /></view>
+        <!-- #endif -->
+        </view>
+      </view>
     </main>
   </view>
 </template>
@@ -246,6 +255,8 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 let unbindThemeWatcher = null
 
 const adminVerified = ref(false)
+const diagnosticsExpanded = ref(false)
+let verifiedAdminToken = ''
 let authVersion = 0
 const currentTheme = ref('light')
 const loading = ref(false)
@@ -419,14 +430,30 @@ function goToAiChat() {
   uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
 }
 function goToTest() {
+  if (!canOpenDiagnostics()) return
   uni.navigateTo({ url: '/pages-admin/test' })
 }
 function goToTestMap() {
+  if (!canOpenDiagnostics()) return
   uni.navigateTo({ url: '/pages-admin/test-map' })
+}
+function canOpenDiagnostics() {
+  return adminVerified.value && verifiedAdminToken === uni.getStorageSync('token')
+}
+function goCallCheck() {
+  if (!canOpenDiagnostics()) return
+  const target = baseUrl.replace(/\/$/, '') + '/call-check.html'
+  // #ifdef H5
+  window.location.assign(target)
+  // #endif
+  // #ifndef H5
+  uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(target)}` })
+  // #endif
 }
 async function adminAuth(){
   const version = ++authVersion
   adminVerified.value = false
+  verifiedAdminToken = ''
   const token = uni.getStorageSync('token')
   if (!token) {
     uni.setStorageSync('autoLogin', false)
@@ -437,6 +464,7 @@ async function adminAuth(){
     const response = await userinfo('false')
     if (version !== authVersion || token !== uni.getStorageSync('token')) return false
     if (response && response.data && response.data.isAdmin === true){
+      verifiedAdminToken = token
       adminVerified.value = true
       return true
     } else {
@@ -459,7 +487,7 @@ async function adminAuth(){
 onShow(async () => {
   if (await adminAuth()) loadSettings()
 })
-onHide(() => { adminVerified.value = false; authVersion++ })
+onHide(() => { adminVerified.value = false; verifiedAdminToken = ''; diagnosticsExpanded.value = false; authVersion++ })
 
 onMounted(() => {
   currentTheme.value = applyStoredTheme()
@@ -472,6 +500,13 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.diagnostic-tools { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 12px; }
+.diagnostic-toggle { display: flex; justify-content: space-between; gap: 16px; width: 100%; margin: 0; padding: 12px 0; color: var(--muted); background: transparent; font-size: 13px; line-height: 1.5; text-align: left; }
+.diagnostic-toggle::after, .diagnostic-link::after { border: 0; }
+.diagnostic-links { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0 0; }
+.diagnostic-console { margin-top: 14px; }
+.diagnostic-link { margin: 0; padding: 9px 14px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; line-height: 1.5; }
+
 /* ───── 全局变量 ───── */
 .theme-wrapper {
   --bg: #0f1824;
@@ -624,26 +659,6 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 .theme-wrapper.light-theme .btn-chat {
   background: rgba(124, 80, 232, 0.1);
   border-color: rgba(124,80,232,0.25);
-}
-
-.btn-test {
-  background: rgba(245, 166, 35, 0.15);
-  color: var(--orange);
-  border: 1px solid rgba(245,166,35,0.28);
-}
-.theme-wrapper.light-theme .btn-test {
-  background: rgba(212, 131, 10, 0.1);
-  border-color: rgba(212,131,10,0.25);
-}
-
-.btn-map {
-  background: rgba(41, 196, 208, 0.15);
-  color: var(--cyan);
-  border: 1px solid rgba(41,196,208,0.28);
-}
-.theme-wrapper.light-theme .btn-map {
-  background: rgba(26, 171, 184, 0.1);
-  border-color: rgba(26,171,184,0.25);
 }
 
 .btn-save {

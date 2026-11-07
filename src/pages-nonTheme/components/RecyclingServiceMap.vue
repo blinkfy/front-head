@@ -16,7 +16,7 @@
     <view v-if="places.length" class="place-results">
       <button v-for="(place, index) in places" :key="index" class="place-result" @click="selectPlace(place)">{{ place.name }}</button>
     </view>
-    <view class="map-stage">
+    <view class="map-stage" @touchstart="markViewportInteraction" @mousedown="markViewportInteraction" @wheel="markViewportInteraction" @keydown="markViewportInteraction">
       <!-- #ifdef H5 -->
       <view :id="mapId" class="map-canvas"></view>
       <!-- #endif -->
@@ -56,6 +56,7 @@
       <view class="map-actions"><button class="map-button" :disabled="disabled" @click="clear">清空范围</button><text v-if="validGeometry" class="map-valid">范围已就绪</text></view>
       <text v-if="validationError" class="map-error" role="alert">{{ validationError }}</text>
     </template>
+    <text v-if="locationHint" class="map-hint">{{ locationHint }}</text>
     <text v-if="searchError" class="map-error" role="alert">{{ searchError }}</text>
     <view v-if="displayAreas.length || addressPoint" class="map-legend">
       <view v-for="(area, index) in displayAreas" :key="area.id || index" class="legend-item"><view class="legend-swatch" :style="{ backgroundColor: area.color }"></view><text>{{ area.name }}</text></view>
@@ -65,24 +66,28 @@
 </template>
 
 <script setup>
+import { getUserLocationOnce } from '@/utils/location'
 import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 // #ifndef H5
 import { searchPlaces } from '@/api/map'
 // #endif
-import { gcj02ToWgs84, geometryBounds, geometryError, normalizeGeometry, normalizePoint, wgs84ToGcj02 } from '../utils/recycling-geometry.mjs'
+import { distanceMeters, gcj02ToWgs84, geometryBounds, geometryError, normalizeGeometry, normalizePoint, wgs84ToGcj02 } from '../utils/recycling-geometry.mjs'
 // #ifdef H5
 import { loadRecyclingLeaflet } from '../utils/recycling-map-loader.mjs'
 // #endif
 
-const props = defineProps({ geometry: { type: Object, default: undefined }, modelValue: { type: Object, default: null }, areas: { type: Array, default: () => [] }, point: { type: Object, default: null }, readonly: Boolean, disabled: Boolean })
+const props = defineProps({ geometry: { type: Object, default: undefined }, modelValue: { type: Object, default: null }, areas: { type: Array, default: () => [] }, point: { type: Object, default: null }, readonly: Boolean, disabled: Boolean, autoLocate: Boolean })
 const emit = defineEmits(['update:geometry', 'update:modelValue', 'change'])
 const source = computed(() => props.geometry === undefined ? props.modelValue : props.geometry)
 const mode = ref('circle'), radius = ref(1000), center = ref(null), vertices = ref([]), completed = ref(false)
+const locationHint = ref('')
 const loading = ref(true), mapError = ref(''), query = ref(''), searching = ref(false), searchError = ref(''), places = ref([])
 const mapId = `recycling-service-map-${Math.random().toString(36).slice(2)}`
 const nativeMounted = ref(true), nativeCenter = ref({ latitude: 35.86, longitude: 104.19 }), nativeScale = ref(5)
 const nativeCenterBusy = ref(false), componentProxy = getCurrentInstance()?.proxy
 let map, layers, L, tileLayer, timeout, disposed = false, generation = 0, lastEmitted = '', searchGeneration = 0
+let viewportRevision = 0, initialLocationAttempted = false
+function markViewportInteraction() { viewportRevision++; locationHint.value = '' }
 const colors = ['#168362', '#3178c6', '#c87524', '#9656bc', '#d35375']
 const addressPoint = computed(() => normalizePoint(props.point))
 const draft = computed(() => mode.value === 'circle' ? { type: 'circle', coordinateSystem: 'wgs84', center: center.value, radiusMeters: radius.value } : { type: 'polygon', coordinateSystem: 'wgs84', points: vertices.value })
@@ -122,6 +127,7 @@ const nativeIncludePoints = ref([])
 watch(source, value => {
   if (JSON.stringify(value || null) === lastEmitted) return
   const geometry = normalizeGeometry(value)
+  if (geometry) markViewportInteraction()
   center.value = geometry?.type === 'circle' ? geometry.center : null
   vertices.value = geometry?.type === 'polygon' ? geometry.points : []
   mode.value = geometry?.type || 'circle'; radius.value = geometry?.radiusMeters || 1000; completed.value = geometry?.type === 'polygon'
@@ -134,18 +140,19 @@ function publish() {
   emit('update:geometry', geometry); emit('update:modelValue', geometry); emit('change', geometry)
   renderLayers()
 }
-function setMode(value) { if (props.disabled || value === mode.value) return; mode.value = value; center.value = null; vertices.value = []; completed.value = false; publish() }
+function setMode(value) { if (props.disabled || value === mode.value) return; markViewportInteraction(); mode.value = value; center.value = null; vertices.value = []; completed.value = false; publish() }
 function pick(point) {
   if (props.readonly || props.disabled || !normalizePoint(point)) return
+  markViewportInteraction()
   const firstCircle = mode.value === 'circle' && !center.value
   if (mode.value === 'circle') center.value = point
-  else { if (vertices.value.length >= 30) { searchError.value = '最多添加 30 个顶点，请完成圈选或撤销后重试'; return }; vertices.value = [...vertices.value, point]; completed.value = false }
+  else { if (vertices.value.some(vertex => distanceMeters(vertex, point) < 0.1)) { searchError.value = '此位置已添加，请移动地图后选择下一个顶点'; return }; if (vertices.value.length >= 30) { searchError.value = '最多添加 30 个顶点，请完成圈选或撤销后重试'; return }; vertices.value = [...vertices.value, point]; completed.value = false }
   searchError.value = ''; publish(); if (firstCircle) nextTick(fitMap)
 }
 function radiusInput(event) { radius.value = event.detail.value === '' ? null : Number(event.detail.value); publish() }
 function radiusSlide(event) { radius.value = Number(event.detail.value); publish() }
 function undo() { vertices.value = vertices.value.slice(0, -1); completed.value = false; publish() }
-function clear() { center.value = null; vertices.value = []; completed.value = false; publish() }
+function clear() { markViewportInteraction(); center.value = null; vertices.value = []; completed.value = false; publish() }
 function finishPolygon() { completed.value = !geometryError(draft.value); publish(); if (completed.value) nextTick(fitMap) }
 function nativeTap(event) { const detail = event.detail || {}; pick(gcj02ToWgs84(detail.latitude, detail.longitude)) }
 function nativeReady() { loading.value = false; mapError.value = ''; clearTimeout(timeout) }
@@ -217,9 +224,44 @@ function fitMap() {
   if (map) { map.invalidateSize(); if (points.length === 1) map.setView([first.latitude, first.longitude], 15); else map.fitBounds(points.map(point => [point.latitude, point.longitude]), { padding: [24, 24], maxZoom: 16 }) }
   // #endif
 }
+function focusMapPoint(point, scale = 15) {
+  nativeCenter.value = wgs84ToGcj02(point); nativeScale.value = scale
+  // App's map watcher fits even an empty includePoints array, overriding center.
+  // Supply real bounds around the destination instead of clearing the array.
+  const bounds = geometryBounds({ type: 'circle', coordinateSystem: 'wgs84', center: point, radiusMeters: scale === 16 ? 400 : 800 })
+  nativeIncludePoints.value = [
+    wgs84ToGcj02({ latitude: bounds.south, longitude: bounds.west }),
+    wgs84ToGcj02({ latitude: bounds.north, longitude: bounds.east })
+  ]
+  // #ifdef H5
+  if (map) map.setView([point.latitude, point.longitude], scale)
+  // #endif
+}
+async function locateInitialViewport(token) {
+  if (!props.autoLocate || props.readonly || props.disabled || initialLocationAttempted || viewportRevision || viewportPoints.value.length) return
+  initialLocationAttempted = true
+  const revision = viewportRevision
+  const isCurrent = () => !disposed && token === generation && revision === viewportRevision && !props.disabled && !viewportPoints.value.length
+  locationHint.value = '正在定位附近地图…'
+  try {
+    let point
+    // #ifdef H5
+    point = normalizePoint(await getUserLocationOnce('wgs84', { interactive: true, isCurrent }))
+    // #endif
+    // #ifndef H5
+    point = gcj02ToWgs84(await getUserLocationOnce('gcj02', { interactive: true, isCurrent }))
+    // #endif
+    if (!isCurrent()) return
+    if (!point) throw new Error('当前坐标无法用于地图')
+    focusMapPoint(point)
+    locationHint.value = ''
+  } catch (_) {
+    if (isCurrent()) locationHint.value = '未能获取当前位置，可搜索地点或移动地图圈选'
+  }
+}
 async function initialize() {
   const token = ++generation
-  clearTimeout(timeout); loading.value = true; mapError.value = ''
+  clearTimeout(timeout); loading.value = true; mapError.value = ''; locationHint.value = ''
   // #ifdef H5
   if (map) map.remove()
   map = null; layers = null; tileLayer = null
@@ -235,16 +277,17 @@ async function initialize() {
     timeout = setTimeout(() => { if (token === generation && !tileLoaded) { loading.value = false; mapError.value = '地图加载超时，请重试' } }, 12000)
     tileLayer.addTo(map)
     map.on('click', event => pick({ latitude: event.latlng.lat, longitude: event.latlng.lng }))
-    renderLayers(); fitMap()
+    renderLayers(); fitMap(); void locateInitialViewport(token)
   } catch (error) { if (!disposed && token === generation) { loading.value = false; mapError.value = error.message || '地图加载失败，请重试' } }
   // #endif
   // #ifndef H5
   nativeCenterBusy.value = false; nativeMounted.value = false; await nextTick(); if (disposed || token !== generation) return; nativeMounted.value = true
-  await nextTick(); if (disposed || token !== generation) return; fitMap(); verifyNativeReady(token)
+  await nextTick(); if (disposed || token !== generation) return; fitMap(); verifyNativeReady(token); void locateInitialViewport(token)
   // #endif
 }
 async function search() {
   if (searching.value || props.disabled || !query.value.trim()) return
+  markViewportInteraction()
   const token = ++searchGeneration
   searching.value = true; searchError.value = ''; places.value = []
   try {
@@ -271,10 +314,8 @@ async function search() {
   finally { if (token === searchGeneration) searching.value = false }
 }
 function selectPlace(place) {
-  nativeCenter.value = wgs84ToGcj02(place.point); nativeScale.value = 16; nativeIncludePoints.value = []
-  // #ifdef H5
-  if (map) map.setView([place.point.latitude, place.point.longitude], 16)
-  // #endif
+  markViewportInteraction()
+  focusMapPoint(place.point, 16)
   places.value = []
 }
 onMounted(initialize)
@@ -286,13 +327,13 @@ onBeforeUnmount(() => { disposed = true; generation++; searchGeneration++; clear
 .map-actions, .map-search, .radius-row, .legend-item { display: flex; align-items: center; gap: 12rpx; }
 .map-actions { flex-wrap: wrap; margin-bottom: 12rpx; }
 .map-search { margin-bottom: 14rpx; }
-.map-button { flex-shrink: 0; margin: 0; padding: 12rpx 18rpx; border-radius: 12rpx; background: var(--shop-soft, var(--bg-secondary, #eff5f1)); color: var(--shop-green, #168362); font-size: 24rpx; line-height: 1.5; }
+.map-button { box-sizing: border-box; width: auto; max-width: 100%; min-width: 0; height: auto; white-space: normal; word-break: break-all; flex-shrink: 0; margin: 0; padding: 12rpx 18rpx; border-radius: 12rpx; background: var(--shop-soft, var(--bg-secondary, #eff5f1)); color: var(--shop-green, #168362); font-size: 24rpx; line-height: 1.5; }
 .map-button::after, .place-result::after { border: 0; }
 .map-button.active { color: #fff; background: #168362; }
 .map-button[disabled] { opacity: .45; }
-.map-input { box-sizing: border-box; min-width: 0; flex: 1; height: 72rpx; padding: 0 16rpx; border: 1rpx solid var(--shop-line, var(--border-color, #dce7df)); border-radius: 12rpx; font-size: 25rpx; color: inherit; }
+.service-map .map-input { box-sizing: border-box; min-width: 0; width: 0; max-width: 100%; flex: 1; height: 72rpx; min-height: 72rpx; line-height: normal; padding: 0 16rpx; border: 1rpx solid var(--shop-line, var(--border-color, #dce7df)); border-radius: 12rpx; font-size: 25rpx; color: inherit; }
 .map-stage { position: relative; height: 300px; min-height: 240px; isolation: isolate; border: 1rpx solid var(--shop-line, var(--border-color, #dce7df)); border-radius: 14rpx; overflow: hidden; }
-.map-canvas { width: 100%; height: 100%; background: var(--shop-soft, var(--bg-secondary, #eff5f1)); }
+.map-canvas { display: block; width: 100%; height: 300px; min-height: 300px; flex-shrink: 0; background: var(--shop-soft, var(--bg-secondary, #eff5f1)); }
 .map-crosshair { position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin-left: -14px; margin-top: -14px; pointer-events: none; }
 .crosshair-horizontal, .crosshair-vertical { position: absolute; background: #168362; border: 1px solid #fff; border-radius: 2px; }
 .crosshair-horizontal { left: 0; top: 12px; width: 26px; height: 2px; }
@@ -302,13 +343,13 @@ onBeforeUnmount(() => { disposed = true; generation++; searchGeneration++; clear
 .map-hint, .map-error { display: block; font-size: 23rpx; line-height: 1.6; color: var(--shop-muted, var(--text-secondary, #77827b)); }
 .map-error { margin-top: 10rpx; color: #d85c43; }
 .map-valid { font-size: 23rpx; color: #168362; }
-.radius-row { margin-top: 16rpx; font-size: 25rpx; }
-.radius-input { flex: 0 1 200rpx; }
+.radius-row { flex-wrap: wrap; margin-top: 16rpx; font-size: 25rpx; }
+.service-map .radius-input { width: 200rpx; flex: 0 1 200rpx; }
 .map-legend { display: flex; flex-wrap: wrap; gap: 12rpx 24rpx; margin-top: 14rpx; }
 .legend-item { max-width: 100%; font-size: 23rpx; overflow-wrap: anywhere; }
 .legend-swatch { width: 24rpx; height: 16rpx; border-radius: 4rpx; flex-shrink: 0; }
 .legend-pin { width: 18rpx; height: 18rpx; border-radius: 50%; background: #2877c4; border: 3rpx solid #fff; box-shadow: 0 0 0 1rpx #2877c4; flex-shrink: 0; }
 .place-results { margin-bottom: 12rpx; }
-.place-result { margin: 0; padding: 12rpx; border-bottom: 1rpx solid var(--shop-line, #dce7df); text-align: left; color: inherit; background: var(--shop-card, var(--bg-primary, #fff)); font-size: 24rpx; line-height: 1.5; }
+.place-result { box-sizing: border-box; width: 100%; min-width: 0; height: auto; white-space: normal; word-break: break-all; margin: 0; padding: 12rpx; border-bottom: 1rpx solid var(--shop-line, #dce7df); text-align: left; color: inherit; background: var(--shop-card, var(--bg-primary, #fff)); font-size: 24rpx; line-height: 1.5; }
 :global(.recycle-dark) .service-map, :global(.dark-mode) .service-map { --shop-text:#e5eee8; --shop-soft:#263b32; --shop-card:#18271f; --shop-line:#40564a; --shop-muted:#a7bbae; }
 </style>

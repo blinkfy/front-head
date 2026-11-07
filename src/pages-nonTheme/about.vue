@@ -1,5 +1,8 @@
 <template>
   <view :class="['about-container', { 'dark-theme': isDarkTheme }]">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <!-- 顶部安全区域占位 -->
     <view class="safe-area-top"></view>
 
@@ -104,6 +107,11 @@
   </view>
 </template>
 <script setup>
+// #ifdef APP-PLUS
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
+// #endif
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { baseUrl } from '@/api/settings'
 import { appDownloadUrl } from '@/utils/app-update-core.mjs'
 // #ifdef APP-PLUS
@@ -119,6 +127,18 @@ appIconSource = '/pages-nonTheme/static/Icon.webp.png'
 // #endif
 
 // 主题相关
+const appConfirmDialog = ref(null)
+// #ifdef APP-PLUS
+const cancelAppDialogs = () => appConfirmDialog.value?.cancelAll()
+onHide(cancelAppDialogs)
+onUnload(cancelAppDialogs)
+onBackPress(event => {
+  if (event.from === 'backbutton' && appConfirmDialog.value?.current) {
+    appConfirmDialog.value.settle(false)
+    return true
+  }
+})
+// #endif
 const isDarkTheme = ref(uni.getStorageSync('app_theme') === 'dark')
 const currentYear = new Date().getFullYear()
 const features = [
@@ -147,8 +167,8 @@ function downloadApp() {
   // #ifndef H5 || APP-PLUS
   uni.setClipboardData({
     data: url,
-    success: () => uni.showModal({ title: '下载 APP', content: '下载链接已复制，请在手机浏览器中打开，下载 Android 安装包。', showCancel: false }),
-    fail: () => uni.showModal({ title: '下载 APP', content: `请在浏览器中打开：${url}`, showCancel: false })
+    success: () => showAppModal({ $refs: { appConfirmDialog: appConfirmDialog.value } }, { title: '下载 APP', content: '下载链接已复制，请在手机浏览器中打开，下载 Android 安装包。', showCancel: false }),
+    fail: () => showAppModal({ $refs: { appConfirmDialog: appConfirmDialog.value } }, { title: '下载 APP', content: `请在浏览器中打开：${url}`, showCancel: false })
   })
   // #endif
 }

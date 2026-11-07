@@ -1,3 +1,4 @@
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { fetchAiAction, updateAiAction, confirmAiAction, createBookingDraft, newActionRequestId } from '@/api/ai-actions.js'
 
 const errorText = error => error?.msg || error?.message || '网络暂不可用，请重试以核实同一预约草稿'
@@ -22,7 +23,7 @@ export const bookingDraftMethods = {
       if (Array.isArray(payload.addressRegion) && payload.addressRegion.length === 3) this.addressRegion = [...payload.addressRegion]
       if (payload.contactPhone) this.contactPhone = payload.contactPhone
       this.syncServiceCoverage()
-      if (payload.addressCoordinateSystem === 'wgs84' && payload.addressLat != null && payload.addressLng != null) this.addressCoordinates = { address: this.address, latitude: Number(payload.addressLat), longitude: Number(payload.addressLng), coordinateSystem: 'wgs84' }; else this.addressCoordinates = null
+      if (payload.addressCoordinateSystem === 'wgs84' && payload.addressLat != null && payload.addressLng != null) this.addressCoordinates = { address: this.address, latitude: Number(payload.addressLat), longitude: Number(payload.addressLng), coordinateSystem: 'wgs84', ...(Number.isFinite(payload.addressAccuracy) && payload.addressAccuracy >= 0 ? { accuracyMeters: Math.min(200, payload.addressAccuracy) } : {}) }; else this.addressCoordinates = null
       this.syncServiceCoverage()
       this.selectedTypes = (payload.items || []).map(item => Number(item.typeId))
       this.itemWeights = Object.fromEntries((payload.items || []).map(item => [item.typeId, item.weight]))
@@ -41,7 +42,7 @@ export const bookingDraftMethods = {
   },
   getBookingPayload() {
     const coordinate = this.addressCoordinates?.address === this.address ? this.addressCoordinates : null
-    return { serviceAreaId: this.serviceAreaId, ...(this.addressRegion.length === 3 && this.addressRegion.every(part => String(part || '').trim()) ? { addressRegion: this.addressRegion.map(part => String(part || '').trim()) } : {}), ...(coordinate ? { addressLat: coordinate.latitude, addressLng: coordinate.longitude, addressCoordinateSystem: coordinate.coordinateSystem } : {}), items: this.selectedTypes.map(typeId => ({ typeId, weight: Number(this.itemWeights[typeId] ?? 1) })),
+    return { serviceAreaId: this.serviceAreaId, ...(this.addressRegion.length === 3 && this.addressRegion.every(part => String(part || '').trim()) ? { addressRegion: this.addressRegion.map(part => String(part || '').trim()) } : {}), ...(coordinate ? { addressLat: coordinate.latitude, addressLng: coordinate.longitude, addressCoordinateSystem: coordinate.coordinateSystem, ...(coordinate.accuracyMeters != null ? { addressAccuracy: coordinate.accuracyMeters } : {}) } : {}), items: this.selectedTypes.map(typeId => ({ typeId, weight: Number(this.itemWeights[typeId] ?? 1) })),
       appointmentDate: this.timeSlotsDate, appointmentTimeSlot: this.selectedTimeSlot,
       address: this.address, contactPhone: this.contactPhone.trim(), notes: this.remark }
   },
@@ -74,7 +75,7 @@ export const bookingDraftMethods = {
     } catch (error) {
       // Retain this draft ID. A lost response can only be recovered, never create a fresh order.
       if (Number(error?.statusCode || error?.status || error?.code) === 409) await this.loadBookingDraft()
-      uni.showModal({ title: '请核实预约信息', content: errorText(error), showCancel: false })
+      showAppModal(this, { title: '请核实预约信息', content: errorText(error), showCancel: false })
     } finally { this.submitting = false }
   },
   async recreateBookingDraft() {
@@ -88,7 +89,7 @@ export const bookingDraftMethods = {
       this.replacementRequestId = ''
       await this.loadBookingDraft(response)
       uni.redirectTo({ url: `/pages-nonTheme/booking?draftId=${encodeURIComponent(this.draftId)}` })
-    } catch (error) { uni.showModal({ title: '暂时无法创建草稿', content: errorText(error), showCancel: false }) }
+    } catch (error) { showAppModal(this, { title: '暂时无法创建草稿', content: errorText(error), showCancel: false }) }
     finally { this.submitting = false }
   }
 }

@@ -1,3 +1,4 @@
+import { ensureFeaturePermission } from '@/utils/feature-permission.js'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { baseUrl } from '@/api/settings.js'
 
@@ -8,7 +9,9 @@ export const audioInitializationMethods = {
             this.recorderManager = uni.getRecorderManager()
 
             this.recorderManager.onStart(() => {
-                console.log('录音开始')
+                if (!this.recordHeld || this.isChatPageDestroyed || !this.isChatPageActive) {
+                    this.isCancelVoice = true; this.recorderManager.stop(); return
+                }
                 this.isRecording = true
                 this.recordingDuration = 0
                 this.recordingTimer = setInterval(() => {
@@ -24,9 +27,9 @@ export const audioInitializationMethods = {
                 this.isRecording = false
                 clearInterval(this.recordingTimer)
 
-                if (!this.isCancelVoice && this.recordingDuration >= 1) {
+                if (!this.isChatPageDestroyed && this.isChatPageActive && !this.isCancelVoice && this.recordingDuration >= 1) {
                     this.sendVoiceMessage(res.tempFilePath, this.recordingDuration)
-                } else if (this.recordingDuration < 1) {
+                } else if (this.isChatPageActive && !this.isCancelVoice && this.recordingDuration < 1) {
                     uni.showToast({ title: '录音时间太短', icon: 'none' })
                 }
 
@@ -88,87 +91,28 @@ export const audioInitializationMethods = {
 }
 
 export const voiceRecordingMethods = {
-    startRecord(e) {
+    async startRecord(e) {
             // #ifdef H5
             uni.showToast({ title: 'H5端暂不支持录音功能', icon: 'none' })
             return
             // #endif
-
             // #ifndef H5
+            if (this.recordPermissionPending || this.isRecording) return
             this.startY = e.touches[0].clientY
             this.isCancelVoice = false
-
-            // 在 APP-PLUS 环境下, uni.authorize 可能不可靠,优先尝试直接启动录音
-            // #ifdef APP-PLUS
+            const attempt = (this.recordAttempt || 0) + 1
+            this.recordAttempt = attempt
+            this.recordHeld = true
+            this.recordPermissionPending = true
+            const owner = uni.getStorageSync('token') || ''
+            const current = () => this.recordHeld && this.recordAttempt === attempt && !this.isChatPageDestroyed &&
+                this.isChatPageActive && owner === (uni.getStorageSync('token') || '')
             try {
-                if (!this.recorderManager) {
-                    this.recorderManager = uni.getRecorderManager()
-                }
-                this.recorderManager.start({
-                    duration: 60000,
-                    sampleRate: 16000,
-                    numberOfChannels: 1,
-                    encodeBitRate: 48000,
-                    format: 'mp3'
-                })
-            } catch (err) {
-                console.warn('APP-PLUS 直接启动录音失败,尝试权限请求', err)
-                // 回退到权限请求流程
-                uni.authorize({
-                    scope: 'scope.record',
-                    success: () => {
-                        this.recorderManager.start({
-                            duration: 60000,
-                            sampleRate: 16000,
-                            numberOfChannels: 1,
-                            encodeBitRate: 48000,
-                            format: 'mp3'
-                        })
-                    },
-                    fail: () => {
-                        uni.showModal({
-                            title: '提示',
-                            content: '需要录音权限才能发送语音消息',
-                            confirmText: '去设置',
-                            success: (res) => {
-                                if (res.confirm) {
-                                    uni.openSetting()
-                                }
-                            }
-                        })
-                    }
-                })
-            }
-            // #endif
-
-            // 其余平台(微信小程序等)使用原有授权流程
-            // #ifndef APP-PLUS
-            // 检查录音权限
-            uni.authorize({
-                scope: 'scope.record',
-                success: () => {
-                    this.recorderManager.start({
-                        duration: 60000,
-                        sampleRate: 16000,
-                        numberOfChannels: 1,
-                        encodeBitRate: 48000,
-                        format: 'mp3'
-                    })
-                },
-                fail: () => {
-                    uni.showModal({
-                        title: '提示',
-                        content: '需要录音权限才能发送语音消息',
-                        confirmText: '去设置',
-                        success: (res) => {
-                            if (res.confirm) {
-                                uni.openSetting()
-                            }
-                        }
-                    })
-                }
-            })
-            // #endif
+                if (!await ensureFeaturePermission('microphone', { isCurrent: current }) || !current()) return
+                this.recorderManager.start({ duration: 60000, sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: 'mp3' })
+            } catch (_) {
+                if (current()) uni.showToast({ title: '录音未能启动，请重试', icon: 'none' })
+            } finally { this.recordPermissionPending = false }
             // #endif
         },
     onRecordMove(e) {
@@ -180,6 +124,8 @@ export const voiceRecordingMethods = {
             this.isCancelVoice = diff > 50
         },
     stopRecord() {
+            this.recordHeld = false
+            this.recordAttempt = (this.recordAttempt || 0) + 1
             // #ifndef H5
             if (this.isRecording) {
                 this.recorderManager.stop()

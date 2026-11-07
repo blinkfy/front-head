@@ -13,6 +13,3 @@ export default {
   methods: { back: recycleBack }
 }
 </script>
-<style>
-@import '../styles/recycling.css';
-</style>

@@ -1,5 +1,8 @@
 <template>
   <view class="home-page" :class="[tabPageClass, { 'waste-guide-open': showGuideModal, 'onboarding-demo-reading': showAppOnboarding && onboardingDemoFinished }]" :style="homeAdaptiveStyle">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <!-- #ifdef MP-WEIXIN -->
     <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
     <!-- #endif -->
@@ -373,6 +376,9 @@
 </template>
 
 <script setup>
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { useAppConfirmDialog } from '@/utils/use-app-confirm-dialog.js'
+const { appConfirmDialog } = useAppConfirmDialog()
 import { recentRecognition } from '@/utils/recent-recognition.js'
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch, getCurrentInstance } from 'vue'
 import { trackOnboardingFocus, queryOnboardingRects, getOnboardingViewport, getOnboardingScrollTop } from '@/utils/onboarding-focus.mjs'

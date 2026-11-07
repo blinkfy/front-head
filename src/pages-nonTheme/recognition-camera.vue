@@ -13,7 +13,7 @@
         <view v-if="!ready" class="capture-status">
           <text class="capture-message">{{ errorMessage || '正在打开相机…' }}</text>
           <view v-if="errorMessage" class="capture-error-actions">
-            <button class="capture-retry" @click="retryCamera">重试</button>
+            <button class="capture-retry" @click="retryCamera(true)">重试</button>
             <button class="capture-retry" @click="openCameraSettings">相机权限</button>
           </view>
         </view>
@@ -39,6 +39,7 @@
 <script setup>
 import { computed, getCurrentInstance, nextTick, ref } from 'vue'
 import { onHide, onResize, onShow, onUnload } from '@dcloudio/uni-app'
+import { ensureFeaturePermission } from '@/utils/feature-permission.js'
 
 const page = getCurrentInstance()
 const statusBarHeight = Number(uni.getSystemInfoSync().statusBarHeight) || 0
@@ -75,7 +76,8 @@ function onCameraError() {
   errorMessage.value = '相机暂时无法使用，请重试或检查相机权限。'
 }
 function onCameraStopped() { if (visible && ready.value && !committed.value) onCameraError() }
-async function retryCamera() {
+async function retryCamera(interactive = false) {
+  if (interactive && !await ensureFeaturePermission('camera', { isCurrent: () => alive && !committed.value })) return
   const version = ++mountVersion
   cameraActive.value = false
   ready.value = false

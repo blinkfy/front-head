@@ -24,6 +24,7 @@ import { recentRecognition } from '@/utils/recent-recognition.js'
 import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
 import { onAppPageReady } from '@/utils/app-page-ready.mjs'
 // #ifdef H5
+import { initWebCallRingtone } from '@/utils/web-call-ringtone.js'
 import { preloadTabPage, preloadSiblingTabPages } from '@/utils/tab-page-transition.js'
 // #endif
 import { initUiSounds, setUiSoundsActive } from '@/utils/ui-sounds.js'
@@ -78,6 +79,9 @@ export default {
     // #endif
     console.log('App Launch')
     initUiSounds()
+    // #ifdef H5
+    initWebCallRingtone()
+    // #endif
     // #ifdef APP-PLUS
     installAppWebpEncoder(encodeUploadWebp)
     installChatPush(getHuaweiPushToken, deleteHuaweiPushToken)
@@ -234,6 +238,8 @@ export default {
 <style>
 /* #ifndef APP-NVUE */
 @import "@/styles/auth-orbs.css";
+/* Shared by recycling pages and their slotted form content. */
+@import "@/pages-nonTheme/styles/recycling.css";
 /*每个页面公共css */
 
 /* #ifdef H5 */

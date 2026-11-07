@@ -52,6 +52,8 @@ object RealtimeBridge {
     private var nativePeer: JSONObject? = null
     private var nativeStartedAt = 0L
     private var nativeSpeaker = false
+    private var nativeEntryMode = "audio"
+    private var nativeCanSwitchCamera = false
     private var nativeCamera = true
     private var nativeRemoteCamera = true
     private var nativeAcceptSent = false
@@ -59,9 +61,13 @@ object RealtimeBridge {
     private var nativeDeadline: Runnable? = null
     @JvmStatic fun isNativeCall(id: String): Boolean = nativeAnswered && callId == id && id.isNotEmpty()
     private fun nativeSnapshot(phase: String = if (callConnected) "connected" else "connecting", reason: String = ""): JSONObject =
-        JSONObject().put("type", "voice.native").put("callId", callId).put("phase", phase).put("mode", if (video) "video" else "audio")
+        JSONObject().put("type", "voice.native").put("callId", callId).put("phase", phase).put("mode", nativeEntryMode).put("cameraSupported", video).put("canSwitchCamera", nativeCanSwitchCamera)
             .put("peer", nativePeer).put("userId", selfId).put("muted", muted).put("speaker", nativeSpeaker)
             .put("cameraEnabled", nativeCamera).put("remoteCameraEnabled", nativeRemoteCamera).put("startedAt", nativeStartedAt).put("reason", reason)
+            .apply {
+                val recording = VoiceCallBridge.recordingState(callId)
+                recording?.keys()?.forEach { key -> put(key, recording.opt(key)) }
+            }
     private fun publishNative() {
         if (!nativeAnswered) return
         deliver(nativeSnapshot()); notifyIncomingScreen()
@@ -70,12 +76,13 @@ object RealtimeBridge {
         if (!incomingPending(id) || callId.isNotEmpty() || activity.isFinishing || activity.isDestroyed) return false
         val invitation = incoming ?: return false
         val isVideo = invitation.optString("mode") == "video"
+        val flexible = invitation.optBoolean("cameraToggle")
         if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
             (isVideo && activity.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)) return false
         if (!incomingAcceptance.accept(id, incomingOwner())) return false
-        callId = id; video = isVideo; callConnected = false; muted = false; nativeSpeaker = isVideo
+        callId = id; video = isVideo || flexible; nativeEntryMode = if (isVideo) "video" else "audio"; nativeCanSwitchCamera = false; callConnected = false; muted = false; nativeSpeaker = isVideo
         nativeAnswered = true; nativePeer = invitation.optJSONObject("peer"); nativeStartedAt = 0L
-        nativeCamera = true; nativeRemoteCamera = true; nativeAcceptSent = false; nativeReported = false
+        nativeCamera = isVideo; nativeRemoteCamera = isVideo; nativeAcceptSent = false; nativeReported = false
         clearIncoming()
         refreshHeartbeat()
         if (!updateService()) { endCall("failed", true); return false }
@@ -83,7 +90,8 @@ object RealtimeBridge {
         val deadline = Runnable { if (isNativeCall(id) && !callConnected) endCall("connect_failed", true) }
         nativeDeadline = deadline; main.postDelayed(deadline, 30000)
         VoiceCallBridge.open(activity, JSONObject().put("callId", id).put("offerer", false).put("nativeAnswer", true)
-            .put("mode", if (isVideo) "video" else "audio").put("peerName", nativePeer?.optString("name", "联系人"))
+            .put("entryMode", nativeEntryMode).put("recordingOwner", selfId)
+            .put("mode", if (video) "video" else "audio").put("cameraEnabled", isVideo).put("remoteCameraEnabled", isVideo).put("cameraRequested", isVideo).put("speaker", isVideo).put("peerName", nativePeer?.optString("name", "联系人"))
             .put("stunUrls", org.json.JSONArray().put("stun:stun.cloudflare.com:3478")).toString()) { event ->
                 // Errors emitted before the native Session exists still terminate the reservation.
                 main.post { if (isNativeCall(id)) try {
@@ -93,6 +101,20 @@ object RealtimeBridge {
             }
         return true
     }
+    fun videoMinimized(activity: Activity, id: String) { main.post {
+        if (callId != id) return@post
+        if (!isNativeCall(id)) {
+            deliver(JSONObject().put("type", "voice.minimized").put("callId", id)); return@post
+        }
+        // Notification acceptance may never have loaded a Uni call page/listener.
+        val launch = activity.packageManager.getLaunchIntentForPackage(activity.packageName) ?: return@post
+        val peerId = nativePeer?.optString("id") ?: ""
+        val title = java.net.URLEncoder.encode(nativePeer?.optString("name", "联系人") ?: "联系人", "UTF-8")
+        val route = if (Regex("^[1-9]\\d{0,9}$").matches(peerId)) "/pages-nonTheme/chat?chatId=$peerId&userId=$peerId&title=$title" else "/pages-nonTheme/chatlist"
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        launch.putExtra("ftx_realtime_route", route)
+        try { activity.startActivity(launch); CallNotificationActivity.finishForCall(id) } catch (_: Exception) {}
+    } }
     @JvmStatic fun controlNative(id: String, json: String) { main.post {
         if (!isNativeCall(id)) return@post
         try {
@@ -287,7 +309,7 @@ object RealtimeBridge {
                                 announceMessaging()
                                 if (!foreground) {
                                     raw(JSONObject().put("type", "background").put("keepRealtime", true))
-                                    raw(JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true))
+                                    raw(JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true).put("cameraToggle", true))
                                     deferred["connected"] = event.toString()
                                 }
                                 updateService()
@@ -399,7 +421,7 @@ object RealtimeBridge {
             for ((key, event) in events) if (key == "close") emit("close", code = event.toInt()) else emit("message", event)
             point?.let { if (System.currentTimeMillis() - it.time < 45000) locationCallback(it) }
             if (incoming != null) {
-                raw(JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true))
+                raw(JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true).put("cameraToggle", true))
             }
             VoiceCallBridge.resumeState(); publishNative()
         } else {
@@ -438,12 +460,24 @@ object RealtimeBridge {
     @JvmStatic fun detachCall(id: String) { main.post {
         if (callId != id) return@post
         if (nativeAnswered) { endCall("failed", true); return@post }
+        pendingCameraAction = null
         callId = ""; callConnected = false; video = false
         disconnectedTask?.let(main::removeCallbacks); disconnectedTask = null
         updateService()
     } }
     @JvmStatic fun updateMuted(id: String, value: Boolean) { main.post {
         if (id == callId && muted != value) { muted = value; updateService(); publishNative() }
+    } }
+    // A camera granted mid-call needs its foreground service type refreshed.
+    private var pendingCameraAction: Pair<String, () -> Unit>? = null
+    @JvmStatic fun withCameraService(id: String, action: () -> Unit) { main.post {
+        val ctx = context ?: return@post
+        if (callId != id || !video || ctx.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return@post
+        pendingCameraAction = id to action
+        if (!updateService()) pendingCameraAction = null
+    } }
+    @JvmStatic fun cancelCameraServiceAction(id: String) { main.post {
+        if (pendingCameraAction?.first == id) pendingCameraAction = null
     } }
     @JvmStatic fun activeLocationId(): String = if (watching) locationId else ""
     // Return true when native consumed an event while JS may be suspended.
@@ -460,13 +494,22 @@ object RealtimeBridge {
                     if (!raw(JSONObject().put("type", "voice.accept").put("callId", id))) endCall("disconnected", false)
                 }
                 "offer", "answer", "ice" -> raw(JSONObject(data.toString()).put("type", "voice.$type").put("callId", id))
-                "camera" -> if (data.has("cameraEnabled")) raw(JSONObject().put("type", "voice.media").put("callId", id).put("cameraEnabled", data.optBoolean("cameraEnabled")))
+                "camera" -> {
+                    if (data.has("canSwitchCamera")) nativeCanSwitchCamera = data.optBoolean("canSwitchCamera")
+                    if (data.has("cameraEnabled")) {
+                        nativeCamera = data.optBoolean("cameraEnabled")
+                        raw(JSONObject().put("type", "voice.media").put("callId", id).put("cameraEnabled", nativeCamera))
+                    }
+                    if (owned) publishNative()
+                }
                 "control" -> if (owned) applyNativeControl(data) else {
                     // The dedicated video Activity must not wait for a paused Uni JS runtime.
                     VoiceCallBridge.control(id, data.toString())
                     if (video && data.has("cameraEnabled")) raw(JSONObject().put("type", "voice.media").put("callId", id).put("cameraEnabled", data.optBoolean("cameraEnabled")))
                     deliver(JSONObject(data.toString()).put("type", "voice.local-control").put("callId", id))
                 }
+                "recording" -> if (owned) publishNative() else
+                    deliver(JSONObject(data.toString()).put("type", "voice.local-recording").put("callId", id))
                 "hangup", "error" -> endCall(if (type == "hangup") "hangup" else data.optString("reason", "failed"), true)
                 "state" -> when (data.optString("state")) {
                     "failed" -> endCall("connect_failed", true)
@@ -488,6 +531,7 @@ object RealtimeBridge {
         val id = callId
         if (id.isEmpty()) return
         val nativeEnd = if (nativeAnswered) nativeSnapshot("ended", reason) else null
+        pendingCameraAction = null
         nativeAnswered = false; nativePeer = null
         nativeDeadline?.let(main::removeCallbacks); nativeDeadline = null
         callId = ""; video = false; callConnected = false
@@ -520,8 +564,15 @@ object RealtimeBridge {
             "stop-location" -> if (id == locationId) stopLocation(true)
         }
     } }
-    @JvmStatic fun serviceReady() { startingService = false }
+    @JvmStatic fun serviceReady() { main.post {
+        startingService = false
+        val pending = pendingCameraAction; pendingCameraAction = null
+        val ctx = context
+        if (pending != null && ctx != null && pending.first == callId && video && RealtimeService.running &&
+            ctx.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) pending.second()
+    } }
     @JvmStatic fun serviceFailed() { main.post {
+        pendingCameraAction = null
         startingService = false
         messagingEnabled = false; messagingPaused = true
         emit("status", "SERVICE_UNAVAILABLE"); clearIncoming(); endCall("failed", true); stopLocation(true); updateService()
@@ -561,8 +612,12 @@ object RealtimeBridge {
                 val providers = manager!!.getProviders(true).filter { it == LocationManager.NETWORK_PROVIDER || precise && it == LocationManager.GPS_PROVIDER }
                 if (providers.isEmpty()) { locationError(2); return@post }
                 for (provider in providers) manager!!.requestLocationUpdates(provider, 5000L, 0f, source, Looper.getMainLooper())
+                // Show a recent cached fix immediately while requesting fresh GPS/network fixes.
+                providers.mapNotNull { manager!!.getLastKnownLocation(it) }
+                    .filter { it.hasAccuracy() && System.currentTimeMillis() - it.time in 0L..30000L }
+                    .minByOrNull { it.accuracy }?.let(source::onLocationChanged)
                 val deadline = Runnable { if (watching && id == watchId && point == null) locationError(2) }
-                locationDeadline = deadline; main.postDelayed(deadline, 20000)
+                locationDeadline = deadline; main.postDelayed(deadline, 45000)
             } catch (_: SecurityException) { locationError(1) } catch (_: Exception) { locationError(2) }
         }
         return id
@@ -580,7 +635,10 @@ object RealtimeBridge {
             val task = Runnable { flushTask = null; flushLocation() }; flushTask = task; main.postDelayed(task, delay); return
         }
         val value = pending ?: return
-        if (lastSent?.distanceTo(value)?.let { it < 10 && System.currentTimeMillis() - lastSentAt < 30000 } == true) return
+        if (lastSent?.distanceTo(value)?.let { it < 10 && System.currentTimeMillis() - lastSentAt < 30000 } == true) {
+            val task = Runnable { flushTask = null; flushLocation() }; flushTask = task
+            main.postDelayed(task, 30000 - (System.currentTimeMillis() - lastSentAt)); return
+        }
         pending = null; lastSent = Location(value); lastSentAt = System.currentTimeMillis()
         val coordinates = JSONObject().put("latitude", value.latitude).put("longitude", value.longitude)
             .put("accuracy", value.accuracy.toDouble()).put("coordinateSystem", "wgs84")

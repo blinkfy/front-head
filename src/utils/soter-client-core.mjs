@@ -1,6 +1,21 @@
 export function createSoterAdapter({ runtime, api, setTimer = setTimeout, clearTimer = clearTimeout }) {
   const pending = new Set()
-  let selectedMode = '', cached = null, cachedUntil = 0
+  let selectedMode = '', cached = null, cachedUntil = 0, systemPromptActive = false, foreground = true, promptOwner
+  const foregroundWaiters = new Set()
+  function waitForForeground() {
+    if (foreground) return Promise.resolve()
+    return new Promise((resolve, reject) => {
+      let timer
+      const finish = error => {
+        clearTimer(timer); foregroundWaiters.delete(resume); pending.delete(cancel)
+        if (error) reject(error); else resolve()
+      }
+      const resume = () => finish()
+      const cancel = () => finish({ error: 'CANCELLED' })
+      foregroundWaiters.add(resume); pending.add(cancel)
+      timer = setTimer(cancel, 15000)
+    })
+  }
   function call(method, options = {}, timeout = 4000) {
     return new Promise((resolve, reject) => {
       let finished = false, timer
@@ -16,8 +31,8 @@ export function createSoterAdapter({ runtime, api, setTimer = setTimeout, clearT
         if (typeof runtime[method] !== 'function') return complete({ error: 'UNAVAILABLE' }, true)
         runtime[method]({ ...options, success: result => complete(result, false), fail: error => {
           const code = Number(error.errCode ?? error.errcode)
-          const reason = [90008, 90009].includes(code) ? 'CANCELLED' : code === 90010 ? 'LOCKED' : 'UNAVAILABLE'
-          complete({ error: reason }, true)
+          const reason = code === 90008 ? 'CANCELLED' : code === 90009 ? 'AUTH_FAILED' : code === 90010 ? 'LOCKED' : code === 90011 ? 'NOT_ENROLLED' : 'UNAVAILABLE'
+          complete({ error: reason, ...(code === 90009 ? { msg: '指纹或面容未验证通过，请重试' } : {}) }, true)
         } })
       } catch (_) { complete({ error: 'UNAVAILABLE' }, true) }
     })
@@ -51,26 +66,50 @@ export function createSoterAdapter({ runtime, api, setTimer = setTimeout, clearT
       return cached
     } catch (_) { return { ...no, reason: 'service_unavailable' } }
   }
-  async function proof(data, isActive) {
+  async function proof(data, isActive, owner) {
     if (!isActive()) throw { error: 'CANCELLED' }
-    const result = await call('startSoterAuthentication', { requestAuthModes: [selectedMode], challenge: data.payload, authContent: '验证身份以登录分投侠' }, 65000)
-    if (!isActive()) throw { error: 'CANCELLED' }
-    if (!result.resultJSON || !result.resultJSONSignature) throw { error: 'UNAVAILABLE' }
-    return { challengeId: data.challengeId, resultJSON: result.resultJSON, resultJSONSignature: result.resultJSONSignature }
+    systemPromptActive = true
+    promptOwner = owner
+    try {
+      let result, failure
+      try {
+        result = await call('startSoterAuthentication', { requestAuthModes: [selectedMode], challenge: data.payload, authContent: '验证身份以登录分投侠' }, 65000)
+      } catch (error) { failure = error }
+      // Some WeChat/system prompts hide the page. Do not submit while hidden,
+      // and let the owning page resume this proof when it becomes visible again.
+      await waitForForeground()
+      if (!isActive()) throw { error: 'CANCELLED' }
+      if (failure) throw failure
+      if (!result.resultJSON || !result.resultJSONSignature) throw { error: 'UNAVAILABLE' }
+      return { challengeId: data.challengeId, resultJSON: result.resultJSON, resultJSONSignature: result.resultJSONSignature }
+    } finally { systemPromptActive = false; promptOwner = undefined }
   }
   return {
     label: '指纹或面容登录', capability,
     offerText: '下次未保持登录时，优先使用系统指纹或面容认证，并核验当前微信身份。您可在「设置 → 账号与安全」中修改。',
-    async enroll({ token, isActive }) {
+    async enroll({ token, isActive, owner }) {
       const { data } = await api('/quick-login/soter/enrollment/options', { code: await code() }, token)
-      const response = await proof(data, isActive)
+      const response = await proof(data, isActive, owner)
+      if (!isActive()) throw { error: 'CANCELLED' }
       return (await api('/quick-login/soter/enrollment/finish', response, token)).data
     },
-    async login({ credentialId, isActive }) {
+    async login({ credentialId, isActive, owner }) {
       const { data } = await api('/quick-login/soter/login/options', { credentialId, code: await code() })
-      return api('/quick-login/soter/login/finish', await proof(data, isActive))
+      const response = await proof(data, isActive, owner)
+      if (!isActive()) throw { error: 'CANCELLED' }
+      return api('/quick-login/soter/login/finish', response)
     },
     async probeSession(token) { return api('/quick-login/soter/session', { code: await code() }, token) },
-    cancel() { for (const cancel of [...pending]) cancel() }
+    suspendSystemAuthentication(owner) {
+      if (!systemPromptActive || promptOwner !== owner) return false
+      foreground = false
+      return true
+    },
+    resumeSystemAuthentication(owner) {
+      if (systemPromptActive && promptOwner !== owner) return
+      foreground = true
+      for (const resume of [...foregroundWaiters]) resume()
+    },
+    cancel() { foreground = true; systemPromptActive = false; for (const cancel of [...pending]) cancel() }
   }
 }

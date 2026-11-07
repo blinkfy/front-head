@@ -27,7 +27,7 @@ export function geometryError(value) {
   }
   if (value.type !== 'polygon' || !Array.isArray(value.points)) return '请选择圆形或多边形范围'
   const points = value.points.slice()
-  if (points.length > 1 && points[0] && points.at(-1) && samePoint(points[0], points.at(-1))) points.pop()
+  if (points.length > 1 && points[0] && points[points.length - 1] && samePoint(points[0], points[points.length - 1])) points.pop()
   if (points.length < 3 || points.length > 30) return '多边形须有 3 至 30 个顶点'
   if (points.some(point => !normalizePoint(point))) return '顶点坐标无效'
   if (new Set(points.map(point => `${point.latitude},${point.longitude}`)).size !== points.length) return '顶点不能重复'
@@ -52,7 +52,7 @@ export function normalizeGeometry(value) {
   if (geometryError(value)) return null
   if (value.type === 'circle') return { type: 'circle', coordinateSystem: 'wgs84', center: normalizePoint(value.center), radiusMeters: value.radiusMeters }
   const points = value.points.map(normalizePoint)
-  if (samePoint(points[0], points.at(-1))) points.pop()
+  if (samePoint(points[0], points[points.length - 1])) points.pop()
   return { type: 'polygon', coordinateSystem: 'wgs84', points }
 }
 export function distanceMeters(a, b) {
@@ -60,10 +60,28 @@ export function distanceMeters(a, b) {
   const x = Math.sin((b.latitude - a.latitude) * rad / 2) ** 2 + Math.cos(a.latitude * rad) * Math.cos(b.latitude * rad) * Math.sin((b.longitude - a.longitude) * rad / 2) ** 2
   return 2 * EARTH_RADIUS_METERS * Math.atan2(Math.sqrt(Math.min(1, x)), Math.sqrt(Math.max(0, 1 - x)))
 }
-export function containsPoint(value, rawPoint) {
+function distanceToSegmentMeters(location, a, b) {
+  // Project to metres around the query point. Service polygons span at most 2 degrees.
+  const radians = Math.PI / 180, radius = 6371008.8
+  const scaleX = radians * radius * Math.cos(location.latitude * radians), scaleY = radians * radius
+  const ax = (a.longitude - location.longitude) * scaleX, ay = (a.latitude - location.latitude) * scaleY
+  const bx = (b.longitude - location.longitude) * scaleX, by = (b.latitude - location.latitude) * scaleY
+  const dx = bx - ax, dy = by - ay, lengthSquared = dx * dx + dy * dy
+  const fraction = lengthSquared ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSquared)) : 0
+  return Math.sqrt((ax + fraction * dx) ** 2 + (ay + fraction * dy) ** 2)
+}
+export function bookingToleranceMeters(accuracyMeters) {
+  return typeof accuracyMeters === 'number' && Number.isFinite(accuracyMeters) && accuracyMeters >= 0
+    ? Math.max(50, Math.min(200, accuracyMeters)) : 50
+}
+export function coversServiceLocation(geometry, location) {
+  return containsPoint(geometry, location, bookingToleranceMeters(location?.accuracyMeters))
+}
+export function containsPoint(value, rawPoint, toleranceMeters = 0) {
   const geometry = normalizeGeometry(value), point = normalizePoint(rawPoint)
   if (!geometry || !point) return false
-  if (geometry.type === 'circle') return distanceMeters(geometry.center, point) <= geometry.radiusMeters + 1e-6
+  const tolerance = typeof toleranceMeters === 'number' && Number.isFinite(toleranceMeters) ? Math.max(0, Math.min(200, toleranceMeters)) : 0
+  if (geometry.type === 'circle') return distanceMeters(geometry.center, point) <= geometry.radiusMeters + tolerance + 1e-6
   let inside = false
   const points = geometry.points
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
@@ -71,7 +89,7 @@ export function containsPoint(value, rawPoint) {
     if (pointOnSegment(point, a, b)) return true
     if ((a.latitude > point.latitude) !== (b.latitude > point.latitude) && point.longitude < (b.longitude - a.longitude) * (point.latitude - a.latitude) / (b.latitude - a.latitude) + a.longitude) inside = !inside
   }
-  return inside
+  return inside || (tolerance > 0 && points.some((a, i) => distanceToSegmentMeters(point, a, points[(i + 1) % points.length]) <= tolerance + 1e-6))
 }
 export function geometryBounds(value) {
   const geometry = normalizeGeometry(value)

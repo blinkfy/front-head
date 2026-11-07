@@ -1,5 +1,8 @@
 <template>
     <view class="database-page" v-if="adminUser">
+        <!-- #ifdef APP-PLUS -->
+        <AppConfirmDialog ref="appConfirmDialog" />
+        <!-- #endif -->
         <!-- 动态科技背景 -->
         <view class="tech-background">
             <view class="grid-overlay"></view>
@@ -949,7 +952,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, getCurrentInstance } from 'vue'
+import { onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
 import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
@@ -964,6 +970,20 @@ import {
     getDatabaseStats,
     getGenericTableList, createGenericTableRecord, updateGenericTableRecord, deleteGenericTableRecord
 } from '@/api/database'
+
+const page = getCurrentInstance().proxy
+const appConfirmDialog = ref(null)
+
+// #ifdef APP-PLUS
+onBackPress(event => {
+    if (event.from === 'backbutton' && appConfirmDialog.value?.current) {
+        appConfirmDialog.value.settle(false)
+        return true
+    }
+})
+// #endif
+onHide(() => appConfirmDialog.value?.cancelAll())
+onUnload(() => appConfirmDialog.value?.cancelAll())
 
 // 响应式数据
 const isRefreshing = ref(false)
@@ -2207,7 +2227,7 @@ async function deleteDatabaseRecord(item) {
 }
 
 async function handleDelete(item) {
-    uni.showModal({
+    showAppModal(page, {
         title: '确认删除',
         content: `确定要删除这条记录吗？`,
         confirmText: '删除',
@@ -2247,7 +2267,7 @@ async function handleDelete(item) {
 function handleBulkDelete() {
     const records = getSelectedRecords()
     if (!records.length) return
-    uni.showModal({
+    showAppModal(page, {
         title: '确认批量删除',
         content: `确定删除当前页选中的 ${records.length} 条记录吗？此操作无法撤销。`,
         confirmText: '批量删除',
@@ -2329,7 +2349,7 @@ function confirmBulkEdit() {
     }
 
     const payload = { [field.key]: value }
-    uni.showModal({
+    showAppModal(page, {
         title: '确认批量编辑',
         content: `将选中的 ${records.length} 条记录的“${field.label}”统一修改，是否继续？`,
         confirmText: '确认修改',
@@ -2575,7 +2595,7 @@ function closeHistoryImagePreview() {
 }
 
 function deleteImage() {
-    uni.showModal({
+    showAppModal(page, {
         title: '确认删除',
         content: '确定要删除这张图片吗？删除后将无法恢复。',
         confirmText: '删除',

@@ -1,3 +1,4 @@
+import { chooseImageWithPermission } from './feature-permission.js'
 import { createRecognitionImagePicker } from './recognition-picker-core.mjs'
 import { detectWebCamera } from './image-picker.js'
 
@@ -17,7 +18,7 @@ openWebCamera = async () => {
 
 export const chooseRecognitionImage = createRecognitionImagePicker({
   runtime: {
-    chooseImage: options => uni.chooseImage(options),
+    chooseImage: chooseImageWithPermission,
     showActionSheet: options => uni.showActionSheet(options),
     navigateTo: options => uni.navigateTo(options)
   },

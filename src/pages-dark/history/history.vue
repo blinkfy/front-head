@@ -1,5 +1,8 @@
 <template>
   <view class="history-bg">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <!-- 自定义状态栏 -->
     <view class="custom-statusbar"></view>
     
@@ -207,6 +210,9 @@
 </template>
 
 <script setup>
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { useAppConfirmDialog } from '@/utils/use-app-confirm-dialog.js'
+const { appConfirmDialog, showPageModal } = useAppConfirmDialog()
 import { ref, reactive, onMounted, computed } from 'vue'
 import { getRecognitionHistory, deleteHistoryRecord, batchDeleteHistoryRecords, getHistoryImage, getHistoryRecognitionDetail } from '@/api/history'
 import { baseUrl } from '@/api/settings'
@@ -411,7 +417,7 @@ async function batchDelete() {
   if (selectedItems.value.length === 0) return
   
   try {
-    uni.showModal({
+    showPageModal({
       title: '确认删除',
       content: `确定要删除选中的 ${selectedItems.value.length} 条记录吗？`,
       success: async (res) => {
@@ -454,7 +460,7 @@ async function batchDelete() {
 // 删除单个项目
 async function deleteItem(id) {
   try {
-    uni.showModal({
+    showPageModal({
       title: '确认删除',
       content: '确定要删除这条记录吗？',
       success: async (res) => {

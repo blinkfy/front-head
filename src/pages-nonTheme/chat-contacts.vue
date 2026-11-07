@@ -1,5 +1,8 @@
 <template>
   <view class="contacts-page">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <view class="contacts-header" :style="{ paddingTop: `${statusBarHeight}px` }">
       <view class="header-row">
         <view class="icon-button" @click="goBack"><ManifestIcon id="back" :scale="1.1" /></view>
@@ -125,6 +128,8 @@
 </template>
 
 <script>
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import * as chatApi from '@/pages-nonTheme/api/chat'
 import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
@@ -132,7 +137,7 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getDisplayName } from '@/utils/display-name.js'
 
 export default {
-  components: { ManifestIcon },
+  components: { AppConfirmDialog, ManifestIcon },
   data() {
     return {
       statusBarHeight: 20,
@@ -182,8 +187,16 @@ export default {
       if (enabled) this.refreshAll()
     })
   },
-  onHide() { this.searchVersion++; this.searching = false },
-  onUnload() { this.searchVersion++; this.searching = false },
+  // #ifdef APP-PLUS
+  onBackPress(event) {
+    if (event.from === 'backbutton' && this.$refs.appConfirmDialog?.current) {
+      this.$refs.appConfirmDialog.settle(false)
+      return true
+    }
+  },
+  // #endif
+  onHide() { this.$refs.appConfirmDialog?.cancelAll(); this.searchVersion++; this.searching = false },
+  onUnload() { this.$refs.appConfirmDialog?.cancelAll(); this.searchVersion++; this.searching = false },
   methods: {
     getDisplayName,
     async ensureCommunityChatAvailable() {
@@ -275,7 +288,7 @@ export default {
       if (user.isFriend || this.pendingFriendIds.includes(id)) return
       this.pendingFriendIds.push(id)
       try {
-        const result = await new Promise(resolve => uni.showModal({ title: `添加 ${getDisplayName(user)}`, editable: true,
+        const result = await new Promise(resolve => showAppModal(this, { title: `添加 ${getDisplayName(user)}`, editable: true,
           placeholderText: '输入申请说明（可选）', success: resolve, fail: () => resolve({ confirm: false }) }))
         if (!result.confirm) return
         const response = await chatApi.sendFriendRequest(user.id, result.content || '')

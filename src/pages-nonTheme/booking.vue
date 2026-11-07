@@ -1,5 +1,6 @@
 <template>
   <view class="booking-page" :class="{ 'dark-mode': isDark }">
+    <AppConfirmDialog ref="appConfirmDialog" />
     <!-- 动态背景 -->
     <view class="bg-effects">
       <view class="bg-circle c1"></view>
@@ -86,6 +87,7 @@
           <text v-else-if="!bookingPoint" class="estimate-note">请点击地图选址确认上门位置，系统将按圆形或多边形边界匹配服务范围。修改地址后需重新选址。</text>
           <text v-else-if="!selectedServiceArea" class="estimate-note">该上门位置暂无已审核服务范围与排班覆盖，暂不能预约。</text>
           <text v-else class="estimate-note">该地址匹配 {{ matchingAreas.length }} 个服务范围，请继续选择品类、日期与可用时段。</text>
+          <text v-if="bookingPoint" class="estimate-note">边界已预留 {{ bookingTolerance }} 米定位容差。请核对实际上门位置，定位偏差较大时可重新选址。</text>
         </view>
 
         <RecyclingServiceMap v-if="bookingPoint && matchingAreas.length" :areas="matchingAreas" :point="bookingPoint" readonly />
@@ -243,10 +245,11 @@
 import { getWasteTypes, createBooking, getAvailableTimeSlots } from '@/pages-nonTheme/api/booking.js';
 import { recyclingCatalog, mutationData } from './api/recycling.js';
 import { getUserProfile, updateUserProfile } from '@/api/user.js';
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import ShopRegionPicker from './components/ShopRegionPicker.vue';
 import RecyclingServiceMap from './components/RecyclingServiceMap.vue';
-import { containsPoint, normalizePoint, gcj02ToWgs84 } from './utils/recycling-geometry.mjs';
+import { coversServiceLocation, bookingToleranceMeters, normalizePoint, gcj02ToWgs84 } from './utils/recycling-geometry.mjs';
 import ShopAddressPicker from '@/pages-nonTheme/components/shop/ShopAddressPicker.vue';
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js';
 import { playUiSound } from '@/utils/ui-sounds.js';
@@ -254,7 +257,7 @@ import { formatBookingDate } from './utils/booking-date.mjs';
 import { bookingDraftMethods } from './utils/booking-draft-methods.js';
 
 export default {
-  components: { ManifestIcon, ShopRegionPicker, ShopAddressPicker, RecyclingServiceMap },
+  components: { AppConfirmDialog, ManifestIcon, ShopRegionPicker, ShopAddressPicker, RecyclingServiceMap },
   data() {
     return {
       draftId: '', draft: null, draftLoading: false, draftError: '', draftExpired: false, draftReceipt: null, replacementRequestId: '',
@@ -300,13 +303,23 @@ export default {
       this.loadTimeSlots();
     }
   },
-  onUnload() { this.timeSlotsRequestId++; },
+  // #ifdef APP-PLUS
+  onBackPress(event) {
+    if (event.from === 'backbutton' && this.$refs.appConfirmDialog?.current) {
+      this.$refs.appConfirmDialog.settle(false);
+      return true;
+    }
+  },
+  // #endif
+  onHide() { this.$refs.appConfirmDialog?.cancelAll(); },
+  onUnload() { this.$refs.appConfirmDialog?.cancelAll(); this.timeSlotsRequestId++; },
   computed: {
     selectedServiceArea() { return this.serviceAreas.find(area => Number(area.id) === Number(this.serviceAreaId)); },
     addressRegionComplete() { return this.addressRegion.length === 3 && this.addressRegion.every(part => String(part || '').trim()); },
     bookingSelectionKey() { return JSON.stringify([this.serviceAreaId, this.address, this.bookingPoint, this.dateValues[this.selectedDate], [...this.selectedTypes].map(Number).sort((a, b) => a - b)]); },
-    bookingPoint() { const p = this.addressCoordinates; return p?.address === this.address && p.coordinateSystem === 'wgs84' ? normalizePoint(p) : null; },
-    matchingAreas() { return this.bookingPoint ? this.serviceAreas.filter(area => area.geometry && containsPoint(area.geometry, this.bookingPoint)) : []; },
+    bookingPoint() { const p = this.addressCoordinates; const point = p?.address === this.address && p.coordinateSystem === 'wgs84' ? normalizePoint(p) : null; return point ? { ...point, ...(Number.isFinite(p.accuracyMeters) && p.accuracyMeters >= 0 ? { accuracyMeters: Math.min(200, p.accuracyMeters) } : {}) } : null; },
+    bookingTolerance() { return bookingToleranceMeters(this.bookingPoint?.accuracyMeters); },
+    matchingAreas() { return this.bookingPoint ? this.serviceAreas.filter(area => area.geometry && coversServiceLocation(area.geometry, this.bookingPoint)) : []; },
     allowedWasteTypes() { const ids = [...new Set(this.matchingAreas.flatMap(area => area.typeIds || []))]; return this.wasteTypes.filter(item => ids.map(Number).includes(Number(item.id))); },
     address: {
       get() {
@@ -365,7 +378,7 @@ export default {
       let point = normalizePoint({ latitude: Number(selection.latitude), longitude: Number(selection.longitude) });
       if (point && selection.coordinateSystem === 'gcj02') point = gcj02ToWgs84(point);
       else if (selection.coordinateSystem !== 'wgs84') point = null;
-      this.addressCoordinates = point && selection.latitude != null && selection.longitude != null ? { ...point, address: this.address, coordinateSystem: 'wgs84' } : null;
+      this.addressCoordinates = point && selection.latitude != null && selection.longitude != null ? { ...point, address: this.address, coordinateSystem: 'wgs84', ...(Number.isFinite(selection.accuracy) && selection.accuracy >= 0 ? { accuracyMeters: Math.min(200, selection.accuracy) } : {}) } : null;
       this.syncServiceCoverage();
       uni.setStorageSync('bookingAddress', this.address);
     },
@@ -473,7 +486,7 @@ export default {
       if (!this.serviceAreaId) { this.timeSlotsLoading = false; this.timeSlotsError = this.bookingPoint ? '该上门位置暂无已审核范围与排班覆盖' : '请通过地图选择上门位置'; return; }
       if (!this.selectedTypes.length) { this.timeSlotsLoading = false; this.timeSlotsError = '请先选择回收物品，再查询可预约时段'; return; }
       try {
-        const res = await getAvailableTimeSlots(dateStr, this.serviceAreaId, this.selectedTypes, { addressLat: this.bookingPoint.latitude, addressLng: this.bookingPoint.longitude, addressCoordinateSystem: 'wgs84' });
+        const res = await getAvailableTimeSlots(dateStr, this.serviceAreaId, this.selectedTypes, { addressLat: this.bookingPoint.latitude, addressLng: this.bookingPoint.longitude, addressCoordinateSystem: 'wgs84', ...(this.bookingPoint.accuracyMeters != null ? { addressAccuracy: this.bookingPoint.accuracyMeters } : {}) });
         if (requestId !== this.timeSlotsRequestId) return;
         const data = this.extractData(res);
         this.timeSlots = Array.isArray(data)

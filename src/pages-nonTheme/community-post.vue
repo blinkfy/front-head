@@ -1,5 +1,8 @@
 <template>
   <view class="post-page" :class="{ 'dark-mode': isDark }">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <!-- #ifdef MP-WEIXIN -->
     <canvas canvas-id="post-image-trim" class="post-image-trim-canvas"></canvas>
     <!-- #endif -->
@@ -176,6 +179,8 @@
 </template>
 
 <script>
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { getComments, addComment, togglePostLike, getCommunityPosts, getCommunityPostImages, deleteCommunityPost, deleteCommunityComment } from '@/pages-nonTheme/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
@@ -200,7 +205,7 @@ function requestJson(url, options = {}) {
   })
 }
 export default {
-  components: { ManifestIcon, CommunityChatBridge, CommunityPostBody },
+  components: { AppConfirmDialog, ManifestIcon, CommunityChatBridge, CommunityPostBody },
   data() {
     return {
       postId: 0,
@@ -312,7 +317,19 @@ export default {
     this.loadPostDetail();
     this.loadComments();
   },
+  // #ifdef APP-PLUS
+  onBackPress(event) {
+    if (event.from === 'backbutton' && this.$refs.appConfirmDialog?.current) {
+      this.$refs.appConfirmDialog.settle(false)
+      return true
+    }
+  },
+  // #endif
+  onHide() {
+    this.$refs.appConfirmDialog?.cancelAll()
+  },
   onUnload() {
+    this.$refs.appConfirmDialog?.cancelAll()
     // #ifdef H5
     window.removeEventListener('keydown', this.handlePreviewKeydown);
     // #endif
@@ -707,7 +724,7 @@ export default {
       });
     },
     confirmDeletePost() {
-      uni.showModal({
+      showAppModal(this, {
         title: '删除帖子',
         content: '确认删除这条帖子吗？删除后无法恢复。',
         confirmColor: '#ef4444',
@@ -726,7 +743,7 @@ export default {
       });
     },
     confirmDeleteComment(comment) {
-      uni.showModal({
+      showAppModal(this, {
         title: '删除评论',
         content: '确认删除这条评论吗？删除后无法恢复。',
         confirmColor: '#ef4444',

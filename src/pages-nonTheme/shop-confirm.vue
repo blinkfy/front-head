@@ -57,6 +57,9 @@
       </view>
     </template>
     <template #overlay="{ dark }">
+      <!-- #ifdef APP-PLUS -->
+      <AppConfirmDialog ref="appConfirmDialog" />
+      <!-- #endif -->
       <view v-if="result" class="shop-modal-overlay">
         <view class="shop-success">
           <ManifestIcon :id="result.order.status === 'pending' ? 'reward_gift' : 'points_info'" class="shop-success-icon" />
@@ -77,6 +80,11 @@
 </template>
 
 <script setup>
+// #ifdef APP-PLUS
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
+// #endif
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { userinfo } from '@/api/user'
@@ -92,6 +100,18 @@ import { enqueueAchievementUnlocks, extractAchievementUnlocks, takeAchievementUn
 import { playUiSound } from '@/utils/ui-sounds.js'
 import { backFromShopPage, newShopRequestId, orderStatus, returnToShop, shopError, shopIntentKey } from '@/pages-nonTheme/utils/shop-orders'
 
+const appConfirmDialog = ref(null)
+// #ifdef APP-PLUS
+const cancelAppDialogs = () => appConfirmDialog.value?.cancelAll()
+onHide(cancelAppDialogs)
+onUnload(cancelAppDialogs)
+onBackPress(event => {
+  if (event.from === 'backbutton' && appConfirmDialog.value?.current) {
+    appConfirmDialog.value.settle(false)
+    return true
+  }
+})
+// #endif
 const productId = ref('')
 const draftId = ref('')
 const draft = ref(null)
@@ -382,7 +402,7 @@ async function recreateExpiredDraft() {
 
 function showSubmitError(message, title = '兑换未完成') {
   const pending = intent.value ? '\n\n本次请求已保存。请重试同一笔兑换，或到“我的订单”核实结果，避免重新创建兑换。' : ''
-  uni.showModal({ title, content: message + pending, showCancel: false, confirmText: title === '请完善收货信息' ? '去完善' : '我知道了' })
+  showAppModal({ $refs: { appConfirmDialog: appConfirmDialog.value } }, { title, content: message + pending, showCancel: false, confirmText: title === '请完善收货信息' ? '去完善' : '我知道了' })
 }
 
 function goOrders() { uni.navigateTo({ url: '/pages-nonTheme/shop-orders' }) }

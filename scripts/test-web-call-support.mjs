@@ -7,7 +7,7 @@ const sourcePath = fileURLToPath(new URL('../src/utils/web-call-support.js', imp
 const source = fs.readFileSync(sourcePath, 'utf8')
 
 function setup({ permission = 'default', permissionError = null, notificationError = null } = {}) {
-  const calls = { requested: 0, notifications: [], focuses: 0, opened: 0 }
+  const calls = { requested: 0, notifications: [], focuses: 0, opened: 0, ringtoneUpdates: [] }
   class MockNotification {
     static permission = permission
     static requestPermission() {
@@ -25,10 +25,12 @@ function setup({ permission = 'default', permissionError = null, notificationErr
     globalThis: null, isSecureContext: true, RTCPeerConnection: function () {},
     navigator: { mediaDevices: { getUserMedia() {} } }, Notification: MockNotification,
     document, window: { focus() { calls.focuses++ } }, Promise,
+    updateWebCallRingtone: value => calls.ringtoneUpdates.push(value),
   }
   context.globalThis = context
   vm.createContext(context)
-  const compiled = source.replace(/^export function /gm, 'function ')
+  const compiled = source.replace(/^import .* from .*$/gm, '')
+    .replace(/^export function /gm, 'function ')
     .replace(/^export async function /gm, 'async function ')
   vm.runInContext(`${compiled}\nglobalThis.api = { webCallsAvailable, webCallNotificationsAvailable, requestWebCallNotifications, updateWebCallAlert, refreshWebCallAlert }`, context)
   return { api: context.api, calls, document, Notification: MockNotification }
@@ -52,12 +54,14 @@ async function main() {
     document.hidden = false
     api.updateWebCallAlert(state('incoming'), { open: () => opened++ })
     assert.equal(calls.notifications.length, 0, 'visible page does not create a browser notification')
+    assert.equal(calls.ringtoneUpdates.length, 1, 'every call update also updates the ringtone')
     document.hidden = true
     api.refreshWebCallAlert()
     assert.equal(calls.notifications.length, 1, 'hidden page creates a notification for an incoming call')
     const first = calls.notifications[0]
-    assert.equal(first.options.silent, true, 'notification sound follows the configured sound preference')
+    assert.equal(first.options.silent, true, 'browser notifications are silent to avoid double ringing')
     api.updateWebCallAlert(state('incoming'), { open: () => opened++ })
+    assert.equal(calls.ringtoneUpdates.length, 3, 'repeated incoming state is forwarded to the ringtone controller')
     assert.equal(calls.notifications.length, 1, 'repeated updates for the same call do not duplicate its notification')
     assert.match(document.title, /Peer/)
 

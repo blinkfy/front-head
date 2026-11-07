@@ -183,7 +183,7 @@ async function getCurrentLocation(existing = null) {
   const token = ++locationRevision
   notice.value = ''; isGettingLocation.value = true; satelliteReference.value = null; satelliteReferenceLoading.value = false; satelliteCapabilityReady.value = false; satelliteCapability = null; pickerSatelliteReference = null
   try {
-    const location = existing || await getUserLocationOnce('gcj02')
+    const location = existing || await getUserLocationOnce('gcj02', { interactive: true })
     if (!activeLocation(token)) return
     if (!validBinCoordinates(location)) throw new Error('定位结果无效')
     formData.value.latitude = Number(location.latitude); formData.value.longitude = Number(location.longitude)

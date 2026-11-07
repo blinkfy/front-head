@@ -20,9 +20,9 @@ export function locationDistance(a, b) {
 
 export function createLiveLocationController({ send, tracker, getOwner, getSelfId, changed = () => {}, now = Date.now,
   setTimer = setTimeout, clearTimer = clearTimeout, createId = () => `loc_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}` }) {
-  let active = false, connected = false, version = 0, ready = false, session = null
+  let active = false, connected = false, version = 0, ready = false, visible = true, session = null
   let view = { supported: false, phase: 'idle', sessionId: '', peer: null, selfPoint: null, peerPoint: null, peerJoined: false,
-    offers: {}, reason: '', locating: false }
+    offers: {}, reason: '', locating: false, paused: false }
   const publish = patch => { view = { ...view, ...patch, supported: active && connected && ready && tracker.supported() }; changed({ ...view }) }
   const transmit = event => { try { return send(event) !== false } catch (_) { return false } }
   const current = item => item === session && item.owner === getOwner() && active && connected
@@ -31,53 +31,108 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
     if (item === session) end('disconnected', false)
     return false
   }
+  function stopTracking(item) {
+    item.watchVersion = (item.watchVersion || 0) + 1
+    clearTimer(item.timer); clearTimer(item.flushTimer)
+    item.timer = item.flushTimer = null
+    item.pending = item.last = null; item.lastAt = null
+    item.tracking = false; item.awaitingJoin = false
+    const stop = item.stop; item.stop = null
+    try { stop?.() } catch (_) {}
+  }
+  function pause(item, reason) {
+    if (item !== session || item.owner !== getOwner()) return
+    stopTracking(item)
+    publish({ paused: true, locating: false, reason })
+  }
+  function resume(peerId) {
+    const item = session
+    if (!item || item.owner !== getOwner() || !active || (peerId && String(peerId) !== String(item.peer.id))) return false
+    if (!tracker.canResume?.() || (!view.paused && item.tracking) || item.awaitingJoin) return true
+    if (!visible || !connected || !ready) { publish({ paused: true, locating: false }); return true }
+    stopTracking(item)
+    item.awaitingJoin = true
+    publish({ paused: true, locating: true, reason: '', selfPoint: null })
+    item.timer = setTimer(() => { if (current(item)) pause(item, 'unavailable') }, 10000)
+    // An idempotent join repairs server membership after browser suspension.
+    // Keep this session's sequence so an existing member accepts fresh points.
+    if (!transmit({ type: 'location.join', sessionId: item.id })) pause(item, 'disconnected')
+    return true
+  }
   function end(reason = 'left', signal = true) {
     const previous = session
     session = null
     if (!previous) return
-    clearTimer(previous.timer); clearTimer(previous.flushTimer)
-    previous.pending = null; previous.last = null
-    try { previous.stop?.() } catch (_) {}
+    stopTracking(previous)
     if (signal && previous.owner === getOwner()) transmit({ type: 'location.leave', sessionId: previous.id })
-    publish({ phase: 'ended', reason, locating: false, selfPoint: null, peerPoint: null, peerJoined: false })
+    publish({ phase: 'ended', reason, paused: false, locating: false, selfPoint: null, peerPoint: null, peerJoined: false })
   }
   function flush(item) {
     item.flushTimer = null
     if (!ensureCurrent(item) || !item.pending) return
     const point = item.pending
-    if (item.last && locationDistance(item.last, point) < 10 && now() - item.lastAt < 30000) return
+    if (item.last && locationDistance(item.last, point) < 10 && now() - item.lastAt < 30000) {
+      item.flushTimer = setTimer(() => flush(item), 30000 - (now() - item.lastAt))
+      return
+    }
     item.pending = null
-    if (!transmit({ type: 'location.point', sessionId: item.id, sequence: ++item.sequence, point })) return end('disconnected', false)
+    if (!transmit({ type: 'location.point', sessionId: item.id, sequence: ++item.sequence, point })) {
+      if (tracker.canResume?.()) pause(item, 'disconnected')
+      else end('disconnected', false)
+      return
+    }
     item.last = point; item.lastAt = now()
   }
   function locate(item) {
-    if (item.tracking) return
-    item.tracking = true; publish({ locating: true })
-    if (!tracker.managesTimeout?.()) item.timer = setTimer(() => { if (current(item) && !view.selfPoint) end('unavailable') }, 20000)
+    if (item.tracking || !visible) return
+    item.tracking = true
+    const watchVersion = item.watchVersion = (item.watchVersion || 0) + 1
+    const liveWatch = () => item.watchVersion === watchVersion && item.tracking
+    publish({ paused: false, reason: '', locating: true })
+    const failed = error => {
+      if (!liveWatch() || !ensureCurrent(item)) return
+      const denied = error?.code === 1 || error?.code === 'permission_denied'
+      if (!denied && tracker.canResume?.()) pause(item, 'unavailable')
+      else end(denied ? 'permission_denied' : 'unavailable')
+    }
+    if (!tracker.managesTimeout?.()) item.timer = setTimer(() => { if (liveWatch() && current(item) && view.locating) failed() }, tracker.initialTimeout?.() || 20000)
     try {
       const stop = tracker.watch(point => {
-        if (!ensureCurrent(item) || !validLocationPoint(point)) return
-        clearTimer(item.timer)
-        publish({ selfPoint: { ...point, updatedAt: now() }, locating: false })
+        if (!liveWatch() || !ensureCurrent(item) || !validLocationPoint(point)) return
+        clearTimer(item.timer); item.timer = null
+        publish({ selfPoint: { ...point, updatedAt: now() }, locating: false, paused: false })
         item.pending = { latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy, coordinateSystem: 'wgs84' }
         const delay = item.lastAt === null ? 0 : Math.max(0, 5000 - (now() - item.lastAt))
         if (!delay) flush(item)
         else if (!item.flushTimer) item.flushTimer = setTimer(() => flush(item), delay)
-      }, error => { if (ensureCurrent(item)) end(error?.code === 1 || error?.code === 'permission_denied' ? 'permission_denied' : 'unavailable') })
-      if (current(item)) item.stop = stop
+      }, failed)
+      if (current(item) && liveWatch()) item.stop = stop
       else stop?.()
-    } catch (_) { if (current(item)) end('unavailable') }
+    } catch (_) { failed() }
   }
   return {
     state: () => ({ ...view }),
+    resume,
+    setVisible(value) {
+      visible = !!value
+      if (!tracker.canResume?.() || !session) return
+      if (!visible) pause(session, 'background')
+      else if (view.paused) resume()
+    },
     setActive(value) {
+      const resumed = !!value && !active
       active = !!value
       if (!active) { end('background'); ready = false; publish({ offers: {} }) }
+      else if (resumed && connected && version === 1) transmit({ type: 'location.capability', version: 1, available: tracker.supported() })
       publish({})
     },
     connection(value, serverVersion = 0) {
       connected = !!value; version = Number(serverVersion); ready = false
-      if (!connected) { end('disconnected', false); publish({ offers: {} }) }
+      if (!connected) {
+        if (session && active && session.owner === getOwner() && tracker.canResume?.()) pause(session, 'disconnected')
+        else end('disconnected', false)
+        publish({ offers: {} })
+      }
       else if (active && version === 1) transmit({ type: 'location.capability', version: 1, available: tracker.supported() })
       publish({})
     },
@@ -88,13 +143,18 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
       if (sessionId && !/^[A-Za-z0-9_-]{12,80}$/.test(sessionId)) throw new Error('共享入口无效')
       const item = { id: sessionId || createId(), owner: getOwner(), peer, sequence: 0, lastAt: null, pending: null, stop: null }
       session = item
-      publish({ phase: 'joining', sessionId: item.id, peer, reason: '', selfPoint: null, peerPoint: null, peerJoined: false })
+      publish({ phase: 'joining', sessionId: item.id, peer, reason: '', paused: false, selfPoint: null, peerPoint: null, peerJoined: false })
       item.timer = setTimer(() => { if (current(item)) end('timeout') }, 10000)
       if (!transmit({ type: sessionId ? 'location.join' : 'location.start', sessionId: item.id, ...(sessionId ? {} : { peerId: String(peer.id) }) })) end('disconnected', false)
     },
     end,
     handle(event) {
-      if (event.type === 'location.ready') { ready = active && connected && version === 1 && event.version === 1; publish({}); return }
+      if (event.type === 'location.ready') {
+        ready = active && connected && version === 1 && event.version === 1
+        publish({})
+        if (ready && visible && view.paused) resume()
+        return
+      }
       if (!active || !connected) return
       if (event.type === 'location.offer') {
         if (String(event.to?.id) !== String(getSelfId()) || !/^[A-Za-z0-9_-]{12,80}$/.test(event.sessionId || '')) return
@@ -103,7 +163,12 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
       }
       if (event.type === 'location.ended') {
         publish({ offers: Object.fromEntries(Object.entries(view.offers).filter(([, offer]) => offer.sessionId !== event.sessionId)) })
-        if (session?.id === event.sessionId) end(LOCATION_END_LABELS[event.reason] ? event.reason : 'ended', false)
+        if (session?.id === event.sessionId) {
+          if (event.reason === 'disconnected' && tracker.canResume?.() && session.owner === getOwner()) {
+            pause(session, 'disconnected')
+            if (visible && ready) resume()
+          } else end(LOCATION_END_LABELS[event.reason] ? event.reason : 'ended', false)
+        }
         return
       }
       const item = session
@@ -111,10 +176,12 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
       if (!current(item)) { end('disconnected', false); return }
       if (event.type === 'location.joined') {
         if (!item.tracking) clearTimer(item.timer)
+        item.awaitingJoin = false
         const people = Array.isArray(event.people) ? event.people : []
         const peer = people.find(person => String(person.userId) === String(item.peer.id))
         publish({ phase: 'sharing', peerJoined: !!peer, peerPoint: validLocationPoint(peer?.point) ? peer.point : null })
-        locate(item)
+        if (visible) locate(item)
+        else pause(item, 'background')
       } else if (event.type === 'location.point' && String(event.userId) === String(item.peer.id) && validLocationPoint(event.point)) {
         publish({ peerPoint: event.point, peerJoined: true })
       }

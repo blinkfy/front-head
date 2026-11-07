@@ -282,7 +282,6 @@
       <view class="admin-buttons">
         <view class="admin-btn" @click="goFileManagement"><ManifestIcon id="file_manager" /> 文件管理</view>
         <view class="admin-btn" @click="go2048"><ManifestIcon id="admin_2048" /> 2048后台</view>
-        <view class="admin-btn" @click="goCallCheck"><ManifestIcon id="settings" /> 通话环境检测</view>
         <view class="admin-btn" @click="goDbMonitor"><ManifestIcon id="database" /> 数据库管理</view>
         <view class="admin-btn" @click="goAdminAISettings"><ManifestIcon id="ai_settings" /> 服务设置</view>
         <view class="admin-btn" @click="goDigitalTwin"><ManifestIcon id="digital_twin" /> 数字孪生</view>
@@ -767,20 +766,6 @@ async function verifyAdminPermission() {
     uni.showToast({ title: '权限验证失败，请重新登录', icon: 'none' })
     return false
   }
-}
-
-function goCallCheck() {
-  verifyAdminPermission().then(hasPermission => {
-    if (hasPermission) {
-      const target = baseUrl.replace(/\/$/, '') + '/call-check.html'
-      // #ifdef H5
-      window.location.assign(target)
-      // #endif
-      // #ifndef H5
-      uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(target)}` })
-      // #endif
-    }
-  })
 }
 
 function goFileManagement() {

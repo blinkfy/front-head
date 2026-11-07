@@ -51,6 +51,14 @@ export function bindWechat(data, token) {
 // #endif
 
 // Binding status is also used by the H5/App login reminder.
+export function getPreviousLogin() {
+  return request({ url: '/api/user/previous-login', needAuth: true, silent: true })
+}
+
+export function getRecentLogin() {
+  return request({ url: '/api/user/recent-login', needAuth: true, silent: true })
+}
+
 export function getWechatLoginSettings() {
   return request({ url: '/api/wechat/login-settings', needAuth: true, silent: true })
 }

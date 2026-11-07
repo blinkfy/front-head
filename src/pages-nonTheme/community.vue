@@ -1,5 +1,8 @@
 <template>
   <view class="community-page" :class="{ 'dark-mode': isDark }">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <!-- #ifdef MP-WEIXIN -->
     <canvas canvas-id="community-image-trim" class="community-image-trim-canvas"></canvas>
     <!-- #endif -->
@@ -225,6 +228,8 @@
 </template>
 
 <script>
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { getCommunityList, getCommunityTree, getMyCommunity, getCommunityCover, joinCommunity, getCommunityPosts, getCommunityPostImages, getCommunityRanking, togglePostLike, deleteCommunityPost, updatePostVisibility } from '@/pages-nonTheme/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
@@ -239,7 +244,7 @@ import { communityPostSummary } from './utils/community-markdown.mjs';
 import { getDisplayName } from '@/utils/display-name.js';
 
 export default {
-  components: { ManifestIcon, CommunityChatBridge },
+  components: { AppConfirmDialog, ManifestIcon, CommunityChatBridge },
   data() {
     return {
       loading: false,
@@ -306,7 +311,19 @@ export default {
     this.checkAdmin();
     if (this.myCommunity) this.loadPosts();
   },
+  // #ifdef APP-PLUS
+  onBackPress(event) {
+    if (event.from === 'backbutton' && this.$refs.appConfirmDialog?.current) {
+      this.$refs.appConfirmDialog.settle(false)
+      return true
+    }
+  },
+  // #endif
+  onHide() {
+    this.$refs.appConfirmDialog?.cancelAll()
+  },
   onUnload() {
+    this.$refs.appConfirmDialog?.cancelAll()
     // #ifdef H5
     window.removeEventListener('keydown', this.handlePreviewKeydown);
     // #endif
@@ -508,7 +525,7 @@ export default {
       uni.navigateTo({ url: `/pages-nonTheme/community-post?postId=${post.id}&communityId=${communityId}` });
     },
     confirmDeletePost(post) {
-      uni.showModal({
+      showAppModal(this, {
         title: '删除帖子',
         content: '确认删除这条帖子吗？删除后无法恢复。',
         confirmColor: '#ef4444',

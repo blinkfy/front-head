@@ -2,7 +2,14 @@ package ftx.voice
 
 import android.app.Activity
 import android.app.Dialog
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -11,6 +18,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -35,10 +43,16 @@ internal class VideoCallView(
     private var remotePlaceholder: TextView? = null
     private var localPlaceholder: TextView? = null
     private var status: TextView? = null
-    private var muteButton: TextView? = null
-    private var speakerButton: TextView? = null
-    private var cameraButton: TextView? = null
-    private var switchButton: TextView? = null
+    private var muteButton: CallAction? = null
+    private var speakerButton: CallAction? = null
+    private var cameraButton: CallAction? = null
+    private var switchButton: CallAction? = null
+    private var recordButton: TextView? = null
+    private var recording = false
+    private var recordingSince = 0L
+    private var recordingSupported = false
+    private var lastRecordingError = ""
+    private var canSwitchCamera = false
     private var released = false
     private var muted = false
     private var speaker = true
@@ -52,6 +66,10 @@ internal class VideoCallView(
             status?.text = if (connectedAt == 0L) "正在连接…" else {
                 val seconds = (SystemClock.elapsedRealtime() - connectedAt) / 1000
                 "%02d:%02d".format(seconds / 60, seconds % 60)
+            }
+            if (recording) {
+                val seconds = ((System.currentTimeMillis() - recordingSince) / 1000).coerceAtLeast(0)
+                recordButton?.text = "停止录音 · %02d:%02d".format(seconds / 60, seconds % 60)
             }
             main.postDelayed(this, 1000)
         }
@@ -99,24 +117,29 @@ internal class VideoCallView(
         pipHidden.add(preview)
 
         val controls = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
-            setPadding(dp(8), dp(16), dp(8), dp(24)); setBackgroundColor(Color.argb(215, 16, 25, 22))
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            setPadding(dp(16), dp(20), dp(16), dp(24)); setBackgroundColor(Color.argb(225, 23, 35, 31))
         }
-        fun button(label: String, danger: Boolean = false, action: () -> Unit): TextView {
-            val view = text(label, 12f).apply {
-                background = background(if (danger) Color.rgb(190, 70, 65) else Color.rgb(43, 66, 54))
-                setOnClickListener { if (!released) action() }
-                contentDescription = label
-            }
-            controls.addView(view, LinearLayout.LayoutParams(0, dp(54), 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+        val tools = LinearLayout(activity).apply { gravity = Gravity.CENTER }
+        recordButton = text("开始录音", 13f).apply {
+            visibility = View.GONE
+            background = background(Color.rgb(43, 66, 54), 14)
+            setOnClickListener { onControl(JSONObject().put("recordingEnabled", !recording)) }
+        }
+        controls.addView(recordButton, LinearLayout.LayoutParams(dp(154), dp(36)).apply { bottomMargin = dp(8) })
+        controls.addView(tools, LinearLayout.LayoutParams(-1, dp(88)))
+        fun button(kind: String, label: String, action: () -> Unit): CallAction {
+            val view = CallAction(activity, kind, label, false, action)
+            tools.addView(view, LinearLayout.LayoutParams(0, -1, 1f))
             return view
         }
-        muteButton = button("静音") { onControl(JSONObject().put("muted", !muted)) }
-        speakerButton = button("免提开") { onControl(JSONObject().put("speaker", !speaker)) }
-        cameraButton = button("关闭镜头") { onControl(JSONObject().put("cameraEnabled", !cameraEnabled)) }
-        switchButton = button("切换镜头") { onControl(JSONObject().put("switchCamera", true)) }
-        button("挂断", true) { onHangup() }
-        root.addView(controls, FrameLayout.LayoutParams(-1, dp(100), Gravity.BOTTOM))
+        muteButton = button("mic", "静音") { onControl(JSONObject().put("muted", !muted)) }
+        speakerButton = button("speaker", "免提") { onControl(JSONObject().put("speaker", !speaker)) }
+        cameraButton = button("camera", "关闭摄像头") { onControl(JSONObject().put("cameraEnabled", !cameraEnabled)) }
+        switchButton = button("switch", "切换镜头") { onControl(JSONObject().put("switchCamera", true)) }
+        val hangup = CallAction(activity, "hangup", "挂断", true) { if (!released) onHangup() }
+        controls.addView(hangup, LinearLayout.LayoutParams(dp(96), dp(88)).apply { topMargin = dp(18); gravity = Gravity.CENTER_HORIZONTAL })
+        root.addView(controls, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         pipHidden.add(controls)
         val minimize = text("最小化", 13f).apply {
             setOnClickListener { (activity as? VideoCallActivity)?.minimize() }; contentDescription = "最小化通话"
@@ -135,10 +158,17 @@ internal class VideoCallView(
             remoteTrack?.removeSink(renderer); remoteTrack = track; track?.addSink(renderer)
         }
     }
-    fun update(muted: Boolean, speaker: Boolean, camera: Boolean, remoteCamera: Boolean, front: Boolean, connected: Boolean = false) {
+    fun update(muted: Boolean, speaker: Boolean, camera: Boolean, remoteCamera: Boolean, front: Boolean, connected: Boolean = false,
+               canSwitch: Boolean = false, recordingState: JSONObject? = null) {
         if (released) return
-        this.muted = muted; this.speaker = speaker; cameraEnabled = camera; remoteCameraEnabled = remoteCamera
+        this.canSwitchCamera = canSwitch; this.muted = muted; this.speaker = speaker; cameraEnabled = camera; remoteCameraEnabled = remoteCamera
         if (connected && connectedAt == 0L) connectedAt = SystemClock.elapsedRealtime()
+        recordingSupported = recordingState?.optBoolean("recordingSupported") == true
+        recording = recordingState?.optBoolean("recording") == true
+        recordingSince = recordingState?.optLong("recordingStartedAt") ?: 0L
+        val error = recordingState?.optString("recordingError").orEmpty()
+        if (error.isNotEmpty() && error != lastRecordingError) android.widget.Toast.makeText(activity, error, android.widget.Toast.LENGTH_SHORT).show()
+        lastRecordingError = error
         local?.setMirror(front); refresh()
     }
     private fun refresh() {
@@ -147,11 +177,18 @@ internal class VideoCallView(
         remote?.visibility = if (remoteCameraEnabled) View.VISIBLE else View.INVISIBLE
         remotePlaceholder?.visibility = if (remoteCameraEnabled && firstRemoteFrame) View.GONE else View.VISIBLE
         remotePlaceholder?.text = if (remoteCameraEnabled) "正在等待对方画面" else "对方已关闭摄像头"
-        muteButton?.text = if (muted) "取消静音" else "静音"
-        speakerButton?.text = if (speaker) "免提开" else "免提关"
-        cameraButton?.text = if (cameraEnabled) "关闭镜头" else "打开镜头"
+        if (!cameraEnabled && !remoteCameraEnabled) {
+            remotePlaceholder?.text = peerName.take(1) + "\n语音通话中"
+            remotePlaceholder?.textSize = 28f
+        } else remotePlaceholder?.textSize = 16f
+        muteButton?.update(if (muted) "麦克风已关闭" else "静音", muted, muted)
+        speakerButton?.update(if (speaker) "免提已开启" else "免提", speaker)
+        cameraButton?.update(if (cameraEnabled) "关闭摄像头" else "开启摄像头", cameraEnabled, !cameraEnabled)
+        switchButton?.visibility = if (canSwitchCamera) View.VISIBLE else View.GONE
         switchButton?.isEnabled = cameraEnabled
         switchButton?.alpha = if (cameraEnabled) 1f else 0.4f
+        recordButton?.visibility = if (recordingSupported && connectedAt != 0L) View.VISIBLE else View.GONE
+        if (!recording) recordButton?.text = "开始录音"
     }
     fun release() {
         if (released) return
@@ -163,4 +200,67 @@ internal class VideoCallView(
         remoteTrack = null; local = null; remote = null
         pipHidden.clear()
     }
+}
+
+// Same round controls and line icons as the shared web/voice call page.
+private class CallAction(activity: Activity, kind: String, label: String, danger: Boolean, action: () -> Unit) : LinearLayout(activity) {
+    private val density = resources.displayMetrics.density
+    private fun dp(value: Int) = (value * density).toInt()
+    private val glyph = CallGlyph(kind)
+    private val icon = ImageView(activity)
+    private val caption = TextView(activity)
+    init {
+        orientation = VERTICAL; gravity = Gravity.CENTER
+        icon.setImageDrawable(glyph); icon.setPadding(dp(15), dp(15), dp(15), dp(15))
+        icon.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (danger) Color.rgb(200, 79, 75) else Color.rgb(44, 61, 52)) }
+        addView(icon, LayoutParams(dp(60), dp(60)))
+        caption.textSize = 12f; caption.setTextColor(Color.rgb(229, 238, 232)); caption.gravity = Gravity.CENTER
+        addView(caption, LayoutParams(-1, dp(26)))
+        caption.text = label; contentDescription = label
+        setOnClickListener { if (isEnabled) action() }
+        isFocusable = true
+    }
+    fun update(label: String, selected: Boolean, off: Boolean = false) {
+        caption.text = label; contentDescription = label
+        icon.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (selected) Color.rgb(52, 92, 69) else Color.rgb(44, 61, 52)) }
+        glyph.off = off; glyph.invalidateSelf()
+    }
+}
+private class CallGlyph(private val kind: String) : Drawable() {
+    var off = false
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(229, 238, 232); strokeWidth = 2f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    override fun draw(canvas: Canvas) {
+        canvas.save(); canvas.translate(bounds.left.toFloat(), bounds.top.toFloat()); canvas.scale(bounds.width() / 30f, bounds.height() / 30f)
+        paint.style = Paint.Style.STROKE
+        when (kind) {
+            "mic" -> {
+                canvas.drawRoundRect(RectF(11f, 3f, 19f, 20f), 5f, 5f, paint)
+                canvas.drawArc(RectF(7f, 7f, 23f, 24f), 0f, 180f, false, paint)
+                canvas.drawLine(15f, 24f, 15f, 28f, paint)
+            }
+            "speaker" -> {
+                val p = Path().apply { moveTo(4f, 11f); lineTo(10f, 11f); lineTo(17f, 5f); lineTo(17f, 25f); lineTo(10f, 19f); lineTo(4f, 19f); close() }
+                canvas.drawPath(p, paint); canvas.drawArc(RectF(15f, 6f, 27f, 24f), -60f, 120f, false, paint)
+            }
+            "camera", "switch" -> {
+                canvas.drawRoundRect(RectF(3f, 7f, if (kind == "camera") 20f else 27f, 23f), 3f, 3f, paint)
+                if (kind == "camera") {
+                    val p = Path().apply { moveTo(20f, 12f); lineTo(27f, 8f); lineTo(27f, 22f); lineTo(20f, 18f) }
+                    canvas.drawPath(p, paint)
+                } else {
+                    canvas.drawLine(10f, 12f, 20f, 12f, paint); canvas.drawLine(20f, 12f, 17f, 9f, paint)
+                    canvas.drawLine(20f, 18f, 10f, 18f, paint); canvas.drawLine(10f, 18f, 13f, 21f, paint)
+                }
+            }
+            "hangup" -> {
+                canvas.drawArc(RectF(4f, 9f, 26f, 26f), 200f, 140f, false, paint)
+                canvas.drawLine(5f, 14f, 5f, 21f, paint); canvas.drawLine(25f, 14f, 25f, 21f, paint)
+            }
+        }
+        if (off) canvas.drawLine(4f, 3f, 27f, 27f, paint)
+        canvas.restore()
+    }
+    override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+    override fun setColorFilter(filter: ColorFilter?) { paint.colorFilter = filter }
+    @Deprecated("Deprecated in Android") override fun getOpacity() = PixelFormat.TRANSLUCENT
 }

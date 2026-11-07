@@ -59,6 +59,8 @@
 </template>
 
 <script setup>
+import { inject as injectModalProvider } from 'vue'
+const showPageModal = injectModalProvider('app-confirm-dialog', options => uni.showModal(options))
 import { computed, nextTick, ref, watch, onBeforeUnmount, getCurrentInstance } from 'vue'
 import { measureScopedRects, getOnboardingViewport } from '@/utils/onboarding-focus.mjs'
 import { baseUrl } from '@/api/settings.js'
@@ -539,7 +541,7 @@ function requestDismiss() {
   if (dismissConfirmPending || !props.visible || !props.active || guideLeaving.value) return
   dismissConfirmPending = true
   try {
-    uni.showModal({
+    showPageModal({
       title: '关闭新用户引导？',
       content: '关闭后，可在「设置 → 新用户引导」中重新打开。',
       showCancel: true,

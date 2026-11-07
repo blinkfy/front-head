@@ -9,10 +9,13 @@ export const VOICE_END_LABELS = {
 }
 
 export function createVoiceCallController({ media, send, getOwner, getSelfId, changed = () => {}, isMediaBusy = () => false,
+  getRecording = () => null, onRecordingSaved = () => {},
   now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, createId = () => `call_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}` }) {
   let active = false, connected = false, serverVersion = 0, videoVersion = 0, ready = false, videoReady = false, call = null
+  let pendingSave = null
   let view = { phase: 'idle', supported: false, videoSupported: false, mode: 'audio', peer: null, callId: '', muted: false, speaker: false,
-    cameraEnabled: true, remoteCameraEnabled: true, facingMode: 'user', playbackBlocked: false, mediaError: '', startedAt: 0, endedAt: 0, reason: '' }
+    cameraSupported: false, canSwitchCamera: false, cameraEnabled: false, remoteCameraEnabled: false, facingMode: 'user', playbackBlocked: false, mediaError: '', startedAt: 0, endedAt: 0, reason: '',
+    recordingSupported: false, recording: false, recordingStartedAt: 0, recordingError: '' }
   const publish = patch => { view = { ...view, ...patch, supported: active && connected && ready && media.supported(),
     videoSupported: active && connected && ready && videoReady && videoVersion === 1 && !!media.supportsVideo?.() }; changed({ ...view }) }
   const valid = session => call === session && session.owner === getOwner() && active && connected
@@ -23,21 +26,40 @@ export function createVoiceCallController({ media, send, getOwner, getSelfId, ch
     call = null
     clearTimer(previous.timer); clearTimer(previous.disconnectTimer)
     if (signal && previous.owner === getOwner()) transmit({ type: 'voice.end', callId: previous.id, reason })
-    try { previous.driver?.close(); media.cancel?.(previous.id) } catch (_) {}
-    publish({ phase: 'ended', reason, endedAt: now() })
+    let saving
+    try { saving = previous.driver?.close(); media.cancel?.(previous.id) } catch (_) {}
+    if (saving?.then) {
+      const pending = Promise.allSettled([pendingSave, saving]).finally(() => { if (pendingSave === pending) pendingSave = null })
+      pendingSave = pending
+    }
+    publish({ phase: 'ended', reason, endedAt: now(), recording: false, recordingStartedAt: 0 })
+    return saving
   }
   function timeout(session, duration, reason) {
     clearTimer(session.timer)
     session.timer = setTimer(() => { if (call === session) finish(reason) }, duration)
   }
-  function begin(id, peer, offerer, mode = 'audio') {
-    call = { id, peer, offerer, mode, owner: getOwner(), driver: null, opening: null, queue: [], reported: false }
+  function begin(id, peer, offerer, mode = 'audio', cameraToggle = false) {
+    call = { id, peer, offerer, mode, video: mode === 'video' || cameraToggle, owner: getOwner(), recording: getRecording(),
+      driver: null, opening: null, queue: [], reported: false }
     publish({ callId: id, peer, mode, phase: offerer ? 'calling' : 'incoming', muted: false, speaker: mode === 'video',
-      cameraEnabled: true, remoteCameraEnabled: true, facingMode: 'user', playbackBlocked: false, mediaError: '', startedAt: 0, endedAt: 0, reason: '' })
+      cameraSupported: call.video, canSwitchCamera: false, cameraEnabled: mode === 'video', remoteCameraEnabled: mode === 'video', facingMode: 'user', playbackBlocked: false, mediaError: '', startedAt: 0, endedAt: 0, reason: '',
+      recordingSupported: false, recording: false, recordingStartedAt: 0, recordingError: '' })
     timeout(call, 35000, 'timeout')
     return call
   }
   function onMedia(session, event) {
+    if (event.type === 'recording') {
+      if (session.owner !== getOwner()) return
+      if (event.saved) onRecordingSaved(event)
+      if (view.callId === session.id) publish({
+        recordingSupported: event.recordingSupported === true,
+        recording: valid(session) && event.recording === true,
+        recordingStartedAt: Number(event.recordingStartedAt) || 0,
+        recordingError: event.recordingError || ''
+      })
+      return
+    }
     if (!valid(session)) return
     if (event.type === 'offer' || event.type === 'answer' || event.type === 'ice') {
       if (event.type === 'ice' && / typ relay(?: |$)/.test(event.candidate?.candidate || '')) return
@@ -46,14 +68,15 @@ export function createVoiceCallController({ media, send, getOwner, getSelfId, ch
     else if (event.type === 'hangup') finish('hangup')
     else if (event.type === 'playback') publish({ playbackBlocked: event.blocked === true })
     else if (event.type === 'camera') {
-      publish({ facingMode: event.frontFacing === false ? 'environment' : 'user',
-        ...(typeof event.cameraEnabled === 'boolean' ? { cameraEnabled: event.cameraEnabled } : {}) })
+      publish({ ...(typeof event.frontFacing === 'boolean' ? { facingMode: event.frontFacing ? 'user' : 'environment' } : {}),
+        ...(typeof event.cameraEnabled === 'boolean' ? { cameraEnabled: event.cameraEnabled } : {}),
+        ...(typeof event.canSwitchCamera === 'boolean' ? { canSwitchCamera: event.canSwitchCamera } : {}) })
       if (typeof event.cameraEnabled === 'boolean') transmit({ type: 'voice.media', callId: session.id, cameraEnabled: event.cameraEnabled })
     }
     else if (event.type === 'control_error') {
-      publish({ mediaError: '摄像头操作未完成，请检查设备后重试',
+      publish({ mediaError: event.reason === 'camera_unavailable' ? '摄像头暂不可用，已保留语音，可稍后重试开启摄像头' : '摄像头操作未完成，请检查设备后重试',
         ...(typeof event.cameraEnabled === 'boolean' ? { cameraEnabled: event.cameraEnabled } : {}) })
-      if (session.mode === 'video') transmit({ type: 'voice.media', callId: session.id, cameraEnabled: view.cameraEnabled })
+      if (session.video) transmit({ type: 'voice.media', callId: session.id, cameraEnabled: view.cameraEnabled })
     } else if (event.type === 'error') finish(VOICE_END_LABELS[event.reason] ? event.reason : 'failed')
     else if (event.type === 'state') {
       if (event.state === 'connected') {
@@ -70,35 +93,51 @@ export function createVoiceCallController({ media, send, getOwner, getSelfId, ch
     if (session.opening) return
     if (media.managesConnectionTimeout?.()) { clearTimer(session.timer); session.timer = null }
     else timeout(session, 32000, 'connect_failed')
-    session.opening = Promise.resolve().then(() => media.open({ callId: session.id, offerer: session.offerer, mode: session.mode, peerName: session.peer.name,
+    session.opening = Promise.resolve().then(() => media.open({ callId: session.id, offerer: session.offerer, mode: session.video ? 'video' : 'audio', cameraEnabled: session.mode === 'video', peerName: session.peer.name,
+      recording: session.recording, entryMode: session.mode,
       stunUrls: VOICE_STUN_URLS.slice(), isCurrent: () => valid(session), onEvent: event => onMedia(session, event) }))
       .then(driver => {
         if (!valid(session)) { driver.close(); return }
         session.driver = driver
-        driver.control({ muted: view.muted, speaker: view.speaker, cameraEnabled: view.cameraEnabled, remoteCameraEnabled: view.remoteCameraEnabled })
+        driver.control({ muted: view.muted, speaker: view.speaker, cameraEnabled: view.cameraEnabled, remoteCameraEnabled: view.remoteCameraEnabled,
+          ...(view.phase === 'connected' ? { connected: true } : {}) })
         for (const event of session.queue) driver.signal(event)
         session.queue.length = 0
-      }).catch(error => { if (valid(session)) finish(['permission_denied', 'camera_unavailable'].includes(error?.code) ? error.code : 'connect_failed') })
+      }).catch(error => {
+        if (!valid(session)) return
+        console.warn('[voice-call-media]', { stage: 'open-media', mode: session.mode, offerer: session.offerer,
+          error: error?.name || '', message: String(error?.message || '').slice(0, 360) })
+        finish(['permission_denied', 'camera_unavailable'].includes(error?.code) ? error.code : 'connect_failed')
+      })
   }
   function applyControl(options) {
     if (!call || !['connecting', 'connected'].includes(view.phase)) return
     const patch = { mediaError: '' }
     if (typeof options.muted === 'boolean') patch.muted = options.muted
     if (typeof options.speaker === 'boolean') patch.speaker = options.speaker
-    if (call.mode === 'video' && typeof options.cameraEnabled === 'boolean') patch.cameraEnabled = options.cameraEnabled
+    if (call.video && typeof options.cameraEnabled === 'boolean') patch.cameraEnabled = options.cameraEnabled
     publish(patch)
-    call.driver?.control({ ...patch, ...(call.mode === 'video' && options.switchCamera ? { switchCamera: true } : {}),
+    call.driver?.control({ ...patch, ...(call.video && options.switchCamera ? { switchCamera: true } : {}),
+      ...(view.phase === 'connected' && view.recordingSupported && typeof options.recordingEnabled === 'boolean' ? { recordingEnabled: options.recordingEnabled } : {}),
       ...(options.resumePlayback ? { resumePlayback: true } : {}) })
     if (Object.prototype.hasOwnProperty.call(patch, 'cameraEnabled')) transmit({ type: 'voice.media', callId: call.id, cameraEnabled: patch.cameraEnabled })
   }
   return {
     state: () => ({ ...view }),
-    setActive(value) { active = !!value; if (!active) { finish('background'); ready = false }; publish({}) },
+    waitForRecordingSave: () => pendingSave || Promise.resolve(),
+    setActive(value) {
+      const resumed = !!value && !active
+      active = !!value
+      if (!active) { finish('background'); ready = false }
+      else if (resumed && connected && serverVersion === 1) transmit({ type: 'voice.capability', version: 1, available: media.supported(),
+        ...(videoVersion === 1 ? { video: !!media.supportsVideo?.(), cameraToggle: !!media.supportsVideo?.() } : {}) })
+      publish({})
+    },
     connection(value, version = 0, video = 0) {
       connected = !!value; serverVersion = Number(version); videoVersion = Number(video); ready = false; videoReady = false
       if (!connected) finish('disconnected', false)
       else if (active && serverVersion === 1) transmit({ type: 'voice.capability', version: 1, available: media.supported(),
-        ...(videoVersion === 1 ? { video: !!media.supportsVideo?.() } : {}) })
+        ...(videoVersion === 1 ? { video: !!media.supportsVideo?.(), cameraToggle: !!media.supportsVideo?.() } : {}) })
       publish({})
     },
     start(peer, mode = 'audio') {
@@ -107,19 +146,31 @@ export function createVoiceCallController({ media, send, getOwner, getSelfId, ch
       if (call || isMediaBusy()) throw new Error('请先结束当前通话、录音或媒体播放')
       if (!/^[1-9]\d{0,9}$/.test(String(peer?.id || '')) || String(peer.id) === String(getSelfId())) throw new Error('当前联系人不可呼叫')
       const session = begin(createId(), { id: String(peer.id), name: String(peer.name || '联系人').slice(0, 80) }, true, mode)
-      if (!transmit({ type: 'voice.invite', callId: session.id, peerId: session.peer.id, ...(mode === 'video' ? { mode } : {}) })) finish('disconnected', false)
+      const invite = () => {
+        if (!valid(session)) return
+        timeout(session, 35000, 'timeout')
+        if (!transmit({ type: 'voice.invite', callId: session.id, peerId: session.peer.id, ...(mode === 'video' ? { mode } : {}) })) finish('disconnected', false)
+      }
+      if (media.prepareOutgoing) {
+        clearTimer(session.timer)
+        media.primeRecording?.(session.id, session.recording)
+        Promise.resolve().then(() => media.prepareOutgoing(session.id, mode)).then(invite)
+          .catch(() => { if (valid(session)) finish('permission_denied') })
+      } else invite()
     },
     async accept() {
       const session = call
       if (!session || view.phase !== 'incoming') return
       publish({ phase: 'connecting' })
+      clearTimer(session.timer)
+      media.primeRecording?.(session.id, session.recording)
       try {
         await media.permission(session.id, session.mode)
         if (!valid(session)) return
         if (!transmit({ type: 'voice.accept', callId: session.id })) finish('disconnected', false)
       } catch (error) { if (valid(session)) finish(error?.code === 'camera_unavailable' ? 'camera_unavailable' : 'permission_denied') }
     },
-    end(reason = 'hangup') { finish(reason) },
+    end(reason = 'hangup') { return finish(reason) },
     control: applyControl,
     handle(event) {
       if (event.type === 'voice.ready') { ready = active && connected && serverVersion === 1 && event.version === 1; videoReady = ready && event.video === true; publish({}); return }
@@ -131,25 +182,26 @@ export function createVoiceCallController({ media, send, getOwner, getSelfId, ch
         if (call || !ready || isMediaBusy() || String(event.peer?.id) === String(getSelfId())) {
           transmit({ type: 'voice.end', callId: event.callId, reason: 'busy' }); return
         }
-        begin(event.callId, event.peer, false, event.mode || 'audio'); return
+        begin(event.callId, event.peer, false, event.mode || 'audio', event.cameraToggle === true); return
       }
       const session = call
       if (!session || event.callId !== session.id) return
       if (!valid(session)) { finish('disconnected', false); return }
+      if (event.type === 'voice.local-recording') { onMedia(session, { ...event, type: 'recording' }); return }
       if (event.type === 'voice.local-control' && ['connecting', 'connected'].includes(view.phase)) {
         // The native video surface already applied these controls; only mirror UI.
         const patch = {}
-        for (const key of ['muted', 'speaker', ...(session.mode === 'video' ? ['cameraEnabled'] : [])])
+        for (const key of ['muted', 'speaker', ...(session.video ? ['cameraEnabled'] : [])])
           if (typeof event[key] === 'boolean') patch[key] = event[key]
         publish(patch)
       } else if (event.type === 'voice.ended') finish(VOICE_END_LABELS[event.reason] ? event.reason : 'hangup', false)
       else if (event.type === 'voice.ringing' && session.offerer) publish({ peer: event.peer || session.peer })
-      else if (event.type === 'voice.accepted' && ['calling', 'connecting'].includes(view.phase)) { publish({ phase: 'connecting' }); open(session) }
+      else if (event.type === 'voice.accepted' && ['calling', 'connecting'].includes(view.phase)) { session.video = session.mode === 'video' || event.cameraToggle === true; publish({ phase: 'connecting', cameraSupported: session.video }); open(session) }
       else if (event.type === 'voice.connected') {
         clearTimer(session.timer)
         publish({ phase: 'connected', startedAt: view.startedAt || now() })
         session.driver?.control({ connected: true })
-      } else if (event.type === 'voice.media' && session.mode === 'video' && typeof event.cameraEnabled === 'boolean') {
+      } else if (event.type === 'voice.media' && session.video && typeof event.cameraEnabled === 'boolean') {
         publish({ remoteCameraEnabled: event.cameraEnabled })
         session.driver?.control({ remoteCameraEnabled: event.cameraEnabled })
       } else if (['voice.offer', 'voice.answer', 'voice.ice'].includes(event.type)) {

@@ -135,18 +135,25 @@ const timedPasskey = createPasskeyAdapter({ environment: timeoutEnv, api: passke
   setTimer: callback => { queueMicrotask(callback); return 1 }, clearTimer() {} })
 await assert.rejects(timedPasskey.login({ credentialId: 'key', isActive: () => true }), error => error.error === 'CANCELLED')
 
-function soterFixture({ methods = {}, mode = 'fingerPrint', serverSupported = true } = {}) {
+function soterFixture({ methods = {}, mode = 'fingerPrint', serverSupported = true, finishError = null } = {}) {
   const calls = [], apiCalls = [], timers = new Set()
   const runtime = { ...methods }
   const api = async (...args) => { apiCalls.push(args)
     if (args[0] === '/quick-login/capabilities') return { data: { soter: { supported: serverSupported } } }
     if (args[0].endsWith('/options')) return { data: { challengeId: 'challenge-id', payload: 'nonce-123' } }
+    if (args[0] === '/quick-login/soter/enrollment/finish' && finishError) throw finishError
     return { data: { credentialId: 'credential-id', userId: 7 } }
   }
   const adapter = createSoterAdapter({ runtime, api, setTimer: callback => { const timer = { callback }; timers.add(timer); return timer },
     clearTimer: timer => timers.delete(timer) })
   return { adapter, calls, apiCalls, runtime, timers, call: (name, options) => { calls.push({ name, options }) }, mode }
 }
+const readySoterMethods = (onAuth = options => options.success({ resultJSON: 'nonce-proof', resultJSONSignature: 'sig' })) => ({
+  checkIsSupportSoterAuthentication: options => options.success({ supportMode: ['fingerPrint'] }),
+  checkIsSoterEnrolledInDevice: options => options.success({ isEnrolled: true }),
+  login: options => options.success({ code: 'wx-code' }),
+  startSoterAuthentication: onAuth
+})
 let soter
 soter = soterFixture({ methods: {
   checkIsSupportSoterAuthentication: options => { soter.call('support', options); options.success({ supportMode: ['fingerPrint'] }) },
@@ -198,4 +205,165 @@ const authFailure = soterFixture({ methods: {
 await authFailure.adapter.capability()
 await assert.rejects(authFailure.adapter.login({ credentialId: 'key', isActive: () => true }), error => error.error === 'UNAVAILABLE')
 
-console.log('Platform quick login: preferences, lifecycle, stale enrollment, passkey serialization/cancel/timeout, and SOTER capability/proof/cancel passed.')
+// A system-auth hide suspends the proof. Its successful callback must not submit
+// the finish request until the page resumes; the manager commits only afterward.
+const hiddenStorage = new Map([['token', 'token-1']])
+const hiddenRuntime = { getStorageSync: key => hiddenStorage.get(key), setStorageSync: (key, value) => hiddenStorage.set(key, value),
+  removeStorageSync: key => hiddenStorage.delete(key) }
+let hiddenAuth, hiddenManagerFixture
+hiddenManagerFixture = soterFixture({ methods: readySoterMethods(options => { hiddenAuth = options }) })
+const hiddenManager = createPlatformQuickLogin({ runtime: hiddenRuntime, adapter: hiddenManagerFixture.adapter,
+  api: async (...args) => { hiddenManagerFixture.apiCalls.push(args)
+    if (args[0] === '/quick-login/capabilities') return { data: { soter: { supported: true } } }
+    if (args[0].endsWith('/options')) return { data: { challengeId: 'challenge-id', payload: 'nonce-123' } }
+    return { data: { credentialId: 'credential-id', userId: 7 } }
+  }, scope: 'weixin:test' })
+const hiddenEnrollment = hiddenManager.setEnabled(true, 'token-1', user, () => true)
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(hiddenManager.suspendSystemAuthentication(), true)
+hiddenAuth.success({ resultJSON: 'nonce-proof', resultJSONSignature: 'sig' })
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(hiddenManagerFixture.apiCalls.some(call => call[0] === '/quick-login/soter/enrollment/finish'), false)
+hiddenManager.resumeSystemAuthentication()
+await hiddenEnrollment
+assert.equal(hiddenManager.state().enabled, true)
+assert.equal(hiddenManager.state().credentialId, 'credential-id')
+assert.ok(hiddenManagerFixture.apiCalls.some(call => call[0] === '/quick-login/soter/enrollment/finish'))
+
+// Resuming before the native callback also allows the proof to finish normally.
+let earlyResumeAuth
+const earlyResume = soterFixture({ methods: readySoterMethods(options => { earlyResumeAuth = options }) })
+const earlyEnrollment = earlyResume.adapter.enroll({ token: 'token', isActive: () => true })
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(earlyResume.adapter.suspendSystemAuthentication(), true)
+earlyResume.adapter.resumeSystemAuthentication()
+earlyResumeAuth.success({ resultJSON: 'nonce-proof', resultJSONSignature: 'sig' })
+await earlyEnrollment
+assert.ok(earlyResume.apiCalls.some(call => call[0] === '/quick-login/soter/enrollment/finish'))
+
+// Only the page that owns a system prompt can suspend or resume it. A new page
+// cannot wake an old page's proof; the old owner can still resume it later.
+let ownerAuth
+const ownerAdapter = soterFixture({ methods: readySoterMethods(options => { ownerAuth = options }) })
+const oldOwner = {}, newOwner = {}
+const ownerEnrollment = ownerAdapter.adapter.enroll({ token: 'token', isActive: () => true, owner: oldOwner })
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(ownerAdapter.adapter.suspendSystemAuthentication(newOwner), false)
+assert.equal(ownerAdapter.adapter.suspendSystemAuthentication(oldOwner), true)
+ownerAuth.success({ resultJSON: 'nonce-proof', resultJSONSignature: 'sig' })
+await new Promise(resolve => setImmediate(resolve))
+ownerAdapter.adapter.resumeSystemAuthentication(newOwner)
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(ownerAdapter.apiCalls.some(call => call[0] === '/quick-login/soter/enrollment/finish'), false,
+  'a new page cannot resume an old page proof')
+ownerAdapter.adapter.resumeSystemAuthentication(oldOwner)
+await ownerEnrollment
+assert.ok(ownerAdapter.apiCalls.some(call => call[0] === '/quick-login/soter/enrollment/finish'))
+
+// Native authentication failures are held until the owning page is foreground,
+// so the page can display the failure instead of losing it while hidden.
+let hiddenFailureAuth
+const hiddenFailure = soterFixture({ methods: readySoterMethods(options => { hiddenFailureAuth = options }) })
+const hiddenFailureOwner = {}
+const hiddenFailureEnrollment = hiddenFailure.adapter.enroll({ token: 'token', isActive: () => true, owner: hiddenFailureOwner })
+await new Promise(resolve => setImmediate(resolve))
+hiddenFailure.adapter.suspendSystemAuthentication(hiddenFailureOwner)
+hiddenFailureAuth.fail({ errCode: 90009 })
+let hiddenFailureSettled = false
+hiddenFailureEnrollment.catch(() => { hiddenFailureSettled = true })
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(hiddenFailureSettled, false, 'the auth failure waits while the owning page is hidden')
+hiddenFailure.adapter.resumeSystemAuthentication(hiddenFailureOwner)
+await assert.rejects(hiddenFailureEnrollment, error => error.error === 'AUTH_FAILED' && Boolean(error.msg))
+
+// The manager passes a token-bound canCommit guard into SOTER. If the session
+// changes while the native prompt is hidden, finish must never be requested.
+let changedTokenAuth
+const changedToken = soterFixture({ methods: readySoterMethods(options => { changedTokenAuth = options }) })
+const changedTokenStorage = new Map([['token', 'token-1']])
+const changedTokenManager = createPlatformQuickLogin({ runtime: { getStorageSync: key => changedTokenStorage.get(key),
+  setStorageSync: (key, value) => changedTokenStorage.set(key, value), removeStorageSync: key => changedTokenStorage.delete(key) },
+  adapter: changedToken.adapter, api: async (...args) => { changedToken.apiCalls.push(args)
+    if (args[0] === '/quick-login/capabilities') return { data: { soter: { supported: true } } }
+    if (args[0].endsWith('/options')) return { data: { challengeId: 'challenge-id', payload: 'nonce-123' } }
+    return { data: { credentialId: 'credential-id', userId: 7 } }
+  }, scope: 'weixin:token-change' })
+const changedTokenEnrollment = changedTokenManager.setEnabled(true, 'token-1', user, () => true, { owner: oldOwner })
+await new Promise(resolve => setImmediate(resolve))
+changedTokenManager.suspendSystemAuthentication(oldOwner)
+changedTokenAuth.success({ resultJSON: 'nonce-proof', resultJSONSignature: 'sig' })
+changedTokenStorage.set('token', 'token-2')
+changedTokenManager.resumeSystemAuthentication(oldOwner)
+await assert.rejects(changedTokenEnrollment, error => error.error === 'CANCELLED')
+assert.equal(changedToken.apiCalls.some(call => call[0] === '/quick-login/soter/enrollment/finish'), false,
+  'a replaced session is rejected before the finish request')
+
+// Unload uses unconditional cancel, so a late success callback cannot submit or bind.
+let unloadAuth
+const unload = soterFixture({ methods: readySoterMethods(options => { unloadAuth = options }) })
+const unloadStorage = new Map([['token', 'token-1']])
+const unloadManager = createPlatformQuickLogin({ runtime: { getStorageSync: key => unloadStorage.get(key),
+  setStorageSync: (key, value) => unloadStorage.set(key, value), removeStorageSync: key => unloadStorage.delete(key) },
+  adapter: unload.adapter, api: async (...args) => { unload.apiCalls.push(args)
+    if (args[0] === '/quick-login/capabilities') return { data: { soter: { supported: true } } }
+    if (args[0].endsWith('/options')) return { data: { challengeId: 'challenge-id', payload: 'nonce-123' } }
+    return { data: { credentialId: 'credential-id', userId: 7 } }
+  }, scope: 'weixin:unload' })
+const unloadEnrollment = unloadManager.setEnabled(true, 'token-1', user)
+await new Promise(resolve => setImmediate(resolve))
+unloadManager.cancel()
+await assert.rejects(unloadEnrollment, error => error.error === 'CANCELLED')
+unloadAuth.success({ resultJSON: 'late-proof', resultJSONSignature: 'late-signature' })
+assert.equal(unload.apiCalls.some(call => call[0] === '/quick-login/soter/enrollment/finish'), false)
+assert.equal(unloadManager.state().credentialId, undefined)
+
+// A suspended proof still times out after 15 seconds and remains cancellable.
+let timeoutAuth
+const backgroundTimeout = soterFixture({ methods: readySoterMethods(options => { timeoutAuth = options }) })
+const timeoutEnrollment = backgroundTimeout.adapter.enroll({ token: 'token', isActive: () => true })
+await new Promise(resolve => setImmediate(resolve))
+backgroundTimeout.adapter.suspendSystemAuthentication()
+timeoutAuth.success({ resultJSON: 'nonce-proof', resultJSONSignature: 'sig' })
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(backgroundTimeout.timers.size, 1)
+for (const timer of [...backgroundTimeout.timers]) timer.callback()
+await assert.rejects(timeoutEnrollment, error => error.error === 'CANCELLED')
+assert.equal(backgroundTimeout.apiCalls.some(call => call[0] === '/quick-login/soter/enrollment/finish'), false)
+
+// Finish failures leave no local credential and retain an error marker; retry success clears it.
+const finishFailure = soterFixture({ methods: readySoterMethods(), finishError: { reason: 'reauth_required', msg: '重新登录' } })
+const finishStorage = new Map([['token', 'token-1']])
+const finishManager = createPlatformQuickLogin({ runtime: { getStorageSync: key => finishStorage.get(key),
+  setStorageSync: (key, value) => finishStorage.set(key, value), removeStorageSync: key => finishStorage.delete(key) },
+  adapter: finishFailure.adapter, api: async (...args) => { finishFailure.apiCalls.push(args)
+    if (args[0] === '/quick-login/capabilities') return { data: { soter: { supported: true } } }
+    if (args[0].endsWith('/options')) return { data: { challengeId: 'challenge-id', payload: 'nonce-123' } }
+    return { data: { credentialId: 'credential-id', userId: 7 } }
+  }, scope: 'weixin:failure' })
+await assert.rejects(finishManager.setEnabled(true, 'token-1', user), error => error.reason === 'reauth_required')
+assert.equal(finishManager.state().credentialId, undefined)
+assert.equal(finishManager.state().enrollmentError, 'reauth_required')
+finishFailure.adapter.cancel()
+const retrySuccess = soterFixture({ methods: readySoterMethods() })
+const retryManager = createPlatformQuickLogin({ runtime: { getStorageSync: key => finishStorage.get(key),
+  setStorageSync: (key, value) => finishStorage.set(key, value), removeStorageSync: key => finishStorage.delete(key) },
+  adapter: retrySuccess.adapter, api: async (...args) => { retrySuccess.apiCalls.push(args)
+    if (args[0] === '/quick-login/capabilities') return { data: { soter: { supported: true } } }
+    if (args[0].endsWith('/options')) return { data: { challengeId: 'challenge-id', payload: 'nonce-123' } }
+    return { data: { credentialId: 'credential-id', userId: 7 } }
+  }, scope: 'weixin:failure' })
+await retryManager.setEnabled(true, 'token-1', user)
+assert.equal(retryManager.state().credentialId, 'credential-id')
+assert.equal(retryManager.state().enrollmentError, '')
+
+for (const [errCode, expected, message] of [[90009, 'AUTH_FAILED', '指纹或面容未验证通过，请重试'], [90008, 'CANCELLED', '']]) {
+  const failedCode = soterFixture({ methods: { ...readySoterMethods(), startSoterAuthentication: options => options.fail({ errCode }) } })
+  await failedCode.adapter.capability()
+  await assert.rejects(failedCode.adapter.enroll({ token: 'token', isActive: () => true }), error => {
+    assert.equal(error.error, expected)
+    assert.equal(error.msg || '', message)
+    return true
+  })
+}
+
+console.log('Platform quick login: preferences, lifecycle, stale enrollment, passkey serialization/cancel/timeout, and SOTER suspend/resume/timeout/failure passed.')

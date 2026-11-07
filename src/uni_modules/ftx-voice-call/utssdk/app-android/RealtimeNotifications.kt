@@ -12,8 +12,8 @@ import android.os.Handler
 import android.os.Looper
 import org.json.JSONObject
 
-// System notification channels own sound/vibration/DND. Never use media audio,
-// override DND, acquire an idle wake lock, or start microphone/camera on ringing.
+// Message notifications use system channels; incoming calls own a bounded
+// native ringtone/vibration loop that checks the same channel and system policy.
 object RealtimeNotifications {
     private const val INCOMING = 2710
     private val main = Handler(Looper.getMainLooper())
@@ -27,7 +27,7 @@ object RealtimeNotifications {
     private fun channel(ctx: Context, call: Boolean, sound: Boolean): String {
         val id = "ftx_${if (call) "incoming" else "messages"}_${if (sound) "sound" else "quiet"}_v1"
         if (Build.VERSION.SDK_INT >= 26) manager(ctx).createNotificationChannel(NotificationChannel(id,
-            "${if (call) "来电" else "聊天与业务消息"}（${if (sound) "跟随系统" else "无提示音"}）",
+            if (call && !sound) "来电接听界面" else "${if (call) "来电" else "聊天与业务消息"}（${if (sound) "跟随系统" else "无提示音"}）",
             if (call) NotificationManager.IMPORTANCE_HIGH else NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "响铃、振动和勿扰遵循系统通知设置"
             setBypassDnd(false)
@@ -81,28 +81,29 @@ object RealtimeNotifications {
         val reject = PendingIntent.getService(ctx, INCOMING + 1, Intent(ctx, RealtimeService::class.java)
             .putExtra("action", "reject-incoming").putExtra("sessionId", id)
             .setData(android.net.Uri.parse("ftx-internal://call/reject/$id")), flags)
-        val notification = builder(ctx, true, sound).setContentTitle(name.take(100))
+        // Keep the existing audible channel as the user's ring/vibration policy.
+        // A separate quiet HIGH channel displays heads-up/full-screen controls;
+        // group muting would also suppress the heads-up UI on some Android versions.
+        val alertChannel = channel(ctx, true, sound)
+        val displayChannel = channel(ctx, true, false)
+        val notification = builder(ctx, true, false).setContentTitle(name.take(100))
             .setContentText("邀请你进行${if (event.optString("mode") == "video") "视频" else "语音"}通话")
             .setContentIntent(content).setCategory(Notification.CATEGORY_CALL).setPriority(Notification.PRIORITY_MAX)
             .setOngoing(true).setAutoCancel(false).setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null, "拒绝", reject).build())
             .addAction(Notification.Action.Builder(null, "查看接听", content).build())
         if (Build.VERSION.SDK_INT >= 26) notification.setTimeoutAfter(30000)
-        else if (sound) notification.setDefaults(Notification.DEFAULT_VIBRATE)
-            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
-                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build())
+        if (Build.VERSION.SDK_INT < 26) notification.setDefaults(0).setSound(null).setVibrate(longArrayOf(0))
         // Android 14+ may require the user to grant this special access. Heads-up
         // notification/actions still work without it; never open settings automatically.
         if (background && (Build.VERSION.SDK_INT < 34 || manager(ctx).canUseFullScreenIntent())) notification.setFullScreenIntent(content, true)
         val built = notification.build()
-        // The system loops both ringtone and vibration, honoring ringer mode,
-        // DND and the user's channel preferences. Do not emulate it with media audio.
-        built.flags = built.flags or Notification.FLAG_INSISTENT
         return try {
             // A previous process may have left this notification ID behind.
             manager(ctx).cancel(INCOMING)
             manager(ctx).notify(INCOMING, built)
             alertId = id
+            IncomingCallRinger.start(ctx, id, sound, alertChannel, displayChannel)
             val timeout = Runnable { cancelIncoming(ctx, id) }
             alertTimeout = timeout; main.postDelayed(timeout, 30000)
             true
@@ -110,6 +111,7 @@ object RealtimeNotifications {
     }
     fun cancelIncoming(ctx: Context, id: String = alertId) {
         if (id != alertId) return
+        IncomingCallRinger.stop(id)
         alertTimeout?.let(main::removeCallbacks); alertTimeout = null; alertId = ""
         manager(ctx).cancel(INCOMING)
     }

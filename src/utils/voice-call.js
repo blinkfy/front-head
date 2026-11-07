@@ -1,13 +1,14 @@
-import { updateWebCallAlert } from './web-call-support.js'
+import { updateWebCallAlert, webCallsAvailable } from './web-call-support.js'
 import { reactive } from 'vue'
 import { consumeAndroidIncomingAcceptance, controlAndroidAnsweredCall, androidRealtimeAvailable, stopAndroidIncomingAlert } from './android-realtime.js'
 import { createVoiceCallController } from './voice-call-core.mjs'
 import { voiceCallMedia } from './voice-call-media.js'
 import { setUiSoundBlocked, areUiSoundsEnabled } from './ui-sounds.js'
 import { receiveChatFeedback, setChatFeedbackBlocked } from './chat-feedback.js'
+import { recordingConfiguration } from './call-recording-preference.mjs'
 
 export const voiceCallState = reactive({ phase: 'idle', supported: false, videoSupported: false, mode: 'audio', peer: null, callId: '', muted: false, speaker: false,
-  cameraEnabled: true, remoteCameraEnabled: true, facingMode: 'user', playbackBlocked: false, mediaError: '', startedAt: 0, endedAt: 0, reason: '' })
+  cameraSupported: false, canSwitchCamera: false, cameraEnabled: false, remoteCameraEnabled: false, facingMode: 'user', playbackBlocked: false, mediaError: '', startedAt: 0, endedAt: 0, reason: '' })
 let sender = () => false
 let previousPhase = 'idle'
 let openingPage = false
@@ -26,6 +27,8 @@ const controller = createVoiceCallController({
   media: voiceCallMedia, send: event => sender(event),
   getOwner: () => uni.getStorageSync('token') || '',
   getSelfId: () => { const user = uni.getStorageSync('userInfo') || {}; return user.id || user.userId || user.user?.id || user.data?.id },
+  getRecording: recordingConfiguration,
+  onRecordingSaved: () => uni.$emit('call-recordings:changed'),
   isMediaBusy: busyMedia,
   changed(state) {
     if (nativeState && nativeOwner === (uni.getStorageSync('token') || '')) {
@@ -52,7 +55,7 @@ const controller = createVoiceCallController({
         const current = voiceCalls.state()
         if (current.phase !== 'incoming' || current.callId !== state.callId) return
         if (consumeAndroidIncomingAcceptance(state.callId)) void voiceCalls.accept()
-        else if (!androidRealtimeAvailable()) void receiveChatFeedback()
+        else if (!androidRealtimeAvailable() && !webCallsAvailable()) void receiveChatFeedback()
       })
     }
     if (['calling', 'incoming'].includes(state.phase) && !openingPage && pages().slice(-1)[0]?.route !== 'pages-nonTheme/voice-call') {
@@ -67,6 +70,7 @@ export const voiceCalls = {
   ...controller,
   state() { return nativeState ? { ...voiceCallState } : controller.state() },
   handle(event) {
+    if (event.type === 'voice.minimized') { uni.$emit('voice-call:minimize', event.callId); return }
     if (event.type === 'voice.ended' && nativeState?.callId === event.callId)
       event = { ...nativeState, ...event, type: 'voice.native', phase: 'ended' }
     if (event.type !== 'voice.native') { controller.handle(event); return }
@@ -78,7 +82,7 @@ export const voiceCalls = {
       if (nativeState?.callId !== event.callId) return
       nativeState = null; nativeOwner = ''
       Object.assign(voiceCallState, controller.state(), { phase: 'ended', callId: event.callId, mode: event.mode,
-        peer: event.peer, reason: event.reason || 'hangup', endedAt: Date.now() })
+        peer: event.peer, reason: event.reason || 'hangup', endedAt: Date.now(), recording: false, recordingStartedAt: 0 })
       setUiSoundBlocked('voice-call', false); setChatFeedbackBlocked('voice-call', false)
       return
     }
@@ -98,7 +102,7 @@ export const voiceCalls = {
   },
   connection(value, ...versions) {
     if (nativeState && (!value || nativeOwner !== (uni.getStorageSync('token') || ''))) {
-      const ended = { ...nativeState, phase: 'ended', reason: 'disconnected', endedAt: Date.now() }
+    const ended = { ...nativeState, phase: 'ended', reason: 'disconnected', endedAt: Date.now(), recording: false, recordingStartedAt: 0 }
       nativeState = null; nativeOwner = ''
       controller.connection(value, ...versions)
       Object.assign(voiceCallState, ended)

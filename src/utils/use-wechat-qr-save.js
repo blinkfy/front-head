@@ -1,3 +1,4 @@
+import { ensureFeaturePermission, isPermissionDenied, openFeaturePermissionSettings } from './feature-permission.js'
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { onHide, onUnload } from '@dcloudio/uni-app'
 import { getWechatQrMenuPosition } from './wechat-qr-save.mjs'
@@ -10,6 +11,9 @@ import { saveWechatQrToAlbum } from './wechat-qr-save.mjs'
 
 export function useWechatQrSave(source, isDisabled = () => false) {
   const saving = ref(false), qrMenu = ref(null)
+  let alive = true
+  onUnload(() => { alive = false })
+  onBeforeUnmount(() => { alive = false })
   function closeQrMenu() { qrMenu.value = null }
   function openQrMenu(event) {
     if (saving.value || isDisabled() || !source.value) return
@@ -61,6 +65,7 @@ export function useWechatQrSave(source, isDisabled = () => false) {
       uni.showToast({ title: '已发起图片下载', icon: 'none' })
       // #endif
       // #ifdef APP-PLUS
+      if (!await ensureFeaturePermission('album', { isCurrent: () => alive && src === source.value && !isDisabled() })) return
       await saveWechatQrToAlbum({ src,
         downloadFile: options => uni.downloadFile(options),
         saveImageToPhotosAlbum: options => uni.saveImageToPhotosAlbum(options)
@@ -75,7 +80,8 @@ export function useWechatQrSave(source, isDisabled = () => false) {
       })
       // #endif
       // #ifdef APP-PLUS
-      uni.showToast({ title: error?.message || '保存失败，请检查相册权限后重试', icon: 'none' })
+      if (isPermissionDenied(error)) await openFeaturePermissionSettings('album', { isCurrent: () => alive && src === source.value && !isDisabled() })
+      else uni.showToast({ title: error?.message || '保存失败，请重试', icon: 'none' })
       // #endif
     } finally { saving.value = false }
   }

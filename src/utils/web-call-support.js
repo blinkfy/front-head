@@ -1,3 +1,5 @@
+import { updateWebCallRingtone } from './web-call-ringtone.js'
+
 // Browser notifications are local to the existing signaling connection. No push
 // subscription, polling, or additional server connection is created here.
 let latest = null
@@ -31,6 +33,7 @@ export async function requestWebCallNotifications() {
 
 export function updateWebCallAlert(state, { sound = false, open = () => {} } = {}) {
   // #ifdef H5
+  updateWebCallRingtone(state)
   latest = { state, sound, open }
   if (notifiedCall && notifiedCall !== state.callId) {
     notification?.close(); notification = null; notifiedCall = ''
@@ -47,7 +50,7 @@ export function updateWebCallAlert(state, { sound = false, open = () => {} } = {
     const callId = state.callId
     notification = new Notification('分投侠 · 来电', {
       body: `${state.peer?.name || '联系人'}邀请你${state.mode === 'video' ? '视频' : '语音'}通话`,
-      tag: `voice-call-${callId}`, silent: !sound
+      tag: `voice-call-${callId}`, silent: true
     })
     notifiedCall = callId
     notification.onclick = () => {

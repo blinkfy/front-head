@@ -1,3 +1,4 @@
+import { chooseImageWithPermission } from './feature-permission.js'
 import { createRecognitionImagePicker } from './recognition-picker-core.mjs'
 
 // Generic photo entry: only H5 uses the web camera; native pickers remain unchanged.
@@ -26,7 +27,7 @@ openWebCamera = async () => {
 
 export const chooseAppImage = createRecognitionImagePicker({
   runtime: {
-    chooseImage: options => uni.chooseImage(options),
+    chooseImage: chooseImageWithPermission,
     showActionSheet: options => uni.showActionSheet(options),
     navigateTo: options => uni.navigateTo(options)
   },

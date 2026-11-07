@@ -40,12 +40,18 @@ object VoiceCallBridge {
         var capturer: CameraVideoCapturer? = null
         var texture: SurfaceTextureHelper? = null
         var videoView: VideoCallView? = null
+        var videoHost: WeakReference<Activity>? = null
+        var canSwitchCamera = false
+        val cameraIntentRevision = java.util.concurrent.atomic.AtomicInteger(0)
         var cameraEnabled = true
+        var cameraGeneration = 0
+        var cameraFallbackTried = false
         var remoteCameraEnabled = true
         var frontFacing = true
         var muted = false
         var speaker = video
         var connected = false
+        var recording: CallAudioRecording? = null
         var peerName = "联系人"
         val ice = mutableListOf<IceCandidate>()
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -90,8 +96,9 @@ object VoiceCallBridge {
             val s = Session(id, context.applicationContext, callback, video, context as? Activity); current = s
             try {
                 if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { fail(s, "permission_denied"); return@execute }
-                if (video && context.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { fail(s, "permission_denied"); return@execute }
-                if (video && s.activity?.get() == null) { fail(s, "unavailable"); return@execute }
+                s.speaker = input.optBoolean("speaker", video)
+                s.remoteCameraEnabled = input.optBoolean("remoteCameraEnabled", input.optBoolean("cameraRequested", true))
+                s.cameraEnabled = input.optBoolean("cameraEnabled", true) && context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                 RealtimeBridge.attachCall(context, id, video)
                 val urls = input.optJSONArray("stunUrls")
                 val servers = mutableListOf<PeerConnection.IceServer>()
@@ -118,11 +125,24 @@ object VoiceCallBridge {
                     PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions())
                     initialized = true
                 }
-                val module = JavaAudioDeviceModule.builder(context.applicationContext).createAudioDeviceModule()
+                s.peerName = input.optString("peerName", "联系人").take(80)
+                val recording = CallRecordingFiles.forSession(s.context, s.peerName, input.optString("entryMode", if (video) "video" else "audio"),
+                    input.optString("recordingOwner")) { state ->
+                    worker.execute {
+                        if (valid(s)) updateVideo(s)
+                        if (valid(s) || state.optBoolean("saved")) emit(s, "recording", state)
+                    }
+                }
+                s.recording = recording
+                val audioBuilder = JavaAudioDeviceModule.builder(context.applicationContext)
+                if (recording.allowed) audioBuilder
+                    .setSamplesReadyCallback { recording.capture(it) }
+                    .setPlaybackSamplesReadyCallback { recording.playback(it) }
+                val module = audioBuilder.createAudioDeviceModule()
                 val factory = try {
                     val builder = PeerConnectionFactory.builder().setAudioDeviceModule(module)
                     if (video) {
-                        val egl = EglBase.create(); s.egl = egl
+                        val egl = FtxEglBaseFactory.create(); s.egl = egl
                         builder.setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))
                         builder.setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext))
                     }
@@ -134,6 +154,13 @@ object VoiceCallBridge {
                 val listener = object : PeerConnection.Observer {
                     override fun onSignalingChange(state: PeerConnection.SignalingState) {}
                     override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {}
+                    // JNI calls these methods directly. Explicit overrides avoid missing
+                    // Java interface defaults after Android cloud-build desugaring.
+                    override fun onStandardizedIceConnectionChange(state: PeerConnection.IceConnectionState) {}
+                    override fun onIceCandidateError(event: IceCandidateErrorEvent) {}
+                    override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {}
+                    override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {}
+                    override fun onRemoveTrack(receiver: RtpReceiver) {}
                     override fun onIceConnectionReceivingChange(receiving: Boolean) {}
                     override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
                     override fun onIceCandidate(candidate: IceCandidate) {
@@ -167,36 +194,77 @@ object VoiceCallBridge {
                 s.peer!!.addTrack(s.track, listOf("ftx-voice"))
                 if (video) {
                     createCamera(s, factory)
+                    if (!s.cameraEnabled && input.optBoolean("cameraRequested", true)) {
+                        emit(s, "camera", JSONObject().put("cameraEnabled", false))
+                        emit(s, "control_error", JSONObject().put("cameraEnabled", false).put("reason", "camera_unavailable"))
+                    }
                     val track = s.videoTrack!!
                     val sender = s.peer!!.addTrack(track, listOf("ftx-voice"))
                     val parameters = sender.parameters
                     for (encoding in parameters.encodings) { encoding.maxBitrateBps = 700000; encoding.maxFramerate = 24 }
                     sender.setParameters(parameters)
-                    s.peerName = input.optString("peerName", "联系人").take(80)
                     main.post {
                         if (!valid(s) || (nativeAnswer && !RealtimeBridge.isNativeCall(id))) return@post
                         try {
                             val origin = s.activity?.get()
-                            if (origin == null || origin.isFinishing || origin.isDestroyed) { worker.execute { fail(s, "camera_unavailable") }; return@post }
+                            if (origin == null || origin.isFinishing || origin.isDestroyed) { worker.execute { cameraUnavailable(s) }; return@post }
                             VideoCallActivity.markLaunching()
                             origin.startActivity(Intent(origin, VideoCallActivity::class.java)
                                 .putExtra("callId", id).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
-                        } catch (_: Throwable) { VideoCallActivity.cancelLaunching(); worker.execute { fail(s, "camera_unavailable") } }
+                        } catch (_: Throwable) { VideoCallActivity.cancelLaunching(); worker.execute { cameraUnavailable(s) } }
                     }
                 }
                 if (nativeAnswer && !RealtimeBridge.isNativeCall(id)) { release(s); return@execute }
                 emit(s, "ready")
+                if (recording.allowed) emit(s, "recording", recording.snapshot())
                 if (input.optBoolean("offerer")) s.peer!!.createOffer(observer(s, created = { localDescription(s, it) }), MediaConstraints())
-            } catch (_: Throwable) { fail(s, if (video) "camera_unavailable" else "unavailable") }
+            } catch (error: Throwable) {
+                android.util.Log.w("ftx-call", "peer initialization: ${error.javaClass.simpleName}", error)
+                fail(s, "failed")
+            }
         }
     }
     private fun createCamera(s: Session, factory: PeerConnectionFactory) {
-        val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(s.context)) Camera2Enumerator(s.context) else Camera1Enumerator(false)
+        // Keep a video sender even without a camera, so audio/remote video can connect
+        // and a later camera retry does not require renegotiating the whole call.
+        s.videoSource = factory.createVideoSource(false)
+        s.videoTrack = factory.createVideoTrack("ftx-video", s.videoSource)
+        if (!s.cameraEnabled) { s.videoTrack?.setEnabled(false); return }
+        try { startCamera(s) } catch (_: Throwable) {
+            try { startCamera(s, true) } catch (_: Throwable) { cameraUnavailable(s) }
+        }
+    }
+    private fun stopCamera(s: Session) {
+        s.cameraGeneration++
+        try { s.capturer?.stopCapture() } catch (_: Exception) {}
+        try { s.capturer?.dispose() } catch (_: Exception) {}
+        s.capturer = null
+    }
+    private fun cameraUnavailable(s: Session) {
+        if (!valid(s)) return
+        stopCamera(s); s.cameraEnabled = false; s.videoTrack?.setEnabled(false)
+        updateVideo(s)
+        emit(s, "camera", JSONObject().put("cameraEnabled", false))
+        emit(s, "control_error", JSONObject().put("cameraEnabled", false).put("reason", "camera_unavailable"))
+    }
+    private fun startCamera(s: Session, legacy: Boolean = false) {
+        stopCamera(s)
+        val generation = s.cameraGeneration
+        val useLegacy = legacy || !Camera2Enumerator.isSupported(s.context)
+        s.cameraFallbackTried = useLegacy
+        val enumerator: CameraEnumerator = if (useLegacy) Camera1Enumerator(true) else Camera2Enumerator(s.context)
         val names = enumerator.deviceNames
+        s.canSwitchCamera = names.size > 1
         val name = names.firstOrNull { enumerator.isFrontFacing(it) } ?: names.firstOrNull() ?: throw IllegalStateException("Camera unavailable")
         s.frontFacing = enumerator.isFrontFacing(name)
         val errors = object : CameraVideoCapturer.CameraEventsHandler {
-            private fun lost() { worker.execute { if (valid(s) && s.cameraEnabled) fail(s, "camera_unavailable") } }
+            private fun lost() { worker.execute {
+                if (!valid(s) || generation != s.cameraGeneration || !s.cameraEnabled) return@execute
+                if (!s.cameraFallbackTried) {
+                    try { startCamera(s, true); return@execute } catch (_: Throwable) {}
+                }
+                cameraUnavailable(s)
+            } }
             override fun onCameraError(error: String) { lost() }
             override fun onCameraDisconnected() { lost() }
             override fun onCameraFreezed(error: String) { lost() }
@@ -205,28 +273,39 @@ object VoiceCallBridge {
             override fun onCameraClosed() {}
         }
         s.capturer = enumerator.createCapturer(name, errors) ?: throw IllegalStateException("Camera unavailable")
-        s.texture = SurfaceTextureHelper.create("ftx-camera", s.egl!!.eglBaseContext) ?: throw IllegalStateException("Camera texture unavailable")
-        s.videoSource = factory.createVideoSource(false)
-        s.videoTrack = factory.createVideoTrack("ftx-video", s.videoSource)
+        if (s.texture == null) s.texture = SurfaceTextureHelper.create("ftx-camera", s.egl!!.eglBaseContext) ?: throw IllegalStateException("Camera texture unavailable")
         s.capturer!!.initialize(s.texture, s.context, s.videoSource!!.capturerObserver)
         s.capturer!!.startCapture(640, 480, 24)
+        s.cameraEnabled = true; s.videoTrack?.setEnabled(true)
+        emit(s, "camera", JSONObject().put("cameraEnabled", true).put("frontFacing", s.frontFacing).put("canSwitchCamera", s.canSwitchCamera))
     }
     private fun updateVideo(s: Session) {
-        main.post { if (valid(s)) s.videoView?.update(s.muted, s.speaker, s.cameraEnabled, s.remoteCameraEnabled, s.frontFacing, s.connected) }
+        main.post { if (valid(s)) s.videoView?.update(s.muted, s.speaker, s.cameraEnabled, s.remoteCameraEnabled, s.frontFacing, s.connected, s.canSwitchCamera, s.recording?.snapshot()) }
     }
     @JvmStatic fun attachVideo(activity: VideoCallActivity, id: String): Boolean {
         val s = current ?: return false
         if (s.id != id || !valid(s) || !s.video || s.egl == null || s.videoTrack == null) return false
+        if (s.videoHost?.get() === activity && s.videoView != null) return true
         s.videoView?.release()
+        s.videoHost = WeakReference(activity)
         val view = VideoCallView(activity, s.egl!!.eglBaseContext, s.videoTrack!!, s.peerName,
-            { value -> if (valid(s)) emit(s, "control", value) },
+            { value ->
+                val dispatch = { if (valid(s)) emit(s, "control", value) }
+                if (value.optBoolean("cameraEnabled")) activity.withCameraPermission(id, dispatch) else dispatch()
+            },
             { worker.execute { if (valid(s)) { emit(s, "hangup"); release(s) } } })
         s.videoView = view; view.show(); view.setRemoteTrack(s.remoteVideo)
-        view.update(s.muted, s.speaker, s.cameraEnabled, s.remoteCameraEnabled, s.frontFacing, s.connected)
+        view.update(s.muted, s.speaker, s.cameraEnabled, s.remoteCameraEnabled, s.frontFacing, s.connected, s.canSwitchCamera, s.recording?.snapshot())
         return true
+    }
+    @JvmStatic fun detachVideo(activity: Activity, id: String) {
+        val s = current ?: return
+        if (s.id != id || s.videoHost?.get() !== activity) return
+        s.videoView?.release(); s.videoView = null; s.videoHost = null
     }
     @JvmStatic fun pipChanged(id: String, value: Boolean) { current?.let { if (it.id == id && valid(it)) it.videoView?.setPip(value) } }
     @JvmStatic fun canPip(id: String): Boolean = current?.let { it.id == id && valid(it) && it.connected && it.video } == true
+    @JvmStatic fun recordingState(id: String): JSONObject? = current?.takeIf { it.id == id && valid(it) }?.recording?.snapshot()
     @JvmStatic fun showVideo(activity: Activity, id: String) {
         val s = current ?: return
         if (s.id == id && valid(s) && s.video && !VideoCallActivity.visible) {
@@ -238,7 +317,7 @@ object VoiceCallBridge {
     @JvmStatic fun videoClosed(id: String) { current?.let { s -> if (s.id == id && valid(s) && s.video) { emit(s, "hangup"); close(s.id) } } }
     @JvmStatic fun resumeState() { current?.let { s -> if (valid(s)) {
         emit(s, "control", JSONObject().put("muted", s.muted).put("speaker", s.speaker))
-        if (s.video) emit(s, "camera", JSONObject().put("cameraEnabled", s.cameraEnabled).put("frontFacing", s.frontFacing))
+        if (s.video) emit(s, "camera", JSONObject().put("cameraEnabled", s.cameraEnabled).put("frontFacing", s.frontFacing).put("canSwitchCamera", s.canSwitchCamera))
     } } }
     @JvmStatic fun signal(id: String, json: String) {
         worker.execute {
@@ -277,22 +356,47 @@ object VoiceCallBridge {
         } else s.audio.isSpeakerphoneOn = speaker
     }
     @JvmStatic fun control(id: String, options: String) {
+        val session = current
+        if (session == null || session.id != id || !valid(session)) return
+        val input = runCatching { JSONObject(options) }.getOrNull() ?: return
+        val revision = if (input.has("cameraEnabled")) session.cameraIntentRevision.incrementAndGet() else null
+        if (input.optBoolean("cameraEnabled")) {
+            RealtimeBridge.withCameraService(id) { controlMedia(id, options, revision) }
+        } else {
+            if (revision != null) RealtimeBridge.cancelCameraServiceAction(id)
+            controlMedia(id, options, revision)
+        }
+    }
+    private fun controlMedia(id: String, options: String, cameraRevision: Int?) {
         worker.execute {
             val s = current ?: return@execute
-            if (s.id != id || !valid(s)) return@execute
+            if (s.id != id || !valid(s) || (cameraRevision != null && cameraRevision != s.cameraIntentRevision.get())) return@execute
             try {
                 val input = JSONObject(options)
-                if (input.optBoolean("connected")) s.connected = true
-                if (input.has("muted")) { s.muted = input.getBoolean("muted"); s.track?.setEnabled(!s.muted); RealtimeBridge.updateMuted(id, s.muted) }
+                if (input.optBoolean("connected") && !s.connected) {
+                    s.connected = true
+                    if (s.recording?.automatic == true) s.recording?.start()
+                }
+                if (input.has("muted")) {
+                    s.muted = input.getBoolean("muted")
+                    s.recording?.setMuted(s.muted)
+                    s.track?.setEnabled(!s.muted)
+                    RealtimeBridge.updateMuted(id, s.muted)
+                }
+                if (s.connected && input.has("recordingEnabled")) {
+                    if (input.optBoolean("recordingEnabled")) s.recording?.start() else s.recording?.stop()
+                }
                 if (input.has("speaker")) { s.speaker = input.getBoolean("speaker"); route(s, s.speaker) }
                 if (s.video) {
                     if (input.has("cameraEnabled") && s.cameraEnabled != input.getBoolean("cameraEnabled")) {
-                        s.cameraEnabled = input.getBoolean("cameraEnabled")
-                        s.videoTrack?.setEnabled(s.cameraEnabled)
-                        if (s.cameraEnabled) s.capturer?.startCapture(640, 480, 24) else s.capturer?.stopCapture()
+                        if (input.getBoolean("cameraEnabled")) {
+                            try { startCamera(s) } catch (_: Throwable) {
+                                try { startCamera(s, true) } catch (_: Throwable) { cameraUnavailable(s) }
+                            }
+                        } else { stopCamera(s); s.cameraEnabled = false; s.videoTrack?.setEnabled(false) }
                     }
                     if (input.has("remoteCameraEnabled")) s.remoteCameraEnabled = input.getBoolean("remoteCameraEnabled")
-                    if (input.optBoolean("switchCamera") && s.cameraEnabled) s.capturer?.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+                    if (input.optBoolean("switchCamera") && s.cameraEnabled && s.canSwitchCamera) s.capturer?.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
                         override fun onCameraSwitchDone(front: Boolean) { worker.execute {
                             if (valid(s)) { s.frontFacing = front; updateVideo(s); emit(s, "camera", JSONObject().put("frontFacing", front)) }
                         } }
@@ -308,12 +412,13 @@ object VoiceCallBridge {
     @Suppress("DEPRECATION") private fun release(s: Session) {
         if (s.closed) return
         s.closed = true
+        s.recording?.close()
         RealtimeBridge.detachCall(s.id)
         try { s.capturer?.stopCapture() } catch (_: Exception) {}
         if (s.video) {
             main.post {
                 try { s.videoView?.release() } finally {
-                    s.videoView = null; VideoCallActivity.finishCall(s.id)
+                    s.videoView = null; s.videoHost = null; VideoCallActivity.finishCall(s.id)
                     worker.execute { dispose(s) }
                 }
             }

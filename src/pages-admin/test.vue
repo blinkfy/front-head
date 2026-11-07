@@ -39,7 +39,7 @@
         <view class="endpoint-rail">
           <view class="rail-heading">
             <text class="rail-title">精选接口库</text>
-            <text class="rail-caption">覆盖 6 个模块 · 19 项只读验证</text>
+            <text class="rail-caption">覆盖 {{ moduleTabs.length - 1 }} 个模块 · {{ endpointCatalog.length }} 项查询验证</text>
           </view>
           <view class="module-tabs" aria-label="接口模块筛选">
             <view
@@ -72,7 +72,7 @@
 
           <view class="rail-note">
             <text class="rail-note__title">只测关键链路，不堆接口</text>
-            <text class="rail-note__copy">覆盖平台、清运、社区、AI、用户服务和数字孪生；全部为 GET，不会改动业务数据。</text>
+            <text class="rail-note__copy">覆盖平台、清运、社区、AI、消息、用户服务和数字孪生；仅提供查询接口；部分服务可能初始化默认配置或记录日志。</text>
           </view>
         </view>
 
@@ -83,7 +83,7 @@
                 <text class="panel-title">{{ selectedEndpoint.title }}</text>
                 <text class="panel-copy">{{ selectedEndpoint.detail }}</text>
               </view>
-              <view class="safe-tag">只读验证</view>
+              <view class="safe-tag">查询验证</view>
             </view>
 
             <view class="route-line">
@@ -175,7 +175,7 @@
         <view class="history-heading">
           <view>
             <text class="panel-title">最近测试</text>
-            <text class="panel-copy">仅保留本次打开期间的请求记录</text>
+            <text class="panel-copy">离开页面后清除本次请求记录</text>
           </view>
           <view class="clear-history" role="button" @tap="clearHistory">清空历史</view>
         </view>
@@ -205,7 +205,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
+import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import request from '@/api/index'
 import { userinfo } from '@/api/user'
 import ManifestIcon from '@/components/ManifestIcon.vue'
@@ -239,7 +240,7 @@ const endpointCatalog = [
     module: 'platform',
     title: 'AI 服务配置',
     description: '读取当前模型、开关与服务配置。',
-    detail: '验证管理员侧 AI 配置读取链路；仅展示配置，不会提交或覆盖设置。',
+    detail: '验证管理员侧 AI 配置读取链路；首次读取可能创建默认配置文件。',
     method: 'GET',
     path: '/api/admin/ai-settings',
     fields: []
@@ -249,35 +250,13 @@ const endpointCatalog = [
     module: 'collection',
     title: '设备运营数据',
     description: '读取设备状态、审核状态与分页结果。',
-    detail: '验证当前 Device / Devices 设计及设备运营数据的管理接口。',
+    detail: '验证管理端垃圾桶和设备列表、分页及筛选信息。',
     method: 'GET',
-    path: '/api/admin/devices',
+    path: '/api/admin/bins',
     fields: [
       { key: 'page', label: '页码', type: 'number', placeholder: '1', defaultValue: '1' },
       { key: 'pageSize', label: '每页数量', type: 'number', placeholder: '20', defaultValue: '20' }
     ]
-  },
-  {
-    id: 'planning',
-    module: 'collection',
-    title: '清运态势快照',
-    description: '读取桶位、任务、服务点与实时运行状态。',
-    detail: '验证大屏首屏快照接口；路线规划不在此请求中执行。',
-    method: 'GET',
-    path: '/api/planning/dashboard-snapshot',
-    fields: [
-      { key: 'routeStrategy', label: '调度策略', placeholder: 'nearest', defaultValue: 'nearest' }
-    ]
-  },
-  {
-    id: 'servicePoints',
-    module: 'collection',
-    title: '服务点位状态',
-    description: '读取服务点与当前设备绑定状态。',
-    detail: '验证清运调度中服务点位、设备归属和点位状态的实时读取链路。',
-    method: 'GET',
-    path: '/api/planning/points',
-    fields: []
   },
   {
     id: 'operationTasks',
@@ -356,7 +335,7 @@ const endpointCatalog = [
     description: '读取当前管理员会话的识别记录。',
     detail: '验证垃圾识别结果的历史读取与分页链路，不会删除任何识别记录。',
     method: 'GET',
-    path: '/api/history',
+    path: '/api/recognition_history',
     fields: [
       { key: 'page', label: '页码', type: 'number', placeholder: '1', defaultValue: '1' },
       { key: 'pageSize', label: '每页数量', type: 'number', placeholder: '10', defaultValue: '10' }
@@ -373,7 +352,7 @@ const endpointCatalog = [
     fields: [
       { key: 'page', label: '页码', type: 'number', placeholder: '1', defaultValue: '1' },
       { key: 'limit', label: '每页数量', type: 'number', placeholder: '10', defaultValue: '10' },
-      { key: 'status', label: '订单状态', placeholder: 'all', defaultValue: 'all' }
+      { key: 'status', label: '订单状态', placeholder: '留空表示全部', defaultValue: '' }
     ]
   },
   {
@@ -400,16 +379,6 @@ const endpointCatalog = [
     fields: []
   },
   {
-    id: 'lotteryConfig',
-    module: 'services',
-    title: '积分抽奖配置',
-    description: '读取奖品池与抽奖基础配置。',
-    detail: '验证积分激励模块的配置读取能力，不会触发抽奖或消耗积分。',
-    method: 'GET',
-    path: '/api/lottery/config',
-    fields: []
-  },
-  {
     id: 'digitalTwin',
     module: 'twin',
     title: '数字孪生状态',
@@ -432,6 +401,64 @@ const endpointCatalog = [
       { key: 'mode', label: '回放模式', placeholder: 'sim', defaultValue: 'sim' }
     ]
   }
+  ,{
+    id: 'recyclingCatalog', module: 'services', title: '回收服务目录',
+    description: '读取当前开放的服务区域与回收品类。', detail: '验证预约回收使用的实时服务目录；不会创建订单。',
+    method: 'GET', path: '/api/recycling/catalog', fields: []
+  },
+  {
+    id: 'shopProducts', module: 'services', title: '商城商品',
+    description: '读取当前可兑换商品。', detail: '验证新版商城商品列表；不发起兑换。',
+    method: 'GET', path: '/api/shop/products', fields: []
+  },
+  {
+    id: 'shopOrders', module: 'services', title: '商城订单',
+    description: '读取当前账号的商城订单。', detail: '验证新版订单查询；不取消或确认订单。',
+    method: 'GET', path: '/api/shop/orders', fields: []
+  },
+  {
+    id: 'aiCapabilities', module: 'ai', title: 'AI 对话能力',
+    description: '读取当前会话可用的 AI 能力。', detail: '验证对话能力声明；不发送消息或启动任务。',
+    method: 'GET', path: '/api/ai/chat/capabilities', fields: []
+  },
+  {
+    id: 'aiTasks', module: 'ai', title: 'AI 待办列表',
+    description: '读取当前账号的 AI 待办。', detail: '仅查询草稿和待办；不确认或取消任务。',
+    method: 'GET', path: '/api/ai/actions', fields: []
+  },
+  {
+    id: 'chatList', module: 'messages', title: '聊天会话列表',
+    description: '读取当前账号的会话分页。', detail: '验证会话列表；不读取具体聊天内容或改变已读状态。',
+    method: 'GET', path: '/api/chat/chatlist', fields: [
+      { key: 'page', label: '页码', type: 'number', placeholder: '1', defaultValue: '1' },
+      { key: 'pageSize', label: '每页数量', type: 'number', placeholder: '10', defaultValue: '10' }
+    ]
+  },
+  {
+    id: 'notificationSummary', module: 'messages', title: '系统通知汇总',
+    description: '读取当前账号的通知汇总。', detail: '验证通知统计；不标记已读。',
+    method: 'GET', path: '/api/chat/notifications/summary', fields: []
+  },
+  {
+    id: 'pushCapabilities', module: 'messages', title: '消息推送能力',
+    description: '读取服务端推送能力信息。', detail: '仅查询能力；不绑定或解除设备。',
+    method: 'GET', path: '/api/chat/push/capabilities', fields: []
+  },
+  {
+    id: 'communityInbox', module: 'community', title: '社区互动通知',
+    description: '读取当前账号的社区互动列表。', detail: '仅查询社区互动；不标记已读。',
+    method: 'GET', path: '/api/community/notifications', fields: []
+  },
+  {
+    id: 'recyclingAdmin', module: 'collection', title: '回收运营概览',
+    description: '读取回收订单与回收员的运营概览。', detail: '验证管理端回收服务数据；不派单或审核。',
+    method: 'GET', path: '/api/admin/recycling/overview', fields: []
+  },
+  {
+    id: 'twinAlgorithm', module: 'twin', title: '孪生算法状态',
+    description: '读取已缓存的算法服务状态。', detail: '不主动触发算法健康检查或仿真命令。',
+    method: 'GET', path: '/api/digital-twin/algorithm/status', fields: []
+  }
 ]
 
 const moduleTabs = [
@@ -441,6 +468,7 @@ const moduleTabs = [
   { id: 'community', label: '社区' },
   { id: 'ai', label: 'AI' },
   { id: 'services', label: '服务' },
+  { id: 'messages', label: '消息' },
   { id: 'twin', label: '孪生' }
 ]
 
@@ -450,6 +478,7 @@ const moduleLabels = {
   community: '社区治理',
   ai: 'AI 与识别',
   services: '用户服务',
+  messages: '聊天与通知',
   twin: '数字孪生'
 }
 
@@ -465,6 +494,8 @@ const responseDuration = ref(null)
 const testedAt = ref(null)
 const history = ref([])
 const responseScrollTop = ref(0)
+let verifiedToken = ''
+let sessionVersion = 0
 
 const selectedEndpoint = computed(() => (
   endpointCatalog.find(item => item.id === selectedEndpointId.value) || endpointCatalog[0]
@@ -506,20 +537,21 @@ const responseText = computed(() => {
 const responseStatus = computed(() => {
   if (loading.value) return '请求中'
   if (responseError.value) return responseError.value.statusCode || responseError.value.code || '失败'
-  if (response.value) return isSuccessfulResponse(response.value) ? '200' : (response.value.code || '完成')
+  if (response.value) return response.value.status === 'degraded' ? '降级' : (isSuccessfulResponse(response.value) ? '成功' : (response.value.code || '完成'))
   return '待测试'
 })
 
 const responseTone = computed(() => {
   if (loading.value) return 'response-status--loading'
   if (responseError.value) return 'response-status--error'
-  if (response.value) return 'response-status--success'
+  if (response.value) return response.value.status === 'degraded' ? 'response-status--loading' : (isSuccessfulResponse(response.value) ? 'response-status--success' : 'response-status--error')
   return 'response-status--idle'
 })
 
 const responseMessage = computed(() => {
   if (loading.value) return '正在等待服务端响应…'
   if (responseError.value) return responseError.value.msg || responseError.value.message || '请求未完成'
+  if (response.value?.status === 'degraded') return response.value.msg || '服务已响应，但当前处于降级状态。'
   if (response.value) return response.value.msg || '请求完成，已解析响应数据。'
   return '尚未执行请求'
 })
@@ -569,32 +601,40 @@ function toQueryString(params) {
 }
 
 async function runSelectedEndpoint() {
-  if (loading.value) return
+  if (loading.value || accessState.value !== 'ready' || !verifiedToken || verifiedToken !== uni.getStorageSync('token')) return
   const endpoint = selectedEndpoint.value
+  const params = normalizedParams()
+  const version = sessionVersion
+  const requestTime = new Date()
   loading.value = true
   response.value = null
   responseError.value = null
   responseDuration.value = null
-  testedAt.value = new Date()
+  testedAt.value = requestTime
   const startedAt = Date.now()
 
   try {
     const result = await request({
       url: endpoint.path,
       method: endpoint.method,
-      data: normalizedParams(),
-      needAuth: true
+      data: params,
+      needAuth: true,
+      silent: true
     })
+    if (version !== sessionVersion || verifiedToken !== uni.getStorageSync('token')) return
     response.value = result
     responseDuration.value = Date.now() - startedAt
-    appendHistory({ endpoint, result, duration: responseDuration.value, tone: 'success', status: '成功' })
+    appendHistory({ endpoint, params, requestTime, result, duration: responseDuration.value, tone: result.status === 'degraded' ? 'warning' : 'success', status: result.status === 'degraded' ? '降级' : '成功' })
   } catch (error) {
+    if (version !== sessionVersion || verifiedToken !== uni.getStorageSync('token')) return
     responseDuration.value = Date.now() - startedAt
     responseError.value = normalizeError(error)
-    appendHistory({ endpoint, result: responseError.value, duration: responseDuration.value, tone: 'error', status: '失败' })
+    appendHistory({ endpoint, params, requestTime, result: responseError.value, duration: responseDuration.value, tone: 'error', status: '失败' })
   } finally {
-    loading.value = false
-    responseScrollTop.value += 1
+    if (version === sessionVersion) {
+      loading.value = false
+      responseScrollTop.value += 1
+    }
   }
 }
 
@@ -611,14 +651,16 @@ function normalizeError(error) {
   return { code: 'ERROR', msg: String(error || '请求失败') }
 }
 
-function appendHistory({ endpoint, result, duration, tone, status }) {
+function appendHistory({ endpoint, params, requestTime, result, duration, tone, status }) {
   history.value = [
     {
       id: `${Date.now()}-${endpoint.id}`,
       endpointId: endpoint.id,
       method: endpoint.method,
-      path: endpoint.path,
-      time: formatTime(new Date()),
+      path: toQueryString(params) ? `${endpoint.path}?${toQueryString(params)}` : endpoint.path,
+      params: { ...params },
+      requestedAt: requestTime,
+      time: formatTime(requestTime),
       duration,
       tone,
       status,
@@ -629,11 +671,13 @@ function appendHistory({ endpoint, result, duration, tone, status }) {
 }
 
 function restoreHistoryItem(item) {
+  if (loading.value) return
   selectEndpoint(item.endpointId)
-  response.value = item.tone === 'success' ? item.result : null
+  draftParams.value = { ...defaultParams(selectedEndpoint.value), ...item.params }
+  response.value = item.tone !== 'error' ? item.result : null
   responseError.value = item.tone === 'error' ? item.result : null
   responseDuration.value = item.duration
-  testedAt.value = new Date()
+  testedAt.value = item.requestedAt
   responseScrollTop.value += 1
 }
 
@@ -650,136 +694,26 @@ function clearHistory() {
 }
 
 function isSuccessfulResponse(payload) {
-  return !!payload && (payload.code === 0 || payload.success === true || payload.status === 'ok')
+  return !!payload && (payload.code === 0 || payload.success === true || payload.status === 'ok' || payload.status === 'degraded')
 }
 
-function countItems(data, keys = []) {
-  if (Array.isArray(data)) return data.length
-  for (const key of keys) {
-    if (Array.isArray(data?.[key])) return data[key].length
-  }
-  return 0
-}
-
-function buildSummary(payload, endpointId) {
-  if (!payload) {
-    return [
-      { label: '请求状态', value: '等待发送' },
-      { label: '接口类型', value: '只读 GET' },
-      { label: '写入影响', value: '无' }
-    ]
-  }
-
-  if (!isSuccessfulResponse(payload)) {
-    return [
-      { label: '结果', value: '请求失败' },
-      { label: '错误码', value: String(payload.code || payload.statusCode || payload.error || '—') },
-      { label: '说明', value: payload.msg || payload.error || '请检查服务状态' }
-    ]
-  }
-
-  const data = payload.data && typeof payload.data === 'object' ? payload.data : {}
-  const summaries = {
-    database: [
-      { label: '数据表', value: `${Array.isArray(data.tables) ? data.tables.length : 0} 张` },
-      { label: '用户记录', value: String(data.usersCount ?? '—') },
-      { label: '设备记录', value: String(data.binsCount ?? '—') }
-    ],
-    users: [
-      { label: '当前页记录', value: `${countItems(data, ['list', 'rows'])} 条` },
-      { label: '匹配总数', value: String(data.total ?? payload.total ?? '—') },
-      { label: '权限范围', value: '管理员' }
-    ],
-    aiSettings: [
-      { label: '配置项', value: `${Object.keys(data).length} 项` },
-      { label: '接口权限', value: '管理员' },
-      { label: '写入影响', value: '无' }
-    ],
-    devices: [
-      { label: '当前页记录', value: `${Array.isArray(data.list) ? data.list.length : 0} 条` },
-      { label: '匹配总数', value: String(data.total ?? '—') },
-      { label: '数据源', value: 'Devices' }
-    ],
-    planning: [
-      { label: '桶位', value: `${Array.isArray(data.bins) ? data.bins.length : 0} 个` },
-      { label: '服务点', value: `${Array.isArray(data.points) ? data.points.length : 0} 个` },
-      { label: '路线', value: data.routePending ? '后台规划' : '已就绪' }
-    ],
-    servicePoints: [
-      { label: '服务点', value: `${countItems(data, ['items'])} 个` },
-      { label: '数据字段', value: `${Object.keys(data).length} 项` },
-      { label: '写入影响', value: '无' }
-    ],
-    operationTasks: [
-      { label: '调度任务', value: `${countItems(data, ['items'])} 条` },
-      { label: '数据字段', value: `${Object.keys(data).length} 项` },
-      { label: '操作类型', value: '仅查询' }
-    ],
-    faultEvents: [
-      { label: '风险事件', value: `${countItems(data, ['items'])} 条` },
-      { label: '汇总字段', value: `${Object.keys(data.summary || {}).length} 项` },
-      { label: '操作类型', value: '仅查询' }
-    ],
-    sortingCenter: [
-      { label: '最新进度', value: `${countItems(data, ['latest'])} 条` },
-      { label: '中心事件', value: `${countItems(data, ['events'])} 条` },
-      { label: '中心编号', value: String(data.centerId || 'center-main') }
-    ],
-    community: [
-      { label: '统计周期', value: `${data.range?.days || data.days || '—'} 天` },
-      { label: '活跃社区', value: String(data.activeCommunities ?? data.summary?.activeCommunities ?? '—') },
-      { label: '治理事件', value: String(data.totalEvents ?? data.summary?.totalEvents ?? '—') }
-    ],
-    communityTrend: [
-      { label: '统计周期', value: `${data.range?.days || data.days || '30'} 天` },
-      { label: '趋势数据', value: `${countItems(data, ['items', 'series', 'trend'])} 条` },
-      { label: '写入影响', value: '无' }
-    ],
-    knowledgeGraph: [
-      { label: '节点数', value: String(data.nodeCount ?? data.nodes ?? '—') },
-      { label: '关系数', value: String(data.edgeCount ?? data.edges ?? '—') },
-      { label: '服务状态', value: '已响应' }
-    ],
-    recognitionHistory: [
-      { label: '当前页记录', value: `${countItems(data)} 条` },
-      { label: '匹配总数', value: String(payload.total ?? data.total ?? '—') },
-      { label: '操作类型', value: '仅查询' }
-    ],
-    bookingOrders: [
-      { label: '当前页订单', value: `${countItems(data, ['list', 'items', 'orders'])} 条` },
-      { label: '匹配总数', value: String(data.total ?? payload.total ?? '—') },
-      { label: '操作类型', value: '仅查询' }
-    ],
-    shopRecords: [
-      { label: '当前页记录', value: `${countItems(data)} 条` },
-      { label: '匹配总数', value: String(payload.pagination?.total ?? '—') },
-      { label: '操作类型', value: '仅查询' }
-    ],
-    challengeRanking: [
-      { label: '排行榜记录', value: `${countItems(data, ['list', 'items', 'ranking'])} 条` },
-      { label: '数据字段', value: `${Object.keys(data).length} 项` },
-      { label: '写入影响', value: '无' }
-    ],
-    lotteryConfig: [
-      { label: '奖品配置', value: `${countItems(data, ['prizes', 'items'])} 项` },
-      { label: '配置字段', value: `${Object.keys(data).length} 项` },
-      { label: '操作类型', value: '不触发抽奖' }
-    ],
-    digitalTwin: [
-      { label: '场景', value: String(data.scene || data.mode || '当前仿真') },
-      { label: '状态字段', value: `${Object.keys(data).length} 项` },
-      { label: '写入影响', value: '无' }
-    ],
-    twinReplay: [
-      { label: '回放场景', value: String(data.scene || 'baseline') },
-      { label: '回放事件', value: `${countItems(data.replay || {}, ['events'])} 条` },
-      { label: '回放模式', value: String(data.mode || 'sim') }
-    ]
-  }
-  return summaries[endpointId] || [
-    { label: '响应状态', value: '成功' },
-    { label: '数据字段', value: `${Object.keys(data).length} 项` },
-    { label: '写入影响', value: '无' }
+function buildSummary(payload) {
+  if (!payload) return [
+    { label: '请求状态', value: '等待发送' },
+    { label: '接口类型', value: '查询 GET' },
+    { label: '业务操作', value: '不提交' }
+  ]
+  if (!isSuccessfulResponse(payload)) return [
+    { label: '结果', value: '请求失败' },
+    { label: '错误码', value: String(payload.code || payload.statusCode || payload.error || '—') },
+    { label: '说明', value: payload.msg || payload.message || payload.error || '请检查服务状态' }
+  ]
+  const data = payload.data
+  const shape = Array.isArray(data) ? `数组 · ${data.length} 项` : data && typeof data === 'object' ? `对象 · ${Object.keys(data).length} 个字段` : data == null ? '无 data 字段' : typeof data
+  return [
+    { label: '服务状态', value: payload.status === 'degraded' ? '降级' : '已响应' },
+    { label: '数据结构', value: shape },
+    { label: '操作类型', value: '查询请求' }
   ]
 }
 
@@ -807,21 +741,36 @@ function goBack() {
 }
 
 async function verifyAdminAccess() {
+  const version = ++sessionVersion
+  const token = uni.getStorageSync('token') || ''
+  verifiedToken = ''
+  accessState.value = 'checking'
   try {
-    const profile = await userinfo('false')
+    const profile = token ? await userinfo('false') : null
+    if (version !== sessionVersion || token !== (uni.getStorageSync('token') || '')) return
     const user = profile?.data || {}
     if (user.isAdmin !== true) throw new Error('管理员权限不足')
+    verifiedToken = token
     adminName.value = user.username || '管理员会话'
     accessState.value = 'ready'
   } catch (error) {
-    accessState.value = 'denied'
+    if (version === sessionVersion && token === (uni.getStorageSync('token') || '')) accessState.value = 'denied'
   }
 }
 
-onMounted(async () => {
-  draftParams.value = defaultParams(selectedEndpoint.value)
-  await verifyAdminAccess()
-})
+function suspendSession() {
+  sessionVersion++
+  verifiedToken = ''
+  accessState.value = 'checking'
+  loading.value = false
+  history.value = []
+  clearResponse()
+}
+
+draftParams.value = defaultParams(selectedEndpoint.value)
+onShow(verifyAdminAccess)
+onHide(suspendSession)
+onUnload(suspendSession)
 </script>
 
 <style scoped>
@@ -1212,6 +1161,7 @@ page,
 .history-status { font-weight: 680; }
 .history-status.success { color: #1f9d76; }
 .history-status.error { color: #cd5555; }
+.history-status.warning { color: #996f14; }
 .history-empty { margin-top: 16px; padding: 22px; color: #91a0b2; font-size: 13px; text-align: center; border: 1px dashed #d7e1ec; border-radius: 8px; background: #fbfdff; }
 
 .access-state { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; color: #64809f; font-size: 14px; }

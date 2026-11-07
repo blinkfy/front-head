@@ -1,5 +1,8 @@
 <template>
   <view :class="['shell', isDark ? 'dark-theme' : '']">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <view class="ambient ambient-one"></view>
     <view class="ambient ambient-two"></view>
 
@@ -333,6 +336,9 @@
 </template>
 
 <script setup>
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { useAppConfirmDialog } from '@/utils/use-app-confirm-dialog.js'
+const { appConfirmDialog, showPageModal } = useAppConfirmDialog()
 import { chooseAppImage } from '@/utils/image-picker.js'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { onHide, onUnload, onShow } from '@dcloudio/uni-app'
@@ -364,7 +370,7 @@ chatCoordinateSystem = 'wgs84'
 // #endif
 const chatEnvironment = createChatEnvironment({
   coordinateSystem: chatCoordinateSystem,
-  locate: () => getUserLocationOnce(chatCoordinateSystem),
+  locate: () => getUserLocationOnce(chatCoordinateSystem, { interactive: true }),
   reverseGeocode: origin => request({ url: '/api/map/reverse-geocoder', data: origin, needAuth: true, silent: true, timeout: 6000 }),
   loadNearby: origin => request({ url: '/api/trash-bin/list', data: { ...origin, radius: 5000, pageSize: 20 }, silent: true, timeout: 6000 })
 })
@@ -878,7 +884,7 @@ function onDeleteConversation(sessionId) {
   const conversation = conversationMap.get(sessionId)
   if (!conversation) return
 
-  uni.showModal({
+  showPageModal({
     title: '删除对话',
     content: `确定要删除对话“${conversation.title || '此对话'}”吗？`,
     confirmColor: '#EF4444',
@@ -1859,7 +1865,7 @@ function dismissRun(item) {
   if (recoveringRun.value || isStreaming.value || item.status === 'executing' || !ensureRunLedger()) return
   const owner = runOwner
   const remove = () => { if (runIsCurrent(owner)) updateRunLedger(() => runLedger.remove(item.requestId), pendingRuns.value.filter(value => value.requestId !== item.requestId)) }
-  if (item.status === 'pending') uni.showModal({ title: '关闭待核实提示', content: '关闭提示不会停止可能已开始的任务，也不会重新发送。若服务端已收到任务，下次进入页面仍可查询。', success: result => { if (result.confirm) remove() } })
+  if (item.status === 'pending') showPageModal({ title: '关闭待核实提示', content: '关闭提示不会停止可能已开始的任务，也不会重新发送。若服务端已收到任务，下次进入页面仍可查询。', success: result => { if (result.confirm) remove() } })
   else remove()
 }
 async function initializeRuns() {

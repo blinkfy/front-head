@@ -1,7 +1,10 @@
 <template>
 	<view class="chat-admin-container" :class="{ 'dark-theme': isDarkTheme }">
+		<!-- #ifdef APP-PLUS -->
+		<AppConfirmDialog ref="appConfirmDialog" />
+		<!-- #endif -->
 		<!-- 自定义导航栏 -->
-		<view class="nav-bar" @click.stop>
+		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }" @click.stop>
 			<view class="nav-content">
 				<view class="nav-left" @click="goBack">
 				<ManifestIcon class="back-icon nav-white-icon" id="back" :scale="1.15" />
@@ -15,7 +18,7 @@
 		</view>
 
 		<!-- 搜索栏 -->
-		<view class="search-bar" v-if="showSearch" @click.stop>
+		<view class="search-bar" v-if="showSearch" :style="{ top: (44 + statusBarHeight) + 'px' }" @click.stop>
 			<view class="search-input-wrap">
 				<ManifestIcon class="search-input-icon" id="search" />
 				<input ref="searchInput" class="search-input" v-model="searchKeyword" placeholder="搜索用户"
@@ -96,6 +99,9 @@
 </template>
 
 <script>
+import { realtimeActivityCard, realtimeActivitySummary } from '@/utils/realtime-activity.mjs'
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import * as chatApi from '@/pages-nonTheme/api/chat'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
@@ -109,7 +115,7 @@ import SystemNotificationEntry from './components/SystemNotificationEntry.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { getDisplayName } from '@/utils/display-name.js'
 export default {
-	components: { ManifestIcon, CommunityActivityEntry, SystemNotificationEntry, RealtimeActivityEntry },
+	components: { AppConfirmDialog, ManifestIcon, CommunityActivityEntry, SystemNotificationEntry, RealtimeActivityEntry },
 	data() {
 		return {
 			statusBarHeight: 20,
@@ -240,7 +246,16 @@ computed: {
 		this.startPeriodicRefresh()
 	},
 
+	// #ifdef APP-PLUS
+	onBackPress(event) {
+	  if (event.from === 'backbutton' && this.$refs.appConfirmDialog?.current) {
+	    this.$refs.appConfirmDialog.settle(false)
+	    return true
+	  }
+	},
+	// #endif
 	onHide() {
+		this.$refs.appConfirmDialog?.cancelAll()
         if (this.chatEventListener) {
             messageBus.off('chat.changed', this.chatEventListener)
             messageBus.off('chat.reconnected', this.chatEventListener)
@@ -253,6 +268,7 @@ computed: {
 	},
 	
 	onUnload() {
+		this.$refs.appConfirmDialog?.cancelAll()
         if (this.chatEventListener) {
             messageBus.off('chat.changed', this.chatEventListener)
             messageBus.off('chat.reconnected', this.chatEventListener)
@@ -1014,7 +1030,7 @@ computed: {
                             this.sortUserList()
                             this.saveToCache()
                         } else if (tapIndex === 1) {
-                            const result = await new Promise(resolve => uni.showModal({ title: '删除会话', content: '仅从会话列表移除，聊天记录和联系人将保留。有新消息时会重新显示。', success: resolve, fail: () => resolve({ confirm: false }) }))
+                            const result = await new Promise(resolve => showAppModal(this, { title: '删除会话', content: '仅从会话列表移除，聊天记录和联系人将保留。有新消息时会重新显示。', success: resolve, fail: () => resolve({ confirm: false }) }))
                             if (!result.confirm) return
                             await chatApi.hideConversation(user.otherId)
                             this.userList = this.userList.filter(item => String(item.otherId) !== String(user.otherId))
@@ -1099,6 +1115,8 @@ computed: {
 		formatLastMessage(message) {
             if (message?.isWithdraw) return '[消息已撤回]'
 			if (!message) return '暂无消息'
+            const activity = realtimeActivityCard(message)
+            if (activity) return realtimeActivitySummary(activity, String(message.senderId) === String(this.getCurrentUserId()))
 
 			// message 可能是对象或字符串
 			const msgType = message.type || 'text'

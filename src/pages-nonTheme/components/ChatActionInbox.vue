@@ -31,6 +31,8 @@
 </template>
 
 <script setup>
+import { inject as injectModalProvider } from 'vue'
+const showPageModal = injectModalProvider('app-confirm-dialog', options => uni.showModal(options))
 import { ref, onBeforeUnmount } from 'vue'
 import { fetchAiCapabilities, fetchAiActions, cancelAiAction, isCapabilityNotFound } from '@/api/ai-actions.js'
 import { normalizeActionSummaries, actionStatusLabel, actionDetailUrl } from '../utils/ai-chat-actions.mjs'
@@ -107,7 +109,7 @@ async function cancelItem(item) {
   const current = () => opened.value && panel === panelVersion && operation === cancelVersion
   try {
     confirmingCancel.value = true
-    const answer = await new Promise(resolve => uni.showModal({ title: '取消待办', content: `取消“${item.title}”这份尚未提交的草稿？`, success: resolve, fail: () => resolve({ confirm: false }) }))
+    const answer = await new Promise(resolve => showPageModal({ title: '取消待办', content: `取消“${item.title}”这份尚未提交的草稿？`, success: resolve, fail: () => resolve({ confirm: false }) }))
     if (!current()) return
     confirmingCancel.value = false
     if (!answer.confirm || !current()) return

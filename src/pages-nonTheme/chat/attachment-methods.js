@@ -1,3 +1,4 @@
+import { ensureFeaturePermission, isPermissionDenied, openFeaturePermissionSettings } from '@/utils/feature-permission.js'
 import { chooseAppImage } from '@/utils/image-picker.js'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 
@@ -184,18 +185,23 @@ export const mediaPickerMethods = {
                 compressed: true,
                 success: (res) => {
                     this.sendVideoMessage(res.tempFilePath, res.thumbTempFilePath, res.duration)
-                }
+                },
+                fail: error => { if (isPermissionDenied(error)) void openFeaturePermissionSettings('album', { isCurrent: () => !this.isChatPageDestroyed && this.isChatPageActive }) }
             })
             this.showMorePanel = false
         },
-    recordVideo() {
+    async recordVideo() {
+            const owner = uni.getStorageSync('token') || ''
+            const isCurrent = () => !this.isChatPageDestroyed && this.isChatPageActive && owner === (uni.getStorageSync('token') || '')
+            if (!await ensureFeaturePermission('camera', { isCurrent }) || !await ensureFeaturePermission('microphone', { isCurrent }) || !isCurrent()) return
             uni.chooseVideo({
                 sourceType: ['camera'],
                 compressed: true,
                 maxDuration: 60,
                 success: (res) => {
                     this.sendVideoMessage(res.tempFilePath, res.thumbTempFilePath, res.duration)
-                }
+                },
+                fail: error => { if (isPermissionDenied(error)) void openFeaturePermissionSettings('camera', { isCurrent: () => !this.isChatPageDestroyed && this.isChatPageActive }) }
             })
             this.showMorePanel = false
         },

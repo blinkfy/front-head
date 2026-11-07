@@ -1,0 +1,45 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const { parse, compileTemplate } = require('@vue/compiler-sfc')
+const source = fs.readFileSync('src/pages-admin/test.vue', 'utf8')
+const parsed = parse(source, { filename: 'test.vue' })
+assert.deepEqual(parsed.errors, [])
+assert.deepEqual(compileTemplate({ source: parsed.descriptor.template.content, filename: 'test.vue', id: 'test' }).errors, [])
+const script = parsed.descriptor.scriptSetup.content.replace(/^import .*$/gm, '')
+let token = 'admin-a'
+let onShow, onHide, onUnload, pending
+const uni = { getStorageSync: () => token, setClipboardData() {}, showToast() {} }
+const ref = value => ({ value })
+const computed = fn => ({ get value() { return fn() } })
+const request = options => new Promise(resolve => { pending = { options, resolve } })
+const userinfo = async () => ({ data: { isAdmin: true, username: '管理员' } })
+const setup = new Function('ref', 'computed', 'request', 'userinfo', 'uni', 'onShow', 'onHide', 'onUnload', script + '\nreturn { endpointCatalog, selectedEndpoint, draftParams, response, responseError, responseStatus, history, accessState, runSelectedEndpoint, restoreHistoryItem, selectEndpoint };')
+const vm = setup(ref, computed, request, userinfo, uni, fn => onShow = fn, fn => onHide = fn, fn => onUnload = fn)
+;(async () => {
+  assert(vm.endpointCatalog.length > 19)
+  assert.equal(new Set(vm.endpointCatalog.map(e => e.id)).size, vm.endpointCatalog.length)
+  assert(vm.endpointCatalog.every(e => e.method === 'GET'))
+  assert(!vm.endpointCatalog.some(e => ['/api/planning/dashboard-snapshot', '/api/lottery/config'].includes(e.path)))
+  await onShow()
+  assert.equal(vm.accessState.value, 'ready')
+  vm.selectEndpoint('chatList')
+  vm.draftParams.value.page = '3'
+  const running = vm.runSelectedEndpoint()
+  assert.equal(pending.options.data.page, '3')
+  pending.resolve({ status: 'degraded', data: [] })
+  await running
+  assert.equal(vm.responseStatus.value, '降级')
+  assert.equal(vm.history.value[0].path, '/api/chat/chatlist?page=3&pageSize=10')
+  vm.selectEndpoint('database')
+  vm.restoreHistoryItem(vm.history.value[0])
+  assert.equal(vm.draftParams.value.page, '3')
+  const oldRequest = vm.runSelectedEndpoint()
+  onHide()
+  token = 'admin-b'
+  pending.resolve({ code: 0, data: ['stale'] })
+  await oldRequest
+  assert.equal(vm.response.value, null)
+  assert.equal(vm.history.value.length, 0)
+  onUnload()
+  console.log('API 测试目录、参数回显、降级状态和会话隔离检查通过')
+})().catch(error => { console.error(error); process.exitCode = 1 })

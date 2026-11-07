@@ -70,12 +70,21 @@
                     </view>
                     <view class="toggle-switch" :class="{ active: soundEnabled }"><view class="toggle-dot"></view></view>
                 </view>
-                <view v-if="isAndroid" class="setting-item" @click="toggleBackgroundMessages" role="switch" tabindex="0" aria-label="后台消息接收" :aria-checked="backgroundMessagesEnabled" @keydown.enter.prevent="toggleBackgroundMessages" @keydown.space.prevent="toggleBackgroundMessages">
+                <view v-if="isAndroid" class="setting-item" @click="retryNotificationPermission" role="button" tabindex="0" @keydown.enter.prevent="retryNotificationPermission" @keydown.space.prevent="retryNotificationPermission">
+                    <view class="item-left">
+                        <ManifestIcon class="item-icon" id="notification" />
+                        <view class="item-info">
+                            <text class="item-title">消息通知权限</text>
+                            <text class="item-desc">收不到系统通知时，点此检查并重新授权</text>
+                        </view>
+                    </view>
+                </view>
+                <view v-if="isAndroid && backgroundMessagesAdmin" class="setting-item" @click="toggleBackgroundMessages" role="switch" tabindex="0" aria-label="后台消息接收" :aria-checked="backgroundMessagesEnabled" @keydown.enter.prevent="toggleBackgroundMessages" @keydown.space.prevent="toggleBackgroundMessages">
                     <view class="item-left">
                         <ManifestIcon class="item-icon" id="notification" />
                         <view class="item-info">
                             <text class="item-title">后台消息接收</text>
-                            <text class="item-desc">{{ backgroundMessagesEnabled ? '在后台接收消息和来电，常驻通知显示接收状态' : '已关闭，开启后可在后台接收消息和来电' }}</text>
+                            <text class="item-desc">{{ backgroundMessagesEnabled ? '在后台接收通知信息，常驻通知显示接收状态' : '已关闭，开启后可在后台接收通知信息' }}</text>
                         </view>
                     </view>
                     <view class="toggle-switch" :class="{ active: backgroundMessagesEnabled }"><view class="toggle-dot"></view></view>
@@ -122,6 +131,16 @@
             <!-- 数据管理 -->
             <view class="settings-section">
                 <view class="section-title">数据管理</view>
+                <view v-if="backgroundMessagesAdmin" class="setting-item" @click="goCallRecordings">
+                    <view class="item-left">
+                        <ManifestIcon class="item-icon" id="chat_voice_call" />
+                        <view class="item-info">
+                            <text class="item-title">通话录音</text>
+                            <text class="item-desc">自动录音设置和本地文件</text>
+                        </view>
+                    </view>
+                    <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
+                </view>
                 <view class="setting-item" @click="clearData">
                     <view class="item-left">
                         <ManifestIcon class="item-icon" id="clear_cache" />
@@ -163,19 +182,27 @@
 
 <script setup>
 import { clearChatPush } from '@/utils/chat-push.js'
+import { ensureFeaturePermission, openFeaturePermissionSettings } from '@/utils/feature-permission.js'
+import { syncChatPush } from '@/utils/chat-push.js'
 import { syncAndroidMessagingPreference } from '@/utils/android-realtime.js'
 import { recentRecognition } from '@/utils/recent-recognition.js'
 import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
 import { ref, onMounted, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
-import { readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '@/utils/background-message-preference.mjs'
+import { canConfigureBackgroundMessages, readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '@/utils/background-message-preference.mjs'
 
 const soundEnabled = ref(areUiSoundsEnabled())
 const isAndroid = ref(false)
+const backgroundMessagesAdmin = ref(canConfigureBackgroundMessages())
 const backgroundMessagesEnabled = ref(readBackgroundMessagesEnabled())
-const refreshBackgroundMessages = () => { backgroundMessagesEnabled.value = readBackgroundMessagesEnabled() }
+const refreshBackgroundMessages = () => {
+    backgroundMessagesAdmin.value = canConfigureBackgroundMessages()
+    backgroundMessagesEnabled.value = readBackgroundMessagesEnabled()
+}
+onShow(refreshBackgroundMessages)
 uni.$on('chat:background-messages-changed', refreshBackgroundMessages)
 uni.$on('chat:background-messages-state', refreshBackgroundMessages)
 onUnmounted(() => {
@@ -189,31 +216,43 @@ function toggleUiSounds() {
     if (soundEnabled.value) { primeUiSounds(); playUiSound('confirm', { page: 'pages-nonTheme/settings' }) }
 }
 function setBackgroundMessagesEnabled(enabled) {
-    backgroundMessagesEnabled.value = enabled
-    writeBackgroundMessagesEnabled(enabled)
+    backgroundMessagesEnabled.value = writeBackgroundMessagesEnabled(enabled)
 }
-function toggleBackgroundMessages() {
-    const enabled = !backgroundMessagesEnabled.value
-    if (!enabled) {
-        setBackgroundMessagesEnabled(false)
-        return
-    }
+const notificationPermissionPending = ref(false)
+async function requestNotifications() {
+    const owner = uni.getStorageSync('token') || ''
+    const page = getCurrentPages().slice(-1)[0]
+    const isCurrent = () => getCurrentPages().slice(-1)[0] === page && owner === (uni.getStorageSync('token') || '')
+    const granted = await ensureFeaturePermission('notification', { isCurrent })
+    if (!granted || !isCurrent()) return false
+    // Android < 13 also has an app-level notification switch.
+    // #ifdef APP-PLUS
     try {
-        const Version = plus.android.importClass('android.os.Build$VERSION')
-        if (Number(Version.SDK_INT) < 33) {
-            setBackgroundMessagesEnabled(true)
-            return
+        const activity = plus.android.runtimeMainActivity()
+        const manager = activity.getSystemService('notification')
+        if (Number(plus.android.importClass('android.os.Build$VERSION').SDK_INT) >= 24 && !plus.android.invoke(manager, 'areNotificationsEnabled')) {
+            await openFeaturePermissionSettings('notification', { isCurrent }); return false
         }
-        plus.android.requestPermissions(['android.permission.POST_NOTIFICATIONS'], result => {
-            if (result.granted?.includes('android.permission.POST_NOTIFICATIONS')) {
-                setBackgroundMessagesEnabled(true)
-            } else {
-                uni.showToast({ title: '未获得通知权限，无法开启后台消息接收', icon: 'none' })
-            }
-        }, () => uni.showToast({ title: '通知权限不可用，无法开启', icon: 'none' }))
-    } catch (e) {
-        uni.showToast({ title: '通知权限不可用，无法开启', icon: 'none' })
-    }
+    } catch (_) {}
+    // #endif
+    syncChatPush(owner, true)
+    syncAndroidMessagingPreference()
+    return true
+}
+async function retryNotificationPermission() {
+    if (notificationPermissionPending.value) return
+    notificationPermissionPending.value = true
+    try {
+        if (await requestNotifications()) uni.showToast({ title: '通知权限已开启', icon: 'none' })
+    } finally { notificationPermissionPending.value = false }
+}
+async function toggleBackgroundMessages() {
+    if (!canConfigureBackgroundMessages() || notificationPermissionPending.value) return
+    if (backgroundMessagesEnabled.value) { setBackgroundMessagesEnabled(false); return }
+    notificationPermissionPending.value = true
+    try {
+        if (await requestNotifications() && canConfigureBackgroundMessages()) setBackgroundMessagesEnabled(true)
+    } finally { notificationPermissionPending.value = false }
 }
 const isDarkTheme = ref(ThemeManager.getTheme() === 'dark')
 const showConfirmModal = ref(false)
@@ -248,6 +287,10 @@ function goEditProfile() {
 
 function goAccountSecurity() {
     uni.navigateTo({ url: '/pages-nonTheme/account-security' })
+}
+
+function goCallRecordings() {
+    uni.navigateTo({ url: '/pages-nonTheme/call-recordings' })
 }
 
 function goAbout() {
@@ -323,9 +366,9 @@ function handleConfirm() {
             uni.removeStorageSync('device')
             uni.removeStorageSync('userpoints')
             if (isDarkTheme.value) {
-                uni.redirectTo({ url: '/pages-dark/index/index' })
+                uni.redirectTo({ url: '/pages-dark/index/index?manualLogin=1' })
             } else {
-                uni.redirectTo({ url: '/pages/index/index' })
+                uni.redirectTo({ url: '/pages/index/index?manualLogin=1' })
             }
         } catch (e) {
             uni.showToast({

@@ -5,6 +5,10 @@ import { biometricErrorMessage } from './biometric-login-core.mjs'
 
 export function useBiometricLogin({ loading, onLogin, ready = async () => {} }) {
   const available = ref(false), label = ref('指纹或面容登录')
+  const systemPromptOwner = {}
+  let page = null
+  const currentPage = () => typeof getCurrentPages === 'function' ? getCurrentPages().slice(-1)[0] : null
+  const isCurrentPage = () => !page || currentPage() === page
   let active = true, attempted = false, generation = 0, ownedLoading = false
   function deactivate() {
     active = false
@@ -14,9 +18,9 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {} }) 
     ownedLoading = false
   }
   onBeforeUnmount(deactivate)
-  onHide(deactivate)
-  onShow(() => { active = true; void refresh() })
-  const current = () => active && !loading.value
+  onHide(() => { if (!isCurrentPage() || !biometricLogin.suspendSystemAuthentication?.(systemPromptOwner)) deactivate() })
+  onShow(() => { page = currentPage(); active = true; biometricLogin.resumeSystemAuthentication?.(systemPromptOwner); void refresh() })
+  const current = () => active && isCurrentPage() && !loading.value
   async function refresh() {
     const owner = generation
     const support = await biometricLogin.capability()
@@ -29,11 +33,11 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {} }) 
   async function login() {
     if (!current()) return
     const owner = generation
-    const isActive = () => active && generation === owner
+    const isActive = () => active && generation === owner && isCurrentPage()
     loading.value = true
     ownedLoading = true
     try {
-      const result = await biometricLogin.login(isActive)
+      const result = await biometricLogin.login(isActive, systemPromptOwner)
       if (result && isActive()) {
         // The normal completion flow now owns loading through the home-page handoff.
         ownedLoading = false
@@ -53,7 +57,7 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {} }) 
     if (attempted) return true
     attempted = true
     const owner = generation
-    const isActive = () => active && generation === owner
+    const isActive = () => active && generation === owner && isCurrentPage()
     const state = biometricLogin.state()
     if (!state.enabled || (!state.credentialId && !state.prompted)) return false
     // An unfinished web/WeChat setup must not intercept the existing login flow
@@ -93,11 +97,11 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {} }) 
   }
   async function afterLogin(token, user) {
     const owner = generation
-    const isActive = () => active && generation === owner
+    const isActive = () => active && generation === owner && isCurrentPage()
     if (!isActive()) return false
     await ready()
     if (!isActive()) return false
-    try { await biometricLogin.afterLogin(token, user, isActive) }
+    try { await biometricLogin.afterLogin(token, user, isActive, systemPromptOwner) }
     catch (error) { const message = biometricErrorMessage(error); if (message && isActive()) uni.showToast({ title: message, icon: 'none' }) }
     return isActive()
   }

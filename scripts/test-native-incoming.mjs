@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { createVoiceCallController } from '../src/utils/voice-call-core.mjs'
 
-function setup({ ticket = '', permissionError = null, android = true, permissionPromise = null } = {}) {
+function setup({ ticket = '', permissionError = null, android = true, web = false, permissionPromise = null } = {}) {
   const calls = { permission: [], open: 0, sent: [], consumed: [], stoppedAlerts: [], feedbackAlerts: 0,
     controls: [], uiSound: [], feedback: [], ended: [], navigated: [] }
   let acceptedTicket = ticket
@@ -33,9 +33,11 @@ function setup({ ticket = '', permissionError = null, android = true, permission
       return true
     },
     androidRealtimeAvailable: () => android,
+    webCallsAvailable: () => web,
     stopAndroidIncomingAlert: id => calls.stoppedAlerts.push(id),
     controlAndroidAnsweredCall: (id, options) => calls.controls.push({ id, options }),
     createVoiceCallController,
+    recordingConfiguration: () => null,
     document: { querySelectorAll: () => [] },
     voiceCallMedia: media,
     setUiSoundBlocked: (...args) => calls.uiSound.push(args),
@@ -84,12 +86,20 @@ async function run() {
   }
 
   {
-    const { calls, voiceCalls } = setup({ android: false })
+    const { calls, voiceCalls } = setup({ android: false, web: true })
     voiceCalls.handle({ type: 'voice.incoming', callId: 'h5-feedback-0001', mode: 'audio', peer: { id: '42' } })
     await flushMicrotasks()
-    assert.equal(calls.feedbackAlerts, 1, 'non-Android incoming calls retain the existing short feedback sound')
+    assert.equal(calls.feedbackAlerts, 0, 'H5 incoming ringtone replaces the short feedback sound')
     voiceCalls.end('rejected')
     assert.ok(calls.stoppedAlerts.includes('h5-feedback-0001'), 'leaving incoming state stops the matching alert')
+  }
+
+  {
+    const { calls, voiceCalls } = setup({ android: false })
+    voiceCalls.handle({ type: 'voice.incoming', callId: 'no-web-feedback-01', mode: 'audio', peer: { id: '42' } })
+    await flushMicrotasks()
+    assert.equal(calls.feedbackAlerts, 1, 'platforms without native or H5 ringtone keep the short feedback sound')
+    voiceCalls.end('rejected')
   }
 
   {
@@ -176,6 +186,22 @@ async function run() {
     voiceCalls.handle({ ...snapshot, phase: 'ended', reason: 'hangup' })
     assert.equal(voiceCallState.phase, 'ended', `${mode}: native ended snapshot clears ownership`)
     assert.equal(calls.uiSound.at(-1)[1], false, 'native call end releases sound blocking')
+  }
+
+  {
+    const { calls, voiceCalls, voiceCallState } = setup({ ticket: 'accepted-audio-camera-toggle' })
+    voiceCalls.handle({ type: 'voice.incoming', callId: 'accepted-audio-camera-toggle', mode: 'audio', cameraToggle: true,
+      peer: { id: '42', name: 'Peer' } })
+    await flushMicrotasks()
+    assert.deepEqual(calls.permission, [{ id: 'accepted-audio-camera-toggle', mode: 'audio' }],
+      'cameraToggle audio acceptance still requests microphone permission')
+    assert.equal(voiceCallState.cameraSupported, true, 'cameraToggle incoming projects camera support for negotiation')
+    assert.equal(calls.sent.filter(event => event.type === 'voice.accept').length, 1,
+      'cameraToggle audio acceptance sends one accept after permission succeeds')
+    voiceCalls.handle({ type: 'voice.accepted', callId: 'accepted-audio-camera-toggle', cameraToggle: true })
+    await flushMicrotasks()
+    assert.equal(calls.open, 1, 'accepted cameraToggle audio call opens the video-capable JS media path')
+    voiceCalls.setActive(false)
   }
 
   {

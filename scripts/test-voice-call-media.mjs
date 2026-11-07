@@ -36,7 +36,7 @@ function preprocessAppPlus(input) {
     '\nglobalThis.__voiceCallMedia = voiceCallMedia;'
 }
 
-const listenerRegistrations = [], opens = [], signals = [], controls = [], closes = [], permissionRequests = [], timers = new Map()
+const listenerRegistrations = [], opens = [], signals = [], controls = [], closes = [], permissionRequests = [], featureRequests = [], timers = new Map()
 let nextTimer = 0
 let videoAvailable = true
 let nativeRealtime = true
@@ -46,6 +46,16 @@ const context = {
     os: { name: 'Android' },
     android: { requestPermissions(permissions, success) { permissionRequests.push([...permissions]); success({ granted: permissionGrants }) } }
   },
+  requestRealtimePermissions(permissions) {
+    return new Promise((resolve, reject) => context.plus.android.requestPermissions(permissions, resolve, reject))
+  },
+  ensureFeaturePermission(kind, { isCurrent = () => true } = {}) {
+    featureRequests.push(kind)
+    const permission = { microphone: 'android.permission.RECORD_AUDIO', camera: 'android.permission.CAMERA' }[kind]
+    return Promise.resolve(isCurrent() && permissionGrants.includes(permission))
+  },
+  isPermissionDenied: error => error?.code === 'permission_denied',
+  openFeaturePermissionSettings: async () => false,
   voiceRtcAvailable: () => true,
   androidRealtimeAvailable: () => nativeRealtime,
   videoRtcAvailable: () => videoAvailable,
@@ -62,8 +72,8 @@ vm.runInNewContext(preprocessAppPlus(source), context, { filename: sourcePath })
 const media = context.__voiceCallMedia
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
-function options(callId, events, mode = 'audio') {
-  return { callId, offerer: false, mode, peerName: 'Peer Name', stunUrls: ['stun:stun.example:3478', 'turn:relay.example'], isCurrent: () => true,
+function options(callId, events, mode = 'audio', cameraEnabled = mode === 'video') {
+  return { callId, offerer: false, mode, cameraEnabled, peerName: 'Peer Name', stunUrls: ['stun:stun.example:3478', 'turn:relay.example'], isCurrent: () => true,
     onEvent: event => events.push(event) }
 }
 function emit(callId, event) { listenerRegistrations[0][0](JSON.stringify({ callId, ...event })) }
@@ -84,8 +94,7 @@ async function main() {
   assert.equal(opens.length, 1)
   assert.equal(opens[0].length, 1, 'native open is one-shot and receives options only')
   assert.deepEqual(JSON.parse(opens[0][0]), { callId: 'call-one', offerer: false, stunUrls: ['stun:stun.example:3478'] })
-  assert.deepEqual(permissionRequests[0], ['android.permission.RECORD_AUDIO', 'android.permission.POST_NOTIFICATIONS'],
-    'audio requests microphone and notification permission without requesting camera')
+  assert.deepEqual(featureRequests.slice(0, 1), ['microphone'], 'audio preflight requests microphone only')
   emit('call-one', { type: 'ready' })
   const firstDriver = await firstPromise
   for (let index = 0; index < 2; index++) {
@@ -123,10 +132,10 @@ async function main() {
   const videoEvents = []
   const videoPromise = media.open(options('call-video', videoEvents, 'video'))
   await tick()
-  assert.deepEqual(permissionRequests.at(-1), ['android.permission.RECORD_AUDIO', 'android.permission.CAMERA', 'android.permission.POST_NOTIFICATIONS'],
-    'video call requests both microphone and camera permission')
+  assert.deepEqual(featureRequests.slice(-2), ['microphone', 'camera'], 'video call requests microphone and camera permission')
   assert.equal(opens.length, 3)
-  assert.deepEqual(JSON.parse(opens[2][0]), { callId: 'call-video', offerer: false, mode: 'video', peerName: 'Peer Name', stunUrls: ['stun:stun.example:3478'] },
+  assert.deepEqual(JSON.parse(opens[2][0]), { callId: 'call-video', offerer: false, mode: 'video', cameraEnabled: true, cameraRequested: true,
+    remoteCameraEnabled: true, speaker: true, peerName: 'Peer Name', stunUrls: ['stun:stun.example:3478'] },
     'native video open carries mode and peer name while excluding TURN')
   emit('call-video', { type: 'ready' })
   const videoDriver = await videoPromise
@@ -135,19 +144,43 @@ async function main() {
     'camera, switch and remote-camera controls are passed to the native peer')
   videoDriver.close()
 
+  const cameraOffPromise = media.open(options('video-camera-off', [], 'video', false))
+  await tick()
+  assert.deepEqual(featureRequests.slice(-1), ['microphone'], 'video opened camera-off requests microphone only')
+  assert.deepEqual(JSON.parse(opens.at(-1)[0]), { callId: 'video-camera-off', offerer: false, mode: 'video', cameraEnabled: false,
+    cameraRequested: false, remoteCameraEnabled: false, speaker: false, peerName: 'Peer Name', stunUrls: ['stun:stun.example:3478'] },
+  'camera-off video still negotiates video with native peer')
+  emit('video-camera-off', { type: 'ready' })
+  const cameraOffDriver = await cameraOffPromise
+  cameraOffDriver.control({ cameraEnabled: true })
+  await tick()
+  assert.deepEqual(JSON.parse(controls.at(-1)[1]), { cameraEnabled: true }, 'driver can enable camera after audio-only opening')
+  cameraOffDriver.close()
+
+  const cachedStart = featureRequests.length
+  await Promise.all([media.prepareOutgoing('cached-permission', 'video'), media.permission('cached-permission', 'video')])
+  assert.equal(featureRequests.length, cachedStart + 2, 'outgoing preflight and media open share one microphone and camera check per call')
+
   videoAvailable = false
   assert.equal(media.supportsVideo(), false, 'older native runtime does not advertise video')
-  const opensBeforeUnsupported = opens.length, permissionsBeforeUnsupported = permissionRequests.length
+  const opensBeforeUnsupported = opens.length, permissionsBeforeUnsupported = featureRequests.length
   await assert.rejects(media.open(options('unsupported-video', [], 'video')), error => error?.code === 'unsupported')
   assert.equal(opens.length, opensBeforeUnsupported, 'unsupported native version never opens a video peer')
-  assert.equal(permissionRequests.length, permissionsBeforeUnsupported, 'unsupported video does not request camera permission')
+  assert.equal(featureRequests.length, permissionsBeforeUnsupported, 'unsupported video does not request camera permission')
   videoAvailable = true
 
   permissionGrants = ['android.permission.RECORD_AUDIO']
-  const deniedVideoPermission = media.permission('denied-video', 'video')
-  await assert.rejects(deniedVideoPermission, error => error?.code === 'permission_denied')
-  assert.deepEqual(permissionRequests.at(-1), ['android.permission.RECORD_AUDIO', 'android.permission.CAMERA', 'android.permission.POST_NOTIFICATIONS'],
-    'missing camera grant rejects video permission')
+  await media.permission('audio-only-video', 'video')
+  assert.deepEqual(featureRequests.slice(-2), ['microphone', 'camera'],
+    'video permission flow requests microphone and optional camera without failing when camera is denied')
+  const audioOnlyVideo = media.open(options('camera-denied-audio-kept', [], 'video'))
+  await tick()
+  assert.equal(JSON.parse(opens.at(-1)[0]).cameraEnabled, false, 'camera refusal opens the video call in audio-only mode')
+  emit('camera-denied-audio-kept', { type: 'ready' })
+  ;(await audioOnlyVideo).close()
+  permissionGrants = []
+  await assert.rejects(media.permission('microphone-denied', 'audio'), error => error?.code === 'permission_denied',
+    'microphone denial still rejects the call because audio is required')
   console.log('Voice-call Android adapter tests passed.')
 }
 

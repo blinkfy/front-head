@@ -31,6 +31,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getUserLocationOnce } from '@/utils/location'
+import { locationErrorMessage } from '@/utils/location-error.mjs'
 import { searchPlaces } from '@/api/map'
 import { getCurrentAddress, resolveLocationAddress } from '@/utils/location-address'
 
@@ -63,23 +64,21 @@ function update(value) {
     // #ifdef H5
     coordinateSystem = 'wgs84'
     // #endif
-    emit('select', { address, parts: selection.parts || {}, latitude: selection.latitude, longitude: selection.longitude, coordinateSystem })
+    emit('select', { address, parts: selection.parts || {}, latitude: selection.latitude, longitude: selection.longitude, accuracy: selection.accuracy, coordinateSystem })
   }
 }
-function showError(reason) {
-  const message = String(reason?.errMsg || reason?.message || '')
-  if (/cancel/i.test(message)) return
-  error.value = /auth|permission|deny|denied/i.test(message) ? '未获得定位权限，请在系统设置中允许定位，或手动输入地址' : '获取位置失败，请重试或手动输入地址'
+function showError(reason, stage) {
+  error.value = locationErrorMessage(reason, stage)
 }
 function requestJson(url) {
   return new Promise((resolve, reject) => uni.request({ url, timeout: 10000, success: res => res.statusCode === 200 ? resolve(res.data) : reject(new Error('地址服务暂不可用')), fail: reject }))
 }
 function getCoords() {
   // #ifdef H5
-  return getUserLocationOnce('wgs84')
+  return getUserLocationOnce('wgs84', { interactive: true, includeAccuracy: true })
   // #endif
   // #ifndef H5
-  return getUserLocationOnce('gcj02')
+  return getUserLocationOnce('gcj02', { interactive: true, includeAccuracy: true })
   // #endif
 }
 const resolveAddress = resolveLocationAddress
@@ -119,7 +118,7 @@ async function choose() {
     initializing.value = false
     if (current) {
       map.setView([current.latitude, current.longitude], 16)
-      await pickPoint(current.latitude, current.longitude)
+      await pickPoint(current.latitude, current.longitude, current.accuracy)
     } else if (props.modelValue) {
       query.value = props.modelValue.slice(0, 100)
       await search()
@@ -135,8 +134,8 @@ async function choose() {
     const token = revision
     if (coords && active(token) && opened.value && !selected.value) {
       try {
-        const current = await resolveAddress(coords.latitude, coords.longitude)
-        if (active(token) && opened.value && !selected.value) { selected.value = current.address; selectedParts.value = current.parts; selectedCoordinates = { latitude: coords.latitude, longitude: coords.longitude } }
+        const current = await resolveAddress(coords.latitude, coords.longitude, coords.accuracy)
+        if (active(token) && opened.value && !selected.value) { selected.value = current.address; selectedParts.value = current.parts; selectedCoordinates = { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy } }
       } catch (_) { /* 附近地点列表仍可选择，不覆盖其加载结果。 */ }
     }
     return
@@ -176,14 +175,14 @@ function placeMarker(latitude, longitude) {
   marker = window.L.marker([latitude, longitude], { draggable: true }).addTo(map)
   marker.on('dragend', () => { const point = marker.getLatLng(); pickPoint(point.lat, point.lng) })
 }
-async function pickPoint(latitude, longitude) {
+async function pickPoint(latitude, longitude, accuracy) {
   const token = ++revision
   initializing.value = false
   selected.value = ''; selectedParts.value = {}; error.value = ''; searching.value = true
   placeMarker(latitude, longitude)
   try {
-    const result = await resolveAddress(latitude, longitude)
-    if (active(token)) { selected.value = result.address; selectedParts.value = result.parts; selectedCoordinates = { latitude, longitude } }
+    const result = await resolveAddress(latitude, longitude, accuracy)
+    if (active(token)) { selected.value = result.address; selectedParts.value = result.parts; selectedCoordinates = { latitude, longitude, accuracy } }
   }
   catch (reason) { if (active(token)) showError(reason) }
   finally { if (token === revision) searching.value = false }
@@ -194,8 +193,10 @@ async function search() {
   const token = ++revision
   initializing.value = false
   searching.value = true; selected.value = ''; selectedParts.value = {}; error.value = ''
+  let stage = 'location'
   try {
     // #ifdef H5
+    stage = 'places'
     if (!query.value.trim()) { error.value = '请输入要搜索的地址'; return }
     const results = await requestJson(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query.value.trim())}&limit=1&addressdetails=1&accept-language=zh`)
     if (!active(token)) return
@@ -208,12 +209,13 @@ async function search() {
     // #endif
     // #ifndef H5
     if (!coords) coords = await getCoords()
+    stage = 'places'
     const response = await searchPlaces(query.value.trim() || '小区', coords.latitude, coords.longitude, 2000)
     if (!active(token)) return
     places.value = Array.isArray(response?.data) ? response.data : []
     if (!places.value.length) error.value = '附近没有找到地点，请换个关键词或手动填写'
     // #endif
-  } catch (reason) { if (active(token)) showError(reason) }
+  } catch (reason) { if (active(token)) showError(reason, stage) }
   finally { if (token === revision) searching.value = false }
 }
 function selectPlace(place) { selected.value = joinAddress(place); selectedParts.value = place.ad_info || {}; selectedCoordinates = place.location ? { latitude: Number(place.location.lat), longitude: Number(place.location.lng) } : null }

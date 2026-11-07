@@ -1,6 +1,14 @@
+// #ifdef H5
+import { WEB_CALL_RETURN_KEY, pendingWebCallPath } from './web-call-entry.mjs'
+// #endif
 // Keep the source page covered until reLaunch replaces it. Navigation failure
 // is separate from authentication failure and must not clear a valid session.
 export function navigateAfterLogin({ runtime, url, setLoading }) {
+  let callReturn = ''
+  // #ifdef H5
+  try { callReturn = pendingWebCallPath(runtime.getStorageSync?.(WEB_CALL_RETURN_KEY)) } catch (_) {}
+  if (callReturn) url = callReturn
+  // #endif
   setLoading(true)
   const cancelPageLoading = runtime.beginPageLoading?.(url)
   return new Promise(resolve => {
@@ -11,7 +19,12 @@ export function navigateAfterLogin({ runtime, url, setLoading }) {
       resolve(false)
     }
     try {
-      runtime.reLaunch({ url, success: () => resolve(true), fail })
+      runtime.reLaunch({ url, success: () => {
+        // #ifdef H5
+        if (callReturn) runtime.removeStorageSync?.(WEB_CALL_RETURN_KEY)
+        // #endif
+        resolve(true)
+      }, fail })
     } catch (_) { fail() }
   })
 }

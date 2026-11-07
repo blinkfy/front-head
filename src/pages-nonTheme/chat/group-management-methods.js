@@ -1,3 +1,4 @@
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 
 export const groupManagementMethods = {
@@ -14,7 +15,7 @@ export const groupManagementMethods = {
                 if (tapIndex === 2) { this.confirmRemoveGroupMember(member); return }
                 if (tapIndex === 3) { this.toggleGroupMemberMute(member); return }
                 const transfer = tapIndex === 1
-                const result = await new Promise(resolve => uni.showModal({
+                const result = await new Promise(resolve => showAppModal(this, {
                     title: transfer ? '转让群主' : '设置管理员',
                     content: transfer ? `确定将群主转让给“${this.getGroupMemberName(member)}”吗？转让后你将成为管理员。` : `确定${member.role === 'admin' ? '撤销' : '设置'}“${this.getGroupMemberName(member)}”的管理员权限吗？`,
                     success: resolve, fail: () => resolve({ confirm: false })
@@ -31,7 +32,7 @@ export const groupManagementMethods = {
     },
     editGroupAlias() {
         if (!this.isGroupChat || this.groupSettingsBusy) return
-        uni.showModal({ title: '我在本群的昵称', editable: true, content: this.groupInfo?.currentMember?.alias || '', placeholderText: '最多40个字，留空恢复账号昵称',
+        showAppModal(this, { title: '我在本群的昵称', editable: true, content: this.groupInfo?.currentMember?.alias || '', placeholderText: '最多40个字，留空恢复账号昵称',
             success: async result => {
                 if (!result.confirm || this.groupSettingsBusy) return
                 const alias = String(result.content || '').trim()
@@ -65,7 +66,7 @@ export const groupManagementMethods = {
         const mute = !member.mute
         this.removingGroupMemberId = String(member.userId)
         try {
-            const result = await new Promise(resolve => uni.showModal({ title: mute ? '禁言成员' : '解除禁言',
+            const result = await new Promise(resolve => showAppModal(this, { title: mute ? '禁言成员' : '解除禁言',
                 content: `确定${mute ? '禁止' : '恢复'}“${this.getGroupMemberName(member)}”在本群发言吗？`, success: resolve, fail: () => resolve({ confirm: false }) }))
             if (!result.confirm) return
             await chatApi.updateGroupMemberMute(this.groupId, member.userId, mute)
@@ -78,7 +79,7 @@ export const groupManagementMethods = {
         if (this.canManageGroup) {
             this.announcementDraft = this.groupInfo?.announcement || ''
             this.editingAnnouncement = true
-        } else uni.showModal({ title: '群公告', content: this.groupInfo?.announcement || '群主暂未发布公告', showCancel: false })
+        } else showAppModal(this, { title: '群公告', content: this.groupInfo?.announcement || '群主暂未发布公告', showCancel: false })
     },
     async saveGroupAnnouncement() {
         if (this.savingAnnouncement || !this.canManageGroup) return
@@ -120,7 +121,7 @@ export const groupManagementMethods = {
     },
     confirmDissolveGroup() {
         if (!this.isGroupOwner) return
-        uni.showModal({ title: '解散群聊', content: '解散后所有成员都将退出，该群的消息记录将被清除。此操作无法恢复，确定解散吗？', confirmColor: '#ef4444',
+        showAppModal(this, { title: '解散群聊', content: '解散后所有成员都将退出，该群的消息记录将被清除。此操作无法恢复，确定解散吗？', confirmColor: '#ef4444',
             success: async result => {
                 if (!result.confirm) return
                 try { this.leavingGroup = true; await chatApi.dissolveGroup(this.groupId); uni.navigateBack() }

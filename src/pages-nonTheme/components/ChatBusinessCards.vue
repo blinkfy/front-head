@@ -44,6 +44,8 @@
 </template>
 
 <script setup>
+import { inject as injectModalProvider } from 'vue'
+const showPageModal = injectModalProvider('app-confirm-dialog', options => uni.showModal(options))
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { getHistoryImage, getHistoryRecognitionDetail } from '@/api/history'
 import { baseUrl } from '@/api/settings'
@@ -133,7 +135,7 @@ async function recognizeAgain() {
     if (!current() || !detailOpen.value) return
     if (capability?.data?.actions?.rerecognition !== true) throw new Error('当前服务暂不支持再次识别')
     confirmingRecognition.value = true
-    const answer = await new Promise(resolve => uni.showModal({ title: '再次识别', content: '使用原图片重新识别并保存新记录？本次操作只执行一次，网络中断后可使用同一入口核实结果。', success: resolve, fail: () => resolve({ confirm: false }) }))
+    const answer = await new Promise(resolve => showPageModal({ title: '再次识别', content: '使用原图片重新识别并保存新记录？本次操作只执行一次，网络中断后可使用同一入口核实结果。', success: resolve, fail: () => resolve({ confirm: false }) }))
     if (actionCurrent()) confirmingRecognition.value = false
     if (!current() || !detailOpen.value || !answer.confirm) return
     const requestId = createRequestIds.get(key) || businessActionRequestId(card, props.messageId, newActionRequestId)
@@ -180,7 +182,7 @@ async function openBooking(card) {
     uni.navigateTo({ url: `/pages-nonTheme/booking?draftId=${encodeURIComponent(response.data.id)}` })
   } catch (error) {
     if (!current()) return
-    uni.showModal({ title: '暂时无法准备预约', content: error?.msg || error?.message || '请检查网络后重试。', showCancel: false })
+    showPageModal({ title: '暂时无法准备预约', content: error?.msg || error?.message || '请检查网络后重试。', showCancel: false })
   } finally { if (current()) busyProductId.value = '' }
 }
 
@@ -207,7 +209,7 @@ async function openCommunityPost(card) {
     if (!response?.data?.id) throw new Error('帖子草稿创建结果不明确，请重试')
     uni.navigateTo({ url: `/pages-nonTheme/community-publish?draftId=${encodeURIComponent(response.data.id)}` })
   } catch (error) {
-    if (current()) uni.showModal({ title: '暂时无法准备帖子', content: error?.msg || error?.message || '请稍后重试', showCancel: false })
+    if (current()) showPageModal({ title: '暂时无法准备帖子', content: error?.msg || error?.message || '请稍后重试', showCancel: false })
   } finally { if (current()) busyProductId.value = '' }
 }
 
@@ -239,7 +241,7 @@ async function openProduct(card) {
     uni.navigateTo({ url: `/pages-nonTheme/shop-confirm?draftId=${encodeURIComponent(draftId)}` })
   } catch (error) {
     if (!current()) return
-    uni.showModal({ title: '暂时无法创建兑换草稿', content: error?.msg || error?.message || '请检查网络后重试。', showCancel: false })
+    showPageModal({ title: '暂时无法创建兑换草稿', content: error?.msg || error?.message || '请检查网络后重试。', showCancel: false })
   } finally {
     if (current()) busyProductId.value = ''
   }

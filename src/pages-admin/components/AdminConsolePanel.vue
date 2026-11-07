@@ -1,13 +1,12 @@
 <template>
   <view class="console-panel">
-    <view class="console-heading" @click="expanded = !expanded">
+    <view class="console-heading">
       <view>
         <text class="console-title">本机控制台</text>
-        <text class="console-subtitle">{{ expanded ? '仅当前运行期间 · 最多保留 120 条' : '查看 App 日志与推送诊断' }}</text>
+        <text class="console-subtitle">仅当前运行期间 · 最多保留 120 条</text>
       </view>
-      <text class="console-toggle">{{ expanded ? '收起' : '展开' }}</text>
     </view>
-    <view v-if="expanded" class="console-content">
+    <view class="console-content">
       <view class="console-filters">
         <button v-for="item in filters" :key="item.key" class="console-filter" :class="{ selected: filter === item.key }"
           @click="filter = item.key">{{ item.label }}</button>
@@ -32,10 +31,9 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { appConsole } from '@/utils/app-console.mjs'
 
-const expanded = ref(false)
 const filter = ref('push')
 const entries = ref([])
 const filters = [
@@ -46,13 +44,9 @@ const filters = [
 const visibleEntries = computed(() => entries.value.filter(entry => filter.value === 'all' ||
   (filter.value === 'push' ? entry.message.includes('[chat-push]') : entry.level === filter.value)).slice().reverse())
 let unsubscribe = null
-watch(expanded, value => {
-  unsubscribe?.()
-  unsubscribe = null
-  if (value) {
-    entries.value = appConsole.snapshot()
-    unsubscribe = appConsole.subscribe(() => { entries.value = appConsole.snapshot() })
-  }
+onMounted(() => {
+  entries.value = appConsole.snapshot()
+  unsubscribe = appConsole.subscribe(() => { entries.value = appConsole.snapshot() })
 })
 onBeforeUnmount(() => unsubscribe?.())
 
@@ -75,7 +69,6 @@ function copyLogs() {
 .console-title { font-size: 16px; font-weight: 600; }
 .console-subtitle, .console-note, .console-count { color: var(--muted, #6b7972); font-size: 12px; line-height: 1.6; }
 .console-subtitle { margin-top: 4px; }
-.console-toggle { flex-shrink: 0; color: var(--green, #16845e); font-size: 13px; }
 .console-content { border-top: 1px solid var(--line, #e2e7e4); padding: 12px; }
 .console-filters, .console-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .console-filter, .console-action { margin: 0; padding: 5px 10px; font-size: 12px; line-height: 1.5; border: 1px solid var(--line, #e2e7e4); border-radius: 6px; color: var(--text, #1e2d27); background: transparent; }

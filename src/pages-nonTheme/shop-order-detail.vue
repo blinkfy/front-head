@@ -50,6 +50,11 @@
       </view>
       <button class="shop-button shop-outline" @click="goOrders">返回我的订单</button>
     </template>
+    <template #overlay>
+      <!-- #ifdef APP-PLUS -->
+      <AppConfirmDialog ref="appConfirmDialog" />
+      <!-- #endif -->
+    </template>
     <template #fixed>
       <view v-if="order && !loading && !error && ['pending', 'shipped'].includes(order.status)" class="shop-fixed">
         <button class="shop-button" :class="{ 'shop-outline': order.status === 'pending' }" :disabled="busy || !!actionError" :loading="busy" @click="act">{{ busy ? '处理中...' : order.status === 'pending' ? '取消订单' : '确认收货' }}</button>
@@ -59,12 +64,29 @@
 </template>
 
 <script setup>
+// #ifdef APP-PLUS
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
+// #endif
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { cancelShopOrder, fetchShopOrder, receiveShopOrder } from '@/api/shop'
 import ShopShell from '@/pages-nonTheme/components/shop/ShopShell.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { backFromShopPage, orderImage, orderStatus, orderTime, shopError } from '@/pages-nonTheme/utils/shop-orders'
+const appConfirmDialog = ref(null)
+// #ifdef APP-PLUS
+const cancelAppDialogs = () => appConfirmDialog.value?.cancelAll()
+onHide(cancelAppDialogs)
+onUnload(cancelAppDialogs)
+onBackPress(event => {
+  if (event.from === 'backbutton' && appConfirmDialog.value?.current) {
+    appConfirmDialog.value.settle(false)
+    return true
+  }
+})
+// #endif
 const id = ref('')
 const order = ref(null)
 const loading = ref(false)
@@ -102,7 +124,7 @@ async function act() {
   busy.value = true
   const cancelling = order.value.status === 'pending'
   try {
-    const confirmed = await new Promise((resolve, reject) => uni.showModal({
+    const confirmed = await new Promise((resolve, reject) => showAppModal({ $refs: { appConfirmDialog: appConfirmDialog.value } }, {
       title: cancelling ? '取消订单' : '确认收货',
       content: cancelling ? '确认取消此订单？取消成功后积分将按订单退回。' : '请确认已收到商品。确认后订单将完成。',
       confirmText: cancelling ? '确认取消' : '确认收货',

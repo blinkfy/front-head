@@ -117,8 +117,7 @@
         </view>
       </form>
         <!-- #ifdef MP-WEIXIN -->
-        <WechatLoginEntry :pending="wechatBindPending" :loading="isLoading" :dark="true" @login="onWechatLogin" />
-        <button v-if="biometricAvailable" class="biometric-login-entry" :disabled="isLoading" @click.stop="onBiometricLogin">{{ biometricLabel }}</button>
+        <WechatLoginEntry :pending="wechatBindPending" :loading="isLoading" :dark="true" :biometric-available="biometricAvailable" :biometric-label="biometricLabel" @login="onWechatLogin" @biometric-login="onBiometricLogin" />
         <!-- #endif -->
     </view>
     <!-- #ifdef MP-WEIXIN -->
@@ -279,6 +278,9 @@ const getParticleStyle = (index) => {
 
 // 页面加载时检查是否有保存的登录信息
 onMounted(async () => {
+  const loginPage = getCurrentPages().slice(-1)[0]
+  const loginOptions = loginPage?.options || loginPage?.$page?.options || {}
+  if (String(loginOptions.manualLogin || '') === '1') return
   // #ifdef APP-PLUS || H5 || MP-WEIXIN
   if (await preferBiometricLogin()) return
   // #endif

@@ -6,11 +6,16 @@ import { realtimeAvailable, realtimeSocketAlive, realtimeBackgroundMask, realtim
 import { getOrCreatePushInstallationId } from './chat-push-installation.mjs'
 import { readBackgroundMessagesEnabled, BACKGROUND_MESSAGES_KEY, writeBackgroundMessagesEnabled } from './background-message-preference.mjs'
 import { areUiSoundsEnabled } from './ui-sounds.js'
+import { requestRealtimePermissions } from './realtime-permissions.js'
+// #ifdef APP-PLUS
+import { syncNativeRecordingConfiguration } from './call-recordings.js'
+// #endif
 let channelSequence = 0
 export function syncAndroidMessagingPreference() {
   // #ifdef APP-PLUS
   if (androidRealtimeAvailable()) {
     try {
+      syncNativeRecordingConfiguration()
       if (realtimeMessagingPaused() && readBackgroundMessagesEnabled()) {
         uni.setStorageSync(BACKGROUND_MESSAGES_KEY, false)
         uni.$emit('chat:background-messages-state', false)
@@ -83,7 +88,7 @@ export function watchAndroidRealtimeLocation(success, failure) {
   const channel = `location_${++channelSequence}`
   // #ifdef APP-PLUS
   const permissions = ['android.permission.ACCESS_COARSE_LOCATION', 'android.permission.ACCESS_FINE_LOCATION']
-  plus.android.requestPermissions([...permissions, 'android.permission.POST_NOTIFICATIONS'], result => {
+  requestRealtimePermissions(permissions).then(result => {
     if (stopped) return
     if (!permissions.some(permission => result.granted?.includes(permission))) { failure({ code: 1 }); return }
     onRealtimeLocationEvent(json => {

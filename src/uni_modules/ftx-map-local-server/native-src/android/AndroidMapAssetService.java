@@ -70,7 +70,8 @@ public final class AndroidMapAssetService {
                 relative = "static/app-map/" + path;
             } else if ("static/normal-marker.png".equals(path)
                     || "static/smart-marker.png".equals(path)
-                    || "static/pending-bin-marker.png".equals(path)) {
+                    || "static/pending-bin-marker.png".equals(path)
+                    || "static/location-person.png".equals(path)) {
                 relative = path;
             } else {
                 throw new IOException("Unknown map asset: " + path);

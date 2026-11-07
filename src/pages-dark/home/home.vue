@@ -1,5 +1,8 @@
 <template>
   <view class="home-bg" :class="[tabPageClass, { 'waste-guide-open': showGuideModal, 'onboarding-demo-reading': showAppOnboarding && onboardingDemoFinished }]">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <!-- #ifdef MP-WEIXIN -->
     <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
     <!-- #endif -->
@@ -367,6 +370,9 @@
 </template>
 
 <script setup>
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { useAppConfirmDialog } from '@/utils/use-app-confirm-dialog.js'
+const { appConfirmDialog, showPageModal } = useAppConfirmDialog()
 import { recentRecognition } from '@/utils/recent-recognition.js'
 // #ifdef MP-WEIXIN
 import { handleRegistrationQrScan } from '@/utils/registration-relay.mjs'
@@ -1652,7 +1658,7 @@ function scanDeviceQR() {
     })
   } else if (isH5) {
     // 桌面网页保留手动输入
-    uni.showModal({
+    showPageModal({
       title: '连接设备',
       content: '请输入设备ID',
       editable: true,

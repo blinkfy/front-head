@@ -273,6 +273,7 @@
 </template>
 
 <script setup>
+import { ensureFeaturePermission } from '@/utils/feature-permission.js'
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { resolveTrashBinImage, previewTrashBinImage } from '../../utils/trash-bin-image'
 import { ref, onMounted, onBeforeUnmount, computed, getCurrentInstance, nextTick } from 'vue'
@@ -667,10 +668,14 @@ function pickCenterLocation() {
   }
 }
 
-function moveToMyLocation() {
+async function moveToMyLocation() {
+  const owner = uni.getStorageSync('token') || ''
+  const isCurrent = () => !mapPageDisposed && owner === (uni.getStorageSync('token') || '')
+  if (!await ensureFeaturePermission('location', { isCurrent }) || !isCurrent()) return
   console.log('moveToMyLocation 被调用')
   uni.showToast({ title: '正在定位...', icon: 'loading', duration: 2000 })
   getUserLocationOnce('gcj02').then(loc => {
+      if (!isCurrent()) return
     center.value = { latitude: loc.latitude, longitude: loc.longitude }
     userLocation.value = { latitude: loc.latitude, longitude: loc.longitude }
     selectedLocation.value = {
@@ -681,6 +686,7 @@ function moveToMyLocation() {
     }
     uni.showToast({ title: '已定位到我的位置', icon: 'success', duration: 1000 })
   }).catch(err => {
+      if (!isCurrent()) return
     console.error('定位失败:', err)
     uni.showToast({ title: '定位失败', icon: 'none', duration: 1000 })
   })

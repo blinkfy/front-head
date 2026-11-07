@@ -14,6 +14,7 @@ function harness(overrides = {}) {
   const media = {
     supported: () => true,
     supportsVideo: () => true,
+    prepareOutgoing: (callId, mode) => media.permission(callId, mode),
     open: options => {
       opened.push(options)
       if (overrides.open) return overrides.open(options)
@@ -57,6 +58,7 @@ async function testCapabilityAndCallFlow() {
   assert.equal(c.state().supported, true)
   assert.equal(c.state().videoSupported, false, 'server without video capability keeps video disabled')
   c.start({ id: 2, name: 'Peer' })
+  await tick()
   const callId = c.state().callId
   assert.equal(c.state().phase, 'calling')
   assert.deepEqual(h.sent.at(-1), { type: 'voice.invite', callId, peerId: '2' })
@@ -91,10 +93,54 @@ async function testCapabilityAndCallFlow() {
   assert.ok(h.sent.some(event => event.type === 'voice.end' && event.reason === 'hangup'))
 }
 
+async function testPermissionPendingLifecycle() {
+  let resolvePermission
+  const pending = harness({ media: { prepareOutgoing: () => new Promise(resolve => { resolvePermission = resolve }) } })
+  pending.controller.setActive(true); pending.controller.connection(true, 1); pending.controller.handle({ type: 'voice.ready', version: 1 })
+  pending.controller.start({ id: 2 })
+  const callId = pending.controller.state().callId
+  await tick()
+  assert.equal(pending.sent.some(event => event.type === 'voice.invite'), false, 'outgoing invite waits for the system permission callback')
+  assert.equal(pending.timers.size, 0, 'ring timeout does not start while the permission sheet is open')
+  pending.advance(60000)
+  assert.equal(pending.controller.state().phase, 'calling', 'long permission wait does not end the outgoing call')
+  resolvePermission()
+  await tick()
+  assert.ok(pending.sent.some(event => event.type === 'voice.invite' && event.callId === callId), 'grant sends the invite')
+
+  let resolveCancelled
+  const cancelled = harness({ media: { prepareOutgoing: () => new Promise(resolve => { resolveCancelled = resolve }) } })
+  cancelled.controller.setActive(true); cancelled.controller.connection(true, 1); cancelled.controller.handle({ type: 'voice.ready', version: 1 })
+  cancelled.controller.start({ id: 2 }); const cancelledId = cancelled.controller.state().callId
+  await tick(); cancelled.controller.end('cancelled'); resolveCancelled(); await tick()
+  assert.equal(cancelled.sent.some(event => event.type === 'voice.invite' && event.callId === cancelledId), false,
+    'late permission grant after explicit cancellation cannot send an invite')
+
+  let resolveAccountPermission
+  const account = harness({ media: { prepareOutgoing: () => new Promise(resolve => { resolveAccountPermission = resolve }) } })
+  account.controller.setActive(true); account.controller.connection(true, 1); account.controller.handle({ type: 'voice.ready', version: 1 })
+  account.controller.start({ id: 2 }); const accountCallId = account.controller.state().callId
+  await tick(); account.setOwner('token-b'); account.controller.setActive(false); resolveAccountPermission(); await tick()
+  assert.equal(account.sent.some(event => event.type === 'voice.invite' && event.callId === accountCallId), false,
+    'permission result from a previous account cannot send its pending invite')
+
+  let resolveIncomingPermission
+  const incoming = harness({ media: { permission: () => new Promise(resolve => { resolveIncomingPermission = resolve }) } })
+  incoming.controller.setActive(true); incoming.controller.connection(true, 1); incoming.controller.handle({ type: 'voice.ready', version: 1 })
+  incoming.controller.handle({ type: 'voice.incoming', callId: 'permission-wait-incoming', peer: { id: '2' } })
+  const accepting = incoming.controller.accept()
+  assert.equal(incoming.controller.state().phase, 'connecting')
+  assert.equal(incoming.timers.size, 0, 'accept clears the incoming-ring timeout before opening permission')
+  incoming.advance(60000)
+  assert.equal(incoming.controller.state().phase, 'connecting', 'long permission wait does not time out an accepted call')
+  resolveIncomingPermission(); await accepting
+  assert.ok(incoming.sent.some(event => event.type === 'voice.accept' && event.callId === 'permission-wait-incoming'))
+}
+
 async function testVideoCapabilityAndControls() {
   const legacyServer = harness()
   legacyServer.controller.setActive(true); legacyServer.controller.connection(true, 1, 1)
-  assert.deepEqual(legacyServer.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: true })
+  assert.deepEqual(legacyServer.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: true, cameraToggle: true })
   legacyServer.controller.handle({ type: 'voice.ready', version: 1 })
   assert.equal(legacyServer.controller.state().supported, true)
   assert.equal(legacyServer.controller.state().videoSupported, false, 'legacy ready without video keeps video disabled')
@@ -105,7 +151,7 @@ async function testVideoCapabilityAndControls() {
 
   const mediaWithoutVideo = harness({ media: { supportsVideo: () => false } })
   mediaWithoutVideo.controller.setActive(true); mediaWithoutVideo.controller.connection(true, 1, 1)
-  assert.deepEqual(mediaWithoutVideo.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: false })
+  assert.deepEqual(mediaWithoutVideo.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: false, cameraToggle: false })
   mediaWithoutVideo.controller.handle({ type: 'voice.ready', version: 1, video: true })
   assert.equal(mediaWithoutVideo.controller.state().videoSupported, false, 'server support cannot override a media adapter without video')
 
@@ -114,11 +160,15 @@ async function testVideoCapabilityAndControls() {
   c.setActive(true); c.connection(true, 1, 1)
   c.handle({ type: 'voice.ready', version: 1, video: true })
   assert.equal(c.state().videoSupported, true)
+  assert.equal(c.state().cameraSupported, false, 'camera support is call-scoped and false before video negotiation')
   c.start({ id: 2, name: 'Peer' }, 'video')
+  await tick()
   const callId = c.state().callId
   assert.deepEqual(h.sent.at(-1), { type: 'voice.invite', callId, peerId: '2', mode: 'video' })
   c.handle({ type: 'voice.accepted', callId }); await tick()
   assert.equal(h.opened[0].mode, 'video')
+  assert.equal(h.opened[0].cameraEnabled, true, 'video-mode call keeps its existing camera-on default')
+  assert.equal(c.state().cameraSupported, true, 'video negotiation enables camera controls')
   assert.deepEqual(h.drivers[0].controls[0], { muted: false, speaker: true, cameraEnabled: true, remoteCameraEnabled: true })
   h.opened[0].onEvent({ type: 'camera', frontFacing: false, cameraEnabled: true })
   assert.equal(c.state().facingMode, 'environment', 'local camera status is reflected in call state')
@@ -173,16 +223,41 @@ async function testVideoCapabilityAndControls() {
   audio.controller.handle({ type: 'voice.accepted', callId: audioId }); await tick()
   audio.controller.handle({ type: 'voice.local-control', callId: audioId, muted: true, speaker: true, cameraEnabled: false })
   assert.deepEqual({ muted: audio.controller.state().muted, speaker: audio.controller.state().speaker,
-    cameraEnabled: audio.controller.state().cameraEnabled }, { muted: true, speaker: true, cameraEnabled: true },
+    cameraEnabled: audio.controller.state().cameraEnabled }, { muted: true, speaker: true, cameraEnabled: false },
   'audio local-control mirrors audio fields and ignores camera state')
 
   const incoming = harness()
   incoming.controller.setActive(true); incoming.controller.connection(true, 1, 1)
   incoming.controller.handle({ type: 'voice.ready', version: 1, video: true })
-  incoming.controller.handle({ type: 'voice.incoming', callId: 'incoming-video', mode: 'video', peer: { id: '2' } })
+  incoming.controller.handle({ type: 'voice.incoming', callId: 'incoming-audio-old-peer', peer: { id: '2' } })
+  assert.equal(incoming.controller.state().cameraSupported, false, 'old peer without cameraToggle remains audio-only')
   await incoming.controller.accept()
-  assert.deepEqual(incoming.permissionModes, [{ callId: 'incoming-video', mode: 'video' }])
-  assert.ok(incoming.sent.some(event => event.type === 'voice.accept' && event.callId === 'incoming-video'))
+  incoming.controller.handle({ type: 'voice.accepted', callId: 'incoming-audio-old-peer' }); await tick()
+  assert.equal(incoming.opened[0].mode, 'audio', 'old peer acceptance does not pre-negotiate video')
+  assert.equal(incoming.controller.state().cameraSupported, false)
+
+  const cameraToggleIncoming = harness()
+  cameraToggleIncoming.controller.setActive(true); cameraToggleIncoming.controller.connection(true, 1, 1)
+  cameraToggleIncoming.controller.handle({ type: 'voice.ready', version: 1, video: true })
+  cameraToggleIncoming.controller.handle({ type: 'voice.incoming', callId: 'incoming-audio-toggle', cameraToggle: true, peer: { id: '2' } })
+  assert.equal(cameraToggleIncoming.controller.state().cameraSupported, true, 'cameraToggle incoming enables video negotiation')
+  await cameraToggleIncoming.controller.accept()
+  cameraToggleIncoming.controller.handle({ type: 'voice.accepted', callId: 'incoming-audio-toggle', cameraToggle: true }); await tick()
+  assert.deepEqual(cameraToggleIncoming.permissionModes, [{ callId: 'incoming-audio-toggle', mode: 'audio' }],
+    'camera-toggle audio call still requires microphone permission only at acceptance')
+  assert.equal(cameraToggleIncoming.opened[0].mode, 'video', 'cameraToggle incoming pre-negotiates a video transceiver')
+  assert.equal(cameraToggleIncoming.opened[0].cameraEnabled, false, 'camera-toggle audio starts with both cameras disabled')
+
+  const acceptedToggle = harness()
+  acceptedToggle.controller.setActive(true); acceptedToggle.controller.connection(true, 1, 1)
+  acceptedToggle.controller.handle({ type: 'voice.ready', version: 1, video: true })
+  acceptedToggle.controller.start({ id: 2 }, 'audio'); const acceptedToggleId = acceptedToggle.controller.state().callId
+  await tick()
+  acceptedToggle.controller.handle({ type: 'voice.accepted', callId: acceptedToggleId, cameraToggle: true }); await tick()
+  assert.equal(acceptedToggle.controller.state().cameraSupported, true, 'accepted cameraToggle enables video controls')
+  assert.equal(acceptedToggle.opened[0].mode, 'video', 'accepted cameraToggle pre-negotiates video for audio call')
+  assert.equal(acceptedToggle.opened[0].cameraEnabled, false, 'accepted audio cameraToggle leaves the local camera off')
+  assert.deepEqual(acceptedToggle.drivers[0].controls[0].cameraEnabled, false)
 
   let resolveVideoOpen
   const videoRace = harness({ open: () => new Promise(resolve => { resolveVideoOpen = resolve }) })
@@ -225,7 +300,7 @@ async function testIncomingQueueAndOutcomes() {
   assert.ok(busy.sent.some(event => event.type === 'voice.end' && event.callId === 'incoming-2' && event.reason === 'busy'))
 
   const timeout = harness(); timeout.controller.setActive(true); timeout.controller.connection(true, 1)
-  timeout.controller.handle({ type: 'voice.ready', version: 1 }); timeout.controller.start({ id: 2 })
+  timeout.controller.handle({ type: 'voice.ready', version: 1 }); timeout.controller.start({ id: 2 }); await tick()
   timeout.advance(35000)
   assert.equal(timeout.controller.state().reason, 'timeout')
   assert.ok(timeout.sent.some(event => event.type === 'voice.end' && event.reason === 'timeout'))
@@ -354,6 +429,7 @@ async function testNativeConnectionTimeoutOwnership() {
   native.controller.setActive(true); native.controller.connection(true, 1)
   native.controller.handle({ type: 'voice.ready', version: 1 })
   native.controller.start({ id: 2, name: 'Native peer' })
+  await tick()
   const nativeId = native.controller.state().callId
   native.controller.handle({ type: 'voice.accepted', callId: nativeId })
   await tick()
@@ -369,6 +445,7 @@ async function testNativeConnectionTimeoutOwnership() {
   h5.controller.setActive(true); h5.controller.connection(true, 1)
   h5.controller.handle({ type: 'voice.ready', version: 1 })
   h5.controller.start({ id: 3, name: 'Web peer' })
+  await tick()
   const h5Id = h5.controller.state().callId
   h5.controller.handle({ type: 'voice.accepted', callId: h5Id })
   await tick()
@@ -380,6 +457,7 @@ async function testNativeConnectionTimeoutOwnership() {
 async function main() {
   const cases = [
     ['capability and direct call flow', testCapabilityAndCallFlow],
+    ['permission pending lifecycle', testPermissionPendingLifecycle],
     ['video capability, mode and camera controls', testVideoCapabilityAndControls],
     ['incoming queue and call outcomes', testIncomingQueueAndOutcomes],
     ['late resources and session invalidation', testLateResourcesAndSessionInvalidation],

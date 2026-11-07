@@ -125,6 +125,7 @@
 </template>
 
 <script>
+import { ensureFeaturePermission, isPermissionDenied, openFeaturePermissionSettings } from '@/utils/feature-permission.js'
 import { chooseAppImage } from '@/utils/image-picker.js'
 import { transcribeAudio, transcribeAudioBlob, transcribeAudioSegments, recognizeByText } from '@/pages-nonTheme/api/voice.js';
 import { baseUrl } from '@/api/settings.js';
@@ -180,7 +181,9 @@ export default {
   onShow() {
     this.checkTheme();
   },
+  onHide() { this.stopListening(); },
   onUnload() {
+    this.recordHeld = false; this.permissionAttempt = (this.permissionAttempt || 0) + 1; this.permissionPageClosed = true;
     this.destroyRecorder();
   },
   methods: {
@@ -207,6 +210,7 @@ export default {
       recorderManager = uni.getRecorderManager();
       this.realtimeFrameSupported = !this.isApp && typeof recorderManager.onFrameRecorded === 'function';
       recorderManager.onStart(() => {
+        if (!this.recordHeld || this.permissionPageClosed) { recorderManager?.stop(); return; }
         this.statusText = '正在聆听...';
       });
       if (this.realtimeFrameSupported) {
@@ -217,6 +221,7 @@ export default {
         });
       }
       recorderManager.onStop((res) => {
+        if (this.permissionPageClosed) return;
         if (this.appSegmentMode) {
           this.handleAppSegmentStop(res);
           return;
@@ -278,7 +283,16 @@ export default {
     getWaveHeight(index) {
       return 20 + Math.random() * 15;
     },
-    startListening() {
+    async startListening() {
+      if (this.permissionPending || this.isListening) return;
+      const attempt = (this.permissionAttempt || 0) + 1;
+      this.permissionAttempt = attempt; this.recordHeld = true; this.permissionPending = true;
+      const owner = uni.getStorageSync('token') || '';
+      const current = () => this.recordHeld && !this.permissionPageClosed && this.permissionAttempt === attempt && owner === (uni.getStorageSync('token') || '');
+      let granted = false;
+      try { granted = await ensureFeaturePermission('microphone', { isCurrent: current }); }
+      finally { this.permissionPending = false; }
+      if (!granted || !current()) return;
       if (this.isH5) {
         this.startH5Recording();
         return;
@@ -308,6 +322,7 @@ export default {
       });
     },
     stopListening() {
+      this.recordHeld = false; this.permissionAttempt = (this.permissionAttempt || 0) + 1;
       if (!this.isListening) return;
       if (this.isH5) {
         this.stopH5Recording();
@@ -332,6 +347,7 @@ export default {
         this.statusText = '正在录音...';
         this.isListening = true;
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (!this.recordHeld || this.permissionPageClosed) { stream.getTracks().forEach(track => track.stop()); this.isListening = false; return; }
         this.h5AudioStream = stream;
         this.h5AudioChunks = [];
         const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
@@ -381,7 +397,8 @@ export default {
         this.isListening = false;
         this.statusText = '录音启动失败';
         console.error('[voice] h5 recording start failed:', e);
-        uni.showToast({ title: '录音权限不可用', icon: 'none' });
+        if (!this.permissionPageClosed && isPermissionDenied(e)) await openFeaturePermissionSettings('microphone', { isCurrent: () => !this.permissionPageClosed });
+        else if (!this.permissionPageClosed) uni.showToast({ title: '录音启动失败，请重试', icon: 'none' });
       }
     },
     stopH5Recording() {

@@ -1,5 +1,8 @@
 <template>
   <view class="publish-page" :class="{ 'dark-mode': isDark, 'draft-mode': !!draftId }">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <!-- #ifndef H5 -->
     <canvas canvas-id="community-image-canvas" class="community-image-canvas"></canvas>
     <!-- #endif -->
@@ -159,6 +162,8 @@ import { createPost } from '@/pages-nonTheme/api/community.js';
 import { userinfo } from '@/api/user.js';
 import { compressImageToBase64 } from '@/utils/avatar-handler.js';
 import { baseUrl } from '@/api/settings';
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import CommunityPostBody from './components/CommunityPostBody.vue'
 import { communitySocialEnabled } from './utils/community-social.js'
@@ -178,7 +183,7 @@ function requestJson(url, options = {}) {
 }
 
 export default {
-  components: { ManifestIcon, CommunityPostBody },
+  components: { AppConfirmDialog, ManifestIcon, CommunityPostBody },
   data() {
     return {
       communityId: 0,
@@ -231,7 +236,16 @@ export default {
       this.loadCommunityDraft();
     }
   },
-  onUnload() { this.pageClosed = true; this.draftLoadVersion++; },
+  // #ifdef APP-PLUS
+  onBackPress(event) {
+    if (event.from === 'backbutton' && this.$refs.appConfirmDialog?.current) {
+      this.$refs.appConfirmDialog.settle(false)
+      return true
+    }
+  },
+  // #endif
+  onHide() { this.$refs.appConfirmDialog?.cancelAll(); },
+  onUnload() { this.$refs.appConfirmDialog?.cancelAll(); this.pageClosed = true; this.draftLoadVersion++; },
   onShow() {
     this.checkAvailability();
     this.checkTheme();
@@ -287,7 +301,7 @@ export default {
       if (this.submitting) return;
       if (this.draftReceipt) { uni.navigateBack(); return; }
       if (this.content.trim() || this.uploadedImages.length > 0) {
-        uni.showModal({
+        showAppModal(this, {
           title: '提示',
           content: this.draftId ? '离开后未保存的修改会丢失，已保存的草稿可从聊天待办继续编辑。' : '确定放弃编辑吗？',
           success: (res) => {

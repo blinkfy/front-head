@@ -69,12 +69,24 @@ class Element {
   remove() { this.parentNode?.removeChild(this); this.removed = true }
 }
 class PeerConnection {
-  constructor() { this.senders = []; this.closed = false; peers.push(this) }
+  constructor() { this.senders = []; this.transceivers = []; this.closed = false; peers.push(this) }
+  makeTransceiver(kind, { mid = null, direction = 'sendrecv' } = {}) {
+    const sender = { track: null, getParameters: () => ({ encodings: [] }), replaceTrack: async next => { sender.track = next } }
+    const item = { mid, direction, sender, receiver: { track: new Track(kind) } }
+    this.senders.push(sender); this.transceivers.push(item); return item
+  }
   addTrack(track) { const sender = { track, getParameters: () => ({ encodings: [] }), replaceTrack: next => {
     const wait = pendingReplacements.shift()
     return wait ? wait.promise.then(() => { sender.track = next }) : Promise.resolve().then(() => { sender.track = next })
-  } }; this.senders.push(sender); return sender }
+  } }; this.senders.push(sender); this.transceivers.push({ mid: null, direction: 'sendrecv', sender, receiver: { track: new Track(track.kind) } }); return sender }
+  addTransceiver(kind, options) { return this.makeTransceiver(kind, options) }
+  getTransceivers() { return this.transceivers }
   async createOffer() { return { type: 'offer', sdp: 'offer' } }
+  async createAnswer() { return { type: 'answer', sdp: 'answer' } }
+  async setRemoteDescription(value) {
+    this.remoteDescription = value
+    if (value.type === 'offer' && /m=video/.test(value.sdp || '')) this.makeTransceiver('video', { mid: 'offered-video', direction: 'recvonly' })
+  }
   async setLocalDescription(value) { this.localDescription = value }
   close() { this.closed = true }
 }
@@ -99,21 +111,33 @@ context.HTMLVideoElement.prototype.requestPictureInPicture = function () { retur
 vm.runInNewContext(preprocessH5(source), context, { filename: sourcePath })
 const media = context.__voiceCallMedia
 assert.equal(media.managesConnectionTimeout(), false, 'H5 media keeps the JavaScript connection timeout')
-const tick = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
-const options = (callId, mode = 'video', events = []) => ({ callId, mode, offerer: false, stunUrls: ['stun:stun.example:3478'], isCurrent: () => true, onEvent: event => events.push(event) })
+const tick = async () => { for (let i = 0; i < 32; i++) await Promise.resolve() }
+const options = (callId, mode = 'video', events = [], cameraEnabled) => ({ callId, mode, ...(typeof cameraEnabled === 'boolean' ? { cameraEnabled } : {}),
+  offerer: false, stunUrls: ['stun:stun.example:3478'], isCurrent: () => true, onEvent: event => events.push(event) })
 
 async function openVideo(callId) {
-  const opening = media.open(options(callId))
-  assert.equal(captures.length > 0, true)
-  captures.at(-1).resolve(new Stream([new Track('audio'), new Track('video')]))
+  const index = captures.length
+  const opening = media.open(options(callId, 'video'))
+  await tick()
+  const audio = new Track('audio')
+  assert.equal(captures[index].constraints.video, false, 'video calls request microphone first without camera')
+  captures[index].resolve(new Stream([audio]))
+  await tick()
+  assert.equal(captures[index + 1].constraints.audio, false, 'camera is requested separately after microphone access')
+  assert.equal(captures[index + 1].constraints.video.facingMode, 'user')
+  captures[index + 1].resolve(new Stream([new Track('video')]))
   return opening
 }
 
 async function openWithInitialVideo(callId, events = []) {
   const captureIndex = captures.length
   const opening = media.open(options(callId, 'video', events))
-  const audio = new Track('audio'), video = new Track('video')
-  captures[captureIndex].resolve(new Stream([audio, video]))
+  await tick()
+  const audio = new Track('audio')
+  captures[captureIndex].resolve(new Stream([audio]))
+  await tick()
+  const cameraIndex = captures.length - 1, video = new Track('video')
+  captures[cameraIndex].resolve(new Stream([video]))
   const driver = await opening
   const peer = peers.at(-1), local = elements.find(element => element.dataset.callVideo === 'local' && element.srcObject?.getTracks().includes(audio))
   return { driver, peer, stream: local.srcObject, audio, video, sender: peer.senders.find(sender => sender.track === video) }
@@ -125,9 +149,9 @@ async function main() {
   assert.equal(media.canPictureInPicture(), false, 'PiP is unavailable when the document does not advertise support')
 
   const opening = openVideo('camera-race')
-  await tick()
-  assert.deepEqual(captures[0].constraints.video.facingMode, 'user', 'video open requests the initial front camera')
   const driver = await opening
+  assert.equal(captures[0].constraints.video, false, 'video open first requests microphone only')
+  assert.deepEqual(captures[1].constraints.video.facingMode, 'user', 'video open requests the initial front camera separately')
   const callLocalElement = elements.find(element => element.dataset.callVideo === 'local' && element.srcObject)
   const callRemoteElement = elements.find(element => element.dataset.callVideo === 'remote' && element.srcObject)
   assert.ok(callLocalElement && callRemoteElement)
@@ -141,16 +165,33 @@ async function main() {
   assert.equal(callRemoteElement.parentNode, remoteHost, 'remount restores the remote video element to its host')
   await assert.rejects(media.pictureInPicture('camera-race'), /不支持视频小窗/,
     'PiP request rejects cleanly when the browser reports PiP unavailable')
+  context.document.pictureInPictureEnabled = true
+  context.document.pictureInPictureElement = callRemoteElement
+  media.unmountVideo('camera-race')
+  assert.equal(callRemoteElement.parentNode, context.document.body, 'PiP remote video remains connected under body after unmount')
+  assert.equal(callRemoteElement.style.display, '', 'PiP remote video stays displayed after unmount')
+  assert.equal(callRemoteElement.style.position, 'fixed', 'PiP remote video is positioned offscreen without display:none')
+  assert.equal(callRemoteElement.style.left, '-10000px')
+  assert.equal(callRemoteElement.style.width, '1px')
+  assert.equal(callRemoteElement.style.height, '1px')
+  media.mountVideo('camera-race')
+  assert.equal(callRemoteElement.parentNode, remoteHost, 'remount restores PiP video to the call stage')
+  assert.equal(callRemoteElement.style.display, '')
+  assert.equal(callRemoteElement.style.position, '', 'remount clears offscreen positioning')
+  assert.equal(callRemoteElement.style.left, '')
+  assert.equal(callRemoteElement.style.width, '100%')
+  assert.equal(callRemoteElement.style.height, '100%')
   const stream = captures[0] && [...peers[0].senders].length ? elements.find(element => element.dataset.callVideo === 'local').srcObject : null
   const audioTrack = stream.getAudioTracks()[0], originalVideo = stream.getVideoTracks()[0]
+  const initialCaptureCount = captures.length
   const sender = peers[0].senders.find(item => item.track === originalVideo)
   assert.equal(audioTrack.stopped, false)
   assert.equal(originalVideo.stopped, false)
 
   driver.control({ switchCamera: true })
   await tick()
-  assert.equal(captures.length, 2, 'camera switch starts a replacement capture')
-  const replacementPromise = captures[1]
+  assert.equal(captures.length, initialCaptureCount + 1, 'camera switch starts a replacement capture')
+  const replacementPromise = captures[initialCaptureCount]
   driver.control({ cameraEnabled: false })
   assert.equal(originalVideo.readyState, 'ended', 'camera off immediately ends the existing video track during a pending switch')
   assert.equal(audioTrack.stopped, false, 'camera off leaves the audio track live')
@@ -163,17 +204,17 @@ async function main() {
 
   driver.control({ cameraEnabled: true })
   await tick()
-  assert.equal(captures.length, 3, 'camera on captures a new replacement')
+  assert.equal(captures.length, initialCaptureCount + 2, 'camera on captures a new replacement')
   const reopened = new Track('video')
-  captures[2].resolve(new Stream([reopened]))
+  captures[initialCaptureCount + 1].resolve(new Stream([reopened]))
   await tick()
   assert.equal(stream.getVideoTracks()[0], reopened, 'camera on restores a live video track')
   assert.equal(sender.track, reopened, 'the peer sender is restored with the new track')
 
   driver.control({ switchCamera: true })
   await tick()
-  assert.equal(captures.length, 4)
-  const lateCapture = captures[3]
+  assert.equal(captures.length, initialCaptureCount + 3)
+  const lateCapture = captures[initialCaptureCount + 2]
   driver.close()
   assert.equal(callLocalElement.parentNode, null, 'ending the call removes the mounted local video element')
   assert.equal(callRemoteElement.parentNode, null, 'ending the call removes the mounted remote video element')
@@ -290,6 +331,62 @@ async function main() {
   const audioDriver = await audioOpening
   audioDriver.close()
   assert.equal(audioOnlyStream.getAudioTracks()[0].stopped, true)
+
+  const cameraOffIndex = captures.length
+  const cameraOffEvents = []
+  const cameraOffOpening = media.open(options('camera-off-audio-first', 'video', cameraOffEvents, false))
+  await tick()
+  assert.equal(typeof captures[cameraOffIndex].constraints.audio, 'object', 'camera-off video acquires microphone')
+  assert.equal(captures[cameraOffIndex].constraints.video, false, 'camera-off video does not request camera during open')
+  const cameraOffAudio = new Track('audio')
+  captures[cameraOffIndex].resolve(new Stream([cameraOffAudio]))
+  const cameraOffDriver = await cameraOffOpening
+  assert.equal(cameraOffAudio.readyState, 'live')
+  const cameraOffPeer = peers.at(-1)
+  assert.equal(cameraOffPeer.transceivers.some(item => item.receiver.track.kind === 'video'), false,
+    'answerer does not pre-create an unassociated video transceiver before receiving offer')
+  cameraOffDriver.signal({ type: 'offer', sdp: 'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n' })
+  await tick()
+  const offeredCameraOffVideo = cameraOffPeer.transceivers.find(item => item.mid === 'offered-video')
+  assert.ok(offeredCameraOffVideo, 'remote description creates the offered video transceiver')
+  assert.equal(offeredCameraOffVideo.direction, 'sendrecv', 'offered transceiver is made bidirectional for later camera enable')
+  assert.equal(cameraOffPeer.transceivers.filter(item => item.receiver.track.kind === 'video').length, 1,
+    'answerer uses one offered transceiver instead of adding an orphan')
+  const laterCameraIndex = captures.length
+  cameraOffDriver.control({ cameraEnabled: true })
+  await tick()
+  assert.equal(captures[laterCameraIndex].constraints.audio, false, 'later camera enable does not reacquire microphone')
+  assert.equal(typeof captures[laterCameraIndex].constraints.video, 'object', 'camera enable requests video separately')
+  const laterCamera = new Track('video')
+  captures[laterCameraIndex].resolve(new Stream([laterCamera]))
+  await tick()
+  assert.equal(offeredCameraOffVideo.sender.track, laterCamera, 'camera control replaces the negotiated offered sender')
+  assert.equal(cameraOffPeer.transceivers.filter(item => item.receiver.track.kind === 'video').length, 1,
+    'later camera enable does not create an orphan video transceiver')
+  cameraOffDriver.close()
+
+  const deniedCameraIndex = captures.length
+  const deniedCameraEvents = []
+  const deniedCameraOpening = media.open(options('camera-denied-audio-kept', 'video', deniedCameraEvents))
+  const retainedAudio = new Track('audio')
+  captures[deniedCameraIndex].resolve(new Stream([retainedAudio]))
+  await tick()
+  captures[deniedCameraIndex + 1].reject(new Error('camera denied'))
+  const deniedCameraDriver = await deniedCameraOpening
+  const deniedCameraPeer = peers.at(-1)
+  assert.equal(retainedAudio.readyState, 'live', 'camera denial leaves microphone audio available')
+  assert.equal(deniedCameraPeer.senders.some(sender => sender.track === retainedAudio), true)
+  assert.ok(deniedCameraEvents.some(event => event.type === 'camera' && event.cameraEnabled === false), 'camera denial reports audio-only state')
+  assert.equal(deniedCameraPeer.transceivers.some(item => item.receiver.track.kind === 'video'), false,
+    'camera-denied answerer waits for the remote video offer instead of pre-creating a sender')
+  deniedCameraDriver.signal({ type: 'offer', sdp: 'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n' })
+  await tick()
+  const offeredDeniedVideo = deniedCameraPeer.transceivers.find(item => item.mid === 'offered-video')
+  assert.ok(offeredDeniedVideo, 'camera-denied call receives the offered video transceiver')
+  assert.equal(offeredDeniedVideo.direction, 'sendrecv', 'camera-denied call can still receive video and enable its camera later')
+  assert.equal(deniedCameraPeer.transceivers.filter(item => item.receiver.track.kind === 'video').length, 1,
+    'camera-denied answerer has no orphan video transceiver')
+  deniedCameraDriver.close()
 
   console.log('Video-call H5 camera adapter tests passed.')
 }

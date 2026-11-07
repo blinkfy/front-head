@@ -23,7 +23,7 @@ public final class LoopbackMapServer implements Closeable {
     public interface Resources { InputStream open(String path) throws IOException; }
     private static final Set<String> FILES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
         "index.html", "host.mjs", "renderer.mjs", "static/normal-marker.png",
-        "static/smart-marker.png", "static/pending-bin-marker.png")));
+        "static/smart-marker.png", "static/pending-bin-marker.png", "static/location-person.png")));
     private final Resources resources;
     private final ServerSocket listener;
     private final String prefix = "/" + UUID.randomUUID().toString() + "/";

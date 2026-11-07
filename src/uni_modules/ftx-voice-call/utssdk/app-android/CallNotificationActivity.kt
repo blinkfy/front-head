@@ -21,6 +21,10 @@ import org.json.JSONObject
 // Only a live authenticated invitation enables Accept. Public push links cannot
 // create an identity, grant media access, or manufacture an acceptance gesture.
 class CallNotificationActivity : Activity() {
+    companion object {
+        private var current: java.lang.ref.WeakReference<CallNotificationActivity>? = null
+        fun finishForCall(id: String) { current?.get()?.let { if (it.call == id) it.finish() } }
+    }
     private val main = Handler(Looper.getMainLooper())
     private var call = ""
     private var leaving = false
@@ -38,11 +42,22 @@ class CallNotificationActivity : Activity() {
     private lateinit var accept: Button
     private lateinit var reject: Button
     private lateinit var fallback: Button
+    private lateinit var record: Button
+    private var recordingSince = 0L
+    private val recordTicker = object : Runnable {
+        override fun run() {
+            if (recordingSince == 0L || isFinishing) return
+            val seconds = ((System.currentTimeMillis() - recordingSince) / 1000).coerceAtLeast(0)
+            record.text = "停止录音 · %02d:%02d".format(seconds / 60, seconds % 60)
+            main.postDelayed(this, 1000)
+        }
+    }
     private var observer: ((JSONObject?) -> Unit)? = null
     private val finishTask = Runnable { if (!isFinishing) finish() }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        current = java.lang.ref.WeakReference(this)
         if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(true); setTurnScreenOn(true) }
         else window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_SECURE)
@@ -57,6 +72,7 @@ class CallNotificationActivity : Activity() {
         observer?.let { RealtimeBridge.unobserveIncoming(it) }
         unlockVersion++; legacyRequest = -1
         call = id; leaving = false; unlocking = false; observed = false
+        hideRecording()
         main.removeCallbacks(finishTask)
         val listener: (JSONObject?) -> Unit = { update(it) }
         observer = listener; RealtimeBridge.observeIncoming(call, listener)
@@ -87,6 +103,16 @@ class CallNotificationActivity : Activity() {
             fallback.visibility = View.VISIBLE
             fallback.text = if (event.optBoolean("speaker")) "关闭免提" else "开启免提"
             fallback.setOnClickListener { RealtimeBridge.controlNative(call, JSONObject().put("speaker", !event.optBoolean("speaker")).toString()) }
+            hideRecording()
+            if (connected && event.optBoolean("recordingSupported")) {
+                val recording = event.optBoolean("recording")
+                record.visibility = View.VISIBLE
+                record.text = if (recording) "停止录音" else "开始录音"
+                record.setOnClickListener { RealtimeBridge.controlNative(call, JSONObject().put("recordingEnabled", !recording).toString()) }
+                recordingSince = event.optLong("recordingStartedAt")
+                if (recording) recordTicker.run()
+                event.optString("recordingError").takeIf { it.isNotEmpty() }?.let { hint.text = it }
+            }
             if (connected) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             return
         }
@@ -99,10 +125,17 @@ class CallNotificationActivity : Activity() {
         accept.visibility = View.VISIBLE; accept.isEnabled = !unlocking
         accept.setOnClickListener { answer() }
         reject.text = "拒绝"; fallback.visibility = View.GONE
+        hideRecording()
+    }
+    private fun hideRecording() {
+        record.visibility = View.GONE
+        recordingSince = 0L
+        main.removeCallbacks(recordTicker)
     }
     private fun ended() {
         unlockVersion++; legacyRequest = -1
         unlocking = false; accept.isEnabled = false; accept.visibility = View.GONE; fallback.visibility = View.GONE
+        hideRecording()
         subtitle.text = "通话已结束"; hint.text = ""; reject.text = "关闭"
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         main.removeCallbacks(finishTask); main.postDelayed(finishTask, 1200)
@@ -204,12 +237,15 @@ class CallNotificationActivity : Activity() {
         root.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(20) })
         fallback = button("打开应用", Color.rgb(40, 103, 143)) { openApp(false) }
         root.addView(fallback, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        record = button("开始录音", Color.rgb(45, 84, 72)) {}.apply { visibility = View.GONE }
+        root.addView(record, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         setContentView(scroll)
     }
     @Deprecated("Deprecated in Android") override fun onBackPressed() {
         if (RealtimeBridge.isNativeCall(call)) moveTaskToBack(true) else finish()
     }
     override fun onDestroy() {
+        if (current?.get() === this) current = null
         observer?.let { RealtimeBridge.unobserveIncoming(it) }; observer = null
         main.removeCallbacksAndMessages(null)
         super.onDestroy()

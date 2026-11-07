@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 import { navigateAfterLogin, claimLoginSplash, returnToLogin } from '../src/utils/login-navigation.mjs'
 import { loginNavigationRuntime } from '../src/utils/login-navigation-runtime.js'
+import { WEB_CALL_RETURN_KEY, pendingWebCallPath } from '../src/utils/web-call-entry.mjs'
+import vm from 'node:vm'
 
 const root = new URL('../', import.meta.url)
 const pages = [
@@ -33,7 +35,8 @@ function conditionalSource(source, target) {
 }
 
 function extractFunction(source, name) {
-  const start = source.indexOf(`async function ${name}(`)
+  const asyncStart = source.indexOf(`async function ${name}(`)
+  const start = asyncStart >= 0 ? asyncStart : source.indexOf(`function ${name}(`)
   assert.notEqual(start, -1, `${name} exists`)
   const brace = source.indexOf('{', start)
   let depth = 0
@@ -108,6 +111,51 @@ async function testHelper() {
   })
 }
 
+async function testH5WebCallReturn() {
+  const source = await readFile(new URL('../src/utils/login-navigation.mjs', import.meta.url), 'utf8')
+  const h5Source = conditionalSource(source, 'H5')
+    .replace(/^import .*\r?\n/gm, '')
+    .replace(/^export function /gm, 'function ')
+  const context = { WEB_CALL_RETURN_KEY, pendingWebCallPath, Date, Promise }
+  vm.createContext(context)
+  vm.runInContext(`${h5Source}\nglobalThis.navigateAfterLogin = navigateAfterLogin`, context)
+
+  await scenario('default login navigation keeps its supplied target without a valid web-call return', async () => {
+    const calls = []
+    const runtime = {
+      getStorageSync: () => null,
+      beginPageLoading: url => { calls.push(['loading', url]); return () => {} },
+      reLaunch: options => { calls.push(['navigate', options.url]); options.success() }
+    }
+    assert.equal(await context.navigateAfterLogin({ runtime, url: '/pages/home/home', setLoading() {} }), true)
+    assert.deepEqual(calls, [['loading', '/pages/home/home'], ['navigate', '/pages/home/home']])
+  })
+
+  await scenario('H5 login consumes only a valid web-call return after successful navigation', async () => {
+    const target = { peerId: '42', selfId: '7', mode: 'audio', name: 'Alice' }
+    const record = { target, at: Date.now() }
+    const expected = pendingWebCallPath(record)
+    for (const outcome of ['success', 'failure']) {
+      const removed = [], navigated = []
+      const runtime = {
+        getStorageSync: key => key === WEB_CALL_RETURN_KEY ? record : null,
+        removeStorageSync: key => removed.push(key),
+        beginPageLoading: () => () => {},
+        showToast() {},
+        reLaunch: options => {
+          navigated.push(options.url)
+          if (outcome === 'success') options.success()
+          else options.fail(new Error('navigation failed'))
+        }
+      }
+      const result = await context.navigateAfterLogin({ runtime, url: '/pages/home/home', setLoading() {} })
+      assert.deepEqual(navigated, [expected])
+      assert.equal(result, outcome === 'success')
+      assert.deepEqual(removed, outcome === 'success' ? [WEB_CALL_RETURN_KEY] : [], 'failed H5 navigation preserves the return record')
+    }
+  })
+}
+
 async function testLoginNavigationRuntime() {
   await scenario('H5 navigation runtime delegates explicit uni APIs', () => {
     const calls = []
@@ -177,6 +225,7 @@ function loginContext({ page, target = 'APP-PLUS', profile = false, shared = fal
   const context = {
     ...refs, isLoading: loading, uni, loginNavigationRuntime: uni,
     userinfo: async () => { events.push('userinfo'); return { data: { username: 'alice' } } },
+    offerBiometricLogin: async () => true,
     rememberWechatLogin: () => {}, consumeWechatProfileCompletion: () => { events.push(`profile:${profile}`); return profile },
     profileCompletionUser: { value: null }, profileCompletionVisible: { value: false },
     get resolveProfileCompletion() { return profileDone },
@@ -203,10 +252,58 @@ function loginContext({ page, target = 'APP-PLUS', profile = false, shared = fal
 for (const page of pages) page.source = await readFile(new URL(page.file, root), 'utf8')
 
 await testHelper()
+await testH5WebCallReturn()
 await testLoginNavigationRuntime()
 await testReturnNavigation()
 await scenario('both login pages compile script and template for H5, MP-Weixin, and APP-PLUS', () => {
   for (const page of pages) for (const target of ['H5', 'MP-WEIXIN', 'APP-PLUS']) compileSfc(page.source, page.file, target)
+})
+await scenario('H5 manual-login query survives the web-call return path and skips automatic login in both themes', async () => {
+  const webCall = await readFile(new URL('src/pages-nonTheme/web-call.vue', root), 'utf8')
+  assert.match(webCall, /\?manualLogin=1/)
+  for (const page of pages) {
+    const script = parse(page.source, { filename: page.file }).descriptor.scriptSetup?.content || ''
+    const h5 = conditionalSource(script, 'H5')
+    assert.match(h5, /loginPage\?\.options \|\| loginPage\?\.\$page\?\.options/)
+    assert.match(h5, /String\(loginOptions\.manualLogin \|\| ''\) === '1'\) return/)
+    assert.match(h5, /onMounted(?:\(async)?/)
+  }
+})
+await scenario('explicit logout stays on manual login in every platform and theme without removing biometric bindings', async () => {
+  const settingsSource = await readFile(new URL('src/pages-nonTheme/settings.vue', root), 'utf8')
+  const settingsScript = parse(settingsSource).descriptor.scriptSetup.content
+  for (const target of ['APP-PLUS', 'MP-WEIXIN', 'H5']) {
+    for (const page of pages) {
+      const storage = new Map([['token', 'session'], ['autoLogin', true], ['biometric_login_v1:test', { credentialId: 'key' }]])
+      const navigation = []
+      const context = {
+        confirmAction: { value: 'logout' }, isDarkTheme: { value: page.dark }, showConfirmModal: { value: true },
+        clearRecognitionTask() {}, recentRecognition: { clear() {} }, clearChatPush() {},
+        uni: { removeStorageSync: key => storage.delete(key), setStorageSync: (key, value) => storage.set(key, value),
+          redirectTo: options => navigation.push(options.url), showToast: options => assert.fail(options.title) }
+      }
+      const logout = vm.runInNewContext(`(${extractFunction(conditionalSource(settingsScript, target), 'handleConfirm')})`, context)
+      await logout()
+      assert.deepEqual(navigation, [(page.dark ? '/pages-dark/index/index' : '/pages/index/index') + '?manualLogin=1'])
+      assert.equal(storage.has('token'), false)
+      assert.equal(storage.get('autoLogin'), false)
+      assert.equal(storage.get('biometric_login_v1:test').credentialId, 'key')
+      const script = conditionalSource(parse(page.source).descriptor.scriptSetup.content, target)
+      const startup = page.dark
+        ? 'async function startup() {' + script.match(/onMounted\(async \(\) => \{([\s\S]*?)\n\}\)/)[1] + '\n}'
+        : extractFunction(script, 'checkAutoLogin')
+      for (const manual of [true, false]) {
+        let attempts = 0
+        const run = vm.runInNewContext(`(${startup})`, {
+          getCurrentPages: () => [{ options: manual ? { manualLogin: '1' } : {} }],
+          preferBiometricLogin: async () => { attempts++; return true }
+        })
+        await run()
+        assert.equal(attempts, manual ? 0 : 1, `${target} ${page.file} distinguishes logout from normal startup`)
+      }
+    }
+    compileSfc(settingsSource, 'src/pages-nonTheme/settings.vue', target)
+  }
 })
 await scenario('both registration pages compile script and template for H5', async () => {
   for (const page of registrationPages) compileSfc(await readFile(new URL(page.file, root), 'utf8'), page.file, 'H5')

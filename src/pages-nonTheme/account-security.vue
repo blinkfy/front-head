@@ -50,7 +50,7 @@
           </view>
           <switch :key="biometricSwitchVersion" class="login-switch" :checked="biometricState.enabled" :disabled="biometricBusy || (!biometricSupport.supported && !biometricState.enabled)" :color="isDarkTheme ? '#5B8DEE' : '#059669'" :aria-label="biometricLabel" @change="toggleBiometric" />
         </view>
-        <view v-if="biometricState.enabled && !biometricBound && biometricSupport.supported && biometricSupport.enrolled" class="setting-item">
+        <view v-if="(biometricState.enabled || biometricState.enrollmentError) && !biometricBound && biometricSupport.supported && biometricSupport.enrolled" class="setting-item">
           <view class="item-info"><text class="item-desc">验证后即可使用</text></view>
           <button class="retry-btn" :disabled="biometricBusy || !profile.id" @click="enableBiometric">完成授权</button>
         </view>
@@ -94,6 +94,16 @@
         <!-- #endif -->
       </view>
 
+      <view v-if="recentLogin" class="settings-section">
+        <text class="section-title">上一次登录</text>
+        <view class="setting-item">
+          <view class="item-info">
+            <text class="item-title">{{ recentLogin.location || '地区暂未获取' }}<text v-if="recentLogin.location" class="region-hint"> · IP 估算</text></text>
+            <text class="item-desc">{{ recentLoginTime }} · {{ recentLoginMethod }}</text>
+          </view>
+        </view>
+      </view>
+
       <view class="security-note">
         <text class="note-title">让账号始终由您掌握</text>
         <text class="note-text">请妥善保管登录密码，勿向他人透露。</text>
@@ -106,7 +116,7 @@
 import { computed, ref } from 'vue'
 import { onShow, onHide } from '@dcloudio/uni-app'
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { getUserProfile, getWechatLoginSettings } from '@/api/user'
+import { getUserProfile, getWechatLoginSettings, getPreviousLogin } from '@/api/user'
 import { ThemeManager } from '@/utils/theme.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
@@ -132,6 +142,23 @@ function readCachedProfile() {
   }
 }
 
+const recentLogin = ref(null)
+const recentLoginTime = computed(() => {
+  const date = new Date(recentLogin.value?.loggedInAt)
+  if (!Number.isFinite(date.getTime())) return ''
+  const pad = value => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+})
+const recentLoginMethod = computed(() => ({ password: '密码登录', 'wechat-password': '微信密码登录', wechat: '微信登录', biometric: '指纹或面容登录', passkey: '通行密钥登录', soter: '微信指纹或面容登录', qr: '扫码登录' }[recentLogin.value?.method] || '账号登录'))
+async function loadRecentLogin() {
+  const token = uni.getStorageSync('token')
+  recentLogin.value = null
+  try {
+    const result = await getPreviousLogin()
+    if (token && token === uni.getStorageSync('token') && result.code === 0 && result.data?.loggedInAt) recentLogin.value = result.data
+  } catch (_) { /* Optional information must not interfere with account settings. */ }
+}
+
 const profile = ref(readCachedProfile())
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
 const biometricState = ref(biometricLogin.state())
@@ -140,9 +167,16 @@ const biometricLabel = ref('指纹或面容登录')
 const biometricBusy = ref(false)
 const biometricSwitchVersion = ref(0)
 let biometricActive = true, biometricGeneration = 0
+const biometricPromptOwner = {}
+let biometricPage = null
+const isBiometricPageCurrent = () => !biometricPage || getCurrentPages().slice(-1)[0] === biometricPage
 const biometricBound = computed(() => Boolean(biometricState.value.credentialId) && String(biometricState.value.userId) === String(profile.value.id))
 const biometricRevokePending = computed(() => Boolean(biometricLogin.syncRevocations) && (biometricState.value.pendingRevocations || []).some(item => String(item.userId) === String(profile.value.id)))
 const biometricDescription = computed(() => {
+  if (biometricBusy.value) return '正在处理…'
+  if (biometricState.value.enrollmentError === 'reauth_required') return '请重新登录后授权'
+  if (biometricState.value.enrollmentError === 'unsupported') return '当前微信暂不支持授权'
+  if (biometricState.value.enrollmentError) return '授权未保存，请重试'
   if (!biometricSupport.value.supported) return quickLoginPlatform === 'web' ? '当前浏览器暂不支持' : '当前设备暂不支持'
   if (!biometricSupport.value.enrolled) return '请先在系统设置中录入指纹或面容'
   if (!biometricState.value.enabled) return '已关闭'
@@ -153,6 +187,7 @@ async function loadBiometric() {
   biometricState.value = biometricLogin.state()
   const support = await biometricLogin.capability()
   if (!biometricActive || generation !== biometricGeneration) return
+  biometricState.value = biometricLogin.state()
   biometricSupport.value = support
   biometricLabel.value = support.label || '指纹或面容登录'
   if (biometricRevokePending.value && biometricLogin.syncRevocations) void syncBiometricRevocations(false)
@@ -160,10 +195,10 @@ async function loadBiometric() {
 async function toggleBiometric(event, options = {}) {
   if (biometricBusy.value || !profile.value.id) return
   const generation = biometricGeneration
-  const isActive = () => biometricActive && biometricGeneration === generation
+  const isActive = () => biometricActive && biometricGeneration === generation && isBiometricPageCurrent()
   biometricBusy.value = true
   try {
-    const result = await biometricLogin.setEnabled(event.detail.value, uni.getStorageSync('token'), profile.value, isActive, options)
+    const result = await biometricLogin.setEnabled(event.detail.value, uni.getStorageSync('token'), profile.value, isActive, { ...options, owner: biometricPromptOwner })
     if (isActive()) uni.showToast({ title: result?.revocationPending ? '本机已关闭，授权撤销待同步' : event.detail.value ? '快捷登录已开启' : '快捷登录已关闭', icon: 'none' })
   } catch (error) {
     const message = biometricErrorMessage(error)
@@ -186,7 +221,7 @@ async function syncBiometricRevocations(notify = true) {
 }
 function stopBiometric() { biometricActive = false; biometricGeneration++; biometricLogin.cancel() }
 onBeforeUnmount(stopBiometric)
-onHide(stopBiometric)
+onHide(() => { if (!isBiometricPageCurrent() || !biometricLogin.suspendSystemAuthentication?.(biometricPromptOwner)) stopBiometric() })
 // #endif
 const username = computed(() => profile.value.username || '')
 const avatarFailed = ref(false)
@@ -302,8 +337,11 @@ onShow(() => {
   profile.value = readCachedProfile()
   avatarFailed.value = false
   loadWechatSettings()
+  void loadRecentLogin()
   // #ifdef APP-PLUS || H5 || MP-WEIXIN
   biometricActive = true
+  biometricPage = getCurrentPages().slice(-1)[0]
+  biometricLogin.resumeSystemAuthentication?.(biometricPromptOwner)
   void loadProfile().then(() => { if (biometricActive) void loadBiometric() })
   // #endif
   // #ifndef APP-PLUS || H5 || MP-WEIXIN
@@ -357,6 +395,7 @@ onShow(() => {
 .item-icon { margin-right: 20rpx; flex-shrink: 0; }
 .item-title { display: block; font-size: 28rpx; font-weight: 500; line-height: 1.5; }
 .item-desc { display: block; margin-top: 8rpx; font-size: 24rpx; line-height: 1.65; color: var(--muted); }
+.region-hint { color: var(--muted); font-size: 22rpx; font-weight: 400; }
 .item-arrow { margin-left: 16rpx; opacity: 0.6; flex-shrink: 0; }
 .item-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12rpx; }
 .status-tag { padding: 2rpx 12rpx; border-radius: 8rpx; background: var(--tint); color: var(--muted); font-size: 22rpx; line-height: 1.6; }

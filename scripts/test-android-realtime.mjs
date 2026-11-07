@@ -36,6 +36,9 @@ let socketAlive = true, socketSuspended = false, permissionRequest, routeUnderTe
 const context = {
   'APP-PLUS': true,
   plus: { os: { name: 'Android' }, android: { requestPermissions(permissions, success, failure) { permissionRequest = { permissions, success, failure } } } },
+  requestRealtimePermissions(permissions) {
+    return new Promise((resolve, reject) => context.plus.android.requestPermissions(permissions, resolve, reject))
+  },
   BACKGROUND_MESSAGES_KEY: 'chat:background-messages',
   getOrCreatePushInstallationId: () => 'install_android_test_123456',
   readBackgroundMessagesEnabled: () => false,
@@ -46,6 +49,7 @@ const context = {
   controlNativeAnsweredCall: (id, options) => calls.nativeControls.push({ id, options: JSON.parse(options) }),
   stopIncomingCallAlert: id => calls.stoppedAlerts.push(id),
   configureRealtimeMessaging: value => calls.messaging.push(JSON.parse(value)),
+  syncNativeRecordingConfiguration() {},
   realtimeAvailable: () => true,
   realtimeSocketAlive: () => socketAlive,
   realtimeSocketSuspended: () => socketSuspended,
@@ -166,15 +170,16 @@ let lateSuccess = 0, lateFailure = 0
 const stopPending = realtime.watchAndroidRealtimeLocation(() => { lateSuccess++ }, () => { lateFailure++ })
 assert.ok(permissionRequest.permissions.includes('android.permission.ACCESS_COARSE_LOCATION'))
 assert.ok(permissionRequest.permissions.includes('android.permission.ACCESS_FINE_LOCATION'))
-assert.ok(permissionRequest.permissions.includes('android.permission.POST_NOTIFICATIONS'))
 stopPending()
 permissionRequest.success({ granted: ['android.permission.ACCESS_FINE_LOCATION'] })
+await Promise.resolve()
 assert.equal(calls.watches.length, 0, 'permission completion after cancellation does not start a native watch')
 assert.equal(lateSuccess + lateFailure, 0)
 
 let fixes = [], errors = []
 const stopLocation = realtime.watchAndroidRealtimeLocation(value => fixes.push(value), error => errors.push(error))
 permissionRequest.success({ granted: ['android.permission.ACCESS_COARSE_LOCATION'] })
+await Promise.resolve()
 assert.equal(calls.watches.length, 1)
 const firstLocationChannel = calls.watches[0]
 calls.locationEvents[0](JSON.stringify({ channel: firstLocationChannel,
@@ -185,6 +190,7 @@ assert.deepEqual(calls.clears, [9])
 const replacementFixes = []
 const stopReplacementLocation = realtime.watchAndroidRealtimeLocation(value => replacementFixes.push(value), () => {})
 permissionRequest.success({ granted: ['android.permission.ACCESS_FINE_LOCATION'] })
+await Promise.resolve()
 assert.equal(calls.watches.length, 2)
 const replacementLocationChannel = calls.watches[1]
 calls.locationEvents.at(-1)(JSON.stringify({ channel: firstLocationChannel,
@@ -201,12 +207,14 @@ assert.equal(fixes.length, 1, 'native location events after stop are ignored')
 let denied
 realtime.watchAndroidRealtimeLocation(() => {}, error => { denied = error })
 permissionRequest.success({ granted: [] })
+await Promise.resolve()
 assert.equal(denied.code, 1, 'permission denial is reported to the tracker')
 assert.equal(calls.watches.length, 2, 'permission denial does not start a native watch')
 
 let requestFailure
 realtime.watchAndroidRealtimeLocation(() => {}, error => { requestFailure = error })
 permissionRequest.failure(new Error('denied'))
+await Promise.resolve()
 assert.equal(requestFailure.code, 1, 'permission request failure is reported')
 
 console.log('PASS Android realtime socket lifecycle, native permission cancellation, location callbacks and late-event cleanup')

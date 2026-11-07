@@ -19,7 +19,7 @@ JAVA_SOURCE = ROOT / "src/uni_modules/ftx-map-local-server/native-src/android/Lo
 APP_MAP = ROOT / "src/static/app-map"
 STATIC = ROOT / "src/static"
 APP_MAP_FILES = ("index.html", "host.mjs", "renderer.mjs")
-MARKER_FILES = ("normal-marker.png", "smart-marker.png", "pending-bin-marker.png")
+MARKER_FILES = ("normal-marker.png", "smart-marker.png", "pending-bin-marker.png", "location-person.png")
 PLAYWRIGHT = Path(r"D:/nodejs/node_global/node_modules/openclaw/node_modules/playwright-core")
 CHROMIUM = Path(r"C:/Users/29513/AppData/Local/ms-playwright/chromium-1243/chrome-win64/chrome.exe")
 
@@ -43,7 +43,7 @@ public final class LocalServerHarness {
             if ("index.html".equals(path) || "host.mjs".equals(path) || "renderer.mjs".equals(path))
                 file = new File(appMap, path);
             else if ("static/normal-marker.png".equals(path) || "static/smart-marker.png".equals(path)
-                    || "static/pending-bin-marker.png".equals(path))
+                    || "static/pending-bin-marker.png".equals(path) || "static/location-person.png".equals(path))
                 file = new File(staticDir, path.substring("static/".length()));
             else throw new IOException("unmapped fixture resource");
             return new FileInputStream(file);
@@ -452,7 +452,8 @@ def main():
             results = list(pool.map(parallel_read, range(8)))
         check(all(status == 200 and size > 0 for status, size in results), "8 concurrent requests complete successfully")
 
-        run_browser(base_url, temporary)
+        if "--http-only" not in sys.argv[1:]:
+            run_browser(base_url, temporary)
 
         address = urlsplit(base_url)
         process.stdin.write("STOP\n"); process.stdin.flush()

@@ -1,6 +1,9 @@
 <template>
     <view class="chat-container" :class="{ 'dark-theme': isDarkTheme }" @drop="onDrop" @dragover.prevent="onDragOver" @dragleave="onDragLeave"
         :style="{ 'background': isDragOver ? 'rgba(7, 193, 96, 0.1)' : 'transparent', 'transition': 'background 0.3s ease', '--chat-status-bar-height': statusBarHeight + 'px' }">
+    <!-- #ifdef APP-PLUS -->
+    <AppConfirmDialog ref="appConfirmDialog" />
+    <!-- #endif -->
     <!-- #ifdef MP-WEIXIN -->
     <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
     <!-- #endif -->
@@ -26,7 +29,7 @@
 
         <view v-if="!isGroupChat && (liveLocationState.offers[String(otherUserId)] || (liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId)))" class="location-share-entry" @click="openLiveLocation">
             <ManifestIcon id="map_location" size="26px" />
-            <view class="location-share-copy"><text class="location-share-title">{{ liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId) ? '正在共享实时位置' : '对方正在共享实时位置' }}</text><text class="location-share-subtitle">点击进入位置共享页面</text></view>
+            <view class="location-share-copy"><text class="location-share-title">{{ liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId) ? '实时位置共享' : '对方发起的位置共享' }}</text><text class="location-share-subtitle">点击查看位置状态</text></view>
             <text class="location-share-arrow">›</text>
         </view>
 
@@ -86,7 +89,8 @@
                             </view>
 
                             <!-- AI 文本使用受限 Markdown，普通用户消息保持原有纯文本展示。 -->
-                            <CommunityPostMessage v-if="msg.type === 'others'" :card="communityPostCard(msg)" @open="openCommunityPost(msg)" />
+                            <RealtimeActivityMessage v-if="realtimeActivityCard(msg)" :card="realtimeActivityCard(msg)" :self="msg.isSelf" @open="openRealtimeActivity(msg)" />
+                            <CommunityPostMessage v-else-if="msg.type === 'others'" :card="communityPostCard(msg)" @open="openCommunityPost(msg)" />
                             <ChatMarkdown v-else-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" :dark="isDarkTheme" />
                             <text v-else-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
 
@@ -292,7 +296,15 @@
                         <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_video_call" :scale="1.5" /></view>
                         <text class="more-text">视频通话</text>
                     </view>
-                    <!-- #ifndef APP-PLUS || H5 -->
+                    <!-- #ifdef MP-WEIXIN -->
+                    <view v-if="!isGroupChat" class="more-item" @click="openWebCall('audio')">
+                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view><text class="more-text">网页语音通话</text>
+                    </view>
+                    <view v-if="!isGroupChat" class="more-item" @click="openWebCall('video')">
+                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_video_call" :scale="1.5" /></view><text class="more-text">网页视频通话</text>
+                    </view>
+                    <!-- #endif -->
+                    <!-- #ifndef APP-PLUS || H5 || MP-WEIXIN -->
                     <view v-if="!isGroupChat" class="more-item" @click="showCallSupport">
                         <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
                         <text class="more-text">通话说明</text>
@@ -300,42 +312,42 @@
                     <!-- #endif -->
                     <view class="more-item" @click="chooseImage">
                         <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="image_gallery" :scale="1.5" />
+                            <ManifestIcon class="more-icon" id="image_gallery" :scale="1.9" />
                         </view>
                         <text class="more-text">图片</text>
                     </view>
                     <view class="more-item" @click="shootPhoto">
                         <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="camera_scan" :scale="1.5" />
+                            <ManifestIcon class="more-icon" id="camera_scan" :scale="1.8" />
                         </view>
                         <text class="more-text">拍照</text>
                     </view>
                     <view class="more-item" @click="chooseVideo">
                         <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="video" :scale="1.5" />
+                            <ManifestIcon class="more-icon" id="video" :scale="2" />
                         </view>
                         <text class="more-text">视频</text>
                     </view>
                     <view class="more-item" @click="recordVideo">
                         <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="video" :scale="1.5" />
+                            <ManifestIcon class="more-icon" id="video" :scale="2" />
                         </view>
                         <text class="more-text">录像</text>
                     </view>
                     <view class="more-item" @click="chooseFile">
                         <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="file_document" :scale="1.5" />
+                            <ManifestIcon class="more-icon" id="file_document" :scale="1.9" />
                         </view>
                         <text class="more-text">文件</text>
                     </view>
                     <view class="more-item" @click="sendLocation">
                         <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="map_location" :scale="1.5" />
+                            <ManifestIcon class="more-icon" id="map_location" :scale="1.8" />
                         </view>
                         <text class="more-text">位置</text>
                     </view>
                     <view v-if="!isGroupChat && liveLocationState.supported" class="more-item" @click="openLiveLocation">
-                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="nearby_map" :scale="1.5" /></view>
+                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="nearby_map" :scale="1.9" /></view>
                         <text class="more-text">实时位置</text>
                     </view>
                 </view>
@@ -624,6 +636,8 @@
 </template>
 
 <script>
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
+import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { chooseAppImage } from '@/utils/image-picker.js'
 import BookingChatContext from './components/BookingChatContext.vue'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
@@ -646,6 +660,8 @@ import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { prepareAvatarUpload } from '@/utils/upload-image.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
 import { setChatFeedbackBlocked } from '@/utils/chat-feedback.js'
+import { embeddedWebCallUrl, requestWebCallTicket } from '@/utils/web-call-entry.mjs'
+import { appendRecordingBridge } from '@/utils/call-recordings.js'
 import RealtimeActivityEntry from '@/components/RealtimeActivityEntry.vue'
 import { voiceCalls, voiceCallState } from '@/utils/voice-call.js'
 import { liveLocationState } from '@/utils/live-location.js'
@@ -654,6 +670,8 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { communityPostCard, communityPostLink } from './utils/community-social.js'
 import CommunityPostMessage from './components/CommunityPostMessage.vue'
+import RealtimeActivityMessage from './components/RealtimeActivityMessage.vue'
+import { realtimeActivityCard, realtimeActivitySummary } from '@/utils/realtime-activity.mjs'
 import { getDisplayName } from '@/utils/display-name.js'
 
 // 本地存储 key 前缀
@@ -668,9 +686,9 @@ const chatRelationshipLabels = {
 }
 
 export default {
-    components: { RealtimeActivityEntry, BookingChatContext,
+    components: { AppConfirmDialog, RealtimeActivityEntry, BookingChatContext,
         ChatMarkdown,
-        CommunityPostMessage,
+        CommunityPostMessage, RealtimeActivityMessage,
         ChatSelectionDialog,
         ChatHistorySearch,
         ManifestIcon
@@ -723,6 +741,7 @@ export default {
             // 页面离开后异步恢复的缓存不能重新启动轮询，避免退出登录后遗留请求持续报未登录。
             isChatPageActive: false,
             isChatPageDestroyed: false,
+            webCallOpening: false,
             messagePollingVersion: 0,
             activeMessagePollingVersion: null,
             hasInitialScrolledToBottom: false,
@@ -1073,7 +1092,17 @@ export default {
         }
     },
     
+    // #ifdef APP-PLUS
+    onBackPress(event) {
+      if (event.from === 'backbutton' && this.$refs.appConfirmDialog?.current) {
+        this.$refs.appConfirmDialog.settle(false)
+        return true
+      }
+    },
+    // #endif
     onHide() {
+        this.$refs.appConfirmDialog?.cancelAll()
+        this.cancelRecord()
         this.saveChatDraft()
         setActiveChatConversation('')
         if (this.chatEventListener) {
@@ -1088,6 +1117,8 @@ export default {
     },
 
     onUnload() {
+        this.$refs.appConfirmDialog?.cancelAll()
+        this.cancelRecord()
         setChatFeedbackBlocked(this.chatFeedbackOwner, false)
         this.saveChatDraft()
         setActiveChatConversation('')
@@ -1134,8 +1165,29 @@ export default {
             uni.navigateTo({ url: `/pages-nonTheme/live-location?peerId=${encodeURIComponent(this.otherUserId)}&name=${encodeURIComponent(name)}${offer ? `&sessionId=${encodeURIComponent(offer.sessionId)}` : ''}` })
             this.showMorePanel = false
         },
+        async openWebCall(mode) {
+            if (this.webCallOpening) return
+            const target = { peerId: this.otherUserId, selfId: this.getCurrentUserId(), mode,
+                name: this.contactSettings.note || this.otherUsername || this.chatTitle }
+            let url = embeddedWebCallUrl(baseUrl, target)
+            if (!url) { uni.showToast({ title: '通话入口不可用，请检查联系人和 HTTPS 地址', icon: 'none' }); return }
+            this.webCallOpening = true
+            const token = uni.getStorageSync('token') || ''
+            uni.showLoading({ title: '正在打开通话' })
+            try {
+                const ticket = await requestWebCallTicket(uni, baseUrl, token)
+                if (!this.isChatPageActive || this.isChatPageDestroyed || token !== (uni.getStorageSync('token') || '') || String(target.selfId) !== String(this.getCurrentUserId())) return
+                if (!ticket) {
+                    uni.showToast({ title: '无法登录网页通话，请检查网络或更新服务', icon: 'none' })
+                    return
+                }
+                url = appendRecordingBridge(embeddedWebCallUrl(baseUrl, target, ticket))
+                this.showMorePanel = false
+                uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(url)}&title=${encodeURIComponent('网页通话')}` })
+            } finally { this.webCallOpening = false; uni.hideLoading() }
+        },
         showCallSupport() {
-            uni.showModal({
+            showAppModal(this, {
                 title: '语音与视频通话',
                 content: '当前小程序暂不支持直接语音、视频通话。可以在分投侠 App 登录同一账号后，与使用 App 或支持通话的网页版联系人通话。',
                 confirmText: '查看 App', cancelText: '知道了',
@@ -1150,6 +1202,32 @@ export default {
         },
         syncChatFeedbackMedia() {
             setChatFeedbackBlocked(this.chatFeedbackOwner, !this.isChatPageDestroyed && !!(this.isRecording || this.playingVoiceId))
+        },
+        realtimeActivityCard,
+        openRealtimeActivity(message) {
+            const card = realtimeActivityCard(message)
+            const ownId = String(this.getCurrentUserId())
+            if (!card || this.isGroupChat || ![String(card.fromId), String(card.toId)].includes(ownId)) return
+            const peerId = String(card.fromId) === ownId ? String(card.toId) : String(card.fromId)
+            if (peerId !== String(this.otherUserId)) return
+            const name = this.contactSettings.note || this.otherUsername || this.chatTitle || '联系人'
+            if (card.activity === 'location') {
+                // Always join this exact session. An expired record never starts a new share.
+                uni.navigateTo({ url: `/pages-nonTheme/live-location?peerId=${encodeURIComponent(peerId)}&name=${encodeURIComponent(name)}&sessionId=${encodeURIComponent(card.sessionId)}` })
+            } else if (['calling', 'incoming', 'connecting', 'connected'].includes(voiceCallState.phase)) {
+                if (String(voiceCallState.peer?.id) === peerId) uni.navigateTo({ url: '/pages-nonTheme/voice-call' })
+                else uni.showToast({ title: '请先结束当前通话', icon: 'none' })
+            } else {
+                // #ifdef APP-PLUS || H5
+                this.startVoiceCall(card.mode)
+                // #endif
+                // #ifdef MP-WEIXIN
+                void this.openWebCall(card.mode)
+                // #endif
+                // #ifndef APP-PLUS || H5 || MP-WEIXIN
+                this.showCallSupport()
+                // #endif
+            }
         },
         communityPostLink,
         communityPostCard,
@@ -1524,6 +1602,7 @@ export default {
 
         // 格式化服务器返回的消息
         formatServerMessage(serverMsg) {
+            const activity = realtimeActivityCard(serverMsg)
             const postCard = communityPostCard(serverMsg)
             const currentUserId = this.getCurrentUserId()
             const isSelf = !serverMsg.isAi && (currentUserId
@@ -1565,11 +1644,12 @@ export default {
             const message = {
                 id: serverMsg.id || serverMsg.messageId,
                 clientMessageId: serverMsg.clientMessageId || null,
-                type: postCard ? 'others' : serverMsg.type || 'text',
-                content: postCard ? JSON.stringify(postCard) : content,
+                type: activity || postCard ? 'others' : serverMsg.type || 'text',
+                content: activity ? JSON.stringify(activity) : postCard ? JSON.stringify(postCard) : content,
                 isSelf: isSelf,
                 isAi: !!serverMsg.isAi,
                 senderId: serverMsg.senderId,
+                receiverId: serverMsg.receiverId,
                 senderName: serverMsg.isAi ? 'AI 环保助手' : getDisplayName(serverMsg.Sender || serverMsg.sender, ''),
                 senderUsername: serverMsg.Sender?.username || serverMsg.sender?.username || '',
                 senderNickname: serverMsg.Sender?.nickname || serverMsg.sender?.nickname || '',
@@ -2221,7 +2301,7 @@ export default {
                         return
                     }
                     // 权限被拒绝或其他错误
-                    uni.showModal({
+                    showAppModal(this, {
                         title: '提示',
                         content: '需要获取位置权限才能发送位置，请在设置中开启',
                         confirmText: '去设置',
@@ -2471,7 +2551,7 @@ export default {
 
         // 确认清空聊天记录
         confirmClearChat() {
-            uni.showModal({
+            showAppModal(this, {
                 title: '提示',
                 content: '仅清空你自己的聊天记录，对方或其他群成员的记录将保留。此操作不可恢复。',
                 success: async (res) => {
@@ -2492,7 +2572,7 @@ export default {
 
         // 确认删除联系人
         confirmDeleteContact() {
-            uni.showModal({
+            showAppModal(this, {
                 title: '警告',
                 content: '确定删除该联系人及你自己的聊天记录吗？对方的记录不受影响。',
                 confirmColor: '#ff4444',
@@ -2567,7 +2647,7 @@ export default {
 
         editGroupName() {
             if (!this.canManageGroup) return
-            uni.showModal({
+            showAppModal(this, {
                 title: '修改群名称',
                 editable: true,
                 placeholderText: '请输入群名称',
@@ -2644,7 +2724,7 @@ export default {
             this.removingGroupMemberId = String(member.userId)
             try {
                 const confirmed = await new Promise((resolve) => {
-                    uni.showModal({
+                    showAppModal(this, {
                         title: '移除群成员',
                         content: `确定将“${this.getGroupMemberName(member)}”移出群聊吗？`,
                         confirmText: '移除',
@@ -2670,7 +2750,7 @@ export default {
 
         confirmLeaveGroup() {
             if (this.isGroupOwner) { uni.showToast({ title: '请先在成员管理中转让群主，或解散群聊', icon: 'none' }); return }
-            uni.showModal({
+            showAppModal(this, {
                 title: '退出群聊',
                 content: '退出后将不再接收该群消息，确定继续吗？',
                 confirmColor: '#ef4444',
@@ -2695,7 +2775,7 @@ export default {
                 itemList: ['清空聊天记录'],
                 success: (res) => {
                     if (res.tapIndex === 0) {
-                        uni.showModal({
+                        showAppModal(this, {
                             title: '提示',
                             content: '仅清空你自己的聊天记录，对方或其他群成员的记录将保留。此操作不可恢复。',
                             success: async (r) => {
@@ -2824,6 +2904,7 @@ export default {
             
             switch (refMsg.type) {
                 case 'others':
+                    if (realtimeActivityCard(refMsg)) return realtimeActivitySummary(realtimeActivityCard(refMsg), refMsg.isSelf)
                     return communityPostCard(refMsg) ? `[社区帖子] ${communityPostCard(refMsg).title}` : '[消息]'
                 case 'text':
                     return refMsg.content.substring(0, 50) + (refMsg.content.length > 50 ? '...' : '')
@@ -3090,6 +3171,9 @@ page {
     width: 100vw;
     margin: 0;
     padding: 0;
+    padding-top: var(--chat-header-height, 64px);
+    box-sizing: border-box;
+    --chat-header-height: 64px;
     overflow: hidden;
     transition: all 0.3s ease, color 0.3s ease;
 
@@ -3217,7 +3301,7 @@ page {
 
 .location-share-entry {
     display: flex; align-items: center; gap: 10px; flex: none;
-    margin-top: 64px; padding: 12px 18px; background: #e6f2eb; color: #227451;
+    margin-top: 0; padding: 12px 18px; background: #e6f2eb; color: #227451;
 }
 .location-share-copy { flex: 1; min-width: 0; }
 .location-share-title { display: block; font-size: 14px; font-weight: 600; }
@@ -3226,7 +3310,7 @@ page {
 .dark-theme .location-share-entry { background: #233d2e; color: #c0e4ce; }
 .location-share-entry + .message-list { margin-top: 0; }
 /* #ifdef APP-PLUS || MP-WEIXIN */
-.location-share-entry { margin-top: calc(44px + var(--chat-status-bar-height, 20px)); }
+.chat-container { --chat-header-height: calc(44px + var(--chat-status-bar-height, 20px)); }
 /* #endif */
 
 /* #ifdef APP-PLUS || MP-WEIXIN */
@@ -3300,7 +3384,8 @@ page {
 .message-list {
     flex: 1;
     padding: 20rpx 15rpx;
-    margin-top: calc(44px);
+    margin-top: 0;
+    min-height: 0;
     overflow-y: auto;
     background: var(--bg-primary);
     transition: all 0.3s ease;
@@ -3310,7 +3395,7 @@ page {
 
 /* #ifdef APP-PLUS || MP-WEIXIN */
 .message-list {
-    margin-top: calc(44px + var(--chat-status-bar-height, 20px));
+    margin-top: 0;
 }
 /* #endif */
 

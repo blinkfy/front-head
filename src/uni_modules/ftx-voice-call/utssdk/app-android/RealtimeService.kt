@@ -50,7 +50,7 @@ class RealtimeService : Service() {
             var types = 0
             if (RealtimeBridge.messagesEnabled() && Build.VERSION.SDK_INT >= 34) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             if (call.isNotEmpty() && Build.VERSION.SDK_INT >= 30) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            if (RealtimeBridge.video && Build.VERSION.SDK_INT >= 30) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            if (RealtimeBridge.video && Build.VERSION.SDK_INT >= 30 && checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
             if (location.isNotEmpty() && Build.VERSION.SDK_INT >= 29) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             if (Build.VERSION.SDK_INT >= 29) startForeground(2700, builder.build(), types) else startForeground(2700, builder.build())
             if (call.isNotEmpty() || location.isNotEmpty()) {

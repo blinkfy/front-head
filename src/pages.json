@@ -137,9 +137,17 @@
 					}
 				},
 				{
+					"path": "web-call",
+					"style": { "navigationStyle": "custom" }
+				},
+				{
 					"path": "voice-call",
 					"style": { "navigationStyle": "custom", "disableScroll": true, "app-plus": { "popGesture": "none" } }
 				},
+			{
+				"path": "call-recordings",
+				"style": { "navigationStyle": "custom", "navigationBarTitleText": "通话录音" }
+			},
 				{
 					"path": "chat",
 					"style": {

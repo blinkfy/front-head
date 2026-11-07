@@ -37,6 +37,7 @@
         :webview-styles="webviewStyles"
         @load="onLoad"
         @error="onLoadError"
+        @message="onWebviewMessage"
       ></web-view>
 
       <!-- 加载/错误状态 -->
@@ -65,6 +66,23 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+// #ifdef MP-WEIXIN
+import { setChatEventsDelegated } from '@/utils/chat-events.js'
+import { acceptRecordingCatalog } from '@/utils/call-recording-preference.mjs'
+import { baseUrl } from '@/api/settings.js'
+// #endif
+let delegatedCall = false
+let recordingBridge = null
+
+function onWebviewMessage(event) {
+  // #ifdef MP-WEIXIN
+  if (!recordingBridge || !Array.isArray(event?.detail?.data)) return
+  try {
+    const latest = [...event.detail.data].reverse().find(item => item?.kind === 'call-recordings' && item.bridge === recordingBridge.bridge)
+    if (latest) acceptRecordingCatalog(latest, recordingBridge)
+  } catch (_) {}
+  // #endif
+}
 
 const src = ref('')
 const title = ref('内嵌页面')
@@ -245,12 +263,11 @@ onMounted(() => {
   const currentPage = pages[pages.length - 1]
   const options = currentPage.$page?.options || currentPage.options || {}
 
-  console.log('webview 页面参数:', options)
 
   const url = options.url
   if (url) {
     try {
-      const decodedUrl = decodeURIComponent(url)
+      const decodedUrl = /^https?:\/\//i.test(url) ? url : decodeURIComponent(url)
       src.value = decodedUrl
 
       const lower = decodedUrl.toLowerCase()
@@ -260,7 +277,29 @@ onMounted(() => {
       }
 
       // 根据 URL 设置标题
-      if (decodedUrl.includes('/call-check.html')) {
+      // #ifdef MP-WEIXIN
+      const embeddedPrefix = String(baseUrl).replace(/\/+$/, '') + '/web/call/index.html#?'
+      if (decodedUrl.startsWith(embeddedPrefix)) {
+        const query = Object.fromEntries(decodedUrl.slice(embeddedPrefix.length).split('&').map(part => {
+          const separator = part.indexOf('=')
+          return separator < 0 ? [part, ''] : [part.slice(0, separator), decodeURIComponent(part.slice(separator + 1))]
+        }))
+        if (query.recordOwner && query.recordBridge) recordingBridge = { owner: query.recordOwner, bridge: query.recordBridge }
+        if (query.view === 'recordings') title.value = '通话录音'
+        else {
+          title.value = '网页通话'
+          delegatedCall = true
+          setChatEventsDelegated(true)
+        }
+      }
+      // #endif
+      if (decodedUrl.includes('/web/#/pages-nonTheme/web-call?')) {
+        title.value = '网页通话'
+        // #ifdef MP-WEIXIN
+        delegatedCall = true
+        setChatEventsDelegated(true)
+        // #endif
+      } else if (decodedUrl.includes('/call-check.html')) {
         title.value = '通话环境检测'
       } else if (decodedUrl.includes('/files')) {
         title.value = '文件管理'
@@ -270,7 +309,6 @@ onMounted(() => {
         title.value = '关于开发者'
       }
 
-      console.log('解析后的 URL:', decodedUrl, 'isPdf=', isPdf.value)
     } catch (e) {
       src.value = url
       console.error('URL 解码失败:', e)
@@ -305,6 +343,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // #ifdef MP-WEIXIN
+  if (delegatedCall) { delegatedCall = false; setChatEventsDelegated(false) }
+  // #endif
   pageDisposed = true
   clearLoadTimeout()
   const activeDownloadTask = downloadTask
