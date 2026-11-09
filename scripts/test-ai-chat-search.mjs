@@ -323,7 +323,32 @@ const historyEnd = page.indexOf('// ─── 发送消息', historyStart)
 assert(!page.slice(historyStart, historyEnd).includes('search'), 'search metadata must not enter model history')
 assert(page.includes('const enableSearch = isSearchEnabled.value'), 'toggle is captured before asynchronous preparation')
 assert(component.includes("window.open(url, '_blank', 'noopener,noreferrer')"))
-assert(component.includes('uni.setClipboardData'))
+const openSourceCode = component.slice(component.indexOf('function openSource('), component.indexOf('</script>'))
+for (const h5 of [true, false]) {
+  const opened = []
+  const navigation = []
+  const notices = []
+  const context = {
+    safeSearchUrl, encodeURIComponent,
+    window: { open: (...args) => opened.push(args) },
+    uni: { navigateTo: options => navigation.push(options), showToast: options => notices.push(options) }
+  }
+  vm.createContext(context)
+  vm.runInContext(platformCode(openSourceCode, h5), context)
+  const url = 'https://example.org/guide?q=分类&from=ai#来源'
+  context.openSource(url)
+  context.openSource('javascript:alert(1)')
+  if (h5) {
+    assert.deepEqual(opened, [[safeSearchUrl(url), '_blank', 'noopener,noreferrer']])
+    assert.equal(navigation.length, 0)
+  } else {
+    assert.equal(opened.length, 0)
+    assert.equal(navigation.length, 1)
+    assert.equal(navigation[0].url, `/pages-nonTheme/webview?url=${encodeURIComponent(safeSearchUrl(url))}&title=${encodeURIComponent('参考来源')}`)
+    navigation[0].fail()
+    assert.equal(notices[0].title, '打开来源失败，请重试')
+  }
+}
 // Keyboard bindings compile with preventDefault for Enter and Space on every custom control.
 const toggleMarkup = page.slice(page.indexOf("['deep-think-btn', 'search-toggle'"), page.indexOf('<text class="deep-think-text">联网搜索'))
 assert(toggleMarkup.includes('tabindex="0"'))

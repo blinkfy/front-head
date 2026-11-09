@@ -7,6 +7,7 @@ const paths = {
   hangup: '<path d="M3 16v-5c5-5 13-5 18 0v5h-5v-4a12 12 0 0 0-8 0v4Z"/>',
   speaker: '<path d="M3 9h4l5-4v14l-5-4H3ZM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14"/>',
   record: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>',
+  chat: '<path d="M20 14a3 3 0 0 1-3 3H9l-5 4V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3Z"/><path d="M8 9h8M8 13h6"/>',
 }
 
 export function callAction(label, action, icon, { kind = '', disabled = false, selected, off = false } = {}) {

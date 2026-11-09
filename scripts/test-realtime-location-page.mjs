@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 import { realtimeRouteName } from '../src/utils/realtime-route.mjs'
@@ -19,6 +20,42 @@ assert.match(source, /if \(!isCurrent\(\)\) return/, 'a late permission result c
 assert.match(source, /canMinimize && this\.state\.phase === 'sharing'/, 'sharing pages can return to chat without an explicit leave')
 assert.match(source, /liveLocations\.end\('left'\)/, 'explicit stop ends the owned session')
 assert.match(source, /location-person\.png/, 'peer map marker uses the person marker asset')
+
+const activeLocation = { supported: true, phase: 'sharing', sessionId: 'session_active', peer: { id: '2' },
+  selfPoint: { latitude: 1 }, peerPoint: { latitude: 2 }, offers: {} }
+let mask = 0, ended = 0, back = 0
+const context = {
+  ManifestIcon: {}, AppTencentMap: {}, liveLocationState: activeLocation, ThemeManager: { getTheme: () => 'light' },
+  androidRealtimeAvailable: () => true, webLocationAvailable: () => false, miniLocationAvailable: () => false,
+  androidBackgroundMask: () => mask, uni: { getStorageSync: () => 'owner' }, clearInterval, clearTimeout,
+  liveLocations: { enter() { throw new Error('已有实时位置共享，请先结束') }, end() { ended++ } }
+}
+vm.createContext(context)
+vm.runInContext(parse(source).descriptor.script.content.replace(/^import .*$/gm, '').replace('export default', 'globalThis.page ='), context)
+function openedPage(peerId) {
+  const { data, computed, methods } = context.page
+  const instance = { ...data(), ...methods, peer: { id: peerId }, entryOwner: 'owner', pageVisible: true, prepared: true }
+  instance.navigateBack = () => { back++ }
+  Object.defineProperty(instance, 'state', { get: () => computed.state.call(instance) })
+  Object.defineProperty(instance, 'canMinimize', { get: () => computed.canMinimize.call(instance) })
+  instance.tryEnter()
+  return instance
+}
+const unrelated = openedPage('3')
+assert.equal(unrelated.state.peerPoint, null, 'a different peer page never shows another session coordinates')
+assert.equal(unrelated.ownedId, '', 'a rejected enter cannot claim the existing session')
+context.page.onUnload.call(unrelated)
+assert.equal(ended, 0, 'a different peer page cannot end the current share')
+const same = openedPage('2')
+assert.equal(same.state.peerPoint, activeLocation.peerPoint, 'reopening the same share reuses its current coordinates')
+assert.equal(context.page.onBackPress.call(same), false, 'hardware back can exit if the Android background service is unavailable')
+assert.equal(ended, 1)
+mask = 2
+const minimized = openedPage('2')
+assert.equal(context.page.onBackPress.call(minimized), true)
+assert.equal(back, 1)
+context.page.onUnload.call(minimized)
+assert.equal(ended, 1, 'intentional minimization preserves the current share')
 
 for (const filename of ['../src/pages-nonTheme/live-location.vue', '../src/components/RealtimeActivityEntry.vue', '../src/pages-nonTheme/chat.vue',
   '../src/pages-nonTheme/settings.vue', '../src/pages-nonTheme/voice-scan.vue', '../src/pages-nonTheme/recognition-camera.vue',

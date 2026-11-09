@@ -1,3 +1,5 @@
+import { saveDownloadedChatMedia } from '@/pages-nonTheme/utils/chat-local-media.mjs'
+
 export const videoPlaybackMethods = {
     async playVideo(url, msg) {
             // 如果已经标记失败，点击重试
@@ -5,12 +7,21 @@ export const videoPlaybackMethods = {
                 this.retryLoadMedia(msg, 'video')
                 return
             }
+            if (typeof url !== 'string' || !url) return
+            const revision = ++this.videoPlaybackRevision
+            const owner = this.getCurrentUserId()
+            const active = () => !this.isChatPageDestroyed && revision === this.videoPlaybackRevision && owner === this.getCurrentUserId()
+            const play = source => {
+                if (!active()) return
+                this.currentVideoCache = { source: url, path: source, messageId: msg.id, owner }
+                this.currentVideoUrl = source
+                this.showVideoPlayer = true
+            }
             
             // 首先尝试使用缓存的 URL
             const validUrl = await this.getValidFileUrl(msg)
             if (validUrl) {
-                this.currentVideoUrl = validUrl
-                this.showVideoPlayer = true
+                play(validUrl)
                 return
             }
             
@@ -18,19 +29,24 @@ export const videoPlaybackMethods = {
             if (url.startsWith('blob:')) {
                 const isValid = await this.checkBlobUrlValid(url)
                 if (isValid) {
-                    this.currentVideoUrl = url
-                    this.showVideoPlayer = true
+                    play(url)
                     return
                 }
             }
             
             // 如果是 file:// 协议,直接使用
             if (url.startsWith('file://')) {
-                this.currentVideoUrl = url
-                this.showVideoPlayer = true
+                play(url)
                 return
             }
 
+            // #ifdef H5
+            const source = await this.getChatMediaSource('attachment', url, { download: true, size: msg.fileSize })
+            play(source || url)
+            return
+            // #endif
+
+            // #ifndef H5
             // 需要从服务器下载
             try {
                 // 初始化下载进度
@@ -38,13 +54,13 @@ export const videoPlaybackMethods = {
 
                 const downloadTask = uni.downloadFile({
                     url: url,
-                    success: (res) => {
+                    success: async (res) => {
                         if (res.statusCode === 200) {
-                            // 保存到本地缓存
-                            this.localFileCache[msg.id] = res.tempFilePath
-                            this.saveLocalFileCache()
-                            this.currentVideoUrl = res.tempFilePath
-                            this.showVideoPlayer = true
+                            const path = await saveDownloadedChatMedia(owner, 'attachment', url, res.tempFilePath)
+                            if (!this.isChatPageDestroyed && owner === this.getCurrentUserId()) {
+                                this.downloadedChatFiles[JSON.stringify([owner, url])] = path
+                            }
+                            play(path)
                             // 清除下载进度和错误标记
                             delete this.downloadProgress[msg.id]
                             if (this.mediaLoadErrors[msg.id]) {
@@ -91,38 +107,61 @@ export const videoPlaybackMethods = {
                 })
                 delete this.downloadProgress[msg.id]
             }
+            // #endif
         },
     closeVideoPlayer() {
+            this.videoPlaybackRevision++
             this.showVideoPlayer = false
             this.currentVideoUrl = ''
-        }
+            this.currentVideoCache = null
+        },
+    onChatVideoError() {
+            const video = this.currentVideoCache
+            if (!video || video.owner !== this.getCurrentUserId()) return
+            if (video.path !== video.source && /^https?:\/\//i.test(video.source)) {
+                void this.invalidateChatMediaSource('attachment', video.source, video.path)
+                const key = JSON.stringify([video.owner, video.source])
+                if (this.downloadedChatFiles[key] === video.path) delete this.downloadedChatFiles[key]
+                if (this.localFileCache[video.messageId] === video.path) {
+                    delete this.localFileCache[video.messageId]
+                    this.saveLocalFileCache()
+                }
+                this.currentVideoUrl = video.source
+                this.currentVideoCache = { ...video, path: video.source }
+                return
+            }
+            this.closeVideoPlayer()
+            uni.showToast({ title: '视频播放失败', icon: 'none' })
+        },
 }
 
 export const fileAccessMethods = {
     async openFile(msg, preferOnlinePreview = true) {
             // 如果已经标记失败，点击重试
-            if (this.mediaLoadErrors[msg.id]?.type === 'file') {
+            if (preferOnlinePreview && this.mediaLoadErrors[msg.id]?.type === 'file') {
                 this.retryLoadMedia(msg, 'file')
                 return
             }
+            if (!preferOnlinePreview) delete this.mediaLoadErrors[msg.id]
 
-            // 在线文件直接复用文件管理器的预览能力；本地临时文件仍沿用原有系统打开流程。
+            const url = msg.content
+            const fileName = msg.fileName
+            const owner = this.getCurrentUserId()
+            if (typeof url !== 'string' || !url) return
+            const validUrl = await this.getValidFileUrl(msg)
+            if (this.isChatPageDestroyed || owner !== this.getCurrentUserId()) return
+            if (validUrl) {
+                this.doOpenFile(validUrl, fileName)
+                return
+            }
+
+            // Keep the server preview available for formats the client may not render.
             if (preferOnlinePreview && this.isFilePreviewable(msg)) {
                 const previewUrl = this.getOnlineFilePreviewUrl(msg.content)
                 if (previewUrl) {
                     this.openOnlineFilePreview(previewUrl, msg.fileName)
                     return
                 }
-            }
-            
-            const url = msg.content
-            const fileName = msg.fileName
-
-            // 首先尝试使用缓存的 URL
-            const validUrl = await this.getValidFileUrl(msg)
-            if (validUrl) {
-                this.doOpenFile(validUrl, fileName)
-                return
             }
             
             // 如果当前 URL 是 blob 且有效,直接使用
@@ -146,8 +185,15 @@ export const fileAccessMethods = {
                 this.downloadProgress[msg.id] = 0
 
                 // #ifdef H5
-                // H5 环境下,先检查文件是否存在
                 try {
+                    const local = await this.getChatMediaSource('attachment', url, { download: true, size: msg.fileSize })
+                    if (this.isChatPageDestroyed || owner !== this.getCurrentUserId()) return
+                    if (local) {
+                        this.downloadFileWithName(local, fileName)
+                        delete this.downloadProgress[msg.id]
+                        delete this.mediaLoadErrors[msg.id]
+                        return
+                    }
                     const checkRes = await fetch(url, { method: 'HEAD' })
                     if (checkRes.ok) {
                         // 文件存在,触发下载
@@ -179,12 +225,12 @@ export const fileAccessMethods = {
                 // 非 H5 环境,使用 uni.downloadFile
                 const downloadTask = uni.downloadFile({
                     url: url,
-                    success: (res) => {
+                    success: async (res) => {
                         if (res.statusCode === 200) {
-                            // 保存到本地缓存
-                            this.localFileCache[msg.id] = res.tempFilePath
-                            this.saveLocalFileCache()
-                            this.doOpenFile(res.tempFilePath, fileName)
+                            const path = await saveDownloadedChatMedia(owner, 'attachment', url, res.tempFilePath)
+                            if (this.isChatPageDestroyed || owner !== this.getCurrentUserId()) return
+                            this.downloadedChatFiles[JSON.stringify([owner, url])] = path
+                            this.doOpenFile(path, fileName)
                             // 清除下载进度和错误标记
                             delete this.downloadProgress[msg.id]
                             if (this.mediaLoadErrors[msg.id]) {
@@ -264,7 +310,7 @@ export const fileAccessMethods = {
         },
     getOnlineFilePreviewUrl(fileUrl) {
             const url = String(fileUrl || '').trim()
-            if (!url || url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('file://')) {
+            if (!/^https?:\/\//i.test(url)) {
                 return ''
             }
             const downloadPath = '/files/download/'
@@ -272,9 +318,18 @@ export const fileAccessMethods = {
                 ? url.replace(downloadPath, '/files/preview/')
                 : ''
         },
+    previewChatFile(msg) {
+            const previewUrl = this.getOnlineFilePreviewUrl(msg.content)
+            if (previewUrl) this.openOnlineFilePreview(previewUrl, msg.fileName)
+            else void this.openFile(msg)
+        },
     openOnlineFilePreview(previewUrl, fileName) {
             // #ifdef H5
-            window.open(previewUrl, '_blank', 'noopener,noreferrer')
+            const tab = window.open('', '_blank')
+            if (tab) {
+                tab.opener = null
+                tab.location.replace(previewUrl)
+            } else window.location.assign(previewUrl)
             // #endif
 
             // #ifndef H5
@@ -306,16 +361,25 @@ export const fileAccessMethods = {
         },
 // 获取有效的文件 URL(如果 blob 失效则从服务器下载)
     async getValidFileUrl(msg) {
-            const cachedUrl = this.localFileCache[msg.id]
+            const key = JSON.stringify([this.getCurrentUserId(), msg.content])
+            const persistent = await this.getChatMediaSource('attachment', msg.content)
+            if (persistent) return persistent
+            const cachedUrl = this.downloadedChatFiles[key] || this.localFileCache[msg.id]
             
             // 检查缓存的 URL 是否有效
             if (cachedUrl) {
-                const isValid = await this.checkBlobUrlValid(cachedUrl)
+                let isValid = await this.checkBlobUrlValid(cachedUrl)
+                // #ifndef H5
+                isValid = await new Promise(resolve => uni.getFileInfo({
+                    filePath: cachedUrl, success: () => resolve(true), fail: () => resolve(false)
+                }))
+                // #endif
                 if (isValid) {
                     return cachedUrl // 缓存有效,直接返回
                 } else {
                     // 缓存失效,清除缓存
                     delete this.localFileCache[msg.id]
+                    delete this.downloadedChatFiles[key]
                     this.saveLocalFileCache()
                 }
             }
@@ -344,9 +408,12 @@ export const fileAccessMethods = {
             // #endif
 
             // #ifdef MP-WEIXIN
+            const extension = this.getFileExtension(fileName)
             wx.openDocument({
                 filePath: filePath,
-                showMenu: true
+                ...(/^(pdf|docx?|xlsx?|pptx?)$/.test(extension) ? { fileType: extension } : {}),
+                showMenu: true,
+                fail: () => uni.showToast({ title: '文件已下载，微信无法预览此格式', icon: 'none' })
             })
             // #endif
         }

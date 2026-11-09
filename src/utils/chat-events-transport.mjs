@@ -1,16 +1,27 @@
 // A single account-bound connection shared by all pages. HTTP polling is the fallback.
+const RETRY_CLOSE_CODE = 4101
+
 export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket, onEvent, onConnected, onDisconnected,
     setTimer = setTimeout, clearTimer = clearTimeout }) {
     let active = false, socket = null, identity = '', generation = 0, timer = null
     let retryAt = 0, attempts = 0, lastPong = 0, lastPing = 0, authenticated = false
     let previouslyConnected = false
-    function close() {
+    function close(retry = false) {
         generation++
         const previous = socket
         socket = null
         authenticated = false
         onDisconnected?.()
-        try { previous?.close({ code: 1000, reason: 'Session changed' }) } catch (_) {}
+        try { previous?.close({ code: retry ? RETRY_CLOSE_CODE : 1000, reason: retry ? 'Connection lost' : 'Session changed' }) } catch (_) {}
+    }
+    function sendFrame(event) {
+        const current = socket
+        const version = generation
+        const fail = () => { if (current === socket && version === generation) close(true) }
+        try {
+            current.send({ data: JSON.stringify(event), fail })
+            return current === socket
+        } catch (_) { fail(); return false }
     }
     function tick() {
         timer = null
@@ -25,10 +36,10 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
         }
         const now = Date.now()
         if (socket?.isAlive?.() || socket?.isSuspended?.()) lastPong = now // Android native heartbeat survives suspended JS.
-        if (socket && now - lastPong > 45000) { close(); retryAt = now + 1000 }
+        if (socket && now - lastPong > 45000) { close(true); retryAt = now + 1000 }
         if (socket && authenticated && !socket.isSuspended?.() && now - lastPing > 20000) {
             lastPing = now
-            socket.send({ data: JSON.stringify({ type: 'ping' }), fail: () => close() })
+            sendFrame({ type: 'ping' })
         }
         if (token && !socket && now >= retryAt) {
             const version = ++generation
@@ -39,9 +50,9 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
                 const current = connectSocket({ url, complete() {} })
                 socket = current
                 const valid = () => active && version === generation && token === String(getToken() || '')
-                const disconnected = (event = {}) => {
+                const disconnected = (event = {}, retry = false) => {
                     if (version !== generation) return
-                    close()
+                    close(retry)
                     // An expired token must be replaced rather than retried in a tight loop.
                     retryAt = Date.now() + (event.code === 4001 ? 60000 : Math.min(30000, 1000 * 2 ** Math.min(attempts++, 5)))
                 }
@@ -61,7 +72,7 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
                     } catch (_) {}
                 })
                 current.onClose(disconnected)
-                current.onError(disconnected)
+                current.onError(event => disconnected(event, true))
             } catch (_) { close(); retryAt = now + 5000 }
         }
         timer = setTimer(tick, 1000)
@@ -69,7 +80,7 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
     return {
         send(event) {
             if (!active || !authenticated || !socket || identity !== String(getToken() || '') || (!socket.isAlive?.() && Date.now() - lastPong > 45000)) return false
-            try { socket.send({ data: JSON.stringify(event), fail: () => close() }); return true } catch (_) { close(); return false }
+            return sendFrame(event)
         },
         isConnected() {
             return active && authenticated && !!socket && identity === String(getToken() || '') && (socket.isAlive?.() || Date.now() - lastPong <= 45000)

@@ -20,16 +20,27 @@ export function locationDistance(a, b) {
 
 export function createLiveLocationController({ send, tracker, getOwner, getSelfId, changed = () => {}, now = Date.now,
   setTimer = setTimeout, clearTimer = clearTimeout, createId = () => `loc_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}` }) {
-  let active = false, connected = false, version = 0, ready = false, visible = true, session = null
-  let view = { supported: false, phase: 'idle', sessionId: '', peer: null, selfPoint: null, peerPoint: null, peerJoined: false,
+  let active = false, connected = false, version = 0, ready = false, visible = true, session = null, owner
+  const empty = { supported: false, phase: 'idle', sessionId: '', peer: null, selfPoint: null, peerPoint: null, peerJoined: false,
     offers: {}, reason: '', locating: false, paused: false }
+  let view = empty
   const publish = patch => { view = { ...view, ...patch, supported: active && connected && ready && tracker.supported() }; changed({ ...view }) }
   const transmit = event => { try { return send(event) !== false } catch (_) { return false } }
   const current = item => item === session && item.owner === getOwner() && active && connected
   const ensureCurrent = item => {
     if (current(item)) return true
-    if (item === session) end('disconnected', false)
+    syncOwner()
     return false
+  }
+  function syncOwner() {
+    const next = getOwner()
+    const changedOwner = owner !== undefined && next !== owner
+    owner = next
+    if (changedOwner) {
+      if (session) stopTracking(session)
+      session = null; ready = false
+      publish(empty)
+    }
   }
   function stopTracking(item) {
     item.watchVersion = (item.watchVersion || 0) + 1
@@ -46,6 +57,7 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
     publish({ paused: true, locating: false, reason })
   }
   function resume(peerId) {
+    syncOwner()
     const item = session
     if (!item || item.owner !== getOwner() || !active || (peerId && String(peerId) !== String(item.peer.id))) return false
     if (!tracker.canResume?.() || (!view.paused && item.tracking) || item.awaitingJoin) return true
@@ -60,6 +72,7 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
     return true
   }
   function end(reason = 'left', signal = true) {
+    syncOwner()
     const previous = session
     session = null
     if (!previous) return
@@ -99,6 +112,10 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
     try {
       const stop = tracker.watch(point => {
         if (!liveWatch() || !ensureCurrent(item) || !validLocationPoint(point)) return
+        if (point.provisional === true) {
+          if (!view.selfPoint) publish({ selfPoint: { ...point, updatedAt: now() } })
+          return
+        }
         clearTimer(item.timer); item.timer = null
         publish({ selfPoint: { ...point, updatedAt: now() }, locating: false, paused: false })
         item.pending = { latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy, coordinateSystem: 'wgs84' }
@@ -110,16 +127,31 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
       else stop?.()
     } catch (_) { failed() }
   }
+  function receivedPoint(point, event) {
+    if (!validLocationPoint(point)) return null
+    const receivedAt = now()
+    const deferred = Number.isFinite(event.clientDeferredMs) ? Math.max(0, event.clientDeferredMs) : 0
+    let updatedAt = receivedAt - deferred
+    if (Number.isFinite(point.updatedAt) && Number.isFinite(event.serverTime)) {
+      updatedAt -= Math.max(0, event.serverTime - point.updatedAt)
+    } else if (event.type === 'location.joined') {
+      // Older servers provide no clock reference. Do not refresh a replayed snapshot.
+      updatedAt = Math.min(updatedAt, Number.isFinite(point.updatedAt) ? point.updatedAt : receivedAt - 46000)
+    }
+    return { ...point, updatedAt }
+  }
   return {
-    state: () => ({ ...view }),
+    state() { syncOwner(); return { ...view } },
     resume,
     setVisible(value) {
+      syncOwner()
       visible = !!value
       if (!tracker.canResume?.() || !session) return
       if (!visible) pause(session, 'background')
       else if (view.paused) resume()
     },
     setActive(value) {
+      syncOwner()
       const resumed = !!value && !active
       active = !!value
       if (!active) { end('background'); ready = false; publish({ offers: {} }) }
@@ -127,6 +159,7 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
       publish({})
     },
     connection(value, serverVersion = 0) {
+      syncOwner()
       connected = !!value; version = Number(serverVersion); ready = false
       if (!connected) {
         if (session && active && session.owner === getOwner() && tracker.canResume?.()) pause(session, 'disconnected')
@@ -137,6 +170,7 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
       publish({})
     },
     enter(peer, sessionId = '') {
+      syncOwner()
       if (!view.supported) throw new Error('请确认已登录、定位可用且聊天连接正常')
       if (session) throw new Error('已有实时位置共享，请先结束')
       if (!/^[1-9]\d{0,9}$/.test(String(peer?.id || '')) || String(peer.id) === String(getSelfId())) throw new Error('当前联系人不可共享位置')
@@ -149,6 +183,8 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
     },
     end,
     handle(event) {
+      syncOwner()
+      if (!event || typeof event.type !== 'string') return
       if (event.type === 'location.ready') {
         ready = active && connected && version === 1 && event.version === 1
         publish({})
@@ -157,16 +193,19 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
       }
       if (!active || !connected) return
       if (event.type === 'location.offer') {
-        if (String(event.to?.id) !== String(getSelfId()) || !/^[A-Za-z0-9_-]{12,80}$/.test(event.sessionId || '')) return
-        const offers = { ...view.offers, [String(event.from.id)]: { sessionId: event.sessionId, peer: event.from } }
+        const from = String(event.from?.id || '')
+        if (!/^[1-9]\d{0,9}$/.test(from) || from === String(getSelfId()) ||
+            String(event.to?.id) !== String(getSelfId()) || !/^[A-Za-z0-9_-]{12,80}$/.test(event.sessionId || '')) return
+        const offers = { ...view.offers, [from]: { sessionId: event.sessionId, peer: event.from } }
         publish({ offers: Object.fromEntries(Object.entries(offers).slice(-128)) }); return
       }
       if (event.type === 'location.ended') {
         publish({ offers: Object.fromEntries(Object.entries(view.offers).filter(([, offer]) => offer.sessionId !== event.sessionId)) })
         if (session?.id === event.sessionId) {
           if (event.reason === 'disconnected' && tracker.canResume?.() && session.owner === getOwner()) {
+            const shouldResume = !session.awaitingJoin && view.reason !== 'disconnected'
             pause(session, 'disconnected')
-            if (visible && ready) resume()
+            if (shouldResume && visible && ready) resume()
           } else end(LOCATION_END_LABELS[event.reason] ? event.reason : 'ended', false)
         }
         return
@@ -178,12 +217,12 @@ export function createLiveLocationController({ send, tracker, getOwner, getSelfI
         if (!item.tracking) clearTimer(item.timer)
         item.awaitingJoin = false
         const people = Array.isArray(event.people) ? event.people : []
-        const peer = people.find(person => String(person.userId) === String(item.peer.id))
-        publish({ phase: 'sharing', peerJoined: !!peer, peerPoint: validLocationPoint(peer?.point) ? peer.point : null })
+        const peer = people.find(person => String(person?.userId) === String(item.peer.id))
+        publish({ phase: 'sharing', peerJoined: !!peer, peerPoint: receivedPoint(peer?.point, event) })
         if (visible) locate(item)
         else pause(item, 'background')
       } else if (event.type === 'location.point' && String(event.userId) === String(item.peer.id) && validLocationPoint(event.point)) {
-        publish({ peerPoint: event.point, peerJoined: true })
+        publish({ peerPoint: receivedPoint(event.point, event), peerJoined: true })
       }
     }
   }

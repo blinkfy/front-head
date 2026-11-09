@@ -147,11 +147,14 @@
       </view>
     </view>
     
+    <!-- #ifdef APP-PLUS -->
+    <HistoryAppFastDismiss @dismiss="onFastDetailDismiss" />
+    <!-- #endif -->
     <!-- 详情弹窗 -->
-    <view v-if="detailVisible" class="detail-modal" @click="closeDetail">
-      <view class="detail-content" :class="{ 'has-extra': detailExtra.hasContent, 'extra-long': detailExtra.isLong }" @click.stop>
+    <view v-if="detailVisible" class="detail-modal" @tap="onDetailTap">
+      <view class="detail-content" :class="{ 'has-extra': detailExtra.hasContent, 'extra-long': detailExtra.isLong }" @tap.stop @click.stop>
         <!-- 关闭按钮 -->
-        <view class="detail-close" @click="closeDetail">
+        <view class="detail-close" @tap.stop="onDetailTap">
           <ManifestIcon class="close-icon" id="close" />
         </view>
         
@@ -159,7 +162,7 @@
         <!-- 图片区域（按需加载，未就绪时显示占位） -->
         <view class="detail-image-section">
           <image v-if="detailItem.image" :src="detailItem.image" mode="aspectFit" class="detail-image"
-            @click.stop="openImagePreview" @error="onDetailImageError" />
+            @click.stop="openImagePreview" @load="onDetailImageLoaded" @error="onDetailImageError" />
           <view v-else class="detail-image detail-image-ph">
             <ManifestIcon id="image_gallery" class="detail-ph-icon" />
             <text class="detail-image-state" @click="retryDetailImage">{{ detailImageLoading ? '图片加载中…' : getHistoryImageLabel(detailImageState) }}</text>
@@ -218,6 +221,9 @@ import { getRecognitionHistory, deleteHistoryRecord, batchDeleteHistoryRecords, 
 import { baseUrl } from '@/api/settings'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import HistoryRecognitionExtra from '@/components/HistoryRecognitionExtra.vue'
+// #ifdef APP-PLUS
+import HistoryAppFastDismiss from '@/components/HistoryAppFastDismiss.vue'
+// #endif
 import { normalizeHistoryRecognitionDetail } from '@/utils/history-recognition-detail.mjs'
 import { HISTORY_IMAGE_RETENTION_DAYS, getHistoryImageState, getHistoryImageLabel } from '@/utils/history-image-state.mjs'
 
@@ -499,6 +505,8 @@ const detailImageLoading = ref(false)
 const detailImageFailed = ref(false)
 const detailImageState = computed(() => getHistoryImageState(detailItem.value, detailImageFailed.value))
 let detailImageRequest = 0
+let detailImageRetry = 0
+let detailImageUsingRaw = false
 const detailRecognition = ref(null)
 const detailExtraImageFailed = ref(false)
 const detailExtra = computed(() => normalizeHistoryRecognitionDetail(detailRecognition.value, detailExtraImageFailed.value))
@@ -508,6 +516,7 @@ let detailRecognitionRequest = 0
 function viewDetail(item) {
   imagePreviewVisible.value = false
   detailItem.value = { ...item, image: '' }
+  detailImageRetry = 0
   detailImageFailed.value = false
   detailVisible.value = true
   loadDetailImage(item)
@@ -528,12 +537,21 @@ async function loadDetailRecognition(item) {
   }
 }
 
-async function loadDetailImage(item) {
+async function loadDetailImage(item, preferRaw = true) {
   const requestId = ++detailImageRequest
   detailImageLoading.value = false
+  detailImageUsingRaw = false
   if (!item.hasImage) return
   detailImageLoading.value = true
   detailImageFailed.value = false
+  // #ifdef APP-PLUS
+  const token = uni.getStorageSync('token') || ''
+  if (preferRaw && token) {
+    detailImageUsingRaw = true
+    detailItem.value.image = `${baseUrl}/api/recognition_history/image/${encodeURIComponent(item.id)}?raw=1&token=${encodeURIComponent(token)}&retry=${detailImageRetry}`
+    return
+  }
+  // #endif
   try {
     const res = await getHistoryImage(item.id)
     if (!detailVisible.value || requestId !== detailImageRequest) return
@@ -550,14 +568,30 @@ async function loadDetailImage(item) {
   }
 }
 
+function onDetailImageLoaded() {
+  detailImageLoading.value = false
+}
+
 function onDetailImageError() {
+  // #ifdef APP-PLUS
+  if (detailVisible.value && detailImageUsingRaw) {
+    detailImageUsingRaw = false
+    detailItem.value.image = ''
+    loadDetailImage(detailItem.value, false)
+    return
+  }
+  // #endif
+  detailImageLoading.value = false
   detailItem.value.image = ''
   detailImageFailed.value = true
   onThumbError(detailItem.value.id)
 }
 
 function retryDetailImage() {
-  if (!detailImageLoading.value && detailImageState.value === 'error') loadDetailImage(detailItem.value)
+  if (!detailImageLoading.value && detailImageState.value === 'error') {
+    detailImageRetry++
+    loadDetailImage(detailItem.value)
+  }
 }
 
 // 列表缩略图保持按需加载，失败后可单独重试。
@@ -579,6 +613,18 @@ function retryThumb(item) {
   if (getHistoryImageState(item, !!thumbFailed.value[item.id]) !== 'error') return
   thumbRetry.value = { ...thumbRetry.value, [item.id]: (thumbRetry.value[item.id] || 0) + 1 }
   thumbFailed.value = { ...thumbFailed.value, [item.id]: false }
+}
+
+let lastFastDetailDismiss = 0
+function onFastDetailDismiss() {
+  lastFastDetailDismiss = Date.now()
+  closeDetail()
+}
+
+function onDetailTap() {
+  // Avoid handling a second tap event from the same touch after a fast dismissal.
+  if (Date.now() - lastFastDetailDismiss < 1000) return
+  closeDetail()
 }
 
 function closeDetail() {

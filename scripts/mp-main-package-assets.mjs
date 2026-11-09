@@ -20,11 +20,11 @@ export function mpMainPackageAssetsPlugin() {
         if (!roots.has('pages-admin') || !roots.has('pages-nonTheme')) throw new Error('Required existing icon subpackages are missing')
         const manifest = JSON.parse(await fs.readFile(path.join(root, 'src/static/manifest.json'), 'utf8'))
         const tables = manifest.filter(icon => icon.id.endsWith('_table') && !['lottery_record_table', 'reservation_order_table'].includes(icon.id))
-        const resources = tables.map(icon => ({ file: icon.file, package: 'pages-admin' }))
+        const resources = tables.map(icon => ({ file: icon.mp_file || icon.file, originalFile: icon.file, package: 'pages-admin' }))
         resources.push({ file: 'Icon.webp.png', package: 'pages-nonTheme' })
         const nonThemeIds = new Set(NON_THEME_ONLY_ICON_IDS)
         for (const icon of manifest) {
-          if (nonThemeIds.has(icon.id)) resources.push({ file: icon.file, package: 'pages-nonTheme' })
+          if (nonThemeIds.has(icon.id)) resources.push({ file: icon.mp_file || icon.file, originalFile: icon.file, package: 'pages-nonTheme' })
         }
         resources.push({ file: 'lejv.webp', package: 'pages-nonTheme' })
         let saved = 0
@@ -32,11 +32,17 @@ export function mpMainPackageAssetsPlugin() {
           const from = path.resolve(output, 'static', resource.file)
           const to = path.resolve(output, resource.package, 'static', resource.file)
           if (!from.startsWith(output + path.sep) || !to.startsWith(output + path.sep)) throw new Error('Invalid package asset path')
-          const data = await fs.readFile(path.join(root, 'src/static', resource.file))
+          // 微信本地图标沿用 WebP 原始字节，仅使用 .webp.png 文件名。
+          const sourceFile = resource.originalFile && resource.file === `${resource.originalFile}.png`
+            ? resource.originalFile : resource.file
+          const data = await fs.readFile(path.join(root, 'src/static', sourceFile))
           await fs.mkdir(path.dirname(to), { recursive: true })
           await fs.writeFile(to, data)
           // 仅删除已成功复制的构建副本，源码及 WebP 字节保持不变。
           await fs.rm(from, { force: true })
+          if (resource.originalFile && resource.originalFile !== resource.file) {
+            await fs.rm(path.resolve(output, 'static', resource.originalFile), { force: true })
+          }
           saved += data.length
         }
         // JSON 已编译进 JS；运行时不读取这一重复静态文件。

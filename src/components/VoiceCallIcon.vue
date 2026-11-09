@@ -28,4 +28,6 @@ export default { props: { kind: { type: String, default: 'phone' }, off: Boolean
 .switch-camera .detail::before, .switch-camera .detail::after { content: ''; position: absolute; width: 4px; height: 4px; border-top: 2px solid currentColor; border-right: 2px solid currentColor; }
 .switch-camera .detail::before { right: -1px; top: -4px; transform: rotate(45deg); }
 .switch-camera .detail::after { left: -1px; bottom: -4px; transform: rotate(225deg); }
+.screen .shape { position: absolute; left: 3px; top: 4px; width: 24px; height: 17px; border: 2px solid currentColor; border-radius: 3px; box-sizing: border-box; }
+.screen .detail { position: absolute; left: 10px; top: 24px; width: 10px; border-bottom: 2px solid currentColor; }
 </style>

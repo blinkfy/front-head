@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createVoiceCallController } from '../src/utils/voice-call-core.mjs'
+import { callAvatarUrl, createVoiceCallController } from '../src/utils/voice-call-core.mjs'
 import { createChatEventsTransport } from '../src/utils/chat-events-transport.mjs'
 
 function harness(overrides = {}) {
@@ -31,7 +31,8 @@ function harness(overrides = {}) {
     }
   }
   const controller = createVoiceCallController({ media, send: event => { sent.push({ ...event }); return overrides.send ? overrides.send(event) : true },
-    getOwner: () => owner, getSelfId: () => selfId, isMediaBusy: () => busy, changed: state => changed.push(state),
+    getOwner: () => owner, getSelfId: () => selfId, getClaimCallId: overrides.getClaimCallId, isMediaBusy: () => busy, changed: state => changed.push(state),
+    allowScreenShare: overrides.allowScreenShare,
     now: () => now, createId: () => `call-${++nextId}`,
     setTimer: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, delay }); return id },
     clearTimer: id => timers.delete(id) })
@@ -57,14 +58,22 @@ async function testCapabilityAndCallFlow() {
   c.handle({ type: 'voice.ready', version: 1 })
   assert.equal(c.state().supported, true)
   assert.equal(c.state().videoSupported, false, 'server without video capability keeps video disabled')
-  c.start({ id: 2, name: 'Peer' })
+  const cachedAvatar = 'https://example.test/images/cached.webp'
+  c.start({ id: 2, name: 'Peer', avatar: cachedAvatar })
   await tick()
   const callId = c.state().callId
   assert.equal(c.state().phase, 'calling')
   assert.deepEqual(h.sent.at(-1), { type: 'voice.invite', callId, peerId: '2' })
+  c.handle({ type: 'voice.ringing', callId, peer: { id: 2, name: 'Peer' } })
+  assert.equal(c.state().peer.avatar, cachedAvatar, 'legacy servers preserve the chat avatar')
+  const freshAvatar = 'data:image/webp;base64,AAAA'
+  c.handle({ type: 'voice.ringing', callId, peer: { id: 2, name: 'Peer', avatar: freshAvatar } })
+  assert.equal(callAvatarUrl(c.state().peer.avatar, 'https://example.test'), freshAvatar)
+  assert.equal(callAvatarUrl('/images/person.webp.png', 'https://example.test'), '')
   c.handle({ type: 'voice.accepted', callId })
   await tick()
   assert.equal(h.opened.length, 1)
+  assert.equal(h.opened[0].peerAvatar, freshAvatar, 'native audio layout receives the current peer avatar')
   assert.deepEqual(h.opened[0].stunUrls, ['stun:stun.cloudflare.com:3478'], 'controller exposes STUN only, with no TURN configuration')
   assert.equal(h.opened[0].offerer, true)
   h.opened[0].onEvent({ type: 'offer', sdp: 'offer-sdp' })
@@ -140,7 +149,7 @@ async function testPermissionPendingLifecycle() {
 async function testVideoCapabilityAndControls() {
   const legacyServer = harness()
   legacyServer.controller.setActive(true); legacyServer.controller.connection(true, 1, 1)
-  assert.deepEqual(legacyServer.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: true, cameraToggle: true })
+  assert.deepEqual(legacyServer.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: true, cameraToggle: true, screenShareReceive: true })
   legacyServer.controller.handle({ type: 'voice.ready', version: 1 })
   assert.equal(legacyServer.controller.state().supported, true)
   assert.equal(legacyServer.controller.state().videoSupported, false, 'legacy ready without video keeps video disabled')
@@ -151,7 +160,7 @@ async function testVideoCapabilityAndControls() {
 
   const mediaWithoutVideo = harness({ media: { supportsVideo: () => false } })
   mediaWithoutVideo.controller.setActive(true); mediaWithoutVideo.controller.connection(true, 1, 1)
-  assert.deepEqual(mediaWithoutVideo.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: false, cameraToggle: false })
+  assert.deepEqual(mediaWithoutVideo.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: false, cameraToggle: false, screenShareReceive: false })
   mediaWithoutVideo.controller.handle({ type: 'voice.ready', version: 1, video: true })
   assert.equal(mediaWithoutVideo.controller.state().videoSupported, false, 'server support cannot override a media adapter without video')
 
@@ -296,6 +305,7 @@ async function testIncomingQueueAndOutcomes() {
 
   const busy = harness(); busy.controller.setActive(true); busy.controller.connection(true, 1)
   busy.controller.handle({ type: 'voice.ready', version: 1 }); busy.controller.start({ id: 2 })
+  await tick()
   busy.controller.handle({ type: 'voice.incoming', callId: 'incoming-2', peer: { id: '3' } })
   assert.ok(busy.sent.some(event => event.type === 'voice.end' && event.callId === 'incoming-2' && event.reason === 'busy'))
 
@@ -313,6 +323,37 @@ async function testIncomingQueueAndOutcomes() {
   assert.deepEqual(denied.permissionCalls, ['denied'])
   assert.ok(denied.sent.some(event => event.type === 'voice.end' && event.reason === 'permission_denied'))
   assert.deepEqual(denied.cancelled, ['denied'])
+}
+
+async function testIncomingOwnership() {
+  const claimedId = 'incoming-selected-id'
+  let pendingClaim = claimedId
+  const h = harness({ getClaimCallId: () => pendingClaim })
+  const c = h.controller
+  c.setActive(true)
+  c.connection(true, 1)
+  assert.equal(h.sent.at(-1).claimCallId, claimedId)
+  c.handle({ type: 'voice.ready', version: 1 })
+  c.start({ id: 3 })
+  const preflightId = c.state().callId
+  const incoming = { type: 'voice.incoming', callId: claimedId, peer: { id: '2' } }
+  c.handle(incoming)
+  c.handle(incoming)
+  await tick()
+  assert.equal(c.state().callId, claimedId)
+  assert.equal(c.state().phase, 'incoming')
+  assert.deepEqual(h.cancelled, [preflightId])
+  assert.equal(h.permissionCalls.length, 0)
+  assert.equal(h.sent.some(event => ['voice.end', 'voice.invite'].includes(event.type)), false)
+  await c.accept('incoming-obsolete-id')
+  assert.equal(h.permissionCalls.length, 0)
+  await c.accept(claimedId)
+  assert.deepEqual(h.permissionCalls, [claimedId])
+  assert.ok(h.sent.some(event => event.type === 'voice.accept' && event.callId === claimedId))
+  pendingClaim = ''
+  c.refreshCapability()
+  assert.equal(h.sent.at(-1).type, 'voice.capability')
+  assert.equal(h.sent.at(-1).claimCallId, undefined)
 }
 
 async function testLateResourcesAndSessionInvalidation() {
@@ -454,12 +495,112 @@ async function testNativeConnectionTimeoutOwnership() {
   assert.equal(h5.controller.state().reason, 'connect_failed', 'H5 call still ends when its JS connection deadline expires')
 }
 
+async function testAnsweredElsewhereDuringPermission() {
+  let allow;
+  const h = harness({ media: { permission: () => new Promise(resolve => { allow = resolve }) } });
+  const c = h.controller;
+  c.setActive(true); c.connection(true, 1); c.handle({ type: 'voice.ready', version: 1 });
+  const id = 'multidevice_permission_race';
+  c.handle({ type: 'voice.incoming', callId: id, peer: { id: 2, name: '联系人' } });
+  const accepting = c.accept(id);
+  assert.equal(c.state().phase, 'connecting');
+  c.handle({ type: 'voice.ended', callId: id, reason: 'answered_elsewhere' });
+  assert.equal(c.state().reason, 'answered_elsewhere');
+  assert.equal(c.state().phase, 'ended');
+  allow(); await accepting; await tick();
+  assert.equal(h.sent.some(event => event.type === 'voice.accept'), false, 'late permissions cannot reclaim a call answered on another device');
+  assert.equal(h.sent.some(event => event.type === 'voice.end'), false, 'losing device does not send a hangup to the winner');
+  c.handle({ type: 'voice.accepted', callId: id });
+  c.handle({ type: 'voice.connected', callId: id });
+  assert.equal(c.state().phase, 'ended', 'late signaling cannot resurrect the losing device');
+  assert.equal(h.opened.length, 0);
+}
+
+async function testScreenSharing() {
+  for (const { mode, negotiated, allowScreenShare, canShare } of [
+    { mode: 'video', negotiated: true, allowScreenShare: true, canShare: true },
+    { mode: 'video', negotiated: true, allowScreenShare: false, canShare: false },
+    { mode: 'video', negotiated: false, allowScreenShare: true, canShare: false },
+    { mode: 'audio', negotiated: true, allowScreenShare: true, canShare: false }
+  ]) {
+    const { controller, sent, drivers, opened } = harness({ allowScreenShare, media: { supportsScreenShare: () => true } })
+    controller.setActive(true)
+    controller.connection(true, 1, 1)
+    assert.equal(sent.at(-1).screenShareReceive, true)
+    controller.handle({ type: 'voice.ready', version: 1, video: true })
+    controller.start({ id: 2 }, mode)
+    await tick()
+    const { callId } = controller.state()
+    controller.handle({ type: 'voice.accepted', callId, screenShareSupported: negotiated })
+    await tick()
+    controller.control({ screenSharing: true })
+    assert.equal(drivers[0].controls.some(control => control.screenSharing), false)
+    controller.handle({ type: 'voice.connected', callId })
+    assert.equal(controller.state().screenShareSupported, canShare)
+    controller.control({ screenSharing: true })
+    assert.equal(drivers[0].controls.some(control => control.screenSharing), canShare)
+    if (canShare) {
+      opened[0].onEvent({ type: 'screen_pending', screenSharingPending: true })
+      assert.equal(controller.state().screenSharePending, true)
+      opened[0].onEvent({ type: 'screen', screenSharing: true })
+      assert.equal(controller.state().screenSharePending, false)
+      assert.deepEqual(sent.at(-1), { type: 'voice.media', callId, screenSharing: true })
+      controller.control({ cameraEnabled: false })
+      assert.equal(controller.state().cameraEnabled, true)
+      opened[0].onEvent({ type: 'screen', screenSharing: false })
+      assert.deepEqual(sent.at(-1), { type: 'voice.media', callId, screenSharing: false })
+    }
+    controller.handle({ type: 'voice.media', callId, cameraEnabled: false, screenSharing: true })
+    assert.equal(controller.state().remoteScreenSharing, mode === 'video' && negotiated)
+    assert.equal(controller.state().remoteCameraEnabled, false)
+    controller.end()
+    assert.equal(controller.state().remoteScreenSharing, false)
+  }
+}
+
+async function testOutgoingPreview() {
+  for (const ending of ['accept', 'cancel', 'timeout']) {
+    let previewControls
+    const h = harness({ media: { prepareOutgoingPreview(callId, peer, controls) {
+      assert.equal(peer.id, '2')
+      assert.ok(h.sent.some(event => event.type === 'voice.invite' && event.callId === callId))
+      previewControls = controls
+      return true
+    } } })
+    const c = h.controller
+    c.setActive(true); c.connection(true, 1, 1); c.handle({ type: 'voice.ready', version: 1, video: true })
+    c.start({ id: 2 }, 'video')
+    await tick()
+    const { callId } = c.state()
+    assert.equal(c.state().outgoingPreview, true)
+    assert.equal(h.opened.length, 0, 'ringing only previews locally')
+    if (ending === 'accept') {
+      c.handle({ type: 'voice.accepted', callId })
+      await tick()
+      assert.equal(h.opened.length, 1)
+      previewControls.onCancel()
+      assert.equal(c.state().phase, 'connecting', 'late preview cancel cannot end an accepted call')
+    } else {
+      if (ending === 'cancel') previewControls.onCancel()
+      else h.advance(35000)
+      assert.equal(c.state().reason, ending === 'cancel' ? 'cancelled' : 'timeout')
+      assert.deepEqual(h.cancelled, [callId])
+    }
+    assert.equal(c.state().outgoingPreview, false)
+    assert.equal(previewControls.isCurrent(), false)
+  }
+}
+
 async function main() {
   const cases = [
     ['capability and direct call flow', testCapabilityAndCallFlow],
+    ['multidevice accept versus permission race', testAnsweredElsewhereDuringPermission],
     ['permission pending lifecycle', testPermissionPendingLifecycle],
     ['video capability, mode and camera controls', testVideoCapabilityAndControls],
+    ['screen sharing capability and receive-only clients', testScreenSharing],
+    ['local video preview while ringing', testOutgoingPreview],
     ['incoming queue and call outcomes', testIncomingQueueAndOutcomes],
+    ['incoming handoff and session ownership', testIncomingOwnership],
     ['late resources and session invalidation', testLateResourcesAndSessionInvalidation],
     ['native and H5 connection timeout ownership', testNativeConnectionTimeoutOwnership],
     ['transport voice authentication', testTransportVoiceAuthentication]

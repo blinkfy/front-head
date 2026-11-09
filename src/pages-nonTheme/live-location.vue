@@ -36,7 +36,7 @@
       </view>
       <text v-if="!localError && distanceLabel" class="distance">{{ distanceLabel }}</text>
       <text v-if="state.phase === 'sharing' && state.paused" class="waiting-note">位置更新已暂停；可重新获取位置并恢复本次共享。</text>
-      <text v-else-if="state.phase === 'sharing'" class="waiting-note">{{ miniRealtime && !miniEnhanced ? '兼容定位约 15 秒采样；静止时约 30 秒发送，以系统定位为准。' : '移动时最快约 5 秒更新；静止时约 30 秒，以系统定位为准。' }}</text>
+      <text v-else-if="state.phase === 'sharing'" class="waiting-note">{{ miniRealtime ? '移动时最快约 5 秒更新；静止时约 30 秒。定位异常会自动兼容，更新可能稍慢。' : '移动时最快约 5 秒更新；静止时约 30 秒，以系统定位为准。' }}</text>
       <text v-if="state.phase === 'sharing' && !state.peerJoined" class="waiting-note">对方当前未共享位置，点击聊天顶部的入口可加入。双方都退出后结束本次共享。</text>
       <text v-if="state.phase === 'ended'" class="end-note">{{ statusCopy }}</text>
       <button v-if="!preparing && (state.reason === 'permission_denied' || localError.includes('权限'))" class="locate minimize-button" @click="recoverLocationPermission">检查定位权限</button>
@@ -60,7 +60,7 @@ import { androidRealtimeAvailable, androidBackgroundMask } from '@/utils/android
 import { liveLocationTracker, webLocationAvailable } from '@/utils/live-location-tracker.js'
 import { realtimePermissionPending } from '@/utils/realtime-permissions.js'
 import { openFeaturePermissionSettings } from '@/utils/feature-permission.js'
-import { miniLocationAvailable, readMiniLocationEnhanced } from '@/utils/mini-location.js'
+import { miniLocationAvailable } from '@/utils/mini-location.js'
 import { realtimeRouteName } from '@/utils/realtime-route.mjs'
 
 export default {
@@ -69,10 +69,14 @@ export default {
     AppTencentMap
     // #endif
   },
-  data() { return { state: liveLocationState, peer: { id: '', name: '' }, center: { latitude: 39.908, longitude: 116.397 },
-    initializedCenter: false, darkTheme: ThemeManager.getTheme() === 'dark', mapError: false, now: Date.now(), timer: null, localError: '', ownedId: '', appRealtime: androidRealtimeAvailable(), webRealtime: webLocationAvailable(), miniRealtime: miniLocationAvailable(), miniEnhanced: readMiniLocationEnhanced(), minimized: false,
-    preparing: true, prepared: false, entryClosed: false, pageVisible: true, entryOwner: '', requestedSession: '', readyTimer: null } },
+  data() { return { peer: { id: '', name: '' }, center: { latitude: 39.908, longitude: 116.397 },
+    initializedCenter: false, darkTheme: ThemeManager.getTheme() === 'dark', mapError: false, now: Date.now(), timer: null, localError: '', ownedId: '', appRealtime: androidRealtimeAvailable(), webRealtime: webLocationAvailable(), miniRealtime: miniLocationAvailable(), minimized: false,
+    preparing: true, prepared: false, entryClosed: false, pageVisible: false, entryOwner: '', requestedSession: '', readyTimer: null } },
   computed: {
+    state() {
+      if (this.ownedId && this.ownedId === liveLocationState.sessionId && String(liveLocationState.peer?.id) === this.peer.id) return liveLocationState
+      return { supported: liveLocationState.supported, phase: 'idle', selfPoint: null, peerPoint: null, peerJoined: false, paused: false, locating: false, reason: '' }
+    },
     canMinimize() { return this.appRealtime || this.webRealtime || this.miniRealtime },
     selfDisplay() { return this.state.selfPoint ? wgs84ToGcj02(this.state.selfPoint.latitude, this.state.selfPoint.longitude) : {} },
     markers() {
@@ -87,10 +91,10 @@ export default {
         callout: { content: '我', display: 'ALWAYS', color: '#fff', bgColor: '#317ad8', padding: 7, borderRadius: 8 } }, ...this.markers]
     },
     includePoints() { return this.state.selfPoint ? [this.selfDisplay, ...this.markers.map(({ latitude, longitude }) => ({ latitude, longitude }))] : [] },
-    statusTitle() { return this.state.paused ? '位置更新已暂停' : this.localError ? '位置共享未进行' : this.preparing ? '请允许定位权限' : !this.ownedId ? '正在连接位置服务' : this.state.phase === 'ended' ? '位置共享未进行' : this.state.locating ? '正在获取我的位置' : '正在进入位置共享' },
-    statusCopy() { return this.state.paused ? (this.state.locating ? '正在恢复并获取新位置…' : '定位更新已暂停，返回后会尝试恢复，也可点击重新获取位置并共享。') : this.localError || (this.preparing ? '授权完成后开始共享，等待授权期间不会判定定位失败。' : !this.ownedId ? '正在等待聊天连接就绪…' : LOCATION_END_LABELS[this.state.reason]) || '正在定位，首次定位或室内信号较弱时可能需要稍等。' },
+    statusTitle() { return this.localError ? '位置共享未进行' : this.state.paused ? '位置更新已暂停' : this.preparing ? '请允许定位权限' : !this.ownedId ? '正在连接位置服务' : this.state.phase === 'ended' ? '位置共享未进行' : this.state.locating ? '正在获取我的位置' : '正在进入位置共享' },
+    statusCopy() { return this.localError || (this.state.paused ? (this.state.locating ? '正在恢复并获取新位置…' : '定位更新已暂停，返回后会尝试恢复，也可点击重新获取位置并共享。') : this.preparing ? '授权完成后开始共享，等待授权期间不会判定定位失败。' : !this.ownedId ? '正在等待聊天连接就绪…' : LOCATION_END_LABELS[this.state.reason]) || '正在定位，首次定位或室内信号较弱时可能需要稍等。' },
     distanceLabel() {
-      if (this.state.paused || !this.state.selfPoint || !this.state.peerPoint) return ''
+      if (this.state.paused || !this.state.selfPoint || this.state.selfPoint.provisional || !this.state.peerPoint) return ''
       if (this.now - this.state.selfPoint.updatedAt > 45000 || this.now - this.state.peerPoint.updatedAt > 45000) return ''
       const distance = locationDistance(this.state.selfPoint, this.state.peerPoint)
       return `相距约 ${distance < 1000 ? `${Math.round(distance)} 米` : `${(distance / 1000).toFixed(1)} 公里`} · 以定位精度为准`
@@ -112,12 +116,20 @@ export default {
       if (this.entryClosed || this.entryOwner !== (uni.getStorageSync('token') || '')) return
       this.prepared = true; this.preparing = false; this.tryEnter()
     }
-    catch (error) { this.preparing = false; this.localError = error.message || '暂时无法进入位置共享' }
+    catch (error) {
+      if (this.entryClosed || this.entryOwner !== (uni.getStorageSync('token') || '')) return
+      this.preparing = false; this.localError = error?.message || '暂时无法进入位置共享'
+    }
   },
-  onShow() { this.miniEnhanced = readMiniLocationEnhanced(); this.pageVisible = true; this.now = Date.now(); if (!this.timer) this.timer = setInterval(() => { this.now = Date.now() }, 1000); this.tryEnter() },
-  onHide() { this.pageVisible = false; clearInterval(this.timer); this.timer = null; if (!this.webRealtime && !this.miniRealtime && !realtimePermissionPending() && !(this.appRealtime && (androidBackgroundMask() & 2))) this.stop() },
-  onUnload() { this.entryClosed = true; clearTimeout(this.readyTimer); clearInterval(this.timer); this.timer = null; if (!(this.canMinimize && this.ownedId && this.state.phase === 'sharing')) this.stop() },
-  onBackPress() { if (!this.minimized && this.canMinimize && this.state.phase === 'sharing') { this.minimize(); return true }; if (!this.minimized) this.stop(); return false },
+  onShow() { this.pageVisible = true; this.now = Date.now(); if (!this.timer) this.timer = setInterval(() => { this.now = Date.now() }, 1000); this.tryEnter() },
+  onHide() { this.pageVisible = false; clearTimeout(this.readyTimer); this.readyTimer = null; clearInterval(this.timer); this.timer = null; if (!this.webRealtime && !this.miniRealtime && !realtimePermissionPending() && !(this.appRealtime && (androidBackgroundMask() & 2))) this.stop() },
+  onUnload() { this.entryClosed = true; clearTimeout(this.readyTimer); clearInterval(this.timer); this.timer = null; if (!this.minimized && !(this.miniRealtime && this.state.phase === 'sharing')) this.stop() },
+  onBackPress() {
+    if (this.minimized) return false
+    if (this.canMinimize && this.state.phase === 'sharing' && this.minimize(false)) return true
+    this.stop()
+    return false
+  },
   methods: {
     async recoverLocationPermission() {
       const isCurrent = () => !this.entryClosed && this.entryOwner === (uni.getStorageSync('token') || '')
@@ -132,11 +144,10 @@ export default {
         await liveLocationTracker.permission({ isCurrent })
         if (!isCurrent()) return
         this.prepared = true; this.preparing = false
-        if (liveLocations.resume(this.peer.id)) {
-          this.ownedId = this.state.sessionId
-          if (this.state.selfPoint) { this.initializedCenter = true; this.center = { ...this.selfDisplay } }
-        } else { this.ownedId = ''; this.requestedSession = this.state.offers[this.peer.id]?.sessionId || ''; this.tryEnter() }
-      } catch (error) { if (isCurrent()) this.localError = error.message || '请检查定位权限后重试' }
+        this.ownedId = ''
+        this.requestedSession = liveLocationState.offers[this.peer.id]?.sessionId || ''
+        this.tryEnter()
+      } catch (error) { if (isCurrent()) this.localError = error?.message || '请检查定位权限后重试' }
       finally { this.preparing = false }
     },
     tryEnter() {
@@ -147,17 +158,17 @@ export default {
       }
       clearTimeout(this.readyTimer); this.readyTimer = null
       try {
-        const reusable = this.canMinimize && ['joining', 'sharing'].includes(this.state.phase) && String(this.state.peer?.id) === this.peer.id
-        if (reusable && this.state.paused) {
-          if (!liveLocations.resume(this.peer.id)) liveLocations.enter(this.peer, this.requestedSession || this.state.offers[this.peer.id]?.sessionId || '')
-        } else if (!reusable) liveLocations.enter(this.peer, this.requestedSession || this.state.offers[this.peer.id]?.sessionId || '')
-        this.ownedId = this.state.sessionId
+        const sessionId = this.requestedSession || liveLocationState.offers[this.peer.id]?.sessionId || ''
+        const reusable = this.canMinimize && ['joining', 'sharing'].includes(liveLocationState.phase) &&
+          String(liveLocationState.peer?.id) === this.peer.id && (!sessionId || sessionId === liveLocationState.sessionId)
+        if (!reusable || (liveLocationState.paused && !liveLocations.resume(this.peer.id))) liveLocations.enter(this.peer, sessionId)
+        this.ownedId = liveLocationState.sessionId
         if (this.state.selfPoint) { this.initializedCenter = true; this.center = { ...this.selfDisplay } }
-      } catch (error) { this.localError = error.message || '暂时无法进入位置共享' }
+      } catch (error) { this.localError = error?.message || '暂时无法进入位置共享' }
     },
     stop() {
       clearInterval(this.timer); this.timer = null
-      if (this.ownedId && this.ownedId === this.state.sessionId) liveLocations.end('left')
+      if (this.ownedId && this.entryOwner === (uni.getStorageSync('token') || '') && this.ownedId === this.state.sessionId) liveLocations.end('left')
       this.center = { latitude: 39.908, longitude: 116.397 }; this.initializedCenter = false
     },
     leave() {
@@ -168,11 +179,15 @@ export default {
       if (getCurrentPages().length > 1) uni.navigateBack()
       else uni.redirectTo({ url: '/pages-nonTheme/chatlist' })
     },
-    back() { if (this.canMinimize && this.state.phase === 'sharing') this.minimize(); else this.leave() },
-    minimize() {
-      if (this.appRealtime && !(androidBackgroundMask() & 2)) { uni.showToast({ title: '后台定位服务尚未就绪', icon: 'none' }); return }
+    back() { if (!(this.canMinimize && this.state.phase === 'sharing' && this.minimize(false))) this.leave() },
+    minimize(showHint = true) {
+      if (this.appRealtime && !(androidBackgroundMask() & 2)) {
+        if (showHint) uni.showToast({ title: '后台定位服务尚未就绪', icon: 'none' })
+        return false
+      }
       this.minimized = true
       this.navigateBack()
+      return true
     },
     recenter() {
       this.center = { ...this.selfDisplay }
@@ -184,7 +199,8 @@ export default {
     pointLabel(point, self) {
       if (this.localError) return '未进入位置共享'
       if (this.state.phase === 'ended') return '已停止共享'
-      if (!point) return self ? '正在定位…' : this.state.peerJoined ? '已加入，正在定位…' : '等待对方进入'
+      if (!point) return self ? (this.state.paused && !this.state.locating ? '位置更新已暂停' : '正在定位…') : this.state.peerJoined ? '已加入，正在定位…' : '等待对方进入'
+      if (point.provisional) return '上次位置 · 正在等待新的定位'
       const age = Math.max(0, Math.floor((this.now - point.updatedAt) / 1000))
       if ((self && this.state.paused) || age > 45) return `位置更新已暂停 · ${age} 秒前更新 · 精度约 ${Math.round(point.accuracy)} 米`
       const time = age < 5 ? '刚刚更新' : `${age} 秒前更新`

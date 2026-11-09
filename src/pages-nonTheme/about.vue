@@ -157,7 +157,7 @@ function checkTheme() {
   isDarkTheme.value = theme === 'dark'
 }
 
-const currentVersion = manifest?.versionName || '1.4.10'
+const currentVersion = manifest?.versionName || '1.4.11'
 
 function downloadApp() {
   const url = appDownloadUrl(baseUrl)

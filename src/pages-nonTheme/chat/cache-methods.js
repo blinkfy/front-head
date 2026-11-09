@@ -1,4 +1,5 @@
 import { loadChatHistoryCache, saveChatHistoryCache } from '@/utils/chat-history-cache.js'
+import { fetchChatMedia, forgetChatMedia, readChatMedia } from '@/pages-nonTheme/utils/chat-local-media.mjs'
 // #ifndef H5
 import { restoreCachedChatOriginalImages } from '@/pages-nonTheme/utils/chat-media-cache.js'
 // #endif
@@ -54,7 +55,6 @@ export const historyCacheMethods = {
                 this.messages = []
             }
         },
-// 已查看过的原图在 H5 复用浏览器缓存；小程序 / APP 则优先恢复 saveFile 的持久文件。
     async restoreCachedOriginalImages() {
             const originalMessages = this.messages.filter((message) => (
                 message?.type === 'image' && message.originalLoaded && message.content
@@ -62,9 +62,10 @@ export const historyCacheMethods = {
             if (originalMessages.length === 0) return
 
             // #ifdef H5
-            originalMessages.forEach((message) => {
-                this.setLoadedOriginalImage(message.id, message.content)
-            })
+            await Promise.all(originalMessages.slice(-100).map(async message => {
+                const url = await this.getChatMediaSource('original', message.content)
+                if (url && this.getCurrentImageMessage(message.id, message.content)) this.setLoadedOriginalImage(message.id, url)
+            }))
             return
             // #endif
 
@@ -152,6 +153,40 @@ export const historyCacheMethods = {
 }
 
 export const localFileCacheMethods = {
+    getHeldChatMediaSource(kind, url) {
+        return this.localChatMediaHandles[JSON.stringify([this.getCurrentUserId(), kind, url])]?.url || ''
+    },
+    async getChatMediaSource(kind, url, { download = false, size = 0 } = {}) {
+        const owner = this.getCurrentUserId()
+        const key = JSON.stringify([owner, kind, url])
+        if (this.localChatMediaHandles[key]) return this.localChatMediaHandles[key].url
+        const handle = download ? await fetchChatMedia(owner, kind, url, size) : await readChatMedia(owner, kind, url)
+        if (!handle) return ''
+        if (this.isChatPageDestroyed || String(owner) !== String(this.getCurrentUserId())) {
+            handle.release?.()
+            return ''
+        }
+        if (handle.release) {
+            if (this.localChatMediaHandles[key]) handle.release()
+            else this.localChatMediaHandles[key] = handle
+            return this.localChatMediaHandles[key].url
+        }
+        return handle.url
+    },
+    invalidateChatMediaSource(kind, url, path) {
+        const owner = this.getCurrentUserId()
+        const key = JSON.stringify([owner, kind, url])
+        const handle = this.localChatMediaHandles[key]
+        if (handle?.url === path) {
+            handle.release()
+            delete this.localChatMediaHandles[key]
+        }
+        return forgetChatMedia(owner, kind, url, path)
+    },
+    releaseChatMediaSources() {
+        for (const handle of Object.values(this.localChatMediaHandles)) handle.release()
+        this.localChatMediaHandles = {}
+    },
     loadLocalFileCache() {
             try {
                 const userInfo = uni.getStorageSync('userInfo')

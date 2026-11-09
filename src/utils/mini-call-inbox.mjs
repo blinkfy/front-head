@@ -29,7 +29,9 @@ export function createMiniCallInbox({ state, send, identity, show, open, entry, 
         !['audio', 'video'].includes(event.mode) || !/^[1-9]\d{0,9}$/.test(String(event.peer?.id)) ||
         String(event.peer.id) === String(account.id) || state.callId === event.callId) return true
       reset(); owner = account.token
-      Object.assign(state, { callId: event.callId, peer: { id: String(event.peer.id), name: String(event.peer.name || '联系人').slice(0, 80) }, mode: event.mode })
+      const peer = { id: String(event.peer.id), name: String(event.peer.name || '联系人').slice(0, 80) }
+      if (typeof event.peer.avatar === 'string') peer.avatar = event.peer.avatar
+      Object.assign(state, { callId: event.callId, peer, mode: event.mode })
       const id = state.callId
       timer = setTimer(() => { if (state.callId === id) reset() }, 35000)
       notify()

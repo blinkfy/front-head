@@ -4,6 +4,7 @@ import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
+import { stripWebCallTicket } from '../src/utils/web-call-entry.mjs'
 
 const sourcePath = fileURLToPath(new URL('../src/utils/chat-events.js', import.meta.url))
 const source = fs.readFileSync(sourcePath, 'utf8')
@@ -17,7 +18,7 @@ function preprocess(input, platform) {
     if (!match) { if (include) output.push(line); continue }
     const [, directive, expression] = match
     if (directive === 'ifdef' || directive === 'ifndef') {
-      const selected = expression.trim() === 'H5' ? platform === 'H5' : false
+      const selected = expression.trim() === platform
       const condition = directive === 'ifdef' ? selected : !selected
       stack.push({ parent: include, condition })
       include = include && condition
@@ -34,7 +35,7 @@ function preprocess(input, platform) {
 
 function harness({ platform, web = true, backgroundMask = 0 }) {
   const calls = { voice: [], location: [], transport: [], feedback: [], catchup: [], foreground: [], refresh: 0,
-    mask: [], videoVisible: 0, androidReturn: 0, listeners: {}, uniEvents: [], lifecycle: [], visible: [], notifications: [], bus: [] }
+    mask: [], videoVisible: 0, androidReturn: 0, listeners: {}, uniEvents: [], lifecycle: [], visible: [], notifications: [], bus: [], miniAlerts: [] }
   let permissionPending = false
   let eventHandlers = null
   const transport = {
@@ -65,6 +66,8 @@ function harness({ platform, web = true, backgroundMask = 0 }) {
     androidVideoVisible: () => { calls.videoVisible++; return false },
     realtimePermissionPending: () => permissionPending,
     webLocationAvailable: () => platform === 'H5' && web,
+    miniLocationAvailable: () => false,
+    miniIncomingCalls: { foreground(value) { calls.miniAlerts.push(value) } }, installMiniIncomingSender() {},
     setAndroidRealtimeForeground(value) { calls.foreground.push(value); calls.lifecycle.push('native-foreground') },
     handleAndroidRealtimeReturn() { calls.androidReturn++ }, syncAndroidMessagingPreference() {},
     uni: { getStorageSync: key => key === 'token' ? 'test-token' : key === 'userInfo' ? { id: 2 } : '', setStorageSync() {}, request() {}, navigateTo() {}, $on(name, callback) { calls.uniEvents.push([name, callback]) } },
@@ -82,7 +85,7 @@ function harness({ platform, web = true, backgroundMask = 0 }) {
   }
   vm.createContext(context)
   const compiled = preprocess(source, platform)
-  vm.runInContext(`${compiled}\nglobalThis.__chatEvents = { setChatEventsActive, setChatEventsDelegated, isChatEventsConnected, setActiveChatConversation }`, context, { filename: sourcePath })
+  vm.runInContext(`${compiled}\nglobalThis.__chatEvents = { setChatEventsActive, delegateMiniCallAlerts, isChatEventsConnected, setActiveChatConversation }`, context, { filename: sourcePath })
   return { api: context.__chatEvents, calls, handlers: eventHandlers, setPermissionPending: value => { permissionPending = value }, ...context.__surfaces }
 }
 
@@ -158,20 +161,26 @@ function testAndroidBackgroundMask() {
 }
 
 function testDelegatedWebCallLifecycle() {
-  const foreground = harness({ platform: 'MP', web: false })
+  const foreground = harness({ platform: 'MP-WEIXIN', web: false })
   foreground.api.setChatEventsActive(true)
-  foreground.api.setChatEventsDelegated(true)
-  assert.equal(last(foreground.calls.transport), false, 'delegating the web-call page pauses the outer mini-app socket')
+  const release = foreground.api.delegateMiniCallAlerts()
+  assert.equal(last(foreground.calls.miniAlerts), false, 'delegating the web-call page pauses only the native call alerts')
+  assert.equal(last(foreground.calls.transport), true, 'native chat and location keep the outer socket')
+  assert.equal(last(foreground.calls.visible), true, 'delegation does not pause native location tracking')
   foreground.api.setChatEventsActive(true)
-  assert.equal(last(foreground.calls.transport), false, 'App onShow cannot reactivate the outer socket while delegated')
-  foreground.api.setChatEventsDelegated(false)
-  assert.equal(last(foreground.calls.transport), true, 'releasing delegation restores the requested foreground state')
+  assert.equal(last(foreground.calls.miniAlerts), false, 'App onShow cannot reactivate native alerts while delegated')
+  const releaseSecond = foreground.api.delegateMiniCallAlerts()
+  release()
+  release()
+  assert.equal(last(foreground.calls.miniAlerts), false, 'another live WebView still owns alerts after the first releases')
+  releaseSecond()
+  assert.equal(last(foreground.calls.miniAlerts), true, 'releasing delegation restores native call alerts')
 
-  const background = harness({ platform: 'MP', web: false })
+  const background = harness({ platform: 'MP-WEIXIN', web: false })
   background.api.setChatEventsActive(false)
-  background.api.setChatEventsDelegated(true)
+  const releaseBackground = background.api.delegateMiniCallAlerts()
   assert.equal(last(background.calls.transport), false)
-  background.api.setChatEventsDelegated(false)
+  releaseBackground()
   assert.equal(last(background.calls.transport), false, 'releasing delegation while backgrounded keeps the socket closed')
 }
 
@@ -227,9 +236,51 @@ function testWebviewCompilation() {
   }
 }
 
+async function testWebviewRetry() {
+  const { preprocess: preprocessUni } = require('@dcloudio/uni-cli-shared/lib/preprocess')
+  const source = fs.readFileSync(new URL('../src/pages-nonTheme/webview.vue', import.meta.url), 'utf8')
+  const script = preprocessUni(parse(source).descriptor.scriptSetup.content, { MP: true, MP_WEIXIN: true }, { type: 'js' })
+    .replace(/^import .* from .*$/gm, '')
+  const baseUrl = 'https://example.test'
+  const oldTicket = 'a'.repeat(64)
+  const newTicket = 'b'.repeat(64)
+  let activeLeases = 0
+  let resolveTicket
+  const context = vm.createContext({
+    baseUrl, stripWebCallTicket, ref: value => ({ value }),
+    onMounted() {}, onBeforeUnmount() {}, setTimeout: () => 1, clearTimeout() {},
+    uni: { getStorageSync: () => 'account' },
+    delegateMiniCallAlerts() { activeLeases++; return () => { activeLeases-- } },
+    requestWebCallTicket: () => new Promise(resolve => { resolveTicket = resolve })
+  })
+  const page = vm.runInContext(`${script}\n;({
+    open(value) { src.value = value; standaloneWebview = callWebview = true; beginContentLoad() },
+    onLoad, onLoadError, retryLoad, get url() { return src.value }, get key() { return webviewKey.value }
+  })`, context)
+  const entry = `${baseUrl}/web/call/index.html#?peerId=7&ticket=${oldTicket}&nativeChat=1`
+  page.open(entry)
+  assert.equal(activeLeases, 1)
+  page.onLoadError()
+  assert.equal(activeLeases, 0)
+  const retry = page.retryLoad()
+  resolveTicket(newTicket)
+  await retry
+  assert.equal(page.url, `${baseUrl}/web/call/index.html#?peerId=7&nativeChat=1&ticket=${newTicket}`)
+  assert.equal(page.key, 1)
+  assert.equal(activeLeases, 1)
+  page.onLoadError()
+  const recovered = page.retryLoad()
+  page.onLoad()
+  resolveTicket(oldTicket)
+  await recovered
+  assert.equal(page.key, 1, 'a late successful load wins over the pending ticket retry')
+  assert.equal(activeLeases, 1)
+}
+
 testH5Lifecycle()
 testAndroidBackgroundMask()
 testDelegatedWebCallLifecycle()
 testActivityMessageVersionKeepsSingleLocationNotification()
 testWebviewCompilation()
+await testWebviewRetry()
 console.log('Chat-events H5, Android, delegated web-call, activity message compatibility, and webview compilation tests passed.')

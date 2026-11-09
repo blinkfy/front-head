@@ -28,8 +28,12 @@ export function applyRunSnapshot(messages, pending, snapshot, normalizeCards, no
   const next = messages.slice()
   const userId = ID.test(String(snapshot.userMessageId || '')) ? String(snapshot.userMessageId) : ''
   if (userId) {
-    const local = next.find(item => String(item.id) === pending.userLocalId)
-    if (local) local.id = userId
+    const local = next.find(item => item.role === 'user' && (String(item.id) === pending.userLocalId || String(item.id) === userId))
+    if (local) {
+      local.id = userId
+      // Completion uses server timestamps for both sides, even when the device clock differs.
+      if (snapshot.userMessage?.createdAt) local.createdAt = snapshot.userMessage.createdAt
+    }
     else if (!next.some(item => item.role === 'user' && String(item.id) === userId) && (snapshot.userMessage?.content || pending.userText)) next.push({ id: userId, role: 'user', content: snapshot.userMessage?.content || pending.userText,
       hasImage: !!snapshot.userMessage?.hasImage, recognitionHistoryId: snapshot.userMessage?.recognitionHistoryId || null, imageAvailable: !!snapshot.userMessage?.hasImage, imageBase64: '', createdAt: snapshot.userMessage?.createdAt || pending.createdAt })
   }
@@ -45,7 +49,14 @@ export function applyRunSnapshot(messages, pending, snapshot, normalizeCards, no
   }
   const seen = new Set()
   return next.filter(item => { const key = `${item.role}:${item.id}`; if (seen.has(key)) return false; seen.add(key); return true })
-    .sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0))
+    .sort((a, b) => {
+      const timeDifference = (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0)
+      if (timeDifference) return timeDifference
+      const aId = String(a.id), bId = String(b.id)
+      // Database timestamps can have second precision; compare IDs without losing bigint precision.
+      if (ID.test(aId) && ID.test(bId)) return aId.length - bId.length || aId.localeCompare(bId)
+      return 0
+    })
 }
 
 export function createRunLedger({ read, write, key }) {

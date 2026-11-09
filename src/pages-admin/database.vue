@@ -873,6 +873,7 @@
                                     :maxlength="-1"
                                     v-model="editForm[field.key]"
                                     :type="field.inputType"
+                                    :password="!!field.writeOnly"
                                     :placeholder="field.placeholder"
                                     :disabled="field.locked"
                                 />
@@ -1130,12 +1131,12 @@ const legacyTableCatalog = [
     { name: 'AiChatMessage', label: 'AI 对话表', icon: 'ai_chat_message_table' },
     { name: 'AiSessionMeta', label: 'AI 会话元数据表', icon: 'ai_conversation_table' },
     { name: 'AiChatAction', label: 'AI 执行动作表', icon: 'ai_chat_action_table' },
-    { name: 'AiSetting', label: 'AI 设置表', icon: 'ai_setting_table', editable: false,
-        description: '配置快照仅供查看，请前往 AI 服务设置修改，同步运行配置和本地配置文件。' },
-    { name: 'BookingSlot', label: '预约并发锁表', icon: 'booking_slot_table', editable: false,
-        description: '预约并发控制使用的锁记录，并非可预约时段或容量配置。由系统维护，仅供查看。' },
-    { name: 'ChatPushDevice', label: '聊天推送设备表', icon: 'chat_push_device_table', editable: false,
-        description: 'App 自动维护的推送绑定，可查看用户、设备摘要和有效期，原始推送凭证不展示。' },
+    { name: 'AiSetting', label: 'AI 设置表', icon: 'ai_setting_table',
+        description: '修改全局配置时同步运行配置和本地配置文件。' },
+    { name: 'BookingSlot', label: '预约并发锁表', icon: 'booking_slot_table',
+        description: '预约并发控制使用的锁记录，修改后会影响预约并发控制。' },
+    { name: 'ChatPushDevice', label: '聊天推送设备表', icon: 'chat_push_device_table',
+        description: 'App 推送设备绑定。可修改用户、安装标识和有效期，原始推送凭证不展示。' },
     { name: 'CommunityNotification', label: '社区互动通知表', icon: 'community_notification_table' },
     { name: 'GroupMessageDeletion', label: '群消息删除记录表', icon: 'group_message_deletion_table' },
     { name: 'UserNotification', label: '用户业务通知表', icon: 'user_notification_table' },
@@ -1160,7 +1161,23 @@ const legacyTableCatalog = [
     { name: 'SortingCenterEvent', label: '分拣中心事件表', icon: 'sorting_center_event_table' },
     { name: 'DeviceDepositEvent', label: '设备投递事件表', icon: 'device_deposit_event_table' },
     { name: 'AlgorithmTelemetrySample', label: '算法遥测样本表', icon: 'algorithm_telemetry_sample_table' },
-    { name: 'AlgorithmPrediction', label: '算法预测表', icon: 'algorithm_prediction_table' }
+    { name: 'AlgorithmPrediction', label: '算法预测表', icon: 'algorithm_prediction_table' },
+    { name: 'ShopProduct', label: '商城商品表', icon: 'shop_product_table' },
+    { name: 'UserLoginLocation', label: '用户登录位置表', icon: 'user_login_location_table' },
+    { name: 'BiometricCredential', label: '生物识别凭据表', icon: 'biometric_credential_table' },
+    { name: 'BiometricChallenge', label: '生物识别挑战表', icon: 'biometric_challenge_table' },
+    { name: 'PlatformLoginCredential', label: '平台登录凭据表', icon: 'platform_login_credential_table' },
+    { name: 'PlatformLoginChallenge', label: '平台登录挑战表', icon: 'platform_login_challenge_table' },
+    { name: 'CollectorProfile', label: '回收员资料表', icon: 'collector_profile_table' },
+    { name: 'CollectorApplication', label: '回收员申请表', icon: 'collector_application_table' },
+    { name: 'CollectorAvailability', label: '回收员排班表', icon: 'collector_availability_table' },
+    { name: 'RecyclingServiceArea', label: '回收服务区域表', icon: 'recycling_service_area_table' },
+    { name: 'RecyclingLock', label: '回收并发锁表', icon: 'recycling_lock_table' },
+    { name: 'BookingOrderEvent', label: '预约订单事件表', icon: 'booking_order_event_table' },
+    { name: 'BookingChatBinding', label: '预约聊天绑定表', icon: 'booking_chat_binding_table' },
+    { name: 'RecyclingRequest', label: '回收请求去重表', icon: 'recycling_request_table' },
+    { name: 'RecyclingDelivery', label: '回收通知投递表', icon: 'recycling_delivery_table' },
+    { name: 'RecyclingDeviceDelivery', label: '回收设备投递回执表', icon: 'recycling_device_delivery_table' }
 ]
 const tables = ref([])
 
@@ -1383,7 +1400,7 @@ function buildGenericFieldMeta(field = {}) {
         options,
         locked,
         inputType: isNumericSchemaType(type) ? 'digit' : (isDateSchemaType(type) ? 'text' : 'text'),
-        required: !field.allowNull && !field.autoIncrement,
+        required: !field.allowNull && !field.autoIncrement && !(field.writeOnly && editMode.value === 'edit'),
         placeholder: isJsonSchemaType(type)
             ? '请输入 JSON'
             : (isDateSchemaType(type) ? '请输入日期或时间字符串' : `请输入${field.label || formatGenericFieldLabel(field.key)}`)
@@ -1393,7 +1410,7 @@ function buildGenericFieldMeta(field = {}) {
 function getGenericEditFields(tableName = currentTable.value) {
     return getGenericSchema(tableName)
         .filter(field => !['createdAt', 'updatedAt', 'deletedAt'].includes(field.key))
-        .filter(field => !(editMode.value === 'add' && field.autoIncrement))
+        .filter(field => !(editMode.value === 'add' && (field.autoIncrement || field.generated)))
         .map(field => buildGenericFieldMeta(field))
 }
 

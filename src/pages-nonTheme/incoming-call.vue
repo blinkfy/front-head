@@ -1,7 +1,7 @@
 <template>
   <view class="incoming-page">
     <text class="call-kind">{{ state.mode === 'video' ? '视频通话邀请' : '语音通话邀请' }}</text>
-    <view class="avatar">{{ peerInitial }}</view>
+    <ChatCachedAvatar class="avatar" :src="peerAvatar" :avatar-name="state.peer?.name || '聊'" :owner="avatarOwner" />
     <text class="peer-name">{{ state.peer?.name || '联系人' }}</text>
     <text class="status">{{ state.opening ? '正在接听…' : '邀请你通话' }}</text>
     <text v-if="state.error" class="error">{{ state.error }}</text>
@@ -13,23 +13,35 @@
 </template>
 <script>
 import VoiceCallIcon from '@/components/VoiceCallIcon.vue'
+import ChatCachedAvatar from './components/ChatCachedAvatar.vue'
+import { callAvatarUrl } from '@/utils/voice-call-core.mjs'
+import { recordingIdentity } from '@/utils/call-recording-preference.mjs'
+import { baseUrl } from '@/api/settings.js'
 import { miniIncomingState, miniIncomingCalls } from '@/utils/mini-call-incoming.js'
 export default {
-  components: { VoiceCallIcon },
-  data: () => ({ state: miniIncomingState, incomingId: '', leaving: false, handingOff: false, disposed: false }),
-  computed: { peerInitial() { return Array.from(this.state.peer?.name || '聊')[0] } },
+  components: { VoiceCallIcon, ChatCachedAvatar },
+  data: () => ({ state: miniIncomingState, avatarOwner: recordingIdentity().owner, incomingId: '', leaving: false, handingOff: false, disposed: false }),
+  computed: { peerAvatar() { return callAvatarUrl(this.state.peer?.avatar, baseUrl) } },
   watch: { 'state.callId'(id) { if (!id && !this.leaving && !this.handingOff) this.close() } },
   onLoad() { this.incomingId = this.state.callId; if (!this.incomingId) this.close() },
-  onUnload() { this.disposed = true; if (this.incomingId === this.state.callId && !this.state.opening) miniIncomingCalls.reject() },
+  onUnload() {
+    this.disposed = true
+    // Clearing an opening alert only invalidates the local handoff. If the
+    // redirect already started, the web page can still claim the call.
+    if (this.incomingId && this.incomingId === this.state.callId) miniIncomingCalls.reject()
+  },
   methods: {
     async accept() {
+      if (this.disposed || this.leaving || !this.incomingId || this.incomingId !== this.state.callId) return
       this.handingOff = true
       await miniIncomingCalls.accept()
       if (this.disposed) return
       this.handingOff = false
       if (!this.state.callId) this.close()
     },
-    reject() { miniIncomingCalls.reject() },
+    reject() {
+      if (!this.disposed && !this.leaving && this.incomingId && this.incomingId === this.state.callId) miniIncomingCalls.reject()
+    },
     close() { if (this.leaving) return; this.leaving = true; if (getCurrentPages().length > 1) uni.navigateBack(); else uni.redirectTo({ url: '/pages-nonTheme/chatlist' }) },
   },
 }

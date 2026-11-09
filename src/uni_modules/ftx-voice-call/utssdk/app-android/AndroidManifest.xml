@@ -9,6 +9,7 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
   <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
@@ -27,6 +28,7 @@
     <service android:name="ftx.voice.RealtimeService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="microphone|camera|location|specialUse">
       <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled persistent instant-message and incoming-call reception with a visible stop action; no idle microphone, camera, location or wake lock." />
     </service>
+    <service android:name="ftx.voice.ScreenShareService" android:exported="false" android:foregroundServiceType="mediaProjection" />
     <activity android:name="ftx.voice.CallNotificationActivity" android:exported="true" android:excludeFromRecents="true" android:launchMode="singleTop" android:theme="@android:style/Theme.Material.NoActionBar" android:showWhenLocked="true" android:turnScreenOn="true">
       <intent-filter>
         <action android:name="android.intent.action.VIEW" />

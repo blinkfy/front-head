@@ -3,6 +3,7 @@ import VoiceCallBridge from 'ftx.voice.VoiceCallBridge'
 import RealtimeBridge from 'ftx.voice.RealtimeBridge'
 import VideoCallActivity from 'ftx.voice.VideoCallActivity'
 import CallRecordingFiles from 'ftx.voice.CallRecordingFiles'
+import OutgoingVideoPreview from 'ftx.voice.OutgoingVideoPreview'
 
 let listener: ((event: string) => void) | null = null
 let socketListener: ((event: string) => void) | null = null
@@ -11,6 +12,12 @@ let locationListener: ((event: string) => void) | null = null
 export function onVoicePeerEvent(callback: (event: string) => void): void { listener = callback }
 export function voiceRtcAvailable(): boolean { return true }
 export function videoRtcAvailable(): boolean { return true }
+export function screenShareRtcAvailable(): boolean { return true }
+export function showOutgoingVideoPreview(options: string, onCancel: () => void): boolean {
+  const activity = UTSAndroid.getUniActivity()
+  return activity != null && OutgoingVideoPreview.show(activity!, options, onCancel)
+}
+export function closeOutgoingVideoPreview(callId: string): void { OutgoingVideoPreview.close(callId) }
 export function openVoicePeer(options: string): void {
   const context = UTSAndroid.getUniActivity() ?? UTSAndroid.getAppContext()
   if (context == null) {

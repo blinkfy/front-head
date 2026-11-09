@@ -2,8 +2,8 @@
     "name" : "分投侠",
     "appid" : "__UNI__0B093BC",
     "description" : "",
-    "versionName" : "1.4.10",
-    "versionCode" : 127,
+    "versionName" : "1.4.11",
+    "versionCode" : 130,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -110,6 +110,7 @@
     },
     "quickapp" : {},
     "mp-weixin" : {
+        "mergeVirtualHostAttributes" : true,
         "lazyCodeLoading" : "requiredComponents",
         "appid" : "wx96459cc7a9407470",
         "optimization" : {

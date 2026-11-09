@@ -1,9 +1,10 @@
 import { showDialog, dialogOpen } from './dialog.js'
 import { callAction } from './icons.js'
-import { createVoiceCallController, VOICE_END_LABELS } from '../utils/voice-call-core.mjs'
+import { createRecordingPlayer } from './recording-player.js'
+import { callAvatarUrl, createVoiceCallController, VOICE_END_LABELS } from '../utils/voice-call-core.mjs'
 import { voiceCallMedia } from '../utils/voice-call-media.js'
 import { createChatEventsTransport } from '../utils/chat-events-transport.mjs'
-import { stripWebCallTicket, webCallTarget } from '../utils/web-call-entry.mjs'
+import { stripWebCallTicket, webCallTarget, miniCallChatPath } from '../utils/web-call-entry.mjs'
 import { listWebRecordings, readWebRecording, renameWebRecording, deleteWebRecording } from '../utils/web-recording-storage.mjs'
 import { matchesRecording, validRecordingCallId, recordingPlayable } from '../utils/call-recording-preference.mjs'
 
@@ -12,8 +13,10 @@ const base = location.origin
 let token = '', owner = '', isAdmin = false, controller, transport, state = {}, target = null
 let recordBridge = '', recordOwner = '', disposed = false, managerRows = []
 let callUi, callTimer, leaving = false, incomingRing = '', ringBlocked = false
-let playingUrl = '', playbackRevision = 0
+let playingUrl = '', playbackRevision = 0, disposePlayback = null
 let incomingCallId = '', incomingTimer
+let nativeChatAvailable = false, openingNativeChat = false, nativeChatVisit = false
+let nativeChatError = ''
 let managerCallId = '', managerQuery = '', managerSelecting = false, managerDeleting = false
 const managerSelection = new Set()
 const ringtone = new Audio('./ringtone.mp3')
@@ -30,7 +33,8 @@ const endpoint = path => `${base}/api/web-call/${path}`
 function stopPlayback() {
   playbackRevision++
   const audio = content.querySelector('audio')
-  if (audio) { audio.pause(); audio.closest('.row')?.classList.remove('has-player'); audio.remove() }
+  audio?.closest('.row')?.classList.remove('has-player')
+  disposePlayback?.(); disposePlayback = null
   if (playingUrl) URL.revokeObjectURL(playingUrl)
   playingUrl = ''
 }
@@ -69,7 +73,8 @@ function voiceConnection(onEvent, onConnected, onDisconnected) {
     }, onEvent, onConnected, onDisconnected })
 }
 function showError(error, title = '暂时无法打开通话') {
-  content.innerHTML = `<h1>${escapeHtml(title)}</h1><p class="error">${escapeHtml(error?.message || String(error))}</p><p>请返回小程序重新打开，或检查网络后重试。</p>`
+  const hint = params().get('view') === 'recordings' ? '请返回小程序重新打开，或检查网络后重试。' : '请返回小程序重试，也可以打开分投侠 App，在聊天中进行通话。'
+  content.innerHTML = `<h1>${escapeHtml(title)}</h1><p class="error">${escapeHtml(error?.message || String(error))}</p><p>${hint}</p>`
 }
 function button(label, action, kind = 'secondary', disabled = false) {
   return `<button class="button ${kind}" data-action="${action}" ${disabled ? 'disabled' : ''}>${label}</button>`
@@ -80,43 +85,51 @@ function setupCallUi() {
   document.body.classList.add('call-surface')
   content.classList.add('call-screen')
   content.innerHTML = `
-    <div class="call-heading"><p class="card-title"></p><h1 class="peer"></h1><p class="status" aria-live="polite"></p>
+    <div class="call-heading"><p class="screen-share-status" role="status" hidden>对方正在共享屏幕</p>
+      <p class="card-title"></p><h1 class="peer"></h1><p class="status" aria-live="polite"></p>
       <p class="call-duration" hidden></p></div>
-    <div class="call-avatar" aria-hidden="true"></div>
+    <div class="call-avatar" aria-hidden="true"><span></span><img alt="" hidden></div>
     <div class="video-grid" hidden>
       <button class="video-pane" type="button" data-action="remote-video">
-        <span class="video-feed" id="call-video-remote"></span><span class="camera-placeholder">对方已关闭摄像头</span>
+        <span class="video-feed" id="call-video-remote"></span>
       </button>
       <button class="video-pane" type="button" data-action="local-video">
-        <span class="video-feed" id="call-video-local"></span><span class="camera-placeholder">摄像头已关闭</span>
+        <span class="video-feed" id="call-video-local"></span>
       </button>
     </div>
     <div class="call-notices"><p class="recording" hidden></p><p class="error" role="status" hidden></p></div>
     <div class="call-footer"><div class="actions"></div><p class="card-copy call-note"></p>
       <button class="call-back" data-action="back">返回小程序</button></div>
   `
-  callUi = Object.fromEntries(['card-title', 'peer', 'status', 'video-grid', 'call-duration', 'recording', 'error', 'actions', 'call-note']
+  callUi = Object.fromEntries(['card-title', 'peer', 'status', 'video-grid', 'call-duration', 'screen-share-status', 'recording', 'error', 'actions', 'call-note']
     .map(name => [name, content.querySelector('.' + name)]))
   callUi.remoteVideo = content.querySelector('[data-action="remote-video"]')
   callUi.localVideo = content.querySelector('[data-action="local-video"]')
-  callUi.avatar = content.querySelector('.call-avatar')
+  callUi.avatarInitial = content.querySelector('.call-avatar span')
+  callUi.avatarImage = content.querySelector('.call-avatar img')
+  callUi.avatarImage.onload = () => { callUi.avatarImage.hidden = false; callUi.avatarInitial.hidden = true }
+  callUi.avatarImage.onerror = () => { callUi.avatarImage.hidden = true; callUi.avatarInitial.hidden = false }
+}
+function isMainLocal() {
+  return state.phase === 'calling' ? state.outgoingPreview === true : state.cameraEnabled && !state.remoteScreenSharing && (!state.remoteCameraEnabled || selfIsMain)
 }
 function renderVideo(visible) {
   if (!visible) { selfIsMain = false; videoControlsHidden = false }
   content.classList.toggle('video-call', visible)
   content.classList.toggle('video-controls-hidden', visible && videoControlsHidden)
   callUi['video-grid'].hidden = !visible
+  callUi['screen-share-status'].hidden = !visible || !state.remoteScreenSharing
   if (!visible) return
-  const mainIsLocal = state.cameraEnabled && (!state.remoteCameraEnabled || selfIsMain)
+  const mainIsLocal = isMainLocal()
+  const outgoing = state.phase === 'calling'
   const primaryLabel = videoControlsHidden ? '显示通话控件' : '隐藏通话控件'
-  callUi.remoteVideo.hidden = !state.remoteCameraEnabled
-  callUi.localVideo.hidden = !state.cameraEnabled
+  callUi.remoteVideo.hidden = outgoing || (!state.remoteCameraEnabled && !state.remoteScreenSharing)
+  callUi.localVideo.hidden = outgoing ? !state.outgoingPreview : !state.cameraEnabled
+  callUi.localVideo.tabIndex = outgoing ? -1 : 0
   callUi.remoteVideo.classList.toggle('video-preview', mainIsLocal)
   callUi.localVideo.classList.toggle('video-preview', !mainIsLocal)
-  callUi.remoteVideo.classList.toggle('camera-off', !state.remoteCameraEnabled)
-  callUi.localVideo.classList.toggle('camera-off', !state.cameraEnabled)
   callUi.remoteVideo.setAttribute('aria-label', mainIsLocal ? '将对方画面放大' : primaryLabel)
-  callUi.localVideo.setAttribute('aria-label', mainIsLocal ? primaryLabel : '将自己画面放大')
+  callUi.localVideo.setAttribute('aria-label', outgoing ? '本机摄像头预览' : mainIsLocal || state.remoteScreenSharing ? primaryLabel : '将自己画面放大')
 }
 function updateClock() {
   callUi['call-duration'].textContent = state.startedAt ? duration(Date.now() - state.startedAt) : ''
@@ -140,7 +153,7 @@ function updateRingtone(retry = false) {
 function renderCall() {
   const phase = state.phase || 'idle', peerName = state.peer?.name || target?.name || '联系人'
   const idleLabel = incomingCallId ? '正在接听来电…' : voiceCallMedia.supported() ? (state.supported ? '已连接，可以开始通话' : '正在连接通话服务…') : '当前浏览器不支持通话'
-  const labels = { idle: idleLabel, calling: '正在呼叫…', incoming: '对方邀请你通话', connecting: '正在建立连接…',
+  const labels = { idle: idleLabel, calling: state.outgoingPreview ? '等待对方接听 · 本机预览' : '正在呼叫…', incoming: '对方邀请你通话', connecting: '正在建立连接…',
     connected: '通话中', ended: VOICE_END_LABELS[state.reason] || '通话已结束' }
   let actions = ''
   if ((phase === 'idle' && !incomingCallId) || phase === 'ended') actions += target?.mode === 'video'
@@ -157,6 +170,7 @@ function renderCall() {
     if (phase === 'connected' && state.cameraSupported) actions += callAction(state.cameraEnabled ? '关闭摄像头' : '开启摄像头', 'camera', 'camera', { off: !state.cameraEnabled, selected: state.cameraEnabled })
     if (phase === 'connected' && state.canSwitchCamera && state.cameraEnabled) actions += callAction('切换镜头', 'switch-camera', 'switch-camera')
     if (phase === 'connected' && state.recordingSupported) actions += callAction(state.recording ? '停止录音' : '开始录音', 'record', 'record', { selected: state.recording })
+    if (phase === 'connected' && nativeChatAvailable) actions += callAction('打开聊天', 'open-chat', 'chat', { disabled: openingNativeChat })
     actions += callAction(phase === 'calling' ? '取消呼叫' : '挂断', 'hangup', 'hangup', { kind: 'danger end-call' })
   }
   const mode = phase === 'idle' ? target?.mode : state.mode
@@ -165,12 +179,20 @@ function renderCall() {
   callUi['card-title'].textContent = title
   content.dataset.phase = phase
   callUi.peer.textContent = peerName
-  callUi.avatar.textContent = Array.from(peerName)[0] || '聊'
+  callUi.avatarInitial.textContent = Array.from(peerName)[0] || '聊'
+  const avatar = callAvatarUrl(state.peer?.avatar, base)
+  if (avatar !== (callUi.avatarImage.getAttribute('src') || '')) {
+    callUi.avatarImage.hidden = true
+    callUi.avatarInitial.hidden = false
+    if (avatar) callUi.avatarImage.src = avatar
+    else callUi.avatarImage.removeAttribute('src')
+  }
   callUi.status.textContent = labels[phase]
-  renderVideo(['connecting', 'connected'].includes(phase) && !!(state.cameraEnabled || state.remoteCameraEnabled))
+  renderVideo((phase === 'calling' && state.outgoingPreview === true) ||
+    (['connecting', 'connected'].includes(phase) && !!(state.cameraEnabled || state.remoteCameraEnabled || state.remoteScreenSharing)))
   callUi['call-duration'].hidden = phase !== 'connected'
   callUi.recording.hidden = !state.recording
-  callUi.error.textContent = state.recordingError || state.mediaError || ''
+  callUi.error.textContent = state.recordingError || state.mediaError || (phase === 'connected' ? nativeChatError : '')
   callUi.error.hidden = !callUi.error.textContent
   callUi.actions.innerHTML = actions
   callUi['call-note'].textContent = state.supported ? '通话期间请保持页面打开。' : '如长时间无法连接，请检查网络后从小程序重新打开。'
@@ -272,12 +294,12 @@ async function performManagerAction(action, row) {
         if (!slot) return
         playingUrl = URL.createObjectURL(blob)
         const audio = new Audio(playingUrl)
-        audio.controls = true
-        slot.append(audio)
+        const player = createRecordingPlayer(audio, slot, { durationMs: row.durationMs, onError: message => {
+          if (!disposed && revision === playbackRevision) { errorText.textContent = message; errorText.hidden = false }
+        } })
+        disposePlayback = player.dispose
         slot.closest('.row').classList.add('has-player')
-        void audio.play().catch(error => {
-          if (error.name !== 'AbortError') { errorText.textContent = '请点击播放器继续播放'; errorText.hidden = false }
-        })
+        void player.play()
       } else {
         const extension = /mp4|aac/.test(row.mimeType) ? 'm4a' : /ogg/.test(row.mimeType) ? 'ogg' : 'webm'
         const name = row.name.replace(/[\\/:*?"<>|]/g, '_') + '.' + extension
@@ -316,6 +338,35 @@ function miniSdk() {
     document.head.appendChild(script)
   }).catch(error => { miniSdkPromise = null; throw error })
   return miniSdkPromise
+}
+async function openNativeChat() {
+  if (!nativeChatAvailable || openingNativeChat || leaving || disposed || state.phase !== 'connected') return
+  const callId = state.callId
+  const url = miniCallChatPath({ selfId: owner, peerId: state.peer?.id, name: state.peer?.name, mode: state.mode })
+  if (!url) return
+  openingNativeChat = true
+  nativeChatError = ''
+  renderCall()
+  try {
+    await miniSdk()
+    if (disposed || leaving || state.phase !== 'connected' || state.callId !== callId) return
+    const runtime = globalThis.wx?.miniProgram
+    if (typeof runtime?.navigateTo !== 'function') throw new Error('当前微信无法打开原生聊天')
+    nativeChatVisit = true
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('打开聊天超时，请重试')), 5000)
+      const finish = callback => result => { clearTimeout(timer); callback(result) }
+      const fail = finish(() => reject(new Error('暂时无法打开聊天，请重试')))
+      try { runtime.navigateTo({ url, success: finish(resolve), fail }) }
+      catch (_) { fail() }
+    })
+  } catch (error) {
+    nativeChatVisit = false
+    if (state.callId === callId) nativeChatError = error.message
+  } finally {
+    openingNativeChat = false
+    if (!disposed) renderCall()
+  }
 }
 async function boot() {
   const p = params(), manager = p.get('view') === 'recordings'
@@ -388,6 +439,7 @@ async function boot() {
   }
   target = webCallTarget({ peerId: p.get('peerId'), selfId: owner, mode: p.get('mode'), name: p.get('name') })
   if (!target) throw new Error('通话链接信息无效')
+  nativeChatAvailable = p.get('nativeChat') === '1'
   setupCallUi()
   callTimer = setInterval(updateClock, 1000)
   incomingCallId = /^[A-Za-z0-9_-]{12,80}$/.test(p.get('incomingCallId') || '') ? p.get('incomingCallId') : ''
@@ -395,27 +447,35 @@ async function boot() {
   if (incomingCallId) initialCallPending = false
   transport = voiceConnection(event => {
     controller.handle(event)
-    if (incomingCallId && event.type === 'voice.incoming') {
+    if (incomingCallId && event.type === 'voice.incoming' && event.callId === incomingCallId &&
+        String(event.peer?.id) === target.peerId && (event.mode || 'audio') === target.mode && state.phase === 'incoming' &&
+        state.callId === incomingCallId) {
+      const acceptedId = incomingCallId
       clearTimeout(incomingTimer)
-      if (event.callId === incomingCallId && String(event.peer?.id) === target.peerId) void controller.accept()
       incomingCallId = ''
+      void controller.accept(acceptedId)
       return
     }
     if (event.type !== 'voice.ready' || !state.supported || !initialCallPending) return
     initialCallPending = false
-    if (state.phase === 'idle') {
+    if (state.phase === 'idle' && !event.pendingIncoming) {
       try { controller.start({ id: target.peerId, name: target.name }, target.mode) }
       catch (error) { callUi.error.textContent = error.message; callUi.error.hidden = false }
     }
   }, event => controller.connection(true, event.voiceCallVersion, event.videoCallVersion), () => controller.connection(false))
   controller = createVoiceCallController({ media: voiceCallMedia, send: event => transport.send(event), getOwner: () => token, getSelfId: () => owner,
+    allowScreenShare: false,
+    getClaimCallId: () => incomingCallId,
     changed(value) { state = value; renderCall() },
     getRecording: () => ({ owner, admin: isAdmin, auto: recordOwner === owner && !!recordBridge && p.get('recordingAuto') === '1' }),
     onRecordingSaved: () => { void refreshCatalog(true).catch(() => {}) } })
   controller.setActive(true); transport.setActive(true)
   if (incomingCallId) incomingTimer = setTimeout(() => {
-    if (!incomingCallId || disposed || state.phase !== 'idle') return
-    incomingCallId = ''; state.mediaError = '来电已结束或未能接通，请返回小程序重试'; renderCall()
+    if (!incomingCallId || disposed) return
+    incomingCallId = ''
+    controller.refreshCapability()
+    if (state.phase === 'idle') state.mediaError = '来电已结束或未能接通，请返回小程序重试'
+    renderCall()
   }, 12000)
   void miniSdk().catch(() => {})
   renderCall()
@@ -433,25 +493,36 @@ async function boot() {
       else if (action === 'switch-camera') controller.control({ switchCamera: true })
       else if (action === 'record') controller.control({ recordingEnabled: !state.recording })
       else if (action === 'resume') controller.control({ resumePlayback: true })
+      else if (action === 'open-chat') void openNativeChat()
       else if (action === 'ring') updateRingtone(true)
       else if (action === 'back') void leaveCall()
       else if (action === 'local-video' || action === 'remote-video') {
+        if (state.phase === 'calling') return
         const local = action === 'local-video'
-        const mainIsLocal = state.cameraEnabled && (!state.remoteCameraEnabled || selfIsMain)
-        if (local === mainIsLocal) videoControlsHidden = !videoControlsHidden
+        const mainIsLocal = isMainLocal()
+        if (local === mainIsLocal || state.remoteScreenSharing) videoControlsHidden = !videoControlsHidden
         else selfIsMain = local
         renderVideo(true)
       }
     } catch (error) { state.mediaError = error.message; renderCall() }
   })
-  addEventListener('pagehide', () => {
+  addEventListener('pagehide', event => {
+    // A cached document can resume. A real unload still releases the call.
+    if (event.persisted && nativeChatVisit && !leaving) return
+    if (disposed) return
     disposed = true
     clearInterval(callTimer); clearTimeout(incomingTimer)
     controller.end('background')
     controller.setActive(false)
     transport.setActive(false)
-  }, { once: true })
-  addEventListener('pageshow', event => { if (event.persisted) showError('请返回小程序重新打开通话') })
+  })
+  addEventListener('pageshow', event => {
+    if (event.persisted && disposed) showError('请返回小程序重新打开通话')
+    nativeChatVisit = false
+  })
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) nativeChatVisit = false
+  })
 }
 function returnToMini() {
   if (globalThis.wx?.miniProgram?.navigateBack) globalThis.wx.miniProgram.navigateBack({ delta: 1 })

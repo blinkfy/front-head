@@ -50,6 +50,26 @@ const insertedUser = applyRunSnapshot([], valid, completed, normalizeChatBusines
 assert.equal(insertedUser.imageBase64, '', 'a history-only recovered user message carries no image payload')
 assert.deepEqual(normalizePendingRuns([{ ...valid, seedLocalIds: ['seed-a', 'seed-a', 3, 'x'.repeat(81), 'seed-b'] }])[0].seedLocalIds, ['seed-a', 'seed-b'])
 assert.equal(merged.find(x => x.id === 'local-assistant'), undefined, 'completed snapshot replaces the local assistant placeholder')
+// A fast reply can have an earlier timestamp than the device's optimistic user message.
+const serverTime = '2026-11-05T00:00:01.000Z'
+const timedSnapshot = { ...completed, userMessage: { content: '问题', createdAt: serverTime },
+  result: { ...completed.result, createdAt: serverTime } }
+for (const deviceTime of ['2026-11-05T00:00:01.900Z', '2026-11-05T00:05:00.000Z', '2026-11-04T23:55:00.000Z']) {
+  const messages = [
+    { id: '99', role: 'assistant', content: '上一轮', createdAt: valid.createdAt },
+    { id: valid.userLocalId, role: 'user', content: '问题', createdAt: deviceTime, imageBase64: 'preview' }
+  ]
+  const ordered = applyRunSnapshot(messages, valid, timedSnapshot, normalizeChatBusinessCards, normalizeChatDisposalPoints, finalizeChatSearch)
+  assert.deepEqual(ordered.map(item => item.id), ['99', '101', '202'], 'completion keeps the question before its answer despite device clock skew')
+  assert.equal(ordered[1].createdAt, serverTime)
+  assert.equal(ordered[1].imageBase64, 'preview')
+  const replayed = applyRunSnapshot(ordered, valid, timedSnapshot, normalizeChatBusinessCards, normalizeChatDisposalPoints, finalizeChatSearch)
+  assert.deepEqual(replayed.map(item => item.id), ['99', '101', '202'], 'replayed completion preserves order without duplicates')
+}
+const recoveredAfterAnswer = applyRunSnapshot([
+  { id: '202', role: 'assistant', content: '已加载回答', createdAt: serverTime }
+], valid, timedSnapshot, normalizeChatBusinessCards, normalizeChatDisposalPoints, finalizeChatSearch)
+assert.deepEqual(recoveredAfterAnswer.map(item => item.id), ['101', '202'], 'a restored question sorts before its existing answer at the same timestamp')
 assert.throws(() => applyRunSnapshot([], valid, { ...completed, requestId: 'other_request_123456' }, normalizeChatBusinessCards, normalizeChatDisposalPoints, finalizeChatSearch), /不匹配/)
 assert.throws(() => applyRunSnapshot([], { ...valid, runId: uuid }, { ...completed, runId: '223e4567-e89b-42d3-a456-426614174000' }, normalizeChatBusinessCards, normalizeChatDisposalPoints, finalizeChatSearch), /不匹配/)
 
@@ -293,7 +313,7 @@ assert(markedSeedIds.ids.includes('seed-after-refresh'), 'matching fingerprint r
 assert(!markedSeedIds.ids.includes('unrelated-seed'), 'different fingerprint seed stays pending')
 assert.equal(refreshed.conversation.messages.find(x => x.id === 'unrelated-seed')._pendingPersist, true)
 
-const dismissUnknown = pageContext({ uni: { showModal: options => options.success({ confirm: true }), showToast() {} } })
+const dismissUnknown = pageContext({ showPageModal: options => options.success({ confirm: true }), uni: { showToast() {} } })
 dismissUnknown.runOwner = 'owner-a'; dismissUnknown.runLedger = createRunLedger({ key: 'ledger', read: () => [valid], write: () => {} }); dismissUnknown.pendingRuns.value = [valid]
 dismissUnknown.dismissRun(valid)
 assert.equal(dismissUnknown.pendingRuns.value.length, 0, 'an unknown pending record can be explicitly dismissed locally')

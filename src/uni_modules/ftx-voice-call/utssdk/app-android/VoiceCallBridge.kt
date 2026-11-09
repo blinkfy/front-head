@@ -23,9 +23,10 @@ object VoiceCallBridge {
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var initialized = false
+    private var screenSequence = 0
     @Volatile private var current: Session? = null
     private class Session(val id: String, val context: Context, val callback: (String) -> Unit,
-                          val video: Boolean = false, activity: Activity? = null) {
+                          val video: Boolean, val entryMode: String, activity: Activity? = null) {
         val activity = activity?.let { WeakReference(it) }
         var factory: PeerConnectionFactory? = null
         var peer: PeerConnection? = null
@@ -36,6 +37,7 @@ object VoiceCallBridge {
         var egl: EglBase? = null
         var videoSource: VideoSource? = null
         var videoTrack: VideoTrack? = null
+        var videoSender: RtpSender? = null
         var remoteVideo: VideoTrack? = null
         var capturer: CameraVideoCapturer? = null
         var texture: SurfaceTextureHelper? = null
@@ -46,13 +48,27 @@ object VoiceCallBridge {
         var cameraEnabled = true
         var cameraGeneration = 0
         var cameraFallbackTried = false
+        var cameraName: String? = null
+        var cameraNameLegacy = false
         var remoteCameraEnabled = true
         var frontFacing = true
-        var muted = false
+        var screenShareSupported = false
+        var remoteScreenSharing = false
+        var screenSharing = false
+        @Volatile var screenRequest: Int? = null
+        var screenConsent: Intent? = null
+        var screenCapture: CallScreenCapture? = null
+        var screenDeadline: Runnable? = null
+        val supportsPlaybackCapture = Build.VERSION.SDK_INT >= 29 && video && entryMode == "video"
+        @Volatile var screenAudioRate = 0
+        @Volatile var screenAudio: CallScreenAudio? = null
+        var audioModule: JavaAudioDeviceModule? = null
+        @Volatile var muted = false
         var speaker = video
         var connected = false
         var recording: CallAudioRecording? = null
         var peerName = "联系人"
+        var peerAvatar = ""
         val ice = mutableListOf<IceCandidate>()
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val oldMode = audio.mode
@@ -70,6 +86,38 @@ object VoiceCallBridge {
     private fun fail(s: Session, reason: String) {
         if (!valid(s)) return
         emit(s, "error", JSONObject().put("reason", reason)); release(s)
+    }
+    @Suppress("DEPRECATION")
+    private fun requestAudioFocus(s: Session): Boolean {
+        lateinit var listener: AudioManager.OnAudioFocusChangeListener
+        listener = AudioManager.OnAudioFocusChangeListener { change ->
+            // Notification ducking does not interrupt the call.
+            if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+                worker.execute { if (s.focusListener === listener) fail(s, "interrupted") }
+        }
+        s.focusListener = listener
+        val result = try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).setAudioAttributes(attributes).setOnAudioFocusChangeListener(listener, main).build()
+                s.focus = request
+                s.audio.requestAudioFocus(request)
+            } else s.audio.requestAudioFocus(listener, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+        } catch (_: Exception) { AudioManager.AUDIOFOCUS_REQUEST_FAILED }
+        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) return true
+        releaseAudioFocus(s)
+        return false
+    }
+    @Suppress("DEPRECATION")
+    private fun releaseAudioFocus(s: Session) {
+        val listener = s.focusListener ?: return
+        val request = s.focus
+        s.focusListener = null
+        s.focus = null
+        runCatching {
+            if (Build.VERSION.SDK_INT >= 26) request?.let { s.audio.abandonAudioFocusRequest(it) }
+            else s.audio.abandonAudioFocus(listener)
+        }
     }
     private fun observer(s: Session, created: ((SessionDescription) -> Unit)? = null, done: (() -> Unit)? = null) = object : SdpObserver {
         override fun onCreateSuccess(description: SessionDescription) { worker.execute { if (valid(s)) created?.invoke(description) } }
@@ -93,31 +141,23 @@ object VoiceCallBridge {
             if (current?.closed == true) { main.post { open(context, options, callback) }; return@execute }
             if (current != null) { main.post { callback(JSONObject().put("type", "error").put("callId", id).put("reason", "busy").toString()) }; return@execute }
             val video = input.optString("mode") == "video"
-            val s = Session(id, context.applicationContext, callback, video, context as? Activity); current = s
+            val previewReleased = !video || OutgoingVideoPreview.releaseBeforePeer()
+            val s = Session(id, context.applicationContext, callback, video, input.optString("entryMode", if (video) "video" else "audio"), context as? Activity); current = s
             try {
                 if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { fail(s, "permission_denied"); return@execute }
                 s.speaker = input.optBoolean("speaker", video)
+                s.screenShareSupported = video && s.entryMode == "video" && input.optBoolean("screenShareSupported")
                 s.remoteCameraEnabled = input.optBoolean("remoteCameraEnabled", input.optBoolean("cameraRequested", true))
-                s.cameraEnabled = input.optBoolean("cameraEnabled", true) && context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-                RealtimeBridge.attachCall(context, id, video)
+                s.cameraEnabled = previewReleased && input.optBoolean("cameraEnabled", true) &&
+                    context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                RealtimeBridge.attachCall(context, id, video, s.cameraEnabled && video)
                 val urls = input.optJSONArray("stunUrls")
                 val servers = mutableListOf<PeerConnection.IceServer>()
                 if (urls != null) for (index in 0 until minOf(urls.length(), 3)) {
                     val url = urls.optString(index)
                     if (url.startsWith("stun:") || url.startsWith("stuns:")) servers.add(PeerConnection.IceServer.builder(url).createIceServer())
                 }
-                val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
-                    // A short notification duck request must not hang up speech.
-                    if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) worker.execute { fail(s, "interrupted") }
-                }
-                s.focusListener = focusListener
-                @Suppress("DEPRECATION")
-                val focusResult = if (Build.VERSION.SDK_INT >= 26) {
-                    val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
-                    val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).setAudioAttributes(attributes).setOnAudioFocusChangeListener(focusListener, main).build()
-                    s.focus = request; s.audio.requestAudioFocus(request)
-                } else s.audio.requestAudioFocus(focusListener, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                if (focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) { fail(s, "interrupted"); return@execute }
+                if (!requestAudioFocus(s)) { fail(s, "interrupted"); return@execute }
                 s.audioChanged = true
                 s.audio.mode = AudioManager.MODE_IN_COMMUNICATION
                 route(s, s.speaker)
@@ -126,7 +166,8 @@ object VoiceCallBridge {
                     initialized = true
                 }
                 s.peerName = input.optString("peerName", "联系人").take(80)
-                val recording = CallRecordingFiles.forSession(s.context, s.peerName, input.optString("entryMode", if (video) "video" else "audio"),
+                s.peerAvatar = input.optString("peerAvatar")
+                val recording = CallRecordingFiles.forSession(s.context, s.peerName, s.entryMode,
                     input.optString("recordingOwner"), s.id) { state ->
                     worker.execute {
                         if (valid(s)) updateVideo(s)
@@ -135,10 +176,21 @@ object VoiceCallBridge {
                 }
                 s.recording = recording
                 val audioBuilder = JavaAudioDeviceModule.builder(context.applicationContext)
-                if (recording.allowed) audioBuilder
-                    .setSamplesReadyCallback { recording.capture(it) }
-                    .setPlaybackSamplesReadyCallback { recording.playback(it) }
+                if (recording.allowed) {
+                    if (!s.supportsPlaybackCapture) audioBuilder.setSamplesReadyCallback { recording.capture(it) }
+                    audioBuilder.setPlaybackSamplesReadyCallback { recording.playback(it) }
+                }
+                if (s.supportsPlaybackCapture) audioBuilder.setAudioBufferCallback { buffer, format, channels, rate, bytes, timestamp ->
+                    if (s.screenAudioRate != rate) s.screenAudioRate = rate
+                    if (recording.allowed) recording.capture(buffer, format, channels, rate, bytes)
+                    s.screenAudio?.mix(buffer, format, channels, rate, bytes, s.muted)
+                    timestamp
+                }
                 val module = audioBuilder.createAudioDeviceModule()
+                if (s.supportsPlaybackCapture) {
+                    s.audioModule = module
+                    module.setMicrophoneMute(s.muted)
+                }
                 val factory = try {
                     val builder = PeerConnectionFactory.builder().setAudioDeviceModule(module)
                     if (video) {
@@ -200,9 +252,8 @@ object VoiceCallBridge {
                     }
                     val track = s.videoTrack!!
                     val sender = s.peer!!.addTrack(track, listOf("ftx-voice"))
-                    val parameters = sender.parameters
-                    for (encoding in parameters.encodings) { encoding.maxBitrateBps = 700000; encoding.maxFramerate = 24 }
-                    sender.setParameters(parameters)
+                    s.videoSender = sender
+                    setVideoEncoding(s, false)
                     main.post {
                         if (!valid(s) || (nativeAnswer && !RealtimeBridge.isNativeCall(id))) return@post
                         try {
@@ -243,9 +294,13 @@ object VoiceCallBridge {
     private fun cameraUnavailable(s: Session) {
         if (!valid(s)) return
         stopCamera(s); s.cameraEnabled = false; s.videoTrack?.setEnabled(false)
+        RealtimeBridge.cancelCameraServiceAction(s.id)
         updateVideo(s)
         emit(s, "camera", JSONObject().put("cameraEnabled", false))
         emit(s, "control_error", JSONObject().put("cameraEnabled", false).put("reason", "camera_unavailable"))
+    }
+    @JvmStatic fun cameraServiceUnavailable(id: String) {
+        worker.execute { current?.takeIf { it.id == id }?.let(::cameraUnavailable) }
     }
     private fun startCamera(s: Session, legacy: Boolean = false) {
         stopCamera(s)
@@ -255,7 +310,9 @@ object VoiceCallBridge {
         val enumerator: CameraEnumerator = if (useLegacy) Camera1Enumerator(true) else Camera2Enumerator(s.context)
         val names = enumerator.deviceNames
         s.canSwitchCamera = names.size > 1
-        val name = names.firstOrNull { enumerator.isFrontFacing(it) } ?: names.firstOrNull() ?: throw IllegalStateException("Camera unavailable")
+        val name = names.firstOrNull { s.cameraNameLegacy == useLegacy && it == s.cameraName }
+            ?: names.firstOrNull { enumerator.isFrontFacing(it) == s.frontFacing }
+            ?: names.firstOrNull() ?: throw IllegalStateException("Camera unavailable")
         s.frontFacing = enumerator.isFrontFacing(name)
         val errors = object : CameraVideoCapturer.CameraEventsHandler {
             private fun lost() { worker.execute {
@@ -268,34 +325,191 @@ object VoiceCallBridge {
             override fun onCameraError(error: String) { lost() }
             override fun onCameraDisconnected() { lost() }
             override fun onCameraFreezed(error: String) { lost() }
-            override fun onCameraOpening(name: String) {}
+            override fun onCameraOpening(name: String) { worker.execute {
+                if (valid(s) && generation == s.cameraGeneration) { s.cameraName = name; s.cameraNameLegacy = useLegacy }
+            } }
             override fun onFirstFrameAvailable() {}
             override fun onCameraClosed() {}
         }
         s.capturer = enumerator.createCapturer(name, errors) ?: throw IllegalStateException("Camera unavailable")
+        s.cameraName = name; s.cameraNameLegacy = useLegacy
         if (s.texture == null) s.texture = SurfaceTextureHelper.create("ftx-camera", s.egl!!.eglBaseContext) ?: throw IllegalStateException("Camera texture unavailable")
         s.capturer!!.initialize(s.texture, s.context, s.videoSource!!.capturerObserver)
         s.capturer!!.startCapture(640, 480, 24)
         s.cameraEnabled = true; s.videoTrack?.setEnabled(true)
         emit(s, "camera", JSONObject().put("cameraEnabled", true).put("frontFacing", s.frontFacing).put("canSwitchCamera", s.canSwitchCamera))
     }
-    private fun updateVideo(s: Session) {
-        main.post { if (valid(s)) s.videoView?.update(s.muted, s.speaker, s.cameraEnabled, s.remoteCameraEnabled, s.frontFacing, s.connected, s.canSwitchCamera, s.recording?.snapshot()) }
+    private fun setVideoEncoding(s: Session, sharing: Boolean) {
+        val sender = s.videoSender ?: return
+        try {
+            val parameters = sender.parameters
+            for (encoding in parameters.encodings) {
+                encoding.maxBitrateBps = if (sharing) 1500000 else 700000
+                encoding.maxFramerate = if (sharing) 15 else 24
+            }
+            sender.setParameters(parameters)
+        } catch (_: Exception) { /* Continue with the negotiated encoder settings. */ }
     }
+
+    private fun beginScreenShare(s: Session) {
+        if (!s.video || !s.connected || !s.screenShareSupported || s.screenRequest != null) return
+        val request = ++screenSequence
+        s.screenRequest = request
+        updateVideo(s)
+        emit(s, "screen_pending", JSONObject().put("screenSharingPending", true))
+        main.post {
+            if (!expectsScreenShare(s.id, request)) return@post
+            val host = s.videoHost?.get() as? VideoCallActivity
+            if (host?.requestScreenPermission(s.id, request) != true) screenServiceStopped(s.id, request, true)
+        }
+    }
+
+    internal fun expectsScreenShare(id: String, request: Int): Boolean =
+        current?.let { valid(it) && it.id == id && it.screenRequest == request } == true
+
+    internal fun screenPermissionResult(id: String, request: Int, consent: Intent?) { worker.execute {
+        val s = current ?: return@execute
+        if (!expectsScreenShare(id, request)) return@execute
+        if (consent == null) stopScreenShare(s, "screen_cancelled")
+        else {
+            s.screenConsent = consent
+            main.post { if (expectsScreenShare(id, request)) ScreenShareService.start(s.context, id, request) }
+        }
+    } }
+
+    internal fun screenServiceReady(id: String, request: Int) { worker.execute {
+        val s = current ?: return@execute
+        if (!expectsScreenShare(id, request)) return@execute
+        val consent = s.screenConsent ?: return@execute
+        s.screenConsent = null // A system authorization may be consumed only once.
+        try {
+            val capture = CallScreenCapture(s.context, s.factory!!, s.egl!!.eglBaseContext, { width, height ->
+                worker.execute {
+                    if (!expectsScreenShare(id, request)) return@execute
+                    try { s.screenCapture?.changeSize(width, height) } catch (_: Exception) { stopScreenShare(s, "screen_unavailable") }
+                }
+            }, { worker.execute { if (expectsScreenShare(id, request)) installScreenTrack(s) } }, { screenServiceStopped(id, request, false) })
+            s.screenCapture = capture
+            val deadline = Runnable { worker.execute {
+                if (expectsScreenShare(id, request) && !s.screenSharing) stopScreenShare(s, "screen_unavailable")
+            } }
+            s.screenDeadline = deadline; main.postDelayed(deadline, 8000)
+            capture.start(consent)
+        } catch (_: Exception) { stopScreenShare(s, "screen_unavailable") }
+    } }
+
+    private fun installScreenTrack(s: Session) {
+        s.screenDeadline?.let(main::removeCallbacks); s.screenDeadline = null
+        try {
+            val track = s.screenCapture?.track ?: error("Screen track unavailable")
+            if (s.videoSender?.setTrack(track, false) != true) error("Screen track unavailable")
+            s.screenSharing = true
+            stopCamera(s)
+            s.videoTrack?.setEnabled(false)
+            setVideoEncoding(s, true)
+            startScreenAudio(s)
+            updateVideo(s)
+            emit(s, "screen", JSONObject().put("screenSharing", true))
+            emit(s, "screen_pending", JSONObject().put("screenSharingPending", false))
+        } catch (_: Exception) { stopScreenShare(s, "screen_unavailable") }
+    }
+
+    private fun startScreenAudio(s: Session) {
+        if (!s.supportsPlaybackCapture) return
+        val projection = s.screenCapture?.projection ?: return
+        val capture = CallScreenAudio.start(projection, s.screenAudioRate) { failed ->
+            worker.execute {
+                if (valid(s) && s.screenAudio === failed) {
+                    stopScreenAudio(s)
+                    updateVideo(s)
+                }
+            }
+        } ?: return
+        s.screenAudio = capture
+        if (runCatching { updateAudioMute(s) }.isFailure) {
+            stopScreenAudio(s)
+            return
+        }
+        // Let the app being shared take media focus while voice chat continues.
+        releaseAudioFocus(s)
+    }
+
+    private fun stopScreenAudio(s: Session) {
+        val capture = s.screenAudio ?: return
+        s.screenAudio = null
+        runCatching { updateAudioMute(s) }
+        capture.close()
+    }
+
+    private fun updateAudioMute(s: Session) {
+        // Keep ADM mute in sync before sharing starts, so no buffered mic frame escapes a muted call.
+        s.audioModule?.setMicrophoneMute(s.muted)
+        s.track?.setEnabled(!s.muted || s.screenAudio != null)
+    }
+
+    internal fun screenServiceStopped(id: String, request: Int, failed: Boolean) { worker.execute {
+        val s = current ?: return@execute
+        if (expectsScreenShare(id, request)) stopScreenShare(s, if (failed) "screen_unavailable" else null)
+    } }
+
+    private fun stopScreenShare(s: Session, error: String? = null, ending: Boolean = false) {
+        val request = s.screenRequest ?: return
+        val sharing = s.screenSharing
+        s.screenRequest = null
+        s.screenConsent = null
+        s.screenDeadline?.let(main::removeCallbacks); s.screenDeadline = null
+        s.screenSharing = false
+        stopScreenAudio(s)
+        if (!ending && sharing && s.focusListener == null) requestAudioFocus(s)
+        var reason = error
+        val restored = !sharing || runCatching { s.videoSender?.setTrack(if (ending) null else s.videoTrack, false) == true }.getOrDefault(false)
+        if (sharing && !restored && !ending) runCatching { s.videoSender?.setTrack(null, false) }
+        s.screenCapture?.close(); s.screenCapture = null
+        main.post { ScreenShareService.stop(s.id, request) }
+        if (ending) return
+        if (sharing) {
+            if (restored) {
+                setVideoEncoding(s, false)
+                if (s.cameraEnabled) {
+                    try { startCamera(s, s.cameraNameLegacy) } catch (_: Exception) {
+                        try { startCamera(s, true) } catch (_: Exception) { cameraUnavailable(s) }
+                    }
+                }
+            } else {
+                cameraUnavailable(s)
+                reason = "screen_unavailable"
+            }
+        }
+        updateVideo(s)
+        if (sharing) emit(s, "screen", JSONObject().put("screenSharing", false))
+        emit(s, "screen_pending", JSONObject().put("screenSharingPending", false))
+        if (reason != null) {
+            val message = if (reason == "screen_cancelled") "未开始屏幕共享" else "暂时无法共享屏幕，通话继续"
+            main.post { if (valid(s)) s.videoHost?.get()?.let { android.widget.Toast.makeText(it, message, android.widget.Toast.LENGTH_SHORT).show() } }
+            emit(s, "screen_error", JSONObject().put("reason", reason))
+        }
+    }
+
+    private fun updateVideo(s: Session) {
+        main.post { if (valid(s)) s.videoView?.let { updateVideoView(s, it) } }
+    }
+    private fun updateVideoView(s: Session, view: VideoCallView) = view.update(s.muted, s.speaker, s.cameraEnabled, s.remoteCameraEnabled,
+        s.frontFacing, s.connected, s.canSwitchCamera, s.recording?.snapshot(), s.screenShareSupported,
+        s.screenSharing, s.remoteScreenSharing, s.screenRequest != null && !s.screenSharing, s.screenAudio != null)
     @JvmStatic fun attachVideo(activity: VideoCallActivity, id: String): Boolean {
         val s = current ?: return false
         if (s.id != id || !valid(s) || !s.video || s.egl == null || s.videoTrack == null) return false
         if (s.videoHost?.get() === activity && s.videoView != null) return true
         s.videoView?.release()
         s.videoHost = WeakReference(activity)
-        val view = VideoCallView(activity, s.egl!!.eglBaseContext, s.videoTrack!!, s.peerName,
+        val view = VideoCallView(activity, s.egl!!.eglBaseContext, s.videoTrack!!, s.peerName, s.peerAvatar,
             { value ->
                 val dispatch = { if (valid(s)) emit(s, "control", value) }
                 if (value.optBoolean("cameraEnabled")) activity.withCameraPermission(id, dispatch) else dispatch()
             },
             { worker.execute { if (valid(s)) { emit(s, "hangup"); release(s) } } })
         s.videoView = view; view.show(); view.setRemoteTrack(s.remoteVideo)
-        view.update(s.muted, s.speaker, s.cameraEnabled, s.remoteCameraEnabled, s.frontFacing, s.connected, s.canSwitchCamera, s.recording?.snapshot())
+        updateVideoView(s, view)
         return true
     }
     @JvmStatic fun detachVideo(activity: Activity, id: String) {
@@ -380,7 +594,7 @@ object VoiceCallBridge {
                 if (input.has("muted")) {
                     s.muted = input.getBoolean("muted")
                     s.recording?.setMuted(s.muted)
-                    s.track?.setEnabled(!s.muted)
+                    updateAudioMute(s)
                     RealtimeBridge.updateMuted(id, s.muted)
                 }
                 if (s.connected && input.has("recordingEnabled")) {
@@ -388,7 +602,11 @@ object VoiceCallBridge {
                 }
                 if (input.has("speaker")) { s.speaker = input.getBoolean("speaker"); route(s, s.speaker) }
                 if (s.video) {
-                    if (input.has("cameraEnabled") && s.cameraEnabled != input.getBoolean("cameraEnabled")) {
+                    if (input.has("screenShareSupported")) s.screenShareSupported = s.entryMode == "video" && input.optBoolean("screenShareSupported")
+                    if (input.has("remoteScreenSharing")) s.remoteScreenSharing = input.optBoolean("remoteScreenSharing")
+                    if (!s.screenShareSupported || (input.has("screenSharing") && !input.optBoolean("screenSharing"))) stopScreenShare(s)
+                    if (input.optBoolean("screenSharing")) beginScreenShare(s)
+                    if (s.screenRequest == null && input.has("cameraEnabled") && s.cameraEnabled != input.getBoolean("cameraEnabled")) {
                         if (input.getBoolean("cameraEnabled")) {
                             try { startCamera(s) } catch (_: Throwable) {
                                 try { startCamera(s, true) } catch (_: Throwable) { cameraUnavailable(s) }
@@ -396,12 +614,13 @@ object VoiceCallBridge {
                         } else { stopCamera(s); s.cameraEnabled = false; s.videoTrack?.setEnabled(false) }
                     }
                     if (input.has("remoteCameraEnabled")) s.remoteCameraEnabled = input.getBoolean("remoteCameraEnabled")
-                    if (input.optBoolean("switchCamera") && s.cameraEnabled && s.canSwitchCamera) s.capturer?.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+                    val generation = s.cameraGeneration
+                    if (s.screenRequest == null && input.optBoolean("switchCamera") && s.cameraEnabled && s.canSwitchCamera) s.capturer?.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
                         override fun onCameraSwitchDone(front: Boolean) { worker.execute {
-                            if (valid(s)) { s.frontFacing = front; updateVideo(s); emit(s, "camera", JSONObject().put("frontFacing", front)) }
+                            if (valid(s) && s.cameraGeneration == generation) { s.frontFacing = front; updateVideo(s); emit(s, "camera", JSONObject().put("frontFacing", front)) }
                         } }
                         override fun onCameraSwitchError(error: String) { worker.execute {
-                            if (valid(s)) emit(s, "control_error", JSONObject().put("cameraEnabled", s.cameraEnabled))
+                            if (valid(s) && s.cameraGeneration == generation) emit(s, "control_error", JSONObject().put("cameraEnabled", s.cameraEnabled))
                         } }
                     })
                     updateVideo(s)
@@ -413,6 +632,7 @@ object VoiceCallBridge {
         if (s.closed) return
         s.closed = true
         s.recording?.close()
+        stopScreenShare(s, ending = true)
         RealtimeBridge.detachCall(s.id)
         try { s.capturer?.stopCapture() } catch (_: Exception) {}
         if (s.video) {
@@ -441,9 +661,8 @@ object VoiceCallBridge {
                 if (Build.VERSION.SDK_INT >= 31) s.audio.clearCommunicationDevice() else s.audio.isSpeakerphoneOn = s.oldSpeaker
                 s.audio.mode = s.oldMode
             }
-            if (Build.VERSION.SDK_INT >= 26) s.focus?.let { s.audio.abandonAudioFocusRequest(it) }
-            else s.focusListener?.let { s.audio.abandonAudioFocus(it) }
         } catch (_: Exception) {}
+        releaseAudioFocus(s)
         if (current === s) current = null
     }
     @JvmStatic fun close(id: String) { worker.execute { current?.let { if (it.id == id) release(it) } } }

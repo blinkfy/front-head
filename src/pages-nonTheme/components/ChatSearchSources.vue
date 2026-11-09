@@ -38,11 +38,9 @@ function openSource(value) {
   window.open(url, '_blank', 'noopener,noreferrer')
   // #endif
   // #ifndef H5
-  uni.setClipboardData({
-    data: url,
-    showToast: false,
-    success: () => uni.showToast({ title: '链接已复制，请在浏览器打开', icon: 'none' }),
-    fail: () => uni.showToast({ title: '复制链接失败，请重试', icon: 'none' })
+  uni.navigateTo({
+    url: `/pages-nonTheme/webview?url=${encodeURIComponent(url)}&title=${encodeURIComponent('参考来源')}`,
+    fail: () => uni.showToast({ title: '打开来源失败，请重试', icon: 'none' })
   })
   // #endif
 }

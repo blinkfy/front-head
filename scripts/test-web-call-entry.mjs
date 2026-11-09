@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import vm from 'node:vm'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { webCallTarget, webCallPath, webCallUrl, embeddedWebCallUrl, pendingWebCallPath, requestWebCallTicket, redeemWebCallTicket, stripWebCallTicket } from '../src/utils/web-call-entry.mjs'
+import { webCallTarget, webCallPath, webCallUrl, embeddedWebCallUrl, miniCallChatPath, miniCallChatReturnMode, registerMiniCallHost, pendingWebCallPath, requestWebCallTicket, redeemWebCallTicket, stripWebCallTicket } from '../src/utils/web-call-entry.mjs'
 
 const require = createRequire(import.meta.url)
 const root = new URL('../', import.meta.url)
@@ -28,6 +28,20 @@ const ticketUrl = webCallUrl('https://example.test/app', target, ticketValue)
 assert.equal(new URL(ticketUrl).search, '', 'ticket is not sent in the HTTP query')
 assert.match(new URL(ticketUrl).hash, /ticket=a{64}$/, 'ticket is placed only in the route fragment')
 assert.equal(stripWebCallTicket(ticketUrl), webUrl, 'entry removes its ticket from the address bar')
+
+const host = {}
+assert.equal(registerMiniCallHost(host, 7), true)
+for (const mode of ['audio', 'video']) {
+  const chatPath = miniCallChatPath({ ...target, mode, ticket: ticketValue })
+  const chatUrl = new URL(chatPath, 'https://app.example')
+  assert.equal(chatUrl.pathname, '/pages-nonTheme/chat')
+  const options = Object.fromEntries(chatUrl.searchParams)
+  assert.deepEqual(options, { userId: '42', title: target.name, embeddedCallMode: mode })
+  assert.equal(miniCallChatReturnMode([{}, host, {}], options, 7), mode)
+  assert.equal(miniCallChatReturnMode([{}, host, {}, {}], options, 7), '', 'only the chat immediately above the call returns to it')
+  assert.equal(miniCallChatReturnMode([{}, host, {}], options, 8), '', 'a different signed-in account cannot attach to the call')
+  assert.equal(miniCallChatReturnMode([{}, host, {}], { ...options, groupId: '5' }, 7), '')
+}
 
 const record = { at: 1_000_000, target }
 assert.equal(pendingWebCallPath(record, 1_000_000), path)
@@ -82,8 +96,7 @@ assert.equal(chat.errors.length, 0)
 const chatDescriptor = { ...chat.descriptor, script: { ...chat.descriptor.script, content: preprocess(chat.descriptor.script.content, 'MP-WEIXIN', 'js') } }
 assert.ok(compileScript(chatDescriptor, { id: 'mp-weixin-chat-web-call' }).content.length > 0, 'MP-WEIXIN chat script compiles')
 const mpChatTemplate = preprocess(chat.descriptor.template.content, 'MP-WEIXIN')
-assert.match(mpChatTemplate, /openWebCall\('audio'\)/)
-assert.match(mpChatTemplate, /openWebCall\('video'\)/)
+assert.match(mpChatTemplate, /@click="chooseCallMode"/)
 const chatResult = compileTemplate({ source: mpChatTemplate, filename: 'chat.vue', id: 'mp-weixin-chat-web-call' })
 assert.deepEqual(chatResult.errors, [], 'MP-WEIXIN chat template compiles with web call entries')
 
@@ -133,6 +146,7 @@ async function runChatOpenWebCall({ active = true, ticket = 'd'.repeat(64), toke
   await state.promise
   assert.equal(state.calls.navigations.length, 0)
   assert.equal(state.calls.toast.length, 1)
+  assert.match(state.calls.toast[0].title, /请使用分投侠 App/)
   assert.equal(state.calls.hidden, 1)
 }
 

@@ -5,11 +5,11 @@
       <view class="entry-copy"><text class="entry-title">开启浏览器来电通知</text><text class="entry-detail">网页保持打开时，在其他窗口也能看到来电提醒</text></view><text>›</text>
     </button>
     <!-- #endif -->
-    <button v-if="call.phase === 'connected'" class="realtime-entry" @click="openCall">
+    <button v-if="callActive" class="realtime-entry" @click="openCall">
       <ManifestIcon :id="videoCall ? 'chat_video_call' : 'chat_voice_call'" size="25px" />
-      <view class="entry-copy"><text class="entry-title">{{ videoCall ? '视频通话进行中' : '语音通话进行中' }}</text><text class="entry-detail">{{ call.peer?.name || '联系人' }} · 点击返回通话</text></view><text>›</text>
+      <view class="entry-copy"><text class="entry-title">{{ callTitle }}</text><text class="entry-detail">{{ call.peer?.name || '联系人' }} · {{ call.phase === 'incoming' ? '点击接听或拒绝' : '点击返回通话' }}</text></view><text>›</text>
     </button>
-    <button v-if="showLocation && (enabled || webLocation || miniLocation) && location.phase === 'sharing'" class="realtime-entry" @click="openLocation">
+    <button v-if="locationActive" class="realtime-entry" @click="openLocation">
       <ManifestIcon id="map_location" size="25px" />
       <view class="entry-copy"><text class="entry-title">{{ location.paused ? '位置更新已暂停' : '实时位置共享' }}</text><text class="entry-detail">{{ location.peer?.name || '联系人' }} · 点击查看位置状态</text></view><text>›</text>
     </button>
@@ -20,17 +20,19 @@ import { webCallsAvailable, webCallNotificationsAvailable, requestWebCallNotific
 import ManifestIcon from './ManifestIcon.vue'
 import { voiceCallState, openVoiceCallPage } from '@/utils/voice-call.js'
 import { liveLocationState } from '@/utils/live-location.js'
-import { androidRealtimeAvailable } from '@/utils/android-realtime.js'
-import { webLocationAvailable } from '@/utils/live-location-tracker.js'
-import { miniLocationAvailable } from '@/utils/mini-location.js'
 export default {
   props: { showLocation: { type: Boolean, default: true }, showNotificationSetting: { type: Boolean, default: false } },
   components: { ManifestIcon },
-  data: () => ({ enabled: androidRealtimeAvailable(), webEnabled: webCallsAvailable(), webLocation: webLocationAvailable(), miniLocation: miniLocationAvailable(), canNotify: webCallNotificationsAvailable(), notificationsGranted: false, call: voiceCallState, location: liveLocationState }),
+  data: () => ({ webEnabled: webCallsAvailable(), canNotify: webCallNotificationsAvailable(), notificationsGranted: false, call: voiceCallState, location: liveLocationState, openingLocation: false }),
   computed: {
-    videoCall() { return (this.call.cameraSupported || this.call.mode === 'video') && (this.call.cameraEnabled || this.call.remoteCameraEnabled) },
-    hasEntries() { return ((this.enabled || this.webEnabled) && this.call.phase === 'connected') ||
-      (this.showLocation && (this.enabled || this.webLocation || this.miniLocation) && this.location.phase === 'sharing') ||
+    videoCall() { return this.call.mode === 'video' || ((this.call.cameraSupported || this.call.mode === 'video') && (this.call.cameraEnabled || this.call.remoteCameraEnabled)) },
+    callActive() { return ['calling', 'incoming', 'connecting', 'connected'].includes(this.call.phase) },
+    locationActive() { return this.showLocation && this.location.phase === 'sharing' },
+    callTitle() {
+      const kind = this.videoCall ? '视频' : '语音'
+      return this.call.phase === 'incoming' ? `${kind}来电` : this.call.phase === 'calling' ? `正在呼叫 · ${kind}通话` : this.call.phase === 'connecting' ? `${kind}通话连接中` : `${kind}通话进行中`
+    },
+    hasEntries() { return this.callActive || this.locationActive ||
       (this.showNotificationSetting && this.webEnabled && this.canNotify && !this.notificationsGranted) }
   },
   mounted() {
@@ -47,7 +49,12 @@ export default {
     openCall() { openVoiceCallPage() },
     openLocation() {
       const peer = this.location.peer
-      if (peer) uni.navigateTo({ url: `/pages-nonTheme/live-location?peerId=${encodeURIComponent(peer.id)}&name=${encodeURIComponent(peer.name || '联系人')}&sessionId=${encodeURIComponent(this.location.sessionId)}` })
+      if (!peer || this.openingLocation || !this.locationActive) return
+      this.openingLocation = true
+      uni.navigateTo({
+        url: `/pages-nonTheme/live-location?peerId=${encodeURIComponent(peer.id)}&name=${encodeURIComponent(peer.name || '联系人')}&sessionId=${encodeURIComponent(this.location.sessionId)}`,
+        complete: () => { this.openingLocation = false }
+      })
     }
   }
 }

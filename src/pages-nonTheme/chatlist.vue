@@ -31,8 +31,8 @@
 		<scroll-view ref="userScroll" class="user-list" scroll-y :scroll-top="scrollTop" :style="{ height: listHeight, backgroundColor: 'var(--list-bg)', paddingTop: headerOffset + 'px' }" @scrolltolower="loadMore"
 			refresher-enabled :refresher-triggered="isRefreshing" @refresherrefresh="onRefresh" @click.stop @click="handleContainerClick">
             <SystemNotificationEntry :active="isPageActive" />
-            <RealtimeActivityEntry show-notification-setting />
             <CommunityActivityEntry :enabled="communityChatEnabled" :active="isPageActive" />
+            <RealtimeActivityEntry show-notification-setting />
 			<!-- 加载中 -->
 			<view class="loading-wrap" v-if="(isSearching ? searchLoading : loading) && filteredUserList.length === 0">
 				<view class="loading-spinner"></view>
@@ -50,7 +50,7 @@
 				v-for="(user, index) in filteredUserList" :key="getConversationKey(user)" @click="openChat(user)" @longpress="showConversationActions(user)" @contextmenu.prevent="showConversationActions(user)"
 				:style="{ animationDelay: index * 0.05 + 's' }">
 				<view class="avatar-wrap">
-					<image class="avatar" :src="getUserAvatar(user)" mode="aspectFill"></image>
+					<ChatCachedAvatar class="avatar" :src="getUserAvatar(user)" :avatar-name="user.note || getDisplayName(user)" :owner="avatarCacheOwner" />
 					<view class="unread-badge" v-if="user.unreadCount > 0">
 						{{ user.unreadCount > 99 ? '99+' : user.unreadCount }}
 					</view>
@@ -106,6 +106,7 @@ import * as chatApi from '@/pages-nonTheme/api/chat'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
+import ChatCachedAvatar from './components/ChatCachedAvatar.vue'
 import { messageBus } from '@/utils/message-event-bus.js'
 import { isChatEventsConnected } from '@/utils/chat-events.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
@@ -115,7 +116,10 @@ import SystemNotificationEntry from './components/SystemNotificationEntry.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { getDisplayName } from '@/utils/display-name.js'
 export default {
-	components: { AppConfirmDialog, ManifestIcon, CommunityActivityEntry, SystemNotificationEntry, RealtimeActivityEntry },
+	components: {
+		AppConfirmDialog, ManifestIcon, CommunityActivityEntry, SystemNotificationEntry, RealtimeActivityEntry,
+		ChatCachedAvatar,
+	},
 	data() {
 		return {
 			statusBarHeight: 20,
@@ -159,6 +163,9 @@ export default {
 	},
 
 computed: {
+		avatarCacheOwner() {
+			return this.cacheKey.slice('chatlist_'.length)
+		},
 		headerOffset() {
 			const baseOffset = 44 + (this.statusBarHeight || 20)
 			const searchOffset = this.showSearch ? 50 : 0
@@ -1245,39 +1252,6 @@ computed: {
 			}
 		},
 
-		// 生成基于用户名的头像 URL (使用第三方服务)
-		generateAvatarFromName(name) {
-			if (!name) return this.getDefaultAvatarUrl()
-			
-			// 获取用户名首字符
-			const firstChar = name.charAt(0).toUpperCase()
-			
-			// 根据用户名生成颜色 (简单哈希)
-			const colors = [
-				'FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', 
-				'98D8C8', '6C5CE7', 'A29BFE', 'FD79A8',
-				'FDCB6E', '00B894', '00CEC9', '0984E3'
-			]
-			let hash = 0
-			for (let i = 0; i < name.length; i++) {
-				hash = name.charCodeAt(i) + ((hash << 5) - hash)
-			}
-			const colorIndex = Math.abs(hash) % colors.length
-			const bgColor = colors[colorIndex]
-			
-			// 使用在线头像生成服务
-			// 方案1: UI Avatars (推荐，支持跨平台)
-			const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(firstChar)}&background=${bgColor}&color=fff&size=100&font-size=0.4&bold=true`
-			
-			return avatarUrl
-		},
-
-		// 获取默认头像 URL
-		getDefaultAvatarUrl() {
-			// 使用在线默认头像服务而不是本地文件
-			return 'https://ui-avatars.com/api/?name=U&background=999999&color=fff&size=100'
-		},
-
 		// 暴露给模板：Options API 中 import 的函数不会自动进入渲染上下文
 		getDisplayName,
 
@@ -1298,9 +1272,7 @@ computed: {
 				const avatarUrl = getAvatarUrl(user.avatar, baseUrl)
 				return avatarUrl
 			}
-			// 没有有效头像时，生成基于用户名的头像
-			const generatedUrl = this.generateAvatarFromName(username)
-			return generatedUrl
+			return ''
 		}
 	}
 }

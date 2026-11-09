@@ -18,6 +18,26 @@ export function embeddedWebCallUrl(baseUrl, value, ticket = '') {
   const legacy = webCallUrl(baseUrl, value, ticket)
   return legacy.replace('/web/#/pages-nonTheme/web-call?', '/web/call/index.html#?')
 }
+
+// The parent page instance is the return target. No ticket or call credentials
+// are passed to the native chat page.
+const miniCallHosts = new WeakMap()
+export function registerMiniCallHost(page, selfId) {
+  if (!page || !id(selfId)) return false
+  miniCallHosts.set(page, String(selfId))
+  return true
+}
+export function miniCallChatPath(value) {
+  const target = webCallTarget(value)
+  if (!target) return ''
+  return `/pages-nonTheme/chat?userId=${target.peerId}&title=${encodeURIComponent(target.name)}&embeddedCallMode=${target.mode}`
+}
+export function miniCallChatReturnMode(pages, options, selfId) {
+  const mode = options?.embeddedCallMode
+  const parent = pages[pages.length - 2]
+  if (miniCallHosts.get(parent) !== String(selfId) || options?.groupId || options?.conversationType === 'group') return ''
+  return webCallTarget({ peerId: options?.userId, selfId, mode })?.mode || ''
+}
 // Raw requests deliberately keep old-server failures local to this entry page.
 function post(runtime, base, path, data, token = '') {
   return new Promise((resolve, reject) => runtime.request({

@@ -12,9 +12,12 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import okhttp3.*
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 // One account-bound socket. Coordinates/tokens remain in memory only. All mutable
 // state is serialized on main. Opted-in messaging reconnects with bounded backoff.
@@ -29,6 +32,7 @@ object RealtimeBridge {
     @Volatile private var serverSupported = false
     @Volatile var callId = ""; private set
     @Volatile var video = false; private set
+    @Volatile var cameraServiceNeeded = false; private set
     @Volatile var muted = false; private set
     @Volatile private var callConnected = false
     @Volatile var locationId = ""; private set
@@ -56,14 +60,26 @@ object RealtimeBridge {
     private var nativeCanSwitchCamera = false
     private var nativeCamera = true
     private var nativeRemoteCamera = true
+    private var nativeScreenSupported = false
+    private var screenSharing: Boolean? = null
+    private var remoteScreenSharing: Boolean? = null
+    private var remoteCameraForScreen: Boolean? = null
+    private var screenPending: Boolean? = null
     private var nativeAcceptSent = false
     private var nativeReported = false
     private var nativeDeadline: Runnable? = null
     @JvmStatic fun isNativeCall(id: String): Boolean = nativeAnswered && callId == id && id.isNotEmpty()
+    internal fun incomingAvatar(peer: JSONObject?): String {
+        val avatar = peer?.optString("avatar").orEmpty().trim()
+        if (!avatar.startsWith("/static/") && !avatar.startsWith("/images/")) return avatar
+        return socketUrl.replaceFirst(Regex("^ws"), "http").toHttpUrlOrNull()?.resolve(avatar)?.toString().orEmpty()
+    }
     private fun nativeSnapshot(phase: String = if (callConnected) "connected" else "connecting", reason: String = ""): JSONObject =
         JSONObject().put("type", "voice.native").put("callId", callId).put("phase", phase).put("mode", nativeEntryMode).put("cameraSupported", video).put("canSwitchCamera", nativeCanSwitchCamera)
             .put("peer", nativePeer).put("userId", selfId).put("muted", muted).put("speaker", nativeSpeaker)
             .put("cameraEnabled", nativeCamera).put("remoteCameraEnabled", nativeRemoteCamera).put("startedAt", nativeStartedAt).put("reason", reason)
+            .put("screenShareSupported", nativeScreenSupported).put("screenSharing", screenSharing == true)
+            .put("remoteScreenSharing", remoteScreenSharing == true).put("screenSharePending", screenPending == true)
             .apply {
                 val recording = VoiceCallBridge.recordingState(callId)
                 recording?.keys()?.forEach { key -> put(key, recording.opt(key)) }
@@ -77,12 +93,14 @@ object RealtimeBridge {
         val invitation = incoming ?: return false
         val isVideo = invitation.optString("mode") == "video"
         val flexible = invitation.optBoolean("cameraToggle")
-        if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
-            (isVideo && activity.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)) return false
+        if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return false
         if (!incomingAcceptance.accept(id, incomingOwner())) return false
         callId = id; video = isVideo || flexible; nativeEntryMode = if (isVideo) "video" else "audio"; nativeCanSwitchCamera = false; callConnected = false; muted = false; nativeSpeaker = isVideo
         nativeAnswered = true; nativePeer = invitation.optJSONObject("peer"); nativeStartedAt = 0L
-        nativeCamera = isVideo; nativeRemoteCamera = isVideo; nativeAcceptSent = false; nativeReported = false
+        nativeCamera = isVideo && activity.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        cameraServiceNeeded = nativeCamera
+        nativeRemoteCamera = isVideo; nativeAcceptSent = false; nativeReported = false
+        resetScreenState()
         clearIncoming()
         refreshHeartbeat()
         if (!updateService()) { endCall("failed", true); return false }
@@ -91,7 +109,8 @@ object RealtimeBridge {
         nativeDeadline = deadline; main.postDelayed(deadline, 30000)
         VoiceCallBridge.open(activity, JSONObject().put("callId", id).put("offerer", false).put("nativeAnswer", true)
             .put("entryMode", nativeEntryMode).put("recordingOwner", selfId)
-            .put("mode", if (video) "video" else "audio").put("cameraEnabled", isVideo).put("remoteCameraEnabled", isVideo).put("cameraRequested", isVideo).put("speaker", isVideo).put("peerName", nativePeer?.optString("name", "联系人"))
+            .put("mode", if (video) "video" else "audio").put("cameraEnabled", nativeCamera).put("remoteCameraEnabled", isVideo).put("cameraRequested", isVideo).put("speaker", isVideo).put("peerName", nativePeer?.optString("name", "联系人"))
+            .put("peerAvatar", incomingAvatar(nativePeer))
             .put("stunUrls", org.json.JSONArray().put("stun:stun.cloudflare.com:3478")).toString()) { event ->
                 // Errors emitted before the native Session exists still terminate the reservation.
                 main.post { if (isNativeCall(id)) try {
@@ -131,6 +150,42 @@ object RealtimeBridge {
             raw(JSONObject().put("type", "voice.media").put("callId", callId).put("cameraEnabled", nativeCamera))
         }
         VoiceCallBridge.control(callId, value.toString()); updateService(); publishNative()
+    }
+
+    private fun updateRemoteMedia(event: JSONObject, owned: Boolean) {
+        val update = JSONObject()
+        if (event.has("cameraEnabled")) {
+            val enabled = event.optBoolean("cameraEnabled")
+            update.put("remoteCameraEnabled", enabled)
+            remoteCameraForScreen = enabled
+            if (owned) nativeRemoteCamera = enabled
+        }
+        if (event.has("screenSharing")) {
+            val sharing = event.optBoolean("screenSharing")
+            update.put("remoteScreenSharing", sharing)
+            remoteScreenSharing = sharing
+        }
+        VoiceCallBridge.control(callId, update.toString())
+    }
+
+    private fun announceVoiceCapability() {
+        raw(JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true)
+            .put("cameraToggle", true).put("screenShareReceive", true))
+    }
+
+    private fun resetScreenState() {
+        nativeScreenSupported = false; screenSharing = null; screenPending = null; remoteScreenSharing = null; remoteCameraForScreen = null
+    }
+
+    private fun syncScreenState() {
+        if (callId.isEmpty() || nativeAnswered) return
+        screenSharing?.let { deliver(JSONObject().put("type", "voice.local-screen").put("callId", callId).put("screenSharing", it)) }
+        screenPending?.let { deliver(JSONObject().put("type", "voice.local-screen-pending").put("callId", callId).put("screenSharingPending", it)) }
+        remoteScreenSharing?.let {
+            val media = JSONObject().put("type", "voice.media").put("callId", callId).put("screenSharing", it)
+            remoteCameraForScreen?.let { enabled -> media.put("cameraEnabled", enabled) }
+            deliver(media)
+        }
     }
     private var incomingObserver: ((JSONObject?) -> Unit)? = null
     private var observedIncomingId = ""
@@ -174,7 +229,7 @@ object RealtimeBridge {
             messagingEnabled = value.optBoolean("enabled") && !messagingPaused && installationId.isNotEmpty()
             val previousSound = soundEnabled
             soundEnabled = value.optBoolean("sound", true)
-            if (previousSound && !soundEnabled) context?.let { RealtimeNotifications.cancelIncoming(it) }
+            if (previousSound && !soundEnabled) IncomingCallRinger.stop(RealtimeNotifications.incomingId())
             if (authenticated) announceMessaging()
             updateService()
         } catch (_: Exception) { messagingEnabled = false; updateService() }
@@ -190,6 +245,8 @@ object RealtimeBridge {
         notifyIncomingScreen()
     }
     private fun receiveIncoming(event: JSONObject) {
+        val id = event.optString("callId")
+        if (id == incoming?.optString("callId") || id == callId) return
         if (callId.isNotEmpty() || incoming != null) {
             raw(JSONObject().put("type", "voice.end").put("callId", event.optString("callId")).put("reason", "busy")); return
         }
@@ -197,24 +254,22 @@ object RealtimeBridge {
         incomingAcceptance.offer(event.optString("callId"), incomingOwner())
         notifyIncomingScreen()
         val ctx = context
-        if (ctx == null || !RealtimeNotifications.incoming(ctx, event, soundEnabled)) {
-            raw(JSONObject().put("type", "voice.end").put("callId", event.optString("callId")).put("reason", "unavailable"))
-            clearIncoming(); return
-        }
+        val notified = ctx != null && RealtimeNotifications.incoming(ctx, event, soundEnabled)
         val task = Runnable {
             if (incoming?.optString("callId") == event.optString("callId")) {
                 raw(JSONObject().put("type", "voice.end").put("callId", event.optString("callId")).put("reason", "timeout")); clearIncoming()
             }
         }
         incomingDeadline = task; main.postDelayed(task, 30000)
-        raw(JSONObject().put("type", "voice.notified").put("callId", event.optString("callId")))
+        if (notified) raw(JSONObject().put("type", "voice.notified").put("callId", id))
     }
     @Volatile private var generation = 0
     private var closing = false
     private var callback: ((String) -> Unit)? = null
-    private val deferred = linkedMapOf<String, String>()
+    private data class DeferredEvent(val data: String, val queuedAt: Long = SystemClock.elapsedRealtime())
+    private val deferred = linkedMapOf<String, DeferredEvent>()
     private var watchCallback: ((String) -> Unit)? = null
-    private var watchId = 0
+    private val watchId = AtomicInteger()
     private var manager: LocationManager? = null
     private var listener: LocationListener? = null
     private var point: Location? = null
@@ -248,7 +303,12 @@ object RealtimeBridge {
         else if (event.optString("type").startsWith("voice.") || event.optString("type").startsWith("location.")) {
             val close = deferred.remove("close")
             val key = event.optString("type") + ":" + event.optString("callId", event.optString("sessionId"))
-            deferred.remove(key); deferred[key] = event.toString()
+            val previous = deferred.remove(key)
+            if (event.optString("type") == "voice.media" && previous != null) {
+                val old = JSONObject(previous.data)
+                for (field in listOf("cameraEnabled", "screenSharing")) if (!event.has(field) && old.has(field)) event.put(field, old.getBoolean(field))
+            }
+            deferred[key] = DeferredEvent(event.toString())
             while (deferred.size > 32) deferred.remove(deferred.keys.first())
             if (close != null) deferred["close"] = close // Terminal reasons must precede socket disposal.
         }
@@ -284,14 +344,18 @@ object RealtimeBridge {
                         val event = JSONObject(text); lastSeen = System.currentTimeMillis()
                         if (isNativeCall(event.optString("callId"))) {
                             when (event.optString("type")) {
-                                "voice.accepted" -> return@post
+                                "voice.accepted" -> {
+                                    nativeScreenSupported = nativeEntryMode == "video" && event.optBoolean("screenShareSupported")
+                                    VoiceCallBridge.control(callId, JSONObject().put("screenShareSupported", nativeScreenSupported).toString())
+                                    if (video) raw(JSONObject().put("type", "voice.media").put("callId", callId).put("cameraEnabled", nativeCamera))
+                                    return@post
+                                }
                                 "voice.offer", "voice.answer", "voice.ice" -> {
                                     VoiceCallBridge.signal(callId, JSONObject(event.toString()).put("type", event.optString("type").removePrefix("voice.")).toString())
                                     return@post
                                 }
                                 "voice.media" -> {
-                                    nativeRemoteCamera = event.optBoolean("cameraEnabled", true)
-                                    VoiceCallBridge.control(callId, JSONObject().put("remoteCameraEnabled", nativeRemoteCamera).toString())
+                                    updateRemoteMedia(event, true)
                                     publishNative(); return@post
                                 }
                                 "voice.connected" -> {
@@ -309,8 +373,8 @@ object RealtimeBridge {
                                 announceMessaging()
                                 if (!foreground) {
                                     raw(JSONObject().put("type", "background").put("keepRealtime", true))
-                                    raw(JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true).put("cameraToggle", true))
-                                    deferred["connected"] = event.toString()
+                                    announceVoiceCapability()
+                                    deferred["connected"] = DeferredEvent(event.toString())
                                 }
                                 updateService()
                             }
@@ -332,8 +396,7 @@ object RealtimeBridge {
                                 if (event.optString("callId") == incoming?.optString("callId")) clearIncoming()
                                 if (event.optString("callId") == callId) endCall(event.optString("reason", "hangup"), false)
                             }
-                            "voice.media" -> if (!foreground && event.optString("callId") == callId) VoiceCallBridge.control(callId,
-                                JSONObject().put("remoteCameraEnabled", event.optBoolean("cameraEnabled")).toString())
+                            "voice.media" -> if (event.optString("callId") == callId) updateRemoteMedia(event, false)
                             "location.joined" -> if (!watching || locationId == event.optString("sessionId")) {
                                 locationId = event.optString("sessionId")
                                 val peer = if (event.optJSONObject("from")?.optString("id") == selfId) event.optJSONObject("to") else event.optJSONObject("from")
@@ -392,7 +455,7 @@ object RealtimeBridge {
             main.removeCallbacks(heartbeat)
             // Preserve only a close marker; foreground reconnect reauthorizes the account.
             val terminal = deferred.filter { (key, value) -> key.startsWith("voice.ended:") || key.startsWith("location.ended:") ||
-                (key.startsWith("voice.native:") && JSONObject(value).optString("phase") == "ended") }
+                (key.startsWith("voice.native:") && JSONObject(value.data).optString("phase") == "ended") }
             deferred.clear(); deferred.putAll(terminal); generation++
             if (messagesEnabled() && code != 4001 && code != 4000 && (tokenExpiry == 0L || tokenExpiry > System.currentTimeMillis())) {
                 val wait = (1000L shl reconnectAttempts.coerceAtMost(6)).coerceAtMost(60000L) + (Math.random() * 1000).toLong()
@@ -401,11 +464,11 @@ object RealtimeBridge {
                 val task = Runnable {
                     reconnectTask = null
                     if (messagesEnabled() && !foreground && (tokenExpiry == 0L || tokenExpiry > System.currentTimeMillis())) connectNative()
-                    else if (!foreground) { closeNow(false); deferred["close"] = "4001" }
+                    else if (!foreground) { closeNow(false); deferred["close"] = DeferredEvent("4001") }
                 }
                 reconnectTask = task; main.postDelayed(task, wait)
             } else {
-                deferred["close"] = code.toString(); socketUrl = ""; updateService()
+                deferred["close"] = DeferredEvent(code.toString()); socketUrl = ""; updateService()
             }
         } else closeNow(true, code)
         closing = false
@@ -418,11 +481,19 @@ object RealtimeBridge {
             if (socket == null && socketUrl.isNotEmpty()) connectNative()
             else refreshHeartbeat()
             val events = deferred.toMap(); deferred.clear()
-            for ((key, event) in events) if (key == "close") emit("close", code = event.toInt()) else emit("message", event)
-            point?.let { if (System.currentTimeMillis() - it.time < 45000) locationCallback(it) }
-            if (incoming != null) {
-                raw(JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true).put("cameraToggle", true))
+            for ((key, event) in events) {
+                when {
+                    key == "close" -> emit("close", code = event.data.toInt())
+                    key.startsWith("location.point:") || key.startsWith("location.joined:") ->
+                        emit("message", JSONObject(event.data).put("clientDeferredMs", SystemClock.elapsedRealtime() - event.queuedAt).toString())
+                    else -> emit("message", event.data)
+                }
             }
+            point?.let { if (validLocation(it, 45000)) locationCallback(it, provisional = !validLocation(it, 15000)) }
+            if (incoming != null) {
+                announceVoiceCapability()
+            }
+            syncScreenState()
             VoiceCallBridge.resumeState(); publishNative()
         } else {
             if (backgroundMask() == 0) { closeNow(true); return@post }
@@ -430,11 +501,11 @@ object RealtimeBridge {
             if (!callConnected && !nativeAnswered && callId.isNotEmpty()) endCall("background", true)
         }
     } }
-    private fun updateService(): Boolean {
+    private fun updateService(reportFailure: Boolean = true): Boolean {
         val ctx = context ?: return false
         if (callId.isEmpty() && !watching && !messagesEnabled()) {
             startingService = false
-            ctx.stopService(Intent(ctx, RealtimeService::class.java))
+            RealtimeService.stop(ctx)
             if (!foreground && socket != null) failSocket(1000, true)
             return true
         }
@@ -445,15 +516,18 @@ object RealtimeBridge {
             true
         } catch (_: Exception) {
             startingService = false
+            if (!reportFailure) return false
             messagingEnabled = false; messagingPaused = true; announceMessaging()
             emit("status", "SERVICE_UNAVAILABLE")
             if (!foreground && callId.isEmpty() && !watching) failSocket(1000, true)
             false
         }
     }
-    @JvmStatic fun attachCall(ctx: Context, id: String, isVideo: Boolean) { main.post {
+    @JvmStatic fun attachCall(ctx: Context, id: String, isVideo: Boolean, cameraEnabled: Boolean) { main.post {
         if (nativeAnswered && callId == id) return@post
         context = ctx.applicationContext; callId = id; video = isVideo; muted = false; callConnected = false
+        resetScreenState()
+        cameraServiceNeeded = cameraEnabled
         refreshHeartbeat()
         if (!updateService()) endCall("failed", true)
     } }
@@ -461,7 +535,8 @@ object RealtimeBridge {
         if (callId != id) return@post
         if (nativeAnswered) { endCall("failed", true); return@post }
         pendingCameraAction = null
-        callId = ""; callConnected = false; video = false
+        callId = ""; callConnected = false; video = false; cameraServiceNeeded = false
+        resetScreenState()
         disconnectedTask?.let(main::removeCallbacks); disconnectedTask = null
         updateService()
     } }
@@ -472,20 +547,39 @@ object RealtimeBridge {
     private var pendingCameraAction: Pair<String, () -> Unit>? = null
     @JvmStatic fun withCameraService(id: String, action: () -> Unit) { main.post {
         val ctx = context ?: return@post
-        if (callId != id || !video || ctx.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return@post
+        if (callId != id || !video) return@post
+        if (ctx.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            VoiceCallBridge.cameraServiceUnavailable(id); return@post
+        }
+        if (cameraServiceNeeded && RealtimeService.running && !startingService) { action(); return@post }
+        cameraServiceNeeded = true
         pendingCameraAction = id to action
-        if (!updateService()) pendingCameraAction = null
+        if (!updateService(reportFailure = false)) {
+            pendingCameraAction = null; cameraServiceNeeded = false
+            VoiceCallBridge.cameraServiceUnavailable(id)
+        }
     } }
     @JvmStatic fun cancelCameraServiceAction(id: String) { main.post {
         if (pendingCameraAction?.first == id) pendingCameraAction = null
+        // Retain the already granted service type until this call ends. A
+        // camera toggle in PiP must not re-promote the service in background.
+    } }
+    @JvmStatic fun cameraServiceUnavailable(id: String) { main.post {
+        if (id != callId) return@post
+        if (pendingCameraAction?.first == id) pendingCameraAction = null
+        cameraServiceNeeded = false
+        VoiceCallBridge.cameraServiceUnavailable(id)
     } }
     @JvmStatic fun activeLocationId(): String = if (watching) locationId else ""
     // Return true when native consumed an event while JS may be suspended.
     @JvmStatic fun callEvent(id: String, type: String, data: JSONObject): Boolean {
         val background = !foreground
         val owned = isNativeCall(id)
+        val screenEvent = type == "screen" || type == "screen_pending" || type == "screen_error"
+        val nativeScreen = screenEvent && callId == id && authenticated && socket != null
+        if (screenEvent && !owned && !nativeScreen) return false
         // Native owns the disconnect grace period on both sides of a JS pause.
-        if (!owned && !background && type != "state" && type != "control") return false
+        if (!owned && !background && !nativeScreen && type != "state" && type != "control") return false
         main.post {
             if (callId != id) return@post
             when (type) {
@@ -498,7 +592,7 @@ object RealtimeBridge {
                     if (data.has("canSwitchCamera")) nativeCanSwitchCamera = data.optBoolean("canSwitchCamera")
                     if (data.has("cameraEnabled")) {
                         nativeCamera = data.optBoolean("cameraEnabled")
-                        raw(JSONObject().put("type", "voice.media").put("callId", id).put("cameraEnabled", nativeCamera))
+                        if (!owned || nativeAcceptSent) raw(JSONObject().put("type", "voice.media").put("callId", id).put("cameraEnabled", nativeCamera))
                     }
                     if (owned) publishNative()
                 }
@@ -510,6 +604,20 @@ object RealtimeBridge {
                 }
                 "recording" -> if (owned) publishNative() else
                     deliver(JSONObject(data.toString()).put("type", "voice.local-recording").put("callId", id))
+                "screen" -> {
+                    val sharing = data.optBoolean("screenSharing")
+                    if (!raw(JSONObject().put("type", "voice.media").put("callId", id).put("screenSharing", sharing))) { failSocket(); return@post }
+                    screenSharing = sharing; screenPending = false
+                    if (owned) publishNative()
+                    else deliver(JSONObject(data.toString()).put("type", "voice.local-screen").put("callId", id))
+                }
+                "screen_pending" -> {
+                    screenPending = data.optBoolean("screenSharingPending")
+                    if (owned) publishNative()
+                    else deliver(JSONObject(data.toString()).put("type", "voice.local-screen-pending").put("callId", id))
+                }
+                "screen_error" -> if (owned) publishNative() else
+                    deliver(JSONObject(data.toString()).put("type", "voice.local-screen-error").put("callId", id))
                 "hangup", "error" -> endCall(if (type == "hangup") "hangup" else data.optString("reason", "failed"), true)
                 "state" -> when (data.optString("state")) {
                     "failed" -> endCall("connect_failed", true)
@@ -525,7 +633,7 @@ object RealtimeBridge {
                 }
             }
         }
-        return background || owned || type == "control"
+        return background || owned || nativeScreen || type == "control"
     }
     private fun endCall(reason: String, signal: Boolean) {
         val id = callId
@@ -534,7 +642,8 @@ object RealtimeBridge {
         pendingCameraAction = null
         nativeAnswered = false; nativePeer = null
         nativeDeadline?.let(main::removeCallbacks); nativeDeadline = null
-        callId = ""; video = false; callConnected = false
+        callId = ""; video = false; callConnected = false; cameraServiceNeeded = false
+        resetScreenState()
         deferred.keys.filter { it.startsWith("voice.") && it.endsWith(":$id") }.forEach(deferred::remove)
         disconnectedTask?.let(main::removeCallbacks); disconnectedTask = null
         if (signal) raw(JSONObject().put("type", "voice.end").put("callId", id).put("reason", reason))
@@ -560,6 +669,7 @@ object RealtimeBridge {
             "hangup" -> if (id == callId) endCall("hangup", true)
             "mute" -> if (id == callId) {
                 muted = !muted; VoiceCallBridge.control(id, JSONObject().put("muted", muted).toString()); updateService(); publishNative()
+                if (!nativeAnswered) deliver(JSONObject().put("type", "voice.local-control").put("callId", id).put("muted", muted))
             }
             "stop-location" -> if (id == locationId) stopLocation(true)
         }
@@ -582,69 +692,91 @@ object RealtimeBridge {
         endCall("hangup", true); stopLocation(true); clearIncoming(); closeNow(true)
     } }
     @JvmStatic fun watchLocation(ctx: Context, callback: (String) -> Unit): Int {
-        val id = ++watchId
+        val id = watchId.incrementAndGet()
         main.post {
+            if (id != watchId.get()) return@post
             context = ctx.applicationContext
             if (locationId.isEmpty() || !alive()) { callback("{\"error\":2}"); return@post }
-            watchCallback = callback; watching = true; sequence = 0; lastSentAt = 0
-            refreshHeartbeat()
-            if (!updateService()) { locationError(2); return@post }
+            watchCallback = callback
+            listener?.let { try { manager?.removeUpdates(it) } catch (_: Exception) {} }
+            listener = null
+            locationDeadline?.let(main::removeCallbacks); locationDeadline = null
+            if (!watching) { sequence = 0; lastSentAt = 0 }
             try {
-                manager = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                val providerManager = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
                 val precise = ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
                 val coarse = ctx.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
                 if (!precise && !coarse) { locationError(1); return@post }
+                fun availableProviders() = providerManager.getProviders(true).filter {
+                    it == LocationManager.NETWORK_PROVIDER || precise && it == LocationManager.GPS_PROVIDER
+                }
+                val providers = availableProviders()
+                if (providers.isEmpty()) { locationError(2); return@post }
+                manager = providerManager; watching = true
+                refreshHeartbeat()
+                if (!updateService()) { locationError(2); return@post }
                 val source = object : LocationListener {
                     override fun onLocationChanged(value: Location) {
-                        if (!watching || id != watchId || !value.hasAccuracy() || !value.latitude.isFinite() || !value.longitude.isFinite()) return
+                        if (!watching || id != watchId.get() || !validLocation(value, 15000)) return
                         point = Location(value); pending = Location(value)
-                        locationDeadline?.let(main::removeCallbacks); locationDeadline = null
+                        scheduleLocationDeadline(id, 90000)
                         if (foreground) locationCallback(value)
                         flushLocation()
                     }
                     override fun onProviderDisabled(provider: String) {
-                        if (manager?.getProviders(true)?.any { it == LocationManager.GPS_PROVIDER || it == LocationManager.NETWORK_PROVIDER } != true) locationError(2)
+                        if (watching && id == watchId.get() && availableProviders().isEmpty()) locationError(2)
                     }
                     override fun onProviderEnabled(provider: String) {}
                     @Deprecated("Deprecated in Android") override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
                 }
                 listener = source
-                val providers = manager!!.getProviders(true).filter { it == LocationManager.NETWORK_PROVIDER || precise && it == LocationManager.GPS_PROVIDER }
-                if (providers.isEmpty()) { locationError(2); return@post }
-                for (provider in providers) manager!!.requestLocationUpdates(provider, 5000L, 0f, source, Looper.getMainLooper())
-                // Show a recent cached fix immediately while requesting fresh GPS/network fixes.
-                providers.mapNotNull { manager!!.getLastKnownLocation(it) }
-                    .filter { it.hasAccuracy() && System.currentTimeMillis() - it.time in 0L..30000L }
-                    .minByOrNull { it.accuracy }?.let(source::onLocationChanged)
-                val deadline = Runnable { if (watching && id == watchId && point == null) locationError(2) }
-                locationDeadline = deadline; main.postDelayed(deadline, 45000)
+                for (provider in providers) providerManager.requestLocationUpdates(provider, 5000L, 0f, source, Looper.getMainLooper())
+                // Last-known locations help the local map only. The peer waits for a fresh provider callback.
+                if (foreground) providers.mapNotNull { providerManager.getLastKnownLocation(it) }
+                    .filter { validLocation(it, 30000) }.minByOrNull { it.accuracy }?.let { locationCallback(it, provisional = true) }
+                scheduleLocationDeadline(id, if (point == null) 45000 else 90000)
             } catch (_: SecurityException) { locationError(1) } catch (_: Exception) { locationError(2) }
         }
         return id
     }
-    private fun locationCallback(value: Location) { watchCallback?.invoke(JSONObject().put("latitude", value.latitude)
-        .put("longitude", value.longitude).put("accuracy", value.accuracy.toDouble()).toString()) }
+    private fun scheduleLocationDeadline(id: Int, timeout: Long) {
+        locationDeadline?.let(main::removeCallbacks)
+        val deadline = Runnable { if (watching && id == watchId.get()) locationError(2) }
+        locationDeadline = deadline; main.postDelayed(deadline, timeout)
+    }
+    private fun validLocation(value: Location, maxAge: Long): Boolean =
+        value.hasAccuracy() && value.accuracy.isFinite() && value.latitude in -90.0..90.0 && value.longitude in -180.0..180.0 &&
+            TimeUnit.NANOSECONDS.toMillis(SystemClock.elapsedRealtimeNanos() - value.elapsedRealtimeNanos) in 0L..maxAge
+    private fun locationCallback(value: Location, provisional: Boolean = false) {
+        val event = JSONObject().put("latitude", value.latitude).put("longitude", value.longitude).put("accuracy", value.accuracy.toDouble())
+        if (provisional) event.put("provisional", true)
+        watchCallback?.invoke(event.toString())
+    }
     private fun locationError(code: Int) {
         watchCallback?.invoke(JSONObject().put("error", code).toString())
         stopLocation(true)
     }
     private fun flushLocation() {
-        if (!watching || pending == null || flushTask != null) return
-        val delay = (5000 - (System.currentTimeMillis() - lastSentAt)).coerceAtLeast(0)
+        if (!watching || pending == null) return
+        // A moving fix supersedes the previous stationary-delay decision.
+        flushTask?.let(main::removeCallbacks); flushTask = null
+        val now = SystemClock.elapsedRealtime()
+        val delay = if (lastSent == null) 0L else (5000 - (now - lastSentAt)).coerceAtLeast(0)
         if (delay > 0) {
             val task = Runnable { flushTask = null; flushLocation() }; flushTask = task; main.postDelayed(task, delay); return
         }
         val value = pending ?: return
-        if (lastSent?.distanceTo(value)?.let { it < 10 && System.currentTimeMillis() - lastSentAt < 30000 } == true) {
+        if (!validLocation(value, 15000)) { pending = null; return }
+        if (lastSent?.distanceTo(value)?.let { it < 10 && now - lastSentAt < 30000 } == true) {
             val task = Runnable { flushTask = null; flushLocation() }; flushTask = task
-            main.postDelayed(task, 30000 - (System.currentTimeMillis() - lastSentAt)); return
+            main.postDelayed(task, 30000 - (now - lastSentAt)); return
         }
-        pending = null; lastSent = Location(value); lastSentAt = System.currentTimeMillis()
+        pending = null; lastSent = Location(value); lastSentAt = now
         val coordinates = JSONObject().put("latitude", value.latitude).put("longitude", value.longitude)
             .put("accuracy", value.accuracy.toDouble()).put("coordinateSystem", "wgs84")
         if (!raw(JSONObject().put("type", "location.point").put("sessionId", locationId).put("sequence", ++sequence).put("point", coordinates))) failSocket()
     }
-    @JvmStatic fun clearLocation(id: Int) { main.post { if (id == watchId) stopLocation(false) } }
+    @JvmStatic fun clearLocation(id: Int) { main.post { if (id == watchId.get()) stopLocation(false) } }
     private fun stopLocation(signal: Boolean) {
         val id = locationId
         deferred.keys.filter { it.startsWith("location.") && it.endsWith(":$id") }.forEach(deferred::remove)
@@ -664,7 +796,7 @@ object RealtimeBridge {
     }
     private fun updateServiceWithoutSocketClose() {
         val ctx = context ?: return
-        if (callId.isEmpty() && !watching && !messagesEnabled()) ctx.stopService(Intent(ctx, RealtimeService::class.java))
+        if (callId.isEmpty() && !watching && !messagesEnabled()) RealtimeService.stop(ctx)
         else updateService()
     }
 }

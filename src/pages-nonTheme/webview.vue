@@ -30,7 +30,7 @@
         @error="onLoadError"
       ></iframe>
       <web-view
-        v-else-if="!isH5 && src"
+        v-else-if="!isH5 && src && !showCallFallback"
         :key="`native-${webviewKey}`"
         :src="src"
         :class="['webview-container', { 'is-loading': loading || loadError }]"
@@ -51,8 +51,10 @@
           </view>
         </view>
         <text class="empty-title">{{ loadError || '正在加载...' }}</text>
-        <text class="empty-subtitle">{{ loadError ? '请检查网络后重试' : '请稍候，页面加载完成后将自动显示' }}</text>
-        <view v-if="loadError" class="retry-btn" @click="retryLoad">重新加载</view>
+        <text v-if="showCallFallback" class="empty-subtitle call-fallback-hint">请打开分投侠 App，登录同一账号，在聊天中进行通话。</text>
+        <text v-else class="empty-subtitle">{{ loadError ? '请检查网络后重试' : '请稍候，页面加载完成后将自动显示' }}</text>
+        <view v-if="loadError" class="retry-btn" @click="retryLoad">{{ retrying ? '正在重试…' : '重新加载' }}</view>
+        <view v-if="showCallFallback" class="call-fallback-back" @click="goBack">返回小程序</view>
       </view>
       <view v-else-if="!src" class="webview-empty">
         <view class="empty-icon"><ManifestIcon id="empty_state" /></view>
@@ -64,14 +66,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 // #ifdef MP-WEIXIN
-import { setChatEventsDelegated } from '@/utils/chat-events.js'
+import { delegateMiniCallAlerts } from '@/utils/chat-events.js'
 import { acceptRecordingCatalog } from '@/utils/call-recording-preference.mjs'
 import { baseUrl } from '@/api/settings.js'
+import { registerMiniCallHost, requestWebCallTicket, stripWebCallTicket } from '@/utils/web-call-entry.mjs'
 // #endif
-let delegatedCall = false
+const callWebview = ref(false)
+let standaloneWebview = false
+let releaseCallDelegation = null
+const retrying = ref(false)
+let loadVersion = 0
 let recordingBridge = null
 
 function onWebviewMessage(event) {
@@ -92,6 +99,7 @@ const isPdf = ref(false)
 const downloading = ref(false)
 const webviewStyles = ref({})
 const loadError = ref('')
+const showCallFallback = computed(() => callWebview.value && !!loadError.value)
 const webviewKey = ref(0)
 const adjustTimers = new Set()
 const WEBVIEW_LOAD_TIMEOUT_MS = 20000
@@ -164,37 +172,84 @@ function clearLoadTimeout() {
   loadTimeoutTimer = null
 }
 
+function syncCallDelegation(value) {
+  // #ifdef MP-WEIXIN
+  if (value && callWebview.value) {
+    if (!releaseCallDelegation) releaseCallDelegation = delegateMiniCallAlerts()
+  } else if (releaseCallDelegation) {
+    releaseCallDelegation()
+    releaseCallDelegation = null
+  }
+  // #endif
+}
+
 function beginContentLoad() {
   clearLoadTimeout()
   if (!src.value || pageDisposed) return
   loading.value = true
   loadError.value = ''
+  syncCallDelegation(true)
   loadTimeoutTimer = setTimeout(() => {
-    loadTimeoutTimer = null
-    if (pageDisposed) return
-    loading.value = false
-    loadError.value = '页面加载超时'
+    failContentLoad('页面加载超时')
   }, WEBVIEW_LOAD_TIMEOUT_MS)
 }
 
-function onLoad() {
+function failContentLoad(message) {
   if (pageDisposed) return
   clearLoadTimeout()
   loading.value = false
+  loadError.value = message
+  syncCallDelegation(false)
+}
+
+function onLoad(event) {
+  if (pageDisposed || showCallFallback.value) return
+  // #ifdef MP-WEIXIN
+  if (callWebview.value) {
+    const loadedOrigin = /^https?:\/\/[^/?#]+/i.exec(event?.detail?.src)?.[0].toLowerCase()
+    const expectedOrigin = /^https?:\/\/[^/?#]+/i.exec(src.value)?.[0].toLowerCase()
+    if (loadedOrigin && loadedOrigin !== expectedOrigin) {
+      failContentLoad('通话网页无法打开')
+      return
+    }
+  }
+  // #endif
+  loadVersion += 1
+  clearLoadTimeout()
+  loading.value = false
   loadError.value = ''
+  syncCallDelegation(true)
   console.log('页面加载完成')
 }
 
 function onLoadError(error) {
-  if (pageDisposed) return
-  clearLoadTimeout()
-  loading.value = false
-  loadError.value = '页面加载失败'
-  console.error('内嵌页面加载失败:', error)
+  if (pageDisposed || showCallFallback.value) return
+  failContentLoad('页面加载失败')
+  if (!callWebview.value) console.error('内嵌页面加载失败:', error)
 }
 
-function retryLoad() {
-  if (!src.value || pageDisposed) return
+async function retryLoad() {
+  if (!src.value || pageDisposed || retrying.value) return
+  // #ifdef MP-WEIXIN
+  if (standaloneWebview) {
+    const account = uni.getStorageSync('token') || ''
+    const version = loadVersion
+    retrying.value = true
+    if (!showCallFallback.value) {
+      loading.value = true
+      loadError.value = ''
+    }
+    const ticket = account ? await requestWebCallTicket(uni, baseUrl, account) : ''
+    retrying.value = false
+    if (pageDisposed || version !== loadVersion) return
+    if (!/^[a-f0-9]{64}$/.test(ticket) || (uni.getStorageSync('token') || '') !== account) {
+      failContentLoad('通话登录刷新失败')
+      return
+    }
+    const source = stripWebCallTicket(src.value)
+    src.value = source + (source.endsWith('?') || source.endsWith('&') ? '' : '&') + `ticket=${ticket}`
+  }
+  // #endif
   webviewKey.value += 1
   beginContentLoad()
 }
@@ -280,6 +335,7 @@ onMounted(() => {
       // #ifdef MP-WEIXIN
       const embeddedPrefix = String(baseUrl).replace(/\/+$/, '') + '/web/call/index.html#?'
       if (decodedUrl.startsWith(embeddedPrefix)) {
+        standaloneWebview = true
         const query = Object.fromEntries(decodedUrl.slice(embeddedPrefix.length).split('&').map(part => {
           const separator = part.indexOf('=')
           return separator < 0 ? [part, ''] : [part.slice(0, separator), decodeURIComponent(part.slice(separator + 1))]
@@ -288,16 +344,15 @@ onMounted(() => {
         if (query.view === 'recordings') title.value = '通话录音'
         else {
           title.value = '通话'
-          delegatedCall = true
-          setChatEventsDelegated(true)
+          if (registerMiniCallHost(currentPage, query.selfId)) src.value = decodedUrl + '&nativeChat=1'
+          callWebview.value = true
         }
       }
       // #endif
       if (decodedUrl.includes('/web/#/pages-nonTheme/web-call?')) {
         title.value = '通话'
         // #ifdef MP-WEIXIN
-        delegatedCall = true
-        setChatEventsDelegated(true)
+        callWebview.value = decodedUrl.startsWith(String(baseUrl).replace(/\/+$/, '') + '/web/#/pages-nonTheme/web-call?')
         // #endif
       } else if (decodedUrl.includes('/call-check.html')) {
         title.value = '通话环境检测'
@@ -343,9 +398,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  // #ifdef MP-WEIXIN
-  if (delegatedCall) { delegatedCall = false; setChatEventsDelegated(false) }
-  // #endif
+  syncCallDelegation(false)
   pageDisposed = true
   clearLoadTimeout()
   const activeDownloadTask = downloadTask
@@ -542,6 +595,19 @@ onBeforeUnmount(() => {
 .empty-subtitle {
   font-size: 26rpx;
   color: #999;
+}
+
+.call-fallback-hint {
+  max-width: 520rpx;
+  color: #52645c;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.call-fallback-back {
+  padding: 16rpx 24rpx;
+  color: #177b5b;
+  font-size: 26rpx;
 }
 
 .debug-info {

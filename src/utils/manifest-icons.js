@@ -16,12 +16,14 @@ export function getManifestIcon(id) {
 export function getManifestIconPath(id) {
   const icon = getManifestIcon(id)
   if (!icon) return ''
+  let file = icon.file
   // #ifdef MP-WEIXIN
+  file = icon.mp_file || file
   // 这两枚表图标也用于抽奖、预约页面，其余表图标仅由管理分包使用。
   if (icon.id.endsWith('_table') && !['lottery_record_table', 'reservation_order_table'].includes(icon.id)) {
-    return `/pages-admin/static/${icon.file}`
+    return `/pages-admin/static/${file}`
   }
-  if (nonThemeOnlyIconIds.has(icon.id)) return `/pages-nonTheme/static/${icon.file}`
+  if (nonThemeOnlyIconIds.has(icon.id)) return `/pages-nonTheme/static/${file}`
   // #endif
-  return `/static/${icon.file}`
+  return `/static/${file}`
 }

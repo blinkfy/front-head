@@ -35,8 +35,8 @@ class CallNotificationActivity : Activity() {
     private var legacyCall = ""
     private var legacyVersion = 0
     private var observed = false
-    private var incomingVideo = false
     private lateinit var name: TextView
+    private lateinit var avatar: CallAvatarView
     private lateinit var subtitle: TextView
     private lateinit var hint: TextView
     private lateinit var accept: Button
@@ -78,6 +78,7 @@ class CallNotificationActivity : Activity() {
         observer = listener; RealtimeBridge.observeIncoming(call, listener)
         if (!observed) {
             name.text = "分投侠来电"; subtitle.text = "打开应用确认来电状态"
+            avatar.visibility = View.GONE; avatar.setPeer("分投侠", "")
             hint.text = "已结束的来电不会接通"
             accept.visibility = View.GONE; reject.text = "关闭"; fallback.visibility = View.VISIBLE
             main.postDelayed(finishTask, 30000)
@@ -90,9 +91,12 @@ class CallNotificationActivity : Activity() {
             return
         }
         observed = true
+        val peer = event.optJSONObject("peer")
+        val peerName = peer?.optString("name", "联系人")?.take(80) ?: "联系人"
+        name.text = peerName
+        avatar.setPeer(peerName, RealtimeBridge.incomingAvatar(peer)); avatar.visibility = View.VISIBLE
         if (event.optString("type") == "voice.native") {
             unlocking = false
-            name.text = event.optJSONObject("peer")?.optString("name", "联系人")?.take(80) ?: "联系人"
             val connected = event.optString("phase") == "connected"
             subtitle.text = if (connected) "通话中" else "正在连接…"
             hint.text = if (event.optBoolean("speaker")) "免提播放" else "听筒 / 耳机播放"
@@ -116,9 +120,7 @@ class CallNotificationActivity : Activity() {
             if (connected) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             return
         }
-        name.text = event.optJSONObject("peer")?.optString("name", "联系人")?.take(80) ?: "联系人"
         val video = event.optString("mode") == "video"
-        incomingVideo = video
         subtitle.text = if (video) "邀请你视频通话" else "邀请你语音通话"
         hint.text = "接听后开始通话"
         accept.text = if (video) "接听视频" else "接听语音"
@@ -143,10 +145,7 @@ class CallNotificationActivity : Activity() {
     private fun answer() {
         if (unlocking || leaving) return
         if (!RealtimeBridge.incomingPending(call)) { ended(); return }
-        RealtimeNotifications.cancelIncoming(this, call)
-        val required = mutableListOf(Manifest.permission.RECORD_AUDIO)
-        if (incomingVideo) required.add(Manifest.permission.CAMERA)
-        if (required.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             accept.isEnabled = false
             if (!RealtimeBridge.answerNative(this, call)) ended()
             return
@@ -198,7 +197,12 @@ class CallNotificationActivity : Activity() {
         if (launch == null) { RealtimeBridge.cancelIncomingAcceptance(call); resetUnlock(); return }
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         launch.putExtra("ftx_realtime_route", "/pages-nonTheme/voice-call?incomingCallId=$call")
-        try { leaving = true; startActivity(launch); finish() }
+        try {
+            leaving = true
+            startActivity(launch)
+            if (accepted) RealtimeNotifications.cancelIncoming(this, call)
+            finish()
+        }
         catch (_: Exception) {
             leaving = false
             if (accepted) RealtimeBridge.cancelIncomingAcceptance(call)
@@ -214,7 +218,8 @@ class CallNotificationActivity : Activity() {
         }
         val white = Color.rgb(241, 248, 247); val muted = Color.rgb(167, 193, 192)
         root.addView(label("分投侠 · 来电", 16f, muted))
-        root.addView(View(this), LinearLayout.LayoutParams(1, dp(48)))
+        avatar = CallAvatarView(this).apply { visibility = View.GONE }
+        root.addView(avatar, LinearLayout.LayoutParams(dp(88), dp(88)).apply { topMargin = dp(24) })
         name = label("联系人", 30f, white).apply { typeface = Typeface.DEFAULT_BOLD; maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END }
         root.addView(name, LinearLayout.LayoutParams(-1, -2))
         subtitle = label("", 18f, muted); root.addView(subtitle)

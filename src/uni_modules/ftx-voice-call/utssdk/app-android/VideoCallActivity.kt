@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
+import android.media.projection.MediaProjectionConfig
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
@@ -31,6 +33,31 @@ class VideoCallActivity : Activity() {
     private var resumed = false
     private var cameraRequestPending = false
     private var cameraAction: (() -> Unit)? = null
+    private var screenPermission: Pair<String, Int>? = null
+
+    fun requestScreenPermission(id: String, request: Int): Boolean {
+        if (released || id != attachedCallId || current?.get() !== this || !resumed || isFinishing || isDestroyed ||
+            cameraRequestPending || screenPermission != null || (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode)) return false
+        return try {
+            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            screenPermission = id to request
+            // Playback capture is device-wide, so request matching whole-screen consent.
+            val intent = if (Build.VERSION.SDK_INT >= 34) manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+            else manager.createScreenCaptureIntent()
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, 2703)
+            true
+        } catch (_: Exception) { screenPermission = null; false }
+    }
+
+    @Deprecated("Deprecated in Android")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 2703) return
+        val (id, request) = screenPermission ?: return
+        screenPermission = null
+        VoiceCallBridge.screenPermissionResult(id, request, data.takeIf { resultCode == RESULT_OK && !released && id == attachedCallId })
+    }
     fun withCameraPermission(id: String, action: () -> Unit) {
         if (released || id != attachedCallId || current?.get() !== this || isFinishing || isDestroyed || cameraRequestPending) return
         cameraAction = action
@@ -99,11 +126,11 @@ class VideoCallActivity : Activity() {
     }
     override fun onPause() {
         resumed = false
-        if (!cameraRequestPending && current?.get() === this) { visible = false; RealtimeBridge.setForeground(false) }
+        if (!cameraRequestPending && screenPermission == null && current?.get() === this) { visible = false; RealtimeBridge.setForeground(false) }
         super.onPause()
     }
     fun minimize(returnToChat: Boolean = true) {
-        if (released || current?.get() !== this || enteringPip || (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode)) return
+        if (released || current?.get() !== this || enteringPip || screenPermission != null || (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode)) return
         if (!VoiceCallBridge.canPip(attachedCallId) || (RealtimeBridge.backgroundMask() and 1) == 0) {
             Toast.makeText(this, "接通且后台服务就绪后可最小化", Toast.LENGTH_SHORT).show(); return
         }
@@ -129,12 +156,17 @@ class VideoCallActivity : Activity() {
     }
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (!cameraRequestPending && !released && current?.get() === this) { minimize(false); RealtimeBridge.setForeground(false) }
+        if (!cameraRequestPending && screenPermission == null && !released && current?.get() === this) { minimize(false); RealtimeBridge.setForeground(false) }
     }
     @Deprecated("Deprecated in Android") override fun onBackPressed() { minimize() }
     override fun onPictureInPictureModeChanged(value: Boolean, config: Configuration) {
         super.onPictureInPictureModeChanged(value, config); enteringPip = false; VoiceCallBridge.pipChanged(attachedCallId, value)
-        if (current?.get() === this) visible = !value && resumed
+        if (current?.get() === this && !released) {
+            val restoredAfterResume = !visible && !value && resumed
+            visible = !value && resumed
+            // On some devices onResume runs before Android clears PiP mode.
+            if (restoredAfterResume) RealtimeBridge.setForeground(true)
+        }
     }
     // Stopping a surface during a PiP/fullscreen transition is not a hangup.
     // The explicit hangup action or a finishing Activity owns call cleanup.
@@ -142,6 +174,7 @@ class VideoCallActivity : Activity() {
         val ownsCallSurface = current?.get() === this
         VoiceCallBridge.detachVideo(this, attachedCallId)
         cameraAction = null; cameraRequestPending = false
+        screenPermission?.let { (id, request) -> VoiceCallBridge.screenPermissionResult(id, request, null) }; screenPermission = null
         if (current?.get() === this) { current = null; visible = false }
         if (ownsCallSurface && !released && isFinishing && !isChangingConfigurations) VoiceCallBridge.videoClosed(attachedCallId)
         super.onDestroy()

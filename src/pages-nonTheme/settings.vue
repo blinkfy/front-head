@@ -70,18 +70,6 @@
                     </view>
                     <view class="toggle-switch" :class="{ active: soundEnabled }"><view class="toggle-dot"></view></view>
                 </view>
-                <!-- #ifdef MP-WEIXIN -->
-                <view class="setting-item" @click="toggleMiniLocationMode" role="switch" :aria-checked="miniLocationEnhanced">
-                    <view class="item-left">
-                        <ManifestIcon class="item-icon" id="map_location" />
-                        <view class="item-info">
-                            <text class="item-title">增强定位</text>
-                            <text class="item-desc">{{ miniLocationEnhanced ? '使用实时位置更新；异常时可关闭，切换兼容定位' : '兼容模式：定时获取位置，保留地图选址和手动填写' }}</text>
-                        </view>
-                    </view>
-                    <view class="toggle-switch" :class="{ active: miniLocationEnhanced }"><view class="toggle-dot"></view></view>
-                </view>
-                <!-- #endif -->
                 <view v-if="isAndroid" class="setting-item" @click="retryNotificationPermission" role="button" tabindex="0" @keydown.enter.prevent="retryNotificationPermission" @keydown.space.prevent="retryNotificationPermission">
                     <view class="item-left">
                         <ManifestIcon class="item-icon" id="notification" />
@@ -121,8 +109,8 @@
                     <view class="item-left">
                         <ManifestIcon class="item-icon" id="customer_service" />
                         <view class="item-info">
-                            <text class="item-title">联系客服</text>
-                            <text class="item-desc">获取技术支持和反馈</text>
+                            <text class="item-title">{{ communityChatEnabled ? '消息与聊天' : '联系客服' }}</text>
+                            <text class="item-desc">{{ communityChatEnabled ? '查看会话、联系人和群聊' : '获取技术支持和反馈' }}</text>
                         </view>
                     </view>
                     <ManifestIcon class="item-arrow" id="chevron_right" :scale="1" />
@@ -145,7 +133,7 @@
                 <view class="section-title">数据管理</view>
                 <view v-if="backgroundMessagesAdmin" class="setting-item" @click="goCallRecordings">
                     <view class="item-left">
-                        <ManifestIcon class="item-icon" id="chat_voice_call" />
+                        <ManifestIcon class="item-icon" id="call_recordings" />
                         <view class="item-info">
                             <text class="item-title">通话录音</text>
                             <text class="item-desc">自动录音设置和本地文件</text>
@@ -194,6 +182,7 @@
 
 <script setup>
 import { clearChatPush } from '@/utils/chat-push.js'
+import { communitySocialEnabled } from '@/pages-nonTheme/utils/community-social.js'
 import { ensureFeaturePermission, openFeaturePermissionSettings } from '@/utils/feature-permission.js'
 import { syncChatPush } from '@/utils/chat-push.js'
 import { syncAndroidMessagingPreference } from '@/utils/android-realtime.js'
@@ -206,12 +195,8 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
 import { canConfigureBackgroundMessages, readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '@/utils/background-message-preference.mjs'
 
-// #ifdef MP-WEIXIN
-import { readMiniLocationEnhanced, writeMiniLocationEnhanced } from '@/utils/mini-location.js'
-const miniLocationEnhanced = ref(readMiniLocationEnhanced())
-function toggleMiniLocationMode() { miniLocationEnhanced.value = writeMiniLocationEnhanced(!miniLocationEnhanced.value) }
-onShow(() => { miniLocationEnhanced.value = readMiniLocationEnhanced() })
-// #endif
+const communityChatEnabled = ref(false)
+onShow(async () => { communityChatEnabled.value = await communitySocialEnabled() })
 
 const soundEnabled = ref(areUiSoundsEnabled())
 const isAndroid = ref(false)

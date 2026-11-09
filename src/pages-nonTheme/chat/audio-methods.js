@@ -50,14 +50,60 @@ export const audioInitializationMethods = {
             // #endif
         },
     initAudioPlayer() {
+            // #ifdef H5
+            const audio = new Audio()
+            let attempt = 0
+            let starting = false
+            this.innerAudioContext = {
+                set src(value) { audio.src = value },
+                async play() {
+                    const current = ++attempt
+                    starting = true
+                    try { await audio.play() }
+                    finally { if (attempt === current) starting = false }
+                },
+                stop: () => { audio.pause(); audio.currentTime = 0 },
+                destroy: () => { audio.removeAttribute('src'); audio.load() },
+                onEnded: handler => audio.addEventListener('ended', handler),
+                // While starting, the play promise already reports decoding errors.
+                onError: handler => audio.addEventListener('error', event => { if (!starting) handler(event) })
+            }
+            // #endif
+            // #ifndef H5
             this.innerAudioContext = uni.createInnerAudioContext()
+            // #endif
 
             this.innerAudioContext.onEnded(() => {
                 this.playingVoiceId = null
+                this.currentPlayingMsg = null
+                this.currentVoiceCache = null
             })
 
-            this.innerAudioContext.onError((err) => {
+            const onPlaybackError = err => {
+                if (this.isChatPageDestroyed || !this.currentPlayingMsg || err?.name === 'AbortError') return
+                const current = this.currentVoiceCache
+                if (!current || current.owner !== this.getCurrentUserId()) return
                 console.error('播放错误', err)
+                if (err?.name === 'NotAllowedError') {
+                    this.voiceGestureRetry = { ...current, messageId: this.currentPlayingMsg.id }
+                    this.playingVoiceId = null
+                    this.currentPlayingMsg = null
+                    uni.showToast({ title: '请再点一次语音开始播放', icon: 'none' })
+                    return
+                }
+                if (current.path !== current.source) {
+                    const { source, path } = current
+                    this.currentVoiceCache = { ...current, path: source }
+                    void this.invalidateChatMediaSource('attachment', source, path)
+                    if (/^https?:\/\//i.test(source)) {
+                        this.innerAudioContext.src = source
+                        const revision = this.voicePlaybackRevision
+                        this.innerAudioContext.play()?.catch?.(error => {
+                            if (revision === this.voicePlaybackRevision) onPlaybackError(error)
+                        })
+                        return
+                    }
+                }
                 this.playingVoiceId = null
                 
                 // 设置错误标记(如果有当前播放的语音消息)
@@ -68,6 +114,7 @@ export const audioInitializationMethods = {
                         retryCount: 0 
                     })
                 }
+                this.currentPlayingMsg = null
                 
                 // 解析错误信息
                 let errorMsg = '语音播放失败'
@@ -86,7 +133,9 @@ export const audioInitializationMethods = {
                 }
                 
                 uni.showToast({ title: errorMsg, icon: 'none' })
-            })
+            }
+            this.innerAudioContext.onError(onPlaybackError)
+            this.handleVoicePlaybackError = onPlaybackError
         }
 }
 
@@ -141,14 +190,18 @@ export const voiceRecordingMethods = {
 }
 
 export const voicePlaybackMethods = {
-    playVoice(msg) {
+    async playVoice(msg) {
             // 如果已经标记失败，点击重试
             if (this.mediaLoadErrors[msg.id]?.type === 'voice') {
                 this.retryLoadMedia(msg, 'voice')
                 return
             }
             
+            const revision = ++this.voicePlaybackRevision
+            const owner = this.getCurrentUserId()
             if (this.playingVoiceId === msg.id) {
+                this.currentPlayingMsg = null
+                this.currentVoiceCache = null
                 this.innerAudioContext.stop()
                 this.playingVoiceId = null
                 return
@@ -157,6 +210,8 @@ export const voicePlaybackMethods = {
             if (this.playingVoiceId) {
                 this.innerAudioContext.stop()
             }
+            this.currentPlayingMsg = null
+            this.currentVoiceCache = null
 
             this.playingVoiceId = msg.id
             
@@ -164,7 +219,7 @@ export const voicePlaybackMethods = {
             let audioSrc = msg.content
             
             // 如果content是对象(JSON解析后),提取path
-            if (typeof audioSrc === 'object' && audioSrc.path) {
+            if (audioSrc && typeof audioSrc === 'object' && audioSrc.path) {
                 audioSrc = `${baseUrl}/files/download/${audioSrc.path}`
             }
             
@@ -173,18 +228,26 @@ export const voicePlaybackMethods = {
                 !audioSrc.startsWith('http://') && 
                 !audioSrc.startsWith('https://') &&
                 !audioSrc.startsWith('wxfile://') &&
-                !audioSrc.startsWith('file://')) {
+                !audioSrc.startsWith('file://') &&
+                !audioSrc.startsWith('blob:') &&
+                !audioSrc.startsWith('_doc/')) {
                 audioSrc = `${baseUrl}/files/download/${audioSrc}`
             }
             
-            console.log('准备播放语音:', audioSrc)
-            
-            // 保存当前播放的消息对象,用于错误处理
+            const retry = this.voiceGestureRetry
+            this.voiceGestureRetry = null
+            const retryPath = retry?.owner === owner && retry.messageId === msg.id && retry.source === audioSrc ? retry.path : ''
+            const cached = retryPath || this.getHeldChatMediaSource('attachment', audioSrc)
+                || await this.getChatMediaSource('attachment', audioSrc, { download: true, size: msg.fileSize })
+            if (revision !== this.voicePlaybackRevision || this.isChatPageDestroyed || owner !== this.getCurrentUserId()) return
             this.currentPlayingMsg = msg
+            this.currentVoiceCache = { owner, source: audioSrc, path: cached || audioSrc }
             
             try {
-                this.innerAudioContext.src = audioSrc
-                this.innerAudioContext.play()
+                this.innerAudioContext.src = cached || audioSrc
+                this.innerAudioContext.play()?.catch?.(error => {
+                    if (revision === this.voicePlaybackRevision && error.name !== 'AbortError') this.handleVoicePlaybackError(error)
+                })
             } catch (err) {
                 console.error('播放语音失败:', err)
                 this.$set(this.mediaLoadErrors, msg.id, { type: 'voice', error: true, retryCount: 0 })

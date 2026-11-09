@@ -91,17 +91,24 @@ export function watchAndroidRealtimeLocation(success, failure) {
   requestRealtimePermissions(permissions).then(result => {
     if (stopped) return
     if (!permissions.some(permission => result.granted?.includes(permission))) { failure({ code: 1 }); return }
-    onRealtimeLocationEvent(json => {
-      if (stopped) return
-      try {
-        const envelope = JSON.parse(json)
-        if (envelope.channel !== channel) return
-        const value = JSON.parse(envelope.event)
-        if (value.error) failure({ code: value.error }); else success({ coords: value })
+    try {
+      onRealtimeLocationEvent(json => {
+        if (stopped) return
+        try {
+          const envelope = JSON.parse(json)
+          if (envelope.channel !== channel) return
+          const value = JSON.parse(envelope.event)
+          if (value.error) failure({ code: value.error }); else success({ coords: value })
+        }
+        catch (_) { failure({ code: 2 }) }
+      })
+      const watchId = watchRealtimeLocation(channel)
+      if (watchId > 0) {
+        if (stopped) clearRealtimeLocation(watchId)
+        else id = watchId
       }
-      catch (_) { failure({ code: 2 }) }
-    })
-    id = watchRealtimeLocation(channel)
+      else failure({ code: 2 })
+    } catch (_) { failure({ code: 2 }) }
   }, () => { if (!stopped) failure({ code: 1 }) })
   // #endif
   return () => {
@@ -120,11 +127,14 @@ export function handleAndroidRealtimeReturn() {
       const page = pages[pages.length - 1]
       const path = route.split('?')[0].replace(/^\//, '')
       const query = Object.fromEntries((route.split('?')[1] || '').split('&').filter(Boolean).map(part => {
-        const [key, value = ''] = part.split('='); return [key, decodeURIComponent(value)]
+        const separator = part.indexOf('=')
+        const key = separator < 0 ? part : part.slice(0, separator)
+        const value = separator < 0 ? '' : part.slice(separator + 1)
+        try { return [key, decodeURIComponent(value)] } catch (_) { return [key, value] }
       }))
       if (page?.route === path && path === 'pages-nonTheme/voice-call') {
         if (query.incomingCallId) uni.$emit('voice-call:notification-opened', query.incomingCallId)
-      } else if (page?.route !== path || Object.keys(query).some(key => String(page.options?.[key] || '') !== query[key])) {
+      } else if (page?.route !== path || Object.keys(query).some(key => String((page.$page?.options || page.options)?.[key] ?? '') !== query[key])) {
         uni.navigateTo({ url: route })
       }
     }

@@ -55,7 +55,7 @@ class Element {
   constructor(tag) { this.tag = tag; this.dataset = {}; this.style = {}; this.children = []; this.srcObject = null; this.parentNode = null; elements.push(this) }
   setAttribute() {}
   play() {
-    if (this.dataset.callVideo === 'remote') {
+    if (this.dataset.voiceCallAudio) {
       this.playCalls = (this.playCalls || 0) + 1
       return (remotePlayResults.shift() || (() => Promise.resolve()))()
     }
@@ -117,7 +117,7 @@ const options = (callId, mode = 'video', events = [], cameraEnabled) => ({ callI
 
 async function openVideo(callId) {
   const index = captures.length
-  const opening = media.open(options(callId, 'video'))
+  const opening = media.open({ ...options(callId, 'video'), offerer: true })
   await tick()
   const audio = new Track('audio')
   assert.equal(captures[index].constraints.video, false, 'video calls request microphone first without camera')
@@ -131,7 +131,7 @@ async function openVideo(callId) {
 
 async function openWithInitialVideo(callId, events = []) {
   const captureIndex = captures.length
-  const opening = media.open(options(callId, 'video', events))
+  const opening = media.open({ ...options(callId, 'video', events), offerer: true })
   await tick()
   const audio = new Track('audio')
   captures[captureIndex].resolve(new Stream([audio]))
@@ -297,11 +297,12 @@ async function main() {
   assert.equal(closeCandidate.readyState, 'ended', 'late replaceTrack completion cannot revive the candidate')
   assert.equal(closing.stream.getVideoTracks().some(track => track.readyState === 'live'), false)
 
-  // Remote audio/video tracks share one stable stream; AbortError is harmless and autoplay denial is recoverable.
+  // Audio stays independent of the video surface; AbortError is harmless and autoplay denial is recoverable.
   const remoteEvents = []
   const remoteCall = await openWithInitialVideo('remote-playback', remoteEvents)
   const remoteElement = elements.find(element => element.dataset.callVideo === 'remote' && !element.removed)
   const stableRemoteStream = remoteElement.srcObject
+  const remoteAudioElement = elements.find(element => element.dataset.voiceCallAudio && !element.removed)
   remotePlayResults.push(() => Promise.reject(Object.assign(new Error('play interrupted'), { name: 'AbortError' })))
   const remoteAudio = new Track('audio')
   remoteCall.peer.ontrack({ track: remoteAudio, streams: [new Stream([remoteAudio])] })
@@ -313,12 +314,13 @@ async function main() {
   remoteCall.peer.ontrack({ track: remoteVideo, streams: [new Stream([remoteVideo])] })
   await tick()
   assert.equal(remoteElement.srcObject, stableRemoteStream)
-  assert.deepEqual(stableRemoteStream.getTracks(), [remoteAudio, remoteVideo], 'separate remote tracks accumulate in the same MediaStream')
+  assert.deepEqual(stableRemoteStream.getTracks(), [remoteVideo], 'video surface only contains video')
+  assert.deepEqual(remoteAudioElement.srcObject.getTracks(), [remoteAudio], 'audio has its own stable player when video is hidden')
   remoteCall.driver.close()
 
   const blockedEvents = []
   const blockedCall = await openWithInitialVideo('remote-playback-blocked', blockedEvents)
-  const blockedRemote = elements.find(element => element.dataset.callVideo === 'remote' && !element.removed)
+  const blockedRemote = elements.find(element => element.dataset.voiceCallAudio && !element.removed)
   remotePlayResults.push(() => Promise.reject(Object.assign(new Error('user gesture required'), { name: 'NotAllowedError' })))
   blockedCall.peer.ontrack({ track: new Track('audio'), streams: [] })
   await tick()

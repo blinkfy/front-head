@@ -12,6 +12,8 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+// 小程序中让商城样式覆盖调用页提供的插槽内容；选择器均限定在 .shop-flow 内。
+defineOptions({ options: { styleIsolation: 'shared' } })
 defineProps({ title: { type: String, required: true } })
 const emit = defineEmits(['back'])
 const dark = ref(uni.getStorageSync('app_theme') === 'dark')

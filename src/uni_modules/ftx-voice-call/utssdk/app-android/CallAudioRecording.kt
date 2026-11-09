@@ -22,6 +22,7 @@ import org.webrtc.audio.JavaAudioDeviceModule
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -277,14 +278,23 @@ class CallAudioRecording internal constructor(
 
     fun capture(samples: JavaAudioDeviceModule.AudioSamples) = enqueue(false, samples)
     fun playback(samples: JavaAudioDeviceModule.AudioSamples) = enqueue(true, samples)
-    private fun enqueue(playback: Boolean, samples: JavaAudioDeviceModule.AudioSamples) {
+    fun capture(buffer: ByteBuffer, format: Int, channels: Int, rate: Int, bytes: Int) =
+        enqueue(false, format, channels, rate) {
+            val copy = buffer.duplicate()
+            copy.position(0)
+            ByteArray(bytes.coerceIn(0, copy.limit())).also { copy.get(it) }
+        }
+    private fun enqueue(playback: Boolean, samples: JavaAudioDeviceModule.AudioSamples) =
+        enqueue(playback, samples.audioFormat, samples.channelCount, samples.sampleRate) { samples.data }
+
+    private inline fun enqueue(playback: Boolean, format: Int, channels: Int, rate: Int, read: () -> ByteArray) {
         if (!running.get() || (!playback && muted.get())) return
         if (!CallRecordingFiles.permits(owner)) { stop(); return }
         try {
-            val data = samples.data
-            if (data.isEmpty() || samples.sampleRate <= 0 || samples.channelCount <= 0) return
-            // The SDK delivers an owned byte-array snapshot on both callbacks.
-            if (!queue.offer(Pcm(playback, data, samples.audioFormat, samples.channelCount, samples.sampleRate, System.nanoTime()))) {
+            if (rate <= 0 || channels <= 0) return
+            val data = read()
+            if (data.isEmpty()) return
+            if (!queue.offer(Pcm(playback, data, format, channels, rate, System.nanoTime()))) {
                 stopWithError("录音数据过多，已停止")
             }
         } catch (_: Exception) { stopWithError("录音采集失败") }

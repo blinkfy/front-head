@@ -11,6 +11,7 @@ import android.graphics.ColorFilter
 import android.graphics.PixelFormat
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -34,7 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 // All methods are called on the Android main thread.
 internal class VideoCallView(
     private val activity: Activity, private val egl: EglBase.Context,
-    private val localTrack: VideoTrack, private val peerName: String,
+    private val localTrack: VideoTrack, private val peerName: String, private val peerAvatar: String,
     private val onControl: (JSONObject) -> Unit, private val onHangup: () -> Unit
 ) {
     private val main = Handler(Looper.getMainLooper())
@@ -55,12 +56,15 @@ internal class VideoCallView(
     private var mainTapTarget: View? = null
     private var heading: LinearLayout? = null
     private var audioInfo: LinearLayout? = null
+    private var audioAvatar: CallAvatarView? = null
     private var audioStatus: TextView? = null
     private var status: TextView? = null
     private var muteButton: CallAction? = null
     private var speakerButton: CallAction? = null
     private var cameraButton: CallAction? = null
     private var switchButton: CallAction? = null
+    private var shareButton: CallAction? = null
+    private var sharingBadge: TextView? = null
     private var recordButton: TextView? = null
     private var recordingBadge: TextView? = null
     private var recording = false
@@ -73,13 +77,20 @@ internal class VideoCallView(
     private var speaker = true
     private var cameraEnabled = true
     private var remoteCameraEnabled = true
+    private var screenShareSupported = false
+    private var screenSharing = false
+    private var screenAudioSharing = false
+    private var remoteScreenSharing = false
+    private var screenSharePending = false
     private var frontCamera = true
     private var firstRemoteFrame = false
     private var selfIsMain = false
     private var controlsHidden = false
     private var inPip = false
-    private val showSelfInMain get() = cameraEnabled && (!remoteCameraEnabled || (selfIsMain && !inPip))
-    private val hasVideo get() = cameraEnabled || remoteCameraEnabled
+    private val localVideo get() = cameraEnabled && !screenSharing
+    private val remoteVideo get() = remoteCameraEnabled || remoteScreenSharing
+    private val showSelfInMain get() = localVideo && !remoteScreenSharing && (!remoteVideo || (selfIsMain && !inPip))
+    private val hasVideo get() = localVideo || remoteVideo || screenSharing
     private var connectedAt = 0L
     private val ticker = object : Runnable {
         override fun run() {
@@ -159,6 +170,9 @@ internal class VideoCallView(
         audioInfo = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
             setPadding(dp(24), 0, dp(24), 0)
+            audioAvatar = CallAvatarView(activity).also { avatar ->
+                addView(avatar, LinearLayout.LayoutParams(dp(88), dp(88)).apply { bottomMargin = dp(16) })
+            }
             addView(text(peerName, 26f))
             addView(text("语音通话中", 15f), LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
             audioStatus = text("正在连接…", 15f).also {
@@ -212,6 +226,7 @@ internal class VideoCallView(
         speakerButton = button("speaker", "免提") { onControl(JSONObject().put("speaker", !speaker)) }
         cameraButton = button("camera", "关闭摄像头") { onControl(JSONObject().put("cameraEnabled", !cameraEnabled)) }
         switchButton = button("switch", "切换镜头") { onControl(JSONObject().put("switchCamera", true)) }
+        shareButton = button("screen", "共享屏幕") { onControl(JSONObject().put("screenSharing", !screenSharing)) }
         button("hangup", "挂断", danger = true) { if (!released) onHangup() }
         root.addView(controls, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         chrome.add(controls)
@@ -226,6 +241,11 @@ internal class VideoCallView(
             setTextColor(Color.rgb(255, 204, 204))
             setPadding(dp(8), dp(4), dp(8), dp(4))
             root.addView(this, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = dp(16); leftMargin = dp(12) })
+        }
+        sharingBadge = text("正在共享屏幕", 12f).apply {
+            background = background(Color.argb(184, 29, 45, 37), 9)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            root.addView(this, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(88) })
         }
         activity.setContentView(root)
         activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -276,10 +296,15 @@ internal class VideoCallView(
         }
     }
     fun update(muted: Boolean, speaker: Boolean, camera: Boolean, remoteCamera: Boolean, front: Boolean, connected: Boolean = false,
-               canSwitch: Boolean = false, recordingState: JSONObject? = null) {
+               canSwitch: Boolean = false, recordingState: JSONObject? = null, screenShareSupported: Boolean = false,
+               screenSharing: Boolean = false, remoteScreenSharing: Boolean = false, screenSharePending: Boolean = false,
+               screenAudioSharing: Boolean = false) {
         if (released) return
         val wasSelf = showSelfInMain
         this.canSwitchCamera = canSwitch; this.muted = muted; this.speaker = speaker; cameraEnabled = camera; remoteCameraEnabled = remoteCamera
+        this.screenShareSupported = screenShareSupported; this.screenSharing = screenSharing
+        this.screenAudioSharing = screenAudioSharing
+        this.remoteScreenSharing = remoteScreenSharing; this.screenSharePending = screenSharePending
         if (wasSelf != showSelfInMain) bindVideo()
         if (connected && connectedAt == 0L) connectedAt = SystemClock.elapsedRealtime()
         recordingSupported = recordingState?.optBoolean("recordingSupported") == true
@@ -290,14 +315,19 @@ internal class VideoCallView(
         lastRecordingError = error
         frontCamera = front
         localSink?.setMirror(front)
-        if (!cameraEnabled && !remoteCameraEnabled) controlsHidden = false
+        if (!hasVideo) controlsHidden = false
         refresh()
     }
     private fun refresh() {
         val selfLarge = showSelfInMain
-        val remoteMessage = if (remoteCameraEnabled) "正在等待对方画面" else "对方已关闭摄像头"
-        val mainEnabled = if (selfLarge) cameraEnabled else remoteCameraEnabled
-        val previewEnabled = if (selfLarge) remoteCameraEnabled else cameraEnabled
+        val remoteMessage = when {
+            remoteScreenSharing -> "正在等待对方屏幕画面"
+            remoteCameraEnabled -> "正在等待对方画面"
+            screenSharing -> "切换到要展示的应用"
+            else -> "对方已关闭摄像头"
+        }
+        val mainEnabled = if (selfLarge) localVideo else remoteVideo
+        val previewEnabled = if (selfLarge) remoteVideo else localVideo
         mainRenderer?.visibility = if (mainEnabled) View.VISIBLE else View.INVISIBLE
         previewRenderer?.visibility = if (previewEnabled) View.VISIBLE else View.INVISIBLE
         mainPlaceholder?.apply {
@@ -311,22 +341,45 @@ internal class VideoCallView(
         muteButton?.update(if (muted) "麦克风已关闭" else "静音", muted, muted)
         speakerButton?.update(if (speaker) "免提已开启" else "免提", speaker)
         cameraButton?.update(if (cameraEnabled) "关闭摄像头" else "开启摄像头", cameraEnabled, !cameraEnabled)
-        switchButton?.visibility = if (canSwitchCamera) View.VISIBLE else View.GONE
+        cameraButton?.visibility = if (screenSharing || screenSharePending) View.GONE else View.VISIBLE
+        switchButton?.visibility = if (canSwitchCamera && !screenSharing && !screenSharePending) View.VISIBLE else View.GONE
         switchButton?.isEnabled = cameraEnabled
         switchButton?.alpha = if (cameraEnabled) 1f else 0.4f
         recordButton?.visibility = if (recordingSupported && connectedAt != 0L) View.VISIBLE else View.GONE
         if (!recording) recordButton?.text = "开始录音"
+        shareButton?.visibility = if (screenShareSupported && connectedAt != 0L) View.VISIBLE else View.GONE
+        shareButton?.isEnabled = !screenSharePending
+        shareButton?.apply {
+            update(when {
+                screenSharing -> "停止共享"
+                screenSharePending -> "等待授权"
+                Build.VERSION.SDK_INT >= 29 -> "全屏＋声音"
+                else -> "共享屏幕"
+            }, screenSharing)
+            if (!screenSharing && !screenSharePending && Build.VERSION.SDK_INT >= 29)
+                contentDescription = "共享整个屏幕和允许采集的媒体声音"
+        }
         refreshChrome()
     }
     private fun refreshChrome() {
         for (view in chrome) view.visibility = if (inPip || controlsHidden) View.GONE else View.VISIBLE
         heading?.visibility = if (inPip || controlsHidden || !hasVideo) View.GONE else View.VISIBLE
         audioInfo?.visibility = if (hasVideo) View.GONE else View.VISIBLE
-        preview?.visibility = if (!inPip && cameraEnabled && remoteCameraEnabled) View.VISIBLE else View.GONE
+        if (!hasVideo) audioAvatar?.setPeer(peerName, peerAvatar)
+        preview?.visibility = if (!inPip && localVideo && remoteVideo) View.VISIBLE else View.GONE
+        preview?.isClickable = !remoteScreenSharing
         preview?.contentDescription = if (showSelfInMain) "将对方画面放大" else "将自己画面放大"
         mainTapTarget?.visibility = if (inPip || !hasVideo) View.GONE else View.VISIBLE
         mainTapTarget?.contentDescription = if (controlsHidden) "显示通话控件" else "隐藏通话控件"
         recordingBadge?.visibility = if (!inPip && controlsHidden && recording) View.VISIBLE else View.GONE
+        sharingBadge?.apply {
+            text = when {
+                screenAudioSharing -> "正在共享屏幕和媒体声音"
+                screenSharing -> "正在共享屏幕"
+                else -> "对方正在共享屏幕"
+            }
+            visibility = if (!inPip && (screenSharing || remoteScreenSharing)) View.VISIBLE else View.GONE
+        }
     }
     fun release() {
         if (released) return
@@ -395,6 +448,12 @@ private class CallGlyph(private val kind: String) : Drawable() {
             "hangup" -> {
                 canvas.drawArc(RectF(4f, 9f, 26f, 26f), 200f, 140f, false, paint)
                 canvas.drawLine(5f, 14f, 5f, 21f, paint); canvas.drawLine(25f, 14f, 25f, 21f, paint)
+            }
+            "screen" -> {
+                canvas.drawRoundRect(RectF(3f, 4f, 27f, 22f), 3f, 3f, paint)
+                canvas.drawLine(15f, 22f, 15f, 27f, paint); canvas.drawLine(10f, 27f, 20f, 27f, paint)
+                canvas.drawLine(15f, 17f, 15f, 9f, paint)
+                canvas.drawLine(15f, 9f, 11f, 13f, paint); canvas.drawLine(15f, 9f, 19f, 13f, paint)
             }
         }
         if (off) canvas.drawLine(4f, 3f, 27f, 27f, paint)

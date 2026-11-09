@@ -9,7 +9,9 @@ export const imageSourceMethods = {
             if (!msg) return ''
             const shouldUseOriginalFallback = Boolean(this.thumbnailFallbackIds[msg.id])
             const baseImageUrl = this.loadedOriginalImages[msg.id] || (
-                shouldUseOriginalFallback ? msg.content : (msg.thumbnail || this.getThumbnail(msg.content))
+                shouldUseOriginalFallback ? msg.content : (
+                    !msg.thumbnail || /\/api\/chat\/imageReview\?/i.test(msg.thumbnail) ? this.getThumbnail(msg.content) : msg.thumbnail
+                )
             )
             const nonce = this.imageRetryNonces[msg.id]
             if (!nonce || typeof baseImageUrl !== 'string' || !/^https?:\/\//i.test(baseImageUrl)) {
@@ -77,8 +79,8 @@ export const imageSourceMethods = {
                         relPath = urlObj.pathname
                     }
                 } catch (err) {
-                    // path 可能并不是完整 URL，直接保留原始 path
-                    relPath = path
+                    const absolutePath = /^https?:\/\/[^/]+([^?#]*)/i.exec(path)?.[1]
+                    relPath = absolutePath ? absolutePath.replace(/^\/files\/download\//, '/') : path
                 }
 
                 // 确保 relPath 以 / 开头
@@ -183,8 +185,7 @@ export const imageLoadingMethods = {
             this.$set(this.originalImageLoadingIds, msg.id, true)
 
             // #ifdef H5
-            // H5 继续交给浏览器图片缓存处理，不额外写入媒体文件。
-            this.preloadOriginalImageFromNetwork(msg)
+            void this.loadWebOriginalImage(msg)
             return
             // #endif
 
@@ -194,7 +195,18 @@ export const imageLoadingMethods = {
             this.loadAndPersistOriginalImage(msg)
             // #endif
         },
-// 在线预加载兜底：H5 的唯一加载路径；非 H5 仅在持久缓存失败时使用。
+// #ifdef H5
+    async loadWebOriginalImage(msg) {
+        const url = await this.getChatMediaSource('original', msg.content, { download: true, size: msg.fileSize })
+        const current = this.getCurrentImageMessage(msg.id, msg.content)
+        if (!current || this.isChatPageDestroyed) { this.finishOriginalImageLoading(msg.id); return }
+        if (!url) { this.preloadOriginalImageFromNetwork(current); return }
+        current.originalLoaded = true
+        this.setLoadedOriginalImage(current.id, url)
+        this.saveMessagesToStorage()
+        this.finishOriginalImageLoading(current.id)
+    },
+// #endif
     preloadOriginalImageFromNetwork(msg) {
             const sourceUrl = msg?.content
             if (!sourceUrl) {
@@ -311,6 +323,9 @@ export const imageErrorMethods = {
                 msg.originalLoaded = false
                 this.finishOriginalImageLoading(msg.id)
                 this.saveMessagesToStorage()
+                // #ifdef H5
+                if (isPersistentLocalOriginal) void this.invalidateChatMediaSource('original', msg.content, displayedOriginal)
+                // #endif
                 // #ifndef H5
                 if (isPersistentLocalOriginal) {
                     removeCachedChatOriginalImage({

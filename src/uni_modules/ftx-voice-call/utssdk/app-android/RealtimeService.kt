@@ -1,6 +1,7 @@
 package ftx.voice
 
 import android.app.*
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -9,11 +10,23 @@ import android.os.PowerManager
 
 class RealtimeService : Service() {
     private var wake: PowerManager.WakeLock? = null
-    companion object { @Volatile var running = false; private const val CHANNEL = "ftx_realtime" }
+    private var stopping = false
+    companion object {
+        @Volatile var running = false; private set
+        private const val CHANNEL = "ftx_realtime"
+        private var instance: RealtimeService? = null
+        fun stop(context: Context) {
+            instance?.stopping = true
+            running = false
+            context.stopService(Intent(context, RealtimeService::class.java))
+        }
+    }
+    override fun onCreate() { super.onCreate(); instance = this; running = false }
+    private fun stopExpected() { stopping = true; if (instance === this) running = false; stopSelf() }
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.getStringExtra("action")
-        if (action != null) { RealtimeBridge.notificationAction(action, intent.getStringExtra("sessionId") ?: ""); if (!running) stopSelf(); return START_NOT_STICKY }
+        if (action != null) { RealtimeBridge.notificationAction(action, intent.getStringExtra("sessionId") ?: ""); if (!running) stopExpected(); return START_NOT_STICKY }
         try {
             val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL, "后台消息、通话与位置", NotificationManager.IMPORTANCE_LOW).apply {
@@ -21,7 +34,7 @@ class RealtimeService : Service() {
             })
             val call = RealtimeBridge.callId
             val location = RealtimeBridge.activeLocationId()
-            if (call.isEmpty() && location.isEmpty() && !RealtimeBridge.messagesEnabled()) { stopSelf(); return START_NOT_STICKY }
+            if (call.isEmpty() && location.isEmpty() && !RealtimeBridge.messagesEnabled()) { stopExpected(); return START_NOT_STICKY }
             val launch = packageManager.getLaunchIntentForPackage(packageName) ?: Intent()
             launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             launch.putExtra("ftx_realtime_route", if (call.isNotEmpty()) "/pages-nonTheme/voice-call" else if (location.isNotEmpty()) RealtimeBridge.locationRoute else "/pages-nonTheme/chatlist")
@@ -50,9 +63,21 @@ class RealtimeService : Service() {
             var types = 0
             if (RealtimeBridge.messagesEnabled() && Build.VERSION.SDK_INT >= 34) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             if (call.isNotEmpty() && Build.VERSION.SDK_INT >= 30) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            if (RealtimeBridge.video && Build.VERSION.SDK_INT >= 30 && checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            if (RealtimeBridge.cameraServiceNeeded && Build.VERSION.SDK_INT >= 30) {
+                if (checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                } else RealtimeBridge.cameraServiceUnavailable(call)
+            }
             if (location.isNotEmpty() && Build.VERSION.SDK_INT >= 29) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-            if (Build.VERSION.SDK_INT >= 29) startForeground(2700, builder.build(), types) else startForeground(2700, builder.build())
+            val notification = builder.build()
+            if (Build.VERSION.SDK_INT >= 29) {
+                try { startForeground(2700, notification, types) }
+                catch (error: SecurityException) {
+                    if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA == 0) throw error
+                    startForeground(2700, notification, types and ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA.inv())
+                    RealtimeBridge.cameraServiceUnavailable(call)
+                }
+            } else startForeground(2700, notification)
             if (call.isNotEmpty() || location.isNotEmpty()) {
                 if (wake == null) {
                     wake = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ftx:realtime")
@@ -61,13 +86,15 @@ class RealtimeService : Service() {
                 wake?.acquire(2 * 60 * 60 * 1000L) // Renew when a later overlapping session starts.
             } else { if (wake?.isHeld == true) wake?.release(); wake = null }
             running = true; RealtimeBridge.serviceReady()
-        } catch (_: Exception) { running = false; RealtimeBridge.serviceFailed(); stopSelf() }
+        } catch (_: Exception) { running = false; RealtimeBridge.serviceFailed(); stopExpected() }
         return START_NOT_STICKY
     }
-    override fun onTaskRemoved(rootIntent: Intent?) { if (!RealtimeBridge.messagesEnabled()) { RealtimeBridge.stopAll(); stopSelf() } }
+    override fun onTaskRemoved(rootIntent: Intent?) { if (!RealtimeBridge.messagesEnabled()) { RealtimeBridge.stopAll(); stopExpected() } }
     override fun onDestroy() {
-        running = false; if (wake?.isHeld == true) wake?.release(); wake = null
-        if (RealtimeBridge.messagesEnabled() || RealtimeBridge.callId.isNotEmpty() || RealtimeBridge.activeLocationId().isNotEmpty()) RealtimeBridge.stopAll()
+        val current = instance === this
+        if (current) { instance = null; running = false }
+        if (wake?.isHeld == true) wake?.release(); wake = null
+        if (current && !stopping && (RealtimeBridge.messagesEnabled() || RealtimeBridge.callId.isNotEmpty() || RealtimeBridge.activeLocationId().isNotEmpty())) RealtimeBridge.stopAll()
         super.onDestroy()
     }
 }

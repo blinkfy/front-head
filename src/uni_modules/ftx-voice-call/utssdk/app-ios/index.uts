@@ -1,6 +1,9 @@
 export function onVoicePeerEvent(callback: (event: string) => void): void {}
 export function voiceRtcAvailable(): boolean { return false }
 export function videoRtcAvailable(): boolean { return false }
+export function screenShareRtcAvailable(): boolean { return false }
+export function showOutgoingVideoPreview(options: string, onCancel: () => void): boolean { return false }
+export function closeOutgoingVideoPreview(callId: string): void {}
 export function openVoicePeer(options: string): void {}
 export function signalVoicePeer(callId: string, event: string): void {}
 export function controlVoicePeer(callId: string, options: string): void {}

@@ -20,7 +20,7 @@ import { miniLocationAvailable } from './mini-location.js'
 import { connectChatEventsSocket, androidBackgroundMask, androidVideoVisible, setAndroidRealtimeForeground, handleAndroidRealtimeReturn, syncAndroidMessagingPreference } from './android-realtime.js'
 
 let activityMessages = false
-let delegated = false
+let delegations = 0
 let requestedActive = false
 let foreground = false
 let currentConversation = ''
@@ -150,15 +150,25 @@ installLiveLocationSender(event => transport.send(event))
 
 export function isChatEventsConnected() { return transport.isConnected() }
 
-export function setChatEventsDelegated(value) {
-    delegated = !!value
-    setChatEventsActive(requestedActive)
+function syncMiniCallAlerts() {
+    // #ifdef MP-WEIXIN
+    miniIncomingCalls.foreground(foreground && delegations === 0)
+    // #endif
+}
+
+export function delegateMiniCallAlerts() {
+    if (++delegations === 1) syncMiniCallAlerts()
+    let released = false
+    return () => {
+        if (released) return
+        released = true
+        if (--delegations === 0) syncMiniCallAlerts()
+    }
 }
 
 export function setChatEventsActive(active) {
     requestedActive = !!active
-    active = requestedActive && !delegated
-    foreground = !!active || androidVideoVisible() || (!delegated && realtimePermissionPending())
+    foreground = requestedActive || androidVideoVisible() || realtimePermissionPending()
     syncAndroidMessagingPreference()
     const background = foreground ? 0 : androidBackgroundMask()
     setAndroidRealtimeForeground(foreground)
@@ -167,9 +177,7 @@ export function setChatEventsActive(active) {
     // #ifdef MP-WEIXIN
     liveLocations.setVisible(foreground)
     // #endif
-    // #ifdef MP-WEIXIN
-    miniIncomingCalls.foreground(foreground && !delegated)
-    // #endif
+    syncMiniCallAlerts()
     setChatFeedbackActive(foreground)
     catchup.setActive(foreground)
     initChatNotificationNavigation()
@@ -178,12 +186,6 @@ export function setChatEventsActive(active) {
     if (!foreground) currentConversation = ''
 }
 
-uni.$on('location:mode-changed', () => {
-    if (miniLocationAvailable() && liveLocationState.phase === 'sharing') {
-        liveLocations.setVisible(false)
-        liveLocations.setVisible(foreground)
-    }
-})
 uni.$on('chat:background-messages-changed', () => { syncAndroidMessagingPreference() })
 uni.$on('realtime:permission-changed', () => setChatEventsActive(requestedActive))
 

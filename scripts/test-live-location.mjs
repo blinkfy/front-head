@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
-import { createLiveLocationController } from '../src/utils/live-location-core.mjs'
+import { createLiveLocationController, validLocationPoint } from '../src/utils/live-location-core.mjs'
 import { wgs84ToGcj02 } from '../src/utils/live-location-coordinates.mjs'
 import mapCoordinates from '../../back-end/utils/mapCoordinates.js'
 import { createChatEventsTransport } from '../src/utils/chat-events-transport.mjs'
@@ -92,9 +92,63 @@ await check('foreground resume re-declares location capability on a healthy tran
 await check('peer point updates state without being persisted or re-broadcast', () => {
   const h = enterAndAck(), before = h.sent.length, peerPoint = point(31.24, 121.48)
   h.controller.handle({ type: 'location.point', sessionId: h.sessionId, userId: '2', point: peerPoint })
-  assert.deepEqual(h.controller.state().peerPoint, peerPoint)
+  assert.deepEqual(h.controller.state().peerPoint, { ...peerPoint, updatedAt: h.clock.now() })
   assert.equal(h.sent.length, before, 'incoming peer point is never echoed')
   assert.equal(h.controller.state().peerJoined, true)
+})
+
+await check('peer point age uses the server clock delta and retains stale snapshots on legacy servers', () => {
+  const h = enterAndAck()
+  const sessionId = h.sessionId
+  const serverTime = 2000000
+  const snapshot = { ...point(), updatedAt: serverTime - 50000 }
+  h.controller.handle({ type: 'location.joined', sessionId, serverTime, people: [null, { userId: '2', point: snapshot }] })
+  assert.equal(h.controller.state().peerPoint.updatedAt, h.clock.now() - 50000)
+  h.controller.handle({ type: 'location.point', sessionId, serverTime, userId: '2', point: { ...snapshot, updatedAt: serverTime } })
+  assert.equal(h.controller.state().peerPoint.updatedAt, h.clock.now())
+  h.controller.handle({ type: 'location.point', sessionId, serverTime, clientDeferredMs: 70000, userId: '2', point: { ...snapshot, updatedAt: serverTime } })
+  assert.equal(h.controller.state().peerPoint.updatedAt, h.clock.now() - 70000, 'Android background queue time counts toward age')
+  h.controller.handle({ type: 'location.joined', sessionId, serverTime, clientDeferredMs: 20000, people: [{ userId: '2', point: snapshot }] })
+  assert.equal(h.controller.state().peerPoint.updatedAt, h.clock.now() - 70000, 'join snapshot age includes native queue time')
+  h.controller.handle({ type: 'location.joined', sessionId, people: [{ userId: '2', point: { ...point(), updatedAt: h.clock.now() - 50000 } }] })
+  assert.equal(h.controller.state().peerPoint.updatedAt, h.clock.now() - 50000)
+})
+
+await check('Android provisional coordinates are local-only until a new fix arrives', () => {
+  const h = enterAndAck()
+  const watch = h.watches[0]
+  watch.success({ ...point(), provisional: true })
+  assert.equal(h.controller.state().selfPoint.provisional, true)
+  assert.equal(h.controller.state().locating, true)
+  assert.ok(!h.sent.some(event => event.type === 'location.point'))
+  watch.success(point(31.24))
+  watch.success({ ...point(), provisional: true })
+  assert.equal(h.controller.state().selfPoint.latitude, 31.24)
+  assert.equal(h.controller.state().locating, false)
+  assert.equal(h.sent.filter(event => event.type === 'location.point').length, 1)
+})
+
+await check('account changes discard active coordinates, pending sends and offers immediately', () => {
+  const h = enterAndAck()
+  h.watches[0].success(point())
+  h.controller.handle({ type: 'location.offer', sessionId: 'offer_123456789', from: peer, to: { id: '1' } })
+  h.setOwner('other-account')
+  assert.equal(h.controller.state().phase, 'idle')
+  assert.equal(h.controller.state().selfPoint, null)
+  assert.deepEqual(h.controller.state().offers, {})
+  assert.equal(h.watches[0].stopped, 1)
+  assert.ok(!h.sent.some(event => event.type === 'location.leave'))
+})
+
+await check('a disconnected response during retry cannot produce a join loop', () => {
+  const h = enterAndAck(harness({ canResume: true }))
+  const ended = { type: 'location.ended', sessionId: h.sessionId, reason: 'disconnected' }
+  h.controller.handle(ended)
+  h.controller.handle(ended)
+  h.controller.handle(ended)
+  assert.equal(h.sent.filter(event => event.type === 'location.join').length, 1)
+  h.controller.resume(peer.id)
+  assert.equal(h.sent.filter(event => event.type === 'location.join').length, 2)
 })
 
 await check('self-only joined update clears departed peer while local GPS keeps running', () => {
@@ -310,7 +364,7 @@ await check('permission denial ends session and stops tracker', () => {
   assert.equal(h.controller.state().locating, false)
 })
 
-await check('native tracker owns first-fix timeout while H5 keeps the JS timeout', () => {
+await check('a tracker without an internal timeout uses the controller deadline', () => {
   const native = enterAndAck(harness({ managesTimeout: true }))
   assert.equal(native.clock.pending(), 0, 'native watcher manages its own first-fix deadline')
   native.watches[0].success(point())
@@ -318,9 +372,9 @@ await check('native tracker owns first-fix timeout while H5 keeps the JS timeout
     { ...point(), updatedAt: undefined })
 
   const h5 = enterAndAck()
-  assert.equal(h5.clock.pending(), 1, 'web tracker still schedules the first-fix timeout')
+  assert.equal(h5.clock.pending(), 1, 'an unmanaged tracker still schedules the first-fix timeout')
   h5.clock.advance(20000)
-  assert.equal(h5.controller.state().reason, 'unavailable', 'web tracker still stops when no fix arrives')
+  assert.equal(h5.controller.state().reason, 'unavailable', 'the controller pauses when no fix arrives')
 })
 
 await check('points merge to latest during five second throttle without interval polling', () => {
@@ -397,6 +451,7 @@ function loadTracker(platform, context) {
   context.androidRealtimeAvailable ??= () => false
   context.watchAndroidRealtimeLocation ??= () => () => {}
   context.miniLocationAvailable ??= () => false
+  context.validLocationPoint ??= validLocationPoint
   vm.createContext(context)
   vm.runInContext(preprocessTracker(platform), context)
   return context.liveLocationTracker
@@ -411,7 +466,7 @@ await check('H5 tracker uses secure WGS84 watch, clearWatch, denial and ignores 
   context.globalThis = context
   const tracker = loadTracker({ 'APP-PLUS': false, H5: true }, context)
   assert.equal(tracker.supported(), true)
-  assert.equal(tracker.managesTimeout(), false, 'H5 uses the controller first-fix deadline')
+  assert.equal(tracker.managesTimeout(), true, 'browser timeout excludes the permission prompt')
   assert.equal(tracker.canResume(), true)
   assert.equal(tracker.initialTimeout(), 45000)
   const fixes = [], errors = []
@@ -419,6 +474,7 @@ await check('H5 tracker uses secure WGS84 watch, clearWatch, denial and ignores 
   success({ coords: { latitude: 31.23, longitude: 121.47, accuracy: 8 } })
   assert.deepEqual(JSON.parse(JSON.stringify(fixes[0])), { latitude: 31.23, longitude: 121.47, accuracy: 8, coordinateSystem: 'wgs84' })
   assert.equal(context.options.enableHighAccuracy, true)
+  assert.equal(context.options.timeout, 45000)
   failure({ code: 1 })
   assert.equal(errors.length, 1)
   stop(); success({ coords: { latitude: 1, longitude: 2, accuracy: 1 } })
@@ -451,6 +507,10 @@ await check('H5 tracker refreshes with a fresh one-shot fix and cancels refresh 
   assert.equal(errors.length, 0, 'a watch fix invalidates the older in-flight refresh error')
   assert.equal(fixes.at(-1).latitude, 31.235, 'an older refresh cannot replace the newer watch fix')
   clock.advance(30000)
+  refreshFailure({ code: 2 })
+  assert.equal(errors.length, 0, 'a transient supplementary failure keeps the existing watch')
+  assert.equal(clock.pending(), 1)
+  clock.advance(5000)
   refreshSuccess({ coords: { latitude: 31.24, longitude: 121.48, accuracy: 6 } })
   assert.equal(fixes.length, 3)
   assert.equal(fixes.at(-1).latitude, 31.24)
@@ -509,6 +569,32 @@ await check('Android App tracker selects native realtime location watch', () => 
   stop()
   assert.equal(stopped, 1)
   assert.equal(fallbackWatches, 0, 'Android uses the native location subscription')
+})
+
+await check('iOS first location permission is resolved before entering a sharing session', async () => {
+  let status = 'not determined', signal
+  const context = {
+    uni: { getAppAuthorizeSetting: () => ({ locationAuthorized: status }) },
+    ensureFeaturePermission: async () => true,
+    plus: { os: { name: 'iOS' }, geolocation: { getCurrentPosition(_ok, onFail) { signal(onFail) } } }
+  }
+  const tracker = loadTracker({ 'APP-PLUS': true, H5: false }, context)
+  let finished = false
+  const firstPrompt = new Promise(resolve => { signal = resolve })
+  const permission = tracker.permission({}).then(() => { finished = true })
+  const failFirstFix = await firstPrompt
+  assert.equal(finished, false)
+  status = 'authorized'
+  failFirstFix({ code: 2 })
+  await permission
+  assert.equal(finished, true, 'an authorized device can retry a failed first fix after joining')
+  status = 'not determined'
+  const nextPrompt = new Promise(resolve => { signal = resolve })
+  const rejected = tracker.permission({})
+  const deny = await nextPrompt
+  status = 'denied'
+  deny({ code: 1 })
+  await assert.rejects(rejected, { code: 'permission_denied' })
 })
 
 await check('WGS84 to GCJ02 matches backend map coordinate conversion', () => {

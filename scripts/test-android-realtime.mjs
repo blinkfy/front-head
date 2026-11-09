@@ -153,6 +153,42 @@ replacementSocket.close()
   }
 }
 
+// A queued failure belongs to the socket that submitted the frame.
+{
+  let token = 'first'
+  const sockets = []
+  const transport = createChatEventsTransport({
+    getToken: () => token, getBaseUrl: () => 'https://example.test',
+    connectSocket() {
+      const peer = {
+        onMessage(handler) { this.message = handler },
+        onClose() {}, onError() {},
+        send(frame) { this.fail = frame.fail },
+        close({ code }) { this.closed = code }
+      }
+      sockets.push(peer)
+      return peer
+    },
+    setTimer: () => 1, clearTimer() {}
+  })
+  transport.setActive(true)
+  sockets[0].message({ data: '{"type":"connected"}' })
+  assert.equal(transport.send({ type: 'voice.end' }), true)
+  const oldFailure = sockets[0].fail
+  token = 'second'
+  transport.setActive(true)
+  assert.equal(sockets[0].closed, 1000, 'account change closes the socket deliberately')
+  sockets[1].message({ data: '{"type":"connected"}' })
+  oldFailure()
+  assert.equal(sockets[1].closed, undefined, 'late send failure cannot close a new account connection')
+  assert.equal(transport.isConnected(), true)
+  sockets[1].send = () => { throw new Error('native socket closed') }
+  assert.equal(transport.send({ type: 'location.leave' }), false)
+  assert.equal(sockets[1].closed, 4101, 'a transport failure requests ring recovery')
+  assert.equal(transport.isConnected(), false, 'synchronous failure closes only the affected connection')
+  transport.setActive(false)
+}
+
 routeUnderTest = '/pages-nonTheme/chat?chatId=42&userId=9'
 pagesUnderTest = [{ route: 'pages-nonTheme/chat', options: { chatId: '41', userId: '3' } }]
 realtime.handleAndroidRealtimeReturn()
@@ -217,4 +253,40 @@ permissionRequest.failure(new Error('denied'))
 await Promise.resolve()
 assert.equal(requestFailure.code, 1, 'permission request failure is reported')
 
-console.log('PASS Android realtime socket lifecycle, native permission cancellation, location callbacks and late-event cleanup')
+const nativeFile = name => fs.readFileSync(new URL(`../src/uni_modules/ftx-voice-call/utssdk/app-android/${name}`, import.meta.url), 'utf8')
+const nativeManifest = nativeFile('AndroidManifest.xml')
+const nativeBridge = nativeFile('VoiceCallBridge.kt')
+const nativeView = nativeFile('VideoCallView.kt')
+const nativeScreenAudio = nativeFile('CallScreenAudio.kt')
+assert.match(nativeManifest, /android\.permission\.FOREGROUND_SERVICE_MEDIA_PROJECTION/)
+assert.match(nativeManifest, /ScreenShareService"[^>]+android:foregroundServiceType="mediaProjection"/)
+assert.match(nativeBridge, /if \(!expectsScreenShare\(id, request\)\) return@execute[\s\S]*?s\.screenConsent = consent/,
+  'a permission result cannot start projection after the matching call request ends')
+assert.match(nativeBridge, /s\.closed = true[\s\S]*?stopScreenShare\(s, ending = true\)[\s\S]*?dispose\(s\)/,
+  'hangup clears projection before disposing the peer connection')
+assert.match(nativeBridge, /setTrack\(if \(ending\) null else s\.videoTrack, false\)[\s\S]*?if \(s\.cameraEnabled\)/,
+  'the existing camera track is restored and only a previously active camera is restarted')
+assert.match(nativeView, /remoteCameraEnabled \|\| remoteScreenSharing/)
+assert.match(nativeView, /showSelfInMain get\(\) = localVideo && !remoteScreenSharing/)
+assert.match(nativeView, /fit\(mainRenderer, mainFrameWidth, mainFrameHeight, root\.width, root\.height, Gravity\.CENTER\)/,
+  'remote screen is the main frame and uses the original aspect ratio')
+assert.match(nativeFile('VideoCallActivity.kt'), /MediaProjectionConfig\.createConfigForDefaultDisplay\(\)/,
+  'Android 14 requests whole-display consent to match the device-wide audio capture')
+assert.match(nativeScreenAudio, /addMatchingUsage\(AudioAttributes\.USAGE_MEDIA\)\.addMatchingUsage\(AudioAttributes\.USAGE_GAME\)[\s\S]*?excludeUid\(Process\.myUid\(\)\)/,
+  'shared playback excludes the call app and communication or notification usages')
+assert.match(nativeBridge, /setMicrophoneMute\(s\.muted\)[\s\S]*?s\.track\?\.setEnabled\(!s\.muted \|\| s\.screenAudio != null\)/,
+  'microphone mute stays in ADM while playback can continue on the same sender')
+assert.match(nativeBridge, /s\.screenSharing = false\s+stopScreenAudio\(s\)[\s\S]*?s\.screenCapture\?\.close\(\)/,
+  'screen stop releases playback capture before the projection')
+
+const nativeOutgoingPreview = nativeFile('OutgoingVideoPreview.kt')
+assert.match(nativeOutgoingPreview, /requested !== request/, 'a cancelled mount cannot open the camera late')
+assert.match(nativeOutgoingPreview, /onActivityPaused\(host: Activity\) \{ if \(host === activity\) close\(\) \}/,
+  'the outgoing preview stops when its host goes to the background')
+assert.match(nativeOutgoingPreview, /preview\.close\(\)\.get\(1500, TimeUnit\.MILLISECONDS\)/,
+  'the call camera waits for local preview release')
+assert.match(nativeBridge, /OutgoingVideoPreview\.releaseBeforePeer\(\)[\s\S]*?s\.cameraEnabled = previewReleased/,
+  'if preview release cannot be confirmed, connect without opening a competing camera')
+assert.doesNotMatch(nativeOutgoingPreview, /PeerConnection|VideoTrack|\.send\(/, 'waiting preview owns no network transport')
+
+console.log('PASS Android realtime lifecycle, outgoing video preview, location callbacks and screen sharing wiring including playback audio')

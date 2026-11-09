@@ -1,7 +1,6 @@
 <template>
   <view class="recordings-page" :class="{ dark: darkTheme, 'selection-mode': selecting }">
     <view class="heading"><button class="back icon-button" aria-label="返回" @click="back"><ManifestIcon id="back" /></button><text>{{ selecting ? '已选 ' + selectedIds.length + ' 条' : '通话录音' }}</text>
-      <button v-if="selecting" class="text-button heading-action" :disabled="deleting" @click="exitSelection">完成</button>
     </view>
     <text v-if="loading" class="notice">正在读取录音…</text>
     <view v-else-if="!admin" class="empty">{{ error || '仅管理员可使用通话录音' }}</view>
@@ -15,8 +14,9 @@
       <view class="list-heading"><text>{{ callId ? '本次通话录音' : '本地录音' }} · {{ visibleRows.length }} 条</text>
         <view class="list-toolbar">
           <button class="text-button" :disabled="deleting" @click="refreshFiles">{{ miniProgram ? '同步目录' : '刷新' }}</button>
-          <button v-if="miniProgram" class="text-button" @click="refreshFiles">管理</button>
-          <button v-else-if="selectableRows.length && !selecting" class="text-button" @click="startSelection">选择</button>
+          <button v-if="selecting" class="text-button" :disabled="deleting" @click="exitSelection">完成</button>
+          <button v-else-if="miniProgram" class="text-button" @click="refreshFiles">管理</button>
+          <button v-else-if="selectableRows.length" class="text-button" @click="startSelection">选择</button>
         </view>
       </view>
       <view class="panel list-tools">
@@ -253,7 +253,6 @@ export default {
   margin-left: -16rpx !important;
 }
 .icon-button { display: flex; align-items: center; justify-content: center; flex: none; padding: 0; margin: 0; background: transparent; color: inherit; line-height: 1; }
-.heading-action { margin-left: auto !important; }
 .panel {
   padding: 28rpx;
   border: 1px solid #e0e8e2;

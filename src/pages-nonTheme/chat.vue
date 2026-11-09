@@ -27,6 +27,16 @@
             </view>
         </view>
 
+        <!-- #ifdef MP-WEIXIN -->
+        <view v-if="embeddedCallMode" class="location-share-entry" role="button" @click="goBack">
+            <ManifestIcon :id="embeddedCallMode === 'video' ? 'chat_video_call' : 'chat_voice_call'" size="26px" />
+            <view class="location-share-copy">
+                <text class="location-share-title">返回通话</text>
+                <text class="location-share-subtitle">{{ embeddedCallMode === 'video' ? '视频通话' : '语音通话' }}</text>
+            </view>
+            <text class="location-share-arrow">›</text>
+        </view>
+        <!-- #endif -->
         <view v-if="!isGroupChat && (liveLocationState.offers[String(otherUserId)] || (liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId)))" class="location-share-entry" @click="openLiveLocation">
             <ManifestIcon id="map_location" size="26px" />
             <view class="location-share-copy"><text class="location-share-title">{{ liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId) ? '实时位置共享' : '对方发起的位置共享' }}</text><text class="location-share-subtitle">点击查看位置状态</text></view>
@@ -68,8 +78,7 @@
                 <!-- 消息内容 -->
                 <view v-else :id="`message-${msg.id}`" class="message-content" :class="{ 'message-highlighted': highlightMessageId === msg.id }">
                     <!-- 对方头像 -->
-                    <image v-if="!msg.isSelf" class="avatar" :src="getMessageAvatar(msg)"
-                        mode="aspectFill" />
+                    <ChatCachedAvatar v-if="!msg.isSelf" class="avatar" :src="getMessageAvatar(msg)" :avatar-name="getMessageSenderName(msg)" :owner="avatarCacheOwner" />
 
                     <!-- 消息气泡 -->
                     <view class="bubble-wrapper">
@@ -98,7 +107,9 @@
                             <!-- 图片消息 -->
                             <view v-else-if="msg.type === 'image'" class="image-content" @click="previewImage(msg)">
                                 <!-- 原图已预加载时直接复用；未缓存时仍优先使用缩略图以节省首次流量 -->
-                                <image :src="getImageDisplaySrc(msg)" :data-message-id="msg.id" :data-original-token="loadedOriginalImageTokens[msg.id] || ''" :data-retry-nonce="imageRetryNonces[msg.id] || ''" mode="widthFix" class="msg-image"
+                                <ChatCachedImage :src="getImageDisplaySrc(msg)" :owner="avatarCacheOwner"
+                                    :kind="loadedOriginalImages[msg.id] || thumbnailFallbackIds[msg.id] || imageRetryLoadingIds[msg.id] ? '' : 'preview'"
+                                    :message-id="msg.id" :original-token="loadedOriginalImageTokens[msg.id] || ''" :retry-nonce="imageRetryNonces[msg.id] || ''" mode="widthFix" class="msg-image"
                                     :class="{ 'image-error': mediaLoadErrors[msg.id]?.type === 'image' }"
                                     @error="onImageError(msg, $event)" @load="onImageLoad(msg, $event)" />
                                 <view v-if="imageRetryLoadingIds[msg.id]" class="media-error-mask">
@@ -133,7 +144,7 @@
                             <!-- 视频消息 -->
                             <view v-else-if="msg.type === 'video'" class="video-content"
                                 @click="playVideo(msg.content, msg)">
-                                <image :src="msg.thumbnail || msg.content" mode="aspectFill" class="video-thumbnail"
+                                <ChatCachedImage :src="msg.thumbnail || msg.content" :owner="avatarCacheOwner" :kind="msg.thumbnail && msg.thumbnail !== msg.content ? 'preview' : ''" mode="aspectFill" class="video-thumbnail"
                                     :class="{ 'media-error': mediaLoadErrors[msg.id]?.type === 'video' }" />
                                 <!-- 播放按钮或错误提示 -->
                                 <view v-if="!mediaLoadErrors[msg.id]?.type" class="play-btn">
@@ -171,7 +182,8 @@
                                     <text class="file-name">{{ msg.fileName }}</text>
                                     <view class="file-meta" v-if="!mediaLoadErrors[msg.id]?.type">
                                         <text class="file-size">{{ formatFileSize(msg.fileSize) }}</text>
-                                        <text v-if="isFilePreviewable(msg)" class="file-preview-hint">在线预览</text>
+                                        <text v-if="isFilePreviewable(msg)" class="file-preview-hint" @click.stop="previewChatFile(msg)">在线预览</text>
+                                        <text v-if="isFilePreviewable(msg)" class="file-preview-hint" @click.stop="openFile(msg, false)">下载</text>
                                     </view>
                                     <text class="file-error-text" v-else>下载失败，点击重试</text>
                                     <!-- 上传进度 -->
@@ -210,8 +222,7 @@
                     </view>
 
                     <!-- 自己的头像 -->
-                    <image v-if="msg.isSelf" class="avatar" :src="userAvatarUrl"
-                        mode="aspectFill" @error="onUserAvatarError" />
+                    <ChatCachedAvatar v-if="msg.isSelf" class="avatar" :src="userAvatarUrl" :avatar-name="userAvatarName" :owner="avatarCacheOwner" />
                 </view>
             </view>
 
@@ -240,7 +251,7 @@
             <!-- 主输入栏 -->
             <view class="input-bar">
                 <!-- 语音/键盘切换 -->
-                <view class="input-btn" @click="toggleVoiceMode">
+                <view v-if="!embeddedCallMode" class="input-btn" @click="toggleVoiceMode">
                     <ManifestIcon v-if="!isVoiceMode" class="btn-icon" id="voice_recognition" />
                     <ManifestIcon v-else class="btn-icon" id="keyboard" :scale="1.1" />
                 </view>
@@ -248,7 +259,7 @@
                 <!-- 文本输入框 -->
                 <view v-if="!isVoiceMode" class="input-wrapper" :style="{ height: inputWrapperHeight + 'rpx' }">
                     <textarea class="text-input" v-model="inputText" :placeholder="inputPlaceholder" :maxlength="2000"
-                        :style="{ height: inputTextareaHeight + 'rpx' }" :auto-height="false" :show-confirm-bar="false"
+                        :style="{ height: inputTextareaHeight + 'rpx' }" :auto-height="false" :show-confirm-bar="false" :cursor-spacing="20"
                         @linechange="onInputLineChange" @focus="onInputFocus" @blur="onInputBlur"
                         @confirm="sendTextMessage" @paste="onPaste" />
                 </view>
@@ -293,22 +304,10 @@
             <!-- 更多功能面板 -->
             <view v-if="showMorePanel && !groupSendBlockReason" class="more-panel">
                 <view class="more-grid">
-                    <view v-if="!isGroupChat && voiceCallState.supported" class="more-item" @click="startVoiceCall()">
+                    <view v-if="callMenuOptions.length" class="more-item" @click="chooseCallMode">
                         <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
-                        <text class="more-text">语音通话</text>
+                        <text class="more-text">通话</text>
                     </view>
-                    <view v-if="!isGroupChat && voiceCallState.videoSupported" class="more-item" @click="startVoiceCall('video')">
-                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_video_call" :scale="1.5" /></view>
-                        <text class="more-text">视频通话</text>
-                    </view>
-                    <!-- #ifdef MP-WEIXIN -->
-                    <view v-if="!isGroupChat" class="more-item" @click="openWebCall('audio')">
-                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view><text class="more-text">网页语音通话</text>
-                    </view>
-                    <view v-if="!isGroupChat" class="more-item" @click="openWebCall('video')">
-                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_video_call" :scale="1.5" /></view><text class="more-text">网页视频通话</text>
-                    </view>
-                    <!-- #endif -->
                     <!-- #ifndef APP-PLUS || H5 || MP-WEIXIN -->
                     <view v-if="!isGroupChat" class="more-item" @click="showCallSupport">
                         <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
@@ -321,7 +320,7 @@
                         </view>
                         <text class="more-text">图片</text>
                     </view>
-                    <view class="more-item" @click="shootPhoto">
+                    <view v-if="!embeddedCallMode" class="more-item" @click="shootPhoto">
                         <view class="more-icon-wrapper">
                             <ManifestIcon class="more-icon" id="camera_scan" :scale="1.8" />
                         </view>
@@ -333,7 +332,7 @@
                         </view>
                         <text class="more-text">视频</text>
                     </view>
-                    <view class="more-item" @click="recordVideo">
+                    <view v-if="!embeddedCallMode" class="more-item" @click="recordVideo">
                         <view class="more-icon-wrapper">
                             <ManifestIcon class="more-icon" id="video" :scale="2" />
                         </view>
@@ -373,7 +372,7 @@
 
         <!-- 视频播放弹窗 -->
         <view v-if="showVideoPlayer" class="video-player-modal" @click="closeVideoPlayer">
-            <video :src="currentVideoUrl" class="video-player" autoplay controls @click.stop />
+            <video :key="currentVideoUrl" :src="currentVideoUrl" class="video-player" autoplay controls @error="onChatVideoError" @click.stop />
         </view>
 
         <!-- 设置面板 -->
@@ -390,7 +389,7 @@
                 <!-- 用户信息 -->
                 <view class="user-info-section">
                     <view class="group-avatar-editor" :class="{ editable: canManageGroup }" @click="editGroupAvatar">
-                        <image class="user-avatar-large" :src="otherAvatarUrl" mode="aspectFill" />
+                        <ChatCachedAvatar class="user-avatar-large" :src="otherAvatarUrl" :avatar-name="chatTitle" :owner="avatarCacheOwner" />
                         <view v-if="canManageGroup" class="group-avatar-edit-mask"><text>编辑</text></view>
                     </view>
                     <view class="user-details" :class="{ editable: canManageGroup }" @click="editGroupName">
@@ -409,7 +408,7 @@
                     <view v-if="isGroupOwner" class="group-members-loading"><ManifestIcon id="chat_group_transfer" size="28rpx" /> 点击“管理”可设置管理员或转让群主</view>
                     <view v-if="groupInfo?.Members?.length" class="group-members-grid">
                         <view v-for="member in filteredGroupMembers" :key="member.userId" class="group-member">
-                            <image class="group-member-avatar" :src="getGroupMemberAvatar(member)" mode="aspectFill" />
+                            <ChatCachedAvatar class="group-member-avatar" :src="getGroupMemberAvatar(member)" :avatar-name="getGroupMemberName(member)" :owner="avatarCacheOwner" />
                             <text class="group-member-name">{{ getGroupMemberName(member) }}</text>
                             <text v-if="getGroupMemberRole(member)" class="group-member-role">{{ getGroupMemberRole(member) }}</text>
                             <text v-if="member.mute" class="group-member-role">已禁言</text>
@@ -599,8 +598,9 @@
                 
                 <!-- 图片主体 -->
                 <view class="preview-content-box">
-                    <image :key="'preview-image-' + currentPreviewMessage.id" :src="getImageDisplaySrc(currentPreviewMessage)"
-                        :data-message-id="currentPreviewMessage.id" :data-original-token="loadedOriginalImageTokens[currentPreviewMessage.id] || ''" :data-retry-nonce="imageRetryNonces[currentPreviewMessage.id] || ''" mode="aspectFit" class="preview-img-main" @error="onImageError(currentPreviewMessage, $event)" @load="onImageLoad(currentPreviewMessage, $event)"/>
+                    <ChatCachedImage :key="'preview-image-' + currentPreviewMessage.id" :src="getImageDisplaySrc(currentPreviewMessage)"
+                        :owner="avatarCacheOwner" :kind="loadedOriginalImages[currentPreviewMessage.id] || thumbnailFallbackIds[currentPreviewMessage.id] || imageRetryLoadingIds[currentPreviewMessage.id] ? '' : 'preview'"
+                        :message-id="currentPreviewMessage.id" :original-token="loadedOriginalImageTokens[currentPreviewMessage.id] || ''" :retry-nonce="imageRetryNonces[currentPreviewMessage.id] || ''" mode="aspectFit" class="preview-img-main" @error="onImageError(currentPreviewMessage, $event)" @load="onImageLoad(currentPreviewMessage, $event)"/>
                     
                     <!-- 加载中遮罩 -->
                     <view v-if="isCurrentPreviewImageRetrying" class="loading-overlay">
@@ -663,10 +663,13 @@ import { setActiveChatConversation, isChatEventsConnected } from '@/utils/chat-e
 import { getUserProfile } from '@/api/user.js'
 import { baseUrl } from '@/api/settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
+import ChatCachedImage from '@/pages-nonTheme/components/ChatCachedImage.vue'
+import ChatCachedAvatar from '@/pages-nonTheme/components/ChatCachedAvatar.vue'
 import { prepareAvatarUpload } from '@/utils/upload-image.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
 import { setChatFeedbackBlocked } from '@/utils/chat-feedback.js'
-import { embeddedWebCallUrl, requestWebCallTicket } from '@/utils/web-call-entry.mjs'
+import { embeddedWebCallUrl, requestWebCallTicket, miniCallChatReturnMode } from '@/utils/web-call-entry.mjs'
+import { realtimeRouteName } from '@/utils/realtime-route.mjs'
 import { appendRecordingBridge, listCallRecordings } from '@/utils/call-recordings.js'
 import { recordingIdentity, validRecordingCallId, recordingPlayable } from '@/utils/call-recording-preference.mjs'
 import RealtimeActivityEntry from '@/components/RealtimeActivityEntry.vue'
@@ -696,6 +699,8 @@ const chatRelationshipLabels = {
 
 export default {
     components: { AppConfirmDialog, RealtimeActivityEntry, BookingChatContext,
+        ChatCachedImage,
+        ChatCachedAvatar,
         ChatMarkdown,
         CommunityPostMessage, RealtimeActivityMessage,
         ChatSelectionDialog,
@@ -752,6 +757,7 @@ export default {
             isChatPageActive: false,
             isChatPageDestroyed: false,
             webCallOpening: false,
+            embeddedCallMode: '',
             messagePollingVersion: 0,
             activeMessagePollingVersion: null,
             hasInitialScrolledToBottom: false,
@@ -834,6 +840,14 @@ export default {
             
             // 本地文件缓存 - 存储已下载文件的本地路径
             localFileCache: {}, // { messageId: localPath }
+            localChatMediaHandles: {},
+            downloadedChatFiles: {},
+            videoPlaybackRevision: 0,
+            currentVideoCache: null,
+            voicePlaybackRevision: 0,
+            currentVoiceCache: null,
+            voiceGestureRetry: null,
+            handleVoicePlaybackError: null,
             
             // 媒体加载错误状态 - 记录加载失败的消息
             mediaLoadErrors: {}, // { messageId: { type: 'image'|'video'|'voice'|'file', error: true, retryCount: 0 } }
@@ -891,6 +905,19 @@ export default {
     computed: {
         isGroupChat() {
             return this.conversationType === 'group' && !!this.groupId
+        },
+
+        callMenuOptions() {
+            if (this.isGroupChat || this.embeddedCallMode) return []
+            const options = []
+            // #ifdef MP-WEIXIN
+            options.push({ mode: 'audio', label: '网页语音通话' }, { mode: 'video', label: '网页视频通话' })
+            // #endif
+            // #ifdef APP-PLUS || H5
+            if (this.voiceCallState.supported) options.push({ mode: 'audio', label: '语音通话' })
+            if (this.voiceCallState.videoSupported) options.push({ mode: 'video', label: '视频通话' })
+            // #endif
+            return options
         },
 
         // 输入区最多显示四行，超过后让 textarea 自身滚动，避免撑开底栏。
@@ -965,10 +992,16 @@ export default {
             return CHAT_STORAGE_PREFIX + userId + '_' + this.chatId
         },
 
+        avatarCacheOwner() {
+            return this.getCurrentUserId()
+        },
+
+        userAvatarName() {
+            return getDisplayName(this.normalizeStoredUserInfo(uni.getStorageSync('userInfo')))
+        },
+
         // 当前用户头像 (计算属性，避免重复调用)
         userAvatarUrl() {
-            const userInfo = uni.getStorageSync('userInfo')
-            const username = getDisplayName(userInfo)
             
             // 检查是否有有效的真实头像
             if (this.userAvatar && 
@@ -981,8 +1014,7 @@ export default {
                 return avatarUrl
             }
             
-            // 生成基于用户名的头像
-            return this.generateAvatarFromName(username, false)
+            return ''
         },
 
         // 对方头像 (计算属性，避免重复调用)
@@ -1003,8 +1035,7 @@ export default {
                 const avatarUrl = getAvatarUrl(this.otherAvatar, baseUrl)
                 return avatarUrl
             }
-            // 生成基于聊天标题的头像
-            return this.generateAvatarFromName(this.chatTitle, true)
+            return ''
         },
 
         isGroupOwner() { return this.isGroupChat && this.groupInfo?.currentMember?.role === 'owner' },
@@ -1041,6 +1072,9 @@ export default {
         this.initRecorder()
         this.initAudioPlayer()
         this.loadUserInfo() // 会读取userInfo.isAdmin并设置mode
+        // #ifdef MP-WEIXIN
+        this.embeddedCallMode = miniCallChatReturnMode(getCurrentPages(), options, this.getCurrentUserId())
+        // #endif
 
         if (options.conversationType === 'group' || options.groupId) {
             this.conversationType = 'group'
@@ -1051,7 +1085,7 @@ export default {
         }
 
         if (options.title) {
-            const decodedTitle = decodeURIComponent(options.title)
+            const decodedTitle = this.embeddedCallMode ? realtimeRouteName(options.title) : decodeURIComponent(options.title)
             this.chatTitle = decodedTitle
             this.otherUsername = decodedTitle
         }
@@ -1138,6 +1172,8 @@ export default {
     },
     // #endif
     onHide() {
+        this.voicePlaybackRevision++
+        if (!this.currentPlayingMsg) this.playingVoiceId = null
         this.$refs.appConfirmDialog?.cancelAll()
         this.cancelRecord()
         this.saveChatDraft()
@@ -1171,6 +1207,7 @@ export default {
         // 停止消息轮询
         this.isChatPageActive = false
         this.isChatPageDestroyed = true
+        this.releaseChatMediaSources()
         this.stopMessagePolling()
         this.cleanupDragDropEvent()
         if (this.mentionAbortController) this.mentionAbortController.abort()
@@ -1226,26 +1263,44 @@ export default {
             uni.navigateTo({ url: `/pages-nonTheme/live-location?peerId=${encodeURIComponent(this.otherUserId)}&name=${encodeURIComponent(name)}${offer ? `&sessionId=${encodeURIComponent(offer.sessionId)}` : ''}` })
             this.showMorePanel = false
         },
+        chooseCallMode() {
+            const options = this.callMenuOptions
+            if (!options.length) return
+            uni.showActionSheet({
+                itemList: options.map(option => option.label),
+                success: ({ tapIndex }) => {
+                    const mode = options[tapIndex]?.mode
+                    if (!this.isChatPageActive || !this.callMenuOptions.some(option => option.mode === mode)) return
+                    // #ifdef MP-WEIXIN
+                    void this.openWebCall(mode)
+                    // #endif
+                    // #ifdef APP-PLUS || H5
+                    this.startVoiceCall(mode)
+                    // #endif
+                }
+            })
+        },
         async openWebCall(mode) {
+            if (this.embeddedCallMode) { this.goBack(); return }
             if (this.webCallOpening) return
             const target = { peerId: this.otherUserId, selfId: this.getCurrentUserId(), mode,
                 name: this.contactSettings.note || this.otherUsername || this.chatTitle }
             let url = embeddedWebCallUrl(baseUrl, target)
-            if (!url) { uni.showToast({ title: '通话入口不可用，请检查联系人和 HTTPS 地址', icon: 'none' }); return }
+            const showFallback = () => uni.showToast({ title: '网页通话暂不可用，请使用分投侠 App', icon: 'none', duration: 3500 })
+            if (!url) { showFallback(); return }
             this.webCallOpening = true
             const token = uni.getStorageSync('token') || ''
             uni.showLoading({ title: '正在打开通话' })
+            let ticket
             try {
-                const ticket = await requestWebCallTicket(uni, baseUrl, token)
-                if (!this.isChatPageActive || this.isChatPageDestroyed || token !== (uni.getStorageSync('token') || '') || String(target.selfId) !== String(this.getCurrentUserId())) return
-                if (!ticket) {
-                    uni.showToast({ title: '无法登录网页通话，请检查网络或更新服务', icon: 'none' })
-                    return
-                }
-                url = appendRecordingBridge(embeddedWebCallUrl(baseUrl, target, ticket))
-                this.showMorePanel = false
-                uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(url)}&title=${encodeURIComponent(mode === 'video' ? '视频通话' : '语音通话')}` })
+                ticket = await requestWebCallTicket(uni, baseUrl, token)
             } finally { this.webCallOpening = false; uni.hideLoading() }
+            if (!this.isChatPageActive || this.isChatPageDestroyed || token !== (uni.getStorageSync('token') || '') || String(target.selfId) !== String(this.getCurrentUserId())) return
+            if (!ticket) { showFallback(); return }
+            url = appendRecordingBridge(embeddedWebCallUrl(baseUrl, target, ticket))
+            this.showMorePanel = false
+            uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(url)}&title=${encodeURIComponent(mode === 'video' ? '视频通话' : '语音通话')}`,
+                fail: showFallback })
         },
         showCallSupport() {
             showAppModal(this, {
@@ -1257,7 +1312,7 @@ export default {
         },
         startVoiceCall(mode = 'audio') {
             try {
-                voiceCalls.start({ id: this.otherUserId, name: this.contactSettings.note || this.otherUsername || this.chatTitle }, mode)
+                voiceCalls.start({ id: this.otherUserId, name: this.contactSettings.note || this.otherUsername || this.chatTitle, avatar: this.otherAvatar }, mode)
                 this.showMorePanel = false
             } catch (error) { uni.showToast({ title: error.message || '暂时无法发起通话', icon: 'none' }) }
         },
@@ -2791,7 +2846,7 @@ export default {
             if (avatar && typeof avatar === 'string' && !avatar.includes('default-avatar')) {
                 return getAvatarUrl(avatar, baseUrl)
             }
-            return this.generateAvatarFromName(this.getGroupMemberName(member), true)
+            return ''
         },
 
         getGroupMemberRole(member) {
@@ -3072,54 +3127,11 @@ export default {
             }
         },
 
-        // 生成基于用户名的头像 URL (使用第三方服务)
-        generateAvatarFromName(name, isOther = false) {
-            if (!name) {
-                return 'https://ui-avatars.com/api/?name=U&background=999999&color=fff&size=100'
-            }
-            
-            // 获取用户名首字符
-            const firstChar = name.charAt(0).toUpperCase()
-            
-            // 根据用户名生成颜色 (简单哈希)
-            const colors = [
-                'FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', 
-                '98D8C8', '6C5CE7', 'A29BFE', 'FD79A8',
-                'FDCB6E', '00B894', '00CEC9', '0984E3'
-            ]
-            let hash = 0
-            for (let i = 0; i < name.length; i++) {
-                hash = name.charCodeAt(i) + ((hash << 5) - hash)
-            }
-            const colorIndex = Math.abs(hash) % colors.length
-            const bgColor = colors[colorIndex]
-            
-            // 使用在线头像生成服务
-            const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(firstChar)}&background=${bgColor}&color=fff&size=100&font-size=0.4&bold=true`
-            
-            return avatarUrl
-        },
-
-        // 获取用户头像 (如果没有则生成)
-        // 已改为 computed 属性 userAvatarUrl，此方法已废弃（保留为向后兼容）
-        getUserAvatar() {
-            return this.userAvatarUrl
-        },
-
-        // 获取对方头像 (如果没有则生成)
-        // 已改为 computed 属性 otherAvatarUrl，此方法已废弃（保留为向后兼容）
-        getOtherAvatar() {
-            return this.otherAvatarUrl
-        },
-
         getMessageAvatar(msg) {
             if (msg?.isAi || (msg?.senderName && (msg.senderName.includes('AI') || msg.senderName.includes('ai')))) {
                 return getManifestIconPath('ai_assistant')
             }
-            if (msg?.senderAvatar && typeof msg.senderAvatar === 'string' &&
-                msg.senderAvatar.trim() !== '' &&
-                msg.senderAvatar !== 'null' &&
-                msg.senderAvatar !== 'undefined') {
+            if (this.hasUsableAvatar(msg?.senderAvatar)) {
                 return getAvatarUrl(msg.senderAvatar, baseUrl)
             }
             if (this.isGroupChat) {
@@ -3133,62 +3145,13 @@ export default {
                 }
                 if (member) return this.getGroupMemberAvatar(member)
             }
-            // 群聊中用发送者姓名生成头像，避免回落到群聊标题首字
-            if (this.isGroupChat && msg?.senderName) {
-                return this.generateAvatarFromName(msg.senderName, true)
-            }
-            return this.otherAvatarUrl
+            return this.isGroupChat ? '' : this.otherAvatarUrl
         },
 
         getMessageSenderName(msg) {
             if (msg?.isAi) return 'AI 环保助手'
             if (this.isGroupChat && this.groupMemberAliases?.[String(msg?.senderId)]) return this.groupMemberAliases[String(msg.senderId)]
             return msg?.senderName || getDisplayName({ nickname: msg?.senderNickname, username: msg?.senderUsername }, this.chatTitle || '群成员')
-        },
-
-        // ==================== 已移至 computed 的方法（用于向后兼容） ====================
-        
-        // 原始的用户头像生成逻辑（已移至 computed.userAvatarUrl）
-        _getUserAvatarOld() {
-            // 获取用户信息
-            const userInfo = uni.getStorageSync('userInfo')
-            const username = getDisplayName(userInfo)
-            
-            // 检查是否有有效的真实头像
-            if (this.userAvatar && 
-                typeof this.userAvatar === 'string' &&
-                this.userAvatar.trim() !== '' && 
-                this.userAvatar !== 'null' &&
-                this.userAvatar !== 'undefined' &&
-                !this.userAvatar.includes('default-avatar')) {
-                // 使用新的头像工具处理 (支持 Base64)
-                const avatarUrl = getAvatarUrl(this.userAvatar, baseUrl)
-                return avatarUrl
-            }
-            
-
-            // 生成基于用户名的头像
-            const generatedUrl = this.generateAvatarFromName(username, false)
-            console.log('生成用户名头像:', generatedUrl)
-            return generatedUrl
-        },
-
-        // 获取对方头像 (如果没有则生成)
-        getOtherAvatar() {
-            // 检查是否有有效的真实头像
-            if (this.otherAvatar && 
-                typeof this.otherAvatar === 'string' &&
-                this.otherAvatar.trim() !== '' && 
-                this.otherAvatar !== 'null' &&
-                this.otherAvatar !== 'undefined' &&
-                !this.otherAvatar.includes('default-avatar')) {
-                // 使用新的头像工具处理 (支持 Base64)
-                const avatarUrl = getAvatarUrl(this.otherAvatar, baseUrl)
-                return avatarUrl
-            }
-            // 生成基于聊天标题的头像
-            const generatedUrl = this.generateAvatarFromName(this.chatTitle, true)
-            return generatedUrl
         },
 
         // 获取关系显示文本
@@ -4015,9 +3978,11 @@ page {
 
 // 位置气泡
 .bubble-location {
+    box-sizing: border-box;
+    max-width: 100%;
+    min-width: 0;
     padding: 20rpx;
     background: #fff;
-    min-width: 300rpx;
 
     .location-content {
         display: flex;
@@ -4032,6 +3997,7 @@ page {
 
     .location-info {
         flex: 1;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         gap: 8rpx;
@@ -4046,9 +4012,16 @@ page {
     .location-address {
         font-size: 24rpx;
         color: #999;
+    }
+
+    .location-name,
+    .location-address {
+        display: -webkit-box;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
+        word-break: break-all;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
     }
 }
 
@@ -4400,13 +4373,13 @@ page {
 }
 
 .more-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 40rpx;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 40rpx 24rpx;
 }
 
 .more-item {
-    width: calc(25% - 30rpx);
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -4419,6 +4392,7 @@ page {
 
     .more-text {
         font-size: 24rpx;
+        text-align: center;
         color: var(--text-primary);
         transition: all 0.3s ease;
     }

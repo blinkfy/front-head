@@ -37,9 +37,8 @@ object RealtimeNotifications {
         })
         return id
     }
-    private fun builder(ctx: Context, call: Boolean, sound: Boolean): Notification.Builder {
-        val id = channel(ctx, call, sound)
-        return (if (Build.VERSION.SDK_INT >= 26) Notification.Builder(ctx, id) else Notification.Builder(ctx)).apply {
+    private fun builder(ctx: Context, channelId: String, sound: Boolean): Notification.Builder {
+        return (if (Build.VERSION.SDK_INT >= 26) Notification.Builder(ctx, channelId) else Notification.Builder(ctx)).apply {
             setSmallIcon(ctx.applicationInfo.icon); setAutoCancel(true); setVisibility(Notification.VISIBILITY_PRIVATE)
             if (Build.VERSION.SDK_INT < 26 && sound) setDefaults(Notification.DEFAULT_ALL)
         }
@@ -57,14 +56,21 @@ object RealtimeNotifications {
         val system = event.optString("type") == "notification.changed"
         val item = event.optJSONObject(if (system) "notification" else "message") ?: return false
         val id = event.optJSONObject("delivery")?.optString("id") ?: return false
+        val locationInvite = !system && event.has("notificationTtlMs")
+        val ttl = event.optLong("notificationTtlMs").coerceIn(0L, 60000L)
+        if (locationInvite && ttl == 0L) return true
         val content = if (system) item.optString("content") else event.optString("notificationBody", "你收到一条新消息")
         val title = if (system) item.optString("title", "分投侠") else event.optString("title", "新消息")
         val route = if (system) "/pages-nonTheme/system-notifications" else if (event.optString("conversationType") == "group")
             "/pages-nonTheme/chat?groupId=${event.optString("groupId")}&conversationType=group" else "/pages-nonTheme/chat?chatId=${event.optString("otherId")}&userId=${event.optString("otherId")}" 
         val tag = "ftx_message_$id"
         val request = tag.hashCode() and 0x7fffffff
-        val notification = builder(ctx, false, sound).setContentTitle(title.take(100)).setContentText(content.take(180))
-            .setContentIntent(launch(ctx, route, request)).setCategory(Notification.CATEGORY_MESSAGE).setOnlyAlertOnce(true).build()
+        val channelId = channel(ctx, false, sound)
+        if (Build.VERSION.SDK_INT >= 26 && manager(ctx).getNotificationChannel(channelId)?.importance == NotificationManager.IMPORTANCE_NONE) return false
+        val notification = builder(ctx, channelId, sound).setContentTitle(title.take(100)).setContentText(content.take(180))
+            .setContentIntent(launch(ctx, route, request))
+            .setCategory(if (locationInvite) Notification.CATEGORY_LOCATION_SHARING else Notification.CATEGORY_MESSAGE).setOnlyAlertOnce(true)
+            .apply { if (locationInvite && Build.VERSION.SDK_INT >= 26) setTimeoutAfter(ttl) }.build()
         return try { manager(ctx).notify(tag, request, notification); true } catch (_: Exception) { false }
     }
     fun incoming(ctx: Context, event: JSONObject, sound: Boolean, background: Boolean = true): Boolean {
@@ -86,7 +92,8 @@ object RealtimeNotifications {
         // group muting would also suppress the heads-up UI on some Android versions.
         val alertChannel = channel(ctx, true, sound)
         val displayChannel = channel(ctx, true, false)
-        val notification = builder(ctx, true, false).setContentTitle(name.take(100))
+        if (Build.VERSION.SDK_INT >= 26 && manager(ctx).getNotificationChannel(displayChannel)?.importance == NotificationManager.IMPORTANCE_NONE) return false
+        val notification = builder(ctx, displayChannel, false).setContentTitle(name.take(100))
             .setContentText("邀请你进行${if (event.optString("mode") == "video") "视频" else "语音"}通话")
             .setContentIntent(content).setCategory(Notification.CATEGORY_CALL).setPriority(Notification.PRIORITY_MAX)
             .setOngoing(true).setAutoCancel(false).setOnlyAlertOnce(true)
