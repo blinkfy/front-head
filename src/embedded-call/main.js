@@ -1,7 +1,7 @@
 import { showDialog, dialogOpen } from './dialog.js'
 import { callAction } from './icons.js'
 import { createRecordingPlayer } from './recording-player.js'
-import { callAvatarUrl, createVoiceCallController, VOICE_END_LABELS } from '../utils/voice-call-core.mjs'
+import { callAvatarUrl, createVoiceCallController, VOICE_END_LABELS, shouldReturnFromCall } from '../utils/voice-call-core.mjs'
 import { voiceCallMedia } from '../utils/voice-call-media.js'
 import { createChatEventsTransport } from '../utils/chat-events-transport.mjs'
 import { stripWebCallTicket, webCallTarget, miniCallChatPath } from '../utils/web-call-entry.mjs'
@@ -16,7 +16,7 @@ let callUi, callTimer, leaving = false, incomingRing = '', ringBlocked = false
 let playingUrl = '', playbackRevision = 0, disposePlayback = null
 let incomingCallId = '', incomingTimer
 let nativeChatAvailable = false, openingNativeChat = false, nativeChatVisit = false
-let nativeChatError = ''
+let nativeChatError = '', returningCallId = ''
 let managerCallId = '', managerQuery = '', managerSelecting = false, managerDeleting = false
 const managerSelection = new Set()
 const ringtone = new Audio('./ringtone.mp3')
@@ -87,8 +87,8 @@ function setupCallUi() {
   content.innerHTML = `
     <div class="call-heading"><p class="screen-share-status" role="status" hidden>对方正在共享屏幕</p>
       <p class="card-title"></p><h1 class="peer"></h1><p class="status" aria-live="polite"></p>
-      <p class="call-duration" hidden></p></div>
-    <div class="call-avatar" aria-hidden="true"><span></span><img alt="" hidden></div>
+      <p class="call-duration" hidden></p><p class="preview-badge" hidden>本机预览</p></div>
+    <div class="call-avatar" aria-hidden="true"><span></span><img class="call-avatar-image" alt="" hidden></div>
     <div class="video-grid" hidden>
       <button class="video-pane" type="button" data-action="remote-video">
         <span class="video-feed" id="call-video-remote"></span>
@@ -101,12 +101,12 @@ function setupCallUi() {
     <div class="call-footer"><div class="actions"></div><p class="card-copy call-note"></p>
       <button class="call-back" data-action="back">返回小程序</button></div>
   `
-  callUi = Object.fromEntries(['card-title', 'peer', 'status', 'video-grid', 'call-duration', 'screen-share-status', 'recording', 'error', 'actions', 'call-note']
+  callUi = Object.fromEntries(['card-title', 'peer', 'status', 'video-grid', 'call-duration', 'preview-badge', 'screen-share-status', 'recording', 'error', 'actions', 'call-note']
     .map(name => [name, content.querySelector('.' + name)]))
   callUi.remoteVideo = content.querySelector('[data-action="remote-video"]')
   callUi.localVideo = content.querySelector('[data-action="local-video"]')
   callUi.avatarInitial = content.querySelector('.call-avatar span')
-  callUi.avatarImage = content.querySelector('.call-avatar img')
+  callUi.avatarImage = content.querySelector('.call-avatar-image')
   callUi.avatarImage.onload = () => { callUi.avatarImage.hidden = false; callUi.avatarInitial.hidden = true }
   callUi.avatarImage.onerror = () => { callUi.avatarImage.hidden = true; callUi.avatarInitial.hidden = false }
 }
@@ -116,12 +116,14 @@ function isMainLocal() {
 function renderVideo(visible) {
   if (!visible) { selfIsMain = false; videoControlsHidden = false }
   content.classList.toggle('video-call', visible)
-  content.classList.toggle('video-controls-hidden', visible && videoControlsHidden)
+  const outgoing = state.phase === 'calling'
+  content.classList.toggle('video-waiting', visible && outgoing)
+  content.classList.toggle('video-controls-hidden', visible && videoControlsHidden && !outgoing)
+  callUi['preview-badge'].hidden = !visible || !outgoing
   callUi['video-grid'].hidden = !visible
   callUi['screen-share-status'].hidden = !visible || !state.remoteScreenSharing
   if (!visible) return
   const mainIsLocal = isMainLocal()
-  const outgoing = state.phase === 'calling'
   const primaryLabel = videoControlsHidden ? '显示通话控件' : '隐藏通话控件'
   callUi.remoteVideo.hidden = outgoing || (!state.remoteCameraEnabled && !state.remoteScreenSharing)
   callUi.localVideo.hidden = outgoing ? !state.outgoingPreview : !state.cameraEnabled
@@ -153,7 +155,7 @@ function updateRingtone(retry = false) {
 function renderCall() {
   const phase = state.phase || 'idle', peerName = state.peer?.name || target?.name || '联系人'
   const idleLabel = incomingCallId ? '正在接听来电…' : voiceCallMedia.supported() ? (state.supported ? '已连接，可以开始通话' : '正在连接通话服务…') : '当前浏览器不支持通话'
-  const labels = { idle: idleLabel, calling: state.outgoingPreview ? '等待对方接听 · 本机预览' : '正在呼叫…', incoming: '对方邀请你通话', connecting: '正在建立连接…',
+  const labels = { idle: idleLabel, calling: '等待对方接听…', incoming: '对方邀请你通话', connecting: '正在建立连接…',
     connected: '通话中', ended: VOICE_END_LABELS[state.reason] || '通话已结束' }
   let actions = ''
   if ((phase === 'idle' && !incomingCallId) || phase === 'ended') actions += target?.mode === 'video'
@@ -466,7 +468,11 @@ async function boot() {
   controller = createVoiceCallController({ media: voiceCallMedia, send: event => transport.send(event), getOwner: () => token, getSelfId: () => owner,
     allowScreenShare: false,
     getClaimCallId: () => incomingCallId,
-    changed(value) { state = value; renderCall() },
+    changed(value) {
+      state = value
+      if (shouldReturnFromCall(state)) { updateRingtone(); void returnCompletedCall(); return }
+      renderCall()
+    },
     getRecording: () => ({ owner, admin: isAdmin, auto: recordOwner === owner && !!recordBridge && p.get('recordingAuto') === '1' }),
     onRecordingSaved: () => { void refreshCatalog(true).catch(() => {}) } })
   controller.setActive(true); transport.setActive(true)
@@ -519,14 +525,33 @@ async function boot() {
   addEventListener('pageshow', event => {
     if (event.persisted && disposed) showError('请返回小程序重新打开通话')
     nativeChatVisit = false
+    void returnCompletedCall()
   })
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) nativeChatVisit = false
+    if (!document.hidden) { nativeChatVisit = false; void returnCompletedCall() }
   })
 }
 function returnToMini() {
   if (globalThis.wx?.miniProgram?.navigateBack) globalThis.wx.miniProgram.navigateBack({ delta: 1 })
   else history.back()
+}
+async function returnCompletedCall() {
+  // Do not pop the native chat stacked above this hidden web-view.
+  if (disposed || leaving || returningCallId || document.hidden || nativeChatVisit || !shouldReturnFromCall(state)) return
+  const callId = returningCallId = state.callId
+  try {
+    await controller.waitForRecordingSave()
+    await syncCatalogBeforeReturn()
+    await miniSdk().catch(() => {})
+    if (disposed || leaving || document.hidden || nativeChatVisit || state.callId !== callId || !shouldReturnFromCall(state)) return
+    leaving = true
+    controller.setActive(false)
+    transport.setActive(false)
+    returnToMini()
+  } finally {
+    returningCallId = ''
+    if (state.callId !== callId) void returnCompletedCall()
+  }
 }
 async function leaveCall() {
   if (leaving) return

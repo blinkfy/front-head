@@ -57,12 +57,12 @@
 
             <!-- 物品清单 -->
             <view class="order-items">
-              <view v-for="(item, idx) in order.items.slice(0, 3)" :key="idx" class="order-item">
+              <view v-for="(item, idx) in order.items.slice(0, detailOrderId ? order.items.length : 3)" :key="idx" class="order-item">
                 <text class="item-icon">{{ item.icon }}</text>
-                <text class="item-name">{{ item.name }}</text>
-                <text class="item-price">¥{{ item.price }}</text>
+                <text class="item-name">{{ item.name }}{{ item.quantityNote ? ` · ${item.quantityNote}` : '' }}</text>
+                <text class="item-price">{{ quantityText(item) }}</text>
               </view>
-              <view class="order-item more" v-if="order.items.length > 3">
+              <view class="order-item more" v-if="!detailOrderId && order.items.length > 3">
                 <text class="more-text">+{{ order.items.length - 3 }} 更多</text>
               </view>
             </view>
@@ -79,20 +79,29 @@
               </view>
             </view>
 
+            <view v-if="order.accessNotes" class="order-info"><view class="info-row"><text class="info-label">上门条件</text><text class="info-value">{{ order.accessNotes }}</text></view></view>
+            <view v-if="order.photos?.length" class="order-info"><text class="info-label">物品照片（{{ order.photos.length }}张）</text><view class="order-photos"><image v-for="photo in order.photos" :key="photo.id" :src="photoUrl(photo.url)" mode="aspectFill" @click="previewPhotos(order, photo.url)" /></view></view>
+            <view v-if="order.pricingSnapshot?.collectorQuote" class="order-quote">
+              <text class="quote-title">回收员报价明细</text>
+              <view v-for="item in order.pricingSnapshot.collectorQuote.items || []" :key="item.typeId" class="info-row"><text class="info-label">{{ item.name }}</text><text class="info-value">{{ item.priceMode === 'negotiable' ? '面议' : `¥${money(item.unitPrice)}/${unitText(item.unit)}` }}{{ item.description ? ` · ${item.description}` : '' }}</text></view>
+              <text class="quote-note">{{ order.pricingSnapshot.status === 'pending' ? '接单报价已变化，请核对后确认；确认前回收员不能开始上门。' : '实际数量与结算金额以现场双方确认结果为准。' }}</text>
+            </view>
             <!-- 预估金额 -->
             <view class="order-amount">
-              <text class="amount-label">预估收益</text>
-              <text class="amount-value">¥{{ order.estimateAmount.toFixed(2) }}</text>
+              <text class="amount-label">{{ order.pricingSnapshot?.collectorQuote ? '接单报价' : '参考收益' }}</text>
+              <text class="amount-value">{{ orderPriceText(order) }}</text>
             </view>
             <view v-if="order.status === 'completed' && order.actualPrice !== null" class="order-info">
               <view class="info-row"><text class="info-label">结算金额</text><text class="info-value">¥{{ order.actualPrice.toFixed(2) }}</text></view>
             </view>
+            <view v-if="order.status === 'completed' && order.actualItems?.length" class="order-info"><view v-for="item in order.actualItems" :key="item.typeId" class="info-row"><text class="info-label">{{ item.name || '实际回收' }}</text><text class="info-value">{{ quantityText(item) }}</text></view></view>
             <view v-if="order.cancelReason" class="order-info"><view class="info-row"><text class="info-label">取消原因</text><text class="info-value">{{ order.cancelReason }}</text></view></view>
 
             <view v-if="order.collectorName" class="order-info"><view class="info-row"><text class="info-label">服务人员</text><text class="info-value">{{ order.collectorName }} {{ order.collectorPhone }}</text></view></view>
             <view v-if="detailOrderId && order.events?.length" class="order-info"><view v-for="(event, index) in order.events" :key="event.id || index" class="info-row"><text class="info-label">{{ eventLabel(event.eventType || event.type) }}</text><text class="info-value">{{ event.reason || event.createdAt || '' }}</text></view></view>
             <!-- 操作按钮 -->
             <view class="order-actions">
+              <view v-if="order.status === 'confirmed' && order.pricingSnapshot?.status === 'pending'" class="action-btn quote-confirm" @click="confirmQuote(order)"><text>{{ confirmingQuote ? '确认中…' : '确认回收员报价' }}</text></view>
               <view v-if="order.assignmentVersion && order.collectorId" class="action-btn" @click="contactCollector(order)"><text>{{ contacting ? '联系中…' : '联系回收员' }}</text></view>
               <view v-if="order.status === 'pending' || order.status === 'confirmed'" class="action-btn cancel-btn" @click="showCancelModal(order)"><text>取消订单</text></view>
               <view v-if="order.status === 'picking'" class="action-btn" @click="contactPlatform"><text>联系平台</text></view>
@@ -146,7 +155,7 @@
 </template>
 
 <script>
-import { getBookingList, getBookingDetail, cancelBooking } from '@/pages-nonTheme/api/booking.js';
+import { getBookingList, getBookingDetail, cancelBooking, confirmBookingQuote, bookingUnitText, bookingQuantityText, bookingPhotoUrl } from '@/pages-nonTheme/api/booking.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import { openBookingChat, openPlatformSupport, mutationData } from './api/recycling.js';
 
@@ -154,7 +163,7 @@ export default {
   components: { ManifestIcon },
   data() {
     return {
-      loading: false, loadError: '', contacting: false, cancelling: false, writes: {}, loadedOnce: false,
+      loading: false, loadError: '', contacting: false, cancelling: false, confirmingQuote: false, writes: {}, loadedOnce: false,
       loadingMore: false,
       orders: [],
       detailOrderId: '',
@@ -183,6 +192,27 @@ export default {
     if (this.loadedOnce) this.loadOrders();
   },
   methods: {
+    unitText: bookingUnitText, quantityText: bookingQuantityText, photoUrl: bookingPhotoUrl,
+    money(value) { return Number(value || 0).toFixed(2); },
+    orderPriceText(order) {
+      const snapshot = order.pricingSnapshot;
+      if (snapshot?.collectorQuote) return snapshot.collectorQuote.totalPrice == null ? '合计待现场确认' : `¥${this.money(snapshot.collectorQuote.totalPrice)}`;
+      if (snapshot?.reference) { const reference = snapshot.reference; return reference.minTotal == null || reference.maxTotal == null ? '数量或报价待确认' : `¥${this.money(reference.minTotal)}–${this.money(reference.maxTotal)}${reference.hasUnknown ? '（部分物品）' : ''}`; }
+      return `¥${this.money(order.estimateAmount)}`;
+    },
+    previewPhotos(order, current) { uni.previewImage({ current: this.photoUrl(current), urls: order.photos.map(photo => this.photoUrl(photo.url)).filter(Boolean) }); },
+    async confirmQuote(order) {
+      if (this.confirmingQuote) return;
+      this.confirmingQuote = true;
+      try {
+        const response = await confirmBookingQuote(order.id, mutationData(this.writes, `quote:${order.id}`, { version: order.version }));
+        if (response?.code !== 0) throw new Error(response?.msg || '报价确认失败');
+        delete this.writes[`quote:${order.id}`];
+        uni.showToast({ title: '报价已确认', icon: 'success' });
+        await this.loadOrders();
+      } catch (e) { uni.showToast({ title: e.message || '确认失败，请刷新订单核对', icon: 'none' }); }
+      finally { this.confirmingQuote = false; }
+    },
     extractData(res) {
       return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res;
     },
@@ -266,7 +296,7 @@ export default {
       };
       return map[status] || '未知';
     },
-    eventLabel(type) { return ({ created: '提交预约', accepted: '已接单', started: '开始上门', completed: '回收完成', cancelled: '订单取消', assigned: '平台指派', released: '退回大厅', mapped: '核对区域' }[type] || '订单更新'); },
+    eventLabel(type) { return ({ created: '提交预约', accepted: '已接单', started: '开始上门', completed: '回收完成', cancelled: '订单取消', assigned: '平台指派', released: '退回大厅', mapped: '核对区域', quote_confirmed: '报价已确认' }[type] || '订单更新'); },
     viewDetail(order) { uni.navigateTo({ url: `/pages-nonTheme/booking-orders?orderId=${order.id}` }); },
     async contactCollector(order) { if (this.contacting) return; this.contacting = true; try { await openBookingChat(order, this.writes); } catch (e) { uni.showToast({ title: e.message || '联系失败，请刷新订单', icon: 'none' }); } finally { this.contacting = false; } },
     async contactPlatform() { if (this.contacting) return; this.contacting = true; try { await openPlatformSupport(); } catch (e) { uni.showToast({ title: e.message || '平台联系失败', icon: 'none' }); } finally { this.contacting = false; } },
@@ -295,6 +325,16 @@ export default {
 </script>
 
 <style scoped>
+.order-photos { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 12rpx; }
+.order-photos image { width: 150rpx; height: 150rpx; border-radius: 12rpx; }
+.order-quote { padding: 20rpx; margin-top: 16rpx; background: #f0fdf4; border-radius: 16rpx; }
+.quote-title { display: block; margin-bottom: 16rpx; color: #065f46; font-size: 28rpx; font-weight: 600; }
+.quote-note { display: block; color: #475569; font-size: 24rpx; line-height: 1.6; }
+.dark-mode .order-quote { background: #153e36; }
+.dark-mode .quote-title { color: #a7f3d0; }
+.dark-mode .quote-note { color: #e2e8f0; }
+.quote-confirm { color: #fff !important; background: #059669 !important; }
+
 /* ===== 主容器 ===== */
 .orders-page {
   min-height: 100vh;

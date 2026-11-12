@@ -48,7 +48,7 @@
             <text>预约草稿{{ draft?.status === 'cancelled' ? '已取消' : '已过期' }}，尚未创建订单。</text>
             <button :disabled="submitting" @click="recreateBookingDraft">重新准备预约</button>
           </template>
-          <text v-else>请核对物品、重量和日期，选择可用时段后确认。当前尚未创建订单。</text>
+          <text v-else>请核对物品、预估数量和日期，选择可用时段后确认。当前尚未创建订单。</text>
         </view>
         <view v-if="!draftId || (draft && !draftLoading && !draftError && !draftReceipt && !draftExpired)" :class="{ 'booking-form-busy': submitting }">
 
@@ -105,18 +105,46 @@
             >
               <text class="waste-icon">{{ item.icon }}</text>
               <text class="waste-name">{{ item.name }}</text>
-              <text class="waste-price">¥{{ item.price }}/kg</text>
+              <text class="waste-price">{{ typePriceText(item.id) }}</text>
             </view>
           </view>
         </view>
 
         <view v-if="selectedWasteItems.length" class="section">
-          <view class="section-title">预估重量（公斤）</view>
-          <view v-for="item in selectedWasteItems" :key="item.id" class="booking-weight-row">
-            <text>{{ item.name }}</text>
-            <input v-model="itemWeights[item.id]" type="digit" maxlength="8" :disabled="submitting" placeholder="公斤" />
+          <view class="section-title">预估数量（选填）</view>
+          <view v-for="item in selectedWasteItems" :key="item.id" class="quantity-card">
+            <text class="quantity-name">{{ item.name }}</text>
+            <view class="booking-weight-row">
+              <input v-model="itemWeights[item.id]" type="digit" maxlength="8" :disabled="submitting" placeholder="不清楚可留空" />
+              <picker :range="quantityUnits" range-key="label" :value="unitIndex(item.id)" :disabled="submitting" @change="changeQuantityUnit(item.id, $event)">
+                <view class="unit-control">{{ unitText(itemUnits[item.id] || 'kg') }} ▾</view>
+              </picker>
+            </view>
+            <input v-model="itemQuantityNotes[item.id]" class="input-field quantity-note" maxlength="200" :disabled="submitting" placeholder="数量说明（如：约两袋旧衣服，选填）" />
+            <text class="estimate-note">{{ typePriceText(item.id) }}</text>
+            <text v-if="typePriceDescriptions(item.id)" class="estimate-note price-description">{{ typePriceDescriptions(item.id) }}</text>
           </view>
-          <text class="estimate-note">填写预估重量，实际以回收员现场称重为准。</text>
+          <text class="estimate-note">按重量、件数、台数或袋数估填，不清楚可留空。实际数量与金额以现场确认结果为准。</text>
+        </view>
+
+        <view class="section">
+          <view class="section-title">物品照片（选填，最多6张）</view>
+          <view class="booking-photos">
+            <view v-for="photo in photos" :key="photo.id" class="booking-photo">
+              <image :src="photo.url" mode="aspectFill" @click="previewPhotos(photo.url)" />
+              <button size="mini" :disabled="submitting || photoUploading" @click="removePhoto(photo.id)">移除</button>
+            </view>
+          </view>
+          <view v-if="unresolvedPhotoCount"><text class="estimate-note">草稿中有 {{ unresolvedPhotoCount }} 张照片未能显示，可移除后重新上传。</text><button class="photo-add" :disabled="submitting || photoUploading" @click="clearUnresolvedPhotos">移除未显示照片</button></view>
+          <button v-if="photoCount < 6" class="photo-add" :disabled="submitting || photoUploading" @click="choosePhotos">{{ photoUploading ? '图片上传中…' : '拍照或从相册选择' }}</button>
+          <text class="estimate-note">{{ photoCount }}/6 张。清晰展示物品种类、数量与成色，便于回收员报价。</text>
+          <text v-if="requiresPhotoHint" class="photo-hint">部分回收员对所选品类要求照片；上传照片后可匹配更多服务与时段。</text>
+          <text v-if="photoError" class="photo-hint">{{ photoError }}</text>
+        </view>
+
+        <view class="section">
+          <view class="section-title">上门条件（选填）</view>
+          <view class="input-card textarea-card"><textarea v-model="accessNotes" class="textarea-field" maxlength="500" :disabled="submitting" placeholder="如：楼层、有无电梯、能否停车、是否需要搬运或拆卸" auto-height /></view>
         </view>
 
         <view v-if="unavailableWasteItems.length" class="section">
@@ -209,18 +237,18 @@
         </view>
 
         <!-- 预估收益 -->
-        <view class="estimate-card" v-if="estimateAmount > 0">
+        <view class="estimate-card" v-if="selectedWasteItems.length">
           <view class="estimate-info">
-            <text class="estimate-label">预估收益</text>
-            <text class="estimate-amount">¥{{ estimateAmount.toFixed(2) }}</text>
+            <text class="estimate-label">回收员报价参考</text>
+            <text class="estimate-amount">{{ estimateText }}</text>
           </view>
-          <text class="estimate-note">实际收益以回收员现场称重为准</text>
+          <text class="estimate-note">按该地址回收员报价生成；未填数量、面议或计价单位不同的物品需另行确认。接单后请核对报价。</text>
         </view>
 
         <!-- 预约按钮 -->
         <view class="submit-section">
           <view
-            :class="['submit-btn', submitting || addressBusy ? 'disabled' : '']"
+            :class="['submit-btn', submitting || addressBusy || photoUploading ? 'disabled' : '']"
             @click="submitBooking"
           >
             <text class="submit-text">{{ submitting ? '提交中...' : (draftId ? '确认并提交预约' : '立即预约') }}</text>
@@ -242,7 +270,7 @@
 </template>
 
 <script>
-import { getWasteTypes, createBooking, getAvailableTimeSlots } from '@/pages-nonTheme/api/booking.js';
+import { createBooking, getAvailableTimeSlots, uploadBookingPhoto, bookingUnitText } from '@/pages-nonTheme/api/booking.js';
 import { recyclingCatalog, mutationData } from './api/recycling.js';
 import { getUserProfile, updateUserProfile } from '@/api/user.js';
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue';
@@ -254,6 +282,7 @@ import ShopAddressPicker from '@/pages-nonTheme/components/shop/ShopAddressPicke
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js';
 import { playUiSound } from '@/utils/ui-sounds.js';
 import { formatBookingDate } from './utils/booking-date.mjs';
+import { chooseAppImage } from '@/utils/image-picker.js';
 import { bookingDraftMethods } from './utils/booking-draft-methods.js';
 
 export default {
@@ -261,7 +290,8 @@ export default {
   data() {
     return {
       draftId: '', draft: null, draftLoading: false, draftError: '', draftExpired: false, draftReceipt: null, replacementRequestId: '',
-      itemWeights: {}, maxBookingDate: '',
+      itemWeights: {}, itemUnits: {}, itemQuantityNotes: {}, photos: [], draftPhotoIds: [], photoUploading: false, photoError: '', accessNotes: '', estimateMax: 0, estimateUnknown: true, maxBookingDate: '',
+      quantityUnits: [{ value: 'kg', label: '公斤' }, { value: 'piece', label: '件' }, { value: 'unit', label: '台' }, { value: 'bag', label: '袋' }],
       wasteTypes: [], serviceAreas: [], serviceAreaId: null, catalogError: '', catalogLoading: false, bookingInitialized: false, addressCoordinates: null, bookingWrites: {},
       selectedTypes: [],
       selectedDate: 'today',
@@ -290,7 +320,7 @@ export default {
     this.draftLoading = !!this.draftId;
     this.checkTheme();
     this.initDates();
-    await Promise.all([this.loadWasteTypes(), this.loadContactPhone(), this.loadAddress(), this.loadServiceAreas()]);
+    await Promise.all([this.loadContactPhone(), this.loadAddress(), this.loadServiceAreas()]);
     this.bookingInitialized = true;
     if (this.draftId) await this.loadBookingDraft();
     else this.syncServiceCoverage();
@@ -314,9 +344,13 @@ export default {
   onHide() { this.$refs.appConfirmDialog?.cancelAll(); },
   onUnload() { this.$refs.appConfirmDialog?.cancelAll(); this.timeSlotsRequestId++; },
   computed: {
+    photoCount() { return new Set([...this.draftPhotoIds, ...this.photos.map(photo => photo.id)]).size; },
+    unresolvedPhotoCount() { return this.draftPhotoIds.filter(id => !this.photos.some(photo => photo.id === id)).length; },
+    requiresPhotoHint() { return this.selectedTypes.some(id => this.typePriceGuides(id).some(guide => guide.requiresPhoto)) && !this.photoCount; },
+    estimateText() { if (this.estimateUnknown && !(this.estimateAmount > 0 || this.estimateMax > 0)) return '待报价确认'; return `¥${this.estimateAmount.toFixed(2)}–${this.estimateMax.toFixed(2)}${this.estimateUnknown ? '（部分物品）' : ''}`; },
     selectedServiceArea() { return this.serviceAreas.find(area => Number(area.id) === Number(this.serviceAreaId)); },
     addressRegionComplete() { return this.addressRegion.length === 3 && this.addressRegion.every(part => String(part || '').trim()); },
-    bookingSelectionKey() { return JSON.stringify([this.serviceAreaId, this.address, this.bookingPoint, this.dateValues[this.selectedDate], [...this.selectedTypes].map(Number).sort((a, b) => a - b)]); },
+    bookingSelectionKey() { return JSON.stringify([this.serviceAreaId, this.address, this.bookingPoint, this.dateValues[this.selectedDate], this.photoCount, [...this.selectedTypes].map(Number).sort((a, b) => a - b)]); },
     bookingPoint() { const p = this.addressCoordinates; const point = p?.address === this.address && p.coordinateSystem === 'wgs84' ? normalizePoint(p) : null; return point ? { ...point, ...(Number.isFinite(p.accuracyMeters) && p.accuracyMeters >= 0 ? { accuracyMeters: Math.min(200, p.accuracyMeters) } : {}) } : null; },
     bookingTolerance() { return bookingToleranceMeters(this.bookingPoint?.accuracyMeters); },
     matchingAreas() { return this.bookingPoint ? this.serviceAreas.filter(area => area.geometry && coversServiceLocation(area.geometry, this.bookingPoint)) : []; },
@@ -344,6 +378,8 @@ export default {
     addressRegion: { handler() { this.syncServiceCoverage(); }, deep: true },
     address(value) { if (this.addressCoordinates && this.addressCoordinates.address !== value) this.addressCoordinates = null; this.syncServiceCoverage(); },
     itemWeights: { handler() { this.calculateEstimate(); }, deep: true },
+    itemUnits: { handler() { this.calculateEstimate(); }, deep: true },
+    photoCount() { if (this.bookingInitialized && !this.draftLoading && !this.submitting && !this.photoUploading) this.loadTimeSlots(); },
     selectedTypes: {
       handler() {
         this.calculateEstimate();
@@ -354,10 +390,39 @@ export default {
   },
   methods: {
     ...bookingDraftMethods,
+    unitText: bookingUnitText,
+    unitIndex(typeId) { return Math.max(0, this.quantityUnits.findIndex(unit => unit.value === (this.itemUnits[typeId] || 'kg'))); },
+    changeQuantityUnit(typeId, event) { this.itemUnits[typeId] = this.quantityUnits[Number(event.detail.value)]?.value || 'kg'; },
+    typePriceGuides(typeId) { return this.matchingAreas.flatMap(area => area.priceGuides || []).filter(guide => Number(guide.typeId) === Number(typeId)); },
+    typePriceDescriptions(typeId) { return [...new Set(this.typePriceGuides(typeId).flatMap(guide => guide.descriptions || []).filter(Boolean))].join('；'); },
+    typePriceText(typeId) {
+      const guides = this.typePriceGuides(typeId);
+      if (!guides.length) return '待回收员报价';
+      const labels = [...new Set(guides.map(guide => {
+        const prices = [guide.minPrice, guide.maxPrice].filter(value => value != null && Number.isFinite(Number(value))).map(Number);
+        const price = prices.length ? `¥${Math.min(...prices).toFixed(2)}–${Math.max(...prices).toFixed(2)}/${this.unitText(guide.unit)}` : '';
+        return `${price}${guide.negotiable ? (price ? '，可面议' : '面议') : ''}` || '待报价';
+      }))];
+      return labels.join(' · ');
+    },
+    choosePhotos() {
+      if (this.submitting || this.photoUploading || this.photoCount >= 6) return;
+      this.photoError = '';
+      chooseAppImage({ count: 6 - this.photoCount, sizeType: ['compressed'], success: async result => {
+        this.photoUploading = true;
+        try {
+          for (const path of (result.tempFilePaths || []).slice(0, 6 - this.photoCount)) this.photos.push(await uploadBookingPhoto(path));
+        } catch (e) { this.photoError = e.message || '图片上传失败，请重新选择'; }
+        finally { this.photoUploading = false; if (this.bookingInitialized && !this.draftLoading) this.loadTimeSlots(); }
+      }, fail: error => { if (!/cancel/i.test(error?.errMsg || '')) this.photoError = '无法选择图片，请重试'; } });
+    },
+    clearUnresolvedPhotos() { this.draftPhotoIds = this.draftPhotoIds.filter(id => this.photos.some(photo => photo.id === id)); },
+    removePhoto(id) { this.photos = this.photos.filter(photo => photo.id !== id); this.draftPhotoIds = this.draftPhotoIds.filter(photoId => photoId !== id); },
+    previewPhotos(current) { uni.previewImage({ current, urls: this.photos.map(photo => photo.url).filter(Boolean) }); },
     async loadServiceAreas() {
       this.catalogError = ''; this.catalogLoading = true;
-      try { const catalog = await recyclingCatalog(); this.serviceAreas = catalog.areas || []; }
-      catch (e) { this.catalogError = e.message || '服务覆盖加载失败'; this.serviceAreas = []; }
+      try { const catalog = await recyclingCatalog(); this.serviceAreas = catalog.areas || []; this.wasteTypes = catalog.types || []; }
+      catch (e) { this.catalogError = e.message || '服务覆盖加载失败'; this.serviceAreas = []; this.wasteTypes = []; }
       finally { this.catalogLoading = false; this.syncServiceCoverage(); }
     },
     syncServiceCoverage() {
@@ -459,21 +524,6 @@ export default {
       const last = new Date(today); last.setDate(last.getDate() + 30);
       this.maxBookingDate = formatBookingDate(last);
     },
-    async loadWasteTypes() {
-      try {
-        const res = await getWasteTypes();
-        const data = this.extractData(res);
-        this.wasteTypes = Array.isArray(data)
-          ? data.map((item) => ({
-              ...item,
-              price: Number(item.unitPrice || item.price || 0)
-            }))
-          : [];
-      } catch (e) {
-        console.error('获取废品类型失败:', e);
-        this.wasteTypes = [];
-      }
-    },
     async loadTimeSlots() {
       const requestId = ++this.timeSlotsRequestId;
       const dateStr = this.dateValues[this.selectedDate];
@@ -486,7 +536,7 @@ export default {
       if (!this.serviceAreaId) { this.timeSlotsLoading = false; this.timeSlotsError = this.bookingPoint ? '该上门位置暂无已审核范围与排班覆盖' : '请通过地图选择上门位置'; return; }
       if (!this.selectedTypes.length) { this.timeSlotsLoading = false; this.timeSlotsError = '请先选择回收物品，再查询可预约时段'; return; }
       try {
-        const res = await getAvailableTimeSlots(dateStr, this.serviceAreaId, this.selectedTypes, { addressLat: this.bookingPoint.latitude, addressLng: this.bookingPoint.longitude, addressCoordinateSystem: 'wgs84', ...(this.bookingPoint.accuracyMeters != null ? { addressAccuracy: this.bookingPoint.accuracyMeters } : {}) });
+        const res = await getAvailableTimeSlots(dateStr, this.serviceAreaId, this.selectedTypes, { photoCount: this.photoCount, addressLat: this.bookingPoint.latitude, addressLng: this.bookingPoint.longitude, addressCoordinateSystem: 'wgs84', ...(this.bookingPoint.accuracyMeters != null ? { addressAccuracy: this.bookingPoint.accuracyMeters } : {}) });
         if (requestId !== this.timeSlotsRequestId) return;
         const data = this.extractData(res);
         this.timeSlots = Array.isArray(data)
@@ -511,7 +561,8 @@ export default {
         this.selectedTypes.splice(idx, 1);
       } else {
         this.selectedTypes.push(item.id);
-        if (this.itemWeights[item.id] == null) this.itemWeights[item.id] = 1;
+        if (this.itemWeights[item.id] == null) this.itemWeights[item.id] = '';
+        if (!this.itemUnits[item.id]) this.itemUnits[item.id] = this.typePriceGuides(item.id)[0]?.unit || 'kg';
       }
     },
     selectDate(date) {
@@ -524,13 +575,21 @@ export default {
       this.selectedTimeSlot = time;
     },
     calculateEstimate() {
-      // Unit prices are already loaded; typing a weight never makes an extra backend request.
-      this.estimateAmount = this.selectedWasteItems.reduce((sum, item) => {
-        const weight = Number(this.itemWeights[item.id] ?? 1);
-        return sum + (Number.isFinite(weight) && weight > 0 ? item.price * weight : 0);
-      }, 0);
+      let min = 0, max = 0, unknown = false;
+      for (const item of this.selectedWasteItems) {
+        const quantity = Number(this.itemWeights[item.id]);
+        const guides = this.typePriceGuides(item.id).filter(guide => guide.unit === (this.itemUnits[item.id] || 'kg'));
+        const minimums = guides.filter(guide => guide.minPrice != null).map(guide => Number(guide.minPrice)).filter(Number.isFinite);
+        const maximums = guides.filter(guide => guide.maxPrice != null).map(guide => Number(guide.maxPrice)).filter(Number.isFinite);
+        if (!(quantity > 0) || !minimums.length || !maximums.length) { unknown = true; continue; }
+        min += quantity * Math.min(...minimums); max += quantity * Math.max(...maximums);
+        if (guides.some(guide => guide.negotiable) || guides.length !== this.typePriceGuides(item.id).length) unknown = true;
+      }
+      this.estimateAmount = min; this.estimateMax = max; this.estimateUnknown = unknown;
     },
     validateBookingForm() {
+      if (this.photoUploading) { uni.showToast({ title: '请等待图片上传完成', icon: 'none' }); return false; }
+      if (this.photoCount > 6) { uni.showToast({ title: '物品照片最多6张，请移除多余照片', icon: 'none' }); return false; }
       if (!this.selectedServiceArea) { uni.showToast({ title: this.bookingPoint ? '该上门位置暂无有效范围与排班覆盖' : '请通过地图选择上门位置', icon: 'none' }); return false; }
       if (this.selectedServiceArea.bounds && (!this.addressCoordinates || this.addressCoordinates.address !== this.address)) { uni.showToast({ title: '该区域需地图核验地址，请重新定位或地图选址', icon: 'none' }); return false; }
       if (this.selectedTypes.some(id => !this.allowedWasteTypes.some(type => Number(type.id) === Number(id)))) { uni.showToast({ title: '所选品类不在该区域服务范围，请重新选择', icon: 'none' }); return false; }
@@ -577,10 +636,12 @@ export default {
         uni.showToast({ title: '部分回收物品已停用，请重新选择', icon: 'none' }); return false;
       }
       if (this.selectedTypes.some(id => {
-        const weight = Number(this.itemWeights[id] ?? 1);
+        const raw = this.itemWeights[id];
+        if (raw == null || String(raw).trim() === '') return false;
+        const weight = Number(raw);
         return !Number.isFinite(weight) || weight <= 0 || weight > 10000 || Math.abs(weight * 100 - Math.round(weight * 100)) > 0.00001;
       })) {
-        uni.showToast({ title: '请填写有效的预估重量，最多两位小数', icon: 'none' }); return false;
+        uni.showToast({ title: '预估数量需大于0、最多10000且不超过两位小数', icon: 'none' }); return false;
       }
       return true;
     },
@@ -637,10 +698,30 @@ export default {
 </script>
 
 <style scoped>
+.quantity-card { margin-bottom: 20rpx; padding: 24rpx; background: #fff; border-radius: 20rpx; }
+.quantity-name { display: block; margin-bottom: 16rpx; color: #1f2937; font-size: 28rpx; font-weight: 600; }
+.booking-weight-row input { flex: 1; min-width: 0; text-align: left; color: #1f2937; background: #fff; }
+.unit-control { min-width: 120rpx; padding: 20rpx 24rpx; color: #065f46; background: #e4f8ee; border-radius: 12rpx; font-size: 28rpx; text-align: center; }
+.price-description { display: block; margin-top: 8rpx; line-height: 1.6; }
+.quantity-note { height: 76rpx; line-height: 76rpx; margin-bottom: 12rpx; }
+.booking-photos { display: flex; flex-wrap: wrap; gap: 16rpx; }
+.booking-photo { width: 180rpx; }
+.booking-photo image { display: block; width: 180rpx; height: 180rpx; border-radius: 12rpx; }
+.booking-photo button { margin: 8rpx 0 16rpx; font-size: 24rpx; }
+.photo-add { margin: 12rpx 0; background: #e4f8ee; color: #065f46; font-size: 28rpx; }
+.photo-hint { display: block; margin-top: 12rpx; color: #9a5b0b; font-size: 24rpx; line-height: 1.6; }
+.dark-mode .quantity-card { background: #172334; }
+.dark-mode .quantity-name, .dark-mode .booking-weight-row input { color: #f8fafc; }
+.dark-mode .booking-weight-row input { background: #101827; border-color: #64748b; }
+.dark-mode .unit-control, .dark-mode .photo-add { background: #153e36; color: #a7f3d0; }
+.dark-mode .photo-hint { color: #fcd34d; }
+.estimate-info { gap: 16rpx; flex-wrap: wrap; }
+.estimate-amount { font-size: 34rpx; overflow-wrap: anywhere; }
+
 .draft-status text { display: block; margin-bottom: 12rpx; font-size: 26rpx; line-height: 1.6; overflow-wrap: anywhere; }
 .draft-status button { margin-top: 16rpx; font-size: 26rpx; }
 .booking-weight-row { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; margin-bottom: 16rpx; }
-.booking-weight-row input { width: 180rpx; height: 76rpx; line-height: 76rpx; padding: 0 16rpx; box-sizing: border-box; border: 1rpx solid #d1d5db; border-radius: 12rpx; font-size: 28rpx; text-align: right; }
+.booking-weight-row input { width: 180rpx; height: 76rpx; line-height: 76rpx; padding: 0 16rpx; box-sizing: border-box; border: 1rpx solid #d1d5db; border-radius: 12rpx; font-size: 28rpx; text-align: left; }
 .booking-form-busy { pointer-events: none; opacity: .7; }
 
 .time-feedback { padding: 24rpx 8rpx; color: #536678; font-size: 26rpx; line-height: 1.6; text-align: center; }
@@ -763,7 +844,7 @@ export default {
 /* ===== 废品网格 ===== */
 .waste-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16rpx;
 }
 .waste-card {
@@ -786,7 +867,7 @@ export default {
 .waste-icon { font-size: 44rpx; margin-bottom: 10rpx; }
 .waste-name { color: #1f2937; font-size: 24rpx; font-weight: 700; margin-bottom: 6rpx; text-align: center; }
 .dark-mode .waste-name { color: #fff; }
-.waste-price { color: #10b981; font-size: 22rpx; font-weight: 600; }
+.waste-price { color: #10b981; font-size: 22rpx; font-weight: 600; text-align: center; line-height: 1.5; overflow-wrap: anywhere; }
 .dark-mode .waste-price { color: #34d399; }
 
 /* ===== 日期选择 ===== */
@@ -906,7 +987,7 @@ export default {
 .estimate-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8rpx; }
 .estimate-label { color: #6b7280; font-size: 26rpx; }
 .dark-mode .estimate-label { color: rgba(255, 255, 255, 0.7); }
-.estimate-amount { color: #10b981; font-size: 48rpx; font-weight: 800; }
+.estimate-amount { color: #10b981; font-size: 34rpx; font-weight: 800; }
 .dark-mode .estimate-amount { color: #34d399; }
 .estimate-note { color: #9ca3af; font-size: 22rpx; }
 .dark-mode .estimate-note { color: rgba(255, 255, 255, 0.5); }

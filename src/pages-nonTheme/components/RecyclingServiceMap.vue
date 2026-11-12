@@ -21,7 +21,7 @@
       <view :id="mapId" class="map-canvas"></view>
       <!-- #endif -->
       <!-- #ifndef H5 -->
-      <map v-if="nativeMounted" :id="mapId" class="map-canvas" :latitude="nativeCenter.latitude" :longitude="nativeCenter.longitude" :scale="nativeScale" :polygons="nativePolygons" :circles="nativeCircles" :polyline="nativeLines" :markers="nativeMarkers" :include-points="nativeIncludePoints" :show-location="false" @tap="nativeTap" @updated="nativeReady" @error="nativeError">
+      <map v-if="nativeMounted" :id="mapId" class="map-canvas" :latitude="nativeCenter.latitude" :longitude="nativeCenter.longitude" :scale="nativeScale" :polygons="nativeOverlaysReady ? nativePolygons : []" :circles="nativeOverlaysReady ? nativeCircles : []" :polyline="nativeOverlaysReady ? nativeLines : []" :markers="nativeOverlaysReady ? nativeMarkers : []" :include-points="nativeIncludePoints" :show-location="false" @tap="nativeTap" @error="nativeError">
         <cover-view v-if="!readonly && !loading && !mapError" class="map-crosshair"><cover-view class="crosshair-horizontal"></cover-view><cover-view class="crosshair-vertical"></cover-view></cover-view>
       </map>
       <!-- #endif -->
@@ -83,7 +83,7 @@ const mode = ref('circle'), radius = ref(1000), center = ref(null), vertices = r
 const locationHint = ref('')
 const loading = ref(true), mapError = ref(''), query = ref(''), searching = ref(false), searchError = ref(''), places = ref([])
 const mapId = `recycling-service-map-${Math.random().toString(36).slice(2)}`
-const nativeMounted = ref(true), nativeCenter = ref({ latitude: 35.86, longitude: 104.19 }), nativeScale = ref(5)
+const nativeMounted = ref(false), nativeOverlaysReady = ref(false), nativeCenter = ref({ latitude: 35.86, longitude: 104.19 }), nativeScale = ref(5)
 const nativeCenterBusy = ref(false), componentProxy = getCurrentInstance()?.proxy
 let map, layers, L, tileLayer, timeout, disposed = false, generation = 0, lastEmitted = '', searchGeneration = 0
 let viewportRevision = 0, initialLocationAttempted = false
@@ -155,8 +155,8 @@ function undo() { vertices.value = vertices.value.slice(0, -1); completed.value 
 function clear() { markViewportInteraction(); center.value = null; vertices.value = []; completed.value = false; publish() }
 function finishPolygon() { completed.value = !geometryError(draft.value); publish(); if (completed.value) nextTick(fitMap) }
 function nativeTap(event) { const detail = event.detail || {}; pick(gcj02ToWgs84(detail.latitude, detail.longitude)) }
-function nativeReady() { loading.value = false; mapError.value = ''; clearTimeout(timeout) }
-function nativeError() { loading.value = false; mapError.value = '地图暂不可用，请检查网络后重试'; clearTimeout(timeout) }
+function nativeReady() { if (disposed || !nativeMounted.value) return; nativeOverlaysReady.value = true; loading.value = false; mapError.value = ''; clearTimeout(timeout) }
+function nativeError() { if (disposed) return; nativeOverlaysReady.value = false; loading.value = false; mapError.value = '地图暂不可用，请检查网络后重试'; clearTimeout(timeout) }
 // #ifndef H5
 function getNativeCenter() {
   return new Promise((resolve, reject) => {
@@ -177,7 +177,7 @@ async function verifyNativeReady(token) {
   // App-vue does not consistently emit `updated`; reading map center needs no GPS.
   for (let attempt = 0; attempt < 3; attempt++) {
     if (disposed || token !== generation || !loading.value) return
-    try { await getNativeCenter(); if (!disposed && token === generation) nativeReady(); return }
+    try { await getNativeCenter(); if (!disposed && token === generation && loading.value) nativeReady(); return }
     catch (_) {
       if (disposed || token !== generation || !loading.value) return
       if (attempt === 2) { nativeError(); return }
@@ -281,8 +281,21 @@ async function initialize() {
   } catch (error) { if (!disposed && token === generation) { loading.value = false; mapError.value = error.message || '地图加载失败，请重试' } }
   // #endif
   // #ifndef H5
-  nativeCenterBusy.value = false; nativeMounted.value = false; await nextTick(); if (disposed || token !== generation) return; nativeMounted.value = true
-  await nextTick(); if (disposed || token !== generation) return; fitMap(); verifyNativeReady(token); void locateInitialViewport(token)
+  nativeCenterBusy.value = false
+  nativeOverlaysReady.value = false
+  // Flush overlay removal while the old map is still alive. App's Polygon
+  // teardown assumes its SDK instance exists, so never mount it before readiness.
+  if (nativeMounted.value) {
+    await nextTick()
+    if (disposed || token !== generation) return
+    nativeMounted.value = false
+    await nextTick()
+    if (disposed || token !== generation) return
+  }
+  nativeMounted.value = true
+  await nextTick()
+  if (disposed || token !== generation) return
+  fitMap(); void verifyNativeReady(token); void locateInitialViewport(token)
   // #endif
 }
 async function search() {

@@ -15,6 +15,7 @@
           <text class="webview-title">{{ title }}</text>
           <view class="title-indicator"></view>
         </view>
+        <view v-if="callWebview && !showCallFallback" class="preview-btn" role="button" @click="showCallHelp">打不开？</view>
       </view>
     </view>
 
@@ -51,7 +52,7 @@
           </view>
         </view>
         <text class="empty-title">{{ loadError || '正在加载...' }}</text>
-        <text v-if="showCallFallback" class="empty-subtitle call-fallback-hint">请打开分投侠 App，登录同一账号，在聊天中进行通话。</text>
+        <text v-if="showCallFallback" class="empty-subtitle call-fallback-hint">{{ CALL_APP_HINT }}</text>
         <text v-else class="empty-subtitle">{{ loadError ? '请检查网络后重试' : '请稍候，页面加载完成后将自动显示' }}</text>
         <view v-if="loadError" class="retry-btn" @click="retryLoad">{{ retrying ? '正在重试…' : '重新加载' }}</view>
         <view v-if="showCallFallback" class="call-fallback-back" @click="goBack">返回小程序</view>
@@ -75,6 +76,7 @@ import { baseUrl } from '@/api/settings.js'
 import { registerMiniCallHost, requestWebCallTicket, stripWebCallTicket } from '@/utils/web-call-entry.mjs'
 // #endif
 const callWebview = ref(false)
+const CALL_APP_HINT = '请打开分投侠 App，登录同一账号，在聊天中进行通话。'
 let standaloneWebview = false
 let releaseCallDelegation = null
 const retrying = ref(false)
@@ -167,6 +169,10 @@ function goBack() {
   }
 }
 
+function showCallHelp() {
+  uni.showModal({ title: '通话网页无法打开？', content: CALL_APP_HINT, showCancel: false })
+}
+
 function clearLoadTimeout() {
   if (loadTimeoutTimer) clearTimeout(loadTimeoutTimer)
   loadTimeoutTimer = null
@@ -206,9 +212,11 @@ function onLoad(event) {
   if (pageDisposed || showCallFallback.value) return
   // #ifdef MP-WEIXIN
   if (callWebview.value) {
-    const loadedOrigin = /^https?:\/\/[^/?#]+/i.exec(event?.detail?.src)?.[0].toLowerCase()
-    const expectedOrigin = /^https?:\/\/[^/?#]+/i.exec(src.value)?.[0].toLowerCase()
-    if (loadedOrigin && loadedOrigin !== expectedOrigin) {
+    // WeChat can report a loaded page after a navigation to an error document.
+    // The call page removes its one-time ticket from the fragment after loading.
+    const loadedPage = event?.detail?.src?.split(/[?#]/, 1)[0]
+    const expectedPage = src.value.split(/[?#]/, 1)[0]
+    if (loadedPage && loadedPage !== expectedPage) {
       failContentLoad('通话网页无法打开')
       return
     }
@@ -224,7 +232,7 @@ function onLoad(event) {
 
 function onLoadError(error) {
   if (pageDisposed || showCallFallback.value) return
-  failContentLoad('页面加载失败')
+  failContentLoad(callWebview.value ? '通话网页无法打开' : '页面加载失败')
   if (!callWebview.value) console.error('内嵌页面加载失败:', error)
 }
 

@@ -474,7 +474,7 @@
 
                             <!-- 操作按钮 -->
                             <view class="data-item-actions" v-if="canEditCurrentTable() || !isSpecialTable(currentTable)">
-                                <view v-if="!isSpecialTable(currentTable)" class="item-action-btn detail"
+                                <view v-if="!canEditCurrentTable() && !isSpecialTable(currentTable)" class="item-action-btn detail"
                                     @click.stop="recordDetail = item"><text>查看</text></view>
                                 <view v-if="canEditCurrentTable()" class="item-action-btn edit" @click.stop="handleEdit(item)">
                                     <ManifestIcon id="post_edit" :scale="1.5" />
@@ -1010,6 +1010,8 @@ const adminUser = ref(false)
 const tablesCollapsed = ref(false)
 const specialTables = new Set(['User', 'Device', 'UserDevice', 'History', 'Message', 'Chat'])
 const tableSchemas = ref({})
+const genericUserIdFields = ref([])
+const genericUserNames = ref({})
 const historyImageLoading = ref(false)
 const showHistoryImagePreview = ref(false)
 let historyImageRequestId = 0
@@ -1527,11 +1529,13 @@ function shouldHideGenericPreviewField(key = '', value) {
 function getGenericPreviewFields(item = {}) {
     const entries = Object.entries(item || {})
         .filter(([key, value]) => !['id', 'createdAt', 'updatedAt'].includes(key) && !shouldHideGenericPreviewField(key, value))
-        .slice(0, 4)
-    return entries.map(([key, value]) => ({
+    const selected = entries.filter(([key], index) => index < 4 || genericUserIdFields.value.includes(key))
+    return selected.map(([key, value]) => ({
         key,
         label: getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key),
-        value: typeof value === 'object' && value !== null ? JSON.stringify(value) : value
+        value: genericUserIdFields.value.includes(key) && value !== null && value !== undefined && value !== ''
+            ? `${genericUserNames.value[String(value)] || '未知'} (用户ID: ${value})`
+            : (typeof value === 'object' && value !== null ? JSON.stringify(value) : value)
     }))
 }
 
@@ -1770,6 +1774,8 @@ function clearSearch() {
 
 async function loadTableData() {
     selectedRecordKeys.value = []
+    genericUserIdFields.value = []
+    genericUserNames.value = {}
     try {
         uni.showLoading({ title: '加载中...', mask: true })
 
@@ -1862,6 +1868,8 @@ async function loadTableData() {
         if (!isSpecialTable(currentTable.value)) {
             const response = await getGenericTableList(currentTable.value, params)
             if (response && response.code === 0) {
+                genericUserIdFields.value = Array.isArray(response.data.userIdFields) ? response.data.userIdFields : []
+                genericUserNames.value = response.data.userNames || {}
                 tableData.value = response.data.list || []
                 totalCount.value = response.data.total || 0
                 totalPages.value = Math.ceil(totalCount.value / pageSize.value)

@@ -4,9 +4,10 @@ import android.Manifest
 import android.app.Activity
 import android.app.Application
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.SurfaceTexture
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.hardware.Camera
 import android.os.Bundle
 import android.os.Handler
@@ -16,7 +17,6 @@ import android.view.Gravity
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -47,7 +47,7 @@ object OutgoingVideoPreview {
                 val previous = active
                 if (previous?.id == id && previous.activity === activity && !previous.closing) return@runOnUiThread
                 previous?.close()
-                val preview = Preview(activity, id, input.optString("peerName", "联系人").take(80), onCancel)
+                val preview = Preview(activity, id, input.optString("peerName").ifBlank { "联系人" }.take(80), onCancel)
                 active = preview
                 preview.attach(container)
             }
@@ -88,34 +88,47 @@ object OutgoingVideoPreview {
         }.apply {
             setBackgroundColor(Color.rgb(16, 25, 22))
             isClickable = true
+            keepScreenOn = true
         }
-        private val texture = TextureView(activity).apply { surfaceTextureListener = this@Preview }
-        private val status = label("正在打开相机…", 14f)
+        private val texture = TextureView(activity).apply {
+            surfaceTextureListener = this@Preview
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        private val status = label("等待对方接听…", 14f)
+        private val previewBadge = label("正在打开摄像头…", 12f)
 
         init {
             frame.addView(texture, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             frame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitPreview() }
-            val title = LinearLayout(activity).apply {
+            val heading = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
-                setBackgroundColor(0x80202c27.toInt())
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-                addView(label(peerName, 20f).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
-                addView(status)
+                background = scrim(GradientDrawable.Orientation.TOP_BOTTOM)
+                setPadding(dp(24), dp(20), dp(24), dp(24))
+                addView(label("视频通话", 13f))
+                addView(label(peerName, 22f).apply {
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                    setTypeface(typeface, Typeface.BOLD)
+                }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+                addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
             }
-            frame.addView(title, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
-            val cancel = Button(activity).apply {
-                text = "取消呼叫"
-                setTextColor(Color.WHITE)
-                backgroundTintList = ColorStateList.valueOf(Color.rgb(196, 67, 66))
-                setOnClickListener {
+            frame.addView(heading, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+            val controls = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                background = scrim(GradientDrawable.Orientation.BOTTOM_TOP)
+                setPadding(dp(16), dp(16), dp(16), dp(12))
+                addView(previewBadge, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
+                val cancel = CallAction(activity, "hangup", "取消呼叫", danger = true) {
                     if (!closing && active === this@Preview) {
                         close()
                         onCancel()
                     }
                 }
+                addView(cancel, LinearLayout.LayoutParams(dp(96), dp(70)))
             }
-            frame.addView(cancel, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(24) })
+            frame.addView(controls, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         }
 
         fun attach(container: FrameLayout) {
@@ -126,7 +139,10 @@ object OutgoingVideoPreview {
         private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
         private fun label(value: String, size: Float) = TextView(activity).apply {
             text = value; textSize = size; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            setShadowLayer(4f, 0f, 1f, Color.BLACK)
         }
+        private fun scrim(direction: GradientDrawable.Orientation) =
+            GradientDrawable(direction, intArrayOf(Color.argb(210, 16, 25, 22), Color.TRANSPARENT))
 
         private fun fitPreview() {
             if (previewAspect <= 0f || frame.width == 0 || frame.height == 0) return
@@ -178,7 +194,7 @@ object OutgoingVideoPreview {
                         if (!closing) {
                             previewAspect = if (rotation % 180 == 0) size.width.toFloat() / size.height else size.height.toFloat() / size.width
                             fitPreview()
-                            status.text = "等待接听 · 本机预览"
+                            previewBadge.text = "本机预览"
                         }
                     }
                 } catch (_: Exception) { close() }

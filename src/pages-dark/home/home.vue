@@ -18,7 +18,7 @@
     </view>
     
     <!-- 主要内容区域 -->
-    <view :animation="tabPageAnimation" class="home-container tab-page-motion">
+    <view class="home-container tab-page-motion">
       <!-- 顶部标题区域 -->
       <view class="header-section">
         <view class="main-title">
@@ -426,7 +426,7 @@ import {
 } from '@/utils/recognition-task.mjs'
 import { getRecognitionFailureCopy } from '@/utils/recognition-failure-copy.mjs'
 
-const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages-dark/home/home')
+const { tabPageClass } = useTabPageTransition('pages-dark/home/home')
 const resultImage = ref('')
 const showResultImagePreview = ref(false)
 const resultCollapsed = ref(false)

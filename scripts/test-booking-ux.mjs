@@ -53,6 +53,8 @@ function createBookingHarness() {
   let createBookingCalls = 0
   const context = {
     bookingDraftMethods: {},
+    AppConfirmDialog: {}, RecyclingServiceMap: {},
+    bookingUnitText: unit => ({ kg: '公斤', piece: '件', unit: '台', bag: '袋' })[unit] || '',
     getAvailableTimeSlots(date) {
       const result = deferred()
       requests.push({ date, ...result })
@@ -92,7 +94,17 @@ function createBookingHarness() {
 
 function createPageState(component) {
   const state = component.data()
+  state.$refs = { appConfirmDialog: { cancelAll() {} } }
   Object.assign(state, component.methods)
+  state.serviceAreaId = 42
+  state.selectedTypes = [7]
+  state.bookingPoint = { latitude: 25.033, longitude: 121.5654 }
+  state.bookingSelectionKey = 'selection'
+  state.timeSlotsSelectionKey = 'selection'
+  state.photoCount = 0
+  state.selectedServiceArea = { id: 42, geometry: null }
+  state.allowedWasteTypes = [{ id: 7 }]
+  state.wasteTypes = [{ id: 7 }]
   return state
 }
 
@@ -157,6 +169,8 @@ async function testSubmitGuardsNotReadyAndCrossMidnight() {
   const state = createPageState(harness.component)
   state.initDates()
   state.selectedTypes = [1]
+  state.allowedWasteTypes = [{ id: 1 }]
+  state.wasteTypes = [{ id: 1 }]
   state.selectedTimeSlot = '09:00-10:00'
   state.addressRegion = ['台北市', '台北市', '大安區']
   state.addressDetail = '測試路 1 號'

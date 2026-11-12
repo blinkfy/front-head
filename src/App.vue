@@ -279,7 +279,15 @@ uni-page-body {
 /* #endif */
 
 /* 底部四个主页面按导航位置执行短时位移，不触发重排。 */
-/* 微信小程序的底部换页使用内容节点 animation 属性，底栏保持静止。 */
+/* #ifdef MP-WEIXIN */
+.tab-page-enter-left .tab-page-motion {
+  animation: bottom-tab-page-enter-left 180ms cubic-bezier(0.2, 0.7, 0.25, 1) backwards;
+}
+
+.tab-page-enter-right .tab-page-motion {
+  animation: bottom-tab-page-enter-right 180ms cubic-bezier(0.2, 0.7, 0.25, 1) backwards;
+}
+/* #endif */
 
 /* #ifndef MP-WEIXIN */
 .tab-page-enter-left > view {

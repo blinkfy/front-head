@@ -16,6 +16,10 @@ export const VOICE_END_LABELS = {
   interrupted: '音频被其它应用占用', rate_limited: '呼叫过于频繁，请稍后再试', hangup: '通话已结束', invalid: '通话连接信息无效'
 }
 
+export function shouldReturnFromCall(state) {
+  return state?.phase === 'ended' && ['hangup', 'cancelled', 'rejected', 'answered_elsewhere'].includes(state.reason)
+}
+
 export function createVoiceCallController({ media, send, getOwner, getSelfId, changed = () => {}, isMediaBusy = () => false,
   getRecording = () => null, onRecordingSaved = () => {}, getClaimCallId = () => '', allowScreenShare = true,
   now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, createId = () => `call_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}` }) {
@@ -33,8 +37,9 @@ export function createVoiceCallController({ media, send, getOwner, getSelfId, ch
   function announceCapability() {
     const claimCallId = getClaimCallId()
     const video = videoVersion === 1 && !!media.supportsVideo?.()
+    const screenShareReceive = video && (media.supportsScreenShareReceive?.() ?? true)
     transmit({ type: 'voice.capability', version: 1, available: media.supported(),
-      ...(videoVersion === 1 ? { video, cameraToggle: video, screenShareReceive: video && (media.supportsScreenShareReceive?.() ?? true) } : {}),
+      ...(videoVersion === 1 ? { video, cameraToggle: video, screenShareReceive, voiceScreenShareReceive: screenShareReceive } : {}),
       ...(/^[A-Za-z0-9_-]{12,80}$/.test(claimCallId) ? { claimCallId } : {}) })
   }
   function finish(reason = 'hangup', signal = true) {
@@ -265,7 +270,7 @@ export function createVoiceCallController({ media, send, getOwner, getSelfId, ch
       }
       else if (event.type === 'voice.accepted' && ['calling', 'connecting'].includes(view.phase)) {
         session.video = session.mode === 'video' || event.cameraToggle === true
-        session.screenShare = session.mode === 'video' && event.screenShareSupported === true
+        session.screenShare = session.video && event.screenShareSupported === true
         publish({ phase: 'connecting', cameraSupported: session.video, outgoingPreview: false,
           screenShareSupported: session.screenShare && allowScreenShare && !!media.supportsScreenShare?.() })
         open(session)

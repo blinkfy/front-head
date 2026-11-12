@@ -226,7 +226,10 @@ internal class VideoCallView(
         speakerButton = button("speaker", "免提") { onControl(JSONObject().put("speaker", !speaker)) }
         cameraButton = button("camera", "关闭摄像头") { onControl(JSONObject().put("cameraEnabled", !cameraEnabled)) }
         switchButton = button("switch", "切换镜头") { onControl(JSONObject().put("switchCamera", true)) }
-        shareButton = button("screen", "共享屏幕") { onControl(JSONObject().put("screenSharing", !screenSharing)) }
+        shareButton = button("screen", "共享屏幕") {
+            if (screenShareSupported) onControl(JSONObject().put("screenSharing", !screenSharing))
+            else android.widget.Toast.makeText(activity, "当前通话未协商屏幕共享，请确认双方和服务端已更新后重新拨打", android.widget.Toast.LENGTH_LONG).show()
+        }
         button("hangup", "挂断", danger = true) { if (!released) onHangup() }
         root.addView(controls, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         chrome.add(controls)
@@ -347,7 +350,8 @@ internal class VideoCallView(
         switchButton?.alpha = if (cameraEnabled) 1f else 0.4f
         recordButton?.visibility = if (recordingSupported && connectedAt != 0L) View.VISIBLE else View.GONE
         if (!recording) recordButton?.text = "开始录音"
-        shareButton?.visibility = if (screenShareSupported && connectedAt != 0L) View.VISIBLE else View.GONE
+        shareButton?.visibility = if (connectedAt != 0L) View.VISIBLE else View.GONE
+        shareButton?.alpha = if (screenShareSupported) 1f else 0.5f
         shareButton?.isEnabled = !screenSharePending
         shareButton?.apply {
             update(when {
@@ -395,7 +399,7 @@ internal class VideoCallView(
 }
 
 // Same round controls and line icons as the shared web/voice call page.
-private class CallAction(activity: Activity, kind: String, label: String, danger: Boolean, action: () -> Unit) : LinearLayout(activity) {
+internal class CallAction(activity: Activity, kind: String, label: String, danger: Boolean, action: () -> Unit) : LinearLayout(activity) {
     private val density = resources.displayMetrics.density
     private fun dp(value: Int) = (value * density).toInt()
     private val glyph = CallGlyph(kind)

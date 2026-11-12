@@ -64,6 +64,10 @@ class CallNotificationActivity : Activity() {
         window.statusBarColor = Color.rgb(16, 35, 40); window.navigationBarColor = Color.rgb(16, 35, 40)
         render(); bind(intent)
     }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) answerFromNotification()
+    }
     override fun onNewIntent(value: Intent) { super.onNewIntent(value); intent = value; bind(value) }
     private fun bind(value: Intent) {
         val data = value.data
@@ -83,6 +87,12 @@ class CallNotificationActivity : Activity() {
             accept.visibility = View.GONE; reject.text = "关闭"; fallback.visibility = View.VISIBLE
             main.postDelayed(finishTask, 30000)
         }
+        if (hasWindowFocus()) answerFromNotification()
+    }
+    private fun answerFromNotification() {
+        val token = intent.getStringExtra(RealtimeNotifications.ANSWER_TOKEN_EXTRA) ?: return
+        intent.removeExtra(RealtimeNotifications.ANSWER_TOKEN_EXTRA)
+        if (RealtimeBridge.incomingPending(call) && RealtimeNotifications.consumeAnswerAction(call, token)) answer()
     }
     private fun update(event: JSONObject?) {
         if (isFinishing || leaving) return

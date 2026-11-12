@@ -170,7 +170,7 @@ object RealtimeBridge {
 
     private fun announceVoiceCapability() {
         raw(JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true)
-            .put("cameraToggle", true).put("screenShareReceive", true))
+            .put("cameraToggle", true).put("screenShareReceive", true).put("voiceScreenShareReceive", true))
     }
 
     private fun resetScreenState() {
@@ -229,7 +229,7 @@ object RealtimeBridge {
             messagingEnabled = value.optBoolean("enabled") && !messagingPaused && installationId.isNotEmpty()
             val previousSound = soundEnabled
             soundEnabled = value.optBoolean("sound", true)
-            if (previousSound && !soundEnabled) IncomingCallRinger.stop(RealtimeNotifications.incomingId())
+            if (previousSound && !soundEnabled) RealtimeNotifications.silenceIncoming(ctx)
             if (authenticated) announceMessaging()
             updateService()
         } catch (_: Exception) { messagingEnabled = false; updateService() }
@@ -345,7 +345,7 @@ object RealtimeBridge {
                         if (isNativeCall(event.optString("callId"))) {
                             when (event.optString("type")) {
                                 "voice.accepted" -> {
-                                    nativeScreenSupported = nativeEntryMode == "video" && event.optBoolean("screenShareSupported")
+                                    nativeScreenSupported = video && event.optBoolean("screenShareSupported")
                                     VoiceCallBridge.control(callId, JSONObject().put("screenShareSupported", nativeScreenSupported).toString())
                                     if (video) raw(JSONObject().put("type", "voice.media").put("callId", callId).put("cameraEnabled", nativeCamera))
                                     return@post
@@ -723,6 +723,12 @@ object RealtimeBridge {
                         if (foreground) locationCallback(value)
                         flushLocation()
                     }
+                    // Implement every default callback explicitly: UTS/D8 otherwise
+                    // generates calls to a nonexistent framework LocationListener$-CC.
+                    override fun onLocationChanged(locations: MutableList<Location>) {
+                        for (value in locations) onLocationChanged(value)
+                    }
+                    override fun onFlushComplete(requestCode: Int) {}
                     override fun onProviderDisabled(provider: String) {
                         if (watching && id == watchId.get() && availableProviders().isEmpty()) locationError(2)
                     }

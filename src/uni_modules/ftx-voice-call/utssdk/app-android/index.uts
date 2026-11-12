@@ -4,6 +4,7 @@ import RealtimeBridge from 'ftx.voice.RealtimeBridge'
 import VideoCallActivity from 'ftx.voice.VideoCallActivity'
 import CallRecordingFiles from 'ftx.voice.CallRecordingFiles'
 import OutgoingVideoPreview from 'ftx.voice.OutgoingVideoPreview'
+import RealtimeNotifications from 'ftx.voice.RealtimeNotifications'
 
 let listener: ((event: string) => void) | null = null
 let socketListener: ((event: string) => void) | null = null
@@ -34,6 +35,30 @@ export function realtimeAvailable(): boolean { return true }
 export function realtimeSocketAlive(): boolean { return RealtimeBridge.alive() }
 export function realtimeBackgroundMask(): number { return RealtimeBridge.backgroundMask().toDouble() }
 export function realtimeVideoVisible(): boolean { return VideoCallActivity.visible }
+export function incomingCallPresentation(sound: boolean): string {
+  const context = UTSAndroid.getAppContext()
+  return context != null ? RealtimeNotifications.incomingPresentation(context!, sound) : ''
+}
+export function openIncomingCallSettings(sound: boolean): boolean {
+  const activity = UTSAndroid.getUniActivity()
+  return activity != null && RealtimeNotifications.openIncomingSettings(activity!, sound)
+}
+export function unlockedIncomingCallAllowed(): boolean {
+  const context = UTSAndroid.getAppContext()
+  return context != null && RealtimeNotifications.unlockedIncomingAllowed(context!)
+}
+export function openUnlockedIncomingCallSettings(): boolean {
+  const activity = UTSAndroid.getUniActivity()
+  return activity != null && RealtimeNotifications.openUnlockedIncomingSettings(activity!)
+}
+export function backgroundPopupPermission(): string {
+  const context = UTSAndroid.getAppContext()
+  return context != null ? RealtimeNotifications.backgroundPopupPermission(context!) : 'unknown'
+}
+export function openBackgroundPopupSettings(): boolean {
+  const activity = UTSAndroid.getUniActivity()
+  return activity != null && RealtimeNotifications.openBackgroundPopupSettings(activity!)
+}
 export function onRealtimeSocketEvent(callback: (event: string) => void): void { socketListener = callback }
 export function onRealtimeLocationEvent(callback: (event: string) => void): void { locationListener = callback }
 export function openRealtimeSocket(url: string, channel: string): void {

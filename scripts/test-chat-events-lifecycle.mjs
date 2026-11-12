@@ -247,20 +247,24 @@ async function testWebviewRetry() {
   let activeLeases = 0
   let resolveTicket
   const context = vm.createContext({
-    baseUrl, stripWebCallTicket, ref: value => ({ value }),
+    baseUrl, stripWebCallTicket, ref: value => ({ value }), computed: getter => ({ get value() { return getter() } }),
     onMounted() {}, onBeforeUnmount() {}, setTimeout: () => 1, clearTimeout() {},
     uni: { getStorageSync: () => 'account' },
     delegateMiniCallAlerts() { activeLeases++; return () => { activeLeases-- } },
     requestWebCallTicket: () => new Promise(resolve => { resolveTicket = resolve })
   })
   const page = vm.runInContext(`${script}\n;({
-    open(value) { src.value = value; standaloneWebview = callWebview = true; beginContentLoad() },
-    onLoad, onLoadError, retryLoad, get url() { return src.value }, get key() { return webviewKey.value }
+    open(value) { src.value = value; standaloneWebview = callWebview.value = true; beginContentLoad() },
+    onLoad, onLoadError, retryLoad, get url() { return src.value }, get key() { return webviewKey.value },
+    get fallback() { return showCallFallback.value }
   })`, context)
   const entry = `${baseUrl}/web/call/index.html#?peerId=7&ticket=${oldTicket}&nativeChat=1`
   page.open(entry)
   assert.equal(activeLeases, 1)
-  page.onLoadError()
+  page.onLoad({ detail: { src: stripWebCallTicket(entry) } })
+  assert.equal(page.fallback, false, 'removing the ticket leaves the call page loaded')
+  page.onLoad({ detail: { src: `${baseUrl}/error.html` } })
+  assert.equal(page.fallback, true, 'a same-origin error page triggers the native fallback')
   assert.equal(activeLeases, 0)
   const retry = page.retryLoad()
   resolveTicket(newTicket)
@@ -271,9 +275,10 @@ async function testWebviewRetry() {
   page.onLoadError()
   const recovered = page.retryLoad()
   page.onLoad()
+  assert.equal(page.fallback, true, 'a late load event does not hide the fallback while requesting a new ticket')
   resolveTicket(oldTicket)
   await recovered
-  assert.equal(page.key, 1, 'a late successful load wins over the pending ticket retry')
+  assert.equal(page.key, 2)
   assert.equal(activeLeases, 1)
 }
 

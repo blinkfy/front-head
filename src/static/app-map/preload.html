@@ -16,7 +16,7 @@ document.addEventListener('plusready', function () {
   frame.src = frameUrl + '#sdk-preload:' + encodeURIComponent(key)
   var finish = function (phase) {
     console.info('[app-map-preload] ' + phase + ' ' + JSON.stringify({ elapsedMs: Date.now() - started }))
-    current.close('none')
+    document.title = 'app-map-sdk-' + phase
   }
   window.addEventListener('message', function (event) {
     if (event.source === frame.contentWindow && event.origin === target.origin && event.data &&

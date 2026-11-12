@@ -8,13 +8,18 @@ import { locationErrorMessage } from '../src/utils/location-error.mjs'
 const locationSource = await readFile(new URL('../src/utils/location.js', import.meta.url), 'utf8')
 const addressSource = await readFile(new URL('../src/utils/location-address.js', import.meta.url), 'utf8')
 const pickerSource = await readFile(new URL('../src/pages-nonTheme/components/shop/ShopAddressPicker.vue', import.meta.url), 'utf8')
+const mapCacheSource = await readFile(new URL('../src/utils/map-last-location.mjs', import.meta.url), 'utf8')
+const mapPageSources = await Promise.all([
+  readFile(new URL('../src/pages/map/map.vue', import.meta.url), 'utf8'),
+  readFile(new URL('../src/pages-dark/map/map.vue', import.meta.url), 'utf8')
+])
 
 function preprocessPlatform(source, platform) {
   const lines = source.split(/\r?\n/)
   const active = [true]
   const output = []
   for (const line of lines) {
-    const directive = line.match(/^\s*(?:\/\/|<!--)\s*#(ifdef|ifndef)\s+(\w+)\s*(?:-->)?\s*$/)
+    const directive = line.match(/^\s*(?:\/\/|<!--)\s*#(ifdef|ifndef)\s+([\w-]+)\s*(?:-->)?\s*$/)
     if (directive) {
       const matches = directive[2] === platform
       active.push(active.at(-1) && (directive[1] === 'ifdef' ? matches : !matches))
@@ -74,6 +79,65 @@ await test('App asks the native API for WGS84 and converts gcj02 exactly once', 
   assert.equal(actual.longitude, once.longitude)
   assert.notEqual(actual.latitude, twice.latitude)
   assert.notEqual(actual.longitude, twice.longitude)
+})
+
+await test('App native high accuracy is opt-in', async () => {
+  let defaultOptions
+  loadLocation('app', { getLocation(options) { defaultOptions = options; options.success({ latitude: 25, longitude: 121 }) } })
+    .getUserLocationOnce('wgs84')
+  assert.equal(Object.hasOwn(defaultOptions, 'isHighAccuracy'), false)
+
+  let accurateOptions
+  await loadLocation('app', { getLocation(options) { accurateOptions = options; options.success({ latitude: 25, longitude: 121 }) } })
+    .getUserLocationOnce('gcj02', { highAccuracy: true })
+  assert.equal(accurateOptions.isHighAccuracy, true)
+})
+
+await test('App light and dark map helpers request accurate WGS84 and cache converted GCJ02 once', async () => {
+  const cacheCode = mapCacheSource
+    .replaceAll('export function ', 'function ')
+    + '\nglobalThis.mapCache = { getLastMapLocation, saveLastMapLocation }'
+
+  for (const [index, original] of mapPageSources.entries()) {
+    const match = original.match(/async function getUserLocationOnce\([\s\S]*?\n}\s*/)
+    assert.ok(match, `APP getUserLocationOnce helper exists in map page ${index + 1}`)
+    const appHelper = preprocessPlatform(match[0], 'APP-PLUS')
+
+    const storage = new Map()
+    let nativeOptions
+    let sharedCall
+    const native = { latitude: 25.033, longitude: 121.5654 }
+    const expected = wgs84ToGcj02(native.latitude, native.longitude)
+    const sharedLocation = loadLocation('app', {
+      getLocation(options) {
+        nativeOptions = options
+        options.success({ ...native, accuracy: 8 })
+      }
+    })
+    const context = {
+      uni: {
+        getStorageSync(key) { return storage.get(key) },
+        setStorageSync(key, value) { storage.set(key, value) }
+      },
+      getSharedUserLocationOnce: (type, options) => {
+        sharedCall = { type, options }
+        return sharedLocation.getUserLocationOnce(type, options)
+      },
+      console: { info() {} }
+    }
+    vm.runInNewContext(`${cacheCode}\n${appHelper}\nglobalThis.getUserLocationOnce = getUserLocationOnce`, context)
+
+    const result = await context.getUserLocationOnce('gcj02')
+    assert.equal(sharedCall.type, 'gcj02')
+    assert.deepEqual({ type: nativeOptions.type, isHighAccuracy: nativeOptions.isHighAccuracy }, { type: 'wgs84', isHighAccuracy: true })
+    assert.deepEqual(JSON.parse(JSON.stringify(sharedCall.options)), { highAccuracy: true, includeAccuracy: true })
+    assert.equal(result.latitude, expected.latitude)
+    assert.equal(result.longitude, expected.longitude)
+    assert.equal(result.accuracy, 8)
+    assert.deepEqual(JSON.parse(JSON.stringify(context.mapCache.getLastMapLocation())), expected)
+    assert.notEqual(result.latitude, wgs84ToGcj02(expected.latitude, expected.longitude).latitude)
+    assert.notEqual(result.longitude, wgs84ToGcj02(expected.latitude, expected.longitude).longitude)
+  }
 })
 
 await test('App WGS84 request returns native coordinates without conversion', async () => {

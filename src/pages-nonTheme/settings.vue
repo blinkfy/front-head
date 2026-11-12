@@ -70,12 +70,12 @@
                     </view>
                     <view class="toggle-switch" :class="{ active: soundEnabled }"><view class="toggle-dot"></view></view>
                 </view>
-                <view v-if="isAndroid" class="setting-item" @click="retryNotificationPermission" role="button" tabindex="0" @keydown.enter.prevent="retryNotificationPermission" @keydown.space.prevent="retryNotificationPermission">
+                <view v-if="isAndroid" class="setting-item" @click="setupCallPermissions" role="button" tabindex="0" :aria-busy="permissionSetupPending" @keydown.enter.prevent="setupCallPermissions" @keydown.space.prevent="setupCallPermissions">
                     <view class="item-left">
                         <ManifestIcon class="item-icon" id="notification" />
                         <view class="item-info">
-                            <text class="item-title">消息通知权限</text>
-                            <text class="item-desc">收不到系统通知时，点此检查并重新授权</text>
+                            <text class="item-title">消息与来电授权</text>
+                            <text class="item-desc">{{ permissionSetupDescription }}</text>
                         </view>
                     </view>
                 </view>
@@ -185,11 +185,12 @@ import { clearChatPush } from '@/utils/chat-push.js'
 import { communitySocialEnabled } from '@/pages-nonTheme/utils/community-social.js'
 import { ensureFeaturePermission, openFeaturePermissionSettings } from '@/utils/feature-permission.js'
 import { syncChatPush } from '@/utils/chat-push.js'
-import { syncAndroidMessagingPreference } from '@/utils/android-realtime.js'
+import { androidIncomingCallPresentation, openAndroidIncomingCallSettings, androidUnlockedIncomingCallAllowed,
+    openAndroidUnlockedIncomingCallSettings, androidBackgroundPopupPermission, openAndroidBackgroundPopupSettings, syncAndroidMessagingPreference } from '@/utils/android-realtime.js'
 import { recentRecognition } from '@/utils/recent-recognition.js'
 import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
-import { ref, onMounted, onUnmounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { onHide, onShow } from '@dcloudio/uni-app'
 import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
@@ -200,6 +201,36 @@ onShow(async () => { communityChatEnabled.value = await communitySocialEnabled()
 
 const soundEnabled = ref(areUiSoundsEnabled())
 const isAndroid = ref(false)
+const incomingCallStatus = ref('')
+const unlockedIncomingAllowed = ref(false)
+const backgroundPopupStatus = ref('unknown')
+const permissionSetupPending = ref(false)
+let permissionSetup = null
+const permissionSetupDescription = computed(() => {
+    if (permissionSetupPending.value) return '正在引导授权，完成系统设置后返回即可继续'
+    const missing = []
+    if (incomingCallStatus.value === 'notifications_disabled') missing.push('消息通知')
+    if (incomingCallStatus.value === 'channel_low') missing.push('来电横幅')
+    if (incomingCallStatus.value === 'full_screen_denied') missing.push('锁屏全屏来电')
+    if (!unlockedIncomingAllowed.value) missing.push('亮屏全屏来电')
+    if (backgroundPopupStatus.value === 'denied') missing.push('后台弹窗未开启')
+    else if (backgroundPopupStatus.value === 'unknown') missing.push('后台弹窗待确认')
+    const status = missing.length ? '点此自动检查并授权' + missing.join('、') : '通知与全屏来电已授权'
+    return status + (incomingCallStatus.value === 'dnd' ? '，当前遵循系统勿扰' : '')
+})
+const refreshIncomingCallStatus = () => {
+    incomingCallStatus.value = androidIncomingCallPresentation()
+    unlockedIncomingAllowed.value = androidUnlockedIncomingCallAllowed()
+    backgroundPopupStatus.value = androidBackgroundPopupPermission()
+}
+onHide(() => { if (permissionSetup) permissionSetup.away = true })
+onShow(() => {
+    refreshIncomingCallStatus()
+    if (permissionSetup) {
+        permissionSetup.away = false
+        if (!permissionSetup.busy) void advanceCallPermissions()
+    }
+})
 const backgroundMessagesAdmin = ref(canConfigureBackgroundMessages())
 const backgroundMessagesEnabled = ref(readBackgroundMessagesEnabled())
 const refreshBackgroundMessages = () => {
@@ -210,6 +241,7 @@ onShow(refreshBackgroundMessages)
 uni.$on('chat:background-messages-changed', refreshBackgroundMessages)
 uni.$on('chat:background-messages-state', refreshBackgroundMessages)
 onUnmounted(() => {
+    finishCallPermissionSetup()
     uni.$off('chat:background-messages-changed', refreshBackgroundMessages)
     uni.$off('chat:background-messages-state', refreshBackgroundMessages)
 })
@@ -217,6 +249,7 @@ function toggleUiSounds() {
     soundEnabled.value = !soundEnabled.value
     setUiSoundsEnabled(soundEnabled.value)
     syncAndroidMessagingPreference()
+    refreshIncomingCallStatus()
     if (soundEnabled.value) { primeUiSounds(); playUiSound('confirm', { page: 'pages-nonTheme/settings' }) }
 }
 function setBackgroundMessagesEnabled(enabled) {
@@ -243,12 +276,102 @@ async function requestNotifications() {
     syncAndroidMessagingPreference()
     return true
 }
-async function retryNotificationPermission() {
-    if (notificationPermissionPending.value) return
-    notificationPermissionPending.value = true
-    try {
-        if (await requestNotifications()) uni.showToast({ title: '通知权限已开启', icon: 'none' })
-    } finally { notificationPermissionPending.value = false }
+function finishCallPermissionSetup() {
+    permissionSetup = null
+    permissionSetupPending.value = false
+}
+async function setupCallPermissions() {
+    if (permissionSetupPending.value || notificationPermissionPending.value) return
+    refreshIncomingCallStatus()
+    if (['ready', 'dnd'].includes(incomingCallStatus.value) && unlockedIncomingAllowed.value &&
+        ['allowed', 'not_required'].includes(backgroundPopupStatus.value)) {
+        uni.showToast({ title: incomingCallStatus.value === 'dnd' ? '授权已完成，当前遵循系统勿扰' : '通知与全屏来电已授权', icon: 'none' })
+        return
+    }
+    finishCallPermissionSetup()
+    permissionSetupPending.value = true
+    const owner = uni.getStorageSync('token') || ''
+    const page = getCurrentPages().slice(-1)[0]
+    const answer = await new Promise(resolve => uni.showModal({
+        title: '消息与来电授权',
+        content: '将自动跳过已允许的项目，依次检查通知、全屏来电和后台弹窗。系统设置中的开关需要你确认，返回后会继续检查。',
+        confirmText: '开始授权', success: resolve, fail: () => resolve(null)
+    }))
+    if (!answer?.confirm || page !== getCurrentPages().slice(-1)[0] || owner !== (uni.getStorageSync('token') || '')) {
+        finishCallPermissionSetup()
+        return
+    }
+    permissionSetup = { owner, page, attempted: new Set(), busy: false, away: false }
+    await advanceCallPermissions()
+}
+async function advanceCallPermissions() {
+    const flow = permissionSetup
+    if (!flow || flow.busy || flow.away) return
+    if (flow.page !== getCurrentPages().slice(-1)[0] || flow.owner !== (uni.getStorageSync('token') || '')) {
+        finishCallPermissionSetup()
+        return
+    }
+    refreshIncomingCallStatus()
+    const status = incomingCallStatus.value
+    const step = ['notifications_disabled', 'channel_low', 'full_screen_denied'].includes(status)
+        ? status : (!unlockedIncomingAllowed.value ? 'overlay'
+            : (['allowed', 'not_required'].includes(backgroundPopupStatus.value) ? '' : 'background_popup'))
+    if (!status || !step || flow.attempted.has(step)) {
+        finishCallPermissionSetup()
+        if (status) uni.showToast({
+            title: step === 'background_popup'
+                ? (backgroundPopupStatus.value === 'denied' ? '后台弹窗仍未开启，来电将使用通知提醒' : '后台弹窗需在系统设置中确认')
+                : (step ? '尚有权限未开启，可稍后重新授权' : (status === 'dnd' ? '授权已完成，当前遵循系统勿扰' : '消息与来电授权已完成')),
+            icon: 'none'
+        })
+        return
+    }
+    flow.attempted.add(step)
+    permissionSetupPending.value = true
+    if (step === 'notifications_disabled') {
+        flow.busy = true
+        notificationPermissionPending.value = true
+        try {
+            const granted = await requestNotifications()
+            if (permissionSetup !== flow) return
+            flow.busy = false
+            refreshIncomingCallStatus()
+            if (!flow.away && (granted || incomingCallStatus.value !== step)) {
+                await advanceCallPermissions()
+            } else {
+                // A settings page may still be opening. Resume only on page show.
+                permissionSetupPending.value = false
+            }
+        } catch (_) {
+            if (permissionSetup === flow) {
+                finishCallPermissionSetup()
+                uni.showToast({ title: '授权检查失败，请稍后重试', icon: 'none' })
+            }
+        } finally {
+            notificationPermissionPending.value = false
+        }
+        return
+    }
+    if (step === 'background_popup') {
+        flow.busy = true
+        const answer = await new Promise(resolve => uni.showModal({
+            title: backgroundPopupStatus.value === 'denied' ? '后台弹窗未开启' : '请确认后台弹窗权限',
+            content: '后台弹窗（Background pop-ups）与悬浮窗是独立权限。请在系统权限管理中选择分投侠，将“后台弹窗”设为允许；也可从应用详情的“权限／其他权限”进入。返回后会重新检查。',
+            confirmText: '去设置', cancelText: '稍后', success: resolve, fail: () => resolve(null)
+        }))
+        if (permissionSetup !== flow) return
+        flow.busy = false
+        if (!answer?.confirm || flow.page !== getCurrentPages().slice(-1)[0] || flow.owner !== (uni.getStorageSync('token') || '')) {
+            finishCallPermissionSetup()
+            return
+        }
+    }
+    const opened = step === 'overlay' ? openAndroidUnlockedIncomingCallSettings()
+        : (step === 'background_popup' ? openAndroidBackgroundPopupSettings() : openAndroidIncomingCallSettings())
+    if (!opened) {
+        finishCallPermissionSetup()
+        uni.showToast({ title: '系统设置打开失败，请稍后重试', icon: 'none' })
+    }
 }
 async function toggleBackgroundMessages() {
     if (!canConfigureBackgroundMessages() || notificationPermissionPending.value) return
@@ -388,6 +511,7 @@ onMounted(() => {
     checkTheme()
     // #ifdef APP-PLUS
     isAndroid.value = typeof plus !== 'undefined' && plus.os?.name === 'Android'
+    refreshIncomingCallStatus()
     // #endif
 })
 </script>

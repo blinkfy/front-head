@@ -152,7 +152,7 @@ export async function compressTrashBinImage(filePath) {
   // #endif
 }
 
-export async function previewTrashBinImage(value) {
+export async function previewTrashBinImage(value, { onReady } = {}) {
   let path = resolveTrashBinImage(value)
   if (!path) throw new Error('暂无图片')
   let temporaryPath = ''
@@ -188,6 +188,7 @@ export async function previewTrashBinImage(value) {
   // #endif
   // #endif
   try {
+    onReady?.()
     await uniCall(options => uni.previewImage(options), { urls: [path], current: path })
   } catch (error) {
     if (temporaryPath) discardCompressedFile(temporaryPath)

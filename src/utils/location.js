@@ -2,7 +2,7 @@ import { ensureFeaturePermission } from './feature-permission.js'
 import { wgs84ToGcj02 } from './live-location-coordinates.mjs'
 
 // 共享定位工具：返回 Promise<{latitude, longitude}>，在 H5 环境回退到 navigator.geolocation
-export async function getUserLocationOnce(coordType = null, { interactive = false, isCurrent = () => true, includeAccuracy = false } = {}) {
+export async function getUserLocationOnce(coordType = null, { interactive = false, isCurrent = () => true, includeAccuracy = false, highAccuracy = false } = {}) {
   if (interactive && !await ensureFeaturePermission('location', { isCurrent })) throw Object.assign(new Error('请允许定位权限后重试'), { code: 'permission_denied' })
   if (!isCurrent()) throw new Error('定位已取消')
   // 返回对象 { latitude, longitude } 或 抛错
@@ -95,6 +95,8 @@ export async function getUserLocationOnce(coordType = null, { interactive = fals
           highAccuracyExpireTime: 15000
         }
         
+        if (isApp && highAccuracy) locationOptions.isHighAccuracy = true
+
         // 只有指定了坐标系类型且不是支付宝小程序才添加type参数
         if ((coordType || isApp) && !shouldSkipType) {
           locationOptions.type = isApp ? 'wgs84' : coordType

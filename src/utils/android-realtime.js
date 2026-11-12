@@ -1,7 +1,8 @@
 // #ifdef APP-PLUS
 import { realtimeAvailable, realtimeSocketAlive, realtimeBackgroundMask, realtimeVideoVisible, openRealtimeSocket,
   sendRealtimeSocket, closeRealtimeSocket, setRealtimeForeground, watchRealtimeLocation, clearRealtimeLocation,
-  onRealtimeSocketEvent, onRealtimeLocationEvent, takeRealtimeRoute, configureRealtimeMessaging, realtimeMessagingPaused, realtimeSocketSuspended, takeIncomingCallAcceptance, controlNativeAnsweredCall, stopIncomingCallAlert } from '@/uni_modules/ftx-voice-call'
+  onRealtimeSocketEvent, onRealtimeLocationEvent, takeRealtimeRoute, incomingCallPresentation, openIncomingCallSettings, configureRealtimeMessaging, realtimeMessagingPaused, realtimeSocketSuspended, takeIncomingCallAcceptance, controlNativeAnsweredCall, stopIncomingCallAlert } from '@/uni_modules/ftx-voice-call'
+import { unlockedIncomingCallAllowed, openUnlockedIncomingCallSettings, backgroundPopupPermission, openBackgroundPopupSettings } from '@/uni_modules/ftx-voice-call'
 // #endif
 import { getOrCreatePushInstallationId } from './chat-push-installation.mjs'
 import { readBackgroundMessagesEnabled, BACKGROUND_MESSAGES_KEY, writeBackgroundMessagesEnabled } from './background-message-preference.mjs'
@@ -33,6 +34,47 @@ export function androidRealtimeAvailable() {
   // #endif
   return false
 }
+export function androidIncomingCallPresentation() {
+  // #ifdef APP-PLUS
+  try { if (androidRealtimeAvailable()) return incomingCallPresentation(areUiSoundsEnabled()) } catch (_) {}
+  // #endif
+  return ''
+}
+export function openAndroidIncomingCallSettings() {
+  // #ifdef APP-PLUS
+  try { if (androidRealtimeAvailable()) return openIncomingCallSettings(areUiSoundsEnabled()) } catch (_) {}
+  // #endif
+  return false
+}
+
+export function androidUnlockedIncomingCallAllowed() {
+  // #ifdef APP-PLUS
+  try { if (androidRealtimeAvailable()) return unlockedIncomingCallAllowed() } catch (_) {}
+  // #endif
+  return false
+}
+
+export function openAndroidUnlockedIncomingCallSettings() {
+  // #ifdef APP-PLUS
+  try { if (androidRealtimeAvailable()) return openUnlockedIncomingCallSettings() } catch (_) {}
+  // #endif
+  return false
+}
+
+export function androidBackgroundPopupPermission() {
+  // #ifdef APP-PLUS
+  try { if (androidRealtimeAvailable()) return backgroundPopupPermission() } catch (_) { return 'unknown' }
+  // #endif
+  return 'not_required'
+}
+
+export function openAndroidBackgroundPopupSettings() {
+  // #ifdef APP-PLUS
+  try { if (androidRealtimeAvailable()) return openBackgroundPopupSettings() } catch (_) {}
+  // #endif
+  return false
+}
+
 export function androidBackgroundMask() {
   // #ifdef APP-PLUS
   try { return androidRealtimeAvailable() ? realtimeBackgroundMask() : 0 } catch (_) {}

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { parse } from '@vue/compiler-sfc'
+import { shouldReturnFromCall } from '../src/utils/voice-call-core.mjs'
 
 const OLD = 'previous_call_0001', NEW = 'incoming_call_0002'
 function loadComponent(path, context) {
@@ -18,17 +19,17 @@ function bind(component) {
 function harness({ web = true, app = false } = {}) {
   let owner = 'account-a'
   const state = { phase: 'ended', callId: OLD, mode: 'audio', peer: { id: 2, name: '联系人' }, supported: true }
-  const ended = [], accepted = [], mounted = [], unmounted = [], ticks = [], navigations = [], listeners = new Map()
+  const ended = [], accepted = [], mounted = [], unmounted = [], ticks = [], navigations = [], controls = [], toasts = [], listeners = new Map()
   const uni = { getStorageSync: () => owner, $on: (key, fn) => listeners.set(key, fn), $off: key => listeners.delete(key),
-    navigateBack: () => navigations.push('back'), redirectTo: () => navigations.push('redirect'), showToast() {} }
+    navigateBack: () => navigations.push('back'), redirectTo: () => navigations.push('redirect'), showToast: value => toasts.push(value.title) }
   const context = { voiceCallState: state, webCallRingtoneState: {}, VoiceCallIcon: {}, ChatCachedAvatar: {},
-    voiceCalls: { end: reason => ended.push({ reason, callId: state.callId }), accept: () => accepted.push(state.callId) },
-    voiceCallMedia: { canPictureInPicture: () => false, showNativeVideo() {} },
+    voiceCalls: { end: reason => ended.push({ reason, callId: state.callId }), accept: () => accepted.push(state.callId), control: value => controls.push(value) },
+    voiceCallMedia: { canPictureInPicture: () => false, supportsScreenShare: () => app || web, showNativeVideo() {} },
     canRouteVoiceAudio: () => false, androidRealtimeAvailable: () => app, androidBackgroundMask: () => 1,
     webCallsAvailable: () => web, webCallNotificationsAvailable: () => false, ThemeManager: { getTheme: () => 'light' },
     mountCallVideo: id => mounted.push(id), unmountCallVideo: id => unmounted.push(id),
     uni, getCurrentPages: () => [{ route: 'pages-nonTheme/chatlist' }, { route: 'pages-nonTheme/voice-call' }],
-    setInterval: () => 1, clearInterval() {}, Date, VOICE_END_LABELS: {} }
+    setInterval: () => 1, clearInterval() {}, Date, VOICE_END_LABELS: {}, shouldReturnFromCall }
   const component = loadComponent('../src/pages-nonTheme/voice-call.vue', context)
   const page = bind(component)
   page.$nextTick = fn => ticks.push(fn)
@@ -39,7 +40,7 @@ function harness({ web = true, app = false } = {}) {
     component.watch['state.callId'].call(page, id)
     component.watch['state.phase'].call(page)
   }
-  return { component, page, state, move, ended, accepted, mounted, unmounted, ticks, navigations,
+  return { component, page, state, move, ended, accepted, mounted, unmounted, ticks, navigations, controls, toasts,
     owner: value => { owner = value }, flush: () => { while (ticks.length) ticks.shift()() } }
 }
 for (const platform of [{ web: true }, { web: false, app: true }]) {
@@ -111,9 +112,10 @@ for (const phase of ['incoming', 'calling', 'connecting', 'connected', 'ended'])
   h.page.tapVideo(true)
   assert.equal(h.page.videoControlsHidden, false, 'cancel stays visible while ringing')
 }
-{
+for (const mode of ['audio', 'video']) {
   const h = harness()
-  h.move('connected', NEW, { mode: 'video', cameraSupported: true, cameraEnabled: false, remoteCameraEnabled: false })
+  h.move('connected', NEW, { mode, cameraSupported: true, cameraEnabled: false, remoteCameraEnabled: false, screenShareSupported: true })
+  assert.equal(h.page.shareActionLabel, '共享屏幕')
   assert.equal(h.page.videoActive, false)
   h.state.remoteScreenSharing = true
   assert.equal(h.page.videoActive, true, 'screen share renders even when both cameras are off')
@@ -124,5 +126,60 @@ for (const phase of ['incoming', 'calling', 'connecting', 'connected', 'ended'])
   assert.equal(h.page.videoControlsHidden, true)
   h.state.remoteScreenSharing = false
   assert.equal(h.page.mainIsLocal, true, 'stopping restores the previous camera layout')
+}
+for (const platform of [{ web: true }, { web: false, app: true }]) {
+  for (const reason of ['hangup', 'cancelled', 'rejected', 'answered_elsewhere']) {
+    const h = harness(platform)
+    h.move('connected')
+    h.move('ended', NEW, { reason })
+    h.flush()
+    assert.deepEqual(h.navigations, ['back'], `${reason} returns to chat on ${platform.app ? 'App' : 'H5'}`)
+    assert.equal(h.ended.length, 0, 'returning after completion never sends another hangup')
+  }
+  for (const reason of ['connect_failed', 'permission_denied', 'disconnected', 'timeout', 'busy', 'failed', '']) {
+    const h = harness(platform)
+    h.move('connected')
+    h.move('ended', NEW, { reason })
+    h.flush()
+    assert.deepEqual(h.navigations, [], `${reason || 'unknown'} remains visible for explanation`)
+  }
+}
+{
+  const h = harness()
+  h.move('ended', NEW, { reason: 'hangup' })
+  h.move('incoming', 'incoming_call_0003', { reason: '' })
+  h.flush()
+  assert.deepEqual(h.navigations, [], 'a new incoming call cancels a queued return from the previous call')
+}
+{
+  const h = harness()
+  h.move('connected')
+  h.component.onHide.call(h.page)
+  h.move('ended', NEW, { reason: 'hangup' })
+  h.flush()
+  assert.deepEqual(h.navigations, [], 'a hidden call page cannot pop another page')
+  h.component.onShow.call(h.page)
+  h.flush()
+  assert.deepEqual(h.navigations, ['back'], 'returning from the native call surface skips normal completion')
+}
+{
+  const h = harness()
+  h.move('ended', NEW, { reason: 'hangup' })
+  h.owner('another-account')
+  h.flush()
+  assert.deepEqual(h.navigations, [], 'a deferred return cannot change navigation after account switching')
+}
+for (const platform of [{ web: true }, { web: false, app: true }]) {
+  const h = harness(platform)
+  h.move('connected', NEW, { mode: 'audio', cameraEnabled: false, screenShareSupported: false })
+  assert.equal(h.page.showScreenShare, true, 'capable clients retain a discoverable share entry during voice calls')
+  h.page.toggleScreenShare()
+  assert.equal(h.controls.length, 0, 'an unsupported peer is never sent a sharing command')
+  assert.match(h.toasts.at(-1), /未协商屏幕共享/)
+  h.state.screenShareSupported = true
+  h.page.toggleScreenShare()
+  assert.equal(h.controls.at(-1).screenSharing, true, 'voice screen sharing uses the same media control')
+  h.state.phase = 'calling'
+  assert.equal(h.page.showScreenShare, false, 'sharing is offered after connection')
 }
 console.log('PASS call page session ownership, navigation races, explicit rejection and active-call return entries')

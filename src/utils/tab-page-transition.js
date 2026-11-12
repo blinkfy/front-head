@@ -1,10 +1,13 @@
-import { getCurrentInstance, ref } from 'vue'
+import { ref } from 'vue'
 import { onHide, onReady, onShow, onUnload } from '@dcloudio/uni-app'
 
 const STORAGE_KEY = 'bottomTabTransition'
 const TAB_POSITIONS = { home: 0, map: 1, shop: 2, profile: 3 }
 const TRANSITION_DURATION = 180
-const MP_TRANSITION_DURATION = 200
+// #ifdef APP-PLUS
+import { createAppMapTabCache } from './app-map-retention.mjs'
+const appMapTabCache = createAppMapTabCache()
+// #endif
 
 // #ifdef H5
 import { markH5PagePreloaded } from './h5-page-preload-state.mjs'
@@ -93,40 +96,52 @@ export function navigateBottomTab(from, to, url, method = 'redirectTo') {
     createdAt: Date.now()
   })
 
+  // #ifdef APP-PLUS
+  const plan = appMapTabCache.navigation({ pages: getCurrentPages(), from, targetRoute,
+    owner: uni.getStorageSync('token') || '', url: String(url) })
+  if (plan) {
+    if (plan.method === 'navigateBack') {
+      // Reusing an earlier page must still follow tab order, not the native back direction.
+      uni.navigateBack({ delta: plan.delta, animationType: toPosition > fromPosition ? 'slide-out-left' : 'slide-out-right',
+        animationDuration: TRANSITION_DURATION, fail: () => { appMapTabCache.clear(); uni.reLaunch({ url }) } })
+    } else {
+      const animation = plan.method === 'navigateTo'
+        ? { animationType: toPosition > fromPosition ? 'slide-in-right' : 'slide-in-left', animationDuration: TRANSITION_DURATION } : {}
+      uni[plan.method]({ url, ...animation, fail: () => { appMapTabCache.clear(); uni.redirectTo({ url }) } })
+    }
+    return
+  }
+  // #endif
   const navigate = typeof uni[method] === 'function' ? uni[method] : uni.redirectTo
   navigate.call(uni, { url })
 }
 
 export function useTabPageTransition(pageRoute) {
   const tabPageClass = ref('')
-  const tabPageAnimation = ref(null)
-  const pageInstance = getCurrentInstance()
   let transitionResetTimer = null
-  let transitionVersion = 0
-  let pageReady = false
-  let pendingFirstTransition = null
 
   const resetTransition = () => {
-    transitionVersion += 1
     clearTimeout(transitionResetTimer)
     transitionResetTimer = null
-    pendingFirstTransition = null
     tabPageClass.value = ''
-    tabPageAnimation.value = null
   }
 
   onHide(resetTransition)
   onUnload(resetTransition)
 
   // #ifdef MP-WEIXIN
+  // Set the class before the first render so the destination starts at the sliding offset.
+  const transition = getPendingTabTransition(pageRoute)
+  if (transition) {
+    uni.removeStorageSync(STORAGE_KEY)
+    tabPageClass.value = `tab-page-enter-${transition.direction}`
+  }
   onReady(() => {
-    pageReady = true
-    if (!pendingFirstTransition) return
-    pendingFirstTransition()
-    pendingFirstTransition = null
+    if (tabPageClass.value) transitionResetTimer = setTimeout(resetTransition, TRANSITION_DURATION + 40)
   })
   // #endif
 
+  // #ifndef MP-WEIXIN
   onShow(() => {
     if (typeof uni === 'undefined') return
 
@@ -137,46 +152,10 @@ export function useTabPageTransition(pageRoute) {
 
     uni.removeStorageSync(STORAGE_KEY)
     resetTransition()
-
-    const startTransition = () => {
-      // #ifdef MP-WEIXIN
-      // 两个 step 随动画数据一起送到视图层。
-      const offset = uni.upx2px(96) * (transition.direction === 'left' ? 1 : -1)
-      const animation = uni.createAnimation({ duration: MP_TRANSITION_DURATION, timingFunction: 'ease-out' })
-      animation.translateX(offset).opacity(0.88).step({ duration: 0 })
-      animation.translateX(0).opacity(1).step({ duration: MP_TRANSITION_DURATION })
-      tabPageAnimation.value = animation.export()
-
-      // 等小程序 setData 提交后计时；只保留归零帧，异步刷新不会重放初始偏移。
-      const version = transitionVersion
-      pageInstance.proxy.$nextTick(() => {
-        if (version !== transitionVersion) return
-        transitionResetTimer = setTimeout(() => {
-          transitionResetTimer = null
-          if (version !== transitionVersion) return
-          const settled = uni.createAnimation({ duration: 1, timingFunction: 'linear' })
-          settled.translateX(0).opacity(1).step({ duration: 1 })
-          tabPageAnimation.value = settled.export()
-        }, MP_TRANSITION_DURATION + 40)
-      })
-      // #endif
-      // #ifndef MP-WEIXIN
-      tabPageClass.value = `tab-page-enter-${transition.direction}`
-      transitionResetTimer = setTimeout(() => {
-        tabPageClass.value = ''
-        transitionResetTimer = null
-      }, TRANSITION_DURATION + 40)
-      // #endif
-    }
-
-    // #ifdef MP-WEIXIN
-    if (pageReady) startTransition()
-    else pendingFirstTransition = startTransition
-    // #endif
-    // #ifndef MP-WEIXIN
-    startTransition()
-    // #endif
+    tabPageClass.value = `tab-page-enter-${transition.direction}`
+    transitionResetTimer = setTimeout(resetTransition, TRANSITION_DURATION + 40)
   })
+  // #endif
 
-  return { tabPageClass, tabPageAnimation }
+  return { tabPageClass }
 }

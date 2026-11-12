@@ -12,6 +12,12 @@ export function realtimeAvailable(): boolean { return false }
 export function realtimeSocketAlive(): boolean { return false }
 export function realtimeBackgroundMask(): number { return 0 }
 export function realtimeVideoVisible(): boolean { return false }
+export function incomingCallPresentation(sound: boolean): string { return '' }
+export function openIncomingCallSettings(sound: boolean): boolean { return false }
+export function unlockedIncomingCallAllowed(): boolean { return false }
+export function openUnlockedIncomingCallSettings(): boolean { return false }
+export function backgroundPopupPermission(): string { return 'not_required' }
+export function openBackgroundPopupSettings(): boolean { return false }
 export function onRealtimeSocketEvent(callback: (event: string) => void): void {}
 export function onRealtimeLocationEvent(callback: (event: string) => void): void {}
 export function openRealtimeSocket(url: string, channel: string): void {}

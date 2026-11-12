@@ -4,7 +4,7 @@
     <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
     <!-- #endif -->
     <!-- 顶部导航栏 -->
-    <view :animation="tabPageAnimation" class="map-header tab-page-motion" :style="{ paddingTop: (statusBarHeight + 10) + 'px' }">
+    <view class="map-header tab-page-motion" :style="{ paddingTop: (statusBarHeight + 10) + 'px' }">
       <view class="header-decoration">
         <view class="deco-circle c1"></view>
         <view class="deco-circle c2"></view>
@@ -18,7 +18,7 @@
     </view>
 
     <!-- 地图容器 -->
-    <view :animation="tabPageAnimation" class="map-container tab-page-motion">
+    <view class="map-container tab-page-motion">
       <div v-if="isH5" :id="mapContainerId" class="map-canvas"></div>
       <!-- #ifdef APP-PLUS -->
       <AppTencentMap :covered="showAddModal" ref="appMapRef" class="map-canvas" :latitude="center.latitude" :longitude="center.longitude" :scale="mapScale" :enable-satellite="satellite" :markers="markers" :user-location="userLocation" @updated="onNativeMapUpdated" @error="onNativeMapError" @markertap="onMarkerTap" @tap="onMapTap" @regionchange="onRegionChange" />
@@ -338,7 +338,7 @@ import { canShowDeviceScanEntry } from '@/utils/h5-scan-entry.mjs'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 
 const { isMapAdmin, loadMapBins } = useMapAdminBins()
-const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages/map/map')
+const { tabPageClass } = useTabPageTransition('pages/map/map')
 onShow(() => {
   if (isMapAdmin.value && !selectMode.value && !viewMode.value) loadTrashBinList()
 })
@@ -588,7 +588,7 @@ function mapViewScope() { return `${mapViewEpoch}|${mapViewOwner()}` }
 onHide(() => { mapViewEpoch++ })
 onUnload(() => { mapPageDisposed = true })
 onBeforeUnmount(() => { mapPageDisposed = true })
-const mapScale = ref(12)
+const mapScale = ref(14)
 const { satellite, basemapLoading, setBasemap, bindH5Map, getSatelliteReference, onNativeMapUpdated, onNativeMapError, onNativeMapRegionChange } = useMapBasemap({ isH5, options: pageOptions, appWebMap: true, suspended: () => showAddModal.value })
 
 // 小程序 setup 阶段可能还没有路由参数，以 onLoad 收到的参数为准。
@@ -1144,6 +1144,11 @@ onReady(() => {
 })
 
 async function getUserLocationOnce(coordType = 'gcj02') {
+  // #ifdef APP-PLUS
+  const location = await getSharedUserLocationOnce(coordType, { highAccuracy: true, includeAccuracy: true })
+  console.info('[app-map-location] ' + JSON.stringify({ coordinateSystem: coordType, accuracy: location.accuracy ?? null }))
+  return saveLastMapLocation(location)
+  // #endif
   // #ifdef MP-WEIXIN
   return saveLastMapLocation(await getSharedUserLocationOnce(coordType))
   // #endif
@@ -1372,6 +1377,16 @@ const imagePreviewLoading = ref(false)
 async function openHistoryImage(m) {
   if (imagePreviewLoading.value) return
   imagePreviewLoading.value = true
+  let loadingShown = false
+  const hidePreviewLoading = () => {
+    if (!loadingShown) return
+    loadingShown = false
+    uni.hideLoading()
+  }
+  // #ifdef APP-PLUS
+  uni.showLoading({ title: '图片加载中...', mask: true })
+  loadingShown = true
+  // #endif
   try {
     let value = m && m.imageUrl
     if (!value && m && m.hasImage && m.id !== undefined) {
@@ -1380,14 +1395,17 @@ async function openHistoryImage(m) {
       if (result?.code === 0 && result.data?.image) value = result.data.image
     }
     if (!value) {
+      hidePreviewLoading()
       uni.showToast({ title: '没有图片', icon: 'none' })
       return
     }
-    await previewTrashBinImage(value)
+    await previewTrashBinImage(value, { onReady: hidePreviewLoading })
   } catch (error) {
+    hidePreviewLoading()
     console.warn('[map-image-preview]', { stage: error?.stage, code: error?.code, detail: error?.detail || error?.errMsg || error?.message })
     uni.showToast({ title: error?.message || error?.errMsg || '图片加载失败，请重试', icon: 'none' })
   } finally {
+    hidePreviewLoading()
     imagePreviewLoading.value = false
   }
 }

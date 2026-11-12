@@ -6,7 +6,7 @@ import { startLocalMapServer, stopLocalMapServer } from './app-map-local-server-
 let active = true, ready = false
 const preloader = createAppMapPreloader({
   getNetworkType: () => new Promise(resolve => uni.getNetworkType({ success: result => resolve(result.networkType), fail: () => resolve('none') })),
-  createWindow: sdkUrl => {
+  createWindow: (sdkUrl, finish) => {
     const base = startLocalMapServer()
     if (!base) return null
     let released = false
@@ -15,6 +15,11 @@ const preloader = createAppMapPreloader({
       const view = plus.webview.create('_www/static/app-map/preload.html', 'ftx-map-sdk-preload', {
         width: '1px', height: '1px', left: '-2px', top: '-2px', render: 'always', cachemode: 'default'
       }, { sdkPreloadUrl: sdkUrl, frameUrl: base + 'index.html' })
+      view.addEventListener('titleUpdate', () => {
+        const title = view.getTitle()
+        if (title === 'app-map-sdk-loaded') finish('loaded')
+        else if (title === 'app-map-sdk-failed') finish('failed')
+      })
       view.addEventListener('close', release)
       return {
         addEventListener: (type, listener) => view.addEventListener(type, listener),
@@ -33,5 +38,8 @@ function schedule() {
   if (key) preloader.schedule(`https://map.qq.com/api/gljs?v=1.exp&key=${encodeURIComponent(key)}`)
 }
 onAppPageReady(() => { ready = true; schedule() })
+uni.onNetworkStatusChange?.(result => { if (result.isConnected) schedule() })
 export function setAppMapPreloadActive(value) { active = !!value; if (active) schedule(); else preloader.cancel() }
+export function pauseAppMapPreload() { preloader.cancel() }
+export function markAppMapSdkReady() { preloader.complete() }
 export function disposeAppMapPreload() { preloader.dispose() }

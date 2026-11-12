@@ -17,6 +17,16 @@ export default defineConfig(async ({ mode }) => {
   return {
     // 官网仅作为 H5 静态页面发布，不进入小程序 / APP 的业务路由。
     ...(process.env.UNI_PLATFORM === 'h5' ? { publicDir: resolve(__dirname, 'public') } : {}),
+    // H5 预扫描读取条件编译前的源码，跳过仅供 APP 使用、没有 JS 入口的 UTS 插件。
+    ...(process.env.UNI_PLATFORM === 'h5' ? {
+      optimizeDeps: {
+        exclude: [
+          '@/uni_modules/ftx-huawei-push',
+          '@/uni_modules/ftx-map-local-server',
+          '@/uni_modules/ftx-upload-webp'
+        ]
+      }
+    } : {}),
     plugins: [
       h5DevCompressionPlugin(),
       uni({ vueOptions: { template: { compilerOptions: { isCustomElement: tag => tag === 'smart-sort-xr' } } } }),

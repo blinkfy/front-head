@@ -3,7 +3,7 @@
     <!-- #ifdef MP-WEIXIN -->
     <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
     <!-- #endif -->
-    <view :animation="tabPageAnimation" class="map-header tab-page-motion" :style="{ paddingTop: (statusBarHeight + 14) + 'px' }">
+    <view class="map-header tab-page-motion" :style="{ paddingTop: (statusBarHeight + 14) + 'px' }">
       <view class="map-header-content">
         <button v-if="selectMode || viewMode" class="map-header-back" aria-label="返回" @click="selectMode ? cancelSelect() : handleBack()">‹</button>
         <ManifestIcon v-else id="nearby_map" class="map-header-icon" />
@@ -15,17 +15,17 @@
     </view>
     <view class="map-stage">
     <!-- #ifdef MP-WEIXIN -->
-    <view class="map-motion-layer tab-page-motion" :animation="tabPageAnimation">
+    <view class="map-motion-layer tab-page-motion">
     <!-- #endif -->
     <!-- H5端用div容器，微信小程序端用<map>组件 -->
-    <div v-if="isH5" :id="mapContainerId" class="map-canvas tab-page-motion"></div>
+    <div v-if="isH5" :id="mapContainerId" class="map-canvas"></div>
     <!-- #ifdef APP-PLUS -->
-    <AppTencentMap :covered="showAddModal" ref="appMapRef" class="map-canvas tab-page-motion" :latitude="center.latitude" :longitude="center.longitude" :scale="mapScale" :enable-satellite="satellite" :markers="markers" :user-location="userLocation" @updated="onNativeMapUpdated" @error="onNativeMapError" @markertap="onMarkerTap" @regionchange="onRegionChange" />
+    <AppTencentMap :covered="showAddModal" ref="appMapRef" class="map-canvas" :latitude="center.latitude" :longitude="center.longitude" :scale="mapScale" :enable-satellite="satellite" :markers="markers" :user-location="userLocation" @updated="onNativeMapUpdated" @error="onNativeMapError" @markertap="onMarkerTap" @regionchange="onRegionChange" />
     <!-- #endif -->
     <!-- #ifndef APP-PLUS -->
     <map v-else-if="!showAddModal"
       id="select-map"
-      class="map-canvas tab-page-motion"
+      class="map-canvas"
       :latitude="center.latitude"
       :longitude="center.longitude"
       :scale="mapScale"
@@ -175,7 +175,7 @@
     <view v-if="selectMode && isH5" class="location-control" @click="moveToMyLocation"><ManifestIcon id="map_location" /></view>
 
     <!-- 右下角新增垃圾桶按钮（非选择模式且非查看模式才显示） -->
-    <view :animation="tabPageAnimation" v-if="!selectMode && !viewMode && !showAddModal" class="add-btn-container tab-page-motion">
+    <view v-if="!selectMode && !viewMode && !showAddModal" class="add-btn-container">
       <view class="add-btn" @click="openAddModal">
         <text class="add-btn-icon">+</text>
         <text class="add-btn-text">新增垃圾桶</text>
@@ -306,7 +306,7 @@ import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transi
 */
 
 const { isMapAdmin, loadMapBins } = useMapAdminBins()
-const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages-dark/map/map')
+const { tabPageClass } = useTabPageTransition('pages-dark/map/map')
 onShow(() => {
   if (isMapAdmin.value && !selectMode.value && !viewMode.value) loadTrashBinList()
 })
@@ -562,7 +562,7 @@ function mapViewScope() { return `${mapViewEpoch}|${mapViewOwner()}` }
 onHide(() => { mapViewEpoch++ })
 onUnload(() => { mapPageDisposed = true })
 onBeforeUnmount(() => { mapPageDisposed = true })
-const mapScale = ref(12)
+const mapScale = ref(14)
 const { satellite, basemapLoading, setBasemap, bindH5Map, getSatelliteReference, onNativeMapUpdated, onNativeMapError, onNativeMapRegionChange } = useMapBasemap({ isH5, options: pageOptions, appWebMap: true, suspended: () => showAddModal.value })
 
 // 小程序 setup 阶段可能还没有路由参数，以 onLoad 收到的参数为准。
@@ -1068,6 +1068,11 @@ onMounted(async () => {
   }
 })
 async function getUserLocationOnce(coordType = 'gcj02') {
+  // #ifdef APP-PLUS
+  const location = await getSharedUserLocationOnce(coordType, { highAccuracy: true, includeAccuracy: true })
+  console.info('[app-map-location] ' + JSON.stringify({ coordinateSystem: coordType, accuracy: location.accuracy ?? null }))
+  return saveLastMapLocation(location)
+  // #endif
   // #ifdef MP-WEIXIN
   return saveLastMapLocation(await getSharedUserLocationOnce(coordType))
   // #endif
@@ -1368,6 +1373,16 @@ const imagePreviewLoading = ref(false)
 async function openHistoryImage(m) {
   if (imagePreviewLoading.value) return
   imagePreviewLoading.value = true
+  let loadingShown = false
+  const hidePreviewLoading = () => {
+    if (!loadingShown) return
+    loadingShown = false
+    uni.hideLoading()
+  }
+  // #ifdef APP-PLUS
+  uni.showLoading({ title: '图片加载中...', mask: true })
+  loadingShown = true
+  // #endif
   try {
     let value = m && m.imageUrl
     if (!value && m && m.hasImage && m.id !== undefined) {
@@ -1376,14 +1391,17 @@ async function openHistoryImage(m) {
       if (result?.code === 0 && result.data?.image) value = result.data.image
     }
     if (!value) {
+      hidePreviewLoading()
       uni.showToast({ title: '没有图片', icon: 'none' })
       return
     }
-    await previewTrashBinImage(value)
+    await previewTrashBinImage(value, { onReady: hidePreviewLoading })
   } catch (error) {
+    hidePreviewLoading()
     console.warn('[map-image-preview]', { stage: error?.stage, code: error?.code, detail: error?.detail || error?.errMsg || error?.message })
     uni.showToast({ title: error?.message || error?.errMsg || '图片加载失败，请重试', icon: 'none' })
   } finally {
+    hidePreviewLoading()
     imagePreviewLoading.value = false
   }
 }

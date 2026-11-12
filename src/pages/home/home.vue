@@ -19,7 +19,7 @@
     </view>
     
     <!-- 顶部绿色背景区域 -->
-    <view :animation="tabPageAnimation" class="header-bg tab-page-motion">
+    <view class="header-bg tab-page-motion">
       <!-- 装饰元素 -->
       <view class="header-deco">
         <view class="deco-leaf leaf-1">🌿</view>
@@ -46,7 +46,7 @@
     </view>
 
     <!-- 主内容区域-->
-    <view :animation="tabPageAnimation" class="content-wrapper tab-page-motion">
+    <view class="content-wrapper tab-page-motion">
       <!-- 设备连接状态卡片-->
       <view v-if="hasConnection" class="device-card" @click="goToDeviceConnection">
         <view class="device-card-content">
@@ -429,7 +429,7 @@ import {
 } from '@/utils/recognition-task.mjs'
 import { getRecognitionFailureCopy } from '@/utils/recognition-failure-copy.mjs'
 
-const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages/home/home')
+const { tabPageClass } = useTabPageTransition('pages/home/home')
 const resultImage = ref('')
 const showResultImagePreview = ref(false)
 const resultCollapsed = ref(false)
@@ -1769,6 +1769,14 @@ function closeAchievementModal() {
   position: relative;
   overflow-x: hidden;
 }
+
+/* #ifdef APP-PLUS */
+.home-page {
+  /* 底部导航预留空间计入最小页面高度，避免内容较短时产生额外滚动。 */
+  box-sizing: border-box;
+  padding-bottom: calc(140rpx + env(safe-area-inset-bottom, 0px));
+}
+/* #endif */
 
 /* 背景装饰 */
 .bg-decoration {

@@ -32,7 +32,7 @@ for (const path of [bookingPath, cardPath]) {
   }
 }
 
-const api = { fetchAiAction: async () => ({}), updateAiAction: async () => ({}), confirmAiAction: async () => ({}), createBookingDraft: async () => ({}), newActionRequestId: () => 'replacement-request' }
+const api = { fetchAiAction: async () => ({}), updateAiAction: async () => ({}), confirmAiAction: async () => ({}), createBookingDraft: async () => ({}), newActionRequestId: () => 'replacement-request', showAppModal() {} }
 const methodSource = read('../src/pages-nonTheme/utils/booking-draft-methods.js')
 const methodContext = { ...api, Date, Number, Object, String }
 runInNewContext(`${methodSource.replace(/^import .*\r?\n/gm, '').replace('export const bookingDraftMethods =', 'this.bookingDraftMethods =')}`, methodContext)
@@ -40,12 +40,17 @@ const bookingDraftMethods = methodContext.bookingDraftMethods
 
 const bookingSource = parse(read(bookingPath), { filename: bookingPath }).descriptor.script.content
 const bookingContext = {
+  AppConfirmDialog: {},
+  RecyclingServiceMap: {},
+  bookingUnitText: unit => ({ kg: '公斤', piece: '件', unit: '台', bag: '袋' })[unit] || '',
   __bookingDraftMethods: bookingDraftMethods,
   getWasteTypes: async () => [], createBooking: async () => ({ data: { id: 1 } }), getAvailableTimeSlots: async () => [],
+  mutationData: (_writes, _action, payload) => payload,
   getUserProfile: async () => ({}), updateUserProfile: async () => ({}), splitShopAddress: () => ({ region: ['', '', ''], detail: '' }), composeShopAddress: () => '',
   playUiSound() {}, formatBookingDate, ManifestIcon: {}, ShopRegionPicker: {}, ShopAddressPicker: {},
   console: { warn() {}, error() {} }, setTimeout() {},
   uni: { showToast() {}, showModal() {}, navigateTo() {}, redirectTo() {}, navigateBack() {}, reLaunch() {}, getStorageSync: () => '', setStorageSync() {} }
+  , showAppModal() {}
 }
 const executableBooking = `const bookingDraftMethods = this.__bookingDraftMethods;\n${bookingSource.replace(/^import .*\r?\n/gm, '').replace(/export default\s*/, 'this.bookingComponent = ')}`
 runInNewContext(executableBooking, bookingContext, { filename: 'booking.vue' })
@@ -59,6 +64,7 @@ const makeState = (overrides = {}) => {
     addressRegion: ['台北市', '台北市', '大安區'], addressDetail: '測試路 1 號', contactPhone: '0912345678', remark: '请预约',
     wasteTypes: [{ id: 7, price: 10 }],
     ...component.methods,
+    syncServiceCoverage() {},
     validateBookingForm: () => true,
     async loadTimeSlots() { this.timeSlotsDate = this.dateValues[this.selectedDate]; this.timeSlots = [{ time: '10:00-11:00', available: true }]; this.selectedTimeSlot = '10:00-11:00' },
     ...overrides
@@ -96,11 +102,11 @@ state.draftId = 'booking-1'
 // Re-evaluate the module with counters so the actual production methods execute against the mock API.
 const liveContext = {
   fetchAiAction: vmContext.fetchAiAction, updateAiAction: vmContext.updateAiAction, confirmAiAction: vmContext.confirmAiAction,
-  createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'replacement-request', uni: vmContext.uni, Date, Number, Object, String
+  createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'replacement-request', uni: vmContext.uni, showAppModal() {}, Date, Number, Object, String
 }
 runInNewContext(`${methodSource.replace(/^import .*\r?\n/gm, '').replace('export const bookingDraftMethods =', 'this.bookingDraftMethods =')}`, liveContext)
 Object.assign(state, liveContext.bookingDraftMethods)
-await state.loadBookingDraft({ data: { id: 'booking-1', type: 'booking', status: 'pending', version: 1, expiresAt: '2999-01-01T00:00:00Z', payload: { items: [{ typeId: 7, weight: 1 }], appointmentDate: '2026-11-04', appointmentTimeSlot: '10:00-11:00' } } })
+await state.loadBookingDraft({ data: { id: 'booking-1', type: 'booking', status: 'pending', version: 1, expiresAt: '2999-01-01T00:00:00Z', payload: { items: [{ typeId: 7, quantity: 1, quantityUnit: 'kg', weight: 1 }], photoIds: [], accessNotes: '', appointmentDate: '2026-11-04', appointmentTimeSlot: '10:00-11:00' } } })
 assert.equal(state.selectedTypes[0], 7)
 assert.equal(state.itemWeights[7], 1)
 assert.equal(state.selectedTimeSlot, '10:00-11:00')
@@ -120,7 +126,7 @@ const retryState = makeState({ draftId: 'booking-1', draft: { id: 'booking-1', v
   async loadTimeSlots() { this.timeSlotsDate = this.dateValues[this.selectedDate]; this.timeSlots = [{ time: '10:00-11:00', available: true }]; this.selectedTimeSlot = '10:00-11:00' }
 })
 // Install methods bound to retry's independently mocked API.
-const retryContext = { fetchAiAction: retryState.fetchAiAction, updateAiAction: retryState.updateAiAction, confirmAiAction: retryState.confirmAiAction, createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'retry-id', uni: vmContext.uni, Date, Number, Object, String }
+const retryContext = { fetchAiAction: retryState.fetchAiAction, updateAiAction: retryState.updateAiAction, confirmAiAction: retryState.confirmAiAction, createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'retry-id', uni: vmContext.uni, showAppModal() {}, Date, Number, Object, String }
 runInNewContext(`${methodSource.replace(/^import .*\r?\n/gm, '').replace('export const bookingDraftMethods =', 'this.bookingDraftMethods =')}`, retryContext)
 Object.assign(retryState, retryContext.bookingDraftMethods)
 await retryState.submitDraftBooking()
@@ -137,7 +143,7 @@ const changed = makeState({ draftId: 'booking-1', draft: { id: 'booking-1', vers
   updateAiAction: async () => { stalePatch++ }, confirmAiAction: async () => { staleConfirm++ },
   async loadTimeSlots() { this.timeSlotsDate = this.dateValues[this.selectedDate] }
 })
-const changedContext = { fetchAiAction: changed.fetchAiAction, updateAiAction: changed.updateAiAction, confirmAiAction: changed.confirmAiAction, createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'x', uni: vmContext.uni, Date, Number, Object, String }
+const changedContext = { fetchAiAction: changed.fetchAiAction, updateAiAction: changed.updateAiAction, confirmAiAction: changed.confirmAiAction, createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'x', uni: vmContext.uni, showAppModal() {}, Date, Number, Object, String }
 runInNewContext(`${methodSource.replace(/^import .*\r?\n/gm, '').replace('export const bookingDraftMethods =', 'this.bookingDraftMethods =')}`, changedContext)
 Object.assign(changed, changedContext.bookingDraftMethods)
 await changed.submitDraftBooking()
@@ -150,7 +156,7 @@ let expiredConfirm = 0
 const expiredState = makeState({ draftId: 'booking-1', draft: { id: 'booking-1', version: 1, status: 'pending' }, draftExpired: false,
   fetchAiAction: async id => ({ data: { id, type: 'booking', status: 'pending', version: 1, expiresAt: '2000-01-01T00:00:00Z' } }),
   updateAiAction: async () => { expiredPatch++ }, confirmAiAction: async () => { expiredConfirm++ } })
-const expiredContext = { fetchAiAction: expiredState.fetchAiAction, updateAiAction: expiredState.updateAiAction, confirmAiAction: expiredState.confirmAiAction, createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'x', uni: vmContext.uni, Date, Number, Object, String }
+const expiredContext = { fetchAiAction: expiredState.fetchAiAction, updateAiAction: expiredState.updateAiAction, confirmAiAction: expiredState.confirmAiAction, createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'x', uni: vmContext.uni, showAppModal() {}, Date, Number, Object, String }
 runInNewContext(`${methodSource.replace(/^import .*\r?\n/gm, '').replace('export const bookingDraftMethods =', 'this.bookingDraftMethods =')}`, expiredContext)
 Object.assign(expiredState, expiredContext.bookingDraftMethods)
 await expiredState.submitDraftBooking()
@@ -163,7 +169,7 @@ assert.equal(createCalls, 1, 'replacement draft creation requires the explicit r
 
 let removedTypePatch = 0
 const oldTypeState = makeState({ draftId: 'booking-old-type', draft: { id: 'booking-old-type', version: 1, status: 'pending', snapshot: { details: [{ typeId: 99, name: '旧式家具' }] }, payload: { items: [{ typeId: 99, weight: 2 }] } },
-  selectedTypes: [99], itemWeights: { 99: 2 }, wasteTypes: [{ id: 7, name: '纸箱', price: 10 }],
+  selectedTypes: [99], itemWeights: { 99: 2 }, wasteTypes: [{ id: 7, name: '纸箱', price: 10 }], allowedWasteTypes: [], matchingAreas: [],
   fetchAiAction: async id => ({ data: { id, type: 'booking', status: 'pending', version: 1, expiresAt: '2999-01-01T00:00:00Z', payload: { items: [{ typeId: 99, weight: 2 }] } } }),
   updateAiAction: async (_id, body) => { removedTypePatch++; return { data: { version: 2, payload: body.payload } } },
   confirmAiAction: async () => ({ data: { booking: { id: 88 } } }),
@@ -175,7 +181,7 @@ oldTypeState.toggleWasteType(unavailableItems[0])
 assert.deepEqual(Array.from(oldTypeState.selectedTypes), [])
 oldTypeState.toggleWasteType(oldTypeState.wasteTypes[0])
 assert.deepEqual(Array.from(oldTypeState.selectedTypes), [7], 'the user can remove the disabled type and choose an available type')
-const oldTypeContext = { fetchAiAction: oldTypeState.fetchAiAction, updateAiAction: oldTypeState.updateAiAction, confirmAiAction: oldTypeState.confirmAiAction, createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'x', uni: vmContext.uni, Date, Number, Object, String }
+const oldTypeContext = { fetchAiAction: oldTypeState.fetchAiAction, updateAiAction: oldTypeState.updateAiAction, confirmAiAction: oldTypeState.confirmAiAction, createBookingDraft: vmContext.createBookingDraft, newActionRequestId: () => 'x', uni: vmContext.uni, showAppModal() {}, Date, Number, Object, String }
 runInNewContext(`${methodSource.replace(/^import .*\r?\n/gm, '').replace('export const bookingDraftMethods =', 'this.bookingDraftMethods =')}`, oldTypeContext)
 Object.assign(oldTypeState, oldTypeContext.bookingDraftMethods)
 await oldTypeState.submitDraftBooking()
@@ -193,7 +199,7 @@ bookingUi = createPlainContext.bookingComponent
 await bookingUi.methods.submitBooking.call(plainState)
 assert.equal(createPlain, 1, 'the ordinary no-draft flow still calls createBooking')
 
-const estimateState = makeState({ selectedTypes: [7], itemWeights: { 7: 3 } })
+const estimateState = makeState({ selectedTypes: [7], itemWeights: { 7: 3 }, itemUnits: { 7: 'kg' }, matchingAreas: [{ priceGuides: [{ typeId: 7, unit: 'kg', minPrice: 12, maxPrice: 12 }] }] })
 estimateState.selectedWasteItems = [{ id: 7, price: 12 }]
 component.methods.calculateEstimate.call(estimateState)
 assert.equal(estimateState.estimateAmount, 36)

@@ -94,7 +94,14 @@ async function initialize() {
     return
   }
   if (disposed || version !== lifecycleVersion) return
-  send('phase', { phase: 'sdk_ready', satellite: !!latestPacket?.satellite })
+  let cache = 'unknown'
+  try {
+    const url = `https://map.qq.com/api/gljs?v=1.exp&key=${encodeURIComponent(latestPacket.key)}`
+    const entry = window.performance?.getEntriesByName(url)?.slice(-1)[0]
+    if (entry?.transferSize > 0) cache = 'network'
+    else if (entry?.decodedBodySize > 0) cache = 'hit'
+  } catch (_) { /* Cross-origin timing is not always exposed by WebViews. */ }
+  send('phase', { phase: 'sdk_ready', cache, satellite: !!latestPacket?.satellite })
 
   try {
     renderer = createAppTencentMap({
@@ -164,16 +171,11 @@ function onVisibilityChange() {
 }
 
 if (token.startsWith('sdk-preload:') && location.protocol === 'http:' && location.hostname === '127.0.0.1') {
-  // Download only; do not execute the SDK or create a map/WebGL context.
+  // Execute core SDK dependencies, but leave map/WebGL and tiles for the real page.
   const key = decodeURIComponent(token.slice('sdk-preload:'.length))
-  const link = document.createElement('link')
-  link.rel = 'preload'
-  link.as = 'script'
-  link.href = `https://map.qq.com/api/gljs?v=1.exp&key=${encodeURIComponent(key)}`
-  link.fetchPriority = 'low'
-  link.onload = () => parent.postMessage({ channel: 'app-map-sdk-preload', phase: 'loaded' }, '*')
-  link.onerror = () => parent.postMessage({ channel: 'app-map-sdk-preload', phase: 'failed' }, '*')
-  document.head.appendChild(link)
+  loadSdk(key).then(() => {
+    parent.postMessage({ channel: 'app-map-sdk-preload', phase: 'loaded' }, '*')
+  }, () => parent.postMessage({ channel: 'app-map-sdk-preload', phase: 'failed' }, '*'))
 } else {
   window.addEventListener('message', onMessage)
   window.addEventListener('pagehide', onPageHide)

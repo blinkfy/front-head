@@ -1,3 +1,4 @@
+import { bookingPhotoUrl } from '../api/booking.js'
 import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { fetchAiAction, updateAiAction, confirmAiAction, createBookingDraft, newActionRequestId } from '@/api/ai-actions.js'
 
@@ -19,6 +20,9 @@ export const bookingDraftMethods = {
       if (draft.status !== 'pending') throw new Error('预约草稿已关闭，请返回聊天重新准备')
       const payload = draft.payload || {}
       this.remark = payload.notes || ''
+      this.accessNotes = payload.accessNotes || ''
+      this.photos = (draft.snapshot?.photos || payload.photos || []).filter(photo => photo?.id).map(photo => ({ ...photo, url: bookingPhotoUrl(photo.url) }))
+      this.draftPhotoIds = Array.isArray(payload.photoIds) ? payload.photoIds : []
       if (payload.address) this.address = payload.address
       if (Array.isArray(payload.addressRegion) && payload.addressRegion.length === 3) this.addressRegion = [...payload.addressRegion]
       if (payload.contactPhone) this.contactPhone = payload.contactPhone
@@ -26,7 +30,9 @@ export const bookingDraftMethods = {
       if (payload.addressCoordinateSystem === 'wgs84' && payload.addressLat != null && payload.addressLng != null) this.addressCoordinates = { address: this.address, latitude: Number(payload.addressLat), longitude: Number(payload.addressLng), coordinateSystem: 'wgs84', ...(Number.isFinite(payload.addressAccuracy) && payload.addressAccuracy >= 0 ? { accuracyMeters: Math.min(200, payload.addressAccuracy) } : {}) }; else this.addressCoordinates = null
       this.syncServiceCoverage()
       this.selectedTypes = (payload.items || []).map(item => Number(item.typeId))
-      this.itemWeights = Object.fromEntries((payload.items || []).map(item => [item.typeId, item.weight]))
+      this.itemWeights = Object.fromEntries((payload.items || []).map(item => [item.typeId, item.quantity ?? item.weight ?? '']))
+      this.itemUnits = Object.fromEntries((payload.items || []).map(item => [item.typeId, item.quantityUnit || 'kg']))
+      this.itemQuantityNotes = Object.fromEntries((payload.items || []).map(item => [item.typeId, item.quantityNote || '']))
       this.selectedDate = 'today'
       if (payload.appointmentDate) {
         if (payload.appointmentDate === this.dateValues.tomorrow) this.selectedDate = 'tomorrow'
@@ -42,7 +48,7 @@ export const bookingDraftMethods = {
   },
   getBookingPayload() {
     const coordinate = this.addressCoordinates?.address === this.address ? this.addressCoordinates : null
-    return { serviceAreaId: this.serviceAreaId, ...(this.addressRegion.length === 3 && this.addressRegion.every(part => String(part || '').trim()) ? { addressRegion: this.addressRegion.map(part => String(part || '').trim()) } : {}), ...(coordinate ? { addressLat: coordinate.latitude, addressLng: coordinate.longitude, addressCoordinateSystem: coordinate.coordinateSystem, ...(coordinate.accuracyMeters != null ? { addressAccuracy: coordinate.accuracyMeters } : {}) } : {}), items: this.selectedTypes.map(typeId => ({ typeId, weight: Number(this.itemWeights[typeId] ?? 1) })),
+    return { serviceAreaId: this.serviceAreaId, ...(this.addressRegion.length === 3 && this.addressRegion.every(part => String(part || '').trim()) ? { addressRegion: this.addressRegion.map(part => String(part || '').trim()) } : {}), ...(coordinate ? { addressLat: coordinate.latitude, addressLng: coordinate.longitude, addressCoordinateSystem: coordinate.coordinateSystem, ...(coordinate.accuracyMeters != null ? { addressAccuracy: coordinate.accuracyMeters } : {}) } : {}), items: this.selectedTypes.map(typeId => { const raw = this.itemWeights[typeId]; const quantity = raw == null || String(raw).trim() === '' ? null : Number(raw); const quantityUnit = this.itemUnits[typeId] || 'kg'; return { typeId, quantity, quantityUnit, quantityNote: this.itemQuantityNotes[typeId] || '', ...(quantityUnit === 'kg' && quantity != null ? { weight: quantity } : {}) } }), photoIds: [...new Set([...this.draftPhotoIds, ...this.photos.map(photo => photo.id)])], accessNotes: this.accessNotes.trim(),
       appointmentDate: this.timeSlotsDate, appointmentTimeSlot: this.selectedTimeSlot,
       address: this.address, contactPhone: this.contactPhone.trim(), notes: this.remark }
   },

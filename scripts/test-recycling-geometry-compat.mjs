@@ -152,3 +152,99 @@ assert.deepEqual(appLines[0].points.map(point => [point.latitude, point.longitud
 state.completed.value = true
 assert.equal(getAppLines.value.length, 0, 'completed polygon leaves the draft line layer')
 console.log('ok App two-point draft line uses converted coordinates and clears on completion')
+
+function extractFunction(source, start, end) {
+  const from = source.indexOf(start)
+  const to = source.indexOf(end, from)
+  assert.notEqual(from, -1, `source contains ${start}`)
+  assert.notEqual(to, -1, `source contains ${end}`)
+  return source.slice(from, to).trim()
+}
+
+const appComponentSource = preprocess(componentSource, 'APP-PLUS')
+const initializeSource = extractFunction(appComponentSource, 'async function initialize() {', '\nasync function search()')
+const verifyReadySource = extractFunction(appComponentSource, 'async function verifyNativeReady(token) {', '\nasync function pickNativeCenter()')
+for (const [binding, layer] of [['polygons', 'nativePolygons'], ['circles', 'nativeCircles'], ['polyline', 'nativeLines'], ['markers', 'nativeMarkers']]) {
+  assert.match(componentSource, new RegExp(`:${binding}="nativeOverlaysReady \\? ${layer} : \\[\\]"`), `${binding} stay empty until the native map is ready`)
+}
+
+const lifecycle = {
+  nativeMounted: { value: false }, nativeOverlaysReady: { value: false }, nativeCenterBusy: { value: false },
+  loading: { value: true }, mapError: { value: '' }, locationHint: { value: '' },
+  disposed: false, generation: 0, timeout: null, trace: [],
+  clearTimeout() {},
+  nextTick: async () => lifecycle.trace.push({ event: 'nextTick', mounted: lifecycle.nativeMounted.value, overlaysReady: lifecycle.nativeOverlaysReady.value }),
+  fitMap: () => lifecycle.trace.push({ event: 'fitMap' }),
+  verifyNativeReady: token => lifecycle.trace.push({ event: 'verifyNativeReady', token }),
+  locateInitialViewport: token => lifecycle.trace.push({ event: 'locateInitialViewport', token })
+}
+let nativeMountedValue = false
+Object.defineProperty(lifecycle.nativeMounted, 'value', {
+  get: () => nativeMountedValue,
+  set: value => { nativeMountedValue = value; lifecycle.trace.push({ event: 'mounted', value }) }
+})
+lifecycle.nativeMounted.value = false
+lifecycle.trace.length = 0
+vm.runInNewContext(`${initializeSource}\nglobalThis.runInitialize = initialize`, lifecycle)
+await lifecycle.runInitialize()
+assert.equal(lifecycle.nativeMounted.value, true, 'first initialization mounts the initially absent map')
+assert.deepEqual(lifecycle.trace.filter(entry => entry.event === 'mounted').map(entry => entry.value), [true], 'first initialization does not redundantly unmount the map')
+assert.equal(lifecycle.trace.filter(entry => entry.event === 'nextTick').length, 1, 'initial mount waits once after mounting')
+assert.equal(lifecycle.trace.some(entry => entry.event === 'verifyNativeReady'), true, JSON.stringify(lifecycle.trace))
+assert.equal(lifecycle.nativeOverlaysReady.value, false, 'initial mount keeps layers gated until readiness')
+
+lifecycle.trace.length = 0
+lifecycle.nativeOverlaysReady.value = true
+await lifecycle.runInitialize()
+const oldMapTick = lifecycle.trace.findIndex(entry => entry.event === 'nextTick' && entry.mounted && !entry.overlaysReady)
+const unmountIndex = lifecycle.trace.findIndex(entry => entry.event === 'nextTick' && !entry.mounted)
+assert.ok(oldMapTick >= 0 && unmountIndex > oldMapTick, 'retry flushes empty overlays before unmounting the old map')
+assert.equal(lifecycle.nativeMounted.value, true, 'retry mounts a fresh map after teardown')
+assert.deepEqual(lifecycle.trace.filter(entry => entry.event === 'mounted').map(entry => entry.value), [false, true], 'retry unmounts and remounts exactly once')
+assert.equal(lifecycle.nativeOverlaysReady.value, false, 'retry keeps overlays gated on the fresh map')
+console.log('ok App native map first mount, overlay gating, and retry teardown order')
+
+function deferred() {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  return { promise, resolve }
+}
+const pendingCenter = deferred()
+const readiness = {
+  disposed: false, generation: 4,
+  nativeMounted: { value: false }, nativeOverlaysReady: { value: false }, loading: { value: true },
+  getNativeCenter: () => pendingCenter.promise,
+  nativeReadyCalls: 0,
+  nativeReady: () => { readiness.nativeReadyCalls++; readiness.nativeOverlaysReady.value = true },
+  nativeError: () => { throw new Error('unexpected native error') }
+}
+vm.runInNewContext(`${verifyReadySource}\nglobalThis.runVerifyNativeReady = verifyNativeReady`, readiness)
+await readiness.runVerifyNativeReady(3)
+assert.equal(readiness.nativeReadyCalls, 0, 'an already stale probe exits before reading map state')
+readiness.generation = 5
+const unmountProbe = readiness.runVerifyNativeReady(5)
+readiness.disposed = true
+pendingCenter.resolve({ latitude: 25, longitude: 121 })
+await unmountProbe
+assert.equal(readiness.nativeReadyCalls, 0, 'a probe resolving after unmount does not expose overlays')
+assert.equal(readiness.nativeMounted.value, false, 'a probe never remounts the native map')
+
+readiness.disposed = false
+readiness.generation = 6
+const lateProbe = deferred()
+readiness.getNativeCenter = () => lateProbe.promise
+const lateProbeTask = readiness.runVerifyNativeReady(6)
+readiness.loading.value = false
+lateProbe.resolve({ latitude: 25, longitude: 121 })
+await lateProbeTask
+assert.equal(readiness.nativeReadyCalls, 0, 'a late center result after nativeError does not clear the error or expose overlays')
+assert.equal(readiness.nativeOverlaysReady.value, false)
+console.log('ok App native readiness ignores stale, unmounted, and post-error probes')
+
+readiness.loading.value = true
+readiness.nativeMounted.value = true
+readiness.getNativeCenter = async () => ({ latitude: 25, longitude: 121 })
+await readiness.runVerifyNativeReady(6)
+assert.equal(readiness.nativeReadyCalls, 1, 'a current successful center probe makes the map ready')
+assert.equal(readiness.nativeOverlaysReady.value, true, 'ready maps can display service overlays')
+console.log('ok App native readiness exposes overlays after successful initialization')

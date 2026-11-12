@@ -1,5 +1,5 @@
 <template>
-  <map v-if="rendererFallback" v-show="!covered" :id="hostId + '-normal'" class="app-tencent-map"
+  <map v-if="rendererFallback && !mapExpired" v-show="!covered" :id="hostId + '-normal'" class="app-tencent-map"
     :latitude="latitude" :longitude="longitude" :scale="scale" :markers="markers" show-location
     @regionchange="$emit('regionchange', $event)" @markertap="$emit('markertap', $event)" @tap="$emit('tap', $event)" />
   <view v-else :id="hostId" class="app-tencent-map" :map-packet="packet" :change:map-packet="mapView.update" />
@@ -10,9 +10,11 @@ import { mapConfig } from '@/api/map-config.js'
 import manifest from '../manifest.json'
 import { baseUrl } from '@/api/settings.js'
 import { getCurrentInstance } from 'vue'
+import { createAppMapRetention } from '../utils/app-map-retention.mjs'
 import { onHide, onShow, onUnload } from '@dcloudio/uni-app'
 // #ifdef APP-PLUS
 import { startLocalMapServer, stopLocalMapServer } from '../utils/app-map-local-server-app.js'
+import { pauseAppMapPreload, markAppMapSdkReady } from '../utils/app-map-preload-app.js'
 // #endif
 let serial = 0
 export default {
@@ -23,7 +25,7 @@ export default {
   },
   emits: ['updated', 'error', 'regionchange', 'tap', 'markertap'],
   data() {
-    return { hostId: `app-tencent-map-${Date.now()}-${++serial}`, command: null, rendererFallback: false, mapActive: true, mapDisposed: false,
+    return { hostId: `app-tencent-map-${Date.now()}-${++serial}`, command: null, rendererFallback: false, mapActive: true, mapDisposed: false, mapExpired: false, frameGeneration: 0,
       assetBase: baseUrl.replace(/\/$/, '') + '/web/',
       frameUrl: baseUrl.replace(/\/$/, '') + '/web/static/app-map/index.html' }
   },
@@ -35,7 +37,7 @@ export default {
   computed: {
     packet() {
       const key = mapConfig.qqMapKey || mapConfig.qqMapKeyBackup || manifest['app-plus']?.distribute?.sdkConfigs?.maps?.tencent?.key
-      return { hostId: this.hostId, active: this.mapActive, disposed: this.mapDisposed, key, assetBase: this.assetBase, frameUrl: this.frameUrl,
+      return { hostId: this.hostId, active: this.mapActive, generation: this.frameGeneration, disposed: this.mapDisposed || this.mapExpired, key, assetBase: this.assetBase, frameUrl: this.frameUrl,
         latitude: this.latitude, longitude: this.longitude, scale: this.scale,
         satellite: this.enableSatellite, markers: this.markers, userLocation: this.userLocation, command: this.command }
     }
@@ -45,13 +47,28 @@ export default {
     this.querySerial = 0
     this.localMapBase = ''
     this.isAndroidMap = uni.getSystemInfoSync().platform === 'android'
+    // #ifdef APP-PLUS
+    pauseAppMapPreload()
+    // #endif
     this.prepareLocalMapServer()
+    this.retention = createAppMapRetention({ release: () => {
+      this.mapExpired = true
+      this.frameGeneration++
+      this.releaseLocalMapServer()
+      console.info('[app-map-basemap] idle_released')
+    } })
     const page = getCurrentInstance()?.root
-    onShow(() => { this.prepareLocalMapServer(); this.mapActive = true }, page)
-    onHide(() => { this.mapActive = false }, page)
-    onUnload(() => { this.mapActive = false; this.mapDisposed = true; this.releaseLocalMapServer() }, page)
+    onShow(() => {
+      this.retention.show()
+      this.prepareLocalMapServer()
+      this.mapExpired = false
+      this.mapActive = true
+    }, page)
+    onHide(() => { this.mapActive = false; this.retention.hide() }, page)
+    onUnload(() => { this.retention.dispose(); this.mapActive = false; this.mapDisposed = true; this.releaseLocalMapServer() }, page)
   },
   beforeUnmount() {
+    this.retention?.dispose()
     this.mapActive = false
     this.mapDisposed = true
     this.releaseLocalMapServer()
@@ -113,7 +130,19 @@ export default {
       this.command = { id }
     },
     onMapEvent(event) {
-      if (this.mapDisposed || (!this.mapActive && event.type !== 'updated')) return
+      if (this.mapDisposed) return
+      // #ifdef APP-PLUS
+      if (event.type === 'phase' && event.detail?.phase === 'sdk_ready') markAppMapSdkReady()
+      // #endif
+      if (!this.mapActive && event.type !== 'updated') {
+        if (event.type === 'error' && ['frame_load_failed', 'sdk_load_failed', 'map_render_failed'].includes(event.detail?.code)) {
+          this.mapExpired = true
+          this.frameGeneration++
+          this.releaseLocalMapServer()
+        }
+        return
+      }
+      if (this.mapExpired) return
       if (event.type === 'error' && ['frame_load_failed', 'sdk_load_failed', 'map_render_failed'].includes(event.detail?.code)) {
         // Older WebViews without GL support keep the original ordinary map usable.
         this.rendererFallback = true
@@ -144,7 +173,7 @@ export default {
       this.owner = owner || this.owner || this.$ownerInstance
       cancelAnimationFrame(this.pendingFrame)
       if (packet.disposed) { this.disposeFrame(); return }
-      if (packet.active === false) return
+      if (packet.active === false) { this.wasInactive = true; return }
       this.pendingFrame = requestAnimationFrame(() => this.renderFrame())
     },
     disposeFrame() {
@@ -154,17 +183,25 @@ export default {
       if (this.frameListener) window.removeEventListener('message', this.frameListener)
       this.frame?.remove()
       this.frame = null
+      this.frameReady = false
     },
     renderFrame() {
       const packet = this.latestPacket
       if (packet.active === false) return
       const host = document.getElementById(packet.hostId)
       if (!host) return
-      if (this.frame && (this.frameHost !== host || this.currentFrameUrl !== packet.frameUrl)) this.disposeFrame()
+      if (this.frame && (this.frameHost !== host || this.currentFrameUrl !== packet.frameUrl || this.currentGeneration !== packet.generation)) this.disposeFrame()
       this.stopped = false
-      if (this.frame) { this.sendPacket(); return }
+      if (this.frame) {
+        if (this.wasInactive) this.sendEvent({ type: 'phase', detail: { phase: 'map_instance_reused', satellite: packet.satellite } })
+        this.wasInactive = false
+        this.sendPacket()
+        return
+      }
+      this.wasInactive = false
       this.frameHost = host
       this.currentFrameUrl = packet.frameUrl
+      this.currentGeneration = packet.generation
       let target
       try {
         target = new URL(packet.frameUrl)

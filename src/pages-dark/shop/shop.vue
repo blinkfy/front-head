@@ -12,7 +12,7 @@
     </view>
     
     <!-- 主要内容区域 -->
-    <view :animation="tabPageAnimation" class="shop-container tab-page-motion">
+    <view class="shop-container tab-page-motion">
       <!-- 页面标题 -->
       <view class="page-title">
         <view class="orders-pill" @click="goToOrders">我的订单</view>
@@ -206,7 +206,7 @@ import {
   orderProductsByRecommendation
 } from '@/utils/shop-recommendation'
 
-const { tabPageClass, tabPageAnimation } = useTabPageTransition('pages-dark/shop/shop')
+const { tabPageClass } = useTabPageTransition('pages-dark/shop/shop')
 // 响应式数据
 const userPoints = ref(0) // 用户当前积分
 const loading = ref(false) // 加载状态

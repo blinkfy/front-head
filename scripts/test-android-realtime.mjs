@@ -25,7 +25,7 @@ function loadAndroidRealtime(context) {
     return active
   }).join('\n').replace(/\bexport function\b/g, 'function')
   assert.equal(conditions.length, 0, 'preprocessor blocks close')
-  source += '\nglobalThis.androidRealtime = { androidRealtimeAvailable, androidBackgroundMask, androidVideoVisible, setAndroidRealtimeForeground, syncAndroidMessagingPreference, connectChatEventsSocket, watchAndroidRealtimeLocation, handleAndroidRealtimeReturn, stopAndroidIncomingAlert, controlAndroidAnsweredCall };'
+  source += '\nglobalThis.androidRealtime = { androidRealtimeAvailable, androidIncomingCallPresentation, openAndroidIncomingCallSettings, androidBackgroundPopupPermission, openAndroidBackgroundPopupSettings, androidBackgroundMask, androidVideoVisible, setAndroidRealtimeForeground, syncAndroidMessagingPreference, connectChatEventsSocket, watchAndroidRealtimeLocation, handleAndroidRealtimeReturn, stopAndroidIncomingAlert, controlAndroidAnsweredCall };'
   vm.createContext(context)
   vm.runInContext(source, context)
   return context.androidRealtime
@@ -55,6 +55,8 @@ const context = {
   realtimeSocketSuspended: () => socketSuspended,
   realtimeBackgroundMask: () => 3,
   realtimeVideoVisible: () => true,
+  incomingCallPresentation: sound => { assert.equal(sound, false); return 'full_screen_denied' },
+  openIncomingCallSettings: sound => { assert.equal(sound, false); return true },
   openRealtimeSocket: (url, channel) => calls.opened.push({ url, channel }),
   sendRealtimeSocket: value => calls.sent.push(value),
   closeRealtimeSocket: () => { calls.closed++ },
@@ -72,6 +74,19 @@ context.globalThis = context
 const realtime = loadAndroidRealtime(context)
 
 assert.equal(realtime.androidRealtimeAvailable(), true)
+assert.equal(realtime.androidIncomingCallPresentation(), 'full_screen_denied')
+assert.equal(realtime.openAndroidIncomingCallSettings(), true)
+assert.equal(realtime.androidBackgroundPopupPermission(), 'unknown', 'an older or unreadable native module never implies OEM permission was granted')
+context.backgroundPopupPermission = () => 'denied'
+context.openBackgroundPopupSettings = () => true
+assert.equal(realtime.androidBackgroundPopupPermission(), 'denied')
+assert.equal(realtime.openAndroidBackgroundPopupSettings(), true)
+context.plus.os.name = 'iOS'
+assert.equal(realtime.androidBackgroundPopupPermission(), 'not_required')
+assert.equal(realtime.openAndroidBackgroundPopupSettings(), false)
+assert.equal(realtime.androidIncomingCallPresentation(), '')
+assert.equal(realtime.openAndroidIncomingCallSettings(), false)
+context.plus.os.name = 'Android'
 assert.equal(realtime.androidBackgroundMask(), 3)
 assert.equal(realtime.androidVideoVisible(), true)
 realtime.stopAndroidIncomingAlert('incoming-alert-test01')
@@ -254,6 +269,25 @@ await Promise.resolve()
 assert.equal(requestFailure.code, 1, 'permission request failure is reported')
 
 const nativeFile = name => fs.readFileSync(new URL(`../src/uni_modules/ftx-voice-call/utssdk/app-android/${name}`, import.meta.url), 'utf8')
+const notifications = nativeFile('RealtimeNotifications.kt')
+assert.match(notifications, /background && Build.VERSION.SDK_INT >= 31[\s\S]+Notification\.CallStyle\.forIncomingCall\(person, reject, answer\)/,
+  'background calls use Android’s dedicated incoming-call notification template')
+assert.match(notifications, /id != alertId \|\| token != answerToken[\s\S]+answerToken = null/,
+  'the answer token is scoped to the active call and can only be used once')
+const incomingPage = nativeFile('CallNotificationActivity.kt')
+assert.match(incomingPage, /if \(hasFocus\) answerFromNotification\(\)/)
+assert.match(incomingPage, /incomingPending\(call\) && RealtimeNotifications\.consumeAnswerAction\(call, token\)\) answer\(\)/,
+  'the exported push activity answers only a live call with a valid local notification action')
+assert.match(notifications, /if \(background\) notification\.setFullScreenIntent\(content, true\)/,
+  'Android can choose the heads-up fallback even without full-screen access')
+assert.match(notifications, /error !is SecurityException[\s\S]+error !is IllegalArgumentException[\s\S]+buildIncoming\(basicActions\(incomingBuilder\(\)\)\)/,
+  'a rejected full-screen intent or CallStyle still leaves a tappable incoming notification')
+assert.match(notifications, /val systemAlert = background && sound[\s\S]+val displayChannel = if \(systemAlert\) alertChannel else channel\(ctx, true, false\)/,
+  'background calls with alerts enabled post to the audible channel')
+assert.match(notifications, /this\.flags = this\.flags or Notification\.FLAG_INSISTENT[\s\S]+this\.flags = this\.flags and Notification\.FLAG_INSISTENT\.inv\(\)[\s\S]+alertId == id && stopSystemAlert\(ctx\)/,
+  'the system owns the initial alert and the still-active call hands off to the native loop')
+assert.match(notifications, /fun cancelIncoming[^}]+clearHandoff\(\)[^}]+IncomingCallRinger\.stop\(id\)/,
+  'cancelling during the handoff stops both alert paths')
 const nativeManifest = nativeFile('AndroidManifest.xml')
 const nativeBridge = nativeFile('VoiceCallBridge.kt')
 const nativeView = nativeFile('VideoCallView.kt')

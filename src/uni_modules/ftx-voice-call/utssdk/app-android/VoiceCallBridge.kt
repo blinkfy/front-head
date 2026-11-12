@@ -59,7 +59,7 @@ object VoiceCallBridge {
         var screenConsent: Intent? = null
         var screenCapture: CallScreenCapture? = null
         var screenDeadline: Runnable? = null
-        val supportsPlaybackCapture = Build.VERSION.SDK_INT >= 29 && video && entryMode == "video"
+        val supportsPlaybackCapture = Build.VERSION.SDK_INT >= 29 && video
         @Volatile var screenAudioRate = 0
         @Volatile var screenAudio: CallScreenAudio? = null
         var audioModule: JavaAudioDeviceModule? = null
@@ -146,7 +146,7 @@ object VoiceCallBridge {
             try {
                 if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { fail(s, "permission_denied"); return@execute }
                 s.speaker = input.optBoolean("speaker", video)
-                s.screenShareSupported = video && s.entryMode == "video" && input.optBoolean("screenShareSupported")
+                s.screenShareSupported = video && input.optBoolean("screenShareSupported")
                 s.remoteCameraEnabled = input.optBoolean("remoteCameraEnabled", input.optBoolean("cameraRequested", true))
                 s.cameraEnabled = previewReleased && input.optBoolean("cameraEnabled", true) &&
                     context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -602,7 +602,7 @@ object VoiceCallBridge {
                 }
                 if (input.has("speaker")) { s.speaker = input.getBoolean("speaker"); route(s, s.speaker) }
                 if (s.video) {
-                    if (input.has("screenShareSupported")) s.screenShareSupported = s.entryMode == "video" && input.optBoolean("screenShareSupported")
+                    if (input.has("screenShareSupported")) s.screenShareSupported = input.optBoolean("screenShareSupported")
                     if (input.has("remoteScreenSharing")) s.remoteScreenSharing = input.optBoolean("remoteScreenSharing")
                     if (!s.screenShareSupported || (input.has("screenSharing") && !input.optBoolean("screenSharing"))) stopScreenShare(s)
                     if (input.optBoolean("screenSharing")) beginScreenShare(s)

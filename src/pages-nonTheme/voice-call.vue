@@ -1,10 +1,11 @@
 <template>
-  <view class="call-page" :class="{ dark: darkTheme, 'video-mode': videoActive, 'video-controls-hidden': videoActive && videoControlsHidden, 'screen-sharing': screenShareLabel }">
+  <view class="call-page" :class="{ dark: darkTheme, 'video-mode': videoActive, 'video-waiting': outgoingVideoVisible, 'video-controls-hidden': videoActive && videoControlsHidden, 'screen-sharing': screenShareLabel }">
     <text class="page-title">{{ (['connecting', 'connected'].includes(state.phase) ? videoActive : isVideo) ? '视频通话' : '语音通话' }}</text>
     <view class="peer">
       <ChatCachedAvatar v-if="!videoActive" class="avatar" :src="peerAvatar" :avatar-name="state.peer?.name || '聊'" :owner="avatarOwner" />
       <text class="peer-name">{{ state.peer?.name || '语音通话' }}</text>
       <text class="status" aria-live="polite">{{ statusText }}</text>
+      <text v-if="outgoingVideoVisible" class="preview-badge">本机预览</text>
       <text v-if="state.phase === 'connected' && !videoActive" class="route-hint">{{ routeAudio ? (state.speaker ? '免提播放' : '听筒 / 耳机播放') : '通过系统音频设备播放' }}</text>
       <text v-if="state.reason === 'connect_failed'" class="route-hint">可尝试切换 Wi-Fi 或移动网络后重试</text>
     </view>
@@ -48,10 +49,10 @@
         <view v-if="routeAudio" class="action"><button class="round neutral" :class="{ selected: state.speaker }" aria-label="切换免提" @click="toggleSpeaker"><VoiceCallIcon kind="speaker" /></button><text>{{ state.speaker ? '免提已开启' : '免提' }}</text></view>
         <view v-if="cameraSupported" class="action"><button class="round neutral" :class="{ selected: state.cameraEnabled && !state.screenSharing }" :disabled="state.phase !== 'connected' || state.screenSharing || state.screenSharePending" :aria-label="state.cameraEnabled ? '关闭摄像头' : '开启摄像头'" @click="toggleCamera"><VoiceCallIcon kind="camera" :off="!state.cameraEnabled || state.screenSharing" /></button><text>{{ state.cameraEnabled ? '关闭摄像头' : '开启摄像头' }}</text></view>
         <view v-if="showSwitchCamera" class="action"><button class="round neutral" :disabled="state.phase !== 'connected' || !state.cameraEnabled || state.screenSharePending" aria-label="切换摄像头" @click="switchCamera"><VoiceCallIcon kind="switch-camera" /></button><text>切换镜头</text></view>
-        <view v-if="state.screenShareSupported && state.phase === 'connected'" class="action"><button class="round neutral" :class="{ selected: state.screenSharing }" :disabled="state.screenSharePending" :aria-label="shareActionLabel" @click="toggleScreenShare"><VoiceCallIcon kind="screen" /></button><text>{{ shareActionLabel }}</text></view>
+        <view v-if="showScreenShare" class="action"><button class="round neutral" :class="{ selected: state.screenSharing, unavailable: !state.screenShareSupported }" :disabled="state.screenSharePending" :aria-disabled="!state.screenShareSupported || state.screenSharePending" :aria-label="shareActionLabel" @click="toggleScreenShare"><VoiceCallIcon kind="screen" /></button><text>{{ shareActionLabel }}</text></view>
         <view class="action hangup-action"><button class="round danger" aria-label="挂断通话" @click="end('hangup')"><VoiceCallIcon kind="hangup" /></button><text>挂断</text></view>
       </template>
-      <view v-else-if="state.phase === 'calling'" class="action"><button class="round danger" aria-label="取消呼叫" @click="end('cancelled')"><VoiceCallIcon kind="hangup" /></button><text>取消</text></view>
+      <view v-else-if="state.phase === 'calling'" class="action"><button class="round danger" aria-label="取消呼叫" @click="end('cancelled')"><VoiceCallIcon kind="hangup" /></button><text>取消呼叫</text></view>
       <button v-else class="return-button" @click="back">返回聊天</button>
     </view>
   </view>
@@ -63,7 +64,7 @@ import { webCallsAvailable, webCallNotificationsAvailable, requestWebCallNotific
 import VoiceCallIcon from '@/components/VoiceCallIcon.vue'
 import ChatCachedAvatar from './components/ChatCachedAvatar.vue'
 import { voiceCalls, voiceCallState, voiceCallMedia, canRouteVoiceAudio, mountCallVideo, unmountCallVideo } from '@/utils/voice-call.js'
-import { callAvatarUrl, VOICE_END_LABELS } from '@/utils/voice-call-core.mjs'
+import { callAvatarUrl, VOICE_END_LABELS, shouldReturnFromCall } from '@/utils/voice-call-core.mjs'
 import { recordingIdentity } from '@/utils/call-recording-preference.mjs'
 import { baseUrl } from '@/api/settings.js'
 import { ThemeManager } from '@/utils/theme.js'
@@ -77,11 +78,12 @@ export default {
       const seconds = Math.max(0, Math.floor((this.now - this.state.recordingStartedAt) / 1000))
       return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
     },
-    controlCount() { return 1 + Number(this.routeAudio) + Number(this.cameraSupported) + Number(this.showSwitchCamera) + Number(this.state.screenShareSupported && this.state.phase === 'connected') },
+    controlCount() { return 1 + Number(this.routeAudio) + Number(this.cameraSupported) + Number(this.showSwitchCamera) + Number(this.showScreenShare) },
     canMinimize() { return this.appRealtime || this.webRealtime },
     isVideo() { return this.state.mode === 'video' },
     cameraSupported() { return this.state.cameraSupported || this.isVideo },
     showSwitchCamera() { return this.cameraSupported && this.state.canSwitchCamera && !this.state.screenSharing },
+    showScreenShare() { return this.state.phase === 'connected' && (this.appRealtime || this.state.screenShareSupported || voiceCallMedia.supportsScreenShare?.() === true) },
     shareActionLabel() { return this.state.screenSharing ? '停止共享' : this.state.screenSharePending ? '等待授权' : '共享屏幕' },
     outgoingVideoVisible() { return this.webRealtime && this.state.phase === 'calling' && this.state.outgoingPreview === true },
     localVideoVisible() { return this.state.phase === 'calling' ? this.outgoingVideoVisible : !!(this.state.cameraEnabled || this.state.screenSharing) },
@@ -105,11 +107,11 @@ export default {
         const seconds = Math.max(0, Math.floor((this.now - this.state.startedAt) / 1000))
         return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
       }
-      return { idle: '暂无进行中的通话', calling: this.outgoingVideoVisible ? '等待对方接听 · 本机预览' : '正在呼叫…', incoming: this.isVideo ? '邀请你视频通话' : '邀请你语音通话', connecting: '正在连接…', ended: VOICE_END_LABELS[this.state.reason] || '通话已结束' }[this.state.phase]
+      return { idle: '暂无进行中的通话', calling: '等待对方接听…', incoming: this.isVideo ? '邀请你视频通话' : '邀请你语音通话', connecting: '正在连接…', ended: VOICE_END_LABELS[this.state.reason] || '通话已结束' }[this.state.phase]
     }
   },
   watch: {
-    'state.phase'() { this.attachVideo() },
+    'state.phase'() { this.returnAfterNormalEnd(); this.attachVideo() },
     'state.outgoingPreview'() { this.attachVideo() },
     'state.callId'(id) {
       if (!this.pageVisible || this.leaving) return
@@ -137,7 +139,7 @@ export default {
     if (['connecting', 'connected'].includes(this.state.phase)) voiceCallMedia.showNativeVideo(this.state.callId)
   },
   onReady() { this.attachVideo() },
-  onShow() { this.pageVisible = true; this.leaving = false; this.pageCallId = this.state.callId; this.pageOwner = uni.getStorageSync('token') || ''; this.minimized = false; this.now = Date.now(); if (!this.tick) this.tick = setInterval(() => { this.now = Date.now() }, 1000); this.attachVideo() },
+  onShow() { this.pageVisible = true; this.leaving = false; this.pageCallId = this.state.callId; this.pageOwner = uni.getStorageSync('token') || ''; this.minimized = false; this.now = Date.now(); if (!this.tick) this.tick = setInterval(() => { this.now = Date.now() }, 1000); this.returnAfterNormalEnd(); this.attachVideo() },
   onHide() { this.pageVisible = false; clearInterval(this.tick); this.tick = null; unmountCallVideo(this.pageCallId); if (this.ownsCurrentCall() && this.videoActive && !this.canMinimize) voiceCalls.end('background') },
   onUnload() {
     this.leaving = true; this.pageVisible = false
@@ -158,6 +160,14 @@ export default {
     this.leaving = true; return false
   },
   methods: {
+    returnAfterNormalEnd() {
+      if (!this.pageVisible || this.leaving || !this.ownsCurrentCall() || !shouldReturnFromCall(this.state)) return
+      const callId = this.pageCallId
+      this.$nextTick(() => {
+        // A new incoming call can arrive before navigation runs.
+        if (this.pageVisible && !this.leaving && this.pageCallId === callId && this.ownsCurrentCall() && shouldReturnFromCall(this.state)) this.back()
+      })
+    },
     ownsCurrentCall() { return !!this.pageCallId && this.pageCallId === this.state.callId && this.pageOwner === (uni.getStorageSync('token') || '') },
     tapVideo(local) {
       if (this.outgoingVideoVisible) return
@@ -183,7 +193,13 @@ export default {
     toggleSpeaker() { this.controlCall({ speaker: !this.state.speaker }) },
     toggleCamera() { this.controlCall({ cameraEnabled: !this.state.cameraEnabled }) },
     switchCamera() { this.controlCall({ switchCamera: true }) },
-    toggleScreenShare() { this.controlCall({ screenSharing: !this.state.screenSharing }) },
+    toggleScreenShare() {
+      if (!this.state.screenShareSupported) {
+        uni.showToast({ title: '当前通话未协商屏幕共享，请确认双方和服务端已更新后重新拨打', icon: 'none', duration: 3500 })
+        return
+      }
+      this.controlCall({ screenSharing: !this.state.screenSharing })
+    },
     resumePlayback() { this.controlCall({ resumePlayback: true }) },
     back() { this.leaving = true; this.pageVisible = false; if (getCurrentPages().length > 1) uni.navigateBack(); else uni.redirectTo({ url: '/pages-nonTheme/chatlist' }) },
     async minimize() {
@@ -247,7 +263,10 @@ button::after { border: 0; }
 .video-mode .status { margin-top: 4px; }
 .video-mode .playback-button, .video-mode .record-button { position: relative; margin-top: 6px; }
 .video-mode .connected-controls { position: relative; display: flex; justify-content: center; gap: 8px; padding-top: 12px; margin-top: 0; max-width: 480px; pointer-events: none; }
-.video-mode .outgoing-controls { position: relative; z-index: 1; padding-top: 12px; }
+.video-mode .outgoing-controls { position: relative; z-index: 1; padding: 12px 0 10px; }
+.video-waiting .video-stage::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, #101916b3, transparent 28%, transparent 75%, #101916b3); pointer-events: none; }
+.video-waiting .outgoing-controls .round { width: 64px; height: 64px; }
+.preview-badge { margin-top: 10px; padding: 4px 10px; border-radius: 20px; background: #101916b3; color: #e5eee8; font-size: 12px; }
 .video-mode .action { flex: 1 1 0; gap: 4px; text-shadow: 0 1px 4px #000, 0 1px 8px #000; }
 .video-mode .hangup-action { padding-top: 0; }
 .video-mode .round { width: 46px; height: 46px; pointer-events: auto; }
@@ -261,6 +280,7 @@ button::after { border: 0; }
 .video-feed { pointer-events: none; }
 .video-feed.camera-off { visibility: hidden; }
 .self-label { position: absolute; left: 8px; bottom: 6px; color: white; font-size: 12px; text-shadow: 0 1px 3px #000; }
+.round.unavailable { opacity: .5; }
 .screen-share-badge { position: absolute; z-index: 1; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; padding: 5px 8px; border-radius: 8px; background: rgba(20, 26, 23, .72); color: #d6f6e4; font-size: 12px; pointer-events: none; }
 .video-recording-badge + .screen-share-badge { top: calc(env(safe-area-inset-top, 0px) + 42px); }
 .video-recording-badge { position: absolute; z-index: 1; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; padding: 5px 8px; border-radius: 8px; background: rgba(20, 26, 23, .62); color: #ffcccc; font-size: 12px; pointer-events: none; }

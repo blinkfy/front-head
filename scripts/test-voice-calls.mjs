@@ -149,7 +149,7 @@ async function testPermissionPendingLifecycle() {
 async function testVideoCapabilityAndControls() {
   const legacyServer = harness()
   legacyServer.controller.setActive(true); legacyServer.controller.connection(true, 1, 1)
-  assert.deepEqual(legacyServer.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: true, cameraToggle: true, screenShareReceive: true })
+  assert.deepEqual(legacyServer.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: true, cameraToggle: true, screenShareReceive: true, voiceScreenShareReceive: true })
   legacyServer.controller.handle({ type: 'voice.ready', version: 1 })
   assert.equal(legacyServer.controller.state().supported, true)
   assert.equal(legacyServer.controller.state().videoSupported, false, 'legacy ready without video keeps video disabled')
@@ -160,7 +160,7 @@ async function testVideoCapabilityAndControls() {
 
   const mediaWithoutVideo = harness({ media: { supportsVideo: () => false } })
   mediaWithoutVideo.controller.setActive(true); mediaWithoutVideo.controller.connection(true, 1, 1)
-  assert.deepEqual(mediaWithoutVideo.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: false, cameraToggle: false, screenShareReceive: false })
+  assert.deepEqual(mediaWithoutVideo.sent.at(-1), { type: 'voice.capability', version: 1, available: true, video: false, cameraToggle: false, screenShareReceive: false, voiceScreenShareReceive: false })
   mediaWithoutVideo.controller.handle({ type: 'voice.ready', version: 1, video: true })
   assert.equal(mediaWithoutVideo.controller.state().videoSupported, false, 'server support cannot override a media adapter without video')
 
@@ -521,22 +521,30 @@ async function testScreenSharing() {
     { mode: 'video', negotiated: true, allowScreenShare: true, canShare: true },
     { mode: 'video', negotiated: true, allowScreenShare: false, canShare: false },
     { mode: 'video', negotiated: false, allowScreenShare: true, canShare: false },
-    { mode: 'audio', negotiated: true, allowScreenShare: true, canShare: false }
+    { mode: 'audio', negotiated: true, allowScreenShare: true, canShare: true },
+    { mode: 'audio', negotiated: false, allowScreenShare: true, canShare: false }
   ]) {
     const { controller, sent, drivers, opened } = harness({ allowScreenShare, media: { supportsScreenShare: () => true } })
     controller.setActive(true)
     controller.connection(true, 1, 1)
     assert.equal(sent.at(-1).screenShareReceive, true)
+    assert.equal(sent.at(-1).voiceScreenShareReceive, true)
     controller.handle({ type: 'voice.ready', version: 1, video: true })
     controller.start({ id: 2 }, mode)
     await tick()
     const { callId } = controller.state()
-    controller.handle({ type: 'voice.accepted', callId, screenShareSupported: negotiated })
+    controller.handle({ type: 'voice.accepted', callId, cameraToggle: mode === 'audio' && negotiated, screenShareSupported: negotiated })
     await tick()
     controller.control({ screenSharing: true })
     assert.equal(drivers[0].controls.some(control => control.screenSharing), false)
     controller.handle({ type: 'voice.connected', callId })
     assert.equal(controller.state().screenShareSupported, canShare)
+    if (mode === 'audio') {
+      assert.equal(opened[0].mode, negotiated ? 'video' : 'audio')
+      assert.equal(opened[0].entryMode, 'audio')
+      assert.equal(opened[0].cameraEnabled, false)
+      assert.equal(controller.state().cameraEnabled, false)
+    }
     controller.control({ screenSharing: true })
     assert.equal(drivers[0].controls.some(control => control.screenSharing), canShare)
     if (canShare) {
@@ -545,13 +553,13 @@ async function testScreenSharing() {
       opened[0].onEvent({ type: 'screen', screenSharing: true })
       assert.equal(controller.state().screenSharePending, false)
       assert.deepEqual(sent.at(-1), { type: 'voice.media', callId, screenSharing: true })
-      controller.control({ cameraEnabled: false })
-      assert.equal(controller.state().cameraEnabled, true)
+      controller.control({ cameraEnabled: mode !== 'video' })
+      assert.equal(controller.state().cameraEnabled, mode === 'video', 'sharing keeps the previous camera setting')
       opened[0].onEvent({ type: 'screen', screenSharing: false })
       assert.deepEqual(sent.at(-1), { type: 'voice.media', callId, screenSharing: false })
     }
     controller.handle({ type: 'voice.media', callId, cameraEnabled: false, screenSharing: true })
-    assert.equal(controller.state().remoteScreenSharing, mode === 'video' && negotiated)
+    assert.equal(controller.state().remoteScreenSharing, negotiated)
     assert.equal(controller.state().remoteCameraEnabled, false)
     controller.end()
     assert.equal(controller.state().remoteScreenSharing, false)
