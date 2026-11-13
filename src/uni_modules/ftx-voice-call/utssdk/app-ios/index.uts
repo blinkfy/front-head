@@ -8,6 +8,7 @@ export function openVoicePeer(options: string): void {}
 export function signalVoicePeer(callId: string, event: string): void {}
 export function controlVoicePeer(callId: string, options: string): void {}
 export function closeVoicePeer(callId: string): void {}
+export function updateChatBadge(options: string): void {}
 export function realtimeAvailable(): boolean { return false }
 export function realtimeSocketAlive(): boolean { return false }
 export function realtimeBackgroundMask(): number { return 0 }

@@ -2,6 +2,7 @@
   <view class="address-tools">
     <view class="address-actions">
       <button class="address-action" :disabled="disabled || busy" @click="choose"><ManifestIcon id="map_location" />地图选址</button>
+      <button v-if="autoLocateWhenFilled" class="address-action" :disabled="disabled || busy" @click="locate()">当前位置</button>
       <button v-if="isWeixinMiniProgram" class="address-action" :disabled="disabled || busy" @click="chooseAddressBook">微信收货地址</button>
     </view>
     <text class="address-hint">{{ locating ? '正在获取当前位置…' : '请核对地址并补充楼栋、单元及门牌号' }}</text>
@@ -9,7 +10,7 @@
     <view v-if="opened" class="address-overlay" @click.self="close">
       <view class="address-modal">
         <view class="address-modal-heading"><text>选择收货位置</text><button class="address-action" @click="close">取消</button></view>
-        <view class="address-search"><input v-model="query" class="address-search-input" placeholder="搜索小区、学校或街道" maxlength="100" @confirm="search" /><button class="address-action" :disabled="searching" @click="search">搜索</button></view>
+        <view class="address-search"><input v-model="query" class="address-search-input" placeholder="搜索小区、学校或街道" maxlength="100" @confirm="search" /><button class="address-action" :disabled="searching || initializing" @click="search">搜索</button></view>
         <!-- #ifdef H5 -->
         <view :id="mapId" class="address-map"></view>
         <!-- #endif -->
@@ -36,8 +37,12 @@ import { locationErrorMessage } from '@/utils/location-error.mjs'
 import { searchPlaces } from '@/api/map'
 import { getCurrentAddress, resolveLocationAddress } from '@/utils/location-address'
 import { chooseMiniLocation, chooseMiniAddress, isLocationCancelled } from '@/utils/mini-location.js'
+// #ifdef H5
+import { createPreferredWebMap } from '@/utils/preferred-web-map.js'
+import { searchMapPlaces } from '@/utils/map-place-search.js'
+// #endif
 
-const props = defineProps({ modelValue: { type: String, default: '' }, disabled: Boolean, autoLocate: Boolean })
+const props = defineProps({ modelValue: { type: String, default: '' }, disabled: Boolean, autoLocate: Boolean, autoLocateWhenFilled: Boolean })
 const emit = defineEmits(['update:modelValue', 'busy-change', 'select'])
 const locating = ref(false), searching = ref(false), opened = ref(false)
 const initializing = ref(false)
@@ -48,8 +53,8 @@ const isWeixinMiniProgram = computed(() => {
   try { return uni.getSystemInfoSync().uniPlatform === 'mp-weixin' } catch (_) { return false }
 })
 const mapId = `shop-address-map-${Math.random().toString(36).slice(2)}`
-let map, marker, coords, selectedCoordinates = null, revision = 0, disposed = false
-let leafletPromise
+let map, mapAbort, marker, coords, selectedCoordinates = null, revision = 0, disposed = false
+let mapLibrary
 let autoLocateAttempted = false
 watch(busy, value => emit('busy-change', value), { flush: 'sync' })
 watch(() => props.disabled, value => { if (value) close() })
@@ -76,9 +81,6 @@ function update(value) {
 function showError(reason, stage) {
   error.value = locationErrorMessage(reason, stage)
 }
-function requestJson(url) {
-  return new Promise((resolve, reject) => uni.request({ url, timeout: 10000, success: res => res.statusCode === 200 ? resolve(res.data) : reject(new Error('地址服务暂不可用')), fail: reject }))
-}
 function getCoords() {
   // #ifdef H5
   return getUserLocationOnce('wgs84', { interactive: true, includeAccuracy: true })
@@ -90,16 +92,17 @@ function getCoords() {
 const resolveAddress = resolveLocationAddress
 async function locate(onlyIfEmpty = false) {
   if (props.disabled || busy.value) return
+  const initialValue = props.modelValue.trim()
   const token = ++revision
   error.value = ''; locating.value = true
   try {
     const address = await getCurrentAddress()
-    if (active(token) && (!onlyIfEmpty || !props.modelValue.trim())) update(address)
+    if (active(token) && (!onlyIfEmpty || !props.modelValue.trim() || (props.autoLocateWhenFilled && props.modelValue.trim() === initialValue))) update(address)
   } catch (reason) { if (active(token)) showError(reason) }
   finally { if (token === revision) locating.value = false }
 }
-watch(() => [props.autoLocate, props.disabled], () => {
-  if (!props.autoLocate || props.disabled || busy.value || autoLocateAttempted || props.modelValue.trim()) return
+watch(() => [props.autoLocate, props.disabled, props.autoLocateWhenFilled], () => {
+  if (!props.autoLocate || props.disabled || busy.value || autoLocateAttempted || (props.modelValue.trim() && !props.autoLocateWhenFilled)) return
   autoLocateAttempted = true
   locate(true)
 }, { immediate: true, flush: 'post' })
@@ -114,10 +117,12 @@ async function choose() {
   const nearbyLocation = getCoords().catch(() => null)
   try {
     await nextTick()
-    const L = await loadLeaflet()
     if (!active(token) || !opened.value) return
-    map = L.map(mapId, { center: [35.86, 104.19], zoom: 5 })
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map)
+    mapAbort?.abort(); mapAbort = new AbortController()
+    const created = await createPreferredWebMap(mapId, { center: [35.86, 104.19], zoom: 5, signal: mapAbort.signal })
+    if (!active(token) || !opened.value) { created.map.remove(); return }
+    map = created.map
+    mapLibrary = created.library
     map.on('click', event => pickPoint(event.latlng.lat, event.latlng.lng))
     const current = await nearbyLocation
     if (!active(token) || !opened.value) return
@@ -176,26 +181,9 @@ async function chooseAddressBook() {
   finally { if (token === revision) locating.value = false }
 }
 // #ifdef H5
-function loadLeaflet() {
-  if (window.L) return Promise.resolve(window.L)
-  if (leafletPromise) return leafletPromise
-  if (!document.querySelector('link[href*="leaflet.css"]')) {
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'; link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(link)
-  }
-  leafletPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    const timer = setTimeout(() => { script.remove(); reject(new Error('地图加载超时')) }, 10000)
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-    script.onload = () => { clearTimeout(timer); window.L ? resolve(window.L) : reject(new Error('地图加载失败')) }
-    script.onerror = () => { clearTimeout(timer); script.remove(); reject(new Error('地图加载失败')) }
-    document.head.appendChild(script)
-  }).catch(reason => { leafletPromise = null; throw reason })
-  return leafletPromise
-}
 function placeMarker(latitude, longitude) {
   if (marker) marker.remove()
-  marker = window.L.marker([latitude, longitude], { draggable: true }).addTo(map)
+  marker = mapLibrary.marker([latitude, longitude], { draggable: true }).addTo(map)
   marker.on('dragend', () => { const point = marker.getLatLng(); pickPoint(point.lat, point.lng) })
 }
 async function pickPoint(latitude, longitude, accuracy) {
@@ -212,7 +200,7 @@ async function pickPoint(latitude, longitude, accuracy) {
 }
 // #endif
 async function search() {
-  if (props.disabled || !opened.value || searching.value) return
+  if (props.disabled || !opened.value || searching.value || initializing.value) return
   const token = ++revision
   initializing.value = false
   searching.value = true; selected.value = ''; selectedParts.value = {}; error.value = ''
@@ -221,14 +209,15 @@ async function search() {
     // #ifdef H5
     stage = 'places'
     if (!query.value.trim()) { error.value = '请输入要搜索的地址'; return }
-    const results = await requestJson(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query.value.trim())}&limit=1&addressdetails=1&accept-language=zh`)
+    const center = map?.getCenter()
+    const results = await searchMapPlaces(query.value.trim(), { latitude: center?.lat ?? 35.86, longitude: center?.lng ?? 104.19, limit: 1 })
     if (!active(token)) return
     if (!results?.length) { error.value = '未找到该地址，请换个关键词'; return }
     const place = results[0]
-    if (map) { map.setView([Number(place.lat), Number(place.lon)], 16); placeMarker(Number(place.lat), Number(place.lon)) }
-    selectedCoordinates = { latitude: Number(place.lat), longitude: Number(place.lon) }
-    selected.value = place.display_name || ''
-    selectedParts.value = place.address || {}
+    if (map) { map.setView([place.latitude, place.longitude], 16); placeMarker(place.latitude, place.longitude) }
+    selectedCoordinates = { latitude: place.latitude, longitude: place.longitude }
+    selected.value = joinAddress(place)
+    selectedParts.value = place.parts || {}
     // #endif
     // #ifndef H5
     if (!coords) coords = await getCoords()
@@ -247,9 +236,10 @@ function confirm() {
   try { update({ address: selected.value, parts: selectedParts.value, ...(selectedCoordinates || {}) }); close() } catch (reason) { showError(reason) }
 }
 function close() {
+  mapAbort?.abort(); mapAbort = null
   ++revision; opened.value = false; searching.value = false; locating.value = false; initializing.value = false
   if (map) map.remove()
-  map = null; marker = null; selectedCoordinates = null
+  map = null; mapLibrary = null; marker = null; selectedCoordinates = null
 }
 onBeforeUnmount(() => { disposed = true; close() })
 </script>

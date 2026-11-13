@@ -18,6 +18,7 @@
 import { ThemeManager } from '@/utils/theme.js'
 import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
 import { setChatEventsActive } from '@/utils/chat-events.js'
+import { foregroundNotifications } from '@/utils/foreground-notification.mjs'
 import { warmManifestIcons } from '@/utils/icon-preload.js'
 import { warmSmartSortRobot } from '@/utils/robot-preload.js'
 import { recentRecognition } from '@/utils/recent-recognition.js'
@@ -188,6 +189,7 @@ export default {
     // #endif
   },
   onHide: function () {
+    foregroundNotifications.clear()
     setChatEventsActive(false)
     recentRecognition.background()
     setUiSoundsActive(false)

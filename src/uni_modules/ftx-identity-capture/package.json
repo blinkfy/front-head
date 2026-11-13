@@ -1,0 +1,7 @@
+{
+  "id": "ftx-identity-capture",
+  "displayName": "分投侠端内实名拍摄",
+  "version": "0.1.0",
+  "description": "Native camera and device-side face landmarks for identity capture",
+  "uni_modules": { "dependencies": [], "encrypt": [], "platforms": { "client": { "App": { "app-android": "y", "app-ios": "y" } } } }
+}

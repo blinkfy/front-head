@@ -93,7 +93,6 @@ import ManifestIcon from './ManifestIcon.vue'
 import { addTrashBin, reverseGeocoder, getBinPreReviewCapability, getBinSatelliteReference, preReviewTrashBin } from '@/api/map'
 import { getUserLocationOnce } from '@/utils/location'
 import { normalizeSatelliteReference } from '@/utils/bin-satellite-reference.mjs'
-import { resolveLocationAddress } from '@/utils/location-address'
 import { compressTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
 import { BIN_APPROVAL_POINTS, mergeBinLocation, validBinCoordinates } from '@/utils/bin-contribution.mjs'
 import { BIN_PRE_REVIEW_SUGGESTION_ESTIMATE_MS, binReviewWaitingProgress, isLegacyBinReviewError, normalizeBinPreReview, normalizeBinReviewPreview, preserveBinDescription, sameBinSubmission, withBinReviewDeadline } from '@/utils/bin-pre-review.mjs'
@@ -188,7 +187,8 @@ async function getCurrentLocation(existing = null) {
     if (!validBinCoordinates(location)) throw new Error('定位结果无效')
     formData.value.latitude = Number(location.latitude); formData.value.longitude = Number(location.longitude)
     prepareSatelliteReference(token)
-    const result = await resolveLocationAddress(location.latitude, location.longitude)
+    const response = await reverseGeocoder(location.latitude, location.longitude)
+    const result = response?.data?.result || response?.data || {}
     if (activeLocation(token)) {
       applyAddress(result.address)
       if (!result.address) notice.value = '已定位，未获取到附近地名，请在描述中补充地标。'

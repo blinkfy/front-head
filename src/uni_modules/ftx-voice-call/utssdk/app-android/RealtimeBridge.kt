@@ -410,6 +410,7 @@ object RealtimeBridge {
                             val handled = foreground || messagesEnabled() && context?.let { RealtimeNotifications.message(it, event, soundEnabled) } == true
                             if (handled) raw(JSONObject().put("type", "notification.ack").put("id", receipt.optString("id")).put("nonce", receipt.optString("nonce")))
                         }
+                        context?.let { runCatching { AppChatBadge.event(it, selfId, event) } }
                         deliver(event)
                     } catch (_: Exception) { failSocket() }
                 } }

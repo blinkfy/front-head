@@ -55,6 +55,10 @@
 
       <!-- 表单区域 -->
       <view class="form-section">
+        <view class="profile-identity-entry" role="button" @click="openIdentity">
+          <view><text class="label-text">实名认证</text><text class="profile-identity-hint">{{ identityInfo.verified ? '已通过 · ' + identityInfo.maskedName : '完成本人身份核验，可申请成为回收员' }}</text></view>
+          <text class="profile-identity-action">{{ identityInfo.verified ? '查看 ›' : '去认证 ›' }}</text>
+        </view>
         <!-- 用户名 -->
         <view class="form-group">
           <view class="form-label">
@@ -264,7 +268,9 @@
 
 <script setup>
 import { chooseAppImage } from '@/utils/image-picker.js'
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { identityStatus } from '@/api/identity.js'
 import * as userApi from '@/api/user.js'
 import { getCommunityTree } from '@/pages-nonTheme/api/community.js'
 import { buildCommunityRegionTree, findCommunityByAddress } from './utils/community-regions.js'
@@ -276,10 +282,22 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import { nicknameError } from '@/utils/wechat-profile.mjs'
 import { getCurrentAddress, resolveLocationAddress } from '@/utils/location-address.js'
 import { getUserLocationOnce } from '@/utils/location.js'
+// #ifndef H5
+import { wgs84ToGcj02 } from '@/utils/live-location-coordinates.mjs'
+// #endif
 import { chooseMiniLocation, isLocationCancelled } from '@/utils/mini-location.js'
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js'
+// #ifdef H5
+import { createPreferredWebMap } from '@/utils/preferred-web-map.js'
+import { searchMapPlaces } from '@/utils/map-place-search.js'
+// #endif
 
 const isDarkTheme = ref(false)
+const identityInfo = ref({})
+function openIdentity() { uni.navigateTo({ url: '/pages-nonTheme/identity-verification' }) }
+onShow(async () => {
+  try { identityInfo.value = await identityStatus() } catch { identityInfo.value = {} }
+})
 const userInfo = ref({})
 const isSaving = ref(false)
 const isLoading = ref(false)
@@ -316,7 +334,11 @@ const mapSelectedAddress = ref('')
 const mapSelectedLat = ref(null)
 const mapSelectedLng = ref(null)
 let mapInstance = null
+let mapAbort = null
 let mapMarker = null
+let mapLibrary = null
+let mapRevision = 0
+let mapSelectionRevision = 0
 
 // App 附近地点选择
 const showNearbyPicker = ref(false)
@@ -622,7 +644,12 @@ function fillCurrentLocation() {
   uni.showLoading({ title: '定位中...' })
   const useNativeLocation = isAppPlusPlatform() && typeof plus !== 'undefined'
   const isWeixinMiniProgram = uni.getSystemInfoSync().uniPlatform === 'mp-weixin'
-  const locationTask = isWeixinMiniProgram
+  let locationTask
+  // #ifdef H5
+  locationTask = getCurrentAddress()
+  // #endif
+  // #ifndef H5
+  locationTask = isWeixinMiniProgram
     ? getUserLocationOnce('gcj02', { interactive: true, isCurrent: () => !pageUnmounted && !isSaving.value }).then(point => resolveLocationAddress(point.latitude, point.longitude, point.accuracy))
     : useNativeLocation
     ? getAppCurrentLocation()
@@ -639,32 +666,30 @@ function fillCurrentLocation() {
         })
       })
 
+  // #endif
   locationTask
-    .then((res) => {
+    .then(async (res) => {
       if (pageUnmounted || isSaving.value) return
       const locationText = formatLocationResult(res)
       const lat = res && (res.latitude || (res.coords && res.coords.latitude))
       const lng = res && (res.longitude || (res.coords && res.coords.longitude))
 
-      // 如果获取到的地址只是一串经纬度（例如系统提供商未返回详情），使用 OSM 接口进行强制兜底逆地理编码
+      // 系统未返回地址时，使用共享地址服务补全详情。
       if (locationText && lat && lng && /^[-+]?\d+\.?\d+,\s*[-+]?\d+\.?\d+$/.test(locationText)) {
-        uni.request({
-          url: `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=zh`,
-          header: { 'User-Agent': 'FenTouXia/1.0' },
-          success: (geoRes) => {
-            const data = geoRes.data;
-            const finalAddr = (data && data.display_name) ? data.display_name : locationText;
-            formData.location = finalAddr;
-            uni.setStorageSync('bookingAddress', formData.location);
-            uni.showToast({ title: '地址已更新', icon: 'success' });
-          },
-          fail: () => {
-            formData.location = locationText;
-            uni.setStorageSync('bookingAddress', formData.location);
-            uni.showToast({ title: '地址已更新', icon: 'success' });
-          }
-        });
-        return;
+        let finalAddress = locationText
+        try {
+          let point = { latitude: lat, longitude: lng }
+          // #ifndef H5
+          if (useNativeLocation) point = wgs84ToGcj02(lat, lng)
+          // #endif
+          const result = await resolveLocationAddress(point.latitude, point.longitude, res.accuracy || res.coords?.accuracy)
+          finalAddress = result.address || locationText
+        } catch (_) { /* 保留原有原生定位结果，用户仍可补充地址。 */ }
+        if (pageUnmounted || isSaving.value) return
+        formData.location = finalAddress
+        uni.setStorageSync('bookingAddress', formData.location)
+        uni.showToast({ title: '地址已更新', icon: 'success' })
+        return
       }
 
       if (locationText) {
@@ -781,7 +806,7 @@ function selectLocation() {
   const systemInfo = uni.getSystemInfoSync()
   const uniPlatform = systemInfo.uniPlatform
 
-  // H5环境：打开地图选点弹窗（Leaflet + OpenStreetMap，无需 key）
+  // H5 环境：打开腾讯优先、OSM 备用的地图选点弹窗
   if (uniPlatform === 'web') {
     openMapPicker()
     return
@@ -836,107 +861,68 @@ function onLocationInput() {
 
 // ===== H5 地图选点弹窗 =====
 function openMapPicker() {
+  const token = ++mapRevision
   showMapPicker.value = true
   mapSearchQuery.value = ''
   mapSelectedAddress.value = formData.location || ''
   mapSelectedLat.value = null
   mapSelectedLng.value = null
-
-  // 等待 DOM 渲染完成后初始化地图
-  setTimeout(() => {
-    initMap()
-  }, 300)
+  initMap(token)
 }
 
 function closeMapPicker() {
+  mapAbort?.abort(); mapAbort = null
+  ++mapRevision
+  ++mapSelectionRevision
   showMapPicker.value = false
-  // 销毁地图实例
-  if (mapInstance) {
-    mapInstance.remove()
-    mapInstance = null
-    mapMarker = null
-  }
+  if (mapInstance) mapInstance.remove()
+  mapInstance = null
+  mapMarker = null
+  mapLibrary = null
 }
 
-function initMap() {
-  const containerId = 'map-container'
-  // 确保容器存在
-  const container = document.getElementById(containerId)
+async function initMap(token) {
+  // #ifdef H5
+  await nextTick()
+  if (pageUnmounted || !showMapPicker.value || token !== mapRevision) return
+  const container = document.getElementById('map-container')
   if (!container) return
+  if (mapInstance) mapInstance.remove()
+  mapInstance = null
+  mapMarker = null
+  mapLibrary = null
 
-  // 如果已有实例先销毁
-  if (mapInstance) {
-    mapInstance.remove()
-    mapInstance = null
-    mapMarker = null
-  }
-
-  // 动态加载 Leaflet CSS
-  if (!document.querySelector('link[href*="leaflet.css"]')) {
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'
-    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
-    document.head.appendChild(link)
-  }
-
-  // 动态加载 Leaflet JS
-  if (typeof window.L === 'undefined') {
-    const script = document.createElement('script')
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-    script.onload = () => {
-      createMap(container)
+  const coordinates = parseCoordsFromAddress(formData.location)
+  try {
+    mapAbort?.abort(); mapAbort = new AbortController()
+    const created = await createPreferredWebMap(container, {
+      signal: mapAbort.signal,
+      center: coordinates || [35.86, 104.19],
+      zoom: coordinates ? 15 : 5
+    })
+    if (pageUnmounted || !showMapPicker.value || token !== mapRevision) { created.map.remove(); return }
+    mapInstance = created.map
+    mapLibrary = created.library
+    mapInstance.on('click', (event) => {
+      const { lat, lng } = event.latlng
+      placeMarker(lat, lng)
+      reverseGeocode(lat, lng)
+    })
+    if (formData.location && !coordinates) {
+      mapSearchQuery.value = formData.location
+      searchAddress()
     }
-    document.head.appendChild(script)
-  } else {
-    createMap(container)
+  } catch (_) {
+    if (!pageUnmounted && showMapPicker.value && token === mapRevision) uni.showToast({ title: '地图加载失败，请稍后重试', icon: 'none' })
   }
-}
-
-function createMap(container) {
-  // 默认中心：中国
-  const defaultCenter = [35.86, 104.19]
-  let initialCenter = defaultCenter
-  let initialZoom = 5
-
-  // 如果已有地址坐标，定位到该位置
-  if (formData.location) {
-    const coords = parseCoordsFromAddress(formData.location)
-    if (coords) {
-      initialCenter = coords
-      initialZoom = 15
-    }
-  }
-
-  mapInstance = window.L.map(container, {
-    center: initialCenter,
-    zoom: initialZoom,
-    zoomControl: true
-  })
-
-  window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>'
-  }).addTo(mapInstance)
-
-  // 点击地图选点
-  mapInstance.on('click', (e) => {
-    const { lat, lng } = e.latlng
-    placeMarker(lat, lng)
-    reverseGeocode(lat, lng)
-  })
-
-  // 如果已有地址，尝试搜索并标记
-  if (formData.location && !parseCoordsFromAddress(formData.location)) {
-    mapSearchQuery.value = formData.location
-    setTimeout(() => searchAddress(), 500)
-  }
+  // #endif
 }
 
 function placeMarker(lat, lng) {
   if (mapMarker) {
     mapInstance.removeLayer(mapMarker)
   }
-  mapMarker = window.L.marker([lat, lng], { draggable: true })
+  mapMarker = mapLibrary.marker([lat, lng], { draggable: true })
     .addTo(mapInstance)
     .bindPopup('所选位置')
     .openPopup()
@@ -954,45 +940,42 @@ function placeMarker(lat, lng) {
 }
 
 async function reverseGeocode(lat, lng) {
+  const token = mapRevision
+  const selectionToken = ++mapSelectionRevision
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=zh`,
-      { headers: { 'User-Agent': 'FenTouXia/1.0' } }
-    )
-    const data = await res.json()
-    mapSelectedAddress.value = data.display_name || `${lat},${lng}`
+    const result = await resolveLocationAddress(lat, lng)
+    if (pageUnmounted || !showMapPicker.value || token !== mapRevision || selectionToken !== mapSelectionRevision) return
+    mapSelectedAddress.value = result.address || `${lat},${lng}`
   } catch {
-    mapSelectedAddress.value = `${lat},${lng}`
+    if (!pageUnmounted && showMapPicker.value && token === mapRevision && selectionToken === mapSelectionRevision) mapSelectedAddress.value = `${lat},${lng}`
   }
 }
 
 async function searchAddress() {
+  // #ifdef H5
   const query = mapSearchQuery.value.trim()
   if (!query || !mapInstance) return
-
+  const token = mapRevision
+  const selectionToken = ++mapSelectionRevision
+  const center = mapInstance.getCenter()
   uni.showLoading({ title: '搜索中...' })
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&accept-language=zh`,
-      { headers: { 'User-Agent': 'FenTouXia/1.0' } }
-    )
-    const results = await res.json()
-    uni.hideLoading()
-
-    if (results && results.length > 0) {
-      const r = results[0]
-      const lat = parseFloat(r.lat)
-      const lng = parseFloat(r.lon)
-      mapInstance.setView([lat, lng], 16)
-      placeMarker(lat, lng)
-      mapSelectedAddress.value = r.display_name
+    const results = await searchMapPlaces(query, { latitude: center.lat, longitude: center.lng, limit: 5 })
+    if (pageUnmounted || !showMapPicker.value || token !== mapRevision || selectionToken !== mapSelectionRevision) return
+    if (results?.length) {
+      const place = results[0]
+      mapInstance.setView([place.latitude, place.longitude], 16)
+      placeMarker(place.latitude, place.longitude)
+      mapSelectedAddress.value = place.address && place.name && !place.address.includes(place.name) ? `${place.address} ${place.name}` : place.address || place.name
     } else {
       uni.showToast({ title: '未找到该地址', icon: 'none' })
     }
   } catch {
+    if (!pageUnmounted && showMapPicker.value && token === mapRevision && selectionToken === mapSelectionRevision) uni.showToast({ title: '搜索失败，请重试', icon: 'none' })
+  } finally {
     uni.hideLoading()
-    uni.showToast({ title: '搜索失败，请重试', icon: 'none' })
   }
+  // #endif
 }
 
 function parseCoordsFromAddress(addr) {
@@ -1154,10 +1137,18 @@ onMounted(() => {
 onBeforeUnmount(() => {
   pageUnmounted = true
   autoLocationCancelled = true
+  closeMapPicker()
 })
 </script>
 
 <style scoped>
+.profile-identity-entry { display:flex; align-items:center; justify-content:space-between; gap:20rpx; padding-bottom:28rpx; margin-bottom:28rpx; border-bottom:1rpx solid rgba(148,163,184,.2); }
+.profile-identity-entry > view { flex:1; min-width:0; }
+.profile-identity-hint { display:block; color:#6b7280; font-size:23rpx; line-height:1.6; margin-top:8rpx; }
+.profile-identity-action { color:#059669; font-size:25rpx; flex-shrink:0; }
+.dark-theme .profile-identity-hint { color:#a8b4c4; }
+.dark-theme .profile-identity-action { color:#34d399; }
+
 .edit-profile-container {
   min-height: 100vh;
   background: linear-gradient(180deg, #f0fdf4 0%, #f5f7fa 30%, #f0f9ff 70%, #f5f7fa 100%);

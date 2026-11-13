@@ -93,6 +93,7 @@ const booking = {
   get address() { return [...this.addressRegion, this.addressDetail].filter(Boolean).join('') },
   set address(value) { this.addressRegion = ['台北市', '中正區', '']; this.addressDetail = value.replace(/^台北市中正區/, '') },
   syncServiceCoverage() {},
+  bookingLocationOwner() { return '' },
   uni: { setStorageSync() {} }
 }
 applyAddress.call(booking, pickedAddress)

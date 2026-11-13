@@ -1,4 +1,5 @@
 {
+	"easycom": { "custom": { "^ftx-notification-banner$": "@/components/ForegroundNotificationBanner.vue" } },
 	"pages": [
 		{
 			"path": "pages/index/index",
@@ -233,6 +234,8 @@
 					}
 				},
 				{ "path": "collector-apply", "style": { "navigationStyle": "custom" } },
+				{ "path": "identity-verification", "style": { "navigationStyle": "custom" } },
+				{ "path": "identity-camera", "style": { "navigationStyle": "custom", "disableScroll": true } },
 				{ "path": "collector-workbench", "style": { "navigationStyle": "custom" } },
 				{ "path": "collector-order-detail", "style": { "navigationStyle": "custom" } },
 				{

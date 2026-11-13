@@ -6,6 +6,7 @@
 
 import request from '@/api/index.js'
 import { baseUrl } from '@/api/settings.js'
+import { beginChatBadgeSnapshot, finishChatBadgeSnapshot } from '@/utils/app-chat-badge.js'
 
 // 获取基础URL
 function getBaseUrl() {
@@ -262,6 +263,7 @@ export function getChatHistory(params, requestOptions = {}) {
  * @param {number} params.pageSize - 每页数量
  */
 export function getChatUserList(params, requestOptions = {}) {
+  const badgeSnapshot = beginChatBadgeSnapshot()
   // 构建查询字符串；keyword 可能包含中文、空格、& 或 /，必须逐项编码。
   const queryStr = Object.keys(params || {})
     .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key] ?? ''))}`)
@@ -272,6 +274,9 @@ export function getChatUserList(params, requestOptions = {}) {
     method: 'GET',
     silent: !!requestOptions.silent,
     needAuth: true
+  }).then(result => {
+    finishChatBadgeSnapshot(badgeSnapshot, result, params)
+    return result
   })
 }
 

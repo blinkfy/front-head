@@ -3,7 +3,7 @@
     "appid" : "__UNI__0B093BC",
     "description" : "",
     "versionName" : "1.4.12",
-    "versionCode" : 134,
+    "versionCode" : 136,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -50,7 +50,7 @@
             "ios" : {
                 "dSYMs" : false,
                 "privacyDescription" : {
-                    "NSCameraUsageDescription" : "用于上传需要识别分类的照片",
+                    "NSCameraUsageDescription" : "用于现场实名认证拍摄及识别分类照片",
                     "NSPhotoLibraryUsageDescription" : "用于上传需要识别分类的照片",
                     "NSPhotoLibraryAddUsageDescription" : "用于保存分投侠小程序二维码到相册",
                     "NSLocationWhenInUseUsageDescription" : "用于寻找附近智能垃圾分类装置",

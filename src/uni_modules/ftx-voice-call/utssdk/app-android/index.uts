@@ -5,6 +5,12 @@ import VideoCallActivity from 'ftx.voice.VideoCallActivity'
 import CallRecordingFiles from 'ftx.voice.CallRecordingFiles'
 import OutgoingVideoPreview from 'ftx.voice.OutgoingVideoPreview'
 import RealtimeNotifications from 'ftx.voice.RealtimeNotifications'
+import AppChatBadge from 'ftx.voice.AppChatBadge'
+
+export function updateChatBadge(options: string): void {
+  const context = UTSAndroid.getAppContext()
+  if (context != null) AppChatBadge.update(context!, options)
+}
 
 let listener: ((event: string) => void) | null = null
 let socketListener: ((event: string) => void) | null = null

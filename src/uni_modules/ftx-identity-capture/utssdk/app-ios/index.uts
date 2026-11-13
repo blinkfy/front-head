@@ -1,0 +1,5 @@
+let listener: ((event: string) => void) | null = null
+export function onIdentityCaptureEvent(callback: (event: string) => void): void { listener = callback }
+export function openIdentityCapture(options: string): void { IdentityCaptureBridge.open(options, (event: string) => { listener?.(event) }) }
+export function updateIdentityCapture(options: string): void { IdentityCaptureBridge.update(options) }
+export function closeIdentityCapture(id: string): void { IdentityCaptureBridge.close(id) }

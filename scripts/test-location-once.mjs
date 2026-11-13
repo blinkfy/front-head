@@ -243,12 +243,14 @@ await test('address resolution errors are tagged as address stage and never show
   const code = preprocessPlatform(addressSource, 'app')
     .replace("import { getUserLocationOnce } from '@/utils/location'", 'const { getUserLocationOnce } = globalThis.dependencies')
     .replace("import { reverseGeocoder } from '@/api/map'", 'const { reverseGeocoder } = globalThis.dependencies')
+    .replace("import { wgs84ToGcj02 } from '@/pages-nonTheme/utils/recycling-geometry.mjs'", 'const { wgs84ToGcj02 } = globalThis.dependencies')
     .replace('export async function resolveLocationAddress', 'async function resolveLocationAddress')
     .replace('export async function getCurrentAddress', 'async function getCurrentAddress')
   const context = {
     dependencies: {
       getUserLocationOnce: async () => ({ latitude: 25, longitude: 121 }),
-      reverseGeocoder: async () => { throw Object.assign(new Error('permission denied'), { code: 1 }) }
+      reverseGeocoder: async () => { throw Object.assign(new Error('permission denied'), { code: 1 }) },
+      wgs84ToGcj02: (latitude, longitude) => ({ latitude, longitude })
     }
   }
   vm.runInNewContext(`${code}\nglobalThis.getCurrentAddress = getCurrentAddress`, context)
@@ -264,13 +266,15 @@ await test('current address opts into location accuracy and returns it with the 
   const code = preprocessPlatform(addressSource, 'app')
     .replace("import { getUserLocationOnce } from '@/utils/location'", 'const { getUserLocationOnce } = globalThis.dependencies')
     .replace("import { reverseGeocoder } from '@/api/map'", 'const { reverseGeocoder } = globalThis.dependencies')
+    .replace("import { wgs84ToGcj02 } from '@/pages-nonTheme/utils/recycling-geometry.mjs'", 'const { wgs84ToGcj02 } = globalThis.dependencies')
     .replace('export async function resolveLocationAddress', 'async function resolveLocationAddress')
     .replace('export async function getCurrentAddress', 'async function getCurrentAddress')
   let locationOptions
   const context = {
     dependencies: {
       getUserLocationOnce: async (type, options) => { locationOptions = { type, ...options }; return { latitude: 25, longitude: 121, accuracy: 46 } },
-      reverseGeocoder: async () => ({ data: { result: { address: '台北市中正區', address_component: {} } } })
+      reverseGeocoder: async () => ({ data: { result: { address: '台北市中正區', address_component: {} } } }),
+      wgs84ToGcj02: (latitude, longitude) => ({ latitude, longitude })
     }
   }
   vm.runInNewContext(`${code}\nglobalThis.getCurrentAddress = getCurrentAddress`, context)

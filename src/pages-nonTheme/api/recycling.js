@@ -1,7 +1,7 @@
 import request from '@/api/index.js'
 
 export async function recyclingRequest(url, method = 'GET', data = {}) {
-  const response = await request({ url, method, data, needAuth: true })
+  const response = await request({ url, method, ...(String(method).toUpperCase() === 'GET' ? { params: data } : { data }), needAuth: true })
   if (response?.code !== 0) throw Object.assign(new Error(response?.msg || response?.error || '操作失败，请重试'), { status: response?.code })
   return response.data
 }

@@ -1,9 +1,18 @@
 import { getUserLocationOnce } from '@/utils/location'
 import { reverseGeocoder } from '@/api/map'
+import { wgs84ToGcj02 } from '@/pages-nonTheme/utils/recycling-geometry.mjs'
 
 export async function resolveLocationAddress(latitude, longitude, accuracy) {
   try {
     // #ifdef H5
+    try {
+      const point = wgs84ToGcj02(latitude, longitude)
+      const response = await reverseGeocoder(point.latitude, point.longitude)
+      const result = response?.data?.result || response?.data
+      const address = result?.address || result?.formatted_addresses?.recommend
+      if (response?.code != null && response.code !== 0 || !String(address || '').trim()) throw new Error('地址解析暂不可用')
+      return { address, parts: result.address_component || {}, latitude, longitude, accuracy }
+    } catch (_) { /* The alternate geocoder also receives WGS84, never GCJ02. */ }
     const data = await new Promise((resolve, reject) => uni.request({
       url: `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=zh`,
       timeout: 10000,

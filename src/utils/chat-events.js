@@ -71,6 +71,8 @@ export function notifyChatEvent(event) {
     try { if (message.type !== 'text' && typeof content === 'string') content = JSON.parse(content) } catch (_) {}
     triggerMessageNotification({
         senderName: event.title || event.sender?.nickname || event.sender?.username || '新消息',
+        senderAvatar: event.sender?.avatar || '',
+        senderLabel: event.groupId ? (event.sender?.nickname || event.sender?.username || '群成员') : '',
         content: realtimeActivityCard(message) ? (event.notificationBody || message.content) : typeof content === 'string' ? content : '', type: message.type,
         fileName: content?.fileName || content?.name,
         conversationId: event.conversationId, groupId: event.groupId, otherId: event.otherId
@@ -95,7 +97,7 @@ const transport = createChatEventsTransport({
                 if (seen.has(key)) return
                 seen.set(key, true)
                 if (seen.size > 500) seen.delete(seen.keys().next().value)
-                showNotification({ title: `${event.from.name || '联系人'}正在共享位置`, content: '点击进入，同时共享我的位置', icon: '',
+                showNotification({ title: `${event.from.name || '联系人'}正在共享位置`, content: '点击进入，同时共享我的位置', icon: '', avatar: event.from.avatar,
                     onTap: () => {
                         if ((uni.getStorageSync('token') || '') !== account) return
                         uni.navigateTo({ url: `/pages-nonTheme/live-location?peerId=${encodeURIComponent(event.from.id)}&name=${encodeURIComponent(event.from.name || '联系人')}&sessionId=${encodeURIComponent(event.sessionId)}` })
@@ -122,6 +124,8 @@ const transport = createChatEventsTransport({
             return
         }
         if (event.type === 'community.changed') { messageBus.emit('community.changed', event); return }
+        // Native badge deltas do not require another list/history request.
+        if (['read', 'badge.remove'].includes(event.kind)) return
         messageBus.emit('chat.changed', event)
         notifyChatEvent(event)
     },

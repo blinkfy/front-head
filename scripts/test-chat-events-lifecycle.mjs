@@ -35,7 +35,7 @@ function preprocess(input, platform) {
 
 function harness({ platform, web = true, backgroundMask = 0 }) {
   const calls = { voice: [], location: [], transport: [], feedback: [], catchup: [], foreground: [], refresh: 0,
-    mask: [], videoVisible: 0, androidReturn: 0, listeners: {}, uniEvents: [], lifecycle: [], visible: [], notifications: [], bus: [], miniAlerts: [] }
+    mask: [], videoVisible: 0, androidReturn: 0, listeners: {}, uniEvents: [], lifecycle: [], visible: [], notifications: [], bus: [], miniAlerts: [], messages: [] }
   let permissionPending = false
   let eventHandlers = null
   const transport = {
@@ -47,7 +47,7 @@ function harness({ platform, web = true, backgroundMask = 0 }) {
     baseUrl: 'https://example.test',
     webCallsAvailable: () => web, refreshWebCallAlert: () => calls.refresh++,
     syncChatPush() {},
-    messageBus: { emit(name, event) { calls.bus.push([name, event]) } }, triggerMessageNotification: async () => {},
+    messageBus: { emit(name, event) { calls.bus.push([name, event]) } }, triggerMessageNotification: async (message, options) => calls.messages.push({ message, options }),
     realtimeActivityCard: () => null,
     initChatNotificationNavigation() {}, showNotification() {}, userNotificationUrl: () => '',
     createNotificationCatchup: () => ({ setActive(value) { calls.catchup.push(value) }, check: async () => {}, seen: () => true }),
@@ -67,7 +67,7 @@ function harness({ platform, web = true, backgroundMask = 0 }) {
     realtimePermissionPending: () => permissionPending,
     webLocationAvailable: () => platform === 'H5' && web,
     miniLocationAvailable: () => false,
-    miniIncomingCalls: { foreground(value) { calls.miniAlerts.push(value) } }, installMiniIncomingSender() {},
+    miniIncomingCalls: { handle: () => false, foreground(value) { calls.miniAlerts.push(value) } }, installMiniIncomingSender() {},
     setAndroidRealtimeForeground(value) { calls.foreground.push(value); calls.lifecycle.push('native-foreground') },
     handleAndroidRealtimeReturn() { calls.androidReturn++ }, syncAndroidMessagingPreference() {},
     uni: { getStorageSync: key => key === 'token' ? 'test-token' : key === 'userInfo' ? { id: 2 } : '', setStorageSync() {}, request() {}, navigateTo() {}, $on(name, callback) { calls.uniEvents.push([name, callback]) } },
@@ -280,6 +280,28 @@ async function testWebviewRetry() {
   await recovered
   assert.equal(page.key, 2)
   assert.equal(activeLeases, 1)
+}
+
+for (const platform of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
+  const h = harness({ platform, web: platform === 'H5' })
+  h.api.setChatEventsActive(true)
+  const sender = { id: 9, nickname: '小明', avatar: '/static/avatars/9.webp' }
+  h.handlers.onEvent({ type: 'chat.changed', kind: 'message', conversationId: '9', title: '备注名', sender,
+    message: { id: 9001, senderId: 9, type: 'text', content: '你好' } })
+  assert.equal(h.calls.messages.at(-1).message.senderAvatar, sender.avatar)
+  assert.equal(h.calls.messages.at(-1).message.senderName, '备注名')
+  h.handlers.onEvent({ type: 'chat.changed', kind: 'message', conversationId: 'group:5', groupId: 5, title: '测试群', sender,
+    message: { id: 9002, senderId: 9, type: 'image', content: '{}' } })
+  assert.equal(h.calls.messages.at(-1).message.senderLabel, '小明')
+  assert.equal(h.calls.messages.at(-1).message.senderName, '测试群')
+  h.api.setActiveChatConversation('9')
+  h.handlers.onEvent({ type: 'chat.changed', kind: 'message', conversationId: '9', sender,
+    message: { id: 9003, senderId: 9, type: 'text', content: '当前聊天' } })
+  assert.equal(h.calls.messages.at(-1).options.showNotification, false)
+  const count = h.calls.messages.length
+  h.handlers.onEvent({ type: 'chat.changed', kind: 'message', conversationId: '9', muted: true, sender,
+    message: { id: 9004, senderId: 9, type: 'text', content: '免打扰' } })
+  assert.equal(h.calls.messages.length, count)
 }
 
 testH5Lifecycle()

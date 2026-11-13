@@ -2,6 +2,7 @@ import { baseUrl } from '@/api/settings.js'
 import { createPushRegistration } from './chat-push-registration.mjs'
 import { getOrCreatePushInstallationId } from './chat-push-installation.mjs'
 import { appConsole } from './app-console.mjs'
+import { syncChatBadgeAccount, clearChatBadge } from './app-chat-badge.js'
 
 let registration
 export function installChatPush(getToken, deleteToken) {
@@ -35,9 +36,11 @@ export function installChatPush(getToken, deleteToken) {
 }
 export function syncChatPush(jwt, force = false) {
   appConsole.setIdentity(jwt)
+  syncChatBadgeAccount()
   return registration?.sync(jwt, force)
 }
 export function clearChatPush() {
   appConsole.setIdentity('')
+  clearChatBadge()
   return registration?.logout()
 }

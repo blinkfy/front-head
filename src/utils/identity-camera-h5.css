@@ -1,0 +1,61 @@
+.identity-camera { --identity-light: #fff; --identity-green: #06b886; --identity-ink: #111d30; position: fixed; inset: 0; z-index: 2147483000; display: flex; flex-direction: column; height: 100vh; height: 100dvh; color: var(--identity-ink); background: var(--identity-light); transition: background-color 250ms ease; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; overflow: hidden; color-scheme: light; }
+.identity-camera *, .identity-camera *::before, .identity-camera *::after { box-sizing: border-box; }
+.identity-camera [hidden] { display: none !important; }
+.identity-camera .identity-camera-button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; border: 0; background: transparent; }
+.identity-camera-button:focus-visible { outline: 2px solid var(--identity-green); outline-offset: 3px; }
+.identity-camera .identity-camera-icon { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.identity-camera-header { display: grid; grid-template-columns: 52px 1fr 52px; align-items: center; flex-shrink: 0; padding: max(8px, env(safe-area-inset-top)) 12px 0; min-height: 58px; }
+.identity-camera-header strong { text-align: center; font-size: 18px; font-weight: 650; }
+.identity-camera-header .identity-camera-button { min-width: 44px; min-height: 44px; padding: 8px; font-size: 14px; }
+.identity-camera-header .identity-camera-button:first-child { text-align: left; }
+.identity-camera-back-icon { width: 25px; height: 25px; vertical-align: middle; }
+.identity-camera-content { width: 100%; max-width: 430px; flex: 1; min-height: 0; margin: 0 auto; overflow-y: auto; overscroll-behavior: contain; padding: 12px 24px max(18px, env(safe-area-inset-bottom)); text-align: center; scrollbar-width: thin; }
+.identity-camera-progress, .identity-camera-actions { list-style: none; padding: 0; margin: 0; }
+.identity-camera-progress { display: grid; grid-template-columns: repeat(3, 1fr); padding: 0 9px; }
+.identity-camera-progress li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; font-size: 13px; color: #69717d; }
+.identity-camera-progress li:not(:last-child)::after { content: ''; position: absolute; width: 100%; height: 1px; background: #dce1e5; top: 10px; left: 50%; }
+.identity-camera-progress i { z-index: 1; width: 21px; height: 21px; display: grid; place-items: center; background: var(--identity-light); border: 2px solid #c8cdd3; border-radius: 50%; font-size: 10px; font-style: normal; transition: background-color 250ms ease; }
+.identity-camera-progress .is-current, .identity-camera-progress .is-complete { color: var(--identity-green); }
+.identity-camera-progress .is-current i, .identity-camera-progress .is-complete i { border-color: var(--identity-green); background: var(--identity-green); color: #fff; }
+.identity-camera-progress .is-current i { font-size: 0; }
+.identity-camera-progress .is-current i::after { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+.identity-camera-progress .is-complete i { font-size: 0; }
+.identity-camera-progress .is-complete i::after { content: '✓'; font-size: 12px; }
+.identity-camera-progress .is-complete::after { background: var(--identity-green); }
+.identity-camera-instruction { margin: 24px 0 18px; min-height: 65px; }
+.identity-camera-instruction h2 { margin: 0; font-size: clamp(23px, 6.5vw, 28px); font-weight: 700; line-height: 1.4; letter-spacing: .3px; }
+.identity-camera-instruction p { margin: 9px 0 0; font-size: 14px; line-height: 1.5; color: #69717d; }
+.identity-camera-frame { width: min(66vw, 270px); height: min(83.5vw, 342px); position: relative; margin: 0 auto; color: #a4acb3; }
+.identity-camera-frame.is-ready { color: var(--identity-green); }
+.identity-camera-viewport { position: absolute; inset: 0; border: 2px solid currentColor; border-radius: 50%; overflow: hidden; background: #e9efec; }
+.identity-camera-video { width: 100%; height: 100%; display: block; object-fit: cover; transform: scaleX(-1); }
+.identity-camera-corner { width: 15px; height: 15px; position: absolute; border: solid currentColor; border-width: 0; }
+.identity-camera-corner.tl { top: 12px; left: -6px; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 2px; }
+.identity-camera-corner.tr { top: 12px; right: -6px; border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 2px; }
+.identity-camera-corner.bl { bottom: 12px; left: -6px; border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 2px; }
+.identity-camera-corner.br { bottom: 12px; right: -6px; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 2px; }
+.identity-camera-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; color: #9aafa4; background: #eef4f0; font-size: 13px; }
+.identity-camera .identity-camera-placeholder-icon { width: 90px; height: 108px; stroke-width: 1.3; }
+.identity-camera-face-status { margin: 15px 0 19px; color: #62716b; font-size: 13px; line-height: 1.5; }
+.identity-camera-face-status::before { content: ''; display: inline-block; width: 7px; height: 7px; background: #a4acb3; border-radius: 50%; vertical-align: 1px; margin-right: 8px; }
+.identity-camera-frame.is-ready + .identity-camera-face-status::before { background: var(--identity-green); }
+.identity-camera-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-width: 290px; margin: 0 auto; }
+.identity-camera-actions li { position: relative; color: #707984; padding-top: 2px; }
+.identity-camera-actions li > div { display: flex; align-items: center; justify-content: center; gap: 9px; padding-bottom: 12px; border-bottom: 2px solid #dce1e5; font-size: 16px; }
+.identity-camera-actions i { width: 23px; height: 23px; border: 1.5px solid currentColor; border-radius: 50%; font-style: normal; line-height: 20px; font-size: 14px; }
+.identity-camera .identity-camera-action-icon { display: block; width: 112px; height: 34px; margin: 14px auto 0; stroke-width: 1.4; }
+.identity-camera-actions .is-current, .identity-camera-actions .is-complete { color: var(--identity-green); }
+.identity-camera-actions .is-current > div, .identity-camera-actions .is-complete > div { border-color: var(--identity-green); }
+.identity-camera-actions .is-current span { font-weight: 650; }
+.identity-camera-actions .is-complete i { font-size: 0; background: var(--identity-green); color: #fff; border-color: var(--identity-green); }
+.identity-camera-actions .is-complete i::after { content: '✓'; font-size: 13px; }
+.identity-camera-footer { margin-top: 20px; }
+.identity-camera-footer .identity-camera-light { display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 6px 12px; min-height: 44px; font-size: 14px; }
+.identity-camera .identity-camera-light-icon { width: 23px; height: 23px; color: var(--identity-green); stroke-width: 1.6; }
+.identity-camera-light[aria-pressed='false'] .identity-camera-light-icon { color: #69717d; }
+.identity-camera-footer p { margin: 7px 0 0; color: #69717d; font-size: 12px; line-height: 1.6; }
+.identity-camera-footer small { display: block; color: #69717d; font-size: 11px; line-height: 1.6; margin-top: 9px; }
+@media (min-width: 600px) { .identity-camera-content { padding-top: 22px; }.identity-camera-frame { width: 260px; height: 330px; }.identity-camera-header { width: 100%; max-width: 560px; margin: 0 auto; } }
+@media (max-height: 740px) { .identity-camera-content { padding-top: 5px; }.identity-camera-instruction { margin: 19px 0 16px; min-height: 57px; }.identity-camera-frame { width: min(62vw, 230px); height: min(78vw, 291px); }.identity-camera-face-status { margin: 12px 0; }.identity-camera .identity-camera-action-icon { height: 29px; margin-top: 8px; }.identity-camera-footer { margin-top: 15px; } }
+@media (max-height: 600px) { .identity-camera-frame { width: 170px; height: 215px; }.identity-camera-content { padding-bottom: 12px; }.identity-camera-instruction { margin: 13px 0 14px; }.identity-camera .identity-camera-action-icon { display: none; } }
+@media (prefers-reduced-motion: reduce) { .identity-camera, .identity-camera-progress i { transition: none; } }

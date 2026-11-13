@@ -1,4 +1,5 @@
 import { baseUrl } from './settings'
+import { clearChatBadge } from '@/utils/app-chat-badge.js'
 import {
   markDatabaseOffline,
   updateDatabaseStatusFromAvailability
@@ -34,6 +35,7 @@ function handleUnauthorized() {
 function redirectToLogin() {
   try {
     uni.removeStorageSync('token')
+    clearChatBadge()
   } catch (e) {
     // Storage failures should not prevent recovery to the login page.
   }

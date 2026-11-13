@@ -6,6 +6,7 @@ import { officialSitePlugin } from './scripts/official-site.mjs'
 import { browserRoundCodeAssetsPlugin } from './scripts/browser-roundcode-assets.mjs'
 import { h5DevCompressionPlugin } from './scripts/h5-dev-compression.mjs'
 import { embeddedCallPlugin } from './scripts/embedded-call.mjs'
+import { foregroundNotificationPlugin } from './scripts/foreground-notification-plugin.mjs'
 
 // https://vitejs.dev/config/
 export default defineConfig(async ({ mode }) => {
@@ -28,6 +29,7 @@ export default defineConfig(async ({ mode }) => {
       }
     } : {}),
     plugins: [
+      foregroundNotificationPlugin(),
       h5DevCompressionPlugin(),
       uni({ vueOptions: { template: { compilerOptions: { isCustomElement: tag => tag === 'smart-sort-xr' } } } }),
       smartSortRobotAssetsPlugin(),

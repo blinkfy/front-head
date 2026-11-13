@@ -4,6 +4,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createForegroundNotifications, notificationAvatarUrl } from '../src/utils/foreground-notification.mjs'
 
 const require = createRequire(import.meta.url)
 const { parse: parseSfc, compileScript, compileTemplate, compileStyle } = require('@vue/compiler-sfc')
@@ -631,15 +632,10 @@ async function testNotifications() {
     .replace(/^export default[\s\S]*$/m, '')
     .replace(/^export /gm, '')
   const toasts = [], navigations = [], timers = []
-  const bodyChildren = []
-  const elements = new Map()
-  const document = {
-    body: { appendChild(element) { bodyChildren.push(element); elements.set(element.id, element) } },
-    createElement() { return { style: {}, addEventListener(name, callback) { this[name] = callback }, remove() { this.removed = true } } },
-    getElementById(id) { return elements.get(id) || null }
-  }
+  const foregroundNotifications = createForegroundNotifications({ getOwner: () => 'test-account',
+    setTimer: (callback, duration) => { timers.push({ callback, duration }); return timers.length }, clearTimer() {} })
   const feedbackCalls = []
-  const context = { document,
+  const context = { foregroundNotifications, notificationAvatarUrl, baseUrl: 'https://api.test',
     uni: { showToast: options => toasts.push(options), navigateTo: options => navigations.push(options),
       getSystemInfoSync: () => ({ platform: 'native-mock' }) },
     receiveChatFeedback: options => { feedbackCalls.push(options); return Promise.resolve(true) },
@@ -648,13 +644,12 @@ async function testNotifications() {
   vm.runInNewContext(`${source}\nglobalThis.notificationExports={showNotification,notifyNewMessage,openChatNotification,playNotificationSound}`, context)
   const { showNotification, notifyNewMessage, openChatNotification, playNotificationSound } = context.notificationExports
   notifyNewMessage({ senderName: 'Ada', content: 'hello' }, { showNotification: false, useSystemNotification: true, playSound: false, vibrate: false })
-  assert.equal(bodyChildren.length, 0, 'showNotification=false suppresses DOM banners')
+  assert.equal(foregroundNotifications.snapshot(), null, 'showNotification=false suppresses banners')
   assert.equal(toasts.length, 0, 'showNotification=false suppresses native/toast notifications')
   showNotification({ title: 'Ada', content: 'hello', duration: 1234, onTap: () => openChatNotification({ groupId: 'g 1', senderName: 'Ada' }) })
-  assert.equal(timers.length, 1, 'DOM notification timer is installed')
+  assert.equal(timers.length, 1, 'the shared notification timer is installed')
   assert.equal(timers[0].duration, 1234, 'notification duration is interpreted in milliseconds')
-  assert.ok(bodyChildren[0].click, 'DOM notification is clickable')
-  bodyChildren[0].click()
+  foregroundNotifications.tap(foregroundNotifications.snapshot().id)
   assert.match(navigations[0].url, /conversationType=group/)
   assert.match(navigations[0].url, /groupId=g%201/)
   await playNotificationSound('default')

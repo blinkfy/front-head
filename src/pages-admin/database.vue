@@ -407,7 +407,10 @@
                                     </view>
                                     <view class="data-row">
                                         <text class="data-label">内容:</text>
-                                        <rich-text class="data-value"
+                                        <view v-if="getFieldImages('Message', 'content', item.content, item.type).length" class="admin-image-list">
+                                            <image v-for="(src, index) in getFieldImages('Message', 'content', item.content, item.type)" :key="index" class="device-image-thumb" :src="resolveTrashBinImage(src)" mode="aspectFill" @click.stop="previewDeviceImage(src)" />
+                                        </view>
+                                        <rich-text v-else class="data-value"
                                             :nodes="highlightText((item.content || '').substring(0, 100))"></rich-text>
                                     </view>
                                     <view v-if="item.refId" class="data-row">
@@ -463,6 +466,12 @@
                                     </view>
                                 </template>
                                 <template v-if="!isSpecialTable(currentTable)">
+                                    <view class="data-row" v-for="field in getGenericImageFields(item)" :key="'image-' + field.key">
+                                        <text class="data-label">{{ field.label }}:</text>
+                                        <view class="admin-image-list">
+                                            <image v-for="(src, index) in field.images" :key="index" class="device-image-thumb" :src="resolveTrashBinImage(src)" mode="aspectFill" @click.stop="previewDeviceImage(src)" />
+                                        </view>
+                                    </view>
                                     <view class="data-row" v-for="field in getGenericPreviewFields(item)"
                                         :key="field.key">
                                         <text class="data-label">{{ field.label }}:</text>
@@ -547,7 +556,10 @@
                 <scroll-view class="modal-body" scroll-y>
                     <view v-for="field in getRecordDetailFields(recordDetail)" :key="field.key" class="record-detail-field">
                         <text class="form-label">{{ field.label }}</text>
-                        <text class="record-detail-value" selectable>{{ field.value }}</text>
+                        <view v-if="field.images.length" class="admin-image-list">
+                            <image v-for="(src, index) in field.images" :key="index" class="device-image-thumb" :src="resolveTrashBinImage(src)" mode="aspectFill" @click.stop="previewDeviceImage(src)" />
+                        </view>
+                        <text v-else class="record-detail-value" selectable>{{ field.value }}</text>
                     </view>
                 </scroll-view>
                 <view class="modal-footer">
@@ -583,9 +595,14 @@
                             <input class="form-input" v-model="editForm.password" type="password"
                                 placeholder="请输入新密码" />
                         </view>
+                        <view v-for="field in userProfileFields" :key="field.key" class="form-item">
+                            <text class="form-label">{{ field.label }}</text>
+                            <input class="form-input" v-model="editForm[field.key]" :placeholder="'请输入' + field.label" />
+                        </view>
                         <view class="form-item">
-                            <text class="form-label">头像URL</text>
-                            <input class="form-input" v-model="editForm.avatar" placeholder="请输入头像URL" />
+                            <text class="form-label">头像</text>
+                            <TrashBinImageEditor v-model="editForm.avatar" :disabled="avatarImageProcessing" @processing="avatarImageProcessing = $event" />
+                            <input v-if="!isImageData(editForm.avatar)" class="form-input" v-model="editForm.avatar" placeholder="或输入头像URL" />
                         </view>
                         <view class="form-item">
                             <text class="form-label">积分</text>
@@ -695,32 +712,34 @@
                             </picker>
                         </view>
 
-                        <!-- 编辑模式：显示图片预览和删除按钮 -->
-                        <view v-if="editMode === 'edit' && editForm" class="form-item">
-                            <text v-if="editForm.hasImage || editForm.imageUrl || historyImageLoading" class="form-label">识别图片</text>
-                            <view v-if="editForm.imageUrl" class="image-preview-container">
-                                <image class="form-image-preview" :src="editForm.imageUrl" mode="aspectFit"
-                                    @click.stop="openHistoryImagePreview" />
-                                <view class="image-delete-btn" @click="deleteImage">
-                                    <ManifestIcon id="delete" :scale="1" /><text>删除图片</text>
-                                </view>
+                        <view v-if="historyImageLoading" class="form-tip">记录详情加载中…</view>
+                        <view v-else-if="historyDetailLoadFailed" class="form-tip">图片和识别结果加载失败，可关闭后重试；保存其他字段不会覆盖这些内容</view>
+                        <template v-else>
+                            <view class="form-item">
+                                <text class="form-label">识别图片</text>
+                                <TrashBinImageEditor v-model="editForm.imageUrl" :disabled="historyImageProcessing" @processing="historyImageProcessing = $event" />
                             </view>
-                            <view v-else-if="historyImageLoading" class="form-tip">图片加载中…</view>
-                            <view v-else-if="!editForm.hasImage" class="form-tip">暂无图片</view>
-                            <view v-else class="form-tip">图片加载失败，请关闭后重试</view>
+                            <view class="form-item">
+                                <text class="form-label">变废为宝图片</text>
+                                <TrashBinImageEditor v-model="editForm.upcyclingImage" :disabled="historyUpcyclingProcessing" @processing="historyUpcyclingProcessing = $event" />
+                            </view>
+                            <view class="form-item">
+                                <text class="form-label">识别结果（JSON）</text>
+                                <textarea class="form-textarea" :maxlength="-1" v-model="editForm.resultDetail" placeholder="请输入JSON格式的识别结果" />
+                            </view>
+                        </template>
+                        <view class="form-item">
+                            <text class="form-label">用户已删除</text>
+                            <switch :checked="!!editForm.userDeleted" @change="onHistoryDeletedChange" />
                         </view>
-
-                        <!-- 新增模式：不显示图片字段（由设备自动上传） -->
-                        <view v-if="editMode === 'add'" class="form-item">
-                            <view class="form-tip">
-                                <ManifestIcon class="tip-icon" id="help" />
-                                <text class="tip-text">图片由设备自动识别上传，手动新增记录无需填写图片</text>
-                            </view>
+                        <view v-if="editForm.userDeleted" class="form-item">
+                            <text class="form-label">删除时间</text>
+                            <input class="form-input" v-model="editForm.userDeletedAt" placeholder="ISO时间，例如 2026-01-01T00:00:00Z" />
                         </view>
 
                         <view class="form-item">
                             <text class="form-label">识别置信度</text>
-                            <input class="form-input" v-model="editForm.confidence" type="digit" placeholder="0-100" />
+                            <input class="form-input" v-model="editForm.confidence" type="digit" placeholder="0-1" />
                         </view>
                         <view class="form-item">
                             <text class="form-label">来源</text>
@@ -756,7 +775,11 @@
                         </view>
                         <view class="form-item">
                             <text class="form-label">消息内容</text>
-                            <textarea class="form-textarea" v-model="editForm.content" placeholder="请输入消息内容（JSON格式）" />
+                            <view v-if="getFieldImages('Message', 'content', editForm.content, editForm.type).length" class="admin-image-list">
+                                <image v-for="(src, index) in getFieldImages('Message', 'content', editForm.content, editForm.type)" :key="index" class="device-image-thumb" :src="resolveTrashBinImage(src)" mode="aspectFill" @click.stop="previewDeviceImage(src)" />
+                            </view>
+                            <view v-if="getFieldImages('Message', 'content', editForm.content, editForm.type).length" class="image-raw-toggle" @click="toggleImageRaw('content')">{{ imageRawFields.content ? '收起原始数据' : '编辑原始数据' }}</view>
+                            <textarea v-if="!getFieldImages('Message', 'content', editForm.content, editForm.type).length || imageRawFields.content" class="form-textarea" :maxlength="-1" v-model="editForm.content" placeholder="请输入消息内容（JSON格式）" />
                         </view>
                         <view class="form-item">
                             <text class="form-label">引用消息ID</text>
@@ -837,6 +860,13 @@
                                     <text v-if="field.required" class="required-mark">*</text>
                                 </text>
 
+                                <view v-if="getFieldImages(currentTable, field.key, editForm[field.key], editForm.type).length" class="admin-image-field">
+                                    <view class="admin-image-list">
+                                        <image v-for="(src, index) in getFieldImages(currentTable, field.key, editForm[field.key], editForm.type)" :key="index" class="device-image-thumb" :src="resolveTrashBinImage(src)" mode="aspectFill" @click.stop="previewDeviceImage(src)" />
+                                    </view>
+                                    <view v-if="!field.locked" class="image-raw-toggle" @click="toggleImageRaw(field.key)">{{ imageRawFields[field.key] ? '收起原始数据' : '编辑原始数据' }}</view>
+                                </view>
+                                <template v-if="!getFieldImages(currentTable, field.key, editForm[field.key], editForm.type).length || imageRawFields[field.key]">
                                 <switch
                                     v-if="field.editor === 'switch'"
                                     :checked="!!editForm[field.key]"
@@ -878,6 +908,7 @@
                                     :disabled="field.locked"
                                 />
 
+                                </template>
                                 <view v-if="field.help" class="form-tip">
                                     <ManifestIcon class="tip-icon" id="help" />
                                     <text class="tip-text">{{ field.help }}</text>
@@ -897,19 +928,12 @@
                     <view class="modal-btn cancel" @click="closeEditModal">
                         <text>取消</text>
                     </view>
-                    <view class="modal-btn confirm" :class="{ disabled: deviceImageProcessing }" @click="handleSave">
-                        <text>{{ deviceImageProcessing ? '图片处理中…' : '保存' }}</text>
+                    <view class="modal-btn confirm" :class="{ disabled: imageProcessing || historyImageLoading }" @click="handleSave">
+                        <text>{{ imageProcessing ? '图片处理中…' : historyImageLoading ? '详情加载中…' : '保存' }}</text>
                     </view>
                 </view>
             </view>
         </view>
-        <view v-if="showHistoryImagePreview && editForm.imageUrl" class="image-preview-overlay"
-            @click.stop="closeHistoryImagePreview">
-            <view class="image-preview-close" @click.stop="closeHistoryImagePreview">×</view>
-            <image class="image-preview-large" :src="editForm.imageUrl" mode="aspectFit"
-                @click.stop="closeHistoryImagePreview" />
-        </view>
-
         <view v-if="showBulkEditModal" class="modal-overlay" @click="closeBulkEdit">
             <view class="bulk-edit-modal" @click.stop>
                 <view class="modal-header">
@@ -953,7 +977,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, getCurrentInstance } from 'vue'
+import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import { showAppModal } from '@/utils/app-confirm-dialog.js'
@@ -995,7 +1019,47 @@ const recordDetail = ref(null)
 const editMode = ref('add') // 'add' 或 'edit'
 const editForm = ref({})
 const editInitialForm = ref({})
+const imageRawFields = ref({})
+function toggleImageRaw(key) { imageRawFields.value = { ...imageRawFields.value, [key]: !imageRawFields.value[key] } }
+const databaseImageFields = {
+    AiChatMessage: ['imageData'], ChatGroup: ['avatar'], Community: ['coverImage'],
+    ChallengeQuestion: ['imageUrl'], Prize: ['image'], ShopProduct: ['image'], Post: ['images'],
+    Message: ['content'], GroupMessage: ['content']
+}
+function getFieldImages(table, key, value, messageType) {
+    if (!databaseImageFields[table]?.includes(key) || value == null || value === '') return []
+    if ((table === 'Message' || table === 'GroupMessage') && messageType !== 'image') return []
+    let data = value
+    if (typeof data === 'string' && /^[\s]*[\[{]/.test(data)) {
+        try { data = JSON.parse(data) } catch { return [] }
+    }
+    const values = Array.isArray(data) ? data : [data]
+    return values.map(item => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') return item.path || item.url || item.imageUrl || item.src || item.image || ''
+        return ''
+    }).filter(item => typeof item === 'string' && item.trim())
+}
+function getGenericImageFields(item) {
+    return (databaseImageFields[currentTable.value] || []).map(key => ({
+        key, images: getFieldImages(currentTable.value, key, item[key], item.type),
+        label: getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key)
+    })).filter(field => field.images.length)
+}
 const deviceImageProcessing = ref(false)
+const avatarImageProcessing = ref(false)
+const historyImageProcessing = ref(false)
+const historyUpcyclingProcessing = ref(false)
+const imageProcessing = computed(() => deviceImageProcessing.value || avatarImageProcessing.value || historyImageProcessing.value || historyUpcyclingProcessing.value)
+const userProfileFields = [
+    { key: 'nickname', label: '昵称' }, { key: 'bio', label: '个人简介' },
+    { key: 'phone', label: '手机号' }, { key: 'email', label: '邮箱' }, { key: 'location', label: '所在地' }
+]
+function isImageData(value) { return typeof value === 'string' && (/^data:image\//i.test(value) || /^[A-Za-z0-9+/]{100,}={0,2}$/.test(value)) }
+function onHistoryDeletedChange(event) {
+    editForm.value.userDeleted = !!event.detail.value
+    editForm.value.userDeletedAt = editForm.value.userDeleted ? (editForm.value.userDeletedAt || new Date().toISOString()) : ''
+}
 const selectionMode = ref(false)
 const selectedRecordKeys = ref([])
 const showBulkEditModal = ref(false)
@@ -1013,7 +1077,7 @@ const tableSchemas = ref({})
 const genericUserIdFields = ref([])
 const genericUserNames = ref({})
 const historyImageLoading = ref(false)
-const showHistoryImagePreview = ref(false)
+const historyDetailLoadFailed = ref(false)
 let historyImageRequestId = 0
 
 // 搜索相关
@@ -1173,6 +1237,9 @@ const legacyTableCatalog = [
     { name: 'CollectorProfile', label: '回收员资料表', icon: 'collector_profile_table' },
     { name: 'CollectorApplication', label: '回收员申请表', icon: 'collector_application_table' },
     { name: 'CollectorAvailability', label: '回收员排班表', icon: 'collector_availability_table' },
+    { name: 'CollectorWeeklySchedule', label: '回收员每周排班表', icon: 'collector_availability_table' },
+    { name: 'CollectorScheduleOverride', label: '回收员排班例外表', icon: 'booking_slot_table' },
+    { name: 'RecyclingPhoto', label: '回收照片表', icon: 'recognition_history_table' },
     { name: 'RecyclingServiceArea', label: '回收服务区域表', icon: 'recycling_service_area_table' },
     { name: 'RecyclingLock', label: '回收并发锁表', icon: 'recycling_lock_table' },
     { name: 'BookingOrderEvent', label: '预约订单事件表', icon: 'booking_order_event_table' },
@@ -1528,7 +1595,7 @@ function shouldHideGenericPreviewField(key = '', value) {
 
 function getGenericPreviewFields(item = {}) {
     const entries = Object.entries(item || {})
-        .filter(([key, value]) => !['id', 'createdAt', 'updatedAt'].includes(key) && !shouldHideGenericPreviewField(key, value))
+        .filter(([key, value]) => !['id', 'createdAt', 'updatedAt'].includes(key) && !shouldHideGenericPreviewField(key, value) && !getFieldImages(currentTable.value, key, value, item.type).length)
     const selected = entries.filter(([key], index) => index < 4 || genericUserIdFields.value.includes(key))
     return selected.map(([key, value]) => ({
         key,
@@ -1546,6 +1613,7 @@ function getRecordDetailFields(item = {}) {
         .map(([key, value]) => ({
             key,
             label: timeLabels[key] || getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key),
+            images: getFieldImages(currentTable.value, key, value, item.type),
             value: value === null || value === undefined ? '未设置'
                 : (typeof value === 'object' ? JSON.stringify(value, null, 2)
                     : (typeof value === 'boolean' ? (value ? '是' : '否') : String(value)))
@@ -2152,6 +2220,8 @@ function onBulkEditValueChange(event) {
 }
 
 function handleAdd() {
+    imageRawFields.value = {}
+    historyDetailLoadFailed.value = false
     historyImageRequestId += 1
     historyImageLoading.value = false
     editMode.value = 'add'
@@ -2163,7 +2233,7 @@ function handleAdd() {
 
     // 根据不同表设置默认值
     if (currentTable.value === 'User') {
-        editForm.value = { username: '', password: '', avatar: '', points: 0 }
+        editForm.value = { username: '', password: '', avatar: '', nickname: '', bio: '', phone: '', email: '', location: '', points: 0 }
     } else if (currentTable.value === 'Device') {
         editForm.value = {
             name: '',
@@ -2178,7 +2248,7 @@ function handleAdd() {
     } else if (currentTable.value === 'UserDevice') {
         editForm.value = { userId: '', deviceId: '' }
     } else if (currentTable.value === 'History') {
-        editForm.value = { userId: '', category: '可回收垃圾', imageUrl: '', confidence: '', source: 'online' }
+        editForm.value = { userId: '', category: '可回收垃圾', imageUrl: '', upcyclingImage: '', resultDetail: '', confidence: '', source: 'online', userDeleted: false, userDeletedAt: '' }
     } else if (currentTable.value === 'Message') {
         editForm.value = { 
             senderId: '', 
@@ -2199,6 +2269,7 @@ function handleAdd() {
 }
 
 function handleEdit(item) {
+    imageRawFields.value = {}
     historyImageRequestId += 1
     historyImageLoading.value = false
     editMode.value = 'edit'
@@ -2209,27 +2280,29 @@ function handleEdit(item) {
         return
     }
     editForm.value = { ...item }
+    editInitialForm.value = { ...item }
+    historyDetailLoadFailed.value = false
     if (currentTable.value === 'History') {
         editForm.value.imageUrl = undefined
-        if (item.hasImage) {
-            const requestId = historyImageRequestId
-            historyImageLoading.value = true
-            getAdminHistoryImage(item.id).then(response => {
-                if (requestId !== historyImageRequestId || editForm.value.id !== item.id) return
-                if (response?.code === 0) {
-                    editForm.value.imageUrl = response.data?.imageUrl || null
-                    editForm.value.hasImage = !!editForm.value.imageUrl
-                } else {
-                    uni.showToast({ title: response?.msg || '图片加载失败', icon: 'none' })
-                }
-            }).catch(error => {
-                if (requestId !== historyImageRequestId) return
-                console.error('加载历史图片失败:', error)
-                uni.showToast({ title: error?.msg || '图片加载失败', icon: 'none' })
-            }).finally(() => {
-                if (requestId === historyImageRequestId) historyImageLoading.value = false
-            })
-        }
+        editForm.value.upcyclingImage = undefined
+        editForm.value.resultDetail = undefined
+        const requestId = historyImageRequestId
+        historyImageLoading.value = true
+        getAdminHistoryImage(item.id).then(response => {
+            if (requestId !== historyImageRequestId || editForm.value.id !== item.id) return
+            if (response?.code !== 0) throw new Error(response?.msg || '加载失败')
+            const detail = response.data || {}
+            editForm.value.imageUrl = detail.imageUrl || ''
+            editForm.value.upcyclingImage = detail.upcyclingImage || ''
+            editForm.value.resultDetail = detail.resultDetail == null ? '' : (typeof detail.resultDetail === 'string' ? detail.resultDetail : JSON.stringify(detail.resultDetail, null, 2))
+            editInitialForm.value = { ...editInitialForm.value, imageUrl: editForm.value.imageUrl, upcyclingImage: editForm.value.upcyclingImage, resultDetail: editForm.value.resultDetail }
+        }).catch(error => {
+            if (requestId !== historyImageRequestId) return
+            historyDetailLoadFailed.value = true
+            uni.showToast({ title: error?.message || '记录详情加载失败', icon: 'none' })
+        }).finally(() => {
+            if (requestId === historyImageRequestId) historyImageLoading.value = false
+        })
     }
     showEditModal.value = true
 }
@@ -2415,7 +2488,7 @@ function confirmBulkEdit() {
 }
 
 async function handleSave() {
-    if (currentTable.value === 'Device' && deviceImageProcessing.value) return
+    if (imageProcessing.value || historyImageLoading.value) return
     if (!isSpecialTable(currentTable.value)) {
         try {
             uni.showLoading({ title: '保存中...' })
@@ -2499,6 +2572,11 @@ async function handleSave() {
         // 类型转换
         if (currentTable.value === 'User') {
             data.points = Number(data.points) || 0
+            delete data.community
+            delete data.communityCode
+            delete data.communityDistrict
+            if (editMode.value === 'edit' && data.avatar === editInitialForm.value.avatar) delete data.avatar
+            if (!data.password) delete data.password
         } else if (currentTable.value === 'Device') {
             data.latitude = data.latitude ? Number(data.latitude) : null
             data.longitude = data.longitude ? Number(data.longitude) : null
@@ -2511,12 +2589,23 @@ async function handleSave() {
             data.deviceId = Number(data.deviceId)
         } else if (currentTable.value === 'History') {
             data.userId = Number(data.userId)
-            data.confidence = data.confidence ? Number(data.confidence) : null
+            data.confidence = data.confidence === '' || data.confidence == null ? null : Number(data.confidence)
+            if (data.confidence !== null && (!Number.isFinite(data.confidence) || data.confidence < 0 || data.confidence > 1)) throw new Error('识别置信度应为0到1之间的数字')
             delete data.hasImage
-            // 确保 imageUrl 为 null 时正确传递（删除图片）
-            if (data.imageUrl === null || data.imageUrl === '') {
-                data.imageUrl = null
+            for (const key of ['imageUrl', 'upcyclingImage', 'resultDetail']) {
+                if (data[key] === undefined || (editMode.value === 'edit' && data[key] === editInitialForm.value[key])) delete data[key]
             }
+            if ('resultDetail' in data) {
+                if (!data.resultDetail.trim()) data.resultDetail = null
+                else {
+                    let parsedDetail
+                    try { parsedDetail = JSON.parse(data.resultDetail) } catch { throw new Error('识别结果不是有效的JSON') }
+                    if (!parsedDetail || typeof parsedDetail !== 'object' || Array.isArray(parsedDetail)) throw new Error('识别结果必须是JSON对象')
+                }
+            }
+            if (data.userDeletedAt && !Number.isFinite(new Date(data.userDeletedAt).getTime())) throw new Error('删除时间格式无效')
+            delete data.communityNorm
+            delete data.communityDistrict
         } else if (currentTable.value === 'Message') {
             data.senderId = Number(data.senderId)
             data.receiverId = Number(data.receiverId)
@@ -2590,7 +2679,7 @@ async function handleSave() {
     } catch (error) {
         console.error('保存失败:', error)
         uni.showToast({
-            title: '保存失败：' + (error.msg || '网络错误'),
+            title: '保存失败：' + (error.msg || error.message || '网络错误'),
             icon: 'none'
         })
     } finally {
@@ -2606,35 +2695,8 @@ async function previewDeviceImage(value) {
 function closeEditModal() {
     historyImageRequestId += 1
     historyImageLoading.value = false
-    showHistoryImagePreview.value = false
     showEditModal.value = false
     editForm.value = {}
-}
-
-function openHistoryImagePreview() {
-    if (editForm.value?.imageUrl) showHistoryImagePreview.value = true
-}
-
-function closeHistoryImagePreview() {
-    showHistoryImagePreview.value = false
-}
-
-function deleteImage() {
-    showAppModal(page, {
-        title: '确认删除',
-        content: '确定要删除这张图片吗？删除后将无法恢复。',
-        confirmText: '删除',
-        cancelText: '取消',
-        confirmColor: '#ef4444',
-        success: (res) => {
-            if (res.confirm) {
-                showHistoryImagePreview.value = false
-                editForm.value.imageUrl = null
-                editForm.value.hasImage = false
-                uni.showToast({ title: '图片已删除', icon: 'success' })
-            }
-        }
-    })
 }
 
 function onBinTypeChange(e) {
@@ -3563,6 +3625,9 @@ onUnmounted(() => {
     align-items: center;
 }
 
+.admin-image-list { display: flex; flex-wrap: wrap; gap: 12rpx; }
+.admin-image-field { display: flex; flex-direction: column; gap: 10rpx; }
+.image-raw-toggle { color: #40e0ff; font-size: 22rpx; padding: 10rpx 0; }
 .device-image-thumb {
     width: 72rpx;
     height: 72rpx;

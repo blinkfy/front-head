@@ -73,7 +73,8 @@ import { searchPlaces } from '@/api/map'
 // #endif
 import { distanceMeters, gcj02ToWgs84, geometryBounds, geometryError, normalizeGeometry, normalizePoint, wgs84ToGcj02 } from '../utils/recycling-geometry.mjs'
 // #ifdef H5
-import { loadRecyclingLeaflet } from '../utils/recycling-map-loader.mjs'
+import { createPreferredWebMap } from '@/utils/preferred-web-map.js'
+import { searchMapPlaces } from '@/utils/map-place-search.js'
 // #endif
 
 const props = defineProps({ geometry: { type: Object, default: undefined }, modelValue: { type: Object, default: null }, areas: { type: Array, default: () => [] }, point: { type: Object, default: null }, readonly: Boolean, disabled: Boolean, autoLocate: Boolean })
@@ -85,7 +86,7 @@ const loading = ref(true), mapError = ref(''), query = ref(''), searching = ref(
 const mapId = `recycling-service-map-${Math.random().toString(36).slice(2)}`
 const nativeMounted = ref(false), nativeOverlaysReady = ref(false), nativeCenter = ref({ latitude: 35.86, longitude: 104.19 }), nativeScale = ref(5)
 const nativeCenterBusy = ref(false), componentProxy = getCurrentInstance()?.proxy
-let map, layers, L, tileLayer, timeout, disposed = false, generation = 0, lastEmitted = '', searchGeneration = 0
+let map, mapAbort, layers, L, timeout, disposed = false, generation = 0, lastEmitted = '', searchGeneration = 0
 let viewportRevision = 0, initialLocationAttempted = false
 function markViewportInteraction() { viewportRevision++; locationHint.value = '' }
 const colors = ['#168362', '#3178c6', '#c87524', '#9656bc', '#d35375']
@@ -263,19 +264,16 @@ async function initialize() {
   const token = ++generation
   clearTimeout(timeout); loading.value = true; mapError.value = ''; locationHint.value = ''
   // #ifdef H5
+  mapAbort?.abort(); mapAbort = new AbortController()
   if (map) map.remove()
-  map = null; layers = null; tileLayer = null
+  map = null; layers = null
   try {
-    await nextTick(); L = await loadRecyclingLeaflet()
-    if (disposed || token !== generation) return
-    map = L.map(mapId, { center: [35.86, 104.19], zoom: 5, doubleClickZoom: false })
+    await nextTick()
+    const result = await createPreferredWebMap(mapId, { center: [35.86, 104.19], zoom: 5, doubleClickZoom: false, signal: mapAbort.signal })
+    if (disposed || token !== generation) { result.map.remove(); return }
+    L = result.library; map = result.map
     layers = L.layerGroup().addTo(map)
-    tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' })
-    let tileLoaded = false
-    tileLayer.on('tileload', () => { if (token !== generation) return; tileLoaded = true; loading.value = false; mapError.value = ''; clearTimeout(timeout) })
-    tileLayer.on('tileerror', () => { if (token === generation && !tileLoaded) { loading.value = false; mapError.value = '地图底图加载失败，请检查网络后重试' } })
-    timeout = setTimeout(() => { if (token === generation && !tileLoaded) { loading.value = false; mapError.value = '地图加载超时，请重试' } }, 12000)
-    tileLayer.addTo(map)
+    loading.value = false
     map.on('click', event => pick({ latitude: event.latlng.lat, longitude: event.latlng.lng }))
     renderLayers(); fitMap(); void locateInitialViewport(token)
   } catch (error) { if (!disposed && token === generation) { loading.value = false; mapError.value = error.message || '地图加载失败，请重试' } }
@@ -306,14 +304,10 @@ async function search() {
   try {
     // Search recenters the map only. It never replaces the service geometry.
     // #ifdef H5
-    const results = await new Promise((resolve, reject) => uni.request({
-      url: `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query.value.trim())}&limit=5&addressdetails=1&accept-language=zh`,
-      method: 'GET', timeout: 10000,
-      success: response => response.statusCode === 200 && Array.isArray(response.data) ? resolve(response.data) : reject(new Error('地点搜索暂不可用')),
-      fail: reject
-    }))
+    const center = map?.getCenter()
+    const results = await searchMapPlaces(query.value.trim(), { latitude: center?.lat, longitude: center?.lng, limit: 5 })
     if (disposed || token !== searchGeneration) return
-    places.value = results.map(place => ({ name: place.display_name || place.name || '搜索结果', point: normalizePoint({ latitude: Number(place.lat), longitude: Number(place.lon) }) })).filter(place => place.point).slice(0, 5)
+    places.value = results.map(place => ({ name: place.name || place.address || '搜索结果', point: normalizePoint(place) })).filter(place => place.point)
     // #endif
     // #ifndef H5
     const current = await getNativeCenter()
@@ -332,7 +326,7 @@ function selectPlace(place) {
   places.value = []
 }
 onMounted(initialize)
-onBeforeUnmount(() => { disposed = true; generation++; searchGeneration++; clearTimeout(timeout); if (map) map.remove(); map = null })
+onBeforeUnmount(() => { disposed = true; generation++; searchGeneration++; clearTimeout(timeout); mapAbort?.abort(); if (map) map.remove(); map = null })
 </script>
 
 <style scoped>

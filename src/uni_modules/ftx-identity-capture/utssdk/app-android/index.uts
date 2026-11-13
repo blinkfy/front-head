@@ -1,0 +1,15 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import IdentityCaptureBridge from 'ftx.identity.IdentityCaptureBridge'
+let listener: ((event: string) => void) | null = null
+export function onIdentityCaptureEvent(callback: (event: string) => void): void { listener = callback }
+export function openIdentityCapture(options: string): void {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) {
+    const input = JSON.parseObject(options)
+    listener?.(JSON.stringify({ id: input?.getString('id') ?? '', type: 'error', message: '无法打开拍摄页面，请重试' }))
+    return
+  }
+  IdentityCaptureBridge.open(activity!, options, (event: string) => { listener?.(event) })
+}
+export function updateIdentityCapture(options: string): void { IdentityCaptureBridge.update(options) }
+export function closeIdentityCapture(id: string): void { IdentityCaptureBridge.close(id) }

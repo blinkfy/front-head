@@ -2,6 +2,7 @@ import {
 	createSSRApp, nextTick
 } from "vue";
 import App from "./App.vue";
+import { foregroundNotifications } from "./utils/foreground-notification.mjs";
 import { rewriteLegacyDeviceScanLocation } from "./utils/device-qr-entry.mjs";
 import { applyStoredTheme } from "./utils/theme.js";
 import { installPageTransitions } from "./utils/page-transitions.js";
@@ -19,7 +20,7 @@ export function createApp() {
 	// #endif
 	installPageTransitions();
 	const app = createSSRApp(App);
-	app.mixin({ onReady() {
+	app.mixin({ onShow() { foregroundNotifications.refresh(); }, onReady() {
 		// #ifdef H5
 		const page = this;
 		nextTick(() => {
