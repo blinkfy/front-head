@@ -271,6 +271,18 @@ for (const stage of ['actions', 'decode', 'cancel']) {
   assert.equal(h.page.photo, null); assert.equal(h.page.challenge, null)
 }
 {
+  const h = pageHarness({ captureIdentityPhoto: async () => { h.cameras++; throw Object.assign(new Error('请在手机微信中完成人脸认证。'), { unavailable: true }) } })
+  h.fill(); const before = h.page.identity.retry.remaining
+  await h.page.capture()
+  assert.equal(h.page.captureNotice, '请在手机微信中完成人脸认证。', 'device capability failure shows guidance')
+  assert.equal(h.page.captureFailure, '', 'capability failure does not show an identity failure card')
+  assert.equal(h.page.verificationFailed, false)
+  assert.equal(h.posts, 0); assert.equal(h.page.identity.retry.remaining, before, 'capability failure does not consume an attempt')
+  await h.component.onShow.call(h.page)
+  assert.equal(h.page.captureNotice, '请在手机微信中完成人脸认证。', 'status refresh preserves capability guidance')
+  assert.equal(h.page.verificationFailed, false); assert.equal(h.posts, 0)
+}
+{
   const h = pageHarness({ submitIdentity: async () => { h.posts++; return { verified: false, status: 'failed', finalFailure: true, retry: allowance(2) } } })
   h.fill(); h.actions.resolve({ file: { size: 6000 } }); h.decode.resolve()
   await h.page.capture()

@@ -28,17 +28,32 @@ export async function captureIdentityPhoto(options = {}) {
   // #ifdef MP-WEIXIN
   if (miniCapture) throw new Error('正在认证，请勿重复打开')
   return new Promise((resolve, reject) => {
-    let closed = false, channel
+    let closed = false, channel, timer
+    const cleanup = () => {
+      const current = channel
+      if (!current || typeof current.off !== 'function') return
+      // Native EventChannel finishes iterating its listener list after our callback.
+      // Deleting that list in the callback can crash its internal .filter().
+      setTimeout(() => {
+        try { current.off('captured', captured); current.off('captureCancelled', cancelled) } catch { /* The page may already have destroyed its channel. */ }
+      }, 0)
+    }
     const finish = (photo, error) => {
       if (closed) { discardIdentityPhoto(photo); return }
-      closed = true; miniCapture = null
-      channel?.off('captured'); channel?.off('captureCancelled')
+      closed = true; clearTimeout(timer)
+      if (miniCapture === session) miniCapture = null
+      cleanup()
       error ? reject(error) : resolve(photo)
     }
-    miniCapture = { cancel: () => { channel?.emit('cancelCapture'); finish(null, Object.assign(new Error('已取消认证'), { cancelled: true })) } }
+    const captured = photo => finish(photo)
+    const cancelled = info => finish(null, Object.assign(new Error(info?.message || '已取消认证'), { cancelled: !info?.message, unavailable: info?.unavailable === true }))
+    const signalCancel = () => { try { if (typeof channel?.emit === 'function') channel.emit('cancelCapture') } catch { /* Cancellation must still settle when the opener is gone. */ } }
+    const session = { cancel: () => { if (!closed) { signalCancel(); finish(null, Object.assign(new Error('已取消认证'), { cancelled: true })) } } }
+    miniCapture = session
+    timer = setTimeout(() => { finish(null, new Error('认证超时，请重新开始')); signalCancel() }, 120000)
     uni.navigateTo({ url: `/pages-nonTheme/identity-camera?order=${options.actions?.[0] === 'mouth' ? 'mouth' : 'blink'}`,
-      events: { captured: photo => finish(photo), captureCancelled: info => finish(null, Object.assign(new Error(info?.message || '已取消认证'), { cancelled: !info?.message })) },
-      success: res => { channel = res.eventChannel; if (closed) channel?.emit('cancelCapture') },
+      events: { captured, captureCancelled: cancelled },
+      success: res => { channel = res.eventChannel; if (closed) { signalCancel(); cleanup() } },
       fail: () => finish(null, new Error('无法打开认证页面，请重新尝试')) })
   })
   // #endif

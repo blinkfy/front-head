@@ -103,6 +103,20 @@ function completeActions(flow, order) {
   assert.equal(state.progress, 0, 'no-face placeholder scores cannot establish the per-eye open baseline')
 }
 
+// A partially sampled blink must not combine across a short no-face gap.
+{
+  const flow = createIdentityNativeFlow(['blink', 'mouth'])
+  let time = 0, state
+  for (let i = 0; i < 3; i++) state = flow.update(makeFrame(), time += 120)
+  state = flow.update(makeFrame({ blink: .8 }), time += 120)
+  assert.equal(state.progress, 0, 'one closure frame is only a partial blink')
+  flow.update(makeFrame({ count: 0, points: [] }), time += 120)
+  for (let i = 0; i < 3; i++) state = flow.update(makeFrame(), time += 120)
+  flow.update(makeFrame({ blink: .8 }), time += 120)
+  flow.update(makeFrame(), time += 120); state = flow.update(makeFrame(), time += 120)
+  assert.equal(state.progress, 0, 'the recovered eye opening cannot complete the pre-gap partial blink')
+}
+
 // Holding the mouth open completes its action immediately, then gets explicit
 // neutral-expression guidance before a photo can be captured.
 {
@@ -235,7 +249,7 @@ for (const order of [['blink', 'mouth'], ['mouth', 'blink']]) {
   assert.equal(stops.length, 2, 'release during initialization waits for init and then stops the detector')
 }
 
-function syntheticWeixinFace(action = 'neutral', mirrored = false) {
+function syntheticWeixinFace(action = 'neutral', mirrored = false, pose = 'neutral', mouthThickness = null) {
   // Unassigned landmarks follow the face outline, away from the eye and mouth patches.
   const points = Array.from({ length: 106 }, (_, i) => {
     const angle = 2 * Math.PI * i / 106
@@ -255,7 +269,13 @@ function syntheticWeixinFace(action = 'neutral', mirrored = false) {
     const column = i % 7, row = Math.floor(i / 7)
     while ([45, 98, 104, 105].includes(index)) index++
     const mouthOpen = action === 'mouth'
-    put({ x: .5 + (column - 3) * .025, y: .68 + (row - 1) * (mouthOpen ? .11 : .012) }, index++)
+    const verticalSpread = mouthOpen ? .11 : mouthThickness ?? .0001
+    put({ x: .5 + (column - 3) * .025, y: .68 + (row - 1) * verticalSpread }, index++)
+  }
+  if (pose === 'tilted') for (const point of points) {
+    const dx = point.x - .5, dy = point.y - .5, angle = .4
+    point.x = .5 + dx * Math.cos(angle) - dy * Math.sin(angle)
+    point.y = .5 + dx * Math.sin(angle) + dy * Math.cos(angle)
   }
   if (mirrored) for (const point of points) point.x = 1 - point.x
   return points
@@ -269,6 +289,7 @@ function calibratedLandmarks() {
 {
   const { landmarks, result } = calibratedLandmarks()
   assert.equal(result.calibrated, true, 'synthetic neutral face calibrates from stable landmarks')
+  assert.equal(result.mouth, 0, 'an extremely thin closed-mouth contour remains a valid neutral baseline')
   const opened = landmarks.update(syntheticWeixinFace('mouth'), 640, 480)
   assert.ok(opened?.calibrated && opened.mouth > .5, 'calibrated mouth geometry detects an open-mouth action')
   assert.equal(landmarks.update(syntheticWeixinFace('neutral').slice(0, 105), 640, 480), null,
@@ -276,12 +297,46 @@ function calibratedLandmarks() {
   assert.equal(landmarks.update(syntheticWeixinFace('neutral'), 640, 480).calibrated, false,
     'rejecting a layout resets neutral calibration')
 
+  const recovery = createWeixinIdentityLandmarks()
+  const tilted = recovery.update(syntheticWeixinFace('neutral', false, 'tilted'), 640, 480)
+  assert.equal(tilted?.calibrated, false, 'a temporary pose mismatch pauses calibration without being treated as a foreign layout')
+  assert.equal(recovery.getIssue(), 'face-alignment', 'diagnostics retain only a reason code for pose mismatch')
+  let recovered
+  for (let i = 0; i < 7; i++) recovered = recovery.update(syntheticWeixinFace('neutral'), 640, 480)
+  assert.equal(recovered?.calibrated, true, 'the same landmark tracker recovers after the face returns to a usable pose')
+  assert.equal(recovery.getIssue(), 'ready', 'successful recovery clears the prior pose reason')
+  const recoveredOpen = recovery.update(syntheticWeixinFace('mouth'), 640, 480)
+  assert.ok(recoveredOpen?.calibrated && recoveredOpen.mouth > .5, 'mouth action detection resumes after pose recovery')
+
   const mirrored = createWeixinIdentityLandmarks()
   let mirroredResult
   for (let i = 0; i < 7; i++) mirroredResult = mirrored.update(syntheticWeixinFace('neutral', true), 640, 480)
   assert.equal(mirroredResult.calibrated, true, 'a mirrored neutral face calibrates after folding the pupil-axis angle')
   const mirroredOpen = mirrored.update(syntheticWeixinFace('mouth', true), 640, 480)
   assert.ok(mirroredOpen?.calibrated && mirroredOpen.mouth > .5, 'a mirrored face still detects the mouth action')
+}
+
+// The calibration tolerates a thick but stable neutral contour, scores the
+// same static contour as closed, and waits through unstable mouth geometry.
+{
+  const stableThick = createWeixinIdentityLandmarks()
+  let state
+  for (let i = 0; i < 7; i++) state = stableThick.update(syntheticWeixinFace('neutral', false, 'neutral', .08), 640, 480)
+  assert.equal(state?.calibrated, true, 'a stable neutral contour above the old fixed .42 ratio can calibrate')
+  assert.equal(state.mouth, 0, 'the learned thick baseline alone is not scored as an open mouth')
+  state = stableThick.update(syntheticWeixinFace('neutral', false, 'neutral', .08), 640, 480)
+  assert.equal(state?.calibrated, true); assert.equal(state.mouth, 0, 'identical frames remain neutral after calibration')
+  const opened = stableThick.update(syntheticWeixinFace('mouth'), 640, 480)
+  assert.ok(opened?.calibrated && opened.mouth > .5, 'additional mouth opening is detected relative to the learned baseline')
+
+  const varying = createWeixinIdentityLandmarks()
+  for (let i = 0; i < 12; i++) {
+    state = varying.update(syntheticWeixinFace('neutral', false, 'neutral', i % 2 ? .04 : .08), 640, 480)
+    assert.equal(state?.calibrated, false, 'a changing mouth contour cannot become the neutral baseline')
+  }
+  assert.equal(varying.getIssue(), 'neutral-mouth')
+  for (let i = 0; i < 7; i++) state = varying.update(syntheticWeixinFace('neutral', false, 'neutral', .08), 640, 480)
+  assert.equal(state?.calibrated, true, 'a stable contour can recover after neutral mouth movement settles')
 }
 
 function conditional(source, target) {
@@ -417,6 +472,7 @@ function conditional(source, target) {
   }
   page.photoQuality = methods.photoQuality
   page.retryQuality = methods.retryQuality
+  page.notify = methods.notify
   page.finish = methods.finish
   const points = [{ x: .1, y: .1 }, { x: .9, y: .9 }]
   methods.takePhoto.call(page, points)
@@ -435,6 +491,7 @@ function conditional(source, target) {
   assert.equal(page.closed, true, 'a good encoded still completes normally')
   assert.equal(events[0][0], 'captured')
   assert.equal(events[0][1].path, '/synthetic/clear-still.jpg')
+  await new Promise(resolve => setTimeout(resolve, 10))
   assert.equal(navigations, 1); assert.equal(releases, 1)
 }
 

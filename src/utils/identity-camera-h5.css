@@ -1,3 +1,4 @@
+/* #ifdef H5 */
 .identity-camera { --identity-light: #fff; --identity-green: #06b886; --identity-ink: #111d30; position: fixed; inset: 0; z-index: 2147483000; display: flex; flex-direction: column; height: 100vh; height: 100dvh; color: var(--identity-ink); background: var(--identity-light); transition: background-color 250ms ease; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; overflow: hidden; color-scheme: light; }
 .identity-camera *, .identity-camera *::before, .identity-camera *::after { box-sizing: border-box; }
 .identity-camera [hidden] { display: none !important; }
@@ -59,3 +60,4 @@
 @media (max-height: 740px) { .identity-camera-content { padding-top: 5px; }.identity-camera-instruction { margin: 19px 0 16px; min-height: 57px; }.identity-camera-frame { width: min(62vw, 230px); height: min(78vw, 291px); }.identity-camera-face-status { margin: 12px 0; }.identity-camera .identity-camera-action-icon { height: 29px; margin-top: 8px; }.identity-camera-footer { margin-top: 15px; } }
 @media (max-height: 600px) { .identity-camera-frame { width: 170px; height: 215px; }.identity-camera-content { padding-bottom: 12px; }.identity-camera-instruction { margin: 13px 0 14px; }.identity-camera .identity-camera-action-icon { display: none; } }
 @media (prefers-reduced-motion: reduce) { .identity-camera, .identity-camera-progress i { transition: none; } }
+/* #endif */

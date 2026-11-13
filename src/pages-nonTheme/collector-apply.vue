@@ -31,7 +31,7 @@
         <view v-if="profile?.status === 'approved'" class="change-notice"><text class="setting-label">申请变更服务范围</text><text class="recycle-muted">审核期间沿用原获批范围。通过时会清除未来排班并暂停新单，需重新发布排班；仍有在途任务或预约依赖时请先处理。</text></view>
         <view class="apply-section">
           <view class="apply-section-heading"><text class="apply-section-number">01</text><view><text class="recycle-heading">服务资料</text><text class="recycle-muted">填写对外服务信息，方便用户联系</text></view></view>
-          <view class="identity-fields"><view><text class="recycle-label">服务姓名</text><input class="recycle-input" v-model="form.serviceName" maxlength="50" placeholder="用户将看到的服务姓名" :disabled="submitting" /></view><view><text class="recycle-label">业务联系电话</text><input class="recycle-input" v-model="form.phone" type="number" maxlength="11" placeholder="可联系的手机号" :disabled="submitting" /></view></view>
+          <view class="identity-fields"><view><text class="recycle-label">服务姓名</text><text class="recycle-input verified-service-name">{{ identity.verified ? serviceName || '正在读取实名姓名…' : '完成实名认证后自动显示' }}</text><text class="recycle-muted">使用实名认证姓名，用户将看到此姓名</text></view><view><text class="recycle-label">业务联系电话</text><input class="recycle-input" v-model="form.phone" type="number" maxlength="11" placeholder="可联系的手机号" :disabled="submitting" /></view></view>
         </view>
 
         <view class="apply-section">
@@ -70,8 +70,8 @@ import { collectorMe, recyclingCatalog, collectorApply, collectorStatusText, ope
 import { identityStatus } from '@/api/identity.js'
 export default {
   components: { RecyclingShell, ShopRegionPicker, RecyclingServiceMap },
-  data: () => ({ identity: {}, identityError: '', formInitialized: false, isDark: false, loading: false, submitting: false, error: '', profile: null, application: null, catalog: { areas: [], types: [] }, ownAreas: [], form: { serviceName: '', phone: '', serviceAreas: [{ name: '', region: ['', '', ''], geometry: null }], typeIds: [], notes: '' }, showRanges: false, guideExpanded: null, applicationSteps: [
-    { title: '填写服务资料', copy: '填写服务姓名、业务手机号和可回收品类，可补充服务经验与车辆情况。' },
+  data: () => ({ identity: {}, identityError: '', serviceName: '', formInitialized: false, isDark: false, loading: false, submitting: false, error: '', profile: null, application: null, catalog: { areas: [], types: [] }, ownAreas: [], form: { phone: '', serviceAreas: [{ name: '', region: ['', '', ''], geometry: null }], typeIds: [], notes: '' }, showRanges: false, guideExpanded: null, applicationSteps: [
+    { title: '填写服务资料', copy: '服务姓名由实名认证自动带入，请填写业务手机号和可回收品类，可补充服务经验与车辆情况。' },
     { title: '圈选上门范围', copy: '选择所在地区，在地图设置圆形或多边形范围，最多可申请10个。' },
     { title: '提交并等待审核', copy: '完成后在页面底部提交，在本页查看审核结果；未通过可按说明修改重提。' },
     { title: '排班后开启接单', copy: '通过后到工作台设置报价、发布排班并开启“接收新单”，用户才能预约。' }
@@ -103,10 +103,10 @@ export default {
       this.loading = true; this.error = ''
       try {
         const [me, catalog] = await Promise.all([collectorMe(), recyclingCatalog()])
-        this.profile = me.profile; this.application = me.application; this.catalog = catalog
+        this.profile = me.profile; this.application = me.application; this.serviceName = me.serviceName || ''; this.catalog = catalog
         const prior = this.application || this.profile
         this.ownAreas = (me.areas || []).filter(area => (prior?.areaIds || []).includes(area.id))
-        if (prior && !this.formInitialized) this.form = { serviceName: prior.serviceName || '', phone: prior.phone || '',
+        if (prior && !this.formInitialized) this.form = { phone: prior.phone || '',
           serviceAreas: this.ownAreas.length ? this.ownAreas.map(area => ({ name: area.name || '', region: area.region || ['', '', ''], geometry: area.geometry || null })) : [{ name: '', region: ['', '', ''], geometry: null }],
           typeIds: prior.typeIds || [], notes: prior.notes || '' }
         this.formInitialized = true
@@ -118,11 +118,11 @@ export default {
     async submit() {
       if (this.submitting) return
       if (!this.identity.verified) { uni.showToast({ title: '请先完成实名认证', icon: 'none' }); return }
-      if (!this.form.serviceName.trim() || !/^1[3-9]\d{9}$/.test(this.form.phone) || !this.form.typeIds.length || !this.form.serviceAreas.length) { uni.showToast({ title: '请完善姓名、手机号、服务范围与品类', icon: 'none' }); return }
+      if (!/^1[3-9]\d{9}$/.test(this.form.phone) || !this.form.typeIds.length || !this.form.serviceAreas.length) { uni.showToast({ title: '请完善手机号、服务范围与品类', icon: 'none' }); return }
       const areas = this.form.serviceAreas.map(area => ({ name: area.name.trim(), region: area.region.map(part => String(part || '').trim()), geometry: normalizeGeometry(area.geometry) }))
       if (areas.some(area => !area.name || area.region.length !== 3 || area.region.some(part => !part) || !area.geometry)) { uni.showToast({ title: '请命名每个范围、选择地区并完成有效圈选', icon: 'none' }); return }
       this.submitting = true
-      try { await collectorApply(mutationData(this.writes, 'apply', { ...this.form, serviceAreas: areas })); delete this.writes.apply; uni.showToast({ title: '申请已提交', icon: 'success' }); await this.load() } catch (e) { uni.showToast({ title: e.message || '申请失败', icon: 'none' }) } finally { this.submitting = false }
+      try { await collectorApply(mutationData(this.writes, 'apply', { phone: this.form.phone, typeIds: this.form.typeIds, notes: this.form.notes, serviceAreas: areas })); delete this.writes.apply; uni.showToast({ title: '申请已提交', icon: 'success' }); await this.load() } catch (e) { uni.showToast({ title: e.message || '申请失败', icon: 'none' }) } finally { this.submitting = false }
     }
   }
 }
@@ -163,6 +163,7 @@ export default {
 .apply-section-heading .recycle-heading { font-size: 30rpx; font-weight: 700; margin: 0 0 4rpx; }
 .apply-section-heading .recycle-muted { font-size: 22rpx; }
 .apply-section-number { display: flex; align-items: center; justify-content: center; flex: 0 0 52rpx; height: 52rpx; border-radius: 14rpx; background: linear-gradient(135deg,#10b981,#059669); color: #fff; font-size: 25rpx; font-weight: 700; }
+.identity-fields .verified-service-name { display: block; padding: 20rpx; line-height: 1.5; min-height: 84rpx; height: auto; box-sizing: border-box; overflow-wrap: anywhere; }
 .identity-fields .recycle-label, .application-range .recycle-label { font-size: 26rpx; font-weight: 600; }
 .section-note { display: block; margin: 12rpx 0 20rpx; line-height: 1.7; }
 .application-range { margin-top: 24rpx; padding: 0 20rpx 24rpx; border: 1rpx solid var(--workbench-line); border-radius: 12rpx; background: var(--workbench-surface); min-width: 0; }

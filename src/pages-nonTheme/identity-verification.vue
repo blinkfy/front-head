@@ -3,6 +3,7 @@
     <view class="identity-intro"><text class="identity-title">让每一次上门更安心</text><text class="recycle-muted">认证与当前账号绑定，成为回收员前需完成。</text></view>
     <view v-if="webHandoff" class="identity-notice"><text class="recycle-copy">正在为账号「{{ handoffAccount || '原应用账号' }}」认证。完成后请返回原应用。</text></view>
     <view v-if="error" class="recycle-error">{{ error }}</view>
+    <view v-if="captureNotice && !identity.verified" class="identity-notice" role="status"><text class="recycle-copy">{{ captureNotice }}</text></view>
     <view v-if="loading" class="recycle-empty">正在获取认证状态…</view>
     <view v-else-if="identity.verified" class="identity-result">
       <text class="identity-check">✓</text><text class="identity-title">实名认证已通过</text>
@@ -60,7 +61,7 @@ import { recycleBack } from './api/recycling.js'
 export default {
   components: { RecyclingShell },
   data: () => ({ isDark: false, identity: {}, loading: true, error: '', name: '', number: '', fieldErrors: { name: '', number: '' }, consented: false,
-    showConsent: true, captureFailure: '', photo: null, photoUsable: false, challenge: null, capturing: false, submitting: false,
+    showConsent: true, captureNotice: '', captureFailure: '', photo: null, photoUsable: false, challenge: null, capturing: false, submitting: false,
     openingWeb: false, webLinkReady: false, handoffUrl: '', webHandoff: false, handoffAccount: '', handoffLoading: false, handoffFailed: false }),
   computed: {
     busy() { return this.capturing || this.submitting },
@@ -143,7 +144,7 @@ export default {
         const identity = await identityStatus()
         if (this.pageClosed || version !== (this.identityVersion || 0)) return
         this.identity = identity; this.error = ''
-        if (identity.verified) { this.captureFailure = ''; this.clearPhoto(); this.name = ''; this.number = '' }
+        if (identity.verified) { this.captureNotice = ''; this.captureFailure = ''; this.clearPhoto(); this.name = ''; this.number = '' }
         if (identity.attempt?.state === 'processing' && this.pageVisible) this.pollTimer = setTimeout(() => this.refresh(), 3000)
       } catch (e) { if (!this.pageClosed && version === (this.identityVersion || 0)) this.error = '暂时无法获取认证状态，请稍后重试。' }
       finally { if (!this.pageClosed) this.loading = false }
@@ -172,7 +173,7 @@ export default {
       if (this.busy || this.processing || this.retryBlocked || !this.valid()) return
       const fields = { name: this.name.trim(), number: this.number.trim().toUpperCase() }
       this.identityVersion = (this.identityVersion || 0) + 1
-      this.capturing = true; this.error = ''; this.captureFailure = ''
+      this.capturing = true; this.error = ''; this.captureFailure = ''; this.captureNotice = ''
       let stage = 'challenge', captured = null
       try {
         const challenge = await identityChallenge()
@@ -191,7 +192,8 @@ export default {
         discardIdentityPhoto(captured)
         if (!this.pageClosed) { this.clearPhoto(); this.challenge = null }
         if (!this.pageClosed && !e.cancelled && !/cancel/i.test(e.errMsg || '')) {
-          this.captureFailure = '认证失败'
+          if (e.unavailable) this.captureNotice = e.message || '暂时无法开始认证，请稍后重试。'
+          else this.captureFailure = '认证失败'
           if (e.retry) this.identity = { ...this.identity, retry: e.retry }
           if (stage === 'challenge') await this.refresh()
         }

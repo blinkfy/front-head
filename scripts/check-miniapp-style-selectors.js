@@ -1,5 +1,8 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const { initPreContext, preCss } = require('@dcloudio/uni-cli-shared')
+
+initPreContext('mp-weixin')
 
 const ROOT = path.resolve(__dirname, '..')
 const SOURCE_ROOT = path.join(ROOT, 'src')
@@ -41,9 +44,11 @@ const violations = []
 for (const filePath of walk(SOURCE_ROOT)) {
   const fileSource = fs.readFileSync(filePath, 'utf8')
   for (const block of styleBlocks(filePath, fileSource)) {
-    for (let index = 0; index < block.source.length; index += 1) {
-      if (block.source[index] !== '{') continue
-      const selector = selectorBeforeBrace(block.source, index)
+    // Use the compiler's platform rules; H5/App-only CSS is not emitted to WXSS.
+    const source = preCss(block.source, filePath)
+    for (let index = 0; index < source.length; index += 1) {
+      if (source[index] !== '{') continue
+      const selector = selectorBeforeBrace(source, index)
       if (!selector || selector.startsWith('@')) continue
       UNSUPPORTED_TAG.lastIndex = 0
       let match
@@ -51,7 +56,7 @@ for (const filePath of walk(SOURCE_ROOT)) {
         const selectorStart = index - selector.length
         violations.push({
           filePath,
-          line: lineNumber(fileSource, block.offset + selectorStart + match.index),
+          line: lineNumber(fileSource, block.offset) + lineNumber(source, selectorStart + match.index) - 1,
           tag: match[2],
           selector: selector.replace(/\s+/g, ' ')
         })
