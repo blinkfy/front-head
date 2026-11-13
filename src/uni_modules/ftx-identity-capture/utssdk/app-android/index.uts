@@ -6,7 +6,7 @@ export function openIdentityCapture(options: string): void {
   const activity = UTSAndroid.getUniActivity()
   if (activity == null) {
     const input = JSON.parseObject(options)
-    listener?.(JSON.stringify({ id: input?.getString('id') ?? '', type: 'error', message: '无法打开拍摄页面，请重试' }))
+    listener?.(JSON.stringify({ id: input?.getString('id') ?? '', type: 'error', message: '无法打开认证页面，请重试' }))
     return
   }
   IdentityCaptureBridge.open(activity!, options, (event: string) => { listener?.(event) })

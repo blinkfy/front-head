@@ -1,35 +1,139 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { identityPhotoFileUrl } from '../src/utils/identity-photo-path.mjs'
 import { createIdentityNativeFlow } from '../src/utils/identity-native-flow.mjs'
 import { createIdentityBrightness } from '../src/utils/identity-brightness.mjs'
 import { createWeixinIdentityLandmarks } from '../src/utils/identity-weixin-landmarks.mjs'
 import { createWeixinIdentityDetector } from '../src/utils/identity-weixin-detector.mjs'
+import { identityImageQualityHint, identityImageQualityIssue, identityQualityRegion, measureIdentityImageQuality } from '../src/utils/identity-image-quality.mjs'
 
 const root = new URL('../', import.meta.url)
-const video = { width: 640, height: 480 }, viewport = { width: 360, height: 640 }
+const video = { width: 640, height: 480 }, viewport = { width: 360, height: 640, guide: { width: .78, height: .82 } }
+const CLEAR_QUALITY = { mean: 120, black: .02, dark: .08, clipped: 0, sharpness: 30, resolution: 80 }
+const BAD_QUALITY = { mean: 0, black: 1, dark: 1, clipped: 0, sharpness: 0, resolution: 80 }
 function face(cx = .5, cy = .5, width = .22, height = .55) {
   return [
     { x: cx - width / 2, y: cy - height / 2 }, { x: cx + width / 2, y: cy - height / 2 },
     { x: cx + width / 2, y: cy + height / 2 }, { x: cx - width / 2, y: cy + height / 2 }
   ]
 }
-const makeFrame = (overrides = {}) => ({ count: 1, points: face(), video, viewport, blink: 0, mouth: 0, color: [100, 100, 100], ...overrides })
+const makeFrame = (overrides = {}) => ({ count: 1, points: face(), video, viewport, blink: 0, mouth: 0, color: [100, 100, 100], quality: CLEAR_QUALITY, ...overrides })
 function completeAction(flow, order, first, time) {
   const active = action => action === 'blink' ? { blink: .8, mouth: 0 } : { blink: 0, mouth: .8 }
   let state
   for (let i = 0; i < 3; i++) state = flow.update(makeFrame(), time += 120)
   const signal = active(order[first])
-  state = flow.update(makeFrame(signal), time += 120)
-  state = flow.update(makeFrame(signal), time += 120)
-  for (let i = 0; i < 3; i++) state = flow.update(makeFrame(), time += 120)
-  return { state, time }
+  for (const frame of [signal, signal, {}, {}, {}]) {
+    state = flow.update(makeFrame(frame), time += 120)
+    if (state.progress > first) return { state, time }
+  }
+  throw new Error('action did not complete')
 }
 function completeActions(flow, order) {
-  let time = 0
-  for (let index = 0; index < order.length; index++) time = completeAction(flow, order, index, time).time
-  // The sequence reports done on the first neutral frame after its last recovery.
-  return { state: flow.update(makeFrame(), time += 120), time }
+  let time = 0, state
+  for (let index = 0; index < order.length; index++) ({ state, time } = completeAction(flow, order, index, time))
+  return { state, time }
+}
+
+// A bad image after both requested actions preserves progress, pauses capture,
+// and requires three consecutive good neutral frames before the photo proceeds.
+{
+  const flow = createIdentityNativeFlow(['blink', 'mouth'])
+  let { state, time } = completeActions(flow, ['blink', 'mouth'])
+  assert.equal(state.progress, 2, 'both actions complete before image-quality gating')
+  assert.equal(state.capture, undefined, 'actions alone never capture')
+
+  // Color calibration must ignore exposure/blur metrics; its colored overlay
+  // changes the measured pixels and should not produce a quality warning.
+  for (let i = 0; i < 9; i++) {
+    state = flow.update(makeFrame({ quality: BAD_QUALITY }), time += 300)
+    assert.equal(state.title, '请保持不动', 'bad image metrics do not interrupt light calibration')
+    if (i < 8) assert.match(state.detail, /柔光调整中/)
+    else assert.doesNotMatch(state.detail, /请检查镜头|光线充足|强光和逆光|正在调整画面/,
+      'finishing the last light stage does not mistake the overlay for poor capture quality')
+    assert.equal(state.capture, undefined)
+  }
+
+  state = flow.update(makeFrame({ quality: BAD_QUALITY }), time += 900)
+  assert.equal(state.ready, false, 'poor final-photo quality pauses the flow')
+  assert.equal(state.title, '请检查镜头是否被遮挡')
+  assert.equal(state.capture, undefined, 'poor quality never captures')
+  assert.equal(state.progress, 2, 'poor quality does not discard completed actions')
+
+  for (let i = 0; i < 2; i++) {
+    state = flow.update(makeFrame({ quality: CLEAR_QUALITY }), time += 120)
+    assert.equal(state.capture, undefined, 'fewer than three good frames cannot capture')
+  }
+  state = flow.update(makeFrame({ quality: undefined }), time += 120)
+  assert.equal(state.ready, false, 'missing quality metrics cannot capture')
+  assert.equal(state.title, '正在调整画面，请稍候')
+  assert.equal(state.capture, undefined)
+  assert.equal(state.progress, 2)
+
+  for (let i = 0; i < 2; i++) {
+    state = flow.update(makeFrame({ quality: CLEAR_QUALITY }), time += 120)
+    assert.equal(state.capture, undefined, 'recovery counter restarts after missing metrics')
+    assert.equal(state.progress, 2)
+  }
+  state = flow.update(makeFrame({ quality: CLEAR_QUALITY }), time += 120)
+  assert.equal(state.capture, true, 'three consecutive good frames resume capture')
+  assert.equal(state.progress, 2, 'capture retains completed action progress')
+}
+
+// Native adapters now supply per-eye scores; the weaker lens must not erase
+// a real bilateral blink, while both closure and reopening remain mandatory.
+{
+  const flow = createIdentityNativeFlow(['blink', 'mouth'])
+  let time = 0, state
+  for (let i = 0; i < 3; i++) flow.update(makeFrame({ blink: .1, blinkLeft: .1, blinkRight: .1 }), time += 120)
+  for (let i = 0; i < 2; i++) state = flow.update(makeFrame({ blink: .25, blinkLeft: .80, blinkRight: .25 }), time += 120)
+  assert.equal(state.progress, 0, 'closure alone does not finish the blink')
+  for (let i = 0; i < 2; i++) state = flow.update(makeFrame({ blink: .1, blinkLeft: .1, blinkRight: .1 }), time += 120)
+  assert.equal(state.progress, 1, 'the real native flow consumes both-eye scores with limited lens compensation')
+}
+
+{
+  const flow = createIdentityNativeFlow(['blink', 'mouth'])
+  let time = 0, state
+  for (let i = 0; i < 4; i++) flow.update(makeFrame({ count: 0, points: [], blinkLeft: 0, blinkRight: 0 }), time += 120)
+  for (let i = 0; i < 6; i++) state = flow.update(makeFrame({ blink: .03, blinkLeft: .03, blinkRight: .22 }), time += 120)
+  for (let i = 0; i < 3; i++) flow.update(makeFrame({ blink: .22, blinkLeft: .95, blinkRight: .22 }), time += 120)
+  for (let i = 0; i < 3; i++) state = flow.update(makeFrame({ blink: .03, blinkLeft: .03, blinkRight: .22 }), time += 120)
+  assert.equal(state.progress, 0, 'no-face placeholder scores cannot establish the per-eye open baseline')
+}
+
+// Holding the mouth open completes its action immediately, then gets explicit
+// neutral-expression guidance before a photo can be captured.
+{
+  const flow = createIdentityNativeFlow(['blink', 'mouth'])
+  let { time } = completeAction(flow, ['blink', 'mouth'], 0, 0)
+  let state = flow.update(makeFrame({ mouth: .8 }), time += 120)
+  assert.equal(state.progress, 1, 'one open-mouth frame is insufficient')
+  state = flow.update(makeFrame({ mouth: .8 }), time += 120)
+  assert.equal(state.progress, 2, 'two valid open-mouth frames complete the action without closure')
+  const expanded = face(.5, .5, .22, .86)
+  for (let i = 0; i < 24; i++) {
+    state = flow.update(makeFrame({ mouth: .8, points: expanded }), time += 120)
+    assert.equal(state.progress, 2, 'a held-open mouth does not reset completed actions during lighting')
+    assert.equal(state.capture, undefined, 'an open-mouth photo is never captured')
+  }
+  assert.equal(state.title, '请恢复自然表情', 'settle gives clear next instructions instead of staying on open-mouth')
+  assert.match(state.detail, /自然闭嘴/)
+  for (let i = 0; i < 10; i++) state = flow.update(makeFrame(), time += 120)
+  assert.equal(state.capture, true, 'a neutral, strictly framed photo can finish after closing the mouth')
+}
+{
+  const flow = createIdentityNativeFlow(['mouth', 'blink'])
+  let time = 0, state
+  for (let i = 0; i < 3; i++) flow.update(makeFrame(), time += 120)
+  flow.update(makeFrame({ mouth: .8 }), time += 120)
+  state = flow.update(makeFrame({ mouth: .8 }), time += 120)
+  assert.equal(state.progress, 1)
+  assert.equal(state.title, '请缓慢眨眼', 'the next instruction appears while the mouth is still open')
+  for (let i = 0; i < 2; i++) flow.update(makeFrame({ blink: .8, mouth: .8 }), time += 120)
+  for (let i = 0; i < 2; i++) state = flow.update(makeFrame({ mouth: .8 }), time += 120)
+  assert.equal(state.progress, 2, 'the following blink step does not wait for mouth closure either')
 }
 
 for (const order of [['blink', 'mouth'], ['mouth', 'blink']]) {
@@ -195,6 +299,42 @@ function conditional(source, target) {
   assert.equal(stack.length, 1)
   return result.join('\n')
 }
+
+// Run the H5 adapter's actual final-canvas capture function with synthetic quality samples.
+{
+  const source = readFileSync(new URL('src/utils/identity-camera-h5.js', root), 'utf8')
+  const start = source.indexOf('async function capture(points) {')
+  const end = source.indexOf('\n    const sampleColor', start)
+  assert.ok(start >= 0 && end > start, 'H5 final-capture implementation is present')
+  const captureSource = source.slice(start, end)
+  const clear = { mean: 120, black: .02, dark: .08, clipped: 0, sharpness: 30, resolution: 80 }
+  const blurred = { mean: 130, black: 0, dark: 0, clipped: 0, sharpness: 0, resolution: 80 }
+  let sample = blurred, sampledPoints, finished = [], retries = []
+  const context = vm.createContext({
+    video: { videoWidth: 128, videoHeight: 128 }, taking: false, closed: false, lightFeedback: 'not_run',
+    footerHint: {}, settledFrames: 3,
+    document: { createElement: () => ({ width: 0, height: 0,
+      getContext: () => ({ drawImage() {} }), toBlob: callback => callback({ size: 100 }) }) },
+    sampleQuality: (_canvas, points) => { sampledPoints = points; return sample },
+    identityImageQualityIssue, identityImageQualityHint,
+    showInstruction() {}, text() {},
+    retryQuality(issue) { retries.push(issue); context.taking = false; context.settledFrames = 0 },
+    finish(result, error) { finished.push({ result, error }); context.closed = true }
+  })
+  vm.runInContext(`${captureSource}\nglobalThis.runCapture = capture`, context)
+  const points = [{ x: .2, y: .2 }, { x: .8, y: .8 }]
+  await context.runCapture(points)
+  assert.equal(sampledPoints, points, 'the latest face points define final-canvas quality sampling')
+  assert.deepEqual(retries, ['blur'], 'a final canvas failing the still-quality check requests another image')
+  assert.equal(context.taking, false); assert.equal(context.closed, false)
+  assert.equal(finished.length, 0)
+
+  sample = clear
+  await context.runCapture(points)
+  assert.equal(finished.length, 1, 'a clear final canvas returns the image')
+  assert.equal(finished[0].result.file.size, 100)
+  assert.equal(context.closed, true)
+}
 {
   const source = conditional(readFileSync(new URL('src/api/identity.js', root), 'utf8'), 'APP-PLUS')
     .replace(/^import .*$/gm, '').replace(/^export /gm, '')
@@ -226,12 +366,84 @@ function conditional(source, target) {
   await assert.rejects(context.submitIdentityNative(fields, { path: '/offline/captured.jpg' }), /未取得认证结果/)
 }
 
+// Exercise the Weixin adapter's actual encoded-still quality gate without a camera.
+{
+  const pageSource = readFileSync(new URL('src/pages-nonTheme/identity-camera.vue', root), 'utf8')
+  const script = pageSource.match(/<script>([\s\S]*?)<\/script>/)[1]
+  const isolated = conditional(script, 'MP-WEIXIN')
+    .replace(/^import .*$/gm, '')
+    .replace('export default {', 'globalThis.wxCameraComponent = {')
+  let imagePath = '', drawnPath = '', unlinked = [], events = [], navigations = 0, releases = 0
+  const rgba = (width, height, sample) => {
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const [r, g, b] = sample(x, y), i = (y * width + x) * 4
+      data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255
+    }
+    return { data, width, height }
+  }
+  const context = vm.createContext({
+    wx: { createOffscreenCanvas() {
+      let currentPath = ''
+      const image = { width: 128, height: 128, onload: null, onerror: null }
+      Object.defineProperty(image, 'src', { set(value) { currentPath = value; image.path = value; queueMicrotask(() => image.onload?.()) } })
+      const canvasContext = {
+        drawImage(source) { drawnPath = source.path },
+        getImageData(_x, _y, width, height) {
+          return currentPath.includes('bad')
+            ? rgba(width, height, () => [130, 130, 130])
+            : rgba(width, height, (x, y) => { const v = ((x >> 3) + (y >> 3)) & 1 ? 148 : 92; return [v, v, v] })
+        }
+      }
+      return { width: 1, height: 1, createImage: () => image, getContext: () => canvasContext }
+    } },
+    uni: {
+      getFileSystemManager: () => ({ unlink: ({ filePath, fail }) => { unlinked.push(filePath); fail?.() } }),
+      navigateBack: () => { navigations++ }
+    },
+    identityImageQualityHint, identityImageQualityIssue, identityQualityRegion, measureIdentityImageQuality,
+    createIdentityNativeFlow: () => ({}), createWeixinIdentityLandmarks: () => ({}),
+    createIdentityBrightness: () => ({}), createWeixinIdentityDetector: () => ({}),
+    setTimeout, clearTimeout, Date, queueMicrotask
+  })
+  vm.runInContext(isolated, context)
+  const methods = context.wxCameraComponent.methods
+  const captured = [], retryCalls = []
+  const page = {
+    closed: false, taking: false, display: { progress: 2 }, camera: { takePhoto: options => captured.push(options) },
+    channel: { emit: (...args) => events.push(args) },
+    flow: { retryImage: time => retryCalls.push(time) },
+    release: () => { releases++ }
+  }
+  page.photoQuality = methods.photoQuality
+  page.retryQuality = methods.retryQuality
+  page.finish = methods.finish
+  const points = [{ x: .1, y: .1 }, { x: .9, y: .9 }]
+  methods.takePhoto.call(page, points)
+  await captured[0].success({ tempImagePath: '/synthetic/bad-still.jpg' })
+  assert.equal(drawnPath, '/synthetic/bad-still.jpg', 'the actual still path is decoded for quality measurement')
+  assert.deepEqual(unlinked, ['/synthetic/bad-still.jpg'], 'a rejected still is deleted')
+  assert.equal(page.taking, false, 'a rejected still allows another capture attempt')
+  assert.equal(page.closed, false, 'poor still quality does not end the camera flow')
+  assert.equal(retryCalls.length, 1, 'poor still quality restarts the native flow settle gate')
+  assert.equal(page.display.title, '请保持手机平稳', 'blur guidance is shown after rejecting the still')
+  assert.equal(events.length, 0)
+
+  methods.takePhoto.call(page, points)
+  await captured[1].success({ tempImagePath: '/synthetic/clear-still.jpg' })
+  assert.equal(drawnPath, '/synthetic/clear-still.jpg')
+  assert.equal(page.closed, true, 'a good encoded still completes normally')
+  assert.equal(events[0][0], 'captured')
+  assert.equal(events[0][1].path, '/synthetic/clear-still.jpg')
+  assert.equal(navigations, 1); assert.equal(releases, 1)
+}
+
 {
   const source = conditional(readFileSync(new URL('src/utils/identity-camera-app.js', root), 'utf8'), 'APP-PLUS')
     .replace(/^import .*$/gm, '').replace(/^export /gm, '')
-  let eventHandler, downloadSuccess, nextDownload = 'deferred', openCount = 0, activeOptions
+  let eventHandler, downloadSuccess, nextDownload = 'deferred', imageBehavior = 'success', imageCallback, openCount = 0, activeOptions
   const removed = [], updates = [], closes = []
-  const context = vm.createContext({ baseUrl: 'https://identity.test', createIdentityNativeFlow: () => ({ update: () => ({}), toggleLight: () => ({}) }),
+  const context = vm.createContext({ identityPhotoFileUrl, baseUrl: 'https://identity.test', createIdentityNativeFlow: () => ({ update: () => ({}), toggleLight: () => ({}) }),
     clearTimeout, setTimeout,
     uni: {
       getStorageSync: () => '', setStorageSync() {}, removeStorageSync() {}, onAppHide() {}, offAppHide() {},
@@ -241,6 +453,12 @@ function conditional(source, target) {
         else downloadSuccess = options.success
       },
       getFileInfo(options) { options.success({ size: nextDownload === 'small' ? 9950 : 3758596 }) },
+      getImageInfo(options) {
+        assert.match(options.src, /^file:\/\//, 'the image reader receives a file URL')
+        if (imageBehavior === 'deferred') imageCallback = options.success
+        else if (imageBehavior === 'failure') options.fail({})
+        else options.success({ width: 480, height: 640 })
+      },
       saveFile(options) { options.success({ savedFilePath: '/saved/model' }) }
     },
     plus: { io: {
@@ -266,16 +484,33 @@ function conditional(source, target) {
   await new Promise(resolve => setTimeout(resolve, 0))
   const currentId = activeOptions.id
   eventHandler(JSON.stringify({ id: 'identity-old-session', type: 'photo', path: '/tmp/old-photo' }))
-  assert.deepEqual(removed, ['/tmp/old-photo'], 'a photo event from an old session is deleted')
+  assert.deepEqual(removed, ['file:///tmp/old-photo'], 'a photo event from an old session is deleted')
   assert.equal(closes.length, 1, 'an old-session event cannot close the current capture')
   eventHandler(JSON.stringify({ id: currentId, type: 'photo', path: '/tmp/current-photo' }))
-  assert.equal((await currentCapture).path, '/tmp/current-photo', 'the current session photo still resolves')
-  assert.equal(openCount, 1)
+  const captured = await currentCapture
+  assert.equal(captured.path, '/tmp/current-photo', 'the upload keeps the original filesystem path')
+  assert.equal(captured.preview, 'file:///tmp/current-photo', 'the image view receives a displayable file URL')
+  assert.equal(identityPhotoFileUrl(captured.preview), captured.preview, 'existing file URLs are not prefixed twice')
+  imageBehavior = 'failure'
+  const invalidPhoto = context.captureApp({})
+  await new Promise(resolve => setTimeout(resolve, 0))
+  eventHandler(JSON.stringify({ id: activeOptions.id, type: 'photo', path: '/tmp/unreadable-photo' }))
+  await assert.rejects(invalidPhoto, /认证照片读取失败/, 'unreadable native photos cannot reach the form')
+  assert.equal(removed.at(-1), 'file:///tmp/unreadable-photo', 'unreadable captures are cleaned up')
+  imageBehavior = 'deferred'
+  const cancelledRead = context.captureApp({})
+  await new Promise(resolve => setTimeout(resolve, 0))
+  eventHandler(JSON.stringify({ id: activeOptions.id, type: 'photo', path: '/tmp/late-read-photo' }))
+  context.cancelApp()
+  await assert.rejects(cancelledRead, error => error.cancelled === true)
+  imageCallback({ width: 480, height: 640 })
+  assert.equal(removed.at(-1), 'file:///tmp/late-read-photo', 'a photo read completing after cancellation is deleted')
+  assert.equal(openCount, 3)
   nextDownload = 'html'
-  await assert.rejects(context.captureApp({}), /认证拍摄暂不可用/, 'HTTP 200 HTML fallback cannot open the camera or be cached as a model')
+  await assert.rejects(context.captureApp({}), /认证暂不可用/, 'HTTP 200 HTML fallback cannot open the camera or be cached as a model')
   nextDownload = 'small'
-  await assert.rejects(context.captureApp({}), /认证拍摄暂不可用/, 'HTML fallback with missing response headers is rejected by file size')
-  assert.equal(openCount, 1)
+  await assert.rejects(context.captureApp({}), /认证暂不可用/, 'HTML fallback with missing response headers is rejected by file size')
+  assert.equal(openCount, 3)
 }
 
 console.log('Identity native checks passed: shared action flow, delayed brightness cleanup, Weixin landmarks, and authenticated upload handling.')

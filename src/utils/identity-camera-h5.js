@@ -1,3 +1,5 @@
+import { measureIdentityImageQuality, identityQualityRegion, identityImageQualityIssue, identityImageQualityHint } from './identity-image-quality.mjs'
+import { createIdentityBlinkTracker } from './identity-blink.mjs'
 import { baseUrl } from '@/api/settings.js'
 import { createIdentityActionSequence } from './identity-action-sequence.mjs'
 import { identityFaceFrame, createIdentityFramingGuard, identityCheekColor, identityLightResponse, shuffledIdentityLights } from './identity-camera-checks.mjs'
@@ -11,7 +13,7 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
     const actionsToRun = actions.length === 2 && new Set(actions).size === 2 && actions.every(item => ['blink', 'mouth'].includes(item)) ? actions : ['blink', 'mouth']
     const root = document.createElement('section')
     root.className = 'identity-camera'
-    root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', '实名认证拍摄')
+    root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', '实名认证')
     const chevron = '<svg class="identity-camera-icon identity-camera-back-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>'
     const sun = '<svg class="identity-camera-icon identity-camera-light-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4.2 4.2l2 2m11.6 11.6 2 2M4.2 19.8l2-2M17.8 6.2l2-2"/></svg>'
     const actionIcon = action => action === 'blink'
@@ -19,19 +21,21 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
       : '<svg class="identity-camera-icon identity-camera-action-icon" viewBox="0 0 120 34" aria-hidden="true"><path d="M4 18c5-1 9-7 13-5q4 4 8 0c4-2 8 4 13 5-5 5-10 8-17 8S9 23 4 18Z"/><path d="M4 18q9 3 17 0 8 3 17 0M49 18h18m-5-5 5 5-5 5"/><path d="M82 16c5-2 7-10 12-7q4 4 8 0c5-3 7 5 12 7-1 10-7 16-16 16s-15-6-16-16Z"/><path d="M86 17q12-7 24 0c-1 7-5 11-12 11s-11-4-12-11Z" fill="currentColor" fill-opacity=".12"/><path d="m88 17 1 4q9-3 18 0l1-4M92 26q6-5 12 0"/></svg>'
     root.innerHTML = `<header class="identity-camera-header"><button class="identity-camera-button" type="button" data-close aria-label="返回">${chevron}</button><strong>实名认证</strong><button class="identity-camera-button" type="button" data-exit>退出</button></header>
       <div class="identity-camera-content">
-        <ol class="identity-camera-progress" aria-label="拍摄进度"><li data-stage="prepare" aria-current="step"><i>1</i><span>准备</span></li><li data-stage="actions"><i>2</i><span>动作检测</span></li><li data-stage="capture"><i>3</i><span>完成检测</span></li></ol>
-        <div class="identity-camera-instruction" role="status" aria-live="polite" aria-atomic="true"><h2 data-title>准备开始拍摄</h2><p data-instruction>请允许使用前置摄像头</p></div>
-        <div class="identity-camera-frame" data-frame><div class="identity-camera-viewport"><video class="identity-camera-video" autoplay muted playsinline></video><div class="identity-camera-placeholder" data-placeholder><svg class="identity-camera-icon identity-camera-placeholder-icon" viewBox="0 0 100 120" aria-hidden="true"><ellipse cx="50" cy="38" rx="23" ry="28"/><path d="M12 114q0-42 38-42t38 42"/></svg><span>正在准备相机…</span></div></div><span class="identity-camera-corner tl"></span><span class="identity-camera-corner tr"></span><span class="identity-camera-corner bl"></span><span class="identity-camera-corner br"></span></div>
+        <ol class="identity-camera-progress" aria-label="认证进度"><li data-stage="prepare" aria-current="step"><i>1</i><span>准备</span></li><li data-stage="actions"><i>2</i><span>动作认证</span></li><li data-stage="capture"><i>3</i><span>等待确认</span></li></ol>
+        <div class="identity-camera-instruction" role="status" aria-live="polite" aria-atomic="true"><h2 data-title>准备开始认证</h2><p data-instruction>请允许使用前置摄像头</p></div>
+        <div class="identity-camera-frame" data-frame><div class="identity-camera-viewport"><video class="identity-camera-video" autoplay muted playsinline></video><div class="identity-camera-placeholder" data-placeholder><svg class="identity-camera-icon identity-camera-placeholder-icon" viewBox="0 0 100 120" aria-hidden="true"><ellipse cx="50" cy="38" rx="23" ry="28"/><path d="M12 114q0-42 38-42t38 42"/></svg><span>正在准备认证…</span></div></div><span class="identity-camera-corner tl"></span><span class="identity-camera-corner tr"></span><span class="identity-camera-corner bl"></span><span class="identity-camera-corner br"></span></div>
         <p class="identity-camera-face-status" data-face-status>请本人独自入镜</p>
         <ol class="identity-camera-actions" aria-label="需完成的动作">${actionsToRun.map((action, index) => `<li data-action-step="${index}"><div><i>${index + 1}</i><span>${action === 'blink' ? '眨眼' : '张嘴'}</span></div>${actionIcon(action)}</li>`).join('')}</ol>
-        <footer class="identity-camera-footer"><button class="identity-camera-button identity-camera-light" type="button" data-light aria-pressed="true">${sun}<span data-light-label>柔光补光已开启</span></button><p data-footer-hint>保持手机平稳 · 完成动作后自动拍摄</p><small>如画面偏暗，可调高屏幕亮度，避免逆光</small></footer>
+        <footer class="identity-camera-footer"><button class="identity-camera-button identity-camera-light" type="button" data-light aria-pressed="true">${sun}<span data-light-label>柔光补光已开启</span></button><p data-footer-hint>保持手机平稳 · 完成动作后继续认证</p><small>如画面偏暗，可调高屏幕亮度，避免逆光</small></footer>
       </div>`
     const video = root.querySelector('video'), title = root.querySelector('[data-title]'), instruction = root.querySelector('[data-instruction]')
     const frame = root.querySelector('[data-frame]'), faceStatus = root.querySelector('[data-face-status]'), placeholder = root.querySelector('[data-placeholder]')
     const lightButton = root.querySelector('[data-light]'), footerHint = root.querySelector('[data-footer-hint]')
     const steps = [...root.querySelectorAll('[data-action-step]')], stages = [...root.querySelectorAll('[data-stage]')]
     const sampleCanvas = document.createElement('canvas'), sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true })
+    const qualityCanvas = document.createElement('canvas'), qualityContext = qualityCanvas.getContext('2d', { willReadFrequently: true })
     let stream, detector, interval, timeout, closed = false, taking = false, previousFrame = -1
+    const eyes = createIdentityBlinkTracker()
     let sequence = createIdentityActionSequence(actionsToRun), phase = 'actions', lightEnabled = true, lightFeedback = 'not_run'
     const framingGuard = createIdentityFramingGuard()
     let trackingReady = false
@@ -63,7 +67,7 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
       try { if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }) } catch { /* A stale focus target must not interrupt cleanup. */ }
       error ? reject(error) : resolve(result)
     }
-    const cancel = () => finish(null, Object.assign(new Error('已取消拍摄'), { cancelled: true }))
+    const cancel = () => finish(null, Object.assign(new Error('已取消认证'), { cancelled: true }))
     const hidden = () => { if (document.hidden) cancel() }
     const keyboard = event => {
       if (event.key === 'Escape') { event.preventDefault(); cancel() }
@@ -75,11 +79,11 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
     }
     const beginSettle = timestamp => {
       phase = 'settle'; settleStarted = timestamp; settledFrames = 0; restoreLight(); setStage('capture')
-      showInstruction('请保持不动', '恢复自然表情，马上为你拍摄')
+      showInstruction('请保持不动', '恢复自然表情，马上为你认证')
       text(faceStatus, lightFeedback === 'observed' ? '画面状态良好' : '请保持正对镜头')
     }
     const reset = hint => {
-      sequence = createIdentityActionSequence(actionsToRun); phase = 'actions'; baseline = []; lightStages = []; lightFeedback = 'not_run'
+      eyes.reset(); sequence = createIdentityActionSequence(actionsToRun); phase = 'actions'; baseline = []; lightStages = []; lightFeedback = 'not_run'
       trackingReady = false
       restoreLight(); updateSteps(0, false); frame.classList.remove('is-ready'); setStage('actions')
       showInstruction(hint, '请本人独自入镜，保持脸部完整清晰'); text(faceStatus, '调整后将重新开始动作')
@@ -92,17 +96,33 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
       else if (phase === 'settle') beginSettle(performance.now())
       else restoreLight()
     }
-    async function capture() {
+    const sampleQuality = (source, points, width, height) => {
+      if (!qualityContext || !(width > 1 && height > 1)) return null
+      try {
+        const roi = identityQualityRegion(points, width, height)
+        if (qualityCanvas.width !== roi.width || qualityCanvas.height !== roi.height) { qualityCanvas.width = roi.width; qualityCanvas.height = roi.height }
+        qualityContext.drawImage(source, roi.left, roi.top, roi.width, roi.height, 0, 0, roi.width, roi.height)
+        return measureIdentityImageQuality(qualityContext.getImageData(0, 0, roi.width, roi.height), null, { left: 0, top: 0, width: roi.width, height: roi.height })
+      } catch { return null }
+    }
+    const retryQuality = issue => {
+      taking = false; settledFrames = 0
+      const hint = identityImageQualityHint(issue)
+      showInstruction(hint.title, hint.detail); text(faceStatus, '调整好后自动继续'); text(footerHint, '调整好后自动继续认证'); frame.classList.remove('is-ready')
+    }
+    async function capture(points) {
       if (taking || closed || !video.videoWidth) return
-      taking = true; showInstruction('正在拍摄', '请稍候，即将完成'); text(footerHint, '拍摄完成后将返回确认照片')
+      taking = true; showInstruction('正在认证', '请稍候，即将完成'); text(footerHint, '请稍候，即将完成认证')
       try {
         const canvas = document.createElement('canvas'), scale = Math.min(1, 900 / Math.max(video.videoWidth, video.videoHeight))
         canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale)
         canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+        const issue = identityImageQualityIssue(sampleQuality(canvas, points, canvas.width, canvas.height))
+        if (issue) { retryQuality(issue); return }
         const file = await new Promise(done => canvas.toBlob(done, 'image/jpeg', 0.9))
-        if (!file) throw new Error('拍摄失败，请重新打开相机')
+        if (!file || file.size === 0) { retryQuality('unavailable'); return }
         finish({ file, assist: 'client_actions', lightFeedback })
-      } catch { taking = false; finish(null, new Error('拍摄失败，请重新打开相机')) }
+      } catch { taking = false; finish(null, new Error('认证失败，请重新打开相机')) }
     }
     const sampleColor = points => {
       if (!sampleContext) return null
@@ -116,15 +136,15 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
     setStage('prepare'); updateSteps(0, false)
     document.body.appendChild(root); document.body.style.overflow = 'hidden'; root.querySelector('[data-close]').focus({ preventScroll: true })
     document.addEventListener('visibilitychange', hidden); window.addEventListener('hashchange', cancel); window.addEventListener('pagehide', cancel); document.addEventListener('keydown', keyboard)
-    timeout = setTimeout(() => finish(null, new Error('拍摄超时，请重新开始')), 90000)
+    timeout = setTimeout(() => finish(null, new Error('认证超时，请重新开始')), 90000)
     ;(async () => {
       try {
         const acquired = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'user' }, width: { ideal: 640 }, height: { ideal: 480 } } })
         if (closed) { acquired.getTracks().forEach(track => track.stop()); return }
         stream = acquired; video.srcObject = stream; await video.play()
-        stream.getVideoTracks()[0]?.addEventListener('ended', () => finish(null, new Error('摄像头已断开，请重新开始拍摄')), { once: true })
+        stream.getVideoTracks()[0]?.addEventListener('ended', () => finish(null, new Error('摄像头已断开，请重新开始认证')), { once: true })
         if (closed) return
-        placeholder.hidden = true; showInstruction('正在准备检测', '首次打开可能需要稍等片刻')
+        placeholder.hidden = true; showInstruction('正在准备认证', '首次打开可能需要稍等片刻')
         const assetRoot = `${baseUrl}/identity-assets/0.10.21`
         const vision = await import(/* @vite-ignore */ `${assetRoot}/vision_bundle.mjs`)
         if (closed) return
@@ -140,9 +160,14 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
           try {
             const timestamp = performance.now(), result = detector.detectForVideo(video, timestamp)
             const faceCount = result.faceLandmarks.length, points = result.faceLandmarks[0], viewport = frame.getBoundingClientRect()
+            const scores = Object.fromEntries((result.faceBlendshapes?.[0]?.categories || []).map(item => [item.categoryName, item.score]))
+            const blink = faceCount === 1 ? eyes.update(scores.eyeBlinkLeft || 0, scores.eyeBlinkRight || 0) : NaN, mouth = scores.jawOpen || 0
+            const neutralFace = blink < .25 && mouth < .25
             const framing = faceCount === 1
-              ? identityFaceFrame(points, { width: video.videoWidth, height: video.videoHeight }, viewport, { tracking: trackingReady && phase === 'actions' })
+              ? identityFaceFrame(points, { width: video.videoWidth, height: video.videoHeight }, viewport, { tracking: trackingReady && (phase !== 'settle' || !neutralFace) })
               : { ready: false, hint: faceCount > 1 ? '请本人独自入镜' : '请将脸部放入框内' }
+            const quality = phase === 'light' ? null : sampleQuality(video, points, video.videoWidth, video.videoHeight)
+            const qualityIssue = phase === 'light' ? null : identityImageQualityIssue(quality, { checkSharpness: false })
             const tracking = framingGuard.update(faceCount, framing.ready, timestamp)
             if (tracking.paused) {
               if (tracking.reset) reset(framing.hint)
@@ -153,6 +178,7 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
               // Interrupted color and final-photo frames are never carried into a capture.
               if (phase === 'light') { lightStages[lightIndex].samples = []; stageStarted = timestamp }
               if (phase === 'settle') { settleStarted = timestamp; settledFrames = 0 }
+              if (faceCount < 2 && qualityIssue && qualityIssue !== 'unavailable') { const hint = identityImageQualityHint(qualityIssue); showInstruction(hint.title, hint.detail) }
               return
             }
             trackingReady = true
@@ -163,16 +189,15 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
               } else if (phase === 'settle') beginSettle(timestamp)
             }
             frame.classList.add('is-ready')
-            const scores = Object.fromEntries((result.faceBlendshapes?.[0]?.categories || []).map(item => [item.categoryName, item.score]))
-            const blink = Math.min(scores.eyeBlinkLeft || 0, scores.eyeBlinkRight || 0), mouth = scores.jawOpen || 0
             const color = lightEnabled ? sampleColor(points) : null
+            if (phase === 'actions' && qualityIssue) { sequence.pause(); retryQuality(qualityIssue); return }
             if (phase === 'actions') {
               if (color && blink < .25 && mouth < .25) { baseline.push(color); if (baseline.length > 6) baseline.shift() }
               const state = sequence.update(blink, mouth, timestamp)
               updateSteps(state.index, state.neutral !== false)
               text(faceStatus, '已识别到一张人脸')
               if (state.neutral === false) showInstruction('请正对镜头', '睁开双眼，闭上嘴巴，准备开始')
-              else if (state.index < actionsToRun.length) showInstruction(actionsToRun[state.index] === 'blink' ? '请缓慢眨眼' : '请张开嘴巴', actionsToRun[state.index] === 'blink' ? '闭上双眼，再缓缓睁开' : '张开嘴巴，再自然闭合')
+              else if (state.index < actionsToRun.length) showInstruction(actionsToRun[state.index] === 'blink' ? '请缓慢眨眼' : '请张开嘴巴', actionsToRun[state.index] === 'blink' ? '闭上双眼，再缓缓睁开' : '张开嘴巴，识别后自动进入下一步')
               else showInstruction('动作已完成', '请恢复自然表情，保持手机平稳')
               if (state.done) {
                 updateSteps(actionsToRun.length, false)
@@ -190,15 +215,18 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
                 else { lightFeedback = identityLightResponse(baseline, lightStages).status; beginSettle(timestamp) }
               }
             } else if (phase === 'settle') {
+              showInstruction(neutralFace ? '请保持不动' : '请恢复自然表情', neutralFace ? '保持手机平稳，马上为你认证' : '自然闭嘴、睁开双眼后继续认证')
               if (timestamp - settleStarted < 900) { settledFrames = 0; return }
+              const issue = identityImageQualityIssue(quality)
+              if (issue) { retryQuality(issue); return }
               settledFrames = blink < .25 && mouth < .25 ? settledFrames + 1 : 0
-              if (settledFrames >= 3) capture()
+              if (settledFrames >= 3) capture(points)
             }
-          } catch { finish(null, new Error('动作检测未完成，请使用系统浏览器重新尝试')) }
+          } catch { finish(null, new Error('动作认证未完成，请使用系统浏览器重新尝试')) }
         }, 120)
       } catch (error) {
         const denied = error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError'
-        finish(null, new Error(denied ? '请在浏览器设置中允许相机权限，再重新拍摄' : '无法准备拍摄，请检查网络与相机，或使用系统浏览器重试'))
+        finish(null, new Error(denied ? '请在浏览器设置中允许相机权限，再重新认证' : '无法准备认证，请检查网络与相机，或使用系统浏览器重试'))
       }
     })()
   })

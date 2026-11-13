@@ -22,10 +22,13 @@ function headers() {
   if (!token) throw new Error('请先登录')
   return { Authorization: `Bearer ${token}` }
 }
+function identityRequestError(response) {
+  return Object.assign(new Error(response?.msg || '认证请求失败，请稍后重试'), { code: response?.code, retry: response?.data?.retry })
+}
 function request(path, method = 'GET', data, anonymous = false) {
   return new Promise((resolve, reject) => uni.request({
     url: `${baseUrl}/api/identity/${path}`, method, data, header: anonymous ? {} : headers(), timeout: 15000,
-    success: res => res.data?.code === 0 ? resolve(res.data.data) : reject(new Error(res.data?.msg || '认证请求失败，请稍后重试')),
+    success: res => res.data?.code === 0 ? resolve(res.data.data) : reject(identityRequestError(res.data)),
     fail: () => reject(new Error('网络连接失败，请稍后刷新认证状态'))
   }))
 }
@@ -72,6 +75,6 @@ export async function submitIdentity(fields, capture) {
     fail: () => reject(new Error('未取得认证结果，请刷新认证状态，勿重复提交'))
   }))
   // #endif
-  if (response?.code !== 0) throw new Error(response?.msg || '认证未完成，请刷新状态')
+  if (response?.code !== 0) throw identityRequestError(response)
   return response.data
 }

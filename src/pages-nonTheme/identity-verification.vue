@@ -12,32 +12,38 @@
     </view>
     <template v-else>
       <view v-if="processing" class="identity-notice"><text class="recycle-heading">认证结果确认中</text><text class="recycle-copy">请稍候，勿重复提交。离开后可回到本页查看结果。</text></view>
-      <view v-else-if="identity.attempt?.state === 'unknown'" class="identity-notice"><text class="recycle-copy">上次认证未取得最终结果，请先刷新状态。如仍无结果，可稍后重新拍摄认证。</text></view>
-      <view v-else-if="identity.attempt?.state === 'failed'" class="identity-notice"><text class="recycle-copy">{{ failureHint }}</text></view>
+      <view v-else-if="identity.attempt?.state === 'unknown'" class="identity-notice"><text class="recycle-copy">上次认证未取得最终结果，请先刷新状态。如仍无结果，可稍后重新认证。</text></view>
       <view v-if="!identity.available" class="identity-notice"><text class="recycle-copy">认证服务暂不可用，请稍后重试或联系平台。</text></view>
       <!-- #ifndef H5 || APP-PLUS || MP-WEIXIN -->
-      <view class="identity-notice"><text class="recycle-heading">在安全网页完成动作认证</text><text class="recycle-copy">按随机顺序眨眼、张嘴后自动拍摄，不支持跳过。认证绑定当前账号，无需在浏览器重新登录。</text><text class="recycle-muted">请本人使用链接，勿转发。链接10分钟有效；完成后返回本页刷新状态。</text></view>
-      <button class="recycle-primary" :disabled="openingWeb || processing || !identity.available" @click="openWebVerification">{{ openingWeb ? '正在准备…' : '前往网页认证' }}</button>
+      <view class="identity-notice"><text class="recycle-heading">在安全网页完成动作认证</text><text class="recycle-copy">按随机顺序眨眼、张嘴后继续认证，不支持跳过。认证绑定当前账号，无需在浏览器重新登录。</text><text class="recycle-muted">请本人使用链接，勿转发。链接10分钟有效；完成后返回本页刷新状态。</text></view>
+      <button class="recycle-primary" :disabled="openingWeb || processing || retryBlocked || !identity.available" @click="openWebVerification">{{ openingWeb ? '正在准备…' : '前往网页认证' }}</button>
       <button v-if="handoffUrl" class="recycle-secondary" @click="copyWebLink">复制认证链接</button>
       <text v-if="webLinkReady" class="recycle-muted">链接已复制。若未自动打开，请粘贴到系统浏览器访问。</text>
       <!-- #endif -->
       <template v-if="!handoffFailed">
-      <view class="identity-steps"><text>01 填写身份</text><text>02 人脸核验</text><text>03 确认核验</text></view>
-      <text class="recycle-label">本人姓名</text><input class="recycle-input" v-model="name" maxlength="50" placeholder="与身份证一致的姓名" :disabled="busy" />
-      <text class="recycle-label">身份证号码</text><input class="recycle-input" v-model="number" type="idcard" maxlength="18" placeholder="18位居民身份证号码" :disabled="busy" />
+      <view class="identity-steps"><text>01 填写身份</text><text>02 人脸核验</text><text>03 认证结果</text></view>
+      <text class="recycle-label">本人姓名</text><input class="recycle-input" v-model="name" maxlength="100" placeholder="与身份证一致的姓名" :disabled="busy" :aria-invalid="!!fieldErrors.name" @input="editField('name', $event)" @blur="validateField('name', $event)" @confirm="validateField('name', $event)" />
+      <text v-if="fieldErrors.name" class="identity-field-error" :class="{ 'is-dark': isDark }" role="alert">{{ fieldErrors.name }}</text>
+      <text class="identity-name-note recycle-muted">少数民族姓名中的间隔符请使用“·”。</text>
+      <text class="recycle-label">身份证号码</text><input class="recycle-input" v-model="number" type="idcard" maxlength="18" placeholder="18位居民身份证号码" :disabled="busy" :aria-invalid="!!fieldErrors.number" @input="editField('number', $event)" @blur="validateField('number', $event)" @confirm="validateField('number', $event)" />
+      <text v-if="fieldErrors.number" class="identity-field-error" :class="{ 'is-dark': isDark }" role="alert">{{ fieldErrors.number }}</text>
+      <text class="identity-age-note recycle-muted">实名认证需年满18周岁。</text>
       <view class="identity-consent">
         <checkbox-group @change="consented = $event.detail.value.includes('agree')"><label><checkbox value="agree" :checked="consented" :disabled="busy" color="#059669" /><text>我已阅读并同意实名核验说明</text></label></checkbox-group>
         <button class="identity-link" @click="showConsent = !showConsent">{{ showConsent ? '收起说明' : '查看说明' }}</button>
       </view>
-      <view v-if="showConsent" class="identity-disclosure"><text class="recycle-copy">为核验当前申请人身份，你同意将本人姓名、身份证号码和现场拍摄照片提供给北京互联三六五科技有限公司，用于身份核验。认证通过后，平台将保存你的完整姓名、身份证号码及本次现场照片，用于账号身份管理和必要核查。</text><text class="recycle-copy">请由证件本人完成检测动作。你可以随时取消，完成实名认证后才能申请成为回收员。</text></view>
-      <view class="identity-capture">
-        <image v-if="preview" :src="preview" class="identity-preview" mode="aspectFit" />
-        <text v-else class="recycle-muted">请本人独自入镜，保持光线充足，摘下口罩及遮挡物。仅支持现场拍摄。</text>
-        <view class="identity-assist"><view><text>按提示完成检测动作</text><text class="recycle-muted">眨眼、张嘴后自动拍摄，请保持网络畅通。</text></view></view>
-        <button class="recycle-secondary" :disabled="busy || processing || !identity.available" @click="capture">{{ capturing ? '拍摄中…' : photo ? '重新拍摄' : '开始现场拍摄' }}</button>
+      <view v-if="showConsent" class="identity-disclosure"><text class="recycle-copy">为核验当前申请人身份，你同意将本人姓名、身份证号码和现场认证照片提供给北京互联三六五科技有限公司，用于身份核验。认证通过后，平台将保存你的完整姓名、身份证号码及本次现场照片，用于账号身份管理和必要核查。</text><text class="recycle-copy">请由证件本人完成认证动作。你可以随时取消，完成实名认证后才能申请成为回收员。</text></view>
+      <view v-if="verificationFailed" class="identity-failure" role="alert">
+        <text class="identity-failure-icon">!</text>
+        <text class="identity-failure-title">认证失败</text>
+        <text v-if="retryBlocked" class="identity-retry-copy">认证机会已用完，请于 {{ retryDate }} 后重新认证。</text>
+        <text v-else-if="identity.attempt?.finalFailure && identity.retry" class="identity-retry-copy">您还有 {{ identity.retry.remaining }} 次认证机会</text>
+        <button class="recycle-primary identity-start" :class="{ 'is-disabled': !canStartVerification }" :disabled="!canStartVerification" @click="retryVerification">{{ retryBlocked ? '等待期内暂不可认证' : '重新认证' }}</button>
       </view>
-      <text class="identity-footnote recycle-muted">请使用本人身份信息和现场照片，提交后可在本页查看认证结果。</text>
-      <button class="recycle-primary" :disabled="busy || processing || !identity.available || !photo || !consented" @click="submit">{{ submitting ? '正在核验…' : '确认并开始认证' }}</button>
+      <view v-else class="identity-capture">
+        <view class="identity-assist"><view><text>{{ busy ? '认证进行中，请稍候' : '请按提示完成人脸认证' }}</text><text class="recycle-muted">请本人独自入镜，保持光线充足，认证结果将自动显示。</text></view></view>
+        <button class="recycle-primary identity-start" :class="{ 'is-disabled': !canStartVerification }" :disabled="!canStartVerification" @click="capture">{{ busy ? '认证中…' : '开始人脸认证' }}</button>
+      </view>
       </template>
       <button class="identity-link refresh-status" :disabled="busy" @click="refresh">刷新认证状态</button>
     </template>
@@ -45,19 +51,34 @@
 </template>
 <script>
 import RecyclingShell from './components/RecyclingShell.vue'
+import { identityAgeError } from '@/utils/identity-age.mjs'
+import { normalizeIdentityName, identityNameError } from '@/utils/identity-name.mjs'
 import { identityStatus, identityChallenge, submitIdentity, createIdentityWebSession, exchangeIdentityWebSession, identityWebContext, clearIdentityWebSession } from '@/api/identity.js'
 import { baseUrl } from '@/api/settings.js'
-import { captureIdentityPhoto, cancelIdentityCapture, discardIdentityPhoto } from '@/utils/identity-capture.js'
+import { captureIdentityPhoto, cancelIdentityCapture, discardIdentityPhoto, ensureIdentityPhotoUsable } from '@/utils/identity-capture.js'
 import { recycleBack } from './api/recycling.js'
 export default {
   components: { RecyclingShell },
-  data: () => ({ isDark: false, identity: {}, loading: true, error: '', name: '', number: '', consented: false,
-    showConsent: true, photo: null, preview: '', challenge: null, capturing: false, submitting: false,
+  data: () => ({ isDark: false, identity: {}, loading: true, error: '', name: '', number: '', fieldErrors: { name: '', number: '' }, consented: false,
+    showConsent: true, captureFailure: '', photo: null, photoUsable: false, challenge: null, capturing: false, submitting: false,
     openingWeb: false, webLinkReady: false, handoffUrl: '', webHandoff: false, handoffAccount: '', handoffLoading: false, handoffFailed: false }),
   computed: {
     busy() { return this.capturing || this.submitting },
     processing() { return this.identity.attempt?.state === 'processing' },
-    failureHint() { return ({ '-1': '姓名与身份证不一致，请核对后重新认证。', '-2': '未查到身份证记录，请核对信息。', '-3': '缺少可比对的基准照片，请联系平台。', 2: '比对结果不确定，请在光线充足处重新拍摄。', 3: '人脸比对未通过，请由证件本人重新拍摄。', 4: '未检测到清晰人脸，请重新拍摄。', 5: '活体核验未通过，请使用本人现场拍摄照片。', 6: '画面中有多张人脸，请独自入镜。', 7: '服务商人脸比对未完成，请稍后重试。' })[this.identity.attempt?.resultCode] || '上次认证未通过，请核对信息并重新拍摄，或稍后再试。' }
+    retryBlocked() { return this.identity.retry?.blocked === true },
+    canStartVerification() {
+      return !this.loading && !this.busy && !this.processing && !this.retryBlocked && !this.handoffFailed &&
+        !this.identity.verified && !!this.identity.available && this.consented &&
+        !identityNameError(this.name) && !identityAgeError(this.number)
+    },
+    retryDate() {
+      const value = this.identity.retry?.blockedUntil
+      if (!value) return ''
+      const date = new Date(value)
+      const pad = n => String(n).padStart(2, '0')
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+    },
+    verificationFailed() { return !this.identity.verified && !this.processing && !this.capturing && !!(this.captureFailure || this.retryBlocked || (!this.photo && this.identity.attempt?.state === 'failed')) },
   },
   async onLoad(options = {}) {
     // #ifdef H5
@@ -70,7 +91,7 @@ export default {
         this.handoffAccount = session.account
         if (session.persisted) history.replaceState(history.state, '', location.pathname + location.search + '#/pages-nonTheme/identity-verification')
       }
-      catch (e) { if (!this.pageClosed) { this.handoffFailed = true; this.error = e.message } }
+      catch (e) { if (!this.pageClosed) { this.handoffFailed = true; this.error = '认证入口暂不可用，请重新进入。' } }
       finally {
         this.handoffLoading = false; this.loading = false
       }
@@ -90,7 +111,7 @@ export default {
       } catch { this.error = '链接复制失败，请允许剪贴板权限后重试' }
     },
     async openWebVerification() {
-      if (this.openingWeb) return
+      if (this.openingWeb || this.processing || this.retryBlocked) return
       this.openingWeb = true; this.error = ''; this.webLinkReady = false
       try {
         const session = await createIdentityWebSession()
@@ -102,70 +123,123 @@ export default {
         // #ifndef APP-PLUS
         await this.copyWebLink()
         // #endif
-      } catch (e) { this.error = e.message || '无法打开认证网页，请稍后重试' }
+      } catch (e) { this.error = '认证入口暂不可用，请稍后重试。' }
       finally { this.openingWeb = false }
     },
     clearPhoto() {
-      // #ifdef H5
-      if (this.preview) URL.revokeObjectURL(this.preview)
-      // #endif
       discardIdentityPhoto(this.photo)
-      this.photo = null; this.preview = ''
+      this.photo = null; this.photoUsable = false
+    },
+    async retryVerification() {
+      if (this.busy || this.processing || this.retryBlocked || !this.identity.available || !this.valid()) return
+      this.clearPhoto(); this.challenge = null; this.captureFailure = ''; this.error = ''
+      await this.capture()
     },
     async refresh() {
       if (this.handoffLoading || this.handoffFailed) return
       clearTimeout(this.pollTimer)
+      const version = this.identityVersion || 0
       try {
         const identity = await identityStatus()
-        if (this.pageClosed) return
+        if (this.pageClosed || version !== (this.identityVersion || 0)) return
         this.identity = identity; this.error = ''
-        if (identity.verified) { this.clearPhoto(); this.name = ''; this.number = '' }
+        if (identity.verified) { this.captureFailure = ''; this.clearPhoto(); this.name = ''; this.number = '' }
         if (identity.attempt?.state === 'processing' && this.pageVisible) this.pollTimer = setTimeout(() => this.refresh(), 3000)
-      } catch (e) { if (!this.pageClosed) this.error = e.message || '认证状态获取失败' }
+      } catch (e) { if (!this.pageClosed && version === (this.identityVersion || 0)) this.error = '暂时无法获取认证状态，请稍后重试。' }
       finally { if (!this.pageClosed) this.loading = false }
     },
+    editField(field, event) {
+      if (this.pageClosed || this.identity.verified) return
+      if (typeof event?.detail?.value === 'string') this[field] = event.detail.value
+      this.fieldErrors[field] = ''
+      if (field === 'number' && this.number.trim().length === 18) this.validateField(field)
+    },
+    validateField(field, event) {
+      if (this.pageClosed || this.identity.verified) return false
+      if (typeof event?.detail?.value === 'string') this[field] = event.detail.value
+      this[field] = field === 'name' ? normalizeIdentityName(this.name) : this.number.trim().toUpperCase()
+      this.fieldErrors[field] = field === 'name' ? identityNameError(this.name) : identityAgeError(this.number)
+      return !this.fieldErrors[field]
+    },
     valid() {
-      if (!this.name.trim() || !/^[1-9]\d{16}[\dXx]$/.test(this.number.trim())) { this.error = '请填写本人姓名和18位身份证号码'; return false }
+      this.error = ''
+      const nameValid = this.validateField('name'), numberValid = this.validateField('number')
+      if (!nameValid || !numberValid) return false
       if (!this.consented) { this.error = '请先阅读并同意实名核验说明'; return false }
       return true
     },
     async capture() {
-      if (this.busy || this.processing || !this.valid()) return
-      this.capturing = true; this.error = ''
+      if (this.busy || this.processing || this.retryBlocked || !this.valid()) return
+      const fields = { name: this.name.trim(), number: this.number.trim().toUpperCase() }
+      this.identityVersion = (this.identityVersion || 0) + 1
+      this.capturing = true; this.error = ''; this.captureFailure = ''
+      let stage = 'challenge', captured = null
       try {
         const challenge = await identityChallenge()
         if (this.pageClosed) return
         if (challenge.alreadyVerified) { await this.refresh(); return }
         this.challenge = challenge
-        const photo = await captureIdentityPhoto({ actions: challenge.actions })
-        if (this.pageClosed) { discardIdentityPhoto(photo); return }
-        this.clearPhoto(); this.photo = photo
-        // #ifdef H5
-        this.preview = URL.createObjectURL(photo.file)
-        // #endif
-        // #ifndef H5
-        this.preview = photo.path
-        // #endif
-      } catch (e) { if (!e.cancelled && !/cancel/i.test(e.errMsg || '')) this.error = e.message || '拍摄未完成，请检查相机权限' }
+        stage = 'capture'
+        captured = await captureIdentityPhoto({ actions: challenge.actions })
+        if (this.pageClosed) { discardIdentityPhoto(captured); return }
+        await ensureIdentityPhotoUsable(captured)
+        if (this.pageClosed || this.identity.verified || this.processing) { discardIdentityPhoto(captured); return }
+        this.clearPhoto(); this.photo = captured; captured = null; this.photoUsable = true
+        this.capturing = false
+        await this.submit(fields)
+      } catch (e) {
+        discardIdentityPhoto(captured)
+        if (!this.pageClosed) { this.clearPhoto(); this.challenge = null }
+        if (!this.pageClosed && !e.cancelled && !/cancel/i.test(e.errMsg || '')) {
+          this.captureFailure = '认证失败'
+          if (e.retry) this.identity = { ...this.identity, retry: e.retry }
+          if (stage === 'challenge') await this.refresh()
+        }
+      }
       finally { this.capturing = false }
     },
-    async submit() {
-      if (this.busy || this.processing || !this.photo || !this.challenge || !this.valid()) return
+    async submit(fields) {
+      if (this.pageClosed || this.busy || this.processing || this.retryBlocked || !this.photo || !this.photoUsable || !this.challenge || !this.valid()) return
+      this.identityVersion = (this.identityVersion || 0) + 1
       this.submitting = true; this.error = ''
+      const challengeId = this.challenge.id
       try {
-        await submitIdentity({ challengeId: this.challenge.id, consentVersion: this.challenge.consentVersion,
-          name: this.name.trim(), number: this.number.trim().toUpperCase() }, this.photo)
-        this.clearPhoto(); this.challenge = null
-        await this.refresh()
-      } catch (e) { await this.refresh(); this.error = this.identity.verified ? '' : e.message || '认证未完成，请刷新结果' }
-      finally { this.submitting = false }
+        const result = await submitIdentity({ challengeId, consentVersion: this.challenge.consentVersion, ...fields }, this.photo)
+        if (this.pageClosed) return
+        this.identityVersion = (this.identityVersion || 0) + 1
+        this.identity = { ...this.identity, ...(result.identity || {}), verified: result.verified,
+          retry: result.retry || this.identity.retry,
+          attempt: { id: challengeId, state: result.status, finalFailure: result.finalFailure === true } }
+        if (result.verified) { this.captureFailure = ''; this.name = ''; this.number = '' }
+        if (result.status === 'processing' && this.pageVisible) this.pollTimer = setTimeout(() => this.refresh(), 3000)
+      } catch (e) {
+        if (!this.pageClosed) {
+          if (e.retry) this.identity = { ...this.identity, retry: e.retry }
+          await this.refresh()
+          if (!this.identity.verified && this.identity.attempt?.id !== challengeId) {
+            this.identity = { ...this.identity, attempt: { id: challengeId, state: 'unknown' } }
+          }
+          if (!this.identity.verified && this.identity.attempt?.state !== 'failed' && this.identity.attempt?.state !== 'processing') {
+            this.error = '认证结果尚未确认，请刷新认证状态。'
+          }
+        }
+      }
+      finally { this.clearPhoto(); this.challenge = null; this.submitting = false }
     }
   }
 }
 </script>
 <style scoped>
+.recycle-primary.identity-start.is-disabled { background: var(--workbench-line); color: var(--workbench-muted); opacity: 1; }
+.identity-field-error { display: block; margin-top: 10rpx; color: #b42318; font-size: 24rpx; line-height: 1.6; }
+.identity-field-error.is-dark { color: #ffb4ab; }
+.identity-age-note, .identity-name-note { display: block; margin-top: 12rpx; font-size: 23rpx; }
 .identity-intro { padding: 8rpx 0 28rpx; }
 .identity-title { display: block; color: var(--workbench-text); font-size: 36rpx; font-weight: 700; margin-bottom: 12rpx; }
+.identity-failure { margin-top: 24rpx; padding: 40rpx 28rpx; text-align: center; background: var(--workbench-soft); border-radius: 24rpx; }
+.identity-failure-icon { display: inline-block; width: 68rpx; height: 68rpx; line-height: 68rpx; border-radius: 50%; background: #fff0e8; color: #bd572c; font-size: 42rpx; font-weight: 700; }
+.identity-retry-copy { display: block; margin: 0 0 28rpx; color: var(--workbench-muted); font-size: 26rpx; line-height: 1.6; }
+.identity-failure-title { display: block; margin: 20rpx 0 28rpx; color: var(--workbench-text); font-size: 34rpx; font-weight: 700; }
 .identity-result { padding: 50rpx 12rpx; text-align: center; }
 .identity-check { display: block; color: var(--workbench-green); font-size: 80rpx; margin-bottom: 28rpx; }
 .identity-notice, .identity-disclosure { border-left: 4rpx solid var(--workbench-green); background: var(--workbench-soft); padding: 16rpx 22rpx; margin: 12rpx 0; border-radius: 0 14rpx 14rpx 0; }
@@ -178,9 +252,7 @@ export default {
 .identity-link::after { border: 0; }
 .identity-disclosure .recycle-copy { font-size: 23rpx; }
 .identity-capture { padding: 26rpx 0; margin-top: 20rpx; border-top: 1rpx solid var(--workbench-line); }
-.identity-preview { display: block; width: 100%; height: 360rpx; border-radius: 18rpx; background: var(--workbench-soft); }
 .identity-assist { display: flex; align-items: center; gap: 16rpx; margin-top: 22rpx; font-size: 25rpx; }
 .identity-assist .recycle-muted { display: block; margin-top: 6rpx; font-size: 22rpx; }
-.identity-footnote { display: block; font-size: 22rpx; }
 .refresh-status { margin: 24rpx auto; }
 </style>

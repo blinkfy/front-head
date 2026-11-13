@@ -24,7 +24,7 @@ public class IdentityCaptureBridge: NSObject {
             guard let data = options.data(using: .utf8), let input = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let id = input["id"] as? String,
                   let path = input["modelPath"] as? String else { return }
             if active != nil || pending {
-                let result = ["id": id, "type": "error", "message": "正在拍摄，请勿重复打开"]
+                let result = ["id": id, "type": "error", "message": "正在认证，请勿重复打开"]
                 if let data = try? JSONSerialization.data(withJSONObject: result) { callback(String(data: data, encoding: .utf8)!) }
                 return
             }
@@ -43,7 +43,7 @@ public class IdentityCaptureBridge: NSObject {
                     let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }
                     var presenter = scene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
                     while let next = presenter?.presentedViewController { presenter = next }
-                    guard let host = presenter else { emit(["id": id, "type": "error", "message": "无法打开拍摄页面，请重试"]); listener = nil; return }
+                    guard let host = presenter else { emit(["id": id, "type": "error", "message": "无法打开认证页面，请重试"]); listener = nil; return }
                     let controller = IdentityCaptureController(id: id, path: path, actions: input["actions"] as? [String] ?? [])
                     active = controller; controller.modalPresentationStyle = .fullScreen
                     host.present(controller, animated: true)
@@ -102,7 +102,7 @@ private final class IdentityCaptureController: UIViewController, AVCaptureVideoD
         detail.text = "请本人独自入镜"; detail.font = .systemFont(ofSize: 15)
         progress.text = actions.first == "mouth" ? "准备 · 张嘴 → 眨眼 · 完成" : "准备 · 眨眼 → 张嘴 · 完成"
         lightButton.setTitle("柔光补光已开启", for: .normal); lightButton.addTarget(self, action: #selector(toggleLight), for: .touchUpInside)
-        let hint = UILabel(); hint.text = "保持手机平稳 · 完成动作后自动拍摄"; hint.font = .systemFont(ofSize: 13)
+        let hint = UILabel(); hint.text = "保持手机平稳 · 完成动作后继续认证"; hint.font = .systemFont(ofSize: 13)
         let stack = UIStackView(arrangedSubviews: [header, heading, detail, cameraView, progress, lightButton, hint]); stack.axis = .vertical; stack.spacing = 18
         stack.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(stack)
         for label in [heading, detail, progress, hint] { label.textAlignment = .center; label.numberOfLines = 0; label.textColor = UIColor(red: 0.09, green: 0.19, blue: 0.19, alpha: 1) }
@@ -110,7 +110,7 @@ private final class IdentityCaptureController: UIViewController, AVCaptureVideoD
             stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12), stack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -18), header.heightAnchor.constraint(equalToConstant: 44), cameraView.heightAnchor.constraint(greaterThanOrEqualToConstant: 160)])
         cameraView.clipsToBounds = true
         NotificationCenter.default.addObserver(self, selector: #selector(cancel), name: UIApplication.willResignActiveNotification, object: nil)
-        timeout = Timer.scheduledTimer(withTimeInterval: 90, repeats: false) { [weak self] _ in self?.complete("error", message: "拍摄超时，请重新开始") }
+        timeout = Timer.scheduledTimer(withTimeInterval: 90, repeats: false) { [weak self] _ in self?.complete("error", message: "认证超时，请重新开始") }
         queue.async { [weak self] in self?.prepare() }
     }
     override func viewDidLayoutSubviews() {
@@ -122,7 +122,7 @@ private final class IdentityCaptureController: UIViewController, AVCaptureVideoD
             let file = URL(fileURLWithPath: path.replacingOccurrences(of: "file://", with: ""))
             let data = try Data(contentsOf: file, options: .mappedIfSafe)
             guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff" else { throw NSError(domain: "MODEL", code: 1) }
-        } catch { DispatchQueue.main.async { self.complete("error", message: "拍摄资源校验失败，请重新下载后重试", code: "MODEL") }; return }
+        } catch { DispatchQueue.main.async { self.complete("error", message: "认证资源校验失败，请重新下载后重试", code: "MODEL") }; return }
         do {
             let options = FaceLandmarkerOptions(); options.baseOptions.modelAssetPath = path.replacingOccurrences(of: "file://", with: "")
             options.runningMode = .video; options.numFaces = 2; options.outputFaceBlendshapes = true; options.minFaceDetectionConfidence = 0.65; options.minFacePresenceConfidence = 0.65
@@ -151,7 +151,7 @@ private final class IdentityCaptureController: UIViewController, AVCaptureVideoD
             }
             // All session/detector work, including teardown, stays on this serial queue.
             session.startRunning()
-        } catch { DispatchQueue.main.async { self.complete("error", message: "无法准备拍摄，请检查相机权限或更新 App") } }
+        } catch { DispatchQueue.main.async { self.complete("error", message: "无法准备认证，请检查相机权限或更新 App") } }
     }
     func captureOutput(_ output: AVCaptureOutput, didOutput buffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         let time = Int(ProcessInfo.processInfo.systemUptime * 1000)
@@ -187,7 +187,8 @@ private final class IdentityCaptureController: UIViewController, AVCaptureVideoD
                 CVPixelBufferUnlockBaseAddress(pixels, .readOnly)
             }
             var event: [String: Any] = ["type": "frame", "id": captureId, "count": result.faceLandmarks.count, "points": bounds,
-                "blink": min(score("eyeBlinkLeft"), score("eyeBlinkRight")), "mouth": score("jawOpen"), "video": ["width": cg.width, "height": cg.height]]
+                "blink": min(score("eyeBlinkLeft"), score("eyeBlinkRight")), "blinkLeft": score("eyeBlinkLeft"), "blinkRight": score("eyeBlinkRight"), "mouth": score("jawOpen"), "video": ["width": cg.width, "height": cg.height]]
+            if let quality = identityImageQuality(pixels, bounds: bounds) { event["quality"] = quality }
             if let color = color { event["color"] = color }
             DispatchQueue.main.async {
                 guard !self.closed else { return }
@@ -195,7 +196,7 @@ private final class IdentityCaptureController: UIViewController, AVCaptureVideoD
                 event["frameId"] = self.frameId; event["viewport"] = ["width": self.cameraView.bounds.width, "height": self.cameraView.bounds.height]
                 IdentityCaptureBridge.emit(event)
             }
-        } catch { DispatchQueue.main.async { self.complete("error", message: "动作检测未完成，请重新拍摄") } }
+        } catch { DispatchQueue.main.async { self.complete("error", message: "动作认证未完成，请重新认证") } }
     }
     func update(_ input: [String: Any]) {
         guard !closed && input["id"] as? String == captureId else { return }
@@ -209,7 +210,7 @@ private final class IdentityCaptureController: UIViewController, AVCaptureVideoD
                 guard let data = pendingImage?.jpegData(compressionQuality: 0.9) else { throw NSError(domain: "PHOTO", code: 1) }
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("identity-\(UUID().uuidString).jpg")
                 try data.write(to: url, options: [.atomic, .completeFileProtection]); complete("photo", path: url.path)
-            } catch { complete("error", message: "拍摄失败，请重新尝试") }
+            } catch { complete("error", message: "认证失败，请重新尝试") }
         } else { queue.async { self.waiting = false } }
     }
     @objc private func cancel() { complete("cancel") }

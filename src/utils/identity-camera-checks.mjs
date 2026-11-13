@@ -9,8 +9,13 @@ export function identityFaceFrame(points, video, viewport, { tracking = false } 
   }
   const scale = Math.max(viewport.width / video.width, viewport.height / video.height)
   const sx = video.width * scale / viewport.width, sy = video.height * scale / viewport.height
-  const width = (right - left) * sx, height = (bottom - top) * sy
-  const x = ((left + right) / 2 - .5) * sx + .5, y = ((top + bottom) / 2 - .5) * sy + .5
+  // Native cameras can draw a smaller guide inside their preview. Evaluate in
+  // that guide's coordinates rather than treating the whole preview as the frame.
+  const guide = viewport.guide
+  const gw = Number.isFinite(guide?.width) && guide.width > 0 && guide.width <= 1 ? guide.width : 1
+  const gh = Number.isFinite(guide?.height) && guide.height > 0 && guide.height <= 1 ? guide.height : 1
+  const width = (right - left) * sx / gw, height = (bottom - top) * sy / gh
+  const x = ((left + right) / 2 - .5) * sx / gw + .5, y = ((top + bottom) / 2 - .5) * sy / gh + .5
   // Once aligned, jaw movement must not be mistaken for a new head position.
   // Initial alignment and the final photo still use the tighter bounds.
   if (width > (tracking ? 1.06 : .94) || height > (tracking ? 1.12 : .94)) return { ready: false, hint: '请稍微离远一点' }

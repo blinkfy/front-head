@@ -7,17 +7,11 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
-import android.graphics.Outline
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.View
-import android.view.ViewOutlineProvider
 import android.view.WindowManager
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -45,7 +39,7 @@ object IdentityCaptureBridge {
         activity.runOnUiThread {
             val input = JSONObject(options)
             if (pending != null || screen != null) {
-                emit(JSONObject().put("id", input.optString("id")).put("type", "error").put("message", "正在拍摄，请勿重复打开").toString())
+                emit(JSONObject().put("id", input.optString("id")).put("type", "error").put("message", "正在认证，请勿重复打开").toString())
                 return@runOnUiThread
             }
             pending = input; callback = emit
@@ -69,12 +63,8 @@ class IdentityCaptureActivity : ComponentActivity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var provider: ProcessCameraProvider? = null
     private var detector: FaceLandmarker? = null
-    private lateinit var root: LinearLayout
+    private lateinit var root: IdentityCaptureUi
     private lateinit var preview: PreviewView
-    private lateinit var title: TextView
-    private lateinit var detail: TextView
-    private lateinit var progress: TextView
-    private lateinit var lightButton: Button
     @Volatile private var closed = false
     @Volatile private var waiting = false
     private var permissionPending = false
@@ -84,7 +74,7 @@ class IdentityCaptureActivity : ComponentActivity() {
     private var photo: Bitmap? = null
     private var originalBrightness = -1f
     private var modelPath = ""
-    private val timeout = Runnable { complete("error", "拍摄超时，请重新开始") }
+    private val timeout = Runnable { complete("error", "认证超时，请重新开始") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -101,29 +91,16 @@ class IdentityCaptureActivity : ComponentActivity() {
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) prepareCamera()
         else { permissionPending = true; requestPermissions(arrayOf(Manifest.permission.CAMERA), 481) }
     }
-    private fun label(text: String, size: Float, bold: Boolean = false): TextView = TextView(this).apply {
-        this.text = text; textSize = size; gravity = 17; setTextColor(Color.rgb(22, 48, 48))
-        if (bold) setTypeface(typeface, 1)
-        setPadding(12, 10, 12, 10)
-    }
     private fun buildUi(actions: JSONArray?) {
-        root = LinearLayout(this).apply { orientation = 1; gravity = 1; setPadding(24, 18, 24, 18); setBackgroundColor(Color.WHITE) }
-        val header = LinearLayout(this).apply { gravity = 16 }
-        header.addView(Button(this).apply { text = "返回"; setOnClickListener { complete("cancel") } })
-        header.addView(label("实名认证", 18f, true), LinearLayout.LayoutParams(0, -2, 1f)); root.addView(header)
-        title = label("正在准备相机…", 24f, true); detail = label("请本人独自入镜", 15f)
-        root.addView(title); root.addView(detail)
         preview = PreviewView(this).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
             scaleType = PreviewView.ScaleType.FILL_CENTER
-            outlineProvider = object : ViewOutlineProvider() { override fun getOutline(view: View, outline: Outline) { outline.setOval(0, 0, view.width, view.height) } }
-            clipToOutline = true
         }
-        root.addView(preview, LinearLayout.LayoutParams(-1, 0, 1f).apply { setMargins(30, 18, 30, 18) })
-        val order = if (actions?.optString(0) == "mouth") "张嘴 → 眨眼" else "眨眼 → 张嘴"
-        progress = label("准备 · $order · 完成", 15f); root.addView(progress)
-        lightButton = Button(this).apply { text = "柔光补光已开启"; setOnClickListener { send("light") } }; root.addView(lightButton)
-        root.addView(label("保持手机平稳 · 完成动作后自动拍摄", 13f))
+        val order = if (actions?.optString(0) == "mouth") listOf("mouth", "blink") else listOf("blink", "mouth")
+        root = IdentityCaptureUi(this, preview, order, { complete("cancel") }, { send("light") })
+        window.statusBarColor = Color.WHITE; window.navigationBarColor = Color.WHITE
+        window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
+            (if (android.os.Build.VERSION.SDK_INT >= 26) android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0)
         setContentView(root)
     }
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, grants: IntArray) {
@@ -139,7 +116,7 @@ class IdentityCaptureActivity : ComponentActivity() {
                 val digest = MessageDigest.getInstance("SHA-256")
                 file.inputStream().use { stream -> val buffer = ByteArray(65536); var size: Int; while (stream.read(buffer).also { size = it } > 0) digest.update(buffer, 0, size) }
                 check(digest.digest().joinToString("") { "%02x".format(it) } == "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff")
-            } catch (_: Exception) { runOnUiThread { complete("error", "拍摄资源校验失败，请重新下载后重试", "MODEL") }; return@execute }
+            } catch (_: Exception) { runOnUiThread { complete("error", "认证资源校验失败，请重新下载后重试", "MODEL") }; return@execute }
             try {
                 val task = FaceLandmarker.createFromOptions(this, FaceLandmarker.FaceLandmarkerOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(modelPath).build())
@@ -163,7 +140,7 @@ class IdentityCaptureActivity : ComponentActivity() {
                         } catch (_: Exception) { complete("error", "无法打开前置相机，请检查相机权限") }
                     }, ContextCompat.getMainExecutor(this))
                 }
-            } catch (_: Exception) { runOnUiThread { complete("error", "无法准备动作检测，请更新 App 后重试") } }
+            } catch (_: Exception) { runOnUiThread { complete("error", "无法准备动作认证，请更新 App 后重试") } }
         }
     }
     private fun analyze(frame: ImageProxy) {
@@ -199,31 +176,30 @@ class IdentityCaptureActivity : ComponentActivity() {
             }
             if (count >= 8) sums.forEach { color.put(it / count) }
             val event = JSONObject().put("count", faces.size).put("points", bounds).put("blink", minOf(scores?.get("eyeBlinkLeft") ?: 0f, scores?.get("eyeBlinkRight") ?: 0f))
+                .put("blinkLeft", scores?.get("eyeBlinkLeft") ?: 0f).put("blinkRight", scores?.get("eyeBlinkRight") ?: 0f)
                 .put("mouth", scores?.get("jawOpen") ?: 0f).put("video", JSONObject().put("width", bitmap.width).put("height", bitmap.height))
+            event.put("quality", IdentityImageQuality.measure(bitmap, bounds))
             if (color.length() == 3) event.put("color", color)
             runOnUiThread {
                 if (closed) { bitmap.recycle(); return@runOnUiThread }
                 photo?.recycle(); photo = bitmap; frameId++
-                event.put("frameId", frameId).put("viewport", JSONObject().put("width", preview.width).put("height", preview.height))
+                event.put("frameId", frameId).put("viewport", JSONObject().put("width", preview.width).put("height", preview.height)
+                    .put("guide", JSONObject().put("width", root.guideWidth.toDouble()).put("height", root.guideHeight.toDouble())))
                 send("frame", event)
             }
-        } catch (_: Exception) { runOnUiThread { complete("error", "动作检测未完成，请重新拍摄") } }
+        } catch (_: Exception) { runOnUiThread { complete("error", "动作认证未完成，请重新认证") } }
         finally { frame.close() }
     }
     internal fun update(input: JSONObject) {
         if (closed || input.optString("id") != captureId) return
-        if (input.has("fill")) root.setBackgroundColor(Color.parseColor(input.getString("fill")))
-        if (input.has("title")) title.text = input.getString("title")
-        if (input.has("detail")) detail.text = input.getString("detail")
-        if (input.has("progress")) progress.text = "动作进度 ${input.getInt("progress")} / 2"
-        if (input.has("light")) lightButton.text = if (input.getBoolean("light")) "柔光补光已开启" else "柔光补光已关闭"
+        root.update(input)
         if (input.optLong("frameId", -1) != frameId) return
         if (input.optBoolean("capture") && photo != null) {
             try {
                 val file = File.createTempFile("identity-", ".jpg", cacheDir)
                 file.outputStream().use { check(photo!!.compress(Bitmap.CompressFormat.JPEG, 90, it)) }
                 complete("photo", path = file.absolutePath)
-            } catch (_: Exception) { complete("error", "拍摄失败，请重新尝试") }
+            } catch (_: Exception) { complete("error", "认证失败，请重新尝试") }
         } else waiting = false
     }
     private fun send(type: String, extra: JSONObject = JSONObject()) { extra.put("id", captureId).put("type", type); emit?.invoke(extra.toString()) }

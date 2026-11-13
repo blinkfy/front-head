@@ -1,3 +1,4 @@
+import { identityBlinkScore } from './identity-blink.mjs'
 // XRFrame's face example labels the pupil anchors 104/105, nose 45 and mouth 98:
 // https://github.com/dtysky/xr-frame-demo/blob/master/miniprogram/components/xr-ar-face/index.wxml
 // Select nearby contours by geometry rather than borrowing MediaPipe's point order.
@@ -43,7 +44,7 @@ export function createWeixinIdentityLandmarks() {
         if (calibration.length >= 6) baseline = ratios.map((_, i) => calibration.reduce((sum, row) => sum + row[i], 0) / calibration.length)
         return { points, blink: 0, mouth: 0, calibrated: false }
       }
-      const blink = Math.min(clamp((1 - ratios[0] / baseline[0]) / .65), clamp((1 - ratios[1] / baseline[1]) / .65))
+      const blink = identityBlinkScore(clamp((1 - ratios[0] / baseline[0]) / .65), clamp((1 - ratios[1] / baseline[1]) / .65))
       const open = clamp((ratios[2] - baseline[2]) / .28)
       return { points, blink, mouth: open, calibrated: true }
     }

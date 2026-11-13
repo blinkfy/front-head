@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   IDENTITY_LIGHT_COLORS,
   createIdentityFramingGuard,
@@ -7,6 +8,7 @@ import {
   identityLightResponse,
   shuffledIdentityLights
 } from '../src/utils/identity-camera-checks.mjs'
+import { identityBlinkScore, createIdentityBlinkTracker } from '../src/utils/identity-blink.mjs'
 import { createIdentityActionSequence } from '../src/utils/identity-action-sequence.mjs'
 
 const video = { width: 640, height: 480 }
@@ -28,6 +30,29 @@ assert.equal(identityFaceFrame(face(.5, .5, .42, .55), video, viewport).hint, '�
   'a large face asks the user to move farther away after cover cropping')
 assert.equal(identityFaceFrame(face(.58, .5, .22, .55), video, viewport).hint, '请将脸部移到框中央',
   'an off-center face is detected after horizontal crop mapping')
+// The inner native oval and checks share the exact normalized guide size.
+const nativeViewport = { width: 312, height: 400, guide: { width: .78, height: .82 } }
+const portrait = { width: 312, height: 400 }
+assert.equal(identityFaceFrame(face(.5, .5, .60, .70), portrait, nativeViewport).ready, true)
+assert.equal(identityFaceFrame(face(.5, .5, .78, .85), portrait, nativeViewport).hint, '请稍微离远一点',
+  'a face fitting only the outer preview is not treated as fitting the inner guide')
+assert.equal(identityFaceFrame(face(.64, .5, .50, .60), portrait, nativeViewport).hint, '请将脸部移到框中央',
+  'center displacement is mapped into the same inner guide coordinates')
+// Use the actual native UI target ratios: filling the visible outline must
+// pass the initial/final strict check without being told to move farther away.
+const uiSource = readFileSync(new URL('../src/uni_modules/ftx-identity-capture/utssdk/app-android/IdentityCaptureUi.kt', import.meta.url), 'utf8')
+const acceptedWidth = Number(uiSource.match(/val guideWidth = ([.\d]+)f/)[1])
+const acceptedHeight = Number(uiSource.match(/val guideHeight = ([.\d]+)f/)[1])
+const targetScale = Number(uiSource.match(/preview, guideWidth \* ([.\d]+)f, guideHeight \*/)[1])
+const drawnViewport = { ...portrait, guide: { width: acceptedWidth, height: acceptedHeight } }
+for (const oversize of [1, 1.05]) {
+  assert.equal(identityFaceFrame(face(.5, .5, acceptedWidth * targetScale * oversize, acceptedHeight * targetScale * oversize), portrait, drawnViewport).ready, true,
+    'a centered face matching or slightly exceeding the drawn oval fits the unchanged accepted bounds')
+}
+const guideJaw = face(.5, .5, .60, .87)
+assert.equal(identityFaceFrame(guideJaw, portrait, nativeViewport).ready, false)
+assert.equal(identityFaceFrame(guideJaw, portrait, nativeViewport, { tracking: true }).ready, true,
+  'mouth movement still has a larger tracking allowance inside the smaller guide')
 const jawExpanded = face(.5, .48, .22, .98)
 assert.equal(identityFaceFrame(jawExpanded, video, viewport).ready, false,
   'initial alignment and final capture reject an expanded lower jaw outside strict bounds')
@@ -96,6 +121,57 @@ assert.equal(identityFaceFrame(face(.5, .5, .22, .55), video, viewport, { tracki
   assert.equal(tick(0, .8).index, 0, 'partial actions on opposite sides of a pause cannot be combined')
   tick(0, .8); tick(0, 0); tick(0, 0)
   assert.equal(tick(0, 0).index, 1, 'a fresh complete action can progress after a pause')
+}
+
+{
+  const warm = baseline => {
+    const sequence = createIdentityActionSequence(['blink'])
+    let time = 0
+    const tick = (left, right = left) => sequence.update(identityBlinkScore(left, right), 0, time += 120)
+    for (let i = 0; i < 3; i++) tick(baseline)
+    return { tick }
+  }
+  const glasses = warm(.10)
+  assert.equal(glasses.tick(.75, .23).index, 0)
+  assert.equal(glasses.tick(.75, .23).index, 0, 'a sustained asymmetric bilateral closure still needs reopening')
+  assert.equal(glasses.tick(.10).index, 0)
+  assert.equal(glasses.tick(.10).index, 1, 'a partly obscured eye can complete the full blink cycle')
+  const elevatedEyes = createIdentityBlinkTracker()
+  for (let i = 0; i < 3; i++) assert.equal(elevatedEyes.update(.30, .28), 0,
+    'usable elevated open-eye scores normalize to neutral instead of blocking calibration')
+  assert.equal(elevatedEyes.update(.30, .28), 0, 'final neutral gating uses the same per-eye baseline')
+  assert.ok(elevatedEyes.update(.80, .78) > .38, 'bilateral motion is measured relative to the calibrated open eyes')
+  const invalidEyes = createIdentityBlinkTracker()
+  for (let i = 0; i < 4; i++) assert.ok(invalidEyes.update(.9, .9) >= .25,
+    'starting with closed eyes cannot establish an open-eye baseline')
+  const eyeBaseline = createIdentityBlinkTracker()
+  for (let i = 0; i < 3; i++) eyeBaseline.update(.03, .22)
+  const offset = createIdentityActionSequence(['blink'])
+  let offsetTime = 0
+  for (let i = 0; i < 3; i++) offset.update(eyeBaseline.update(.03, .22), 0, offsetTime += 120)
+  for (let i = 0; i < 3; i++) offset.update(eyeBaseline.update(.95, .22), 0, offsetTime += 120)
+  for (let i = 0; i < 3; i++) assert.equal(offset.update(eyeBaseline.update(.03, .22), 0, offsetTime += 120).index, 0,
+    'an unchanged lens offset cannot stand in for second-eye closure')
+  const quick = warm(.08)
+  assert.equal(quick.tick(.85).index, 0, 'one strong peak does not itself complete a blink')
+  assert.equal(quick.tick(.08).index, 0)
+  assert.equal(quick.tick(.08).index, 1, 'a short clear closure followed by two open frames completes')
+  const noise = warm(.18)
+  for (let i = 0; i < 5; i++) assert.equal(noise.tick(.40).index, 0, 'a small rise from an elevated glasses baseline is insufficient')
+  assert.equal(noise.tick(.18).index, 0)
+  for (const pair of [[.95, .03], [.03, .95]]) {
+    const wink = warm(.05)
+    for (let i = 0; i < 3; i++) wink.tick(...pair)
+    for (let i = 0; i < 3; i++) assert.equal(wink.tick(.05).index, 0, 'one-sided closure/reflection cannot complete a blink')
+  }
+  const spike = warm(.05)
+  spike.tick(.46); spike.tick(.05); spike.tick(.05)
+  assert.equal(spike.tick(.05).index, 0, 'a single moderate spike cannot count as a blink')
+  const interrupted = createIdentityActionSequence(['blink'])
+  let t = 0
+  for (let i = 0; i < 3; i++) interrupted.update(.05, 0, t += 120)
+  interrupted.update(.85, 0, t += 120); interrupted.pause()
+  for (let i = 0; i < 5; i++) assert.equal(interrupted.update(.05, 0, t += 120).index, 0, 'a blink cannot combine closure and reopening across a framing interruption')
 }
 
 const cheekPoints = Array.from({ length: 281 }, () => ({ x: .5, y: .5 }))

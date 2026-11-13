@@ -11,7 +11,7 @@
       <view v-for="item in items" :key="item.id" class="notice-card" :class="{ unread: !item.readAt }" @click="openOrder(item)">
         <view class="notice-title"><text>{{ item.title }}</text><view v-if="!item.readAt" class="notice-dot" /></view>
         <text class="notice-content">{{ item.content }}</text>
-        <view class="notice-meta"><text>{{ timeLabel(item.createdAt) }}</text><text>查看详情 ›</text></view>
+        <view class="notice-meta"><text>{{ timeLabel(item.createdAt) }}</text><text>{{ item.kind === 'provider_quota' ? (item.readAt ? '已读' : '点击标为已读') : '查看详情 ›' }}</text></view>
       </view>
       <view v-if="error" class="notice-status" @click="loadMore">{{ error }}</view>
       <view v-else-if="loading" class="notice-status">加载中…</view>
@@ -72,8 +72,8 @@ export default {
     },
     async openOrder(item) {
       if (this.opening || !this.valid(this.version)) return
-      const url = userNotificationUrl(item), account = this.account
-      if (!url) return
+      const url = item.kind === 'provider_quota' ? '' : userNotificationUrl(item), account = this.account
+      if (!url && item.kind !== 'provider_quota') return
       this.opening = true
       try {
         if (!item.readAt) {
@@ -81,7 +81,7 @@ export default {
           if (res?.code === 0 && this.active && account === (uni.getStorageSync('token') || '')) { item.readAt = new Date().toISOString(); messageBus.emit('notification.changed', {}) }
         }
       } catch (_) { /* The order remains available when marking as read fails. */ }
-      if (this.active && this.account === account && account === (uni.getStorageSync('token') || '')) uni.navigateTo({ url })
+      if (url && this.active && this.account === account && account === (uni.getStorageSync('token') || '')) uni.navigateTo({ url })
       this.opening = false
     }
   }
