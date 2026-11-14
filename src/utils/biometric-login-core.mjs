@@ -1,22 +1,21 @@
+import { createQuickLoginAccounts } from './quick-login-accounts.mjs'
+
 // This module has no platform globals; native code owns the private signing key.
 export function createBiometricLoginManager({ runtime, native, api, scope }) {
   const storageKey = `biometric_login_v1:${encodeURIComponent(scope)}`
   let busy = false
-  function state() {
-    const value = runtime.getStorageSync(storageKey)
-    return { enabled: true, prompted: false, ...(value && typeof value === 'object' ? value : {}) }
-  }
-  function save(patch) { const value = { ...state(), ...patch }; runtime.setStorageSync(storageKey, value); return value }
+  const { state, save, activate, accounts, select } = createQuickLoginAccounts({ runtime, key: storageKey })
   function retire(current) {
     if (!current.credentialId) return
-    const pending = state().pendingRevocations || []
+    const pending = state(current.userId).pendingRevocations || []
     if (!pending.some(item => item.credentialId === current.credentialId)) {
-      save({ pendingRevocations: [...pending, { credentialId: current.credentialId, userId: current.userId }] })
+      save({ pendingRevocations: [...pending, { credentialId: current.credentialId, userId: current.userId }] }, current.userId)
     }
   }
-  function clearBinding() {
-    retire(state())
-    return save({ credentialId: '', userId: null, username: '' })
+  function clearBinding(userId) {
+    const current = state(userId)
+    retire(current)
+    return save({ credentialId: '' }, current.userId)
   }
   async function flushRevocations(token, userId) {
     const pending = state().pendingRevocations || []
@@ -25,7 +24,7 @@ export function createBiometricLoginManager({ runtime, native, api, scope }) {
       if (String(item.userId) !== String(userId)) continue
       try { await api(`/biometric/credentials/${item.credentialId}`, {}, token, 'DELETE'); removed.add(item.credentialId) } catch (_) {}
     }
-    save({ pendingRevocations: (state().pendingRevocations || []).filter(item => !removed.has(item.credentialId)) })
+    save({ pendingRevocations: (state(userId).pendingRevocations || []).filter(item => !removed.has(item.credentialId)) }, userId)
   }
   async function capability() {
     try { return await native({ operation: 'capability' }) }
@@ -43,8 +42,9 @@ export function createBiometricLoginManager({ runtime, native, api, scope }) {
       if (!isActive() || runtime.getStorageSync('token') !== token) throw { error: 'CANCELLED' }
       const result = await api('/biometric/enrollment/finish', { challengeId, publicKey, signature }, token)
       if (!isActive() || runtime.getStorageSync('token') !== token) throw { error: 'CANCELLED' }
-      const previous = state()
-      save({ enabled: true, prompted: true, credentialId, userId: result.data.userId, username: result.data.username || user.username })
+      if (String(result?.data?.userId) !== String(user.id)) throw { error: 'ACCOUNT_MISMATCH', msg: '认证账号不匹配，请重新登录' }
+      const previous = state(user.id)
+      save({ enabled: true, prompted: true, credentialId, userId: result.data.userId, username: result.data.username || user.username }, user.id)
       committed = true
       retire(previous)
       await removeKey(previous.credentialId)
@@ -55,16 +55,13 @@ export function createBiometricLoginManager({ runtime, native, api, scope }) {
     } finally { if (!committed) await removeKey(credentialId) }
   }
   return {
-    state, capability,
+    state, capability, accounts,
+    selectAccount: userId => !busy && select(userId),
     async afterLogin(token, user, isActive = () => true) {
-      if (busy || !Number.isSafeInteger(Number(user?.id)) || Number(user.id) <= 0 || !isActive()) return
+      if (busy || !Number.isSafeInteger(Number(user?.id)) || Number(user.id) <= 0 || !isActive() || runtime.getStorageSync('token') !== token) return
       busy = true
       try {
-        let current = state()
-        if (current.credentialId && String(current.userId) !== String(user.id)) {
-          await removeKey(current.credentialId)
-          current = clearBinding()
-        }
+        const current = activate(user)
         await flushRevocations(token, user.id)
         if (!isActive() || runtime.getStorageSync('token') !== token) return
         if (current.credentialId) runtime.removeStorageSync('savedUser')
@@ -72,54 +69,57 @@ export function createBiometricLoginManager({ runtime, native, api, scope }) {
         const support = await capability()
         if (!support.supported || !support.enrolled || !isActive() || runtime.getStorageSync('token') !== token) return
         // Record before presenting: cancelling, errors, or a restart cannot repeat this offer.
-        save({ prompted: true })
+        save({ prompted: true }, user.id)
         const accepted = await runtime.confirm({ title: `开启${support.label || '指纹或面容登录'}`,
           content: '下次未保持登录时，将优先使用系统指纹或面容认证。您可随时在「设置 → 账号与安全」中修改。',
           confirmText: '开启', cancelText: '暂不开启' })
         if (!isActive() || runtime.getStorageSync('token') !== token) return
-        if (!accepted) { save({ enabled: false }); return }
+        if (!accepted) { save({ enabled: false }, user.id); return }
         await bind(token, user, isActive)
       } finally { busy = false }
     },
     async setEnabled(enabled, token, user, isActive = () => true) {
       if (busy) throw { error: 'BUSY' }
+      if (!isActive() || runtime.getStorageSync('token') !== token) throw { error: 'CANCELLED' }
+      const current = activate(user)
       busy = true
       try {
-        const current = state()
-        save({ enabled: Boolean(enabled), prompted: true })
+        save({ enabled: Boolean(enabled), prompted: true }, user.id)
         if (!enabled) {
-          clearBinding()
+          clearBinding(user.id)
           await removeKey(current.credentialId)
           await flushRevocations(token, user.id)
           return
         }
         const support = await capability()
         if (!support.supported || !support.enrolled) throw { error: 'NOT_ENROLLED' }
-        if (current.credentialId && String(current.userId) === String(user.id)) return
+        if (current.credentialId && accounts().some(item => item.credentialId === current.credentialId && String(item.userId) === String(user.id))) return
         await bind(token, user, isActive)
       } finally { busy = false }
     },
-    async login(isActive = () => true) {
-      const current = state()
-      if (busy || !current.enabled || !current.credentialId) return null
+    async login(isActive = () => true, owner, { mfaSetupTicket, userId } = {}) {
+      const current = state(userId)
+      if (busy || !current.enabled || !current.credentialId || !accounts().some(item => item.credentialId === current.credentialId && String(item.userId) === String(current.userId))) return null
       busy = true
       try {
         const options = await api('/biometric/login/options', { credentialId: current.credentialId })
         if (!isActive()) throw { error: 'CANCELLED' }
         const { signature } = await native({ operation: 'sign', keyId: current.credentialId, payload: options.data.payload })
         if (!isActive()) throw { error: 'CANCELLED' }
-        const result = await api('/biometric/login/finish', { challengeId: options.data.challengeId, signature })
-        return isActive() ? result : null
+        const result = await api('/biometric/login/finish', { challengeId: options.data.challengeId, signature, ...(mfaSetupTicket ? { mfaSetupTicket } : {}) })
+        if (!isActive()) return null
+        if (String(result?.accountId) !== String(current.userId)) throw { error: 'ACCOUNT_MISMATCH', msg: '认证账号不匹配，请重新选择账号' }
+        return result
       } catch (error) {
         if (error?.error === 'KEY_INVALID' || error?.reason === 'invalid_credential') {
           await removeKey(current.credentialId)
-          clearBinding()
+          clearBinding(current.userId)
         }
         throw error
       } finally { busy = false }
     },
     cancel() { try { void native({ operation: 'cancel' }).catch(() => {}) } catch (_) {} },
-    async forgetBinding() { const current = state(); clearBinding(); await removeKey(current.credentialId) }
+    async forgetBinding(userId) { if (busy) throw { error: 'BUSY' }; const current = state(userId); clearBinding(userId); await removeKey(current.credentialId) }
   }
 }
 

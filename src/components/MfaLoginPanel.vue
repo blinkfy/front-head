@@ -4,13 +4,13 @@
       <view class="mfa-emblem">✓</view>
       <text class="mfa-title">双因素验证</text>
       <text class="mfa-description">{{ pending.accountName ? `正在登录 ${pending.accountName}` : '再验证一步，保护您的账号' }}</text>
-      <text v-if="pending.mfaAuthorizeQuick" class="mfa-description">首次使用此快捷认证，验证后将用于双因素登录</text>
+      <text v-if="pending.mfaAuthorizeQuick" class="mfa-description">系统认证已完成；此凭据首次用于双因素登录，请再验证一次</text>
       <text class="mfa-label">{{ recovery ? '一次性恢复码' : '验证器中的6位动态码' }}</text>
       <input v-model="code" class="mfa-input" :type="recovery ? 'text' : 'number'" :maxlength="recovery ? 40 : 6"
         :placeholder="recovery ? '输入已保存的恢复码' : '000000'" :disabled="busy" @confirm="verify" />
       <text v-if="error" class="mfa-error" role="alert">{{ error }}</text>
       <button class="mfa-primary" :loading="busy" :disabled="busy || !code.trim()" @click="verify">验证并登录</button>
-      <button class="mfa-link" :disabled="busy" @click="recovery = !recovery; code = ''; error = ''">{{ recovery ? '使用验证器动态码' : '使用恢复码' }}</button>
+      <button v-if="pending.mfaHasTotp !== false" class="mfa-link" :disabled="busy" @click="recovery = !recovery; code = ''; error = ''">{{ recovery ? '使用验证器动态码' : '使用恢复码' }}</button>
       <!-- #ifdef APP-PLUS || H5 || MP-WEIXIN -->
       <button v-if="canQuick" class="mfa-link" :disabled="busy" @click="verifyQuick">{{ quickLabel }}</button>
       <!-- #endif -->
@@ -24,7 +24,7 @@ import { ref, onBeforeUnmount } from 'vue'
 import { onHide } from '@dcloudio/uni-app'
 import { mfaRequest } from '@/api/mfa'
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
-import { quickLogin, quickLoginForMfa } from '@/utils/quick-login.js'
+import { quickLogin, quickLoginForMfa, quickLoginApi, quickLoginPlatform } from '@/utils/quick-login.js'
 import { biometricErrorMessage } from '@/utils/biometric-login-core.mjs'
 // #endif
 const props = defineProps({ dark: Boolean, promptOwner: Object })
@@ -56,7 +56,7 @@ async function verifyQuick() {
   const revision = generation
   busy.value = true; error.value = ''
   try {
-    const result = await quickLoginForMfa(pending.value.mfaTicket, () => Boolean(current(revision)), props.promptOwner)
+    const result = await quickLoginForMfa(pending.value.mfaTicket, () => Boolean(current(revision)), props.promptOwner, pending.value.accountId)
     if (!current(revision)) return
     if (result?.token && String(result.accountId) === String(pending.value.accountId) && result.mfaVerified === true) finish(result)
     else {
@@ -70,18 +70,29 @@ async function verifyQuick() {
 function open(result) {
   if (!result?.requiresMfa) return Promise.resolve(result)
   finish(null)
-  pending.value = result; code.value = ''; error.value = ''; recovery.value = false; canQuick.value = false
+  pending.value = result; code.value = ''; error.value = ''; recovery.value = result.mfaHasTotp === false; canQuick.value = false
   page = getCurrentPages().slice(-1)[0]
   const revision = generation
   // #ifdef APP-PLUS || H5 || MP-WEIXIN
-  void quickLogin.capability().then(support => {
+  void quickLogin.capability().then(async support => {
     if (!current(revision)) return
-    const state = quickLogin.state()
-    canQuick.value = state.enabled && Boolean(state.credentialId) && support.supported && support.enrolled
+    const state = quickLogin.state(result.accountId)
+    canQuick.value = false
     quickLabel.value = support.label ? `使用${support.label.replace(/登录$/, '')}` : '使用系统认证'
+    // #ifndef H5
+    if (state.enabled && String(state.userId) === String(result.accountId) && state.credentialId && support.supported && support.enrolled) {
+      const availability = await mfaRequest('quick/availability', { mfaTicket: result.mfaTicket,
+        platform: quickLoginPlatform === 'app' ? 'biometric' : 'soter', credentialId: state.credentialId })
+      if (current(revision)) canQuick.value = availability.data?.available === true
+    }
+    // #endif
     // #ifdef H5
-    canQuick.value = Boolean(window.isSecureContext && window.PublicKeyCredential && window.navigator?.credentials)
+    canQuick.value = false
     quickLabel.value = '使用通行密钥'
+    if (window.isSecureContext && window.PublicKeyCredential && window.navigator?.credentials) {
+      const availability = await quickLoginApi('/quick-login/passkey/mfa/availability', { mfaTicket: result.mfaTicket })
+      if (current(revision)) canQuick.value = availability.data?.available === true
+    }
     // #endif
   }).catch(() => {})
   // #endif

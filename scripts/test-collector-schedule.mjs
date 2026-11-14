@@ -15,6 +15,7 @@ const context = {
   module: { exports: {} },
   RecyclingShell: {},
   RecyclingServiceMap: {},
+  RecyclingTimeline: {},
   collectorMe: async () => meResponse,
   collectorSettings: async () => {},
   collectorAvailability: async payload => calls.push(['daily', payload]),

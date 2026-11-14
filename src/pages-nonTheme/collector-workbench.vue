@@ -12,23 +12,55 @@
       <view class="recycle-tabs workbench-tabs"><button v-for="item in tabs" :key="item.key" class="recycle-pill" :class="{ selected: tab === item.key }" @click="changeTab(item.key)">{{ item.label }}</button></view>
 
       <template v-if="tab !== 'settings'">
-        <view class="task-section-heading"><text class="task-section-title">{{ tab === 'available' ? '可接任务' : '我的任务' }}</text><text class="recycle-muted">{{ tab === 'available' ? '大厅隐藏详细地址与电话，接单后可联系用户。' : '查看履约进度，与用户沟通上门安排。' }}</text></view>
-        <view class="task-toolbar"><picker class="task-date" mode="date" :value="date" @change="setDate"><view class="recycle-select">{{ date || '全部日期' }}<view class="field-chevron"></view></view></picker><button v-if="date" class="toolbar-link" @click="clearDate">重置</button><button class="toolbar-link" :disabled="loadingOrders" @click="loadOrders(true)">{{ loadingOrders ? '刷新中…' : '刷新' }}</button></view>
-        <view v-if="tab === 'mine'" class="recycle-pills task-filters"><button v-for="filter in filters" :key="filter.key" class="recycle-pill" :class="{ selected: status === filter.key }" @click="setStatus(filter.key)">{{ filter.label }}</button></view>
-        <view v-if="tab === 'available' && !me.profile.acceptingOrders" class="pause-notice"><text>接收新单已暂停，已接任务不受影响。</text><button class="toolbar-link" @click="changeTab('settings')">前往接单设置</button></view>
-        <view v-if="orders.length" class="task-list">
-          <view v-for="order in orders" :key="order.id" class="task-item" @click="detail(order)">
-            <view class="task-meta"><text class="task-order-no">订单 {{ order.orderNo }}</text><text class="recycle-status">{{ statusText(order.status) }}</text></view>
-            <view class="task-appointment"><text class="task-date-label">{{ order.appointmentDate }}</text><text class="task-time">{{ order.appointmentTimeSlot }}</text></view>
-            <view class="task-detail-line"><text class="task-detail-label">服务范围</text><text>{{ order.serviceAreaName || areaName(order.serviceAreaId) }}</text></view>
-            <view class="task-detail-line"><text class="task-detail-label">回收物品</text><text>{{ itemsText(order) || '查看任务了解物品详情' }}</text></view>
-            <view class="task-price"><text>{{ orderPriceText(order) }}</text><text class="recycle-muted">以现场确认记录为准</text></view>
-            <view class="task-actions"><button class="recycle-primary task-action" @click.stop="detail(order)">{{ tab === 'available' ? '查看并接单' : '查看任务 / 联系用户' }}</button></view>
+        <view v-if="tab === 'available'" class="overview-card">
+          <view class="overview-head"><text class="task-section-title">{{ dayWord }}接单概览</text><text class="recycle-muted">{{ timelineDate }}</text></view>
+          <view class="overview-grid">
+            <view class="overview-metric"><text class="metric-value">{{ me.profile.acceptingOrders ? availableCount : 0 }}</text><text class="metric-label">可接订单（单）</text></view>
+            <view class="overview-metric"><text class="metric-value">{{ summary ? summary.busyHours : '-' }}</text><text class="metric-label">预计工作时长（小时）</text><text class="metric-sub">工作窗口 {{ summary ? summary.windowHours : '-' }} 小时</text></view>
+            <view class="overview-metric"><text class="metric-value">{{ summary ? summary.remainingJobs : '-' }}</text><text class="metric-label">剩余接单容量（单）</text><text class="metric-sub">空闲 {{ summary ? freeHours : '-' }} 小时</text></view>
           </view>
         </view>
+        <view v-else class="overview-card">
+          <view class="overview-head"><text class="task-section-title">{{ dayWord }}任务统计</text><text class="recycle-muted">{{ timelineDate }}</text></view>
+          <view class="overview-grid four">
+            <view class="overview-metric"><text class="metric-value">{{ taskStats.total }}</text><text class="metric-label">总任务</text></view>
+            <view class="overview-metric"><text class="metric-value stat-confirmed">{{ taskStats.confirmed }}</text><text class="metric-label">待执行</text></view>
+            <view class="overview-metric"><text class="metric-value stat-picking">{{ taskStats.picking }}</text><text class="metric-label">进行中</text></view>
+            <view class="overview-metric"><text class="metric-value stat-completed">{{ taskStats.completed }}</text><text class="metric-label">已完成</text></view>
+          </view>
+          <view v-if="nextJob" class="next-job"><view class="next-dot"></view><view class="next-copy"><text class="next-title">{{ nextJob.status === 'picking' ? '正在进行' : '下一单预计上门' }} {{ jobTime(nextJob) }}</text><text class="recycle-muted">订单 {{ nextJob.orderNo }} · {{ nextJob.serviceAreaName || areaName(nextJob.serviceAreaId) }} · 用户预约 {{ nextJob.appointmentTimeSlot }}</text></view><button class="toolbar-link" @click="detail(nextJob)">详情</button></view>
+          <text v-else-if="timeline && !timelineLoading" class="recycle-muted next-empty">{{ taskStats.total ? '当日任务已全部完成' : '当日暂无已接任务' }}</text>
+        </view>
+        <view class="task-section-heading"><text class="task-section-title">{{ tab === 'available' ? '可接任务' : '我的任务' }}</text><text class="recycle-muted">{{ tab === 'available' ? '大厅隐藏详细地址与电话，接单后可联系用户。' : '查看履约进度，与用户沟通上门安排。' }}</text></view>
+        <view class="task-toolbar"><picker class="task-date" mode="date" :value="date" @change="setDate"><view class="recycle-select">{{ date || '全部日期' }}<view class="field-chevron"></view></view></picker><button v-if="date" class="toolbar-link" @click="clearDate">重置</button><button class="toolbar-link" :disabled="loadingOrders" @click="loadOrders(true)">{{ loadingOrders ? '刷新中…' : '刷新' }}</button></view>
+        <view v-if="tab === 'mine'" class="recycle-pills view-switch"><button class="recycle-pill" :class="{ selected: viewMode === 'timeline' }" @click="viewMode = 'timeline'">时间轴</button><button class="recycle-pill" :class="{ selected: viewMode === 'list' }" @click="viewMode = 'list'">任务列表</button></view>
+        <view v-if="tab === 'mine' && viewMode === 'list'" class="recycle-pills task-filters"><button v-for="filter in filters" :key="filter.key" class="recycle-pill" :class="{ selected: status === filter.key }" @click="setStatus(filter.key)">{{ filter.label }}</button></view>
+        <view v-if="tab === 'available' && !me.profile.acceptingOrders" class="pause-notice"><text>接收新单已暂停，已接任务不受影响。</text><button class="toolbar-link" @click="changeTab('settings')">前往接单设置</button></view>
+        <view v-if="tab === 'available' || viewMode === 'timeline'" class="timeline-card">
+          <view class="timeline-head"><text class="task-section-title">{{ tab === 'available' ? '单日接单时间轴' : '单日任务时间轴' }}</text><text class="recycle-muted">{{ timelineDate }} · 按区域</text></view>
+          <view v-if="timelineError" class="recycle-error" role="alert"><text>{{ timelineError }}</text><button class="recycle-secondary" :disabled="timelineLoading" @click="loadTimeline">重新加载</button></view>
+          <view v-else-if="timelineLoading && !timeline" class="recycle-empty" role="status">正在加载时间轴…</view>
+          <RecyclingTimeline v-else :lanes="displayLanes" :mode="tab === 'mine' ? 'status' : 'scheduled'" :show-free="tab === 'available'" :ghosts="ghosts" :actions="tab === 'mine' ? ['detail', 'contact', 'navigate'] : []" :now-minutes="nowMinutes" :empty-text="tab === 'available' ? '当天暂无排班，发布排班后可在此查看接单空间' : '当天暂无已接任务'" @detail="detail" @contact="contactUser" @navigate="navigateTo" />
+          <text class="recycle-muted timeline-note">时间轴展示服务端按装箱排程实时计算的预计上门时间；用户预约时段与实际执行时间分别标注。</text>
+        </view>
+        <view v-if="orders.length && (tab === 'available' || viewMode === 'list')" class="task-list">
+          <view v-for="order in orders" :key="order.id" class="task-item" @click="detail(order)">
+            <view class="task-meta"><text class="task-order-no">订单 {{ order.orderNo }}</text><text class="recycle-status">{{ statusText(order.status) }}</text></view>
+            <view class="task-appointment"><text class="task-date-label">{{ order.appointmentDate }}</text><text class="task-time">用户预约 {{ order.appointmentTimeSlot }}</text></view>
+            <view class="task-detail-line"><text class="task-detail-label">所属区域</text><text>{{ order.serviceAreaName || areaName(order.serviceAreaId) }}</text></view>
+            <view v-if="tab === 'available'" class="task-detail-line"><text class="task-detail-label">预计可插入</text><text :class="order.placement ? 'placement-ok' : 'placement-conflict'">{{ placementText(order) }}</text></view>
+            <view v-else-if="jobFor(order)" class="task-detail-line"><text class="task-detail-label">{{ execLabel(order) }}</text><text>{{ jobTime(jobFor(order)) }}</text></view>
+            <view class="task-detail-line"><text class="task-detail-label">回收物品</text><text>{{ itemsText(order) || '查看任务了解物品详情' }}</text></view>
+            <view class="task-price"><text>{{ orderPriceText(order) }}</text><text class="recycle-muted">以现场确认记录为准</text></view>
+            <view v-if="tab === 'available' && previewId === order.id" class="preplan"><text class="preplan-title">接单后预排程</text><text class="recycle-copy">{{ preplanText(order) }}</text></view>
+            <view class="task-actions"><button v-if="tab === 'available'" class="recycle-secondary task-action" :disabled="!order.placement" @click.stop="togglePreview(order)">{{ previewId === order.id ? '收起预排程' : '预览接单后排程' }}</button><button v-if="tab === 'mine' && ['confirmed', 'picking'].includes(order.status)" class="recycle-secondary task-action" @click.stop="navigateTo(order)">开始导航</button><button v-if="tab === 'mine' && ['confirmed', 'picking'].includes(order.status)" class="recycle-secondary task-action" @click.stop="contactUser(order)">联系用户</button><button class="recycle-primary task-action" @click.stop="detail(order)">{{ tab === 'available' ? '查看并接单' : '订单详情' }}</button></view>
+          </view>
+        </view>
+        <view v-if="tab === 'available' || viewMode === 'list'">
         <view v-if="loadingOrders" class="recycle-empty" role="status">正在加载任务…</view>
         <view v-else-if="!orders.length" class="task-empty"><view class="empty-task-mark"><view></view><view></view><view></view></view><text class="empty-title">{{ tab === 'available' ? (me.profile.acceptingOrders ? '暂时没有可接的新单' : '接收新单已暂停') : '当前筛选下暂无任务' }}</text><text class="recycle-muted">{{ tab === 'available' ? (me.profile.acceptingOrders ? '新单会按您的服务范围、品类与排班匹配，可稍后刷新。' : '开启接收新单并发布排班后，即可查看匹配任务。') : '试试其他状态或日期，已接任务的进度会保留在这里。' }}</text></view>
         <button v-if="hasMore" class="recycle-secondary load-more" :disabled="loadingOrders" @click="loadOrders(false)">加载更多</button>
+        </view>
       </template>
 
       <template v-else>
@@ -78,11 +110,19 @@
               <view class="weekday-shortcuts"><button class="toolbar-link" :disabled="saving" @click="setWeekdays([1,2,3,4,5])">工作日</button><button class="toolbar-link" :disabled="saving" @click="setWeekdays([1,2,3,4,5,6,7])">每天</button><button class="toolbar-link" :disabled="saving" @click="setWeekdays([])">取消选择</button></view>
               <text v-if="weeklyMismatch" class="recycle-muted">该区域各星期的服务时段不同：{{ weeklyMismatchText }}。保存后，所选服务日会统一使用当前时段，请先调整后再保存。</text>
             </template>
-            <template v-else><text class="recycle-label">2. 选择调整日期</text><picker mode="date" :value="scheduleDate" :start="today" :end="lastDay" :disabled="saving" @change="scheduleDate = $event.detail.value; restoreSlots()"><view class="recycle-select">{{ scheduleDate }}</view></picker><text class="recycle-muted recycle-copy">当天临时排班只改所选区域，其他区域时段保留，之后调整每周规则也不会改变这项例外；“恢复周排班”会清除当天全部临时调整。</text><text class="override-state">{{ hasDailyOverride ? '当天已临时调整' : '当天沿用每周固定排班' }}</text></template>
+            <template v-else><text class="recycle-label">2. 选择调整日期</text><picker mode="date" :value="scheduleDate" :start="today" :end="lastDay" :disabled="saving" @change="scheduleDate = $event.detail.value; previewDate = scheduleDate; restoreSlots(); loadPreview()"><view class="recycle-select">{{ scheduleDate }}</view></picker><text class="recycle-muted recycle-copy">当天临时排班只改所选区域，其他区域时段保留，之后调整每周规则也不会改变这项例外；“恢复周排班”会清除当天全部临时调整。</text><text class="override-state">{{ hasDailyOverride ? '当天已临时调整' : '当天沿用每周固定排班' }}</text></template>
           </view>
           <view class="schedule-step"><text class="recycle-label">3. 添加工作时间</text><text class="recycle-muted recycle-copy">支持多段时间，按半小时选择、不跨夜。系统会在工作时间内生成 30 或 60 分钟上门窗口。</text>
             <view v-for="(slot, index) in selectedSlots" :key="index" class="work-range"><picker class="work-range-picker" :range="workTimes.slice(0, -1)" :value="workTimes.indexOf(slot.split('-')[0])" :disabled="saving" @change="changeWorkRange(index, 0, $event)"><view class="recycle-select">{{ slot.split('-')[0] }}</view></picker><text>至</text><picker class="work-range-picker" :range="workTimes" :value="workTimes.indexOf(slot.split('-')[1])" :disabled="saving" @change="changeWorkRange(index, 1, $event)"><view class="recycle-select">{{ slot.split('-')[1] }}</view></picker><button class="toolbar-link" :disabled="saving" @click="removeWorkRange(index)">删除</button></view>
             <text v-if="!selectedSlots.length" class="schedule-hint">尚未添加工作时间，不能发布。请添加时间，例如 08:30 至 12:00。</text><button class="recycle-secondary" :disabled="saving" @click="addWorkRange">添加工作时间</button>
+          </view>
+          <view class="schedule-step schedule-timeline">
+            <text class="recycle-label">单日排班时间轴预览</text>
+            <text class="recycle-muted recycle-copy">按日期查看已发布的各区域工作窗口、已接订单占用时段与空闲可接时段{{ draftLanes.length ? '；蓝色虚线为尚未发布的当前编辑内容。' : '。' }}</text>
+            <view class="preview-date-row"><button class="toolbar-link" :disabled="previewLoading || previewDate <= today" @click="shiftPreviewDate(-1)">前一天</button><picker class="task-date" mode="date" :value="previewDate" :start="today" :end="lastDay" @change="setPreviewDate"><view class="recycle-select">{{ previewDate }}<view class="field-chevron"></view></view></picker><button class="toolbar-link" :disabled="previewLoading || previewDate >= lastDay" @click="shiftPreviewDate(1)">后一天</button></view>
+            <view v-if="previewError" class="recycle-error" role="alert"><text>{{ previewError }}</text><button class="recycle-secondary" :disabled="previewLoading" @click="loadPreview">重新加载</button></view>
+            <view v-else-if="previewLoading && !previewTimeline" class="recycle-empty" role="status">正在加载时间轴…</view>
+            <RecyclingTimeline v-else :lanes="previewTimeline ? previewTimeline.lanes : []" mode="scheduled" :draft="draftLanes" :now-minutes="previewNow" empty-text="当天暂无已发布的排班" />
           </view>
           <view class="schedule-preview"><text class="recycle-label">4. 核对并发布</text><text class="recycle-copy">{{ scheduleSummary() }}</text><text v-if="scheduleError()" class="schedule-hint">{{ scheduleError() }}</text><text v-else class="recycle-muted recycle-copy">核对后点击发布，用户才可预约。仅开放未来 30 天；单日调整优先于每周规则。</text></view>
           <button class="recycle-primary" :disabled="saving || !approvedAreas.length" @click="saveSchedule">{{ saving ? '处理中…' : (scheduleMode === 'weekly' ? '确认发布每周排班' : '确认发布单日排班') }}</button>
@@ -96,15 +136,51 @@
 <script>
 import RecyclingShell from './components/RecyclingShell.vue'
 import RecyclingServiceMap from './components/RecyclingServiceMap.vue'
-import { collectorMe, collectorSettings, collectorAvailability, collectorWeeklyAvailability, collectorOrders, bookingStatusText, collectorStatusText } from './api/recycling.js'
+import RecyclingTimeline from './components/RecyclingTimeline.vue'
+import { collectorMe, collectorSettings, collectorAvailability, collectorWeeklyAvailability, collectorOrders, collectorTimeline, openBookingChat, bookingStatusText, collectorStatusText } from './api/recycling.js'
 import { formatBookingDate } from './utils/booking-date.mjs'
+const pad2 = value => String(value).padStart(2, '0')
+const clock = minutes => `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`
+const toMinutes = value => { const [h, m] = String(value).split(':').map(Number); return h * 60 + m }
 export default {
-  components: { RecyclingShell, RecyclingServiceMap },
-  data: () => ({ isDark: false, loading: false, loadingOrders: false, saving: false, error: '', me: null, catalog: { areas: [], types: [], timeSlots: [] }, tab: 'available', tabs: [{ key: 'available', label: '待接单' }, { key: 'mine', label: '我的任务' }, { key: 'settings', label: '接单设置' }], filters: [{ key: 'active', label: '进行中' }, { key: 'completed', label: '已完成' }, { key: 'cancelled', label: '已取消' }, { key: '', label: '全部' }], status: 'active', date: '', orders: [], page: 0, hasMore: false, queryVersion: 0, scheduleMode: 'weekly', scheduleNotice: '', weekdays: [{ value: 1, label: '周一' }, { value: 2, label: '周二' }, { value: 3, label: '周三' }, { value: 4, label: '周四' }, { value: 5, label: '周五' }, { value: 6, label: '周六' }, { value: 7, label: '周日' }], selectedWeekdays: [], weeklyEdited: false, weeklyMismatch: false, weeklyMismatchText: '', scheduleDate: '', today: '', lastDay: '', areaIndex: 0, selectedSlots: [], serviceOffers: [], offerUnits: [{ value: 'kg', label: '公斤' }, { value: 'piece', label: '件' }, { value: 'unit', label: '台' }, { value: 'bag', label: '袋' }], priceModes: [{ value: 'fixed', label: '固定参考单价' }, { value: 'negotiable', label: '现场议价' }], serviceDurations: Array.from({ length: 12 }, (_, index) => (index + 1) * 15), travelBuffers: [0,15,30,45,60], arrivalWindows: [30,60], serviceDurationMinutes: 30, travelBufferMinutes: 0, arrivalWindowMinutes: 60, workTimes: Array.from({ length: 49 }, (_, index) => `${String(Math.floor(index / 2)).padStart(2, '0')}:${index % 2 ? '30' : '00'}`), editingOfferId: null, showNotificationDetails: false, deviceNotificationStatus: '当前平台未提供状态查询' }),
-  computed: { approvedAreas() { return (this.me?.areas || []).filter(area => area.enabled !== false && (this.me?.profile?.areaIds || []).map(Number).includes(Number(area.id))) }, hasDailyOverride() { return (this.me?.scheduleOverrides || []).some(row => row.date === this.scheduleDate) } },
-  onLoad(options = {}) { if (['mine', 'settings'].includes(options.tab)) this.tab = options.tab; const now = new Date(); this.today = formatBookingDate(now); this.scheduleDate = this.today; now.setDate(now.getDate() + 30); this.lastDay = formatBookingDate(now) },
+  components: { RecyclingShell, RecyclingServiceMap, RecyclingTimeline },
+  data: () => ({ timeline: null, timelineLoading: false, timelineError: '', timelineDate: '', timelineVersion: 0, availableCount: 0, viewMode: 'timeline', previewId: null, previewDate: '', previewTimeline: null, previewLoading: false, previewError: '', previewVersion: 0, writes: {}, isDark: false, loading: false, loadingOrders: false, saving: false, error: '', me: null, catalog: { areas: [], types: [], timeSlots: [] }, tab: 'available', tabs: [{ key: 'available', label: '待接单' }, { key: 'mine', label: '我的任务' }, { key: 'settings', label: '接单设置' }], filters: [{ key: 'active', label: '进行中' }, { key: 'completed', label: '已完成' }, { key: 'cancelled', label: '已取消' }, { key: '', label: '全部' }], status: 'active', date: '', orders: [], page: 0, hasMore: false, queryVersion: 0, scheduleMode: 'weekly', scheduleNotice: '', weekdays: [{ value: 1, label: '周一' }, { value: 2, label: '周二' }, { value: 3, label: '周三' }, { value: 4, label: '周四' }, { value: 5, label: '周五' }, { value: 6, label: '周六' }, { value: 7, label: '周日' }], selectedWeekdays: [], weeklyEdited: false, weeklyMismatch: false, weeklyMismatchText: '', scheduleDate: '', today: '', lastDay: '', areaIndex: 0, selectedSlots: [], serviceOffers: [], offerUnits: [{ value: 'kg', label: '公斤' }, { value: 'piece', label: '件' }, { value: 'unit', label: '台' }, { value: 'bag', label: '袋' }], priceModes: [{ value: 'fixed', label: '固定参考单价' }, { value: 'negotiable', label: '现场议价' }], serviceDurations: Array.from({ length: 12 }, (_, index) => (index + 1) * 15), travelBuffers: [0,15,30,45,60], arrivalWindows: [30,60], serviceDurationMinutes: 30, travelBufferMinutes: 0, arrivalWindowMinutes: 60, workTimes: Array.from({ length: 49 }, (_, index) => `${String(Math.floor(index / 2)).padStart(2, '0')}:${index % 2 ? '30' : '00'}`), editingOfferId: null, showNotificationDetails: false, deviceNotificationStatus: '当前平台未提供状态查询' }),
+  computed: {
+    dayWord() { return this.timelineDate && this.timelineDate !== this.today ? '当日' : '今日' },
+    summary() { return this.timeline?.summary || null },
+    freeHours() { return this.summary ? Math.round(this.summary.freeMinutes / 6) / 10 : 0 },
+    taskStats() { const jobs = this.timeline?.jobs || []; const count = status => jobs.filter(job => job.status === status).length; return { total: count('confirmed') + count('picking') + count('completed'), confirmed: count('confirmed'), picking: count('picking'), completed: count('completed') } },
+    nextJob() { const jobs = this.timeline?.jobs || []; return jobs.find(job => job.status === 'picking') || jobs.filter(job => job.status === 'confirmed').sort((a, b) => a.executionStart - b.executionStart)[0] || null },
+    previewOrder() { return this.orders.find(item => item.id === this.previewId && item.appointmentDate === this.timelineDate) || null },
+    ghosts() { const order = this.previewOrder; return order?.placement ? [{ serviceAreaId: order.serviceAreaId, start: order.placement.start, end: order.placement.end, label: '新单' }] : [] },
+    displayLanes() {
+      const lanes = this.timeline?.date === this.timelineDate ? this.timeline.lanes || [] : []
+      const plan = this.previewOrder?.placement?.jobs
+      if (!Array.isArray(plan)) return lanes
+      return lanes.map(lane => ({ ...lane, free: [], jobs: (lane.jobs || []).map(job => {
+        if (job.status === 'completed') return job
+        const position = plan.find(item => item.id === job.id)
+        return { ...job, executionStart: position?.start ?? null, executionEnd: position?.end ?? null }
+      }) }))
+    },
+    nowMinutes() { if (!this.timelineDate || this.timelineDate !== this.today) return null; return this.clockMinutes() },
+    previewNow() { return this.previewDate && this.previewDate === this.today ? this.clockMinutes() : null },
+    draftLanes() {
+      const area = (this.approvedAreas || [])[this.areaIndex]
+      if (this.tab !== 'settings' || !area || !this.previewDate) return []
+      if (this.scheduleMode === 'daily' ? this.scheduleDate !== this.previewDate : !this.selectedWeekdays.includes(this.weekdayOf(this.previewDate))) return []
+      const ranges = this.selectedSlots.map(slot => String(slot).split('-')).filter(([s, e]) => /^\d{2}:\d{2}$/.test(s || '') && /^\d{2}:\d{2}$/.test(e || '')).map(([s, e]) => ({ start: toMinutes(s), end: toMinutes(e) })).filter(item => item.end > item.start).sort((a, b) => a.start - b.start)
+      const windows = []
+      for (const item of ranges) { const last = windows[windows.length - 1]; if (last && item.start <= last.end) last.end = Math.max(last.end, item.end); else windows.push({ ...item }) }
+      if (!windows.length) return []
+      const published = (this.previewTimeline?.lanes || []).find(lane => Number(lane.serviceAreaId) === Number(area.id))?.windows || []
+      if (published.length === windows.length && published.every((item, index) => item.start === windows[index].start && item.end === windows[index].end)) return []
+      return [{ serviceAreaId: area.id, areaName: area.name, windows }]
+    },
+    approvedAreas() { return (this.me?.areas || []).filter(area => area.enabled !== false && (this.me?.profile?.areaIds || []).map(Number).includes(Number(area.id))) }, hasDailyOverride() { return (this.me?.scheduleOverrides || []).some(row => row.date === this.scheduleDate) } },
+  onLoad(options = {}) { if (['mine', 'settings'].includes(options.tab)) this.tab = options.tab; const now = new Date(); this.today = formatBookingDate(now); this.scheduleDate = this.today; this.timelineDate = this.today; this.previewDate = this.today; now.setDate(now.getDate() + 30); this.lastDay = formatBookingDate(now) },
   onShow() { this.isDark = uni.getStorageSync('app_theme') === 'dark'; this.readPermission(); this.load() },
-  onUnload() { this.queryVersion++ },
+  onUnload() { this.queryVersion++; this.timelineVersion++; this.previewVersion++ },
   methods: {
     verifyIdentity() { uni.navigateTo({ url: '/pages-nonTheme/identity-verification' }) },
     statusText: bookingStatusText, collectorStatusText,
@@ -115,17 +191,63 @@ export default {
     offerSummary(offer) { if (!offer.enabled) return '已停用该品类'; if (offer.priceMode === 'negotiable') return '现场议价'; return String(offer.unitPrice ?? '').trim() === '' ? '请设置参考单价' : `¥${this.money(offer.unitPrice)}/${this.unitLabel(offer.unit)}` },
     apply() { uni.navigateTo({ url: '/pages-nonTheme/collector-apply' }) },
     systemNotices() { uni.navigateTo({ url: '/pages-nonTheme/system-notifications' }) },
-    async load() { if (this.loading) return; this.loading = true; this.error = ''; try { const me = await collectorMe(); this.me = me; this.catalog = { timeSlots: me.timeSlots || [], areas: me.areas || [], types: me.types || [] }; this.restoreServiceOffers(); this.restoreSchedule(); if (me.profile?.status === 'approved' && this.tab !== 'settings') await this.loadOrders(true) } catch (e) { this.error = e.message || '加载失败' } finally { this.loading = false } },
+    async load() { if (this.loading) return; this.loading = true; this.error = ''; try { const me = await collectorMe(); this.me = me; this.catalog = { timeSlots: me.timeSlots || [], areas: me.areas || [], types: me.types || [] }; this.restoreServiceOffers(); this.restoreSchedule(); if (me.profile?.status === 'approved') { if (this.tab !== 'settings') await this.loadOrders(true); else this.loadPreview() } } catch (e) { this.error = e.message || '加载失败' } finally { this.loading = false } },
     async loadOrders(reset) {
       if (this.loadingOrders && !reset) return
+      if (reset && this.tab !== 'settings') this.loadTimeline()
       if (this.tab === 'available' && !this.me?.profile?.acceptingOrders) { this.queryVersion++; this.orders = []; this.hasMore = false; this.loadingOrders = false; return }
       const version = ++this.queryVersion; this.loadingOrders = true; const page = reset ? 1 : this.page + 1; this.error = ''
       try { const data = await collectorOrders(this.tab === 'mine' ? 'mine' : 'available', { page, status: this.tab === 'mine' ? this.status : undefined, date: this.date || undefined }); if (version !== this.queryVersion) return; this.orders = reset ? data.orders || [] : [...this.orders, ...(data.orders || [])]; this.page = page; this.hasMore = page < (data.totalPages || 1) } catch (e) { if (version === this.queryVersion) this.error = e.message || '任务加载失败' } finally { if (version === this.queryVersion) this.loadingOrders = false }
     },
-    changeTab(key) { this.tab = key; this.error = ''; if (key !== 'settings') this.loadOrders(true); else { this.queryVersion++; this.loadingOrders = false } },
-    setDate(event) { this.date = event.detail.value; this.loadOrders(true) }, clearDate() { this.date = ''; this.loadOrders(true) },
+    changeTab(key) { this.tab = key; this.error = ''; this.previewId = null; if (key !== 'settings') this.loadOrders(true); else { this.queryVersion++; this.loadingOrders = false; this.loadPreview() } },
+    setDate(event) { this.date = event.detail.value; this.timelineDate = this.date || this.today; this.previewId = null; this.loadOrders(true) }, clearDate() { this.date = ''; this.timelineDate = this.today; this.previewId = null; this.loadOrders(true) },
     setStatus(status) { this.status = status; this.loadOrders(true) },
     detail(order) { uni.navigateTo({ url: `/pages-nonTheme/collector-order-detail?id=${order.id}` }) },
+    clockMinutes() { const now = new Date(); return now.getHours() * 60 + now.getMinutes() },
+    weekdayOf(date) { const [y, m, d] = String(date).split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay() || 7 },
+    jobFor(order) { return (this.timeline?.jobs || []).find(job => job.id === order.id) || null },
+    jobTime(job) { return job && job.executionStart != null ? `${clock(job.executionStart)}–${clock(job.executionEnd)}` : '' },
+    execLabel(order) { return ({ confirmed: '系统预计上门', picking: '实际开始至预计结束', completed: '实际执行时间' }[order.status] || '预计时间') },
+    placementText(order) { return order.placement ? `接单后预计 ${clock(order.placement.start)}–${clock(order.placement.end)} 上门` : '当前排程无法插入，可能与现有任务冲突' },
+    preplanText(order) {
+      if (!order.placement) return '当前排程无法插入该订单。'
+      if (order.appointmentDate !== this.timelineDate) return '正在加载该日时间轴…'
+      if (!Array.isArray(order.placement.jobs)) return '接单后预计时间已标注，请刷新获取完整预排程。'
+      const items = order.placement.jobs.map(job => ({ start: job.start, end: job.end, label: job.id === order.id ? `新单 ${order.orderNo}` : `订单 ${this.timeline?.jobs?.find(item => item.id === job.id)?.orderNo || job.id}` }))
+      items.sort((a, b) => a.start - b.start)
+      return `接单后当日排程（含各区域）：${items.map(item => `${clock(item.start)}–${clock(item.end)} ${item.label}`).join(' → ')}`
+    },
+    togglePreview(order) {
+      if (this.previewId === order.id) { this.previewId = null; return }
+      this.previewId = order.id
+      if (order.appointmentDate && order.appointmentDate !== this.timelineDate) { this.timelineDate = order.appointmentDate; this.loadTimeline() }
+    },
+    async loadTimeline() {
+      const version = ++this.timelineVersion; const date = this.timelineDate || this.today
+      if (!date || typeof collectorTimeline !== 'function') return
+      this.timelineLoading = true; this.timelineError = ''
+      try {
+        const accepting = this.me?.profile?.acceptingOrders
+        const [timeline, available] = await Promise.all([collectorTimeline(date), this.tab === 'available' && accepting ? collectorOrders('available', { page: 1, date }) : Promise.resolve(null)])
+        if (version !== this.timelineVersion) return
+        this.timeline = timeline
+        if (this.tab === 'available') this.availableCount = accepting && available ? (available.total ?? (available.orders || []).length) : 0
+      } catch (e) { if (version === this.timelineVersion) this.timelineError = e.message || '时间轴加载失败' } finally { if (version === this.timelineVersion) this.timelineLoading = false }
+    },
+    async loadPreview() {
+      const version = ++this.previewVersion; const date = this.previewDate || this.today
+      if (!date || this.me?.profile?.status !== 'approved' || typeof collectorTimeline !== 'function') return
+      this.previewLoading = true; this.previewError = ''
+      try { const timeline = await collectorTimeline(date); if (version === this.previewVersion) this.previewTimeline = timeline } catch (e) { if (version === this.previewVersion) this.previewError = e.message || '时间轴加载失败' } finally { if (version === this.previewVersion) this.previewLoading = false }
+    },
+    setPreviewDate(event) { this.previewDate = event.detail.value; this.loadPreview() },
+    shiftPreviewDate(step) { const [y, m, d] = this.previewDate.split('-').map(Number); const next = new Date(y, m - 1, d + step); const value = formatBookingDate(next); if (value < this.today || value > this.lastDay) return; this.previewDate = value; this.loadPreview() },
+    async contactUser(job) { try { await openBookingChat(job, this.writes) } catch (e) { this.error = e.message || '联系失败，请刷新任务' } },
+    navigateTo(job) {
+      const latitude = Number(job.addressLat), longitude = Number(job.addressLng)
+      if (job.addressLat == null || job.addressLng == null || !Number.isFinite(latitude) || !Number.isFinite(longitude)) { uni.showToast({ title: '该订单暂无定位，请联系用户确认地址', icon: 'none' }); return }
+      uni.openLocation({ latitude, longitude, name: job.contactName || '上门地址', address: job.address || '', fail: () => uni.showToast({ title: '无法打开导航', icon: 'none' }) })
+    },
     getWeeklyRows() { const area = this.approvedAreas[this.areaIndex]; return (this.me?.weeklySchedule || []).filter(row => Number(row.serviceAreaId) === Number(area?.id)) },
     getDailyRows() { const area = this.approvedAreas[this.areaIndex]; return (this.me?.availability || []).filter(row => row.date === this.scheduleDate && Number(row.serviceAreaId) === Number(area?.id)) },
     restoreSchedule() { if (this.scheduleMode === 'weekly') this.restoreWeeklySlots(); else this.restoreSlots() },
@@ -149,7 +271,7 @@ export default {
       if (serviceOffers.some(offer => offer.enabled && offer.priceMode === 'fixed' && (offer.unitPrice === null || !Number.isFinite(offer.unitPrice) || offer.unitPrice < 0 || Math.abs(offer.unitPrice * 100 - Math.round(offer.unitPrice * 100)) > 0.000001))) { this.error = '请为启用的固定报价品类填写有效的非负参考单价（最多两位小数）'; return }
       if (serviceOffers.some(offer => offer.description.length > 200)) { this.error = '回收说明不能超过 200 字'; return }
       this.saving = true
-      try { await collectorSettings({ serviceOffers, serviceDurationMinutes: this.serviceDurationMinutes, travelBufferMinutes: this.travelBufferMinutes, arrivalWindowMinutes: this.arrivalWindowMinutes }); this.me = await collectorMe(); this.restoreServiceOffers(); this.error = ''; uni.showToast({ title: '服务配置已保存', icon: 'success' }) } catch (e) { this.error = e.message || '保存失败' } finally { this.saving = false }
+      try { await collectorSettings({ serviceOffers, serviceDurationMinutes: this.serviceDurationMinutes, travelBufferMinutes: this.travelBufferMinutes, arrivalWindowMinutes: this.arrivalWindowMinutes }); this.me = await collectorMe(); this.restoreServiceOffers(); this.loadPreview(); this.error = ''; uni.showToast({ title: '服务配置已保存', icon: 'success' }) } catch (e) { this.error = e.message || '保存失败' } finally { this.saving = false }
     },
     addWorkRange() { this.scheduleNotice = ''; const lastEnd = this.selectedSlots.slice().sort().map(slot => slot.split('-')[1]).pop(); const start = lastEnd && lastEnd < '24:00' ? lastEnd : '08:30'; const end = lastEnd && lastEnd < '24:00' ? this.workTimes[this.workTimes.indexOf(start) + 1] : '12:00'; this.selectedSlots = [...this.selectedSlots, `${start}-${end}`]; if (this.scheduleMode === 'weekly') this.weeklyEdited = true },
     removeWorkRange(index) { this.scheduleNotice = ''; this.selectedSlots = this.selectedSlots.filter((_, position) => position !== index); if (this.scheduleMode === 'weekly') this.weeklyEdited = true },
@@ -193,12 +315,12 @@ export default {
       try {
         if (weekly) await collectorWeeklyAvailability({ serviceAreaId: area.id, weekdays: clear ? [] : this.selectedWeekdays, slots: clear ? [] : this.selectedSlots });
         else await collectorAvailability({ date: this.scheduleDate, serviceAreaId: area.id, slots: clear ? [] : this.selectedSlots });
-        this.me = await collectorMe(); this.restoreSchedule();
+        this.me = await collectorMe(); this.restoreSchedule(); this.loadPreview();
         this.scheduleNotice = clear ? (weekly ? '已停止该范围每周服务，已有单日调整保留。' : '已设为该范围当天休息。') : (this.me.profile?.acceptingOrders ? '排班已发布，用户可预约符合范围、品类和剩余名额的时段。' : '排班已保存；请开启“接收新单”，用户才能预约。');
         uni.showToast({ title: clear ? (weekly ? '每周服务已停止' : '已设为当天休息') : (weekly ? '每周排班已发布' : '单日排班已发布'), icon: 'success' });
       } catch (e) { this.error = e.message || '排班保存失败'; } finally { this.saving = false; }
     },
-    async resetDailySchedule() { if (this.saving) return; this.saving = true; try { await collectorAvailability({ date: this.scheduleDate, reset: true }); this.me = await collectorMe(); this.restoreSlots(); this.error = ''; uni.showToast({ title: '已恢复周排班', icon: 'success' }) } catch (e) { this.error = e.message || '恢复失败' } finally { this.saving = false } },
+    async resetDailySchedule() { if (this.saving) return; this.saving = true; try { await collectorAvailability({ date: this.scheduleDate, reset: true }); this.me = await collectorMe(); this.restoreSlots(); this.error = ''; this.loadPreview(); uni.showToast({ title: '已恢复周排班', icon: 'success' }) } catch (e) { this.error = e.message || '恢复失败' } finally { this.saving = false } },
     readPermission() {
       // #ifdef APP-PLUS
       try { if (typeof plus !== 'undefined' && plus.android) { const manager = plus.android.importClass('androidx.core.app.NotificationManagerCompat'); this.deviceNotificationStatus = manager.from(plus.android.runtimeMainActivity()).areNotificationsEnabled() ? '已允许' : '未允许，请在系统设置中开启' } } catch (_) { this.deviceNotificationStatus = '请在手机系统设置中查看' }
@@ -240,8 +362,34 @@ export default {
 .task-detail-line > text:last-child { flex: 1; min-width: 0; }
 .task-price { display: flex; flex-wrap: wrap; gap: 4rpx 16rpx; margin: 16rpx 0 0; font-size: 26rpx; color: var(--workbench-green); font-weight: 600; }
 .task-price .recycle-muted { font-weight: 400; }
-.task-actions { display: flex; justify-content: flex-end; }
-.task-actions .task-action { width: auto; min-height: 76rpx; margin-top: 20rpx; padding: 16rpx 28rpx; font-size: 26rpx; }
+.task-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12rpx; }
+.task-actions .task-action { width: auto; min-height: 76rpx; margin: 20rpx 0 0; padding: 16rpx 24rpx; font-size: 25rpx; }
+.overview-card, .timeline-card { margin: 24rpx 0; padding: 24rpx; background: var(--workbench-surface); border: 1rpx solid var(--workbench-line); border-radius: 18rpx; }
+.overview-head, .timeline-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8rpx 16rpx; margin-bottom: 18rpx; }
+.overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14rpx; }
+.overview-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.overview-metric { display: flex; flex-direction: column; gap: 6rpx; padding: 18rpx 14rpx; background: var(--workbench-soft); border-radius: 14rpx; min-width: 0; }
+.metric-value { font-size: 38rpx; font-weight: 750; line-height: 1.2; color: var(--workbench-green); }
+.metric-label { font-size: 22rpx; color: var(--workbench-text); font-weight: 600; }
+.metric-sub { font-size: 20rpx; color: var(--workbench-muted); }
+.stat-confirmed { color: #3b82f6; }
+.stat-picking { color: #f59e0b; }
+.stat-completed { color: #10b981; }
+.next-job { display: flex; align-items: center; gap: 16rpx; margin-top: 18rpx; padding: 16rpx 18rpx; background: var(--workbench-soft); border-left: 6rpx solid var(--workbench-green); border-radius: 0 12rpx 12rpx 0; }
+.next-dot { width: 14rpx; height: 14rpx; border-radius: 50%; background: var(--workbench-green); flex-shrink: 0; }
+.next-copy { display: flex; flex-direction: column; gap: 4rpx; flex: 1; min-width: 0; }
+.next-title { font-size: 26rpx; font-weight: 700; color: var(--workbench-text); }
+.next-empty { display: block; margin-top: 16rpx; font-size: 24rpx; }
+.view-switch { margin-bottom: 20rpx; }
+.view-switch .recycle-pill { flex: 1; text-align: center; }
+.timeline-note { display: block; margin-top: 14rpx; font-size: 22rpx; line-height: 1.5; }
+.placement-ok { color: var(--workbench-green); font-weight: 600; }
+.placement-conflict { color: var(--workbench-warning); font-weight: 600; }
+.preplan { margin-top: 16rpx; padding: 16rpx 18rpx; background: var(--workbench-soft); border: 1rpx dashed var(--workbench-green); border-radius: 12rpx; }
+.preplan-title { display: block; margin-bottom: 6rpx; font-size: 24rpx; font-weight: 700; color: var(--workbench-green); }
+.schedule-timeline { margin-top: 8rpx; }
+.preview-date-row { display: flex; align-items: center; gap: 16rpx; margin: 12rpx 0 18rpx; }
+.preview-date-row .task-date .recycle-select { max-width: none; }
 .task-empty { padding: 64rpx 24rpx; display: flex; flex-direction: column; align-items: center; gap: 16rpx; text-align: center; }
 .empty-task-mark { width: 72rpx; padding: 14rpx 12rpx; box-sizing: border-box; border: 2rpx solid var(--workbench-line); border-radius: 12rpx; transform: rotate(-7deg); }
 .empty-task-mark view { height: 4rpx; margin: 8rpx 0; background: var(--workbench-line); border-radius: 4rpx; }

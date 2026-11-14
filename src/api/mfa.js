@@ -3,7 +3,7 @@ import { beginMfaTransition } from '@/utils/mfa-session-transition.mjs'
 
 // Login challenges must not invoke the shared authenticated-session redirect.
 export function mfaRequest(path, data = {}, token = '', method = 'POST') {
-  const finishTransition = ['enable', 'disable'].includes(path) ? beginMfaTransition(token) : () => {}
+  const finishTransition = ['setup', 'enable', 'totp/enable', 'disable'].includes(path) ? beginMfaTransition(token) : () => {}
   return new Promise((resolve, reject) => uni.request({
     url: `${baseUrl.replace(/\/$/, '')}/api/mfa/${path}`, method, data, timeout: 15000,
     header: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },

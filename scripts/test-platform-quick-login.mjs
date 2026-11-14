@@ -5,6 +5,7 @@ import { createSoterAdapter } from '../src/utils/soter-client-core.mjs'
 
 function quickFixture({ accepted = true, support = { supported: true, enrolled: true, label: '指纹登录' } } = {}) {
   const storage = new Map([['token', 'token-1']]), prompts = [], requests = [], enrollments = [], logins = []
+  const credentialOwners = new Map()
   let adapterError, enrollHook, apiFailure = false
   const runtime = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value),
     removeStorageSync: key => storage.delete(key), confirm: async options => { prompts.push(options); return accepted } }
@@ -14,16 +15,16 @@ function quickFixture({ accepted = true, support = { supported: true, enrolled: 
     return {}
   }
   const adapter = { label: '指纹登录', offerText: 'offer', capability: async () => support,
-    enroll: async options => { enrollments.push(options); if (enrollHook) return enrollHook(options); return { credentialId: `key-${enrollments.length}`, userId: options.user.id } },
-    login: async options => { logins.push(options); if (adapterError) throw adapterError; return { token: 'login-token' } }, cancel() {} }
+    enroll: async options => { enrollments.push(options); if (enrollHook) return enrollHook(options); const result = { credentialId: `key-${enrollments.length}`, userId: options.user.id }; credentialOwners.set(result.credentialId, result.userId); return result },
+    login: async options => { logins.push(options); if (adapterError) throw adapterError; return { token: 'login-token', accountId: credentialOwners.get(options.credentialId) } }, cancel() {} }
   const manager = createPlatformQuickLogin({ runtime, adapter, api, scope: 'h5:https://example.test' })
-  return { manager, runtime, storage, prompts, requests, enrollments, logins, setError: error => { adapterError = error },
+  return { manager, runtime, storage, prompts, requests, enrollments, logins, credentialOwners, setError: error => { adapterError = error },
     setEnrollHook: hook => { enrollHook = hook }, setApiFailure: value => { apiFailure = value } }
 }
 
 const user = { id: 7, username: 'alice' }
 const offered = quickFixture({ accepted: false })
-assert.deepEqual(offered.manager.state(), { enabled: true, prompted: false })
+assert.deepEqual({ enabled: offered.manager.state().enabled, prompted: offered.manager.state().prompted }, { enabled: true, prompted: false })
 await offered.manager.afterLogin('token-1', user)
 await offered.manager.afterLogin('token-1', user)
 assert.equal(offered.prompts.length, 1)
@@ -34,6 +35,8 @@ const lifecycle = quickFixture()
 await lifecycle.manager.afterLogin('token-1', user)
 assert.equal(lifecycle.prompts.length, 1)
 assert.equal(lifecycle.manager.state().credentialId, 'key-1')
+await lifecycle.manager.login(() => true, undefined, { mfaSetupTicket: 'setup-ticket-manager' })
+assert.equal(lifecycle.logins.at(-1).mfaSetupTicket, 'setup-ticket-manager', 'manager forwards the MFA setup ticket to its platform adapter')
 await lifecycle.manager.setEnabled(false, 'token-1', user)
 assert.equal(lifecycle.manager.state().credentialId, '')
 assert.equal(lifecycle.manager.state().enabled, false)
@@ -72,8 +75,9 @@ const switched = quickFixture({ accepted: false })
 switched.storage.set('platform_quick_login_v1:h5%3Ahttps%3A%2F%2Fexample.test',
   { enabled: true, prompted: true, credentialId: 'old-key', userId: 7, username: 'alice' })
 await switched.manager.afterLogin('token-1', { id: 8, username: 'bob' })
-assert.equal(switched.manager.state().credentialId, '')
-assert.ok(switched.manager.state().pendingRevocations.some(item => item.credentialId === 'old-key'))
+assert.equal(switched.manager.state(7).credentialId, 'old-key', 'logging into B leaves A bound')
+assert.equal(switched.manager.state(8).credentialId, undefined)
+assert.equal(switched.manager.state(8).pendingRevocations.some(item => item.credentialId === 'old-key'), false)
 assert.equal(switched.requests.some(call => call.method === 'DELETE' && call.path.endsWith('/old-key')), false)
 
 for (const error of [new Error('offline'), { error: 'CANCELLED' }, { error: 'TIMEOUT' }]) {
@@ -105,8 +109,8 @@ const passkeyEnv = { isSecureContext: true, navigator: { credentials: {} },
   PublicKeyCredential: { isUserVerifyingPlatformAuthenticatorAvailable: async () => true }, AbortController,
   atob: value => Buffer.from(value, 'base64').toString('binary'), btoa: value => Buffer.from(value, 'binary').toString('base64') }
 const passkeyApiCalls = []
-const passkeyApi = async (...args) => { passkeyApiCalls.push(args); return { data: { passkey: { supported: true }, options: {
-  challenge: bytesToBase64([0, 1, 254]), user: { id: bytesToBase64([2, 3]) }, excludeCredentials: []
+const passkeyApi = async (...args) => { passkeyApiCalls.push(args); return { data: { passkey: { supported: true }, challengeId: 'passkey-challenge', options: {
+  challenge: bytesToBase64([0, 1, 254]), user: { id: bytesToBase64([2, 3]) }, excludeCredentials: [], allowCredentials: []
 } } } }
 let sentPublicKey
 passkeyEnv.navigator.credentials.create = async options => { sentPublicKey = options.publicKey; return {
@@ -115,6 +119,10 @@ passkeyEnv.navigator.credentials.create = async options => { sentPublicKey = opt
     getTransports: () => ['internal']
   }, getClientExtensionResults: () => ({ credProps: { rk: true } })
 } }
+passkeyEnv.navigator.credentials.get = async () => ({ id: 'login-credential', rawId: Uint8Array.from([5, 6]).buffer, type: 'public-key', response: {
+  clientDataJSON: Uint8Array.from([7]).buffer, authenticatorData: Uint8Array.from([8]).buffer, signature: Uint8Array.from([9]).buffer,
+  userHandle: null
+}, getClientExtensionResults: () => ({}) })
 const passkey = createPasskeyAdapter({ environment: passkeyEnv, api: passkeyApi })
 assert.deepEqual(await passkey.capability(), { supported: true, enrolled: true, label: '通行密钥登录',
   message: '当前浏览器或网页地址暂不支持通行密钥，可使用密码或微信扫码登录' })
@@ -124,6 +132,9 @@ assert.deepEqual([...new Uint8Array(sentPublicKey.user.id)], [2, 3])
 assert.equal(passkeyApiCalls.at(-1)[1].response.rawId, '-vv8')
 assert.equal(passkeyApiCalls.at(-1)[1].response.response.clientDataJSON, 'AQI')
 assert.equal(enrolledPasskey.options.challenge, bytesToBase64([0, 1, 254]))
+await passkey.login({ credentialId: 'credential', mfaSetupTicket: 'setup-ticket-passkey', isActive: () => true })
+assert.equal(passkeyApiCalls.at(-1)[0], '/quick-login/passkey/login/finish')
+assert.equal(passkeyApiCalls.at(-1)[1].mfaSetupTicket, 'setup-ticket-passkey')
 const unsupported = createPasskeyAdapter({ environment: { isSecureContext: false }, api: passkeyApi })
 assert.equal((await unsupported.capability()).supported, false)
 
@@ -189,6 +200,9 @@ delayedAuthOptions.success({ resultJSON: 'late', resultJSONSignature: 'late-sign
 
 const unsupportedSoter = soterFixture({ methods: { checkIsSupportSoterAuthentication: options => options.success({ supportMode: [] }) } })
 assert.equal((await unsupportedSoter.adapter.capability()).supported, false)
+const soterTicket = soterFixture({ methods: readySoterMethods() })
+await soterTicket.adapter.login({ credentialId: 'key', mfaSetupTicket: 'setup-ticket-soter', isActive: () => true })
+assert.equal(soterTicket.apiCalls.find(call => call[0] === '/quick-login/soter/login/finish')[1].mfaSetupTicket, 'setup-ticket-soter')
 const notEnrolledSoter = soterFixture({ methods: {
   checkIsSupportSoterAuthentication: options => options.success({ supportMode: ['fingerPrint'] }),
   checkIsSoterEnrolledInDevice: options => options.success({ isEnrolled: false })

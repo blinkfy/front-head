@@ -14,7 +14,7 @@ const uni = {
 const requestSource = readFileSync(new URL('../src/api/index.js', import.meta.url), 'utf8')
   .replace(/^import[\s\S]*?from ['"][^'"]+['"];?\s*/gm, '')
   .replace('export default request', 'this.request = request')
-const requestContext = { uni, baseUrl: 'https://test.invalid', appendQueryParams, isDatabaseHealthEndpoint: () => false, updateDatabaseStatusFromAvailability() {}, markDatabaseOffline() {}, clearChatBadge() {} }
+const requestContext = { uni, baseUrl: 'https://test.invalid', appendQueryParams, isDatabaseHealthEndpoint: () => false, updateDatabaseStatusFromAvailability() {}, markDatabaseOffline() {}, clearChatBadge() {}, appVersionGuard: () => ({ handleUpgrade: () => false }) }
 runInNewContext(requestSource, requestContext, { filename: 'api/index.js' })
 
 const recyclingSource = readFileSync(new URL('../src/pages-nonTheme/api/recycling.js', import.meta.url), 'utf8')
@@ -31,13 +31,15 @@ await recyclingContext.recycling.recyclingRequest('/api/example', 'POST', { phot
 assert.deepEqual({ ...sent[1].data }, { photoIds: null, enabled: false, token: 'test-token' }, 'write data stays in request body and preserves null/false values')
 await recyclingContext.recycling.collectorSettings({ enabled: false, photoIds: null })
 assert.deepEqual({ ...sent[2].data }, { enabled: false, photoIds: null, token: 'test-token' }, 'PATCH body preserves false and null')
+await recyclingContext.recycling.collectorTimeline('2026-11-12')
+assert.match(sent[3].url, /\/api\/collector\/timeline\?date=2026-11-12&token=test-token$/)
 
 const componentSource = readFileSync(new URL('../src/pages-nonTheme/collector-workbench.vue', import.meta.url), 'utf8')
 const componentScript = componentSource.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(componentScript, 'collector workbench script exists')
 const pending = []
 const componentContext = {
-  RecyclingShell: {}, RecyclingServiceMap: {}, bookingStatusText: value => value, collectorStatusText: value => value,
+  RecyclingShell: {}, RecyclingServiceMap: {}, RecyclingTimeline: {}, bookingStatusText: value => value, collectorStatusText: value => value,
   formatBookingDate: () => '2026-11-12', collectorMe: async () => ({}), collectorSettings: async () => {},
   collectorAvailability: async () => {}, collectorWeeklyAvailability: async () => {},
   collectorOrders: () => new Promise(resolve => pending.push(resolve)), uni: { showToast() {} },

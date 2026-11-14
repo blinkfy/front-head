@@ -73,27 +73,35 @@
                         <view class="search-btn" @click="handleSearch">
                             <text>搜索</text>
                         </view>
+                        <view v-if="databaseView === 'table'" class="filter-toggle" :class="{ active: activeFilterCount }" @click="upperFiltersExpanded = !upperFiltersExpanded">
+                            {{ upperFiltersExpanded ? '收起筛选' : '筛选' }}<text v-if="activeFilterCount" class="filter-toggle-count">{{ activeFilterCount }}</text>
+                            <text class="filter-toggle-arrow">{{ upperFiltersExpanded ? '▴' : '▾' }}</text>
+                        </view>
+                    </view>
+
+                    <view v-if="databaseView === 'card' && currentColumnQuery.filters?.length" class="column-filter-notice" @click="setDatabaseView('table')">
+                        已启用 {{ currentColumnQuery.filters.length }} 个列筛选 · 切换表格查看
                     </view>
 
                     <!-- 时间筛选栏 -->
-                    <view class="filter-container">
-                        <view class="filter-item">
+                    <view v-if="databaseView === 'card' || upperFiltersExpanded" class="filter-container">
+                        <view v-if="currentTable !== 'Chat'" class="filter-item">
                             <view class="filter-label"><ManifestIcon id="challenge_calendar" /> 开始日期</view>
                             <picker mode="date" :value="startDate" @change="onStartDateChange"
                                 :end="endDate || getCurrentDate()">
                                 <view class="filter-picker">
-                                    <text class="filter-value">{{ startDate || '选择日期' }}</text>
+                                    <text class="filter-value">{{ upperDateLabel('start', startDate) }}</text>
                                     <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                 </view>
                             </picker>
                         </view>
 
-                        <view class="filter-item">
+                        <view v-if="currentTable !== 'Chat'" class="filter-item">
                             <view class="filter-label"><ManifestIcon id="challenge_calendar" /> 结束日期</view>
                             <picker mode="date" :value="endDate" @change="onEndDateChange" :start="startDate"
                                 :end="getCurrentDate()">
                                 <view class="filter-picker">
-                                    <text class="filter-value">{{ endDate || '选择日期' }}</text>
+                                    <text class="filter-value">{{ upperDateLabel('end', endDate) }}</text>
                                     <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                 </view>
                             </picker>
@@ -106,7 +114,7 @@
                                 <picker :value="messageTypeFilterIndex" :range="messageTypeFilterOptions"
                                     range-key="label" @change="onMessageTypeFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ messageTypeFilterOptions[messageTypeFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('type', messageTypeFilterOptions, messageTypeFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -117,7 +125,7 @@
                                 <picker :value="readStatusFilterIndex" :range="readStatusFilterOptions"
                                     range-key="label" @change="onReadStatusFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ readStatusFilterOptions[readStatusFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('isRead', readStatusFilterOptions, readStatusFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -128,7 +136,7 @@
                                 <picker :value="withdrawStatusFilterIndex" :range="withdrawStatusFilterOptions"
                                     range-key="label" @change="onWithdrawStatusFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ withdrawStatusFilterOptions[withdrawStatusFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('isWithdraw', withdrawStatusFilterOptions, withdrawStatusFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -139,7 +147,7 @@
                                 <picker :value="senderDeletedFilterIndex" :range="deletedFilterOptions"
                                     range-key="label" @change="onSenderDeletedFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ deletedFilterOptions[senderDeletedFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('isDeletedBySender', deletedFilterOptions, senderDeletedFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -150,7 +158,7 @@
                                 <picker :value="receiverDeletedFilterIndex" :range="deletedFilterOptions"
                                     range-key="label" @change="onReceiverDeletedFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ deletedFilterOptions[receiverDeletedFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('isDeletedByReceiver', deletedFilterOptions, receiverDeletedFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -164,7 +172,7 @@
                                 <picker :value="relationshipFilterIndex" :range="relationshipFilterOptions"
                                     range-key="label" @change="onRelationshipFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ relationshipFilterOptions[relationshipFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('relationship', relationshipFilterOptions, relationshipFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -175,7 +183,7 @@
                                 <picker :value="muteFilterIndex" :range="muteFilterOptions"
                                     range-key="label" @change="onMuteFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ muteFilterOptions[muteFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('mute', muteFilterOptions, muteFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -186,7 +194,7 @@
                                 <picker :value="topFilterIndex" :range="topFilterOptions"
                                     range-key="label" @change="onTopFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ topFilterOptions[topFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('top', topFilterOptions, topFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -200,7 +208,7 @@
                                 <picker :value="sourceFilterIndex" :range="sourceFilterOptions"
                                     range-key="label" @change="onSourceFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ sourceFilterOptions[sourceFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('source', sourceFilterOptions, sourceFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -214,7 +222,7 @@
                                 <picker :value="reviewFilterIndex" :range="reviewFilterOptions"
                                     range-key="label" @change="onReviewFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ reviewFilterOptions[reviewFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('review', reviewFilterOptions, reviewFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -225,7 +233,7 @@
                                 <picker :value="statusFilterIndex" :range="statusFilterOptions"
                                     range-key="label" @change="onStatusFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ statusFilterOptions[statusFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('status', statusFilterOptions, statusFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -236,7 +244,7 @@
                                 <picker :value="binTypeFilterIndex" :range="binTypeFilterOptions"
                                     range-key="label" @change="onBinTypeFilterChange">
                                     <view class="filter-picker">
-                                        <text class="filter-value">{{ binTypeFilterOptions[binTypeFilterIndex].label }}</text>
+                                        <text class="filter-value">{{ upperFilterLabel('type', binTypeFilterOptions, binTypeFilterIndex) }}</text>
                                         <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                     </view>
                                 </picker>
@@ -1140,7 +1148,9 @@ function onHistoryDeletedChange(event) {
 }
 const databaseGrid = ref(null)
 const databaseView = ref('card')
+const upperFiltersExpanded = ref(false)
 function setDatabaseView(view) {
+    if (view === 'table' && databaseView.value !== 'table') upperFiltersExpanded.value = false
     databaseView.value = view
     try { uni.setStorageSync('admin-database-view', view) } catch {}
 }
@@ -1156,9 +1166,90 @@ const columnQueries = ref({})
 const currentColumnQuery = computed(() => columnQueries.value[currentTable.value] || { filters: [], sortField: '', direction: '' })
 function applyColumnQuery(query) {
     columnQueries.value = { ...columnQueries.value, [currentTable.value]: query }
+    syncUpperFiltersFromColumns()
     currentPage.value = 1
     loadTableData()
 }
+
+// Simple upper controls and column filters share the same conditions.
+function upperFilterBindings() {
+    return {
+        Message: [
+            ['type', messageTypeFilterIndex, messageTypeFilterOptions], ['isRead', readStatusFilterIndex, readStatusFilterOptions],
+            ['isWithdraw', withdrawStatusFilterIndex, withdrawStatusFilterOptions],
+            ['isDeletedBySender', senderDeletedFilterIndex, deletedFilterOptions], ['isDeletedByReceiver', receiverDeletedFilterIndex, deletedFilterOptions]
+        ],
+        Chat: [['relationship', relationshipFilterIndex, relationshipFilterOptions], ['mute', muteFilterIndex, muteFilterOptions], ['top', topFilterIndex, topFilterOptions]],
+        History: [['source', sourceFilterIndex, sourceFilterOptions]],
+        Device: [['review', reviewFilterIndex, reviewFilterOptions], ['status', statusFilterIndex, statusFilterOptions], ['type', binTypeFilterIndex, binTypeFilterOptions]]
+    }[currentTable.value] || []
+}
+function upperDateField() {
+    if (currentTable.value === 'Chat') return '' // This endpoint has no date filter.
+    const field = currentTable.value === 'Message' ? 'sendTime' : currentTable.value === 'UserDevice' ? 'lastActiveAt' : 'createdAt'
+    return getGenericSchema().some(item => item.key === field && ['DATE', 'DATEONLY'].includes(String(item.type).toUpperCase())) ? field : ''
+}
+function columnSupportsUpperField(field) {
+    return getGenericSchema().some(item => item.key === field && ['STRING', 'CHAR', 'TEXT', 'UUID', 'ENUM', 'INTEGER', 'BIGINT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'REAL', 'TINYINT', 'SMALLINT', 'BOOLEAN', 'DATE', 'DATEONLY'].includes(String(item.type).toUpperCase()))
+}
+function updateUpperColumnFilter(field, operators, condition) {
+    if (!field || !columnSupportsUpperField(field)) return
+    const query = currentColumnQuery.value
+    const filters = (query.filters || []).filter(item => item.field !== field || !operators.includes(item.operator))
+    if (condition && filters.length >= 20) {
+        uni.showToast({ title: '最多添加20个条件', icon: 'none' })
+        syncUpperFiltersFromColumns()
+        return
+    }
+    if (condition) filters.push(condition)
+    columnQueries.value = { ...columnQueries.value, [currentTable.value]: { ...query, filters } }
+}
+function setUpperColumnSelection(field, index, options) {
+    const value = options.value[Number(index)]?.value
+    updateUpperColumnFilter(field, ['equals', 'contains', 'gt', 'gte', 'lt', 'lte', 'null', 'notNull'],
+        value === null || value === undefined ? null : { field, operator: 'equals', value: String(value) })
+}
+function syncUpperFiltersFromColumns() {
+    const filters = currentColumnQuery.value.filters || []
+    for (const [field, index, options] of upperFilterBindings()) {
+        const matching = filters.filter(item => item.field === field)
+        const selected = matching.length === 1 && matching[0].operator === 'equals'
+            ? options.value.findIndex(option => option.value !== null && String(option.value) === String(matching[0].value)) : -1
+        index.value = selected > 0 ? selected : 0
+    }
+    const field = upperDateField()
+    if (field) {
+        const matches = filters.filter(item => item.field === field)
+        const simpleDate = (operator, other) => {
+            const candidates = matches.filter(item => [operator, other].includes(item.operator))
+            return candidates.length === 1 && candidates[0].operator === operator && /^\d{4}-\d{2}-\d{2}$/.test(candidates[0].value) ? candidates[0].value : ''
+        }
+        startDate.value = simpleDate('gte', 'gt')
+        endDate.value = simpleDate('lte', 'lt')
+    }
+}
+const activeFilterCount = computed(() => {
+    const filters = currentColumnQuery.value.filters || []
+    let count = filters.length
+    for (const [field, index] of upperFilterBindings()) {
+        if (Number(index.value) > 0 && !filters.some(item => item.field === field)) count += 1
+    }
+    const dateField = upperDateField()
+    if (startDate.value && !filters.some(item => item.field === dateField && ['gt', 'gte'].includes(item.operator))) count += 1
+    if (endDate.value && !filters.some(item => item.field === dateField && ['lt', 'lte'].includes(item.operator))) count += 1
+    return count
+})
+function upperFilterLabel(field, options, index) {
+    const filters = (currentColumnQuery.value.filters || []).filter(item => item.field === field)
+    return filters.length && Number(index) === 0 ? '列筛选中' : options[Number(index)]?.label || '全部'
+}
+function upperDateLabel(bound, value) {
+    if (value) return value
+    const field = upperDateField()
+    const operators = bound === 'start' ? ['gte', 'gt', 'equals', 'null', 'notNull'] : ['lte', 'lt', 'equals', 'null', 'notNull']
+    return field && (currentColumnQuery.value.filters || []).some(item => item.field === field && operators.includes(item.operator)) ? '列筛选中' : '选择日期'
+}
+
 const gridDrafts = ref({})
 const gridSubmitting = ref(false)
 const currentGridDrafts = computed(() => gridDrafts.value[currentTable.value] || {})
@@ -1407,6 +1498,8 @@ const legacyTableCatalog = [
     { name: 'AlgorithmPrediction', label: '算法预测表', icon: 'algorithm_prediction_table' },
     { name: 'ShopProduct', label: '商城商品表', icon: 'shop_product_table' },
     { name: 'UserLoginLocation', label: '用户登录位置表', icon: 'user_login_location_table' },
+    { name: 'UserMfa', label: '用户多因素认证配置表', icon: 'shield_captcha' },
+    { name: 'MfaChallenge', label: '多因素认证挑战表', icon: 'challenge_checklist' },
     { name: 'BiometricCredential', label: '生物识别凭据表', icon: 'biometric_credential_table' },
     { name: 'BiometricChallenge', label: '生物识别挑战表', icon: 'biometric_challenge_table' },
     { name: 'PlatformLoginCredential', label: '平台登录凭据表', icon: 'platform_login_credential_table' },
@@ -1833,6 +1926,7 @@ function selectTable(table) {
     reviewFilterIndex.value = 0
     statusFilterIndex.value = 0
     binTypeFilterIndex.value = 0
+    syncUpperFiltersFromColumns()
     
     showEditModal.value = false
     loadTableData()
@@ -1850,6 +1944,8 @@ function getCurrentDate() {
 // 开始日期变化
 function onStartDateChange(e) {
     startDate.value = e.detail.value
+    const field = upperDateField()
+    updateUpperColumnFilter(field, ['gt', 'gte'], field && startDate.value ? { field, operator: 'gte', value: startDate.value } : null)
     console.log('开始日期:', startDate.value)
     currentPage.value = 1  // 重置到第一页
     loadTableData()
@@ -1858,6 +1954,8 @@ function onStartDateChange(e) {
 // 结束日期变化
 function onEndDateChange(e) {
     endDate.value = e.detail.value
+    const field = upperDateField()
+    updateUpperColumnFilter(field, ['lt', 'lte'], field && endDate.value ? { field, operator: 'lte', value: endDate.value } : null)
     console.log('结束日期:', endDate.value)
     currentPage.value = 1  // 重置到第一页
     loadTableData()
@@ -1874,76 +1972,88 @@ function resetDateFilter() {
 
 // Messages表筛选方法
 function onMessageTypeFilterChange(e) {
-    messageTypeFilterIndex.value = e.detail.value
+    messageTypeFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('type', messageTypeFilterIndex.value, messageTypeFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 function onReadStatusFilterChange(e) {
-    readStatusFilterIndex.value = e.detail.value
+    readStatusFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('isRead', readStatusFilterIndex.value, readStatusFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 function onWithdrawStatusFilterChange(e) {
-    withdrawStatusFilterIndex.value = e.detail.value
+    withdrawStatusFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('isWithdraw', withdrawStatusFilterIndex.value, withdrawStatusFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 function onSenderDeletedFilterChange(e) {
-    senderDeletedFilterIndex.value = e.detail.value
+    senderDeletedFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('isDeletedBySender', senderDeletedFilterIndex.value, deletedFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 function onReceiverDeletedFilterChange(e) {
-    receiverDeletedFilterIndex.value = e.detail.value
+    receiverDeletedFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('isDeletedByReceiver', receiverDeletedFilterIndex.value, deletedFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 // Chat表筛选方法
 function onRelationshipFilterChange(e) {
-    relationshipFilterIndex.value = e.detail.value
+    relationshipFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('relationship', relationshipFilterIndex.value, relationshipFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 function onMuteFilterChange(e) {
-    muteFilterIndex.value = e.detail.value
+    muteFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('mute', muteFilterIndex.value, muteFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 function onTopFilterChange(e) {
-    topFilterIndex.value = e.detail.value
+    topFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('top', topFilterIndex.value, topFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 // History表筛选方法
 function onSourceFilterChange(e) {
-    sourceFilterIndex.value = e.detail.value
+    sourceFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('source', sourceFilterIndex.value, sourceFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 // Bin表筛选方法
 function onReviewFilterChange(e) {
-    reviewFilterIndex.value = e.detail.value
+    reviewFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('review', reviewFilterIndex.value, reviewFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 function onStatusFilterChange(e) {
-    statusFilterIndex.value = e.detail.value
+    statusFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('status', statusFilterIndex.value, statusFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
 
 function onBinTypeFilterChange(e) {
-    binTypeFilterIndex.value = e.detail.value
+    binTypeFilterIndex.value = Number(e.detail.value)
+    setUpperColumnSelection('type', binTypeFilterIndex.value, binTypeFilterOptions)
     currentPage.value = 1
     loadTableData()
 }
@@ -3540,6 +3650,7 @@ onUnmounted(() => {
 
 .search-input {
     flex: 1;
+    min-width: 0;
     height: 100%;
     font-size: 26rpx;
     color: #ffffff;
@@ -4525,6 +4636,17 @@ rich-text {
 }
 
 /* 浅色主题：仅覆盖配色，深色主题沿用上面的样式。 */
+.filter-toggle { display: flex; align-items: center; gap: 6rpx; flex-shrink: 0; padding: 10rpx 14rpx; border: 1px solid rgba(100, 220, 235, .35); border-radius: 10rpx; color: #a7eaf3; background: rgba(64, 224, 255, .08); font-size: 22rpx; white-space: nowrap; }
+.filter-toggle.active { color: #fff0bd; border-color: #e6bd62; background: rgba(230, 189, 98, .14); }
+.filter-toggle-count { min-width: 26rpx; padding: 1rpx 5rpx; border-radius: 20rpx; color: #123b46; background: #f5d47d; text-align: center; font-size: 19rpx; }
+.filter-toggle-arrow { font-size: 18rpx; }
+.database-light .filter-toggle { color: #087d60; background: #eaf7f0; border-color: #cce9da; }
+.database-light .filter-toggle.active { color: #805800; background: #fff4d8; border-color: #e0b65a; }
+.database-light .filter-toggle-count { color: #fff; background: #a9770a; }
+
+.column-filter-notice { color: #9ee6f0; font-size: 22rpx; margin: 12rpx 4rpx 0; }
+.database-light .column-filter-notice { color: #087d60; }
+
 .database-light .database-container { background: linear-gradient(165deg, #edf8f3 0%, #f5f9f7 48%, #edf4f7 100%); }
 .database-light .tech-background { opacity: .16; }
 .database-light .status-bar { background: rgba(251, 255, 253, .96); border-color: #d9ebe3; }

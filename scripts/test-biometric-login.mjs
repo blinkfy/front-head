@@ -7,6 +7,8 @@ import { createBiometricLoginManager, biometricErrorMessage } from '../src/utils
 function fixture({ accepted = true, supported = true, enrolled = true } = {}) {
   const storage = new Map([['token', 'session'], ['savedUser', { username: 'test', password: 'test-only' }]])
   const calls = [], confirmations = []
+  const credentialOwners = new Map(), loginChallenges = new Map()
+  let enrollmentUserId = 1, credentialSequence = 0, loginAccountOverride = null
   let failure = null
   const runtime = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value),
     removeStorageSync: key => storage.delete(key), confirm: async options => { confirmations.push(options); return accepted } }
@@ -19,15 +21,57 @@ function fixture({ accepted = true, supported = true, enrolled = true } = {}) {
   const requests = []
   const api = async (path, body, token, method) => {
     requests.push({ path, body, token, method })
-    if (path.endsWith('/options')) return { data: { credentialId: '00000000-0000-4000-8000-000000000001', challengeId: 'test-challenge', payload: 'test-payload' } }
-    if (path === '/biometric/enrollment/finish') return { data: { userId: 1, username: 'test' } }
-    if (path === '/biometric/login/finish') return { token: 'new-session' }
+    if (path === '/biometric/enrollment/options') return { data: { credentialId: credentialSequence++ ? `credential-${credentialSequence}` : 'credential-id', challengeId: `enroll-${credentialSequence}`, payload: 'test-payload' } }
+    if (path === '/biometric/enrollment/finish') {
+      const credentialId = requests.findLast(call => call.path === '/biometric/enrollment/options')?.body?.credentialId ||
+        (credentialSequence > 1 ? `credential-${credentialSequence}` : 'credential-id')
+      credentialOwners.set(credentialId, enrollmentUserId)
+      return { data: { userId: enrollmentUserId, username: `user-${enrollmentUserId}` } }
+    }
+    if (path === '/biometric/login/options') {
+      const challengeId = `login-${body.credentialId}`
+      loginChallenges.set(challengeId, credentialOwners.get(body.credentialId) || 1)
+      return { data: { challengeId, payload: 'test-payload' } }
+    }
+    if (path === '/biometric/login/finish') return { token: 'new-session', accountId: loginAccountOverride ?? loginChallenges.get(body.challengeId) ?? 1 }
     return {}
   }
-  return { storage, calls, confirmations, requests, runtime, native, api,
+  return { storage, calls, confirmations, requests, runtime, native, api, setEnrollmentUserId: id => { enrollmentUserId = id },
+    setLoginAccountOverride: id => { loginAccountOverride = id },
     fail: value => { failure = value }, manager: createBiometricLoginManager({ runtime, native, api, scope: 'https://one.test' }) }
 }
 const user = { id: 1, username: 'test' }
+const setupTicketLogin = fixture()
+setupTicketLogin.storage.set('biometric_login_v1:https%3A%2F%2Fone.test', { enabled: true, prompted: true, credentialId: 'existing-key', userId: 1 })
+await setupTicketLogin.manager.login(() => true, undefined, { mfaSetupTicket: 'setup-ticket-native' })
+assert.equal(setupTicketLogin.requests.find(call => call.path === '/biometric/login/finish').body.mfaSetupTicket, 'setup-ticket-native',
+  'native biometric manager forwards the MFA setup ticket to login finish')
+const nativeAccounts = fixture()
+await nativeAccounts.manager.setEnabled(true, 'session', { id: 1, username: 'alice' })
+const nativeAliceKey = nativeAccounts.manager.state(1).credentialId
+nativeAccounts.setEnrollmentUserId(2)
+await nativeAccounts.manager.setEnabled(true, 'session', { id: 2, username: 'bob' })
+const nativeBobKey = nativeAccounts.manager.state(2).credentialId
+assert.notEqual(nativeAliceKey, nativeBobKey, 'native manager stores distinct account credentials')
+assert.equal(nativeAccounts.manager.selectAccount(2), true)
+const nativeMfa = await nativeAccounts.manager.login(() => true, undefined, { userId: 1 })
+assert.equal(nativeMfa.accountId, 1, 'native MFA authentication remains locked to its requested account')
+assert.equal(nativeAccounts.manager.state().userId, 2, 'native targeted login leaves the selected account unchanged')
+nativeAccounts.setLoginAccountOverride(99)
+await assert.rejects(nativeAccounts.manager.login(() => true, undefined, { userId: 1 }), error => error.error === 'ACCOUNT_MISMATCH')
+assert.equal(nativeAccounts.manager.state(1).credentialId, nativeAliceKey, 'foreign login result does not commit or clear A binding')
+assert.equal(nativeAccounts.manager.state(2).credentialId, nativeBobKey, 'foreign login result leaves B untouched')
+nativeAccounts.setLoginAccountOverride(null)
+nativeAccounts.fail({ error: 'KEY_INVALID' })
+await assert.rejects(nativeAccounts.manager.login(() => true, undefined, { userId: 1 }))
+assert.equal(nativeAccounts.manager.state(1).credentialId, '')
+assert.equal(nativeAccounts.manager.state(2).credentialId, nativeBobKey, 'native invalid A key does not clear B')
+nativeAccounts.fail(null)
+nativeAccounts.setEnrollmentUserId(99)
+await assert.rejects(nativeAccounts.manager.setEnabled(true, 'session', { id: 1, username: 'alice' }), error => error.error === 'ACCOUNT_MISMATCH')
+assert.equal(nativeAccounts.manager.state(1).credentialId, '', 'foreign enrollment result is not committed')
+assert.equal(nativeAccounts.manager.state(2).credentialId, nativeBobKey, 'foreign enrollment result does not delete B')
+assert.ok(nativeAccounts.calls.some(call => call.operation === 'delete' && call.keyId === 'credential-3'), 'foreign enrollment key is discarded')
 const enabled = fixture()
 assert.equal(enabled.manager.state().enabled, true)
 await enabled.manager.afterLogin('session', user)
@@ -207,9 +251,10 @@ for (const platform of ['app', 'h5', 'mp-weixin']) {
   assert.equal(quickLogin.includes("import { biometricLogin } from './biometric-login.js'"), platform === 'app')
   assert.equal(quickLogin.includes("from './passkey-client-core.mjs'"), platform === 'h5')
   assert.equal(quickLogin.includes("from './soter-client-core.mjs'"), platform === 'mp-weixin')
+  assert.equal(quickLogin.includes('mfaSetupTicket: ticket'), true, `${platform} setup login forwards its ticket`)
   for (const file of ['src/pages/index/index.vue', 'src/pages-dark/index/index.vue', 'src/pages/change-password/change-password.vue',
     'src/pages-dark/change-password/change-password.vue', 'src/pages-nonTheme/account-security.vue', 'src/components/H5LoginShell.vue',
-    'src/components/WechatLoginEntry.vue']) {
+    'src/components/WechatLoginEntry.vue', 'src/components/QuickLoginAccountPicker.vue', 'src/components/MfaSecurity.vue', 'src/components/MfaLoginPanel.vue']) {
     const source = readFileSync(new URL('../' + file, import.meta.url), 'utf8')
     const { descriptor, errors } = parse(preJs(preHtml(source)), { filename: file })
     assert.deepEqual(errors, [], `${platform} ${file} parse`)
@@ -219,6 +264,9 @@ for (const platform of ['app', 'h5', 'mp-weixin']) {
     if (['src/pages/index/index.vue', 'src/pages-dark/index/index.vue'].includes(file)) {
       assert.ok(script.content.includes('use-biometric-login.js'), `${platform} ${file} uses the shared login controller`)
     }
+    if (file === 'src/components/MfaLoginPanel.vue') {
+      assert.equal(script.content.includes("from '@/utils/quick-login.js'"), platform !== 'other', `${platform} MFA panel platform imports`)
+    }
   }
 }
-console.log('Biometric frontend: one-time offer, settings, fallback, stale/failed enrollment, server isolation, session resume, lifecycle suspend/cancel, auto-priority, cancellation, 3-platform SFC compilation passed.')
+console.log('Biometric/MFA frontend: setup ticket handoff, one-time offer, settings, fallback, stale/failed enrollment, server isolation, session resume, lifecycle suspend/cancel, auto-priority, cancellation, 3-platform SFC compilation passed.')

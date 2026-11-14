@@ -10,6 +10,7 @@
         <button class="wechat-login-button" :disabled="loading" :loading="loading" @tap="$emit('login')">微信登录</button>
         <button v-if="biometricAvailable" class="wechat-login-button biometric-method-button" :disabled="loading" @tap="$emit('biometric-login')">{{ biometricLabel }}</button>
       </view>
+      <button v-if="biometricAvailable && biometricSwitchable" class="wechat-account-switch" :disabled="loading" @tap="$emit('biometric-switch')">切换快捷登录账号</button>
       <text class="wechat-hint">首次绑定需确认；其他微信的账号需开启共享登录，勾选“记住我”可自动登录上次账号</text>
     </template>
   </view>
@@ -21,9 +22,10 @@ defineProps({
   loading: Boolean,
   dark: Boolean,
   biometricAvailable: Boolean,
+  biometricSwitchable: Boolean,
   biometricLabel: { type: String, default: '指纹或面容登录' }
 })
-defineEmits(['login', 'biometric-login'])
+defineEmits(['login', 'biometric-login', 'biometric-switch'])
 </script>
 
 <style scoped>
@@ -34,7 +36,9 @@ defineEmits(['login', 'biometric-login'])
 .wechat-login-methods .wechat-login-button { flex: 1; min-width: 0; margin: 0; padding: 0 12rpx; }
 .biometric-method-button { background: #fff; }
 .wechat-login-button { background: #eefaf3; color: #198657; border: 1rpx solid #c8e8d7; border-radius: 20rpx; font-size: 30rpx; font-weight: 600; }
-.wechat-login-button::after { border: none; }
+.wechat-login-button::after, .wechat-account-switch::after { border: none; }
+.wechat-account-switch { margin: 8rpx auto 0; padding: 4rpx 16rpx; line-height: 1.8; font-size: 24rpx; color: #198657; background: transparent; }
+.wechat-entry-dark .wechat-account-switch { color: #6ee7b7; }
 .wechat-hint { display: block; text-align: center; margin-top: 12rpx; color: #84918e; font-size: 22rpx; }
 .wechat-bind-note { padding: 24rpx; border-radius: 20rpx; background: #eefaf3; }
 .wechat-bind-title { display: block; color: #198657; font-size: 28rpx; font-weight: 600; }

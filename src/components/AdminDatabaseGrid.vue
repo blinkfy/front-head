@@ -22,8 +22,9 @@
       <scroll-view class="grid-scroller" scroll-x :show-scrollbar="true" @scroll="onGridScroll">
         <view class="grid-content">
           <view class="grid-row grid-header">
-            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell grid-heading" @click.stop="openColumnMenu(column)">
+            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell grid-heading" :class="{ 'grid-heading-filtered': columnFilterCount(column.key) }" @click.stop="openColumnMenu(column)">
               <text class="grid-heading-label">{{ column.label }}</text>
+              <text v-if="columnFilterCount(column.key)" class="grid-filter-badge">筛{{ columnFilterCount(column.key) }}</text>
               <text v-if="columnType(column.key)" class="grid-heading-control" :class="{ active: columnIsActive(column.key) }">{{ columnSortIndicator(column.key) }}⌄</text>
             </view>
           </view>
@@ -85,7 +86,17 @@
           <picker v-if="columnValueOptions.length" mode="selector" :range="columnValueOptions" range-key="label" :value="columnValueIndex" @change="columnValueIndex = Number($event.detail.value)">
             <view class="column-menu-input column-menu-picker">{{ columnValueOptions[columnValueIndex]?.label || '请选择' }}</view>
           </picker>
-          <input v-else class="column-menu-input" v-model="columnFilterValue" :placeholder="columnFilterPlaceholder" :maxlength="500" />
+          <template v-else>
+            <input class="column-menu-input" v-model="columnFilterValue" :placeholder="columnFilterPlaceholder" :maxlength="500" />
+            <view v-if="isDateColumn" class="column-menu-actions column-date-pickers">
+              <picker mode="date" :value="columnPickerDate" @change="setColumnFilterDate">
+                <view class="column-menu-choice">选择日期</view>
+              </picker>
+              <picker v-if="columnMenu.type === 'DATE'" mode="time" :value="columnPickerTime" @change="setColumnFilterTime">
+                <view class="column-menu-choice">选择时间</view>
+              </picker>
+            </view>
+          </template>
         </template>
         <view class="column-menu-actions column-menu-footer">
           <view class="column-menu-choice" @click="clearColumnFilter">清除此列筛选</view>
@@ -134,8 +145,9 @@ function columnType(key) {
   const type = String(props.schema.find(field => field.key === key)?.type || (/^(createdAt|updatedAt|deletedAt)$/.test(key) ? 'DATE' : '')).toUpperCase()
   return columnTypes.has(type) ? type : ''
 }
+function columnFilterCount(key) { return (props.columnQuery.filters || []).filter(filter => filter.field === key).length }
 function columnIsActive(key) { return props.columnQuery.sortField === key || !!props.columnQuery.filters?.some(filter => filter.field === key) }
-function columnSortIndicator(key) { return props.columnQuery.sortField === key ? (props.columnQuery.direction === 'ASC' ? '↑' : '↓') : (props.columnQuery.filters?.some(filter => filter.field === key) ? '•' : '') }
+function columnSortIndicator(key) { return props.columnQuery.sortField === key ? (props.columnQuery.direction === 'ASC' ? '↑' : '↓') : '' }
 const columnFilterOperators = computed(() => {
   const result = []
   if (['STRING', 'CHAR', 'TEXT', 'UUID'].includes(columnMenu.value?.type)) result.push({ label: '包含', value: 'contains' })
@@ -160,6 +172,25 @@ const columnValueOptions = computed(() => {
   return columnMenu.value?.type === 'ENUM' ? (field?.values || []).map(value => ({ label: String(value), value: String(value) })) : []
 })
 const columnFilterPlaceholder = computed(() => columnMenu.value?.type === 'DATE' ? '输入完整时间，例如 2026-11-14 12:00:00' : columnMenu.value?.type === 'DATEONLY' ? '例如 2026-11-14' : '输入筛选值')
+
+const isDateColumn = computed(() => ['DATE', 'DATEONLY'].includes(columnMenu.value?.type))
+const columnPickerDate = computed(() => /^\d{4}-\d{2}-\d{2}/.exec(columnFilterValue.value)?.[0] || '')
+const columnPickerTime = computed(() => /[ T](\d{2}:\d{2})/.exec(columnFilterValue.value)?.[1] || '00:00')
+function setColumnFilterDate(event) {
+  const date = event.detail.value
+  if (columnMenu.value?.type === 'DATEONLY') { columnFilterValue.value = date; return }
+  const time = /[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)$/.exec(columnFilterValue.value)?.[1]
+  columnFilterValue.value = `${date} ${time || '00:00:00'}`
+}
+function setColumnFilterTime(event) {
+  const date = columnPickerDate.value || (() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })()
+  const suffix = /[ T]\d{2}:\d{2}(:\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/.exec(columnFilterValue.value)
+  columnFilterValue.value = `${date} ${event.detail.value}${suffix?.[1] || ':00'}${suffix?.[2] || ''}`
+}
+
 function openColumnMenu(column) {
   const type = columnType(column.key)
   if (!type || props.selectionMode) return
@@ -407,7 +438,9 @@ async function showCell(item, column) {
 .grid-cell { width: 220rpx; min-width: 220rpx; height: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 8rpx; padding: 0 16rpx; border-right: 1px solid rgba(64,224,255,.12); font-size: 22rpx; color: #eafaff; overflow: hidden; }
 .grid-cell.changed { background: rgba(240, 193, 77, .16); box-shadow: inset 0 -3rpx #f0c14d; }
 .grid-heading { justify-content: space-between; cursor: pointer; }
-.grid-heading-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.grid-header .grid-heading-filtered { background: #235d65; box-shadow: inset 0 -5rpx #f5d47d; }
+.grid-filter-badge { flex-shrink: 0; padding: 3rpx 7rpx; border-radius: 7rpx; color: #183b3d; background: #f5d47d; font-size: 18rpx; line-height: 1.3; font-weight: 700; }
+.grid-heading-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .grid-heading-control { flex-shrink: 0; padding: 4rpx 6rpx; color: #8fc3ce; font-size: 23rpx; }
 .grid-heading-control.active { color: #ffe29a; }
 .grid-query-bar { display: flex; justify-content: space-between; align-items: center; gap: 10rpx; color: #b9dce5; font-size: 20rpx; padding: 0 0 12rpx; }
@@ -446,6 +479,7 @@ async function showCell(item, column) {
 .column-menu-choice.selected, .column-menu-choice.primary { color: #06323a; background: #68dce7; border-color: #68dce7; }
 .column-menu-input { width: 100%; box-sizing: border-box; min-height: 68rpx; margin: 10rpx 0; padding: 12rpx 16rpx; border: 1px solid rgba(100,220,235,.35); border-radius: 9rpx; background: #123e52; color: #fff; font-size: 24rpx; }
 .column-menu-picker { display: flex; align-items: center; }
+.column-date-pickers { margin-top: 2rpx; }
 .column-menu-footer { justify-content: flex-end; margin-top: 18rpx; }
 .column-menu-tip { display: block; color: #8aabba; font-size: 19rpx; margin-top: 16rpx; }
 .grid-detail-images { display: flex; flex-wrap: wrap; gap: 14rpx; }
@@ -468,6 +502,8 @@ async function showCell(item, column) {
 .db-grid.grid-light .grid-header .grid-cell { color: #315d49; background: #edf6f0; }
 .db-grid.grid-light .grid-cell { color: #294438; border-right-color: #e5eee8; }
 .db-grid.grid-light .grid-cell.changed { background: #eff8e9; box-shadow: inset 0 -3rpx #92c66d; }
+.db-grid.grid-light .grid-header .grid-heading-filtered { color: #185f43; background: #d5eee0; box-shadow: inset 0 -5rpx #219765; }
+.db-grid.grid-light .grid-filter-badge { color: #fff; background: #23865b; }
 .db-grid.grid-light .grid-heading-control { color: #789486; }
 .db-grid.grid-light .grid-heading-control.active { color: #26704d; }
 .db-grid.grid-light .grid-query-bar { color: #597368; }

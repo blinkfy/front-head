@@ -13,35 +13,45 @@
       <text class="security-desc">剩余 {{ status.recoveryRemaining }} 个恢复码</text>
       <button class="text-button" :disabled="busy" @click="show('verify')">重新验证</button>
       <button class="text-button" :disabled="busy" @click="show('recovery')">更新恢复码</button>
+      <button v-if="status.totpEnabled === false" class="text-button" :disabled="busy" @click="show('totp-password')">添加验证器</button>
     </view>
     <view v-if="stage" class="security-overlay" @touchmove.stop.prevent>
       <view class="security-dialog">
         <text class="dialog-title">{{ titles[stage] }}</text>
-        <template v-if="stage === 'password'">
-          <text class="dialog-copy">先确认当前账号密码，再绑定验证器。</text>
-          <input v-model="password" class="security-input" password maxlength="128" placeholder="当前账号密码" :disabled="busy" @confirm="start" />
-          <button class="primary-button" :loading="busy" :disabled="busy || !password" @click="start">下一步</button>
+        <template v-if="stage === 'password' || stage === 'totp-password'">
+          <text class="dialog-copy">{{ bindingTotp ? '确认当前账号密码，添加动态码验证器。' : '输入当前账号密码，选择一种验证方式即可。' }}</text>
+          <input v-model="password" class="security-input" password maxlength="128" placeholder="当前账号密码" :disabled="busy" />
+          <template v-if="bindingTotp">
+            <button class="primary-button" :loading="busy" :disabled="busy || !password" @click="start('totp-add')">下一步</button>
+            <button v-if="quickBound" class="text-button quick-action" :disabled="busy || !password" @click="verifyWithQuick">使用{{ quickName }}验证并继续</button>
+          </template>
+          <template v-else>
+            <text v-if="quickLoading" class="dialog-copy">正在检查系统认证…</text>
+            <button v-if="quickSupport.supported && quickSupport.enrolled" class="primary-button" :loading="busy" :disabled="busy || !password || !user?.id" @click="start('quick')">使用{{ quickName }}</button>
+            <button class="secondary-button" :loading="busy" :disabled="busy || !password" @click="start('totp')">使用动态码验证器</button>
+          </template>
         </template>
         <template v-else-if="stage === 'setup'">
           <text class="dialog-copy">在验证器中添加账号，选择“输入设置密钥”，粘贴下方密钥。类型选择“基于时间”。</text>
           <text class="secret-value" selectable>{{ setup.secret }}</text>
-          <button class="text-button" @click="copy(setup.secret)">复制设置密钥</button>
+          <button class="text-button" @click="copy(setup.secret)">{{ copied === 'setup' ? '✓ 已复制' : '复制设置密钥' }}</button>
           <input v-model="code" class="security-input" type="number" maxlength="6" placeholder="验证器中的6位动态码" :disabled="busy" @confirm="enable" />
-          <button class="primary-button" :loading="busy" :disabled="busy || code.length !== 6" @click="enable">验证并开启</button>
+          <button class="primary-button" :loading="busy" :disabled="busy || code.length !== 6" @click="enable">{{ bindingTotp ? '确认绑定' : '验证并开启' }}</button>
         </template>
         <template v-else-if="stage === 'saved'">
           <text class="dialog-copy">恢复码仅本次展示，每个只能使用一次。请存放在安全的地方，认证方式不可用时可用于登录。</text>
           <scroll-view scroll-y class="recovery-list"><text v-for="item in recoveryCodes" :key="item" class="recovery-code" selectable>{{ item }}</text></scroll-view>
-          <button class="text-button" @click="copy(recoveryCodes.join('\n'))">复制恢复码</button>
+          <button class="text-button" @click="copy(recoveryCodes.join('\n'))">{{ copied === 'saved' ? '✓ 已复制' : '复制恢复码' }}</button>
           <label class="saved-confirm" @click="saved = !saved"><checkbox :checked="saved" :color="dark ? '#5B8DEE' : '#059669'" /><text>我已妥善保存恢复码</text></label>
           <button class="primary-button" :disabled="!saved" @click="close">完成</button>
         </template>
         <template v-else>
-          <text class="dialog-copy">{{ stage === 'disable' ? status.adminAccount ? '关闭后，本账号将失去管理员权限。' : '关闭后，登录将不再要求双因素验证。' : stage === 'recovery' ? '更新后，旧恢复码将全部失效。' : '输入新的动态码或一个未使用的恢复码。' }}</text>
+          <text class="dialog-copy">{{ stage === 'disable' ? status.adminAccount ? '关闭后，本账号将失去管理员权限。' : '关闭后，登录将不再要求双因素验证。' : stage === 'recovery' ? '更新后，旧恢复码将全部失效。' : status.totpEnabled === false ? '使用系统认证或一个未使用的恢复码。' : '使用系统认证、新的动态码或恢复码。' }}</text>
           <input v-if="stage !== 'verify'" v-model="password" class="security-input" password maxlength="128" placeholder="当前账号密码" :disabled="busy" />
-          <text v-if="status.recoverySession && stage !== 'verify'" class="dialog-copy">刚使用恢复码验证，本次只需确认账号密码。</text>
-          <input v-else v-model="code" class="security-input" maxlength="40" placeholder="新的动态码或恢复码" :disabled="busy" @confirm="confirmAction" />
-          <button class="primary-button" :loading="busy" :disabled="busy || (!code.trim() && !(status.recoverySession && stage !== 'verify')) || (stage !== 'verify' && !password)" @click="confirmAction">{{ stage === 'disable' ? '确认关闭' : '确认验证' }}</button>
+          <text v-if="status.alternativeSession && stage !== 'verify'" class="dialog-copy">已完成身份验证，本次只需确认账号密码。</text>
+          <input v-else v-model="code" class="security-input" maxlength="40" :placeholder="status.totpEnabled === false ? '未使用的恢复码' : '新的动态码或恢复码'" :disabled="busy" @confirm="confirmAction" />
+          <button class="primary-button" :loading="busy" :disabled="busy || (!code.trim() && !(status.alternativeSession && stage !== 'verify')) || (stage !== 'verify' && !password)" @click="confirmAction">{{ stage === 'disable' ? '确认关闭' : '确认验证' }}</button>
+          <button v-if="quickBound" class="text-button quick-action" :disabled="busy || (stage !== 'verify' && !password)" @click="verifyWithQuick">使用{{ quickName }}验证</button>
         </template>
         <text v-if="error" class="security-error" role="alert">{{ error }}</text>
         <button v-if="stage !== 'saved'" class="cancel-button" :disabled="busy" @click="close">取消</button>
@@ -51,14 +61,22 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { mfaRequest, saveMfaSession } from '@/api/mfa'
-defineProps({ dark: Boolean })
+import { quickLogin, quickLoginForSetup } from '@/utils/quick-login.js'
+import { biometricErrorMessage } from '@/utils/biometric-login-core.mjs'
+import { beginMfaTransition } from '@/utils/mfa-session-transition.mjs'
+const props = defineProps({ dark: Boolean, user: Object, promptOwner: Object })
 const emit = defineEmits(['changed'])
 const status = ref(null), loadError = ref(false), busy = ref(false), stage = ref(''), switchVersion = ref(0)
 const password = ref(''), code = ref(''), error = ref(''), setup = ref({}), recoveryCodes = ref([]), saved = ref(false)
-const titles = { password: '开启双因素验证', setup: '绑定验证器', saved: '保存恢复码', disable: '关闭双因素验证', verify: '验证身份', recovery: '更新恢复码' }
-let alive = true, requestGeneration = 0, actionToken = ''
+const bindingTotp = ref(false)
+const copied = ref(''), quickLoading = ref(false), quickSupport = ref({ supported: false, enrolled: false }), quickState = ref({})
+const quickName = computed(() => (quickSupport.value.label || '系统认证').replace(/登录$/, ''))
+const quickBound = computed(() => quickSupport.value.supported && quickSupport.value.enrolled && quickState.value.enabled &&
+  Boolean(quickState.value.credentialId) && String(quickState.value.userId) === String(props.user?.id))
+const titles = { 'totp-password': '添加验证器', password: '开启双因素验证', setup: '绑定验证器', saved: '保存恢复码', disable: '关闭双因素验证', verify: '验证身份', recovery: '更新恢复码' }
+let alive = true, requestGeneration = 0, actionToken = '', copyTimer
 const current = token => alive && token && token === uni.getStorageSync('token')
 async function reload() {
   const revision = ++requestGeneration, token = uni.getStorageSync('token')
@@ -67,18 +85,45 @@ async function reload() {
     if (current(token) && revision === requestGeneration) { status.value = result.data; loadError.value = false }
   } catch (_) { if (alive && revision === requestGeneration) loadError.value = true }
 }
-function show(next) { actionToken = uni.getStorageSync('token'); stage.value = next; password.value = ''; code.value = ''; error.value = '' }
+function show(next) {
+  actionToken = uni.getStorageSync('token'); bindingTotp.value = next === 'totp-password'; stage.value = next; password.value = ''; code.value = ''; error.value = ''
+  quickLoading.value = true
+  void quickLogin.capability().then(support => { if (alive) { quickSupport.value = support; quickState.value = quickLogin.state(props.user?.id) } }).catch(() => {}).finally(() => { if (alive) quickLoading.value = false })
+}
 function toggle(event) { switchVersion.value++; if (status.value && !busy.value) show(event.detail.value ? 'password' : 'disable') }
-function close() { if (busy.value) return; stage.value = ''; password.value = ''; code.value = ''; setup.value = {}; recoveryCodes.value = []; saved.value = false; switchVersion.value++ }
-function copy(value) { uni.setClipboardData({ data: value, showToast: false, success: () => uni.showToast({ title: '已复制', icon: 'none' }) }) }
-async function start() {
+function close() { if (busy.value) return; bindingTotp.value = false; stage.value = ''; password.value = ''; code.value = ''; setup.value = {}; recoveryCodes.value = []; saved.value = false; switchVersion.value++ }
+function clearCopyFeedback() { clearTimeout(copyTimer); copied.value = '' }
+watch(stage, clearCopyFeedback)
+function copy(value) {
+  const copyStage = stage.value
+  uni.setClipboardData({ data: value, showToast: false, success: () => {
+    if (!alive || stage.value !== copyStage) return
+    clearCopyFeedback()
+    copied.value = copyStage
+    copyTimer = setTimeout(clearCopyFeedback, 2000)
+  } })
+}
+async function start(method = 'totp') {
   if (busy.value || !current(actionToken)) return
   busy.value = true; error.value = ''
+  let finishTransition = () => {}
   try {
-    const result = await mfaRequest('setup', { password: password.value }, actionToken)
-    if (current(actionToken)) { setup.value = result.data; password.value = ''; stage.value = 'setup' }
-  } catch (cause) { if (current(actionToken)) error.value = cause.message }
-  finally { busy.value = false }
+    const token = actionToken
+    const result = await mfaRequest(method === 'totp-add' ? 'totp/setup' : 'setup', { password: password.value, method }, token)
+    if (!current(token)) return
+    if (method === 'quick') {
+      if (!saveMfaSession(result.data, token)) return
+      actionToken = result.data.token
+      finishTransition = beginMfaTransition(actionToken)
+      const setupToken = actionToken
+      const isActive = () => current(setupToken) && stage.value === 'password'
+      const enabled = await quickLoginForSetup(result.data.setupTicket, setupToken, props.user, isActive, props.promptOwner)
+      if (!isActive()) return
+      if (!enabled?.mfaEnabled || !enabled.mfaVerified || String(enabled.accountId) !== String(props.user?.id)) throw new Error('认证未完成，请重新尝试或使用动态码验证器')
+      if (await accept(enabled, setupToken)) { recoveryCodes.value = enabled.recoveryCodes; password.value = ''; saved.value = false; stage.value = 'saved' }
+    } else { bindingTotp.value = method === 'totp-add'; setup.value = result.data; password.value = ''; stage.value = 'setup' }
+  } catch (cause) { if (current(actionToken)) error.value = biometricErrorMessage(cause) || '认证已取消，可重新选择验证方式' }
+  finally { busy.value = false; quickState.value = quickLogin.state(props.user?.id); setTimeout(finishTransition, 0) }
 }
 async function accept(result, token) {
   if (!current(token) || !saveMfaSession(result, token)) return false
@@ -92,9 +137,31 @@ async function enable() {
   const token = actionToken
   busy.value = true; error.value = ''
   try {
-    const result = await mfaRequest('enable', { setupTicket: setup.value.setupTicket, code: code.value }, token)
-    if (await accept(result, token)) { recoveryCodes.value = result.recoveryCodes; setup.value = {}; code.value = ''; stage.value = 'saved' }
+    const result = await mfaRequest(bindingTotp.value ? 'totp/enable' : 'enable', { setupTicket: setup.value.setupTicket, code: code.value }, token)
+    if (await accept(result, token)) {
+      setup.value = {}; code.value = ''
+      if (bindingTotp.value) { bindingTotp.value = false; stage.value = ''; uni.showToast({ title: '验证器已添加', icon: 'none' }) }
+      else { recoveryCodes.value = result.recoveryCodes; stage.value = 'saved' }
+    }
   } catch (cause) { if (current(token)) error.value = cause.message }
+  finally { busy.value = false }
+}
+async function verifyWithQuick() {
+  if (busy.value || !current(actionToken)) return
+  const token = actionToken, action = stage.value
+  busy.value = true; error.value = ''
+  try {
+    const result = await quickLogin.login(() => current(token) && stage.value === action, props.promptOwner, { userId: props.user?.id })
+    if (!current(token) || stage.value !== action) return
+    if (!result?.token || !result.mfaVerified || String(result.accountId) !== String(props.user?.id)) {
+      if (result?.mfaTicket) void mfaRequest('cancel', { mfaTicket: result.mfaTicket }).catch(() => {})
+      throw new Error('此凭据尚未获准用于双因素验证，请使用动态码或恢复码')
+    }
+    if (!await accept(result, token)) return
+    if (action === 'verify') { stage.value = ''; uni.showToast({ title: '身份验证成功', icon: 'none' }) }
+    else if (action === 'totp-password') { busy.value = false; await start('totp-add') }
+    else { code.value = ''; busy.value = false; await confirmAction() }
+  } catch (cause) { if (current(actionToken)) error.value = biometricErrorMessage(cause) || '认证已取消，可使用其他方式验证' }
   finally { busy.value = false }
 }
 async function confirmAction() {
@@ -113,7 +180,7 @@ async function confirmAction() {
   finally { busy.value = false }
 }
 onMounted(reload)
-onBeforeUnmount(() => { alive = false; password.value = ''; setup.value = {}; recoveryCodes.value = [] })
+onBeforeUnmount(() => { alive = false; clearCopyFeedback(); password.value = ''; setup.value = {}; recoveryCodes.value = [] })
 defineExpose({ reload })
 </script>
 
@@ -133,9 +200,11 @@ defineExpose({ reload })
 .dialog-copy { display: block; font-size: 25rpx; color: var(--mfa-muted); line-height: 1.7; margin-bottom: 24rpx; }
 .security-input { height: 88rpx; margin-top: 18rpx; padding: 0 20rpx; border: 1rpx solid var(--mfa-line); border-radius: 14rpx; color: var(--mfa-text); background: var(--mfa-field); font-size: 28rpx; }
 .primary-button { margin-top: 24rpx; border-radius: 14rpx; color: #fff; background: var(--mfa-accent); font-size: 28rpx; }
+.secondary-button { margin-top: 18rpx; border: 1rpx solid var(--mfa-accent); border-radius: 14rpx; color: var(--mfa-accent); background: var(--mfa-field); font-size: 28rpx; }
+.quick-action { margin-top: 18rpx; }
 .is-dark .primary-button { color: #10213e; }
 .cancel-button { margin-top: 12rpx; color: var(--mfa-muted); background: transparent; font-size: 26rpx; }
-.text-button::after, .primary-button::after, .cancel-button::after { border: 0; }
+.text-button::after, .primary-button::after, .secondary-button::after, .cancel-button::after { border: 0; }
 .secret-value { display: block; padding: 20rpx; border-radius: 14rpx; background: var(--mfa-field); color: var(--mfa-accent); font-family: monospace; font-size: 28rpx; overflow-wrap: anywhere; word-break: break-all; }
 .recovery-list { height: 340rpx; padding: 16rpx 0; border-radius: 14rpx; background: var(--mfa-field); }
 .recovery-code { display: block; padding: 7rpx 16rpx; font-family: monospace; font-size: 23rpx; text-align: center; }

@@ -10,7 +10,7 @@ const source = await readFile(file, 'utf8')
 const { descriptor } = parse(source)
 let settings = [], weekly = [], daily = [], toasts = [], modals = []
 let me = { profile: { status: 'approved', typeIds: [1,2], areaIds: [3], acceptingOrders: true, newOrderNotifications: false, serviceOffers: null }, types: [{ id: 1, name: '纸类', unitPrice: 1.5 }, { id: 2, name: '旧电器', unitPrice: 2 }, { id: 9, name: '未获批', unitPrice: 9 }], areas: [{ id: 3, name: '区域' }], weeklySchedule: [], availability: [], scheduleOverrides: [] }
-const context = vm.createContext({ RecyclingShell: {}, RecyclingServiceMap: {}, bookingStatusText: x => x, collectorStatusText: x => x, formatBookingDate: () => '2026-11-11', collectorMe: async () => structuredClone(me), collectorSettings: async data => { settings.push(data); Object.assign(me.profile, data) }, collectorWeeklyAvailability: async data => { weekly.push(data); me.weeklySchedule = me.weeklySchedule.filter(row => row.serviceAreaId !== data.serviceAreaId); for (const weekday of data.weekdays) for (const slot of data.slots) me.weeklySchedule.push({ serviceAreaId: data.serviceAreaId, weekday, slot }) }, collectorAvailability: async data => { daily.push(data); me.availability = me.availability.filter(row => !(row.date === data.date && row.serviceAreaId === data.serviceAreaId)); for (const slot of data.slots || []) me.availability.push({ serviceAreaId: data.serviceAreaId, date: data.date, slot }) }, collectorOrders: async () => ({}), uni: { showToast: data => toasts.push(data), showModal: data => modals.push(data) } })
+const context = vm.createContext({ RecyclingShell: {}, RecyclingServiceMap: {}, RecyclingTimeline: {}, bookingStatusText: x => x, collectorStatusText: x => x, formatBookingDate: () => '2026-11-11', collectorMe: async () => structuredClone(me), collectorSettings: async data => { settings.push(data); Object.assign(me.profile, data) }, collectorWeeklyAvailability: async data => { weekly.push(data); me.weeklySchedule = me.weeklySchedule.filter(row => row.serviceAreaId !== data.serviceAreaId); for (const weekday of data.weekdays) for (const slot of data.slots) me.weeklySchedule.push({ serviceAreaId: data.serviceAreaId, weekday, slot }) }, collectorAvailability: async data => { daily.push(data); me.availability = me.availability.filter(row => !(row.date === data.date && row.serviceAreaId === data.serviceAreaId)); for (const slot of data.slots || []) me.availability.push({ serviceAreaId: data.serviceAreaId, date: data.date, slot }) }, collectorOrders: async () => ({ orders: [], total: 0 }), collectorTimeline: async date => ({ date, lanes: [{ serviceAreaId: 3, areaName: '区域', windows: [{ start: 510, end: 720 }], free: [{ start: 540, end: 720, capacity: 6 }], jobs: [{ id: 101, orderNo: 'RO101', status: 'confirmed', serviceAreaId: 3, serviceAreaName: '区域', appointmentDate: date, appointmentTimeSlot: '08:30-09:30', executionStart: 510, executionEnd: 540 }] }], jobs: [{ id: 101, orderNo: 'RO101', status: 'confirmed', serviceAreaId: 3, serviceAreaName: '区域', appointmentDate: date, appointmentTimeSlot: '08:30-09:30', executionStart: 510, executionEnd: 540 }], summary: { windowMinutes: 210, windowHours: 3.5, busyMinutes: 30, busyHours: 0.5, freeMinutes: 180, remainingJobs: 6 } }), uni: { showToast: data => toasts.push(data), showModal: data => modals.push(data) } })
 vm.runInContext(descriptor.script.content.replace(/^import .*$/gm, '').replace('export default', 'globalThis.component ='), context)
 const definition = context.component
 const state = { ...definition.data() }
@@ -94,14 +94,44 @@ await state.resetDailySchedule(); assert.equal(daily.at(-1).reset, true); assert
 state.scheduleMode = 'daily'; state.scheduleDate = ''; state.selectedSlots = ['13:30-19:00']; const dailyBeforeNoDate = daily.length; await state.saveSchedule()
 assert.equal(daily.length, dailyBeforeNoDate, 'daily publish without a selected date does not send a request')
 assert.match(state.error, /日期/)
-console.log('PASS approved offer defaults, own pricing, independent settings, price validation, multi-range weekly and daily/reset methods')
-for (const platform of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
-  const flags = { H5: platform === 'H5', APP_PLUS: platform === 'APP-PLUS', MP: platform === 'MP-WEIXIN', MP_WEIXIN: platform === 'MP-WEIXIN' }
-  const script = { ...descriptor.script, content: preprocess(descriptor.script.content, flags, { type: 'js' }) }
-  compileScript({ ...descriptor, script }, { id: `collector-settings-${platform}` })
-  const template = preprocess(descriptor.template.content, flags, { type: 'html' })
-  const result = platform === 'MP-WEIXIN' ? (await import('@dcloudio/uni-mp-compiler')).default.compile(template, { filename: file.pathname, mode: 'module', miniProgram: { class: { array: true }, slot: { fallbackContent: true } } }) : compileTemplate({ source: template, filename: file.pathname, id: `collector-settings-${platform}` })
-  assert.deepEqual(result.errors || [], [])
-  for (const style of descriptor.styles) assert.deepEqual(compileStyle({ source: style.content, filename: file.pathname, id: `collector-settings-${platform}`, scoped: style.scoped }).errors, [])
-  console.log(`PASS ${platform} SFC script/template/style compile`)
+state.today = '2026-11-11'; state.lastDay = '2026-12-11'; state.timelineDate = '2026-11-11'; state.previewDate = '2026-11-11'
+await state.loadTimeline()
+assert.equal(state.summary.remainingJobs, 6)
+assert.equal(state.freeHours, 3)
+assert.deepEqual({ ...state.taskStats }, { total: 1, confirmed: 1, picking: 0, completed: 0 })
+assert.equal(state.nextJob.orderNo, 'RO101')
+assert.equal(state.jobTime(state.nextJob), '08:30–09:00')
+const candidate = { id: 202, orderNo: 'RO202', serviceAreaId: 3, serviceAreaName: '区域', appointmentDate: '2026-11-11', placement: { start: 540, end: 570, jobs: [{ id: 202, serviceAreaId: 3, start: 540, end: 570 }, { id: 101, serviceAreaId: 3, start: 570, end: 600 }] } }
+state.orders = [candidate]
+assert.equal(state.placementText(candidate), '接单后预计 09:00–09:30 上门')
+assert.match(state.placementText({ id: 203, placement: null }), /无法插入/)
+state.togglePreview(candidate)
+assert.equal(state.ghosts.length, 1)
+assert.equal(state.displayLanes[0].jobs[0].executionStart, 570, 'preview moves the existing job using the server plan')
+assert.equal(state.timeline.lanes[0].jobs[0].executionStart, 510, 'preview does not mutate the published timeline')
+assert.equal(state.displayLanes[0].free.length, 0, 'old free intervals are not overlaid on a new plan')
+state.timelineDate = '2026-11-12'
+assert.equal(state.displayLanes.length, 0, 'previous-date response is not displayed under a new date')
+state.timelineDate = '2026-11-11'
+assert.match(state.preplanText(candidate), /09:00–09:30 新单 RO202 → 09:30–10:00 订单 RO101/)
+state.changeTab('settings'); await state.loadPreview()
+state.scheduleMode = 'daily'; state.scheduleDate = '2026-11-11'; state.selectedSlots = ['08:30-12:00']
+assert.equal(state.draftLanes.length, 0, 'identical published windows do not show draft overlay')
+state.selectedSlots = ['08:30-13:00']
+assert.equal(state.draftLanes.length, 1, 'modified windows show draft overlay in settings timeline')
+assert.deepEqual(JSON.parse(JSON.stringify(state.draftLanes[0].windows)), [{ start: 510, end: 780 }])
+console.log('PASS approved offer defaults, own pricing, independent settings, price validation, multi-range weekly, daily/reset, and timeline workflow')
+const timelineFile = new URL('../src/pages-nonTheme/components/RecyclingTimeline.vue', import.meta.url)
+const timelineDescriptor = parse(await readFile(timelineFile, 'utf8')).descriptor
+for (const [label, targetFile, targetDescriptor] of [['workbench', file, descriptor], ['timeline', timelineFile, timelineDescriptor]]) {
+  for (const platform of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
+    const flags = { H5: platform === 'H5', APP_PLUS: platform === 'APP-PLUS', MP: platform === 'MP-WEIXIN', MP_WEIXIN: platform === 'MP-WEIXIN' }
+    const script = { ...targetDescriptor.script, content: preprocess(targetDescriptor.script.content, flags, { type: 'js' }) }
+    compileScript({ ...targetDescriptor, script }, { id: `collector-${label}-${platform}` })
+    const template = preprocess(targetDescriptor.template.content, flags, { type: 'html' })
+    const result = platform === 'MP-WEIXIN' ? (await import('@dcloudio/uni-mp-compiler')).default.compile(template, { filename: targetFile.pathname, mode: 'module', miniProgram: { class: { array: true }, slot: { fallbackContent: true } } }) : compileTemplate({ source: template, filename: targetFile.pathname, id: `collector-${label}-${platform}` })
+    assert.deepEqual(result.errors || [], [])
+    for (const style of targetDescriptor.styles) assert.deepEqual(compileStyle({ source: style.content, filename: targetFile.pathname, id: `collector-${label}-${platform}`, scoped: style.scoped }).errors, [])
+    console.log(`PASS ${label} ${platform} SFC script/template/style compile`)
+  }
 }

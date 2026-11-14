@@ -12,6 +12,7 @@ export const collectorSettings = data => recyclingRequest('/api/collector/settin
 export const collectorAvailability = data => recyclingRequest('/api/collector/availability', 'PUT', data)
 export const collectorWeeklyAvailability = data => recyclingRequest('/api/collector/weekly-availability', 'PUT', data)
 export const collectorOrders = (kind, data) => recyclingRequest(`/api/collector/orders/${kind}`, 'GET', data)
+export const collectorTimeline = date => recyclingRequest('/api/collector/timeline', 'GET', { date })
 export const collectorOrder = id => recyclingRequest(`/api/collector/orders/${id}`)
 export const collectorAction = (id, action, data) => recyclingRequest(`/api/collector/orders/${id}/${action}`, 'POST', data)
 export const recyclingOverview = (data = {}) => recyclingRequest('/api/admin/recycling/overview', 'GET', data)

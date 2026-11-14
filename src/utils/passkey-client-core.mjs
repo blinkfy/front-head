@@ -75,11 +75,11 @@ export function createPasskeyAdapter({ environment, api, setTimer = setTimeout, 
       if (!isActive()) throw cancelled()
       return (await api('/quick-login/passkey/enrollment/finish', { challengeId: data.challengeId, response }, token)).data
     },
-    async login({ credentialId, mfaTicket, isActive }) {
+    async login({ credentialId, mfaTicket, mfaSetupTicket, isActive }) {
       const { data } = await api('/quick-login/passkey/login/options', { credentialId, ...(mfaTicket ? { mfaTicket } : {}) })
       const response = await ceremony(data.options, false, isActive)
       if (!isActive()) throw cancelled()
-      return api('/quick-login/passkey/login/finish', { challengeId: data.challengeId, response })
+      return api('/quick-login/passkey/login/finish', { challengeId: data.challengeId, response, ...(mfaSetupTicket ? { mfaSetupTicket } : {}) })
     },
     cancel() { controller?.abort(); controller = null }
   }

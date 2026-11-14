@@ -41,13 +41,18 @@ instance = createPlatformQuickLogin({ runtime, api: biometricApi, scope: `weixin
 instance = { state: () => ({ enabled: false }), capability: async () => ({ supported: false, enrolled: false }),
   afterLogin: async () => {}, cancel() {}, forgetBinding: async () => {} }
 // #endif
-export function quickLoginForMfa(ticket, isActive, owner) {
+export function quickLoginForMfa(ticket, isActive, owner, userId) {
   // #ifdef H5
   return webAdapter.login({ mfaTicket: ticket, isActive })
   // #endif
   // #ifndef H5
-  return instance.login(isActive, owner)
+  return instance.login(isActive, owner, { userId })
   // #endif
+}
+export async function quickLoginForSetup(ticket, token, user, isActive, owner) {
+  await instance.setEnabled(true, token, user, isActive, { owner })
+  if (!isActive()) return null
+  return instance.login(isActive, owner, { mfaSetupTicket: ticket, userId: user.id })
 }
 export const quickLogin = instance
 export const quickLoginPlatform = platform

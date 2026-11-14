@@ -1,4 +1,5 @@
 <template>
+  <QuickLoginAccountPicker ref="quickAccountPicker" :dark="false" />
   <MfaLoginPanel ref="mfaPanel" :dark="false" :prompt-owner="biometricPromptOwner" />
   <!-- #ifdef APP-PLUS -->
   <app-splash v-if="showSplash" @loaded="onSplashLoaded" />
@@ -10,7 +11,7 @@
     :loading="isLoading" :show-captcha="showCaptcha" :captcha-hint="captchaHint"
     @login="onLogin(false)" @qr-login="onQrLogin">
     <!-- #ifdef H5 || APP-PLUS -->
-    <template #biometric><button v-if="biometricAvailable" class="biometric-login-entry" :disabled="isLoading" @click.stop.prevent="onBiometricLogin">{{ biometricLabel }}</button></template>
+    <template #biometric><button v-if="biometricAvailable" class="biometric-login-entry" :disabled="isLoading" @click.stop.prevent="onBiometricLogin">{{ biometricLabel }}</button><button v-if="biometricSwitchable" class="biometric-account-switch" :disabled="isLoading" @click.stop.prevent="onSwitchBiometricAccount">切换账号</button></template>
     <!-- #endif -->
   </H5LoginShell>
   <!-- #endif -->
@@ -179,7 +180,7 @@
           </view>
         </form>
         <!-- #ifdef MP-WEIXIN -->
-        <WechatLoginEntry :pending="wechatBindPending" :loading="isLoading" :biometric-available="biometricAvailable" :biometric-label="biometricLabel" @login="onWechatLogin" @biometric-login="onBiometricLogin" />
+        <WechatLoginEntry :pending="wechatBindPending" :loading="isLoading" :biometric-available="biometricAvailable" :biometric-label="biometricLabel" :biometric-switchable="biometricSwitchable" @biometric-switch="onSwitchBiometricAccount" @login="onWechatLogin" @biometric-login="onBiometricLogin" />
         <!-- #endif -->
       </view>
       
@@ -228,6 +229,7 @@ import { resumeRememberedQrLogin } from '@/utils/remembered-qr-login.mjs'
 import { useBiometricLogin } from '@/utils/use-biometric-login.js'
 // #endif
 import MfaLoginPanel from '@/components/MfaLoginPanel.vue'
+import QuickLoginAccountPicker from '@/components/QuickLoginAccountPicker.vue'
 import { userinfoForToken } from '@/api/mfa'
 import { ref, onMounted, watch } from 'vue'
 // #ifdef H5 || APP-PLUS
@@ -265,10 +267,12 @@ const password = ref('')
 const showPwd = ref(false)
 const rememberMe = ref(true)
 const isLoading = ref(false)
+const quickAccountPicker = ref(null)
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
-const { available: biometricAvailable, label: biometricLabel, login: onBiometricLogin,
+const { available: biometricAvailable, switchable: biometricSwitchable, label: biometricLabel, login: onBiometricLogin, switchAccount: onSwitchBiometricAccount,
   prefer: preferBiometricLogin, afterLogin: offerBiometricLogin, promptOwner: biometricPromptOwner } = useBiometricLogin({
   loading: isLoading,
+  chooseAccount: (accounts, selectedId) => quickAccountPicker.value?.open(accounts, selectedId) ?? Promise.resolve(null),
   ready: async () => {
     if (showSplash.value) await new Promise(resolve => {
       const stop = watch(showSplash, visible => { if (!visible) { stop(); resolve() } })
@@ -672,7 +676,8 @@ function onRegister() {
 
 <style scoped>
 .biometric-login-entry { margin: 14px auto 0; padding: 5px 16px; font-size: 14px; line-height: 1.8; color: var(--green, #059669); background: transparent; }
-.biometric-login-entry::after { border: 0; }
+.biometric-login-entry::after, .biometric-account-switch::after { border: 0; }
+.biometric-account-switch { margin: 0 auto; padding: 2px 16px; font-size: 13px; line-height: 1.8; background: transparent; color: var(--green, #059669); }
 .registration-relay-notice { position: relative; margin: 20rpx; padding: 20rpx; border-radius: 16rpx; background: rgba(128, 188, 155, .18); text-align: center; font-size: 26rpx; }
 .registration-relay-actions { display: flex; justify-content: center; gap: 16rpx; margin-top: 16rpx; }
 .login-page {

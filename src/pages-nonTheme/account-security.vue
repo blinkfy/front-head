@@ -65,7 +65,7 @@
         <!-- #endif -->
       </view>
 
-      <view class="settings-section"><MfaSecurity ref="mfaSecurity" :dark="isDarkTheme" @changed="loadProfile" /></view>
+      <view class="settings-section"><MfaSecurity ref="mfaSecurity" :dark="isDarkTheme" :user="profile" :prompt-owner="biometricPromptOwner" @changed="loadProfile().then(loadBiometric)" /></view>
 
       <view class="settings-section">
         <text class="section-title">微信登录</text>
@@ -165,7 +165,7 @@ async function loadRecentLogin() {
 
 const profile = ref(readCachedProfile())
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
-const biometricState = ref(biometricLogin.state())
+const biometricState = ref(biometricLogin.state(profile.value.id))
 const biometricSupport = ref({ supported: false, enrolled: false })
 const biometricLabel = ref('指纹或面容登录')
 const biometricBusy = ref(false)
@@ -188,10 +188,10 @@ const biometricDescription = computed(() => {
 })
 async function loadBiometric() {
   const generation = biometricGeneration
-  biometricState.value = biometricLogin.state()
+  biometricState.value = biometricLogin.state(profile.value.id)
   const support = await biometricLogin.capability()
   if (!biometricActive || generation !== biometricGeneration) return
-  biometricState.value = biometricLogin.state()
+  biometricState.value = biometricLogin.state(profile.value.id)
   biometricSupport.value = support
   biometricLabel.value = support.label || '指纹或面容登录'
   if (biometricRevokePending.value && biometricLogin.syncRevocations) void syncBiometricRevocations(false)
@@ -208,7 +208,7 @@ async function toggleBiometric(event, options = {}) {
     const message = biometricErrorMessage(error)
     if (message && isActive()) uni.showToast({ title: message, icon: 'none' })
   } finally {
-    biometricState.value = biometricLogin.state()
+    biometricState.value = biometricLogin.state(profile.value.id)
     biometricSwitchVersion.value++
     biometricBusy.value = false
   }
@@ -221,7 +221,7 @@ async function syncBiometricRevocations(notify = true) {
   try {
     const result = await biometricLogin.syncRevocations(uni.getStorageSync('token'), profile.value.id)
     if (notify && biometricActive) uni.showToast({ title: result?.revocationPending ? '暂未同步成功，请稍后重试' : '授权已撤销', icon: 'none' })
-  } finally { biometricState.value = biometricLogin.state(); biometricBusy.value = false }
+  } finally { biometricState.value = biometricLogin.state(profile.value.id); biometricBusy.value = false }
 }
 function stopBiometric() { biometricActive = false; biometricGeneration++; biometricLogin.cancel() }
 onBeforeUnmount(stopBiometric)

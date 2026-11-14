@@ -93,11 +93,11 @@ export function createSoterAdapter({ runtime, api, setTimer = setTimeout, clearT
       if (!isActive()) throw { error: 'CANCELLED' }
       return (await api('/quick-login/soter/enrollment/finish', response, token)).data
     },
-    async login({ credentialId, isActive, owner }) {
+    async login({ credentialId, isActive, owner, mfaSetupTicket }) {
       const { data } = await api('/quick-login/soter/login/options', { credentialId, code: await code() })
       const response = await proof(data, isActive, owner)
       if (!isActive()) throw { error: 'CANCELLED' }
-      return api('/quick-login/soter/login/finish', response)
+      return api('/quick-login/soter/login/finish', { ...response, ...(mfaSetupTicket ? { mfaSetupTicket } : {}) })
     },
     async probeSession(token) { return api('/quick-login/soter/session', { code: await code() }, token) },
     suspendSystemAuthentication(owner) {
