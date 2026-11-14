@@ -181,6 +181,7 @@
 </template>
 
 <script setup>
+import { mfaRequest } from '@/api/mfa'
 import { clearChatPush } from '@/utils/chat-push.js'
 import { communitySocialEnabled } from '@/pages-nonTheme/utils/community-social.js'
 import { ensureFeaturePermission, openFeaturePermissionSettings } from '@/utils/feature-permission.js'
@@ -479,6 +480,8 @@ function handleConfirm() {
     } else if (confirmAction.value === 'logout') {
         // 退出登录
         try {
+            const exitingToken = uni.getStorageSync('token')
+            if (exitingToken) void mfaRequest('logout', {}, exitingToken).catch(() => {})
             clearRecognitionTask()
             recentRecognition.clear('logout')
             clearChatPush()

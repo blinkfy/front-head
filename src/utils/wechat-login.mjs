@@ -60,7 +60,7 @@ export function createWechatLoginFlow({ runtime, login }) {
     if (result.data?.needBind) {
       runtime.setStorageSync(WECHAT_BIND_INTENT_KEY, true)
     } else {
-      if (!result.token) throw new Error('微信登录结果异常，请重试')
+      if (!result.token && !result.requiresMfa) throw new Error('微信登录结果异常，请重试')
       cancel()
     }
     return result
@@ -115,7 +115,7 @@ export function createWechatPasswordLoginFlow({ runtime, login, previewMerge, co
       throw stopped('MERGE_REQUIRED')
       }
     }
-    if (result.data?.needConfirmBind || !result.token) {
+    if (result.data?.needConfirmBind || (!result.token && !result.requiresMfa)) {
       throw new Error('登录状态已变化，请重新尝试')
     }
     return result

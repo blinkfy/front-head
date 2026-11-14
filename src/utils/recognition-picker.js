@@ -1,6 +1,9 @@
 import { chooseImageWithPermission } from './feature-permission.js'
 import { createRecognitionImagePicker } from './recognition-picker-core.mjs'
 import { detectWebCamera } from './image-picker.js'
+// #ifdef APP-PLUS
+import { appVersionGuard } from './app-version-guard.js'
+// #endif
 
 let platform = 'native'
 let detectCamera, openWebCamera
@@ -16,7 +19,7 @@ openWebCamera = async () => {
 }
 // #endif
 
-export const chooseRecognitionImage = createRecognitionImagePicker({
+const pickRecognitionImage = createRecognitionImagePicker({
   runtime: {
     chooseImage: chooseImageWithPermission,
     showActionSheet: options => uni.showActionSheet(options),
@@ -24,3 +27,20 @@ export const chooseRecognitionImage = createRecognitionImagePicker({
   },
   platform, detectCamera, openWebCamera
 })
+
+export function chooseRecognitionImage(options = {}) {
+  // #ifdef APP-PLUS
+  void appVersionGuard().ensure({ feature: 'recognition' }).then(allowed => {
+    if (allowed) pickRecognitionImage(options)
+    else {
+      const error = { code: 'APP_UPGRADE_REQUIRED', errMsg: 'chooseImage:fail app upgrade required' }
+      options.fail?.(error)
+      options.complete?.(error)
+    }
+  })
+  return
+  // #endif
+  // #ifndef APP-PLUS
+  return pickRecognitionImage(options)
+  // #endif
+}

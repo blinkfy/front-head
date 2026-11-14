@@ -1,5 +1,5 @@
 <template>
-    <view class="database-page" v-if="adminUser">
+    <view class="database-page" :class="{ 'database-light': !isDark }" v-if="adminUser">
         <!-- #ifdef APP-PLUS -->
         <AppConfirmDialog ref="appConfirmDialog" />
         <!-- #endif -->
@@ -284,8 +284,23 @@
                             @click="openAiSettings">前往 AI 服务设置</view>
                     </view>
 
+                    <view class="data-view-switch">
+                        <text class="data-view-label">展示方式</text>
+                        <view class="data-view-option" :class="{ active: databaseView === 'card' }" @click="setDatabaseView('card')">卡片</view>
+                        <view class="data-view-option" :class="{ active: databaseView === 'table' }" @click="setDatabaseView('table')">表格</view>
+                        <text v-if="databaseView === 'table'" class="data-view-hint">双击单元格编辑</text>
+                        <view v-if="databaseView === 'table'" class="data-view-option data-column-option" @click="databaseGrid?.toggleColumns()">选择列</view>
+                    </view>
+                    <AdminDatabaseGrid v-if="databaseView === 'table'" ref="databaseGrid" :light="!isDark" :table="currentTable" :rows="tableData"
+                        :schema="getGenericSchema(currentTable)" :selection-mode="selectionMode"
+                        :editable="canEditCurrentTable()" :is-selected="isRecordSelected" :row-key="getTableRowKey"
+                        :image-fields="getFieldImages" :user-names="genericUserNames" :user-id-fields="genericUserIdFields"
+                        :edit-fields="getInlineEditFields()" :drafts="currentGridDrafts" :draft-key="getSelectionKey" :submitting="gridSubmitting"
+                        :column-query="currentColumnQuery" @query-change="applyColumnQuery"
+                        @stage="stageGridEdit" @submit="submitGridEdits" @discard="discardGridEdits"
+                        @edit="handleEdit" @delete="handleDelete" @select="toggleRecordSelection" @detail="recordDetail = $event" />
                     <!-- 数据列表 -->
-                    <view class="data-list">
+                    <view v-else class="data-list">
                         <view v-if="tableData.length > 0" class="data-item"
                             :class="{ selected: isRecordSelected(item), selectable: selectionMode }"
                             @click="handleDataItemClick(item)" v-for="(item, index) in tableData"
@@ -307,7 +322,7 @@
                                     </view>
                                     <view class="data-row">
                                         <text class="data-label">积分:</text>
-                                        <text class="data-value" style="color: #ffff80; font-weight: bold;">{{
+                                        <text class="data-value" :style="{ color: isDark ? '#ffff80' : '#927000', fontWeight: 'bold' }">{{
                                             item.points || 0 }}</text>
                                     </view>
                                 </template>
@@ -420,7 +435,7 @@
                                     <view class="data-row">
                                         <text class="data-label">状态:</text>
                                         <text class="data-value">
-                                            <text v-if="item.isRead" style="color: #40e0ff;">已读</text>
+                                            <text v-if="item.isRead" :style="{ color: isDark ? '#40e0ff' : '#087f67' }">已读</text>
                                             <text v-else style="color: #999;">未读</text>
                                             <text v-if="item.isWithdraw" style="color: #f44; margin-left: 10rpx;">已撤回</text>
                                         </text>
@@ -456,7 +471,7 @@
                                         <text class="data-label">状态:</text>
                                         <text class="data-value">
                                             <text v-if="item.mute" style="color: #f44;">勿扰</text>
-                                            <text v-if="item.top" style="color: #ffd700; margin-left: 10rpx;">置顶</text>
+                                            <text v-if="item.top" :style="{ color: isDark ? '#ffd700' : '#927000', marginLeft: '10rpx' }">置顶</text>
                                             <text v-if="!item.mute && !item.top" style="color: #999;">正常</text>
                                         </text>
                                     </view>
@@ -851,6 +866,20 @@
                         </view>
                     </template>
 
+                    <view v-if="currentTable === 'UserIdentity' && editMode === 'edit'" class="form-item">
+                        <text class="form-label">认证资料</text>
+                        <view v-if="!identityEvidence" class="image-raw-toggle" @click="loadIdentityEvidence">{{ identityEvidenceLoading ? '正在读取…' : '读取认证资料' }}</view>
+                        <template v-else>
+                            <text class="form-label">真实姓名</text>
+                            <input class="form-input" v-model="identityEvidence.name" placeholder="请输入真实姓名" />
+                            <text class="form-label">身份证号码</text>
+                            <input class="form-input" v-model="identityEvidence.number" placeholder="请输入身份证号码" />
+                            <text class="form-label">认证照片</text>
+                            <TrashBinImageEditor v-model="identityEvidence.photo" :disabled="identityEvidenceProcessing || identityEvidenceSaving" @processing="identityEvidenceProcessing = $event" />
+                            <view class="image-raw-toggle" @click="saveIdentityEvidence">{{ identityEvidenceSaving ? '保存中…' : '保存认证资料' }}</view>
+                            <view class="form-tip">修改姓名或证件号会同步更新密文及关联信息；照片不可删除，可替换。</view>
+                        </template>
+                    </view>
                     <!-- 通用表单 -->
                     <template v-if="!isSpecialTable(currentTable)">
                         <view v-if="getGenericEditFields().length">
@@ -978,11 +1007,13 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
-import { onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
+import { onShow, onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
+import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
+import AdminDatabaseGrid from '@/components/AdminDatabaseGrid.vue'
 import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
 import {
     getUsersList, createUser, updateUser, deleteUser,
@@ -993,8 +1024,15 @@ import {
     getMessagesList, createMessage, updateMessage, deleteMessage,
     getChatList, createChat, updateChat, deleteChat,
     getDatabaseStats,
-    getGenericTableList, createGenericTableRecord, updateGenericTableRecord, deleteGenericTableRecord
+    getGenericTableList, createGenericTableRecord, updateGenericTableRecord, deleteGenericTableRecord,
+    getAdminIdentityEvidence, updateAdminIdentityEvidence
 } from '@/api/database'
+
+const isDark = ref(false)
+let unbindThemeStorage = () => {}
+function syncDatabaseTheme() { isDark.value = applyStoredTheme() === 'dark' }
+function onDatabaseThemeStorage(event) { if (!event || event.key === 'app_theme') syncDatabaseTheme() }
+onShow(syncDatabaseTheme)
 
 const page = getCurrentInstance().proxy
 const appConfirmDialog = ref(null)
@@ -1019,6 +1057,46 @@ const recordDetail = ref(null)
 const editMode = ref('add') // 'add' 或 'edit'
 const editForm = ref({})
 const editInitialForm = ref({})
+const identityEvidence = ref(null)
+const identityEvidenceLoading = ref(false)
+const identityEvidenceSaving = ref(false)
+const identityEvidenceProcessing = ref(false)
+let identityEvidenceOriginalPhoto = ''
+let identityEvidenceRequestId = 0
+async function loadIdentityEvidence() {
+    if (identityEvidenceLoading.value) return
+    const requestId = ++identityEvidenceRequestId, id = editForm.value.id
+    identityEvidenceLoading.value = true
+    try {
+        const response = await getAdminIdentityEvidence(id)
+        if (requestId !== identityEvidenceRequestId) return
+        if (response?.code !== 0) throw new Error(response?.msg || '读取失败')
+        if (!response.data) { uni.showToast({ title: '该记录没有认证资料', icon: 'none' }); return }
+        identityEvidence.value = { ...response.data }
+        identityEvidenceOriginalPhoto = response.data.photo
+    } catch (error) {
+        if (requestId === identityEvidenceRequestId) uni.showToast({ title: error?.message || '读取失败', icon: 'none' })
+    } finally { if (requestId === identityEvidenceRequestId) identityEvidenceLoading.value = false }
+}
+async function saveIdentityEvidence() {
+    if (identityEvidenceSaving.value || identityEvidenceProcessing.value || !identityEvidence.value) return
+    if (!identityEvidence.value.photo) { uni.showToast({ title: '认证照片不可删除', icon: 'none' }); return }
+    const requestId = identityEvidenceRequestId, id = editForm.value.id
+    identityEvidenceSaving.value = true
+    try {
+        const { name, number, photo } = identityEvidence.value
+        const response = await updateAdminIdentityEvidence(id, { name, number, ...(photo === identityEvidenceOriginalPhoto ? {} : { photo }) })
+        if (requestId !== identityEvidenceRequestId) return
+        if (response?.code !== 0) throw new Error(response?.msg || '保存失败')
+        identityEvidenceOriginalPhoto = photo
+        Object.assign(editForm.value, response.data)
+        Object.assign(editInitialForm.value, response.data)
+        uni.showToast({ title: '认证资料已保存', icon: 'success' })
+    } catch (error) {
+        if (requestId === identityEvidenceRequestId) uni.showToast({ title: error?.message || '保存失败', icon: 'none' })
+    } finally { if (requestId === identityEvidenceRequestId) identityEvidenceSaving.value = false }
+}
+
 const imageRawFields = ref({})
 function toggleImageRaw(key) { imageRawFields.value = { ...imageRawFields.value, [key]: !imageRawFields.value[key] } }
 const databaseImageFields = {
@@ -1059,6 +1137,104 @@ function isImageData(value) { return typeof value === 'string' && (/^data:image\
 function onHistoryDeletedChange(event) {
     editForm.value.userDeleted = !!event.detail.value
     editForm.value.userDeletedAt = editForm.value.userDeleted ? (editForm.value.userDeletedAt || new Date().toISOString()) : ''
+}
+const databaseGrid = ref(null)
+const databaseView = ref('card')
+function setDatabaseView(view) {
+    databaseView.value = view
+    try { uni.setStorageSync('admin-database-view', view) } catch {}
+}
+function initializeDatabaseView() {
+    try {
+        const saved = uni.getStorageSync('admin-database-view')
+        if (saved === 'card' || saved === 'table') { databaseView.value = saved; return }
+        const info = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync()
+        databaseView.value = Number(info?.windowWidth) >= 768 ? 'table' : 'card'
+    } catch { databaseView.value = 'card' }
+}
+const columnQueries = ref({})
+const currentColumnQuery = computed(() => columnQueries.value[currentTable.value] || { filters: [], sortField: '', direction: '' })
+function applyColumnQuery(query) {
+    columnQueries.value = { ...columnQueries.value, [currentTable.value]: query }
+    currentPage.value = 1
+    loadTableData()
+}
+const gridDrafts = ref({})
+const gridSubmitting = ref(false)
+const currentGridDrafts = computed(() => gridDrafts.value[currentTable.value] || {})
+function getInlineEditFields() {
+    if (isSpecialTable(currentTable.value)) {
+        const schema = getGenericSchema(currentTable.value)
+        const fields = getBulkEditableFields().map(field => ({ ...(schema.find(column => column.key === field.key) || {}), ...field }))
+        if (currentTable.value === 'Device') {
+            return [...fields, ...['longitude', 'latitude'].map(key => {
+                const column = schema.find(entry => entry.key === key) || {}
+                return { ...column, ...makeBulkField(key, key === 'longitude' ? '经度' : '纬度', column.type || 'DECIMAL') }
+            })]
+        }
+        if (currentTable.value === 'History') {
+            return [...fields, { ...(schema.find(column => column.key === 'userId') || {}), ...makeBulkField('userId', '用户 ID', 'INTEGER') }]
+        }
+        if (currentTable.value === 'Message') {
+            return [...fields, ...['senderId', 'receiverId', 'refId'].map(key => {
+                const column = schema.find(entry => entry.key === key) || {}
+                const labels = { senderId: '发送者 ID', receiverId: '接收者 ID', refId: '引用消息 ID' }
+                return { ...column, ...makeBulkField(key, labels[key], 'INTEGER') }
+            })]
+        }
+        if (currentTable.value === 'User') {
+            return [...fields, ...['username', 'nickname', 'bio', 'phone', 'email', 'location'].map(key => {
+                const schema = getGenericSchema('User').find(field => field.key === key) || { key, type: 'STRING', allowNull: true }
+                return { ...schema, ...makeBulkField(key, schema.label || formatGenericFieldLabel(key), schema.type || 'STRING') }
+            })]
+        }
+        return fields
+    }
+    const unsafe = /(password|passwd|secret|token|salt|hash|credential|image|avatar|photo|blob|privatekey)/i
+    return getGenericEditFields().filter(field => !field.primaryKey && !field.autoIncrement && !field.generated && !field.writeOnly && !unsafe.test(field.key))
+        .filter(field => !(currentTable.value === 'UserIdentity' && ['userId', 'evidenceAttemptId', 'maskedName', 'maskedNumber'].includes(field.key)))
+}
+function stageGridEdit({ item, key, value, table = currentTable.value, rowKey = getSelectionKey(item) }) {
+    if (gridSubmitting.value) return
+    const existing = gridDrafts.value[table]?.[rowKey]
+    const changes = { ...(existing?.changes || {}) }
+    if (JSON.stringify(value) === JSON.stringify(item[key] ?? null)) delete changes[key]
+    else changes[key] = value
+    const entries = { ...(gridDrafts.value[table] || {}) }
+    if (Object.keys(changes).length) entries[rowKey] = { item: existing?.item || { ...item }, changes }
+    else delete entries[rowKey]
+    gridDrafts.value = { ...gridDrafts.value, [table]: entries }
+}
+function discardGridEdits() {
+    if (gridSubmitting.value || !Object.keys(currentGridDrafts.value).length) return
+    const table = currentTable.value
+    showAppModal(page, { title: '放弃未提交的修改', content: '确定清除当前表的全部草稿吗？', confirmText: '放弃修改',
+        success: result => { if (result.confirm) gridDrafts.value = { ...gridDrafts.value, [table]: {} } } })
+}
+async function submitGridEdits() {
+    if (gridSubmitting.value) return
+    const table = currentTable.value, entries = Object.entries(gridDrafts.value[table] || {})
+    if (!entries.length) return
+    gridSubmitting.value = true
+    let succeeded = 0, failed = 0, firstError = ''
+    try {
+        uni.showLoading({ title: '提交中…', mask: true })
+        for (const [key, draft] of entries) {
+            try {
+                const response = await updateDatabaseRecord(draft.item, draft.changes, table)
+                if (response?.code !== 0) throw new Error(response?.msg || '保存失败')
+                const remaining = { ...(gridDrafts.value[table] || {}) }
+                delete remaining[key]
+                gridDrafts.value = { ...gridDrafts.value, [table]: remaining }
+                succeeded++
+            } catch (error) { failed++; if (!firstError) firstError = error?.message || error?.msg || '保存失败' }
+        }
+    } finally {
+        gridSubmitting.value = false
+        uni.hideLoading()
+    }
+    if (currentTable.value === table && succeeded) await loadTableData()
+    uni.showModal({ title: '提交结果', content: failed ? `成功 ${succeeded} 条，失败 ${failed} 条。失败草稿已保留。\n${firstError}` : `已提交 ${succeeded} 条记录。`, showCancel: false })
 }
 const selectionMode = ref(false)
 const selectedRecordKeys = ref([])
@@ -1181,6 +1357,7 @@ const totalPages = ref(0)
 
 // 数据表配置（已由后端模型注册表动态提供）
 const legacyTableCatalog = [
+    { name: 'UserIdentity', label: '用户实名认证记录表', icon: 'user_identity_table' },
     { name: 'User', label: '用户表', icon: 'user_table' },
     { name: 'Device', label: '设备表', icon: 'device_table' },
     { name: 'Bin', label: '垃圾桶表', icon: '' },
@@ -1236,10 +1413,9 @@ const legacyTableCatalog = [
     { name: 'PlatformLoginChallenge', label: '平台登录挑战表', icon: 'platform_login_challenge_table' },
     { name: 'CollectorProfile', label: '回收员资料表', icon: 'collector_profile_table' },
     { name: 'CollectorApplication', label: '回收员申请表', icon: 'collector_application_table' },
-    { name: 'CollectorAvailability', label: '回收员排班表', icon: 'collector_availability_table' },
-    { name: 'CollectorWeeklySchedule', label: '回收员每周排班表', icon: 'collector_availability_table' },
-    { name: 'CollectorScheduleOverride', label: '回收员排班例外表', icon: 'booking_slot_table' },
-    { name: 'RecyclingPhoto', label: '回收照片表', icon: 'recognition_history_table' },
+    { name: 'CollectorScheduleDay', label: '回收员单日排班表', icon: 'collector_availability_table' },
+    { name: 'CollectorWeeklySchedule', label: '回收员每周排班表', icon: 'collector_weekly_schedule_table' },
+    { name: 'RecyclingPhoto', label: '回收照片表', icon: 'recycling_photo_table' },
     { name: 'RecyclingServiceArea', label: '回收服务区域表', icon: 'recycling_service_area_table' },
     { name: 'RecyclingLock', label: '回收并发锁表', icon: 'recycling_lock_table' },
     { name: 'BookingOrderEvent', label: '预约订单事件表', icon: 'booking_order_event_table' },
@@ -1334,7 +1510,8 @@ function getTableMeta(tableName) {
 }
 
 function canEditCurrentTable() {
-    return getTableMeta(currentTable.value)?.editable !== false
+    return legacyTableCatalog.find(table => table.name === currentTable.value)?.editable !== false
+        && getTableMeta(currentTable.value)?.editable !== false
 }
 
 function getTableRowId(item = {}) {
@@ -1461,7 +1638,7 @@ function buildGenericFieldMeta(field = {}) {
     const isEnum = type === 'ENUM'
     const editor = isBoolean ? 'switch' : (isEnum ? 'select' : (isTextSchemaType(type) || isJsonSchemaType(type) ? 'textarea' : 'input'))
     const options = isEnum ? (Array.isArray(field.values) ? field.values.map(value => ({ label: String(value), value })) : []) : []
-    const locked = !!field.autoIncrement || (!!field.primaryKey && editMode.value === 'edit')
+    const locked = !!field.autoIncrement || (!!field.primaryKey && editMode.value === 'edit') || (currentTable.value === 'UserIdentity' && editMode.value === 'edit' && ['userId', 'evidenceAttemptId', 'maskedName', 'maskedNumber'].includes(field.key))
     return {
         ...field,
         label: field.label || formatGenericFieldLabel(field.key),
@@ -1614,7 +1791,9 @@ function getRecordDetailFields(item = {}) {
             key,
             label: timeLabels[key] || getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key),
             images: getFieldImages(currentTable.value, key, value, item.type),
-            value: value === null || value === undefined ? '未设置'
+            value: genericUserIdFields.value.includes(key) && value !== null && value !== undefined && value !== ''
+                ? `${genericUserNames.value[String(value)] || '未知'} (用户ID: ${value})`
+                : value === null || value === undefined ? '未设置'
                 : (typeof value === 'object' ? JSON.stringify(value, null, 2)
                     : (typeof value === 'boolean' ? (value ? '是' : '否') : String(value)))
         }))
@@ -1771,6 +1950,7 @@ function onBinTypeFilterChange(e) {
 
 // 重置所有筛选条件
 function resetFilters() {
+    columnQueries.value = { ...columnQueries.value, [currentTable.value]: { filters: [], sortField: '', direction: '' } }
     // 重置日期
     startDate.value = ''
     endDate.value = ''
@@ -1840,7 +2020,9 @@ function clearSearch() {
     loadTableData()
 }
 
+let tableLoadRequestId = 0
 async function loadTableData() {
+    const requestId = ++tableLoadRequestId
     selectedRecordKeys.value = []
     genericUserIdFields.value = []
     genericUserNames.value = {}
@@ -1858,6 +2040,12 @@ async function loadTableData() {
         const params = {
             page: currentPage.value,
             pageSize: pageSize.value
+        }
+        const columnQuery = currentColumnQuery.value
+        if (columnQuery.filters?.length) params.columnFilters = JSON.stringify(columnQuery.filters)
+        if (columnQuery.sortField) {
+            params.columnSort = columnQuery.sortField
+            params.columnDirection = columnQuery.direction
         }
 
         // 添加搜索关键词
@@ -1935,6 +2123,7 @@ async function loadTableData() {
 
         if (!isSpecialTable(currentTable.value)) {
             const response = await getGenericTableList(currentTable.value, params)
+            if (requestId !== tableLoadRequestId) return false
             if (response && response.code === 0) {
                 genericUserIdFields.value = Array.isArray(response.data.userIdFields) ? response.data.userIdFields : []
                 genericUserNames.value = response.data.userNames || {}
@@ -1961,7 +2150,6 @@ async function loadTableData() {
             }
         }
 
-        console.log('请求参数:', params)
 
         let response
         switch (currentTable.value) {
@@ -1985,6 +2173,7 @@ async function loadTableData() {
                 break
         }
 
+        if (requestId !== tableLoadRequestId) return false
         if (response && response.code === 0) {
             tableData.value = response.data.list || []
             totalCount.value = response.data.total || 0
@@ -2007,6 +2196,7 @@ async function loadTableData() {
             return false
         }
     } catch (error) {
+        if (requestId !== tableLoadRequestId) return false
         console.error('加载数据失败:', error)
         uni.showToast({
             title: '加载失败：' + (error.msg || error.message || '网络错误'),
@@ -2025,9 +2215,11 @@ async function loadTableData() {
             }, 1000)
         }
         tableData.value = []
+        totalCount.value = 0
+        totalPages.value = 0
         return false
     } finally {
-        uni.hideLoading()
+        if (requestId === tableLoadRequestId) uni.hideLoading()
     }
 }
 
@@ -2086,7 +2278,10 @@ function handleNextPage() {
 }
 
 function getSelectionKey(item) {
-    return String(getTableRowId(item))
+    if (currentTable.value === 'Chat') return JSON.stringify([item.userId, item.otherId])
+    if (currentTable.value === 'UserDevice') return JSON.stringify([item.userId, item.deviceId])
+    const primaryKeys = getGenericSchema(currentTable.value).filter(field => field.primaryKey).map(field => field.key)
+    return primaryKeys.length > 1 ? JSON.stringify(primaryKeys.map(key => item[key])) : String(getTableRowId(item))
 }
 
 function isRecordSelected(item) {
@@ -2105,6 +2300,7 @@ function handleDataItemClick(item) {
 }
 
 function enterSelectionMode() {
+    if (!canEditCurrentTable()) return
     selectionMode.value = true
     selectedRecordKeys.value = []
 }
@@ -2187,6 +2383,7 @@ function getBulkEditableFields() {
 }
 
 function openBulkEdit() {
+    if (!canEditCurrentTable()) return
     if (!selectedRecordKeys.value.length) return
     bulkEditFields.value = getBulkEditableFields()
     if (!bulkEditFields.value.length) {
@@ -2220,6 +2417,7 @@ function onBulkEditValueChange(event) {
 }
 
 function handleAdd() {
+    if (!canEditCurrentTable()) return
     imageRawFields.value = {}
     historyDetailLoadFailed.value = false
     historyImageRequestId += 1
@@ -2269,6 +2467,12 @@ function handleAdd() {
 }
 
 function handleEdit(item) {
+    identityEvidenceRequestId += 1
+    identityEvidence.value = null
+    identityEvidenceLoading.value = false
+    identityEvidenceSaving.value = false
+    identityEvidenceOriginalPhoto = ''
+    if (!canEditCurrentTable()) return
     imageRawFields.value = {}
     historyImageRequestId += 1
     historyImageLoading.value = false
@@ -2325,6 +2529,7 @@ async function deleteDatabaseRecord(item) {
 }
 
 async function handleDelete(item) {
+    if (!canEditCurrentTable()) return
     showAppModal(page, {
         title: '确认删除',
         content: `确定要删除这条记录吗？`,
@@ -2363,6 +2568,7 @@ async function handleDelete(item) {
 }
 
 function handleBulkDelete() {
+    if (!canEditCurrentTable()) return
     const records = getSelectedRecords()
     if (!records.length) return
     showAppModal(page, {
@@ -2405,13 +2611,13 @@ function handleBulkDelete() {
     })
 }
 
-async function updateDatabaseRecord(item, data) {
-    if (!isSpecialTable(currentTable.value)) {
-        const targetId = getGenericRecordKey(item, currentTable.value)
-        return updateGenericTableRecord(currentTable.value, targetId, data)
+async function updateDatabaseRecord(item, data, tableName = currentTable.value) {
+    if (!isSpecialTable(tableName)) {
+        const targetId = getGenericRecordKey(item, tableName)
+        return updateGenericTableRecord(tableName, targetId, data)
     }
 
-    switch (currentTable.value) {
+    switch (tableName) {
         case 'User': return updateUser(item.id, data)
         case 'Device': return updateDevice(item.id, data)
         case 'UserDevice': return updateUserDevice(item.userId, item.deviceId, data)
@@ -2488,6 +2694,7 @@ function confirmBulkEdit() {
 }
 
 async function handleSave() {
+    if (!canEditCurrentTable()) return
     if (imageProcessing.value || historyImageLoading.value) return
     if (!isSpecialTable(currentTable.value)) {
         try {
@@ -2693,6 +2900,9 @@ async function previewDeviceImage(value) {
 }
 
 function closeEditModal() {
+    identityEvidenceRequestId += 1
+    identityEvidence.value = null
+    identityEvidenceOriginalPhoto = ''
     historyImageRequestId += 1
     historyImageLoading.value = false
     showEditModal.value = false
@@ -2745,7 +2955,7 @@ function highlightText(text) {
     const regex = new RegExp(`(${keyword})`, 'gi')
 
     // 替换匹配的文本为带高亮样式的 HTML
-    const highlightedText = textStr.replace(regex, '<span style=" color: #ffd700; font-weight: 800; padding: 2rpx 4rpx; border-radius: 4rpx;">$1</span>')
+    const highlightedText = textStr.replace(regex, `<span style="color: ${isDark.value ? '#ffd700' : '#9a6500'}; font-weight: 800; padding: 2rpx 4rpx; border-radius: 4rpx;">$1</span>`)
 
     return highlightedText
 }
@@ -2799,11 +3009,23 @@ async function loadStats() {
 
 // 初始化
 onMounted(async () => {
+    syncDatabaseTheme()
+    unbindThemeStorage = bindThemeStorageSync()
+    uni.$on?.('app-theme-change', syncDatabaseTheme)
+    // #ifdef H5
+    window.addEventListener('storage', onDatabaseThemeStorage)
+    // #endif
+    initializeDatabaseView()
     await loadStats()
     await loadTableData()
 })
 
 onUnmounted(() => {
+    unbindThemeStorage()
+    uni.$off?.('app-theme-change', syncDatabaseTheme)
+    // #ifdef H5
+    window.removeEventListener('storage', onDatabaseThemeStorage)
+    // #endif
 })
 </script>
 
@@ -3444,7 +3666,6 @@ onUnmounted(() => {
     z-index: 10;
     margin: 0 40rpx 30rpx;
     background: rgba(0, 35, 65, 0.95);
-    backdrop-filter: blur(20px);
     border-radius: 30rpx;
     border: 1px solid rgba(64, 224, 255, 0.4);
     padding: 28rpx;
@@ -3550,6 +3771,13 @@ onUnmounted(() => {
     background: rgba(64, 224, 255, 0.2);
 }
 
+.data-view-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 10rpx; margin: 4rpx 0 12rpx; }
+.data-view-hint { color: #8ca8bb; font-size: 20rpx; margin-left: 4rpx; }
+.data-column-option { margin-left: auto; flex-shrink: 0; }
+@media (max-width: 500px) { .data-view-hint { display: none; } }
+.data-view-label { color: #91aabb; font-size: 21rpx; margin-right: 4rpx; }
+.data-view-option { color: #a9c4d1; background: rgba(64, 224, 255, .08); border: 1px solid rgba(64, 224, 255, .2); border-radius: 9rpx; padding: 8rpx 18rpx; font-size: 21rpx; }
+.data-view-option.active { color: #072d3b; background: #61ddea; border-color: #61ddea; }
 .data-list {
     display: flex;
     flex-direction: column;
@@ -4295,4 +4523,37 @@ rich-text {
     color: rgba(255, 255, 255, 0.7);
     font-size: 22rpx;
 }
+
+/* 浅色主题：仅覆盖配色，深色主题沿用上面的样式。 */
+.database-light .database-container { background: linear-gradient(165deg, #edf8f3 0%, #f5f9f7 48%, #edf4f7 100%); }
+.database-light .tech-background { opacity: .16; }
+.database-light .status-bar { background: rgba(251, 255, 253, .96); border-color: #d9ebe3; }
+.database-light .status-bar .back-icon, .database-light .status-bar .refresh-btn .manifest-icon { filter: none; }
+.database-light .title-text { color: #173b34; }
+.database-light .back-btn, .database-light .refresh-btn, .database-light .tables-toggle { background: #e9f6f0; border-color: #c6e6d7; color: #087d60; }
+.database-light .tables-card, .database-light .search-card, .database-light .data-card, .database-light .pagination { background: rgba(255, 255, 255, .96); border-color: #d6e9e0; box-shadow: 0 6rpx 24rpx rgba(25, 94, 69, .06); }
+.database-light .tables-title, .database-light .data-title, .database-light .modal-title { color: #153d32; }
+.database-light .tables-subtitle, .database-light .table-description, .database-light .filter-label, .database-light .data-label, .database-light .selection-count, .database-light .total-text, .database-light .page-jump-label, .database-light .time-label, .database-light .form-label, .database-light .form-tip .tip-text, .database-light .footer-tip .tip-text, .database-light .data-view-hint, .database-light .data-view-label { color: #617a72; }
+.database-light .table-item, .database-light .search-container, .database-light .filter-picker, .database-light .data-item, .database-light .id-badge, .database-light .form-tip, .database-light .footer-tip { background: #f5faf7; border-color: #d6e9df; box-shadow: none; }
+.database-light .table-item.active, .database-light .data-item.selected { background: #e0f5eb; border-color: #64c59a; box-shadow: 0 3rpx 12rpx rgba(19, 144, 96, .12); }
+.database-light .table-name, .database-light .data-value, .database-light .filter-value, .database-light .search-input, .database-light .record-detail-value, .database-light .time-value { color: #243d36; }
+.database-light .search-input::placeholder, .database-light .form-input::placeholder, .database-light .form-textarea::placeholder { color: #94a9a0; }
+.database-light .table-count, .database-light .id-number, .database-light .data-value.highlight, .database-light .device-image-action, .database-light .image-raw-toggle, .database-light .page-text, .database-light .item-action-btn.detail, .database-light .picker-arrow { color: #087e60; }
+.database-light .search-icon, .database-light .search-clear { color: #648a7a; }
+.database-light .filter-container, .database-light .modal-header, .database-light .modal-footer, .database-light .record-detail-field { border-color: #e0eee6; }
+.database-light .search-btn, .database-light .action-text-btn, .database-light .action-icon-btn, .database-light .page-size-picker, .database-light .page-btn, .database-light .page-jump-btn, .database-light .data-view-option { color: #087d60; background: #eaf7f0; border-color: #cce9da; }
+.database-light .data-view-option.active { color: #fff; background: #0d9a70; border-color: #0d9a70; }
+.database-light .action-text-btn.danger, .database-light .item-action-btn.delete, .database-light .filter-reset-btn { color: #c24c50; background: #fff1f0; border-color: #f2d2cf; }
+.database-light .item-action-btn.edit { background: #e4f5ec; border-color: #bee7d1; }
+.database-light .page-jump-input, .database-light .form-input, .database-light .form-textarea, .database-light .picker-view, .database-light .bulk-edit-switch { color: #243d36; background: #f5faf7; border-color: #d3e7dc; }
+.database-light .form-input:focus, .database-light .form-textarea:focus { background: #fff; border-color: #49bb8d; }
+.database-light .modal-overlay { background: rgba(20, 45, 37, .42); }
+.database-light .modal-container, .database-light .bulk-edit-modal { background: #fff; border-color: #d6e9df; box-shadow: 0 18rpx 58rpx rgba(25, 68, 49, .18); }
+.database-light .modal-btn.cancel { color: #526b61; background: #f0f5f2; border-color: #dce8e1; }
+.database-light .modal-btn.confirm { color: #fff; background: #0d9a70; border-color: #0d9a70; }
+.database-light .form-tip { color: #617a72; }
+.database-light .no-data-text { color: #789087; }
+.database-light .database-scroll-container::-webkit-scrollbar-track, .database-light .modal-body::-webkit-scrollbar-track { background: #edf7f1; }
+.database-light .database-scroll-container::-webkit-scrollbar-thumb { background: #a8cdbb; box-shadow: none; }
+.database-light .database-scroll-container { scrollbar-color: #a8cdbb #edf7f1; }
 </style>

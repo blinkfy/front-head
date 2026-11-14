@@ -472,6 +472,30 @@ function buildCommunityOptions() {
   return out
 }
 
+function communityRowsWithZeroActivity(breakdown) {
+  const rows = Array.isArray(breakdown && breakdown.rows) ? breakdown.rows : []
+  const selectedDistrict = districtOptions.value[districtIndex.value]?.value || ''
+  const selectedCode = communityOptions.value[communityIndex.value]?.value || ''
+  const available = _state.options.filter(item =>
+    (!selectedDistrict || item.district === selectedDistrict) &&
+    (!selectedCode || item.code === selectedCode)
+  )
+  const present = new Set(rows.map(row => `${row.district || ''}\u0000${row.community || ''}`))
+  const zeros = available
+    .filter(item => !present.has(`${item.district || ''}\u0000${item.community || ''}`))
+    .map(item => ({
+      code: item.code,
+      community: item.community,
+      district: item.district,
+      engagementScore: 0,
+      activeUsers: 0,
+      totalEvents: 0,
+      lowConfidenceRate: 0,
+      categories: {}
+    }))
+  return rows.concat(zeros)
+}
+
 async function loadOptions() {
   const data = await api('/api/admin/community/options')
   _state.options   = Array.isArray(data.options)   ? data.options   : []
@@ -509,7 +533,7 @@ function renderKpi(overview) {
 
 // ─── 社区排行 ──────────────────────────────────────────
 function renderCommunityRank(breakdown) {
-  const rows = Array.isArray(breakdown && breakdown.rows) ? breakdown.rows : []
+  const rows = communityRowsWithZeroActivity(breakdown)
   const top  = rows.slice(0, 12)
   const maxScore = Math.max(1, ...top.map(item => n(item.engagementScore, 0)))
   communityRankItems.value = top.map((row, idx) => ({
@@ -579,8 +603,40 @@ function renderCategoryDonut(breakdown) {
 // ─── 趋势图 ────────────────────────────────────────────
 function polyline(points) { return points.map(p => `${p.x},${p.y}`).join(' ') }
 
-function renderTrend(trend) {
+function trendDailyWithMissingDates(trend) {
   const daily = Array.isArray(trend && trend.daily) ? trend.daily : []
+  const range = trend && trend.range
+  const start = String(range && range.startDate || '')
+  const end = String(range && range.endDate || '')
+  const parseUtcDate = value => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+    if (!match) return null
+    const timestamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    const date = new Date(timestamp)
+    return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3])
+      ? timestamp
+      : null
+  }
+  const startTime = parseUtcDate(start)
+  const endTime = parseUtcDate(end)
+  if (startTime === null || endTime === null || endTime < startTime) return daily
+
+  const byDate = new Map(daily.map(item => [String(item && item.date || '').slice(0, 10), item]))
+  const complete = []
+  for (let time = startTime; time <= endTime; time += 86400000) {
+    const date = new Date(time).toISOString().slice(0, 10)
+    complete.push(byDate.get(date) || {
+      date,
+      totalEvents: 0,
+      activeUsers: 0,
+      lowConfidenceRate: 0
+    })
+  }
+  return complete
+}
+
+function renderTrend(trend) {
+  const daily = trendDailyWithMissingDates(trend)
   // 非H5 简表
   trendRows.value = daily.map(item => ({
     date:   String(item.date).slice(5),
@@ -1001,7 +1057,7 @@ function buildAlerts(breakdown, trend) {
     else if (activeUsers <= 2 && totalEvents >= 30) pushAlert(alerts, 'p2', `${community} 使用集中度过高`, `分类量 ${fmtNumber(totalEvents)}，活跃用户仅 ${fmtNumber(activeUsers)}，建议扩展参与用户。`)
     else if (activeUsers <= 3 && totalEvents >= 25) pushAlert(alerts, 'p3', `${community} 用户活跃偏集中`, `活跃用户 ${fmtNumber(activeUsers)}，建议做轮班分流，提升稳定性。`)
   })
-  const daily = Array.isArray(trend && trend.daily) ? trend.daily : []
+  const daily = trendDailyWithMissingDates(trend)
   if (daily.length >= 2) {
     const last = daily[daily.length - 1], prev = daily[daily.length - 2]
     const lastEvents = n(last.totalEvents, 0), prevEvents = n(prev.totalEvents, 0)
@@ -1025,7 +1081,7 @@ function renderAlerts(breakdown, trend) {
 
 // ─── 社区详情列表 ──────────────────────────────────────
 function renderCommunityList(breakdown) {
-  const rows = Array.isArray(breakdown && breakdown.rows) ? breakdown.rows : []
+  const rows = communityRowsWithZeroActivity(breakdown)
   communityListItems.value = rows.slice(0, 12).map(item => {
     const categories = item.categories || {}
     const topCats = Object.entries(categories)

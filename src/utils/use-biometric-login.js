@@ -105,5 +105,5 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {} }) 
     catch (error) { const message = biometricErrorMessage(error); if (message && isActive()) uni.showToast({ title: message, icon: 'none' }) }
     return isActive()
   }
-  return { available, label, login, prefer, afterLogin }
+  return { available, label, login, prefer, afterLogin, promptOwner: systemPromptOwner }
 }

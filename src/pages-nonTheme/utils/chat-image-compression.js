@@ -1,6 +1,7 @@
 import {
   MAX_IMAGE_BYTES,
   compressUntilWithinLimit,
+  isSupportedChatImage,
   dataUrlByteLength
 } from './chat-image-compression-core.mjs'
 
@@ -13,6 +14,7 @@ function makeTempName(extension = 'jpg') {
 
 function imageMimeFromBase64(base64, path = '') {
   const lowerPath = String(path).toLowerCase().split('?')[0]
+  if (/^Qk[0-3]/.test(base64)) return 'image/bmp'
   if (/\.png$/.test(lowerPath) || base64.startsWith('iVBORw0KGgo')) return 'image/png'
   if (/\.gif$/.test(lowerPath) || base64.startsWith('R0lGOD')) return 'image/gif'
   if (/\.webp$/.test(lowerPath) || base64.startsWith('UklGR')) return 'image/webp'
@@ -114,15 +116,17 @@ async function compressH5(src) {
     filePath: originalDataUrl,
     size: blob.size
   }
-  if (dataUrlByteLength(originalDataUrl) <= MAX_IMAGE_BYTES) {
+  const supported = isSupportedChatImage(originalDataUrl)
+  if (supported && dataUrlByteLength(originalDataUrl) <= MAX_IMAGE_BYTES) {
     return { ...original, size: dataUrlByteLength(originalDataUrl) }
   }
 
   const objectUrl = URL.createObjectURL(blob)
   const prepared = { objectUrl, imagePromise: null }
   try {
+    const initial = supported ? original : await compressH5Candidate(prepared, { maxEdge: 1600, quality: 88 })
     return await compressUntilWithinLimit(
-      original,
+      initial,
       (params) => compressH5Candidate(prepared, params)
     )
   } finally {

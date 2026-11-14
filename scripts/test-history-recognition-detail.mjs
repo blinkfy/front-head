@@ -37,6 +37,8 @@ assert.equal(normalize({ version: 1, aiInsights: {
   expandedUpcycling: '方案名称：收纳盒\n所需材料：纸箱\n操作步骤：裁剪\n安全提醒：小心边缘'
 } }).isLong, true, 'multiple content blocks compact original detail')
 assert.equal(normalize({ version: 1, upcyclingImageUrl: imageUrl }).imageUrl, imageUrl)
+const downloadedImage = 'https://api.example.test/api/recognition_history/upcycling-image/12?token=fixture'
+assert.equal(normalize({ version: 1, upcyclingImageUrl: downloadedImage }).imageUrl, downloadedImage)
 assert.equal(normalize({ version: 1, upcyclingImageUrl: imageUrl }, true).hasContent, false)
 for (const invalidImage of ['javascript:alert(1)', 'https://not-a-saved-image.example/x', 'data:text/html;base64,aGVsbG8=']) {
   assert.equal(normalize({ version: 1, upcyclingImageUrl: invalidImage }).imageUrl, '')

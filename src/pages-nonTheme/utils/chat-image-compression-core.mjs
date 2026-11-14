@@ -46,6 +46,12 @@ function getDecodedCandidateSize(candidate) {
   return dataUrlByteLength(candidate?.dataUrl)
 }
 
+export function isSupportedChatImage(dataUrl) {
+  if (!/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(String(dataUrl || ''))) return false
+  // Legacy filesystem adapters sometimes labelled BMP bytes as JPEG.
+  return !/^Qk[0-3]/.test(String(dataUrl).split(',')[1]?.replace(/\s/g, '') || '')
+}
+
 function getChineseCompressionError() {
   return new Error('图片压缩后仍超过 500KB，请更换图片后重试。')
 }
@@ -60,7 +66,7 @@ export async function compressUntilWithinLimit(original, compressCandidate, opti
     ? Math.max(0, Math.floor(options.maxImageBytes))
     : MAX_IMAGE_BYTES
   const originalSize = getDecodedCandidateSize(original)
-  if (originalSize <= maxImageBytes) {
+  if (originalSize <= maxImageBytes && isSupportedChatImage(original?.dataUrl)) {
     return { ...original, size: originalSize }
   }
 
@@ -91,7 +97,7 @@ export async function compressUntilWithinLimit(original, compressCandidate, opti
       }
 
       const size = getDecodedCandidateSize(candidate)
-      if (size <= maxImageBytes) {
+      if (size <= maxImageBytes && isSupportedChatImage(candidate?.dataUrl)) {
         return { ...candidate, size }
       }
       if (candidate && onDiscard) {

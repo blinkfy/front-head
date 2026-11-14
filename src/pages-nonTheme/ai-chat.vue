@@ -356,6 +356,7 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { parseRecognitionSeedSummary } from '@/pages-nonTheme/utils/recognition-seed-display.mjs'
 import { compressChatImage, dataUrlByteLength, MAX_IMAGE_BYTES } from '@/pages-nonTheme/utils/chat-image-compression.js'
+import { uploadChatImage, imageUploadFields, prepareMessageImageUpload } from '@/api/chat-image-upload.js'
 import { resolveChatPreviewSource } from '@/pages-nonTheme/utils/chat-image-preview.js'
 import { SEED_IMAGE_BINDING_KEY, seedImageFingerprint, resolveCachedSeedImage, cachedSeedSession, findCachedSeedMessage } from '@/pages-nonTheme/utils/ai-chat-image-cache.mjs'
 import { getUserLocationOnce } from '@/utils/location.js'
@@ -1395,7 +1396,7 @@ function ensureSessionId() {
 }
 
 // ─── SSE 流式对话（仅 H5） ────────────────────────────────
-async function streamChat({ text, imageBase64, history, seedMessages, enableThinking, enableSearch, clientContext, recognitionSelection = [], runRequest = null, onRun = () => {}, isCurrent = () => !pageDisposed }) {
+async function streamChat({ text, imageBase64, imageUploadId, history, seedMessages, enableThinking, enableSearch, clientContext, recognitionSelection = [], runRequest = null, onRun = () => {}, isCurrent = () => !pageDisposed }) {
   let disposalPoints = []
   let businessCards = []
   streamStopRequested = false
@@ -1410,7 +1411,7 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
   const response = await fetch(`${baseUrl}/api/ai/chat/stream`, {
     method: 'POST',
     headers: buildAuthHeaders(true),
-    body: JSON.stringify({ workflowVersion: 1, text, imageBase64, history, seedMessages, recognitionSelection, sessionId: activeSessionId.value, enableThinking, enableSearch, clientContext, ...runRequest }),
+    body: JSON.stringify({ workflowVersion: 1, text, imageBase64, imageUploadId, history, seedMessages, recognitionSelection, sessionId: activeSessionId.value, enableThinking, enableSearch, clientContext, ...runRequest }),
     signal: requestAbortCtrl.signal
   })
 
@@ -1585,6 +1586,7 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
           workflowVersion: 1,
           text,
           imageBase64,
+          imageUploadId,
           history,
           seedMessages,
           recognitionSelection,
@@ -1674,11 +1676,11 @@ async function streamChat({ text, imageBase64, history, seedMessages, enableThin
   // #endif
 }
 
-function extractHistoryForRequest() {
+async function extractHistoryForRequest(isCurrent) {
   const conversation = ensureConversation(activeSessionId.value)
-  return conversation.messages
+  const items = await Promise.all(conversation.messages
     .slice(-10)
-    .map(item => {
+    .map(async item => {
       const entry = { role: item.role, content: item.content }
       if (item.role === 'assistant' && Array.isArray(item.businessCards) && item.businessCards.length) entry.businessCards = normalizeChatBusinessCards(item.businessCards)
       if (item.role === 'assistant' && Array.isArray(item.disposalPoints) && item.disposalPoints.length) entry.disposalPoints = normalizeChatDisposalPoints(item.disposalPoints)
@@ -1694,18 +1696,21 @@ function extractHistoryForRequest() {
         }
         // 只发送有效的 data URL 或 http URL，过滤掉本地文件路径
         if (img && (img.startsWith('data:image/') || img.startsWith('http://') || img.startsWith('https://'))) {
-          entry.imageBase64 = img
+          if (img.startsWith('data:image/')) {
+            item.imageBase64 = img
+            Object.assign(entry, await prepareMessageImageUpload(item, getStorage('token') || '', isCurrent))
+          } else entry.imageBase64 = img
         }
       }
       return entry
-    })
-    .filter(item => item.content && (item.role === 'user' || item.role === 'assistant'))
+    }))
+  return items.filter(item => item.content && (item.role === 'user' || item.role === 'assistant'))
 }
 
 // ─── 发送消息 ─────────────────────────────────────────────
-async function extractPendingPersistMessages() {
+async function extractPendingPersistMessages(isCurrent) {
   const conversation = ensureConversation(activeSessionId.value)
-  const pending = conversation.messages.filter(item => item?._pendingPersist && (item.role === 'user' || item.role === 'assistant'))
+  const pending = conversation.messages.filter(item => item?._pendingPersist && (item.role === 'user' || item.role === 'assistant')).slice(0, 6)
   for (const item of pending) {
     if (item.role === 'user' && !item.imageExpired && !item.recognitionHistoryId && item.imageBase64) {
       const compressed = await compressChatImage(item.imageBase64)
@@ -1713,14 +1718,16 @@ async function extractPendingPersistMessages() {
       item._localImagePath = compressed.filePath || ''
     }
   }
-  return pending.map(item => ({
+  const messages = await Promise.all(pending.map(async item => ({
     role: item.role, content: item.content,
     reasoning: item.role === 'assistant' ? item.reasoning : undefined,
     businessCards: item.role === 'assistant' ? normalizeChatBusinessCards(item.businessCards) : undefined,
     hasImage: (!item.imageExpired && !!item.imageBase64) || !!item.recognitionHistoryId,
     recognitionHistoryId: item.recognitionHistoryId || undefined,
-    imageBase64: item.role === 'user' && !item.imageExpired && !item.recognitionHistoryId ? item.imageBase64 : undefined
-  })).filter(item => String(item.content || '').trim())
+    ...(item.role === 'user' && !item.imageExpired && !item.recognitionHistoryId && item.imageBase64
+      ? await prepareMessageImageUpload(item, getStorage('token') || '', isCurrent) : {})
+  })))
+  return messages.filter(item => String(item.content || '').trim())
 }
 
 function markPendingPersistMessagesSaved(sessionId = activeSessionId.value, ids = null) {
@@ -1900,11 +1907,13 @@ async function onSend(options = {}) {
   const epoch = ++sendEpoch
   const seedIds = ensureConversation(sendingSessionId).messages.filter(item => item._pendingPersist && String(item.content || '').trim()).slice(0, 6).map(item => String(item.id))
   const preparation = { canceled: false }
+  const preparationIsCurrent = () => !preparation.canceled && !pageDisposed && sendingOwner === String(getStorage('token') || '') && sendingSessionId === activeSessionId.value
   pendingMessagePreparation = preparation
   try {
     if (sendingImage && dataUrlByteLength(sendingImage) > MAX_IMAGE_BYTES) throw new Error('图片需压缩到500KB以内')
-    const seedMessagesForPersist = await extractPendingPersistMessages()
-    const historyForApi = extractHistoryForRequest()
+    const seedMessagesForPersist = await extractPendingPersistMessages(preparationIsCurrent)
+    const historyForApi = await extractHistoryForRequest(preparationIsCurrent)
+    const uploadedImage = sendingImage ? await uploadChatImage(sendingImage, displayImage, sendingOwner, preparationIsCurrent) : {}
     const clientContext = getStorage('token') ? await chatEnvironment.forRequest() : {}
     const useRuns = await supportsRuns()
     if (preparation.canceled || pageDisposed || sendingOwner !== String(getStorage('token') || '') || sendingSessionId !== activeSessionId.value) return
@@ -1921,9 +1930,11 @@ async function onSend(options = {}) {
       requestedRunStop = false
     }
     pushMessageToActive('user', userText, sendingImage, new Date().toISOString(), undefined, displayImage, userLocalId)
+    const localMessage = ensureConversation(sendingSessionId).messages.find(item => String(item.id) === String(userLocalId))
+    if (localMessage && uploadedImage.imageUploadId) localMessage._imageUpload = { ...uploadedImage, owner: sendingOwner }
     messageSent = true
     if (!recognitionSelection.length) { promptText.value = ''; clearPickedImage() }
-    const streamed = await streamChat({ text: userText, imageBase64: sendingImage, history: historyForApi, seedMessages: seedMessagesForPersist, enableThinking: isDeepThinking.value, enableSearch, clientContext, recognitionSelection,
+    const streamed = await streamChat({ text: userText, ...imageUploadFields(uploadedImage), history: historyForApi, seedMessages: seedMessagesForPersist, enableThinking: isDeepThinking.value, enableSearch, clientContext, recognitionSelection,
       runRequest: pendingRun ? { runVersion: 1, requestId: pendingRun.requestId, sessionId: sendingSessionId } : null,
       isCurrent: () => !pageDisposed && epoch === sendEpoch && sendingOwner === String(getStorage('token') || ''),
       onRun: state => {

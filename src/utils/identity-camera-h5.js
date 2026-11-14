@@ -1,6 +1,7 @@
 import { measureIdentityImageQuality, identityQualityRegion, identityImageQualityIssue, identityImageQualityHint } from './identity-image-quality.mjs'
 import { createIdentityBlinkTracker } from './identity-blink.mjs'
 import { baseUrl } from '@/api/settings.js'
+import { encodeIdentityCanvas } from './identity-photo-upload.js'
 import { createIdentityActionSequence } from './identity-action-sequence.mjs'
 import { identityFaceFrame, createIdentityFramingGuard, identityCheekColor, identityLightResponse, shuffledIdentityLights } from './identity-camera-checks.mjs'
 import './identity-camera-h5.css'
@@ -114,12 +115,13 @@ export function captureIdentityWebPhoto({ actions = [] } = {}) {
       if (taking || closed || !video.videoWidth) return
       taking = true; showInstruction('正在认证', '请稍候，即将完成'); text(footerHint, '请稍候，即将完成认证')
       try {
-        const canvas = document.createElement('canvas'), scale = Math.min(1, 900 / Math.max(video.videoWidth, video.videoHeight))
-        canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale)
+        const canvas = document.createElement('canvas')
+        // Archive the whole available frame, independently of the oval preview mask.
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight
         canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
         const issue = identityImageQualityIssue(sampleQuality(canvas, points, canvas.width, canvas.height))
         if (issue) { retryQuality(issue); return }
-        const file = await new Promise(done => canvas.toBlob(done, 'image/jpeg', 0.9))
+        const file = await encodeIdentityCanvas(canvas)
         if (!file || file.size === 0) { retryQuality('unavailable'); return }
         finish({ file, assist: 'client_actions', lightFeedback })
       } catch { taking = false; finish(null, new Error('认证失败，请重新打开相机')) }

@@ -10,6 +10,9 @@ import { markAppPageReady } from "./utils/app-page-ready.mjs";
 // #ifdef H5
 import { finishH5LoginLoading } from "./utils/h5-login-loading.mjs";
 // #endif
+// #ifdef APP-PLUS
+import { installAppVersionGuard } from "./utils/app-version-guard.js";
+// #endif
 export function createApp() {
 	// #ifdef H5
 	if (typeof window !== "undefined") {
@@ -19,8 +22,16 @@ export function createApp() {
 	applyStoredTheme();
 	// #endif
 	installPageTransitions();
+	// #ifdef APP-PLUS
+	const versionGuard = installAppVersionGuard();
+	// #endif
 	const app = createSSRApp(App);
-	app.mixin({ onShow() { foregroundNotifications.refresh(); }, onReady() {
+	app.mixin({ onShow() {
+		// #ifdef APP-PLUS
+		void versionGuard.checkCurrentPage();
+		// #endif
+		foregroundNotifications.refresh();
+	}, onReady() {
 		// #ifdef H5
 		const page = this;
 		nextTick(() => {

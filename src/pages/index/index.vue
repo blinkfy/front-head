@@ -1,4 +1,5 @@
 <template>
+  <MfaLoginPanel ref="mfaPanel" :dark="false" :prompt-owner="biometricPromptOwner" />
   <!-- #ifdef APP-PLUS -->
   <app-splash v-if="showSplash" @loaded="onSplashLoaded" />
   <!-- #endif -->
@@ -226,6 +227,8 @@ import { resumeRememberedQrLogin } from '@/utils/remembered-qr-login.mjs'
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
 import { useBiometricLogin } from '@/utils/use-biometric-login.js'
 // #endif
+import MfaLoginPanel from '@/components/MfaLoginPanel.vue'
+import { userinfoForToken } from '@/api/mfa'
 import { ref, onMounted, watch } from 'vue'
 // #ifdef H5 || APP-PLUS
 import H5LoginShell from '@/components/H5LoginShell.vue'
@@ -264,7 +267,7 @@ const rememberMe = ref(true)
 const isLoading = ref(false)
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
 const { available: biometricAvailable, label: biometricLabel, login: onBiometricLogin,
-  prefer: preferBiometricLogin, afterLogin: offerBiometricLogin } = useBiometricLogin({
+  prefer: preferBiometricLogin, afterLogin: offerBiometricLogin, promptOwner: biometricPromptOwner } = useBiometricLogin({
   loading: isLoading,
   ready: async () => {
     if (showSplash.value) await new Promise(resolve => {
@@ -273,6 +276,10 @@ const { available: biometricAvailable, label: biometricLabel, login: onBiometric
   },
   onLogin: result => completeLogin(result, true, false, true)
 })
+// #endif
+const mfaPanel = ref(null)
+// #ifndef APP-PLUS || H5 || MP-WEIXIN
+const biometricPromptOwner = null
 // #endif
 const wechatBindPending = ref(false)
 // #ifdef MP-WEIXIN
@@ -456,6 +463,18 @@ function handleKeyup(event) {
 async function onQrLogin(result) {
   if (isLoading.value) return
   isLoading.value = true
+  if (result?.requiresMfa) {
+    try {
+      result = await mfaPanel.value.open(result)
+      if (!result?.token) { isLoading.value = false; return }
+      const profile = await userinfoForToken(result.token)
+      result.userInfo = profile.data
+    } catch (error) {
+      isLoading.value = false
+      uni.showToast({ title: error.message || '登录未完成，请重试', icon: 'none' })
+      return
+    }
+  }
   commitRegistrationLogin(registrationRuntime, result)
   uni.setStorageSync('autoLogin', rememberMe.value)
   uni.setStorageSync('rememberedQrLogin', rememberMe.value)
@@ -472,6 +491,11 @@ async function onQrLogin(result) {
 // #endif
 
 async function completeLogin(res, isauto, isWechat = false, isBiometric = false) {
+  if (res?.requiresMfa) {
+    res = await mfaPanel.value.open(res)
+    if (!res?.token) { isLoading.value = false; return }
+  }
+  if (!res?.token) { isLoading.value = false; return }
   // #ifdef H5 || APP-PLUS
   uni.removeStorageSync('rememberedQrLogin')
   // #endif

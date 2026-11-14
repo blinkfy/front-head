@@ -374,6 +374,7 @@ import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import { useAppConfirmDialog } from '@/utils/use-app-confirm-dialog.js'
 const { appConfirmDialog, showPageModal } = useAppConfirmDialog()
 import { recentRecognition } from '@/utils/recent-recognition.js'
+import { resolveUpcyclingImage } from '@/utils/image-download.mjs'
 // #ifdef MP-WEIXIN
 import { handleRegistrationQrScan } from '@/utils/registration-relay.mjs'
 // #endif
@@ -1189,7 +1190,7 @@ function applyEnhancedRecognitionData(recognizeData, restored = false) {
   upcyclingSections.value = upcyclingText ? splitUpcyclingSections(upcyclingText) : []
 
   if (recognizeData.upcyclingImageUrl) {
-    upcyclingImageUrl.value = recognizeData.upcyclingImageUrl
+    upcyclingImageUrl.value = resolveUpcyclingImage(recognizeData.upcyclingImageUrl, getBaseUrl(), uni.getStorageSync('token'))
     imageLoading.value = false
   } else if (recognizeData.upcyclingTaskId) {
     upcyclingTaskId.value = recognizeData.upcyclingTaskId
@@ -1295,7 +1296,7 @@ async function startUpcyclingPoll() {
       const token = uni.getStorageSync('token') || ''
       const res = await new Promise((resolve, reject) => {
         uni.request({
-          url: `${base}/api/upcycling-image/${taskId}`,
+          url: `${base}/api/upcycling-image/${taskId}${token ? '?imageTransport=url' : ''}`,
           method: 'GET',
           header: { Authorization: token },
           success: (r) => resolve(r.data),
@@ -1306,9 +1307,10 @@ async function startUpcyclingPoll() {
       if (revision !== upcyclingPollRevision) return
       if (res && res.code === 0 && res.data) {
         if (res.data.status === 'done' && res.data.url) {
-          recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: res.data.url })
+          const url = resolveUpcyclingImage(res.data.url, base, token)
+          recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: url })
           pendingUpcyclingSound = pageVisible ? taskId : ''
-          upcyclingImageUrl.value = res.data.url
+          upcyclingImageUrl.value = url
           upcyclingTaskId.value = ''
           imageLoading.value = false
           return

@@ -1,5 +1,8 @@
 <template>
   <RecyclingShell title="实名认证" :dark="isDark" variant="workbench">
+    <!-- #ifdef MP-WEIXIN -->
+    <canvas type="2d" id="upload-image-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;" />
+    <!-- #endif -->
     <view class="identity-intro"><text class="identity-title">让每一次上门更安心</text><text class="recycle-muted">认证与当前账号绑定，成为回收员前需完成。</text></view>
     <view v-if="webHandoff" class="identity-notice"><text class="recycle-copy">正在为账号「{{ handoffAccount || '原应用账号' }}」认证。完成后请返回原应用。</text></view>
     <view v-if="error" class="recycle-error">{{ error }}</view>
@@ -206,7 +209,8 @@ export default {
       this.submitting = true; this.error = ''
       const challengeId = this.challenge.id
       try {
-        const result = await submitIdentity({ challengeId, consentVersion: this.challenge.consentVersion, ...fields }, this.photo)
+        const result = await submitIdentity({ challengeId, consentVersion: this.challenge.consentVersion, ...fields }, this.photo,
+          { isCurrent: () => !this.pageClosed && this.challenge?.id === challengeId })
         if (this.pageClosed) return
         this.identityVersion = (this.identityVersion || 0) + 1
         this.identity = { ...this.identity, ...(result.identity || {}), verified: result.verified,
@@ -215,6 +219,7 @@ export default {
         if (result.verified) { this.captureFailure = ''; this.name = ''; this.number = '' }
         if (result.status === 'processing' && this.pageVisible) this.pollTimer = setTimeout(() => this.refresh(), 3000)
       } catch (e) {
+        if (e.cancelled) return
         if (!this.pageClosed) {
           if (e.retry) this.identity = { ...this.identity, retry: e.retry }
           await this.refresh()

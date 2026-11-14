@@ -32,6 +32,7 @@ import { initUiSounds, setUiSoundsActive } from '@/utils/ui-sounds.js'
 import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/device-qr-entry.mjs'
 // #ifdef APP-PLUS
 import { checkAppUpdate } from '@/utils/app-update.js'
+import { appVersionGuard } from '@/utils/app-version-guard.js'
 import { initBusinessNotificationNavigation, resumeBusinessNotification } from '@/utils/business-notification.js'
 import { getHuaweiPushToken, deleteHuaweiPushToken } from '@/uni_modules/ftx-huawei-push'
 import { installChatPush, syncChatPush } from '@/utils/chat-push.js'
@@ -165,6 +166,7 @@ export default {
     // #endif
     setUiSoundsActive(true)
     // #ifdef APP-PLUS
+    void appVersionGuard().checkCurrentPage({ force: true })
     syncChatPush(uni.getStorageSync('token') || '', true)
     initBusinessNotificationNavigation()
     void resumeBusinessNotification()

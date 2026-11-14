@@ -1,5 +1,8 @@
 import { DEVICE_SCAN_PAGE, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl, getDeviceQrScanContent, resolveDeviceQrPathTarget } from './device-qr-entry.mjs'
 import { isPhoneBrowser } from './h5-scan-entry.mjs'
+// #ifdef APP-PLUS
+import { appVersionGuard } from './app-version-guard.js'
+// #endif
 export { getDeviceQrScanContent } from './device-qr-entry.mjs'
 // #ifdef MP-WEIXIN
 import { handleRegistrationQrScan } from './registration-relay.mjs'
@@ -186,6 +189,16 @@ export function saveMockDeviceConnection(device = MOCK_DEVICE) {
 }
 
 export function scanAndConnectDevice(onMockConnected) {
+  // #ifdef APP-PLUS
+  void appVersionGuard().ensure({ feature: 'device' }).then(allowed => { if (allowed) scanAndConnectDeviceAllowed(onMockConnected) })
+  return
+  // #endif
+  // #ifndef APP-PLUS
+  return scanAndConnectDeviceAllowed(onMockConnected)
+  // #endif
+}
+
+function scanAndConnectDeviceAllowed(onMockConnected) {
   let platform, uniPlatform, isH5 = false
 
   try {

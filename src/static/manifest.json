@@ -1594,5 +1594,53 @@
     "recommended_size": 64,
     "file": "icons/recycling_device_delivery_table_64.webp",
     "mp_file": "icons/recycling_device_delivery_table_64.png"
+  },
+  {
+    "id": "user_identity_table",
+    "zh_name": "用户实名认证表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/user_identity_table_64.png",
+    "mp_file": "icons/user_identity_table_64.png"
+  },
+  {
+    "id": "identity_attempt_table",
+    "zh_name": "实名认证任务表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/identity_attempt_table_64.png",
+    "mp_file": "icons/identity_attempt_table_64.png"
+  },
+  {
+    "id": "identity_budget_table",
+    "zh_name": "实名认证调用计数表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/identity_budget_table_64.png",
+    "mp_file": "icons/identity_budget_table_64.png"
+  },
+  {
+    "id": "collector_weekly_schedule_table",
+    "zh_name": "回收员每周排班表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/collector_weekly_schedule_table_64.png",
+    "mp_file": "icons/collector_weekly_schedule_table_64.png"
+  },
+  {
+    "id": "collector_schedule_override_table",
+    "zh_name": "回收员排班例外表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/collector_schedule_override_table_64.png",
+    "mp_file": "icons/collector_schedule_override_table_64.png"
+  },
+  {
+    "id": "recycling_photo_table",
+    "zh_name": "回收照片表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/recycling_photo_table_64.png",
+    "mp_file": "icons/recycling_photo_table_64.png"
   }
 ]

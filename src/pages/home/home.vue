@@ -380,6 +380,7 @@ import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import { useAppConfirmDialog } from '@/utils/use-app-confirm-dialog.js'
 const { appConfirmDialog } = useAppConfirmDialog()
 import { recentRecognition } from '@/utils/recent-recognition.js'
+import { resolveUpcyclingImage } from '@/utils/image-download.mjs'
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch, getCurrentInstance } from 'vue'
 import { trackOnboardingFocus, queryOnboardingRects, getOnboardingViewport, getOnboardingScrollTop } from '@/utils/onboarding-focus.mjs'
 import { onPageScroll, onShow, onHide, onUnload, onResize } from '@dcloudio/uni-app'
@@ -1309,7 +1310,7 @@ function applyEnhancedRecognitionData(recognizeData, restored = false) {
 
   // 处理变废为宝效果图
   if (recognizeData.upcyclingImageUrl) {
-    upcyclingImageUrl.value = recognizeData.upcyclingImageUrl
+    upcyclingImageUrl.value = resolveUpcyclingImage(recognizeData.upcyclingImageUrl, getBaseUrl(), uni.getStorageSync('token'))
     imageLoading.value = false
   } else if (recognizeData.upcyclingTaskId) {
     // 异步生成模式：启动轮询
@@ -1418,7 +1419,7 @@ async function startUpcyclingPoll() {
       const token = uni.getStorageSync('token') || ''
       const res = await new Promise((resolve, reject) => {
         uni.request({
-          url: `${base}/api/upcycling-image/${taskId}`,
+          url: `${base}/api/upcycling-image/${taskId}${token ? '?imageTransport=url' : ''}`,
           method: 'GET',
           header: { Authorization: token },
           success: (r) => resolve(r.data),
@@ -1429,9 +1430,10 @@ async function startUpcyclingPoll() {
       if (revision !== upcyclingPollRevision) return
       if (res && res.code === 0 && res.data) {
         if (res.data.status === 'done' && res.data.url) {
-          recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: res.data.url })
+          const url = resolveUpcyclingImage(res.data.url, base, token)
+          recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: url })
           pendingUpcyclingSound = pageVisible ? taskId : ''
-          upcyclingImageUrl.value = res.data.url
+          upcyclingImageUrl.value = url
           upcyclingTaskId.value = ''
           imageLoading.value = false
           console.log('[upcycling poll] 效果图生成成功')

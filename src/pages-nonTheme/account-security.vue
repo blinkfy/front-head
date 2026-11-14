@@ -65,6 +65,8 @@
         <!-- #endif -->
       </view>
 
+      <view class="settings-section"><MfaSecurity ref="mfaSecurity" :dark="isDarkTheme" @changed="loadProfile" /></view>
+
       <view class="settings-section">
         <text class="section-title">微信登录</text>
         <view class="setting-item">
@@ -116,6 +118,8 @@
 import { computed, ref } from 'vue'
 import { onShow, onHide } from '@dcloudio/uni-app'
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import MfaSecurity from '@/components/MfaSecurity.vue'
+const mfaSecurity = ref(null)
 import { getUserProfile, getWechatLoginSettings, getPreviousLogin } from '@/api/user'
 import { ThemeManager } from '@/utils/theme.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
@@ -149,7 +153,7 @@ const recentLoginTime = computed(() => {
   const pad = value => String(value).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 })
-const recentLoginMethod = computed(() => ({ password: '密码登录', 'wechat-password': '微信密码登录', wechat: '微信登录', biometric: '指纹或面容登录', passkey: '通行密钥登录', soter: '微信指纹或面容登录', qr: '扫码登录' }[recentLogin.value?.method] || '账号登录'))
+const recentLoginMethod = computed(() => ({ password: '密码登录', 'wechat-password': '微信密码登录', wechat: '微信登录', biometric: '指纹或面容登录', passkey: '通行密钥登录', soter: '微信指纹或面容登录', qr: '扫码登录', mfa: '双因素验证登录' }[recentLogin.value?.method] || '账号登录'))
 async function loadRecentLogin() {
   const token = uni.getStorageSync('token')
   recentLogin.value = null
@@ -337,6 +341,7 @@ onShow(() => {
   profile.value = readCachedProfile()
   avatarFailed.value = false
   loadWechatSettings()
+  void mfaSecurity.value?.reload()
   void loadRecentLogin()
   // #ifdef APP-PLUS || H5 || MP-WEIXIN
   biometricActive = true

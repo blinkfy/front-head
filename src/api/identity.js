@@ -1,4 +1,7 @@
 import { baseUrl } from './settings.js'
+// #ifndef H5
+import { prepareIdentityUpload } from '@/utils/identity-photo-upload.js'
+// #endif
 const IDENTITY_CONSENT_VERSION = 'identity-2026-11-v2'
 let webSession = null
 let sessionGeneration = 0
@@ -52,13 +55,13 @@ export async function exchangeIdentityWebSession(code) {
   return { ...result, persisted }
 }
 
-export async function submitIdentity(fields, capture) {
+export async function submitIdentity(fields, capture, { isCurrent = () => true } = {}) {
   const authorization = headers()
   let response
   // #ifdef H5
   const form = new FormData()
   Object.entries(fields).forEach(([key, value]) => form.append(key, value))
-  form.append('file', capture.file, 'capture.jpg')
+  form.append('file', capture.file, capture.file.type === 'image/webp' ? 'capture.webp' : 'capture.jpg')
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30000)
   try {
@@ -68,12 +71,18 @@ export async function submitIdentity(fields, capture) {
   finally { clearTimeout(timer) }
   // #endif
   // #ifndef H5
-  response = await new Promise((resolve, reject) => uni.uploadFile({
-    url: `${baseUrl}/api/identity/verify`, filePath: capture.path, name: 'file', formData: fields,
-    header: authorization, timeout: 30000,
-    success: res => { try { resolve(JSON.parse(res.data)) } catch { reject(new Error('未取得认证结果，请刷新认证状态，勿重复提交')) } },
-    fail: () => reject(new Error('未取得认证结果，请刷新认证状态，勿重复提交'))
-  }))
+  const upload = await prepareIdentityUpload(capture)
+  try {
+    let sameSession = false
+    try { sameSession = headers().Authorization === authorization.Authorization } catch (_) {}
+    if (!isCurrent() || !sameSession) throw Object.assign(new Error('已取消认证'), { cancelled: true })
+    response = await new Promise((resolve, reject) => uni.uploadFile({
+      url: `${baseUrl}/api/identity/verify`, filePath: upload.path, name: 'file', formData: fields,
+      header: authorization, timeout: 30000,
+      success: res => { try { resolve(JSON.parse(res.data)) } catch { reject(new Error('未取得认证结果，请刷新认证状态，勿重复提交')) } },
+      fail: () => reject(new Error('未取得认证结果，请刷新认证状态，勿重复提交'))
+    }))
+  } finally { upload.cleanup() }
   // #endif
   if (response?.code !== 0) throw identityRequestError(response)
   return response.data

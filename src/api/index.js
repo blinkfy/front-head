@@ -1,4 +1,8 @@
 import { baseUrl } from './settings'
+import { isMfaTransition } from '@/utils/mfa-session-transition.mjs'
+// #ifdef APP-PLUS
+import { appVersionGuard } from '@/utils/app-version-guard.js'
+// #endif
 import { clearChatBadge } from '@/utils/app-chat-badge.js'
 import {
   markDatabaseOffline,
@@ -23,7 +27,9 @@ function isExplicitlyLoggedOut() {
   }
 }
 
-function handleUnauthorized() {
+function handleUnauthorized(requestToken) {
+  // A response from an old session must not erase a newer login/MFA grant.
+  if (requestToken !== getToken() || isMfaTransition(requestToken)) return
   // 用户已主动退出时，旧页面中尚未完成的请求不应再提示或重新跳转登录页。
   if (isExplicitlyLoggedOut() || loginPromptActive) return
 
@@ -169,6 +175,12 @@ function request({
       ...(Number.isFinite(timeout) && timeout > 0 ? { timeout } : {}),
       success: res => {
         const responseData = res?.data && typeof res.data === 'object' ? res.data : {}
+        // #ifdef APP-PLUS
+        if (appVersionGuard().handleUpgrade(res)) {
+          reject(requestError(responseData, responseData.msg || '请升级应用后使用'))
+          return
+        }
+        // #endif
         if (isDatabaseHealthEndpoint(url)) {
           updateDatabaseStatusFromAvailability(responseData, {
             runtime: databaseStatusRuntime,
@@ -187,7 +199,7 @@ function request({
           ) {
             resolve(res.data)
           } else if (responseData.code === 401 || responseData.error === 'Unauthorized') {
-            handleUnauthorized()
+            handleUnauthorized(token)
             reject(requestError(responseData, responseErrorMessage(responseData, '请重新登录')))
           } else if (responseData.code === 2) {
             // 数据库临时关闭：持久化降级状态，并对连续失败做 toast 去重。
@@ -208,7 +220,7 @@ function request({
         } else {
           const message = httpErrorMessage(res)
           if (res?.statusCode === 401) {
-            handleUnauthorized()
+            handleUnauthorized(token)
           } else if (responseData.code === 2) {
             markDatabaseOffline({ runtime: databaseStatusRuntime, message, source: url, notify: !silent })
           } else if (!silent) {

@@ -1,4 +1,6 @@
 import request from './index.js'
+import { config } from './config.js'
+import { resolveUpcyclingImage } from '../utils/image-download.mjs'
 
 /**
  * 获取单条历史记录的图片（点开详情时按需加载）
@@ -17,14 +19,18 @@ export async function getHistoryImage(id) {
 
 /** 获取已保存的识别补充内容，不触发再次识别。 */
 export async function getHistoryRecognitionDetail(id) {
-  return await request({
+  const result = await request({
     url: `/api/recognition_history/detail/${id}`,
     method: 'GET',
+    data: { imageTransport: 'url' },
     silent: true,
     header: {
       'Authorization': `Bearer ${uni.getStorageSync('token')}`
     }
   })
+  const details = result?.data?.details
+  if (details?.upcyclingImageUrl) details.upcyclingImageUrl = resolveUpcyclingImage(details.upcyclingImageUrl, config.baseUrl, uni.getStorageSync('token'))
+  return result
 }
 
 /**

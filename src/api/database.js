@@ -582,3 +582,10 @@ export function deleteDevice(id) {
       needAuth: true
     })
   }
+
+export function getAdminIdentityEvidence(id) {
+  return request({ url: `/api/admin/identity-evidence/${encodeURIComponent(id)}`, method: 'GET', needAuth: true })
+}
+export function updateAdminIdentityEvidence(id, data) {
+  return request({ url: `/api/admin/identity-evidence/${encodeURIComponent(id)}`, method: 'PUT', data, needAuth: true })
+}

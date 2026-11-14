@@ -13,8 +13,9 @@ const catalogSource = fs.readFileSync(path.join(root, 'src/pages-admin/database.
 const catalog = vm.runInNewContext(catalogSource.match(/const legacyTableCatalog = (\[[\s\S]*?\n\])/)[1])
 const newTables = ['ShopProduct', 'UserLoginLocation', 'BiometricCredential', 'BiometricChallenge',
   'PlatformLoginCredential', 'PlatformLoginChallenge', 'CollectorProfile', 'CollectorApplication',
-  'CollectorAvailability', 'RecyclingServiceArea', 'RecyclingLock', 'BookingOrderEvent', 'BookingChatBinding',
-  'RecyclingRequest', 'RecyclingDelivery', 'RecyclingDeviceDelivery']
+  'CollectorScheduleDay', 'RecyclingServiceArea', 'RecyclingLock', 'BookingOrderEvent', 'BookingChatBinding',
+  'RecyclingRequest', 'RecyclingDelivery', 'RecyclingDeviceDelivery', 'UserIdentity',
+  'CollectorWeeklySchedule', 'RecyclingPhoto']
 const resolverSource = fs.readFileSync(path.join(root, 'src/utils/manifest-icons.js'), 'utf8')
 const { NON_THEME_ONLY_ICON_IDS } = await import('../src/utils/mp-subpackage-icons.mjs')
 for (const [platform, flags] of [['MP', { MP: true, MP_WEIXIN: true }], ['H5', { H5: true }]]) {
@@ -37,6 +38,8 @@ for (const [platform, flags] of [['MP', { MP: true, MP_WEIXIN: true }], ['H5', {
       .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), `${id} uses genuine PNG bytes in the mini program`)
   }
 }
-assert.ok(catalog.every(table => table.editable !== false), 'client catalog permits editing all tables')
+assert.ok(catalog.every(table => table.editable !== false), 'all tables are editable')
+const configuredIcons = catalog.map(table => table.icon).filter(Boolean)
+assert.equal(new Set(configuredIcons).size, configuredIcons.length, 'each configured table has a distinct icon')
 assert.match(fs.readFileSync(path.join(root, 'src/pages-nonTheme/settings.vue'), 'utf8'), /id="call_recordings"/)
 console.log('Admin table coverage, editable catalog, recording entry and platform icon assets passed.')

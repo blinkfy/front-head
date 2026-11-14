@@ -26,12 +26,11 @@ instance = biometricLogin
 // #endif
 // #ifdef H5
 platform = 'web'
-instance = createPlatformQuickLogin({ runtime, api: biometricApi,
-  scope: `web:${baseUrl}:${window.location.origin}`,
-  adapter: createPasskeyAdapter({ api: biometricApi, environment: {
+const webAdapter = createPasskeyAdapter({ api: biometricApi, environment: {
     isSecureContext: window.isSecureContext, navigator: window.navigator, PublicKeyCredential: window.PublicKeyCredential,
     AbortController: window.AbortController, atob: window.atob.bind(window), btoa: window.btoa.bind(window)
-  } }) })
+  } })
+instance = createPlatformQuickLogin({ runtime, api: biometricApi, scope: `web:${baseUrl}:${window.location.origin}`, adapter: webAdapter })
 // #endif
 // #ifdef MP-WEIXIN
 platform = 'weixin'
@@ -42,6 +41,14 @@ instance = createPlatformQuickLogin({ runtime, api: biometricApi, scope: `weixin
 instance = { state: () => ({ enabled: false }), capability: async () => ({ supported: false, enrolled: false }),
   afterLogin: async () => {}, cancel() {}, forgetBinding: async () => {} }
 // #endif
+export function quickLoginForMfa(ticket, isActive, owner) {
+  // #ifdef H5
+  return webAdapter.login({ mfaTicket: ticket, isActive })
+  // #endif
+  // #ifndef H5
+  return instance.login(isActive, owner)
+  // #endif
+}
 export const quickLogin = instance
 export const quickLoginPlatform = platform
 export const quickLoginApi = (path, data, token, method) => path.startsWith('/userinfo') && instance.probeSession

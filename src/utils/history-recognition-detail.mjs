@@ -15,7 +15,7 @@ export function normalizeHistoryRecognitionDetail(details, imageFailed = false) 
     key: `${section.title}:${index}`
   }))
   const savedImage = text(source.upcyclingImageUrl)
-  const imageUrl = !imageFailed && /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(savedImage) ? savedImage : ''
+  const imageUrl = !imageFailed && (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(savedImage) || /^https?:\/\/[^\s/]+\/api\/recognition_history\/upcycling-image\/[1-9]\d*(?:\?[^\s#]*)?$/i.test(savedImage)) ? savedImage : ''
   const blockCount = (items.length ? 1 : 0) + sections.length + (imageUrl ? 1 : 0)
   const content = [...items, ...sections.map(section => section.content)].join('\n')
   return {

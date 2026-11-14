@@ -134,7 +134,7 @@ export function createH5RegistrationRelay({ api, onState, onLogin, now = Date.no
         emit('consuming')
         const result = await api.consume(target)
         if (!current(revision, target)) return
-        if (!result.token || !result.userInfo) throw new Error('扫码登录结果不完整，请重新扫码')
+        if (!result.requiresMfa && (!result.token || !result.userInfo)) throw new Error('扫码登录结果不完整，请重新扫码')
         session.status = 'consumed'
         // A hidden tab may retain a completed response, but must not navigate until shown again.
         if (active) { loginDelivered = true; emit('complete'); onLogin(result) }
@@ -227,6 +227,7 @@ export function createH5RegistrationRelay({ api, onState, onLogin, now = Date.no
 }
 
 export function commitRegistrationLogin(runtime, result) {
+  if (result?.requiresMfa || !result?.token) throw new Error('请先完成双因素验证')
   runtime.setStorageSync('token', result.token)
   runtime.setStorageSync('userInfo', result.userInfo)
   if (result.isAdmin === true) runtime.setStorageSync('isAdmin', true)

@@ -10,6 +10,7 @@ import { areUiSoundsEnabled } from './ui-sounds.js'
 import { requestRealtimePermissions } from './realtime-permissions.js'
 // #ifdef APP-PLUS
 import { syncNativeRecordingConfiguration } from './call-recordings.js'
+import { appVersionGuard } from './app-version-guard.js'
 // #endif
 let channelSequence = 0
 export function syncAndroidMessagingPreference() {
@@ -94,6 +95,7 @@ export function setAndroidRealtimeForeground(value) {
 }
 export function connectChatEventsSocket(options) {
   // #ifdef APP-PLUS
+  options = { ...options, url: appVersionGuard().socketUrl(options.url) }
   if (androidRealtimeAvailable()) {
     let message, close, error, disposed = false
     const channel = `socket_${++channelSequence}`
@@ -103,7 +105,10 @@ export function connectChatEventsSocket(options) {
         const envelope = JSON.parse(json)
         if (envelope.channel !== channel) return
         const event = JSON.parse(envelope.event)
-        if (event.type === 'message') message?.({ data: event.data })
+        if (event.type === 'message') {
+          appVersionGuard().handleUpgrade(event.data)
+          message?.({ data: event.data })
+        }
         else if (event.type === 'close') close?.({ code: event.code })
         else if (event.type === 'status') {
           console.info('[chat-push]', { stage: 'background-receiver', status: event.data })
