@@ -14,14 +14,19 @@
       <button class="text-button" :disabled="busy" @click="show('verify')">重新验证</button>
       <button class="text-button" :disabled="busy" @click="show('recovery')">更新恢复码</button>
       <button v-if="status.totpEnabled === false" class="text-button" :disabled="busy" @click="show('totp-password')">添加验证器</button>
+      <button v-if="status.wechatAvailable" class="text-button" :disabled="busy" @click="show(status.wechatEnabled ? 'wechat-remove' : 'wechat-add')">{{ status.wechatEnabled ? '关闭微信验证' : '开启微信验证' }}</button>
     </view>
     <view v-if="stage" class="security-overlay" @touchmove.stop.prevent>
       <view class="security-dialog">
         <text class="dialog-title">{{ titles[stage] }}</text>
-        <template v-if="stage === 'password' || stage === 'totp-password'">
-          <text class="dialog-copy">{{ bindingTotp ? '确认当前账号密码，添加动态码验证器。' : '输入当前账号密码，选择一种验证方式即可。' }}</text>
+        <template v-if="stage === 'password' || stage === 'totp-password' || stage === 'wechat-add' || stage === 'wechat-remove'">
+          <text class="dialog-copy">{{ stage === 'wechat-remove' ? '确认账号密码；请先用系统认证、动态码或恢复码重新验证。' : stage === 'wechat-add' ? '确认账号密码，再使用微信验证。' : bindingTotp ? '确认当前账号密码，添加动态码验证器。' : '输入当前账号密码，选择一种验证方式即可。' }}</text>
           <input v-model="password" class="security-input" password maxlength="128" placeholder="当前账号密码" :disabled="busy" />
-          <template v-if="bindingTotp">
+          <template v-if="stage === 'wechat-add' || stage === 'wechat-remove'">
+            <button class="primary-button" :loading="busy" :disabled="busy || !password" @click="stage === 'wechat-add' ? start('wechat-add') : removeWechat()">{{ stage === 'wechat-add' ? '继续微信确认' : '确认关闭' }}</button>
+            <button v-if="quickBound" class="text-button quick-action" :disabled="busy || !password" @click="verifyWithQuick">使用{{ quickName }}验证并继续</button>
+          </template>
+          <template v-else-if="bindingTotp">
             <button class="primary-button" :loading="busy" :disabled="busy || !password" @click="start('totp-add')">下一步</button>
             <button v-if="quickBound" class="text-button quick-action" :disabled="busy || !password" @click="verifyWithQuick">使用{{ quickName }}验证并继续</button>
           </template>
@@ -29,6 +34,7 @@
             <text v-if="quickLoading" class="dialog-copy">正在检查系统认证…</text>
             <button v-if="quickSupport.supported && quickSupport.enrolled" class="primary-button" :loading="busy" :disabled="busy || !password || !user?.id" @click="start('quick')">使用{{ quickName }}</button>
             <button class="secondary-button" :loading="busy" :disabled="busy || !password" @click="start('totp')">使用动态码验证器</button>
+            <button v-if="status.wechatAvailable" class="secondary-button" :loading="busy" :disabled="busy || !password" @click="start('wechat')">使用微信验证</button>
           </template>
         </template>
         <template v-else-if="stage === 'setup'">
@@ -58,6 +64,7 @@
       </view>
     </view>
   </view>
+  <WechatMfaApproval ref="wechatApproval" :dark="dark" />
 </template>
 
 <script setup>
@@ -66,16 +73,18 @@ import { mfaRequest, saveMfaSession } from '@/api/mfa'
 import { quickLogin, quickLoginForSetup } from '@/utils/quick-login.js'
 import { biometricErrorMessage } from '@/utils/biometric-login-core.mjs'
 import { beginMfaTransition } from '@/utils/mfa-session-transition.mjs'
+import WechatMfaApproval from './WechatMfaApproval.vue'
 const props = defineProps({ dark: Boolean, user: Object, promptOwner: Object })
 const emit = defineEmits(['changed'])
 const status = ref(null), loadError = ref(false), busy = ref(false), stage = ref(''), switchVersion = ref(0)
 const password = ref(''), code = ref(''), error = ref(''), setup = ref({}), recoveryCodes = ref([]), saved = ref(false)
 const bindingTotp = ref(false)
+const wechatApproval = ref(null)
 const copied = ref(''), quickLoading = ref(false), quickSupport = ref({ supported: false, enrolled: false }), quickState = ref({})
 const quickName = computed(() => (quickSupport.value.label || '系统认证').replace(/登录$/, ''))
 const quickBound = computed(() => quickSupport.value.supported && quickSupport.value.enrolled && quickState.value.enabled &&
   Boolean(quickState.value.credentialId) && String(quickState.value.userId) === String(props.user?.id))
-const titles = { 'totp-password': '添加验证器', password: '开启双因素验证', setup: '绑定验证器', saved: '保存恢复码', disable: '关闭双因素验证', verify: '验证身份', recovery: '更新恢复码' }
+const titles = { 'wechat-add': '开启微信验证', 'wechat-remove': '关闭微信验证', 'totp-password': '添加验证器', password: '开启双因素验证', setup: '绑定验证器', saved: '保存恢复码', disable: '关闭双因素验证', verify: '验证身份', recovery: '更新恢复码' }
 let alive = true, requestGeneration = 0, actionToken = '', copyTimer
 const current = token => alive && token && token === uni.getStorageSync('token')
 async function reload() {
@@ -109,9 +118,19 @@ async function start(method = 'totp') {
   let finishTransition = () => {}
   try {
     const token = actionToken
-    const result = await mfaRequest(method === 'totp-add' ? 'totp/setup' : 'setup', { password: password.value, method }, token)
+    const result = await mfaRequest(method === 'wechat-add' ? 'wechat/binding' : method === 'totp-add' ? 'totp/setup' : 'setup', { password: password.value, method }, token)
     if (!current(token)) return
-    if (method === 'quick') {
+    if (method === 'wechat' || method === 'wechat-add') {
+      finishTransition = beginMfaTransition(token)
+      const enabled = await wechatApproval.value.open(result.data.setupTicket)
+      if (!current(token) || !enabled) return
+      if (!enabled.mfaEnabled || !enabled.mfaVerified || String(enabled.accountId) !== String(props.user?.id)) throw new Error('微信确认未完成，请重新尝试')
+      if (await accept(enabled, token)) {
+        password.value = ''
+        if (enabled.recoveryCodes) { recoveryCodes.value = enabled.recoveryCodes; saved.value = false; stage.value = 'saved' }
+        else { stage.value = ''; uni.showToast({ title: '微信确认已开启', icon: 'none' }) }
+      }
+    } else if (method === 'quick') {
       if (!saveMfaSession(result.data, token)) return
       actionToken = result.data.token
       finishTransition = beginMfaTransition(actionToken)
@@ -160,6 +179,8 @@ async function verifyWithQuick() {
     if (!await accept(result, token)) return
     if (action === 'verify') { stage.value = ''; uni.showToast({ title: '身份验证成功', icon: 'none' }) }
     else if (action === 'totp-password') { busy.value = false; await start('totp-add') }
+    else if (action === 'wechat-add') { busy.value = false; await start('wechat-add') }
+    else if (action === 'wechat-remove') { busy.value = false; await removeWechat() }
     else { code.value = ''; busy.value = false; await confirmAction() }
   } catch (cause) { if (current(actionToken)) error.value = biometricErrorMessage(cause) || '认证已取消，可使用其他方式验证' }
   finally { busy.value = false }
@@ -176,6 +197,18 @@ async function confirmAction() {
       if (action === 'recovery') { recoveryCodes.value = result.recoveryCodes; saved.value = false; stage.value = 'saved' }
       else { stage.value = ''; uni.showToast({ title: action === 'disable' ? '双因素验证已关闭' : '身份验证成功', icon: 'none' }) }
     }
+  } catch (cause) { if (current(token)) error.value = cause.message }
+  finally { busy.value = false }
+}
+async function removeWechat() {
+  if (busy.value || !current(actionToken)) return
+  const token = actionToken
+  busy.value = true; error.value = ''
+  try {
+    await mfaRequest('wechat/remove', { password: password.value }, token)
+    if (!current(token)) return
+    await reload(); emit('changed'); stage.value = ''; password.value = ''
+    uni.showToast({ title: '微信确认已关闭', icon: 'none' })
   } catch (cause) { if (current(token)) error.value = cause.message }
   finally { busy.value = false }
 }

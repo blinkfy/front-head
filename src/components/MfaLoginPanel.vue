@@ -14,15 +14,18 @@
       <!-- #ifdef APP-PLUS || H5 || MP-WEIXIN -->
       <button v-if="canQuick" class="mfa-link" :disabled="busy" @click="verifyQuick">{{ quickLabel }}</button>
       <!-- #endif -->
+      <button v-if="pending.mfaWechatAvailable" class="mfa-link" :disabled="busy" @click="verifyWechat">使用微信验证</button>
       <button class="mfa-cancel" :disabled="busy" @click="finish(null)">返回登录</button>
     </view>
   </view>
+  <WechatMfaApproval ref="wechatApproval" :dark="dark" />
 </template>
 
 <script setup>
 import { ref, onBeforeUnmount } from 'vue'
 import { onHide } from '@dcloudio/uni-app'
 import { mfaRequest } from '@/api/mfa'
+import WechatMfaApproval from './WechatMfaApproval.vue'
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
 import { quickLogin, quickLoginForMfa, quickLoginApi, quickLoginPlatform } from '@/utils/quick-login.js'
 import { biometricErrorMessage } from '@/utils/biometric-login-core.mjs'
@@ -30,6 +33,7 @@ import { biometricErrorMessage } from '@/utils/biometric-login-core.mjs'
 const props = defineProps({ dark: Boolean, promptOwner: Object })
 const pending = ref(null), code = ref(''), error = ref(''), recovery = ref(false), busy = ref(false)
 const canQuick = ref(false), quickLabel = ref('使用系统认证')
+const wechatApproval = ref(null)
 let resolvePending, page, generation = 0
 const current = revision => revision === generation && pending.value && getCurrentPages().slice(-1)[0] === page
 function finish(result) {
@@ -47,6 +51,18 @@ async function verify() {
   try {
     const result = await mfaRequest('verify', { mfaTicket: pending.value.mfaTicket, code: code.value.trim() })
     if (current(revision)) finish(result)
+  } catch (cause) { if (current(revision)) error.value = cause.message }
+  finally { if (current(revision)) busy.value = false }
+}
+async function verifyWechat() {
+  if (busy.value || !pending.value?.mfaWechatAvailable) return
+  const revision = generation, accountId = pending.value.accountId
+  busy.value = true; error.value = ''
+  try {
+    const result = await wechatApproval.value.open(pending.value.mfaTicket)
+    if (!current(revision) || !result) return
+    if (result.token && result.mfaVerified === true && String(result.accountId) === String(accountId)) finish(result)
+    else error.value = '确认未完成，请使用其他验证方式'
   } catch (cause) { if (current(revision)) error.value = cause.message }
   finally { if (current(revision)) busy.value = false }
 }

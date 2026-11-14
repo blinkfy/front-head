@@ -104,6 +104,13 @@
 						"navigationBarTextStyle": "white"
 					}
 				},
+				{
+					"path": "mfa-confirm",
+					"style": {
+						"navigationStyle": "custom",
+						"navigationBarTextStyle": "white"
+					}
+				},
 				// #ifdef APP-PLUS
 				{ "path": "app-upgrade-required", "style": { "navigationStyle": "custom", "app-plus": { "popGesture": "none" } } },
 				// #endif

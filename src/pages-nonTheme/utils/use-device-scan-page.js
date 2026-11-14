@@ -979,6 +979,10 @@ export function useDeviceScanPage({ dark = false } = {}) {
       uni.showToast({ title: errorMessage.value, icon: 'none' })
       return
     }
+    if (target.kind === 'mfa') {
+      uni.redirectTo({ url: target.url })
+      return
+    }
     if (target.scene) {
       savePendingDeviceQrScene(uni, target.scene)
       uni.redirectTo({ url: target.url })

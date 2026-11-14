@@ -1,10 +1,13 @@
 export const DEVICE_SCAN_PAGE = '/pages-nonTheme/scan'
+export const MFA_CONFIRM_PAGE = '/pages-nonTheme/mfa-confirm'
 
 export const PENDING_DEVICE_QR_KEY = 'pending_device_qr_scene'
 export const PENDING_DEVICE_QR_TTL_MS = 10 * 60 * 1000
 
 const DEVICE_QR_SCENE_PATTERN = /^[a-f0-9]{32}$/i
-const OWN_SCAN_PATH_PATTERN = /^\/?(?:pages(?:-dark)?\/scan\/scan|pages-nonTheme\/scan)(?:$|\?)/
+const MFA_QR_SCENE_PATTERN = /^mf_[a-f0-9]{28}$/
+const MFA_CONFIRM_PATH_PATTERN = /^\/?pages-nonTheme\/mfa-confirm(?:$|\?)/
+const OWN_SCAN_PATH_PATTERN = /^\/?(?:pages(?:-dark)?\/scan\/scan|pages-nonTheme\/(?:scan|mfa-confirm))(?:$|\?)/
 
 export function normalizeDeviceQrScene(value) {
   let scene = String(value ?? '').trim()
@@ -81,6 +84,16 @@ export function resolveDeviceQrPathTarget(pathValue, scanPage = DEVICE_SCAN_PAGE
   const path = normalizeOwnScanPath(pathValue)
   if (!path) return null
   const queryIndex = path.indexOf('?')
+  if (MFA_CONFIRM_PATH_PATTERN.test(path)) {
+    const params = queryIndex < 0 ? {} : parseQuery(path.slice(queryIndex + 1))
+    const scene = params.scene || ''
+    if (!MFA_QR_SCENE_PATTERN.test(scene)) {
+      return { url: '', scene: '', invalidScene: true, kind: 'mfa', deviceId: '', deviceName: '',
+        deviceMode: 'bin', token: '', isMock: false }
+    }
+    return { url: `${MFA_CONFIRM_PAGE}?scene=${encodeURIComponent(scene)}`, scene, invalidScene: false, kind: 'mfa',
+      deviceId: '', deviceName: '', deviceMode: 'bin', token: '', isMock: false }
+  }
   if (queryIndex < 0) return null
   const params = parseQuery(path.slice(queryIndex + 1))
   if (!Object.prototype.hasOwnProperty.call(params, 'scene')) return null

@@ -12,6 +12,9 @@ export function createWebRoundCodeResolver({ getToken, getAccount, resolveRaw, r
     if (data?.kind === 'device' && /^[a-f0-9]{32}$/i.test(data.token || '')) {
       return { errMsg: 'scanCode:ok', scanType: 'WX_CODE', path: '/pages-nonTheme/scan?scene=' + data.token }
     }
+    if (data?.kind === 'mfa' && /^mf_[a-f0-9]{28}$/.test(data.scene || '')) {
+      return { errMsg: 'scanCode:ok', scanType: 'WX_CODE', path: '/pages-nonTheme/mfa-confirm?scene=' + encodeURIComponent(data.scene) }
+    }
     if (data?.kind !== 'registration' || !/^r_[a-f0-9]{24}$/.test(data.sessionId || '')) {
       throw new Error('此圆码暂不支持，请扫描分投侠有效设备码或登录码')
     }

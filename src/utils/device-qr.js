@@ -227,6 +227,10 @@ function scanAndConnectDeviceAllowed(onMockConnected) {
       uni.showToast({ title: target.invalidScene ? '二维码已过期或异常，请重新扫码' : '设备ID不能为空', icon: 'none' })
       return
     }
+    if (target.kind === 'mfa') {
+      uni.navigateTo({ url: target.url })
+      return
+    }
     if (target.isMock) {
       saveMockDeviceConnection({
         device_id: target.deviceId,

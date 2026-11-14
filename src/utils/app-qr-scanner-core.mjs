@@ -1,5 +1,6 @@
 const sessionPattern = /^r_[a-f0-9]{24}$/
 const tokenPattern = /^[a-f0-9]{32}$/i
+const mfaScenePattern = /^mf_[a-f0-9]{28}$/
 
 // Pure orchestration, separated from UTS so race/cancel/error cases can be tested.
 export function createAppQrScanner({ nativeScan, standardScan, resolveRaw, scanApp,
@@ -58,6 +59,9 @@ export function createAppQrScanner({ nativeScan, standardScan, resolveRaw, scanA
         const data = resolved?.data
         if (data?.kind === 'device' && tokenPattern.test(data.token || '')) {
           return { scanType: 'WX_CODE', path: '/pages-nonTheme/scan?scene=' + encodeURIComponent(data.token) }
+        }
+        if (data?.kind === 'mfa' && mfaScenePattern.test(data.scene || '')) {
+          return { scanType: 'WX_CODE', path: '/pages-nonTheme/mfa-confirm?scene=' + encodeURIComponent(data.scene) }
         }
         if (data?.kind !== 'registration') {
           notify('圆码类型或参数异常，请使用普通二维码或微信扫码'); return null
