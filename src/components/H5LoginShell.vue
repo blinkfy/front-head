@@ -10,26 +10,31 @@
       <view class="stage-orb stage-blue"><view class="saturn-ring"></view></view><view class="stage-orb stage-green"><LoginGreenPlanet /></view><view class="stage-orb stage-yellow"><view class="saturn-ring"></view></view>
       <view class="login-glass">
         <view class="mobile-tabs" role="tablist" aria-label="登录方式">
-          <button role="tab" :aria-selected="mode === 'account'" :class="{ selected: mode === 'account' }" :disabled="loading || qrBusy" @click="mode = 'account'">账号登录</button>
-          <button role="tab" :aria-selected="mode === 'wechat'" :class="{ selected: mode === 'wechat' }" :disabled="loading || qrBusy" @click="mode = 'wechat'">微信扫码</button>
+          <button role="tab" :aria-selected="mode === 'account'" :class="{ selected: mode === 'account' }" :disabled="loading || qrBusy || (mfa && !mfa.mfaPasswordAvailable)" @click="selectMode('account')">账号登录</button>
+          <button role="tab" :aria-selected="mode === 'wechat'" :class="{ selected: mode === 'wechat' }" :disabled="loading || qrBusy || (mfa && !mfa.mfaQrAvailable)" @click="selectMode('wechat')">微信扫码</button>
         </view>
-        <text class="mobile-hint">{{ mode === 'account' ? '可切换到微信扫码登录' : '使用微信扫码登录已有账号' }}</text>
-        <view class="login-columns">
+        <view v-if="mfa" class="mfa-inline" role="status">
+          <text>{{ mfa.method === 'password' ? '请输入账号 ' + mfa.accountName + ' 的密码，完成双因素验证' : '请使用账号 ' + mfa.accountName + ' 扫码完成双因素验证' }}</text>
+          <text v-if="mfa.error" class="mfa-inline-error" role="alert">{{ mfa.error }}</text>
+          <view class="mfa-inline-actions"><button class="mfa-inline-action" :disabled="loading || qrBusy" @click="emit('mfaChoices')">其他验证方式</button><button class="mfa-inline-action" :disabled="loading || qrBusy" @click="emit('mfaCancel')">返回登录</button></view>
+        </view>
+        <text v-if="!mfa" class="mobile-hint">{{ mode === 'account' ? '可切换到微信扫码登录' : '使用微信扫码登录已有账号' }}</text>
+        <view class="login-columns" :class="{ 'mfa-password': mfa?.method === 'password' }">
           <view v-show="wide || mode === 'account'" class="account-column">
-            <view class="account-heading"><view class="account-icon"><ManifestIcon id="user_profile" :scale="2.5" /></view><view><text class="account-title">账号密码登录</text><text class="account-description">使用您的账号密码登录分投侠</text></view></view>
+            <view class="account-heading"><view class="account-icon"><ManifestIcon id="user_profile" :scale="2.5" /></view><view><text class="account-title">{{ mfa ? '账号验证' : '账号密码登录' }}</text><text class="account-description">{{ mfa ? '完成验证后即可登录当前账号' : '使用您的账号密码登录分投侠' }}</text></view></view>
             <form class="account-form" @submit="submitAccount">
-              <view class="account-input"><ManifestIcon id="user_profile" :scale="1.8" /><input v-model="usernameModel" type="text" placeholder="用户名" maxlength="20" aria-label="用户名" @confirm="submitAccount" /></view>
-              <view class="account-input"><ManifestIcon id="password" :scale="1.8" /><input v-model="passwordModel" :type="showPassword ? 'text' : 'password'" placeholder="密码" maxlength="20" aria-label="密码" @confirm="submitAccount" /><button type="button" class="eye-toggle" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="emit('update:showPassword', !showPassword)"><ManifestIcon :id="showPassword ? 'visibility_off' : 'visibility'" :scale="1.8" /></button></view>
-              <view v-if="showCaptcha" class="captcha-section"><text>验证码</text><component :is="dark ? CaptchaDark : CaptchaBox" ref="captcha" :model-value="captchaInput" @update:model-value="emit('update:captchaInput', $event)" @confirm="submitAccount" /><text v-if="captchaHint" class="captcha-hint">{{ captchaHint }}</text></view>
-              <view class="account-options"><button type="button" class="remember-toggle" role="checkbox" :aria-checked="rememberMe" @click="emit('update:rememberMe', !rememberMe)"><view class="remember-check" :class="{ checked: rememberMe }"><text v-if="rememberMe">✓</text></view><text>记住我</text></button></view>
-              <button form-type="submit" class="account-submit" :disabled="loading || qrBusy"><ManifestIcon v-if="!loading" id="submit_action" :scale="1.8" /><view v-else class="submit-spinner"></view><text>{{ loading || qrBusy ? '正在登录…' : '登 录' }}</text></button>
-              <slot name="biometric"></slot>
-              <text class="account-caption">已有账号可直接登录</text>
-              <view class="register-entry"><text>还没有账号？</text><button type="button" @click="openRegistration">{{ registrationAllowed ? '立即注册 ›' : (wide ? '扫码注册 ›' : '切换到微信扫码注册') }}</button></view>
+              <view class="account-input"><ManifestIcon id="user_profile" :scale="1.8" /><input v-model="usernameModel" :disabled="Boolean(mfa)" type="text" placeholder="用户名" maxlength="20" aria-label="用户名" @confirm="submitAccount" /></view>
+              <view class="account-input"><ManifestIcon id="password" :scale="1.8" /><input v-model="passwordModel" :disabled="Boolean(mfa && mfa.method !== 'password')" :type="showPassword ? 'text' : 'password'" placeholder="密码" maxlength="20" aria-label="密码" @confirm="submitAccount" /><button type="button" class="eye-toggle" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="emit('update:showPassword', !showPassword)"><ManifestIcon :id="showPassword ? 'visibility_off' : 'visibility'" :scale="1.8" /></button></view>
+              <view v-if="showCaptcha && !mfa" class="captcha-section"><text>验证码</text><component :is="dark ? CaptchaDark : CaptchaBox" ref="captcha" :model-value="captchaInput" @update:model-value="emit('update:captchaInput', $event)" @confirm="submitAccount" /><text v-if="captchaHint" class="captcha-hint">{{ captchaHint }}</text></view>
+              <view v-if="!mfa" class="account-options"><button type="button" class="remember-toggle" role="checkbox" :aria-checked="rememberMe" @click="emit('update:rememberMe', !rememberMe)"><view class="remember-check" :class="{ checked: rememberMe }"><text v-if="rememberMe">✓</text></view><text>记住我</text></button></view>
+              <button form-type="submit" class="account-submit" :disabled="loading || qrBusy || Boolean(mfa && mfa.method !== 'password')"><ManifestIcon v-if="!loading" id="submit_action" :scale="1.8" /><view v-else class="submit-spinner"></view><text>{{ loading || qrBusy ? '正在登录…' : mfa ? '验证并登录' : '登 录' }}</text></button>
+              <slot v-if="!mfa" name="biometric"></slot>
+              <text v-if="!mfa" class="account-caption">已有账号可直接登录</text>
+              <view v-if="!mfa" class="register-entry"><text>还没有账号？</text><button type="button" @click="openRegistration">{{ registrationAllowed ? '立即注册 ›' : (wide ? '扫码注册 ›' : '切换到微信扫码注册') }}</button></view>
             </form>
           </view>
-          <view v-if="wide || mode === 'wechat'" ref="qrColumn" class="wechat-column" :class="{ 'wechat-column-highlight': qrAttention }">
-            <H5WechatLoginPanel ref="qrPanel" :dark="dark" :disabled="loading" :registration-allowed="registrationAllowed" @busy="qrBusy = $event" @login="emit('qrLogin', $event)" />
+          <view v-if="(!mfa || mfa.method === 'qr') && (wide || mode === 'wechat')" ref="qrColumn" class="wechat-column" :class="{ 'wechat-column-highlight': qrAttention }">
+            <H5WechatLoginPanel ref="qrPanel" :dark="dark" :disabled="loading" :registration-allowed="registrationAllowed" :mfa-ticket="mfa?.mfaTicket || ''" @busy="qrBusy = $event" @login="(result, ticket) => emit('qrLogin', result, ticket)" />
           </view>
         </view>
       </view>
@@ -48,8 +53,8 @@ import CaptchaDark from '@/components/CaptchaBox-black.vue'
 import H5WechatLoginPanel from '@/components/H5WechatLoginPanel.vue'
 import { useH5RegistrationPolicy } from '@/utils/use-h5-registration-policy'
 const props = defineProps({ dark: Boolean, username: String, password: String, showPassword: Boolean,
-  rememberMe: Boolean, loading: Boolean, showCaptcha: Boolean, captchaInput: String, captchaHint: String })
-const emit = defineEmits(['update:username', 'update:password', 'update:showPassword', 'update:rememberMe', 'update:captchaInput', 'login', 'qrLogin'])
+  rememberMe: Boolean, loading: Boolean, showCaptcha: Boolean, captchaInput: String, captchaHint: String, mfa: Object })
+const emit = defineEmits(['update:username', 'update:password', 'update:showPassword', 'update:rememberMe', 'update:captchaInput', 'login', 'qrLogin', 'mfaMethod', 'mfaChoices', 'mfaCancel'])
 const usernameModel = computed({ get: () => props.username, set: value => emit('update:username', value) })
 const passwordModel = computed({ get: () => props.password, set: value => emit('update:password', value) })
 const mode = ref('account'), qrBusy = ref(false), qrAttention = ref(false), captcha = ref(null), qrPanel = ref(null), qrColumn = ref(null)
@@ -80,8 +85,16 @@ function syncMotionVisibility() {
   // #endif
 }
 function resize(event) { wide.value = event.matches }
+function selectMode(value) {
+  if (props.mfa) emit('mfaMethod', value === 'account' ? 'password' : 'qr')
+  else mode.value = value
+}
+watch(() => props.mfa?.method, method => {
+  if (method) mode.value = method === 'password' ? 'account' : 'wechat'
+  qrBusy.value = false
+}, { flush: 'sync' })
 function submitAccount() {
-  if (props.loading || qrBusy.value) return
+  if (props.loading || qrBusy.value || (props.mfa && props.mfa.method !== 'password')) return
   // Pause before emitting so a simultaneous QR response cannot race the password request.
   qrPanel.value?.pause()
   emit('login')
@@ -133,6 +146,9 @@ defineExpose({ validate: () => captcha.value?.validate() || false, refresh: () =
 </script>
 
 <style scoped>
+.login-columns.mfa-password { grid-template-columns: minmax(0, 1fr); max-width: 560px; margin: auto; }
+.mfa-inline { margin-bottom: 22px; padding: 14px 16px; border-radius: 14px; background: var(--input); color: var(--green); font-size: 14px; line-height: 1.7; }
+.mfa-inline-error { display: block; color: #e66b74; margin-top: 6px; }.mfa-inline-actions { display: flex; gap: 20px; margin-top: 6px; }.mfa-inline-action { padding: 0; margin: 0; background: transparent; color: var(--green); font-size: 13px; line-height: 2; }.mfa-inline-action::after { border: 0; }
 /* #ifdef APP-PLUS */
 .app-login-shell { padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }
 .app-login-shell .login-hero { padding-top: var(--status-bar-height, 0px); box-sizing: content-box; }

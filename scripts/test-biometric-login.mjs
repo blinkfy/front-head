@@ -46,6 +46,9 @@ setupTicketLogin.storage.set('biometric_login_v1:https%3A%2F%2Fone.test', { enab
 await setupTicketLogin.manager.login(() => true, undefined, { mfaSetupTicket: 'setup-ticket-native' })
 assert.equal(setupTicketLogin.requests.find(call => call.path === '/biometric/login/finish').body.mfaSetupTicket, 'setup-ticket-native',
   'native biometric manager forwards the MFA setup ticket to login finish')
+await setupTicketLogin.manager.login(() => true, undefined, { mfaTicket: 'mfa-ticket-native' })
+assert.equal(setupTicketLogin.requests.findLast(call => call.path === '/biometric/login/finish').body.mfaTicket, 'mfa-ticket-native',
+  'native biometric manager forwards the MFA ticket to login finish')
 const nativeAccounts = fixture()
 await nativeAccounts.manager.setEnabled(true, 'session', { id: 1, username: 'alice' })
 const nativeAliceKey = nativeAccounts.manager.state(1).credentialId
@@ -143,7 +146,7 @@ async function pageFixture({ state, token = '', autoLogin = true, probe, loginRe
   const loading = { value: false }
   const controller = context.use({ loading, onLogin: async () => { navigations++; await onLoginWait } })
   return { controller, loading, counts: () => ({ attempts, navigations, cancel, suspend, resume }), dispose: () => disposed(), hide: () => hidden(), show: () => shown(),
-    replacePage: page => { pages = [page] } }
+    replacePage: page => { pages = [page] }, replaceToken: value => { token = value } }
 }
 const bound = { enabled: true, credentialId: 'key' }
 const resumed = await pageFixture({ state: bound, token: 'session', probe: { data: { id: 1 } } })
@@ -168,15 +171,39 @@ assert.equal(await offline.controller.prefer(), true)
 assert.equal(offline.counts().attempts, 0)
 const disabled = await pageFixture({ state: { enabled: false } })
 assert.equal(await disabled.controller.prefer(), false)
-const pending = await pageFixture({ state: { enabled: true, prompted: true }, token: 'session', probe: { data: { id: 1 } } })
+const pending = await pageFixture({ state: { enabled: true, prompted: true, userId: 1 }, token: 'session', probe: { data: { id: 1 } } })
 await pending.controller.prefer()
 assert.equal(pending.counts().navigations, 1, 'pending authorization still reuses a valid remembered session')
-const pendingExpired = await pageFixture({ state: { enabled: true, prompted: true } })
+const pendingExpired = await pageFixture({ state: { enabled: true, prompted: true, userId: 1 } })
 assert.equal(await pendingExpired.controller.prefer(), true, 'pending authorization stays on manual login without saved-password bypass')
 assert.equal(pendingExpired.counts().attempts, 0)
 const webPending = await pageFixture({ state: { enabled: true, prompted: true }, platform: 'web' })
 assert.equal(await webPending.controller.prefer(), false, 'web authorization pending without a credential keeps the existing auto-login path')
 assert.equal(webPending.counts().attempts, 0)
+const anonymousPending = await pageFixture({ state: { enabled: true, prompted: true } })
+assert.equal(await anonymousPending.controller.prefer(), false, 'ownerless legacy preferences cannot select an account or block ordinary login')
+assert.equal(anonymousPending.counts().attempts, 0)
+const selectedWebPending = await pageFixture({ state: { enabled: true, prompted: true, userId: 1 }, platform: 'web' })
+assert.equal(await selectedWebPending.controller.prefer(), true, 'a selected web account also stays on manual login instead of falling through to another account')
+assert.equal(selectedWebPending.counts().attempts, 0)
+let releaseStaleProbe
+const staleSessionProbe = await pageFixture({ state: { ...bound, userId: 1 }, token: 'session-a', probe: { code: 401 },
+  probeWait: new Promise(resolve => { releaseStaleProbe = resolve }), loginResult: { token: 'stale-a' } })
+const staleProbeRequest = staleSessionProbe.controller.prefer()
+staleSessionProbe.replaceToken('session-b'); releaseStaleProbe()
+await staleProbeRequest
+assert.equal(staleSessionProbe.counts().attempts, 0, 'an old session 401 cannot start quick login after another account signs in')
+assert.equal(staleSessionProbe.counts().navigations, 0)
+assert.equal(staleSessionProbe.loading.value, false)
+let releaseStaleLogin
+const staleSessionLogin = await pageFixture({ state: { ...bound, userId: 1 }, token: 'session-a',
+  loginResult: { wait: new Promise(resolve => { releaseStaleLogin = resolve }), value: { token: 'stale-a', accountId: 1 } } })
+const staleLoginRequest = staleSessionLogin.controller.login()
+await new Promise(resolve => setImmediate(resolve))
+staleSessionLogin.replaceToken('session-b'); releaseStaleLogin()
+await staleLoginRequest
+assert.equal(staleSessionLogin.counts().navigations, 0, 'an old quick-login result cannot replace a newer account session')
+assert.equal(staleSessionLogin.loading.value, false)
 let releaseProbe
 const hidden = await pageFixture({ state: bound, token: 'session', probe: { data: { id: 1 } },
   probeWait: new Promise(resolve => { releaseProbe = resolve }) })

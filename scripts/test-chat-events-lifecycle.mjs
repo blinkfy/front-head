@@ -35,7 +35,7 @@ function preprocess(input, platform) {
 
 function harness({ platform, web = true, backgroundMask = 0 }) {
   const calls = { voice: [], location: [], transport: [], feedback: [], catchup: [], foreground: [], refresh: 0,
-    mask: [], videoVisible: 0, androidReturn: 0, listeners: {}, uniEvents: [], lifecycle: [], visible: [], notifications: [], bus: [], miniAlerts: [], messages: [] }
+    mask: [], videoVisible: 0, androidReturn: 0, listeners: {}, uniEvents: [], lifecycle: [], visible: [], notifications: [], bus: [], miniAlerts: [], messages: [], settings: [], settingConnections: [] }
   let permissionPending = false
   let eventHandlers = null
   const transport = {
@@ -47,6 +47,8 @@ function harness({ platform, web = true, backgroundMask = 0 }) {
     baseUrl: 'https://example.test',
     webCallsAvailable: () => web, refreshWebCallAlert: () => calls.refresh++,
     syncChatPush() {},
+    applyCommunityChatSettings(value) { calls.settings.push(value) },
+    connectCommunityChatSettings(value) { calls.settingConnections.push(value) },
     messageBus: { emit(name, event) { calls.bus.push([name, event]) } }, triggerMessageNotification: async (message, options) => calls.messages.push({ message, options }),
     realtimeActivityCard: () => null,
     initChatNotificationNavigation() {}, showNotification() {}, userNotificationUrl: () => '',
@@ -220,6 +222,18 @@ function testActivityMessageVersionKeepsSingleLocationNotification() {
   assert.equal(inConversation.calls.notifications.length, 0, 'fallback does not toast for the open conversation')
 }
 
+function testCommunitySettingsLifecycle() {
+  const { handlers, calls } = harness({ platform: 'H5', web: true })
+  const connected = { communityChatEnabled: true, settingsUpdatedAt: '2026-11-16T10:00:00Z' }
+  handlers.onConnected(connected)
+  assert.equal(calls.settingConnections.at(-1), connected, 'connection settings use reconnect-aware shared setting synchronization')
+  assert.equal(calls.settings.length, 0, 'connected events do not use the incremental setting update path')
+  const changed = { type: 'settings.changed', communityChatEnabled: false, settingsUpdatedAt: '2026-11-16T10:00:01Z' }
+  handlers.onEvent(changed)
+  assert.equal(calls.settings.at(-1), changed, 'live settings.changed events are applied to the shared setting state')
+  assert.equal(calls.bus.length, 0, 'settings changes do not flow through chat notifications')
+}
+
 function testWebviewCompilation() {
   const { preprocess } = require('@dcloudio/uni-cli-shared/lib/preprocess')
   const source = fs.readFileSync(fileURLToPath(new URL('../src/pages-nonTheme/webview.vue', import.meta.url)), 'utf8')
@@ -308,6 +322,7 @@ testH5Lifecycle()
 testAndroidBackgroundMask()
 testDelegatedWebCallLifecycle()
 testActivityMessageVersionKeepsSingleLocationNotification()
+testCommunitySettingsLifecycle()
 testWebviewCompilation()
 await testWebviewRetry()
 console.log('Chat-events H5, Android, delegated web-call, activity message compatibility, and webview compilation tests passed.')

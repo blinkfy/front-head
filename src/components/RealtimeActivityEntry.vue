@@ -5,9 +5,9 @@
       <view class="entry-copy"><text class="entry-title">开启浏览器来电通知</text><text class="entry-detail">网页保持打开时，在其他窗口也能看到来电提醒</text></view><text>›</text>
     </button>
     <!-- #endif -->
-    <button v-if="callActive" class="realtime-entry" @click="openCall">
+    <button v-if="callActive || ongoingCall" class="realtime-entry" @click="openCall">
       <ManifestIcon :id="videoCall ? 'chat_video_call' : 'chat_voice_call'" size="25px" />
-      <view class="entry-copy"><text class="entry-title">{{ callTitle }}</text><text class="entry-detail">{{ call.peer?.name || '联系人' }} · {{ call.phase === 'incoming' ? '点击接听或拒绝' : '点击返回通话' }}</text></view><text>›</text>
+      <view class="entry-copy"><text class="entry-title">{{ callTitle }}</text><text class="entry-detail">{{ (ongoingCall?.peer || call.peer)?.name || '联系人' }} · {{ ongoingCall ? '切换到本机通话' : call.phase === 'incoming' ? '点击接听或拒绝' : '点击返回通话' }}</text></view><text>›</text>
     </button>
     <button v-if="locationActive" class="realtime-entry" @click="openLocation">
       <ManifestIcon id="map_location" size="25px" />
@@ -25,14 +25,17 @@ export default {
   components: { ManifestIcon },
   data: () => ({ webEnabled: webCallsAvailable(), canNotify: webCallNotificationsAvailable(), notificationsGranted: false, call: voiceCallState, location: liveLocationState, openingLocation: false }),
   computed: {
-    videoCall() { return this.call.mode === 'video' || ((this.call.cameraSupported || this.call.mode === 'video') && (this.call.cameraEnabled || this.call.remoteCameraEnabled)) },
+    ongoingCall() { return !this.callActive && this.call.ongoing },
+    videoCall() { return (this.ongoingCall?.mode || this.call.mode) === 'video' || ((this.call.cameraSupported || this.call.mode === 'video') && (this.call.cameraEnabled || this.call.remoteCameraEnabled)) },
     callActive() { return ['calling', 'incoming', 'connecting', 'connected'].includes(this.call.phase) },
     locationActive() { return this.showLocation && this.location.phase === 'sharing' },
     callTitle() {
+      if (this.ongoingCall) return '在其它设备通话中'
+      if (this.call.phase === 'connecting' && this.call.handoffPending) return '正在切换通话…'
       const kind = this.videoCall ? '视频' : '语音'
       return this.call.phase === 'incoming' ? `${kind}来电` : this.call.phase === 'calling' ? `正在呼叫 · ${kind}通话` : this.call.phase === 'connecting' ? `${kind}通话连接中` : `${kind}通话进行中`
     },
-    hasEntries() { return this.callActive || this.locationActive ||
+    hasEntries() { return this.callActive || this.ongoingCall || this.locationActive ||
       (this.showNotificationSetting && this.webEnabled && this.canNotify && !this.notificationsGranted) }
   },
   mounted() {

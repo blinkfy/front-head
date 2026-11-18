@@ -46,7 +46,7 @@ export function quickLoginForMfa(ticket, isActive, owner, userId) {
   return webAdapter.login({ mfaTicket: ticket, isActive })
   // #endif
   // #ifndef H5
-  return instance.login(isActive, owner, { userId })
+  return instance.login(isActive, owner, { userId, mfaTicket: ticket })
   // #endif
 }
 export async function quickLoginForSetup(ticket, token, user, isActive, owner) {

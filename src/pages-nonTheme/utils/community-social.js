@@ -1,14 +1,7 @@
 import request from '@/api/index.js'
 
-let settingsPromise, settingsUntil = 0
-export function communitySocialEnabled(force = false) {
-  if (!force && settingsPromise && Date.now() < settingsUntil) return settingsPromise
-  settingsUntil = Date.now() + 5000
-  settingsPromise = request({ url: '/api/ai/settings', method: 'GET', silent: true }).then(res =>
-    res?.code === 0 && Boolean(res.data) && res.data.communityChatEnabled !== false
-  ).catch(() => false)
-  return settingsPromise
-}
+import { readCommunityChatEnabled } from '@/utils/community-chat-settings.js'
+export function communitySocialEnabled(force = false) { return readCommunityChatEnabled(force) }
 export const getCommunityPostDetail = postId => request({ url: `/api/community/post/${encodeURIComponent(postId)}/detail`, method: 'GET', needAuth: true })
 export const shareCommunityPost = (postId, data) => request({ url: `/api/community/post/${encodeURIComponent(postId)}/share`, method: 'POST', data, needAuth: true })
 export const getCommunityNotifications = data => request({ url: '/api/community/notifications', method: 'GET',

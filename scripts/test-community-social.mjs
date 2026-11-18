@@ -92,7 +92,9 @@ function testStrictCommunityPostLinks() {
     '【社区帖子】\n示例\nhttps://attacker.invalid/',
     null
   ]) assert.equal(communityPostLink(value), '', 'untrusted or malformed link is rejected')
-  const format = getComponentMethod('src/pages-nonTheme/chat.vue', 'formatServerMessage', { communityPostCard, getDisplayName: () => '发送人', baseUrl: '' })
+  const format = getComponentMethod('src/pages-nonTheme/chat.vue', 'formatServerMessage', {
+    communityPostCard, realtimeActivityCard: () => null, getDisplayName: () => '发送人', baseUrl: ''
+  })
   const normalized = format.call({ getCurrentUserId: () => 7 }, { id: 99, senderId: 7, sendTime: new Date().toISOString(),
     type: 'text', storedType: 'others', communityPost: card, content: '旧版可读文字' })
   assert.equal(normalized.type, 'others')
@@ -102,32 +104,34 @@ function testStrictCommunityPostLinks() {
 }
 
 async function testCommunitySettingIsIndependentOfLlm() {
-  const filename = path.join(root, 'src/pages-nonTheme/utils/community-social.js')
-  const source = fs.readFileSync(filename, 'utf8')
-  const declaration = astFor(source, filename).program.body.find(node => node.type === 'ExportNamedDeclaration' &&
-    node.declaration?.type === 'FunctionDeclaration' && node.declaration.id.name === 'communitySocialEnabled')
-  assert.ok(declaration, 'communitySocialEnabled is exported')
   const calls = []
+  let communityChatEnabled = true
   const request = async options => {
     calls.push(options)
-    return { code: 0, data: { aiEnabled: false, communityChatEnabled: true } }
+    return { code: 0, data: { aiEnabled: false, communityChatEnabled } }
   }
-  const communitySocialEnabled = vm.runInNewContext(
-    `(() => { let settingsPromise, settingsUntil = 0; return ${source.slice(declaration.declaration.start, declaration.declaration.end)} })()`,
-    { request, Date }
-  )
+  const settingsSource = fs.readFileSync(path.join(root, 'src/utils/community-chat-settings.js'), 'utf8')
+    .replace(/^import .*$/gm, '').replace(/\bexport /g, '')
+  const settingsContext = { request, Date, reactive: value => value }
+  vm.createContext(settingsContext)
+  vm.runInContext(`${settingsSource}\nglobalThis.shared = { readCommunityChatEnabled }`, settingsContext)
+  const communitySocialEnabled = getNamedFunction('src/pages-nonTheme/utils/community-social.js', 'communitySocialEnabled', {
+    readCommunityChatEnabled: settingsContext.shared.readCommunityChatEnabled
+  })
+  const first = communitySocialEnabled()
+  assert.equal(communitySocialEnabled(), first, 'social utility delegates to the shared in-flight settings read')
+  assert.equal(calls.length, 1)
+  await first
   assert.equal(await communitySocialEnabled(), true, 'LLM off does not disable community social features')
   assert.equal(await communitySocialEnabled(), true, 'settings result is cached')
   assert.equal(calls.length, 1)
-  const disabled = vm.runInNewContext(
-    `(() => { let settingsPromise, settingsUntil = 0; return ${source.slice(declaration.declaration.start, declaration.declaration.end)} })()`,
-    { request: async () => ({ code: 0, data: { aiEnabled: true, communityChatEnabled: false } }), Date }
-  )
-  assert.equal(await disabled(true), false, 'community switch off disables community social features with LLM on')
+  communityChatEnabled = false
+  assert.equal(await communitySocialEnabled(true), false, 'community switch off disables social features')
+  assert.equal(calls.length, 2, 'forced reads refresh the shared cache')
 }
 
 function testSettingsFallbackAndRegistration() {
-  const settings = fs.readFileSync(path.join(root, 'src/pages-nonTheme/utils/community-social.js'), 'utf8')
+  const settings = fs.readFileSync(path.join(root, 'src/utils/community-chat-settings.js'), 'utf8')
   assert.match(settings, /communityChatEnabled !== false/, 'missing legacy setting defaults enabled')
   const admin = fs.readFileSync(path.join(root, 'src/pages-admin/admin-ai-settings.vue'), 'utf8')
   assert.match(admin, /communityChatEnabled: true/, 'admin form default is enabled')
@@ -252,7 +256,7 @@ function testHistoricalPostShareWithoutFeatureGate() {
   assert.equal(opened.length, 1, 'malformed messages cannot navigate')
   assert.equal(toasts.length, 1)
   const { descriptor } = loadSfc('src/pages-nonTheme/chat.vue')
-  assert.match(descriptor.template.content, /CommunityPostMessage v-if="msg.type === 'others'"/, 'typed post cards render without a switch gate')
+  assert.match(descriptor.template.content, /CommunityPostMessage v-(?:if|else-if)="msg.type === 'others'"/, 'typed post cards render without a switch gate')
   assert.match(descriptor.script.content, /components:\s*\{[^}]*CommunityPostMessage/, 'post card component is registered')
 }
 

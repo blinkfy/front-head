@@ -105,6 +105,7 @@ import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import * as chatApi from '@/pages-nonTheme/api/chat'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
+import { communityChatSettings, readCommunityChatEnabled } from '@/utils/community-chat-settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import ChatCachedAvatar from './components/ChatCachedAvatar.vue'
 import { messageBus } from '@/utils/message-event-bus.js'
@@ -149,7 +150,7 @@ export default {
 			listUnreadTotal: null,
 			isDarkTheme: false,
 			scrollTop: 0,
-            communityChatEnabled: false,
+            communityChatSettings,
 			
 			// 本地缓存相关
 			cacheKey: '', // 存储 key = `chatlist_${userId}`
@@ -163,6 +164,7 @@ export default {
 	},
 
 computed: {
+        communityChatEnabled() { return this.communityChatSettings.enabled },
 		avatarCacheOwner() {
 			return this.cacheKey.slice('chatlist_'.length)
 		},
@@ -1067,22 +1069,8 @@ computed: {
 		},
 
 		async refreshCommunityVisibility() {
-			try {
-				const response = await new Promise((resolve, reject) => {
-					uni.request({
-						url: `${baseUrl}/api/ai/settings`,
-						success: resolve,
-						fail: reject
-					})
-				})
-				const payload = response?.data
-				const settings = payload && payload.code === 0 ? payload.data : null
-				if (settings) this.communityChatEnabled = settings.communityChatEnabled !== false
-			} catch (error) {
-				console.warn('[chatlist] check community chat settings failed:', error)
-			}
-			return this.communityChatEnabled
-		},
+            return readCommunityChatEnabled()
+        },
 
 		openContacts() {
 			if (!this.communityChatEnabled) return

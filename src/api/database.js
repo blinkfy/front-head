@@ -5,6 +5,10 @@
 
   import request from './index'
 
+  export function queryReadonlySql(sql) {
+    return request({ url: '/api/admin/database/query', method: 'POST', data: { sql }, needAuth: true })
+  }
+
   // ==================== Users 表相关 API ====================
 
   /**
@@ -564,6 +568,10 @@ export function deleteDevice(id) {
       data,
       needAuth: true
     })
+  }
+
+  export function getGenericTableRecord(tableName, id) {
+    return request({ url: `/api/admin/tables/${encodeURIComponent(tableName)}/${encodeURIComponent(id)}`, method: 'GET', needAuth: true })
   }
 
   export function updateGenericTableRecord(tableName, id, data) {

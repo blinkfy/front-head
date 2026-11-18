@@ -4,6 +4,11 @@
  */
 import request from '@/api/index.js';
 import { baseUrl } from '@/api/settings.js';
+import { transcribeLocalAudio, localFirstAsr } from '@/utils/local-asr.js';
+
+function localResponse(result) {
+  return { code: 0, msg: 'success', data: { text: result.text, local: true } };
+}
 
 export function recognizeByText(text) {
   return request({
@@ -19,7 +24,14 @@ export function recognizeByText(text) {
  * @param {string} filePath - 录音文件临时路径
  * @returns {Promise<{code: number, data: {text: string, requestId: string}}>}
  */
-export function transcribeAudio(filePath) {
+export async function transcribeAudio(filePath, options = {}) {
+  return localFirstAsr(
+    async () => { const result = await transcribeLocalAudio([filePath], options); return result && { ...result, response: localResponse(result) }; },
+    () => transcribeAudioCloud(filePath), options
+  ).then(result => result.response || result);
+}
+
+function transcribeAudioCloud(filePath) {
   return new Promise((resolve, reject) => {
     const token = uni.getStorageSync('token') || '';
     uni.uploadFile({
@@ -45,7 +57,7 @@ export function transcribeAudio(filePath) {
   });
 }
 
-export function transcribeAudioBlob(blob, filename = 'audio.webm') {
+export function transcribeAudioBlob(blob, filename = 'audio.webm', options = {}) {
   return new Promise((resolve, reject) => {
     const token = uni.getStorageSync('token') || '';
     const formData = new FormData();
@@ -53,7 +65,8 @@ export function transcribeAudioBlob(blob, filename = 'audio.webm') {
 
     fetch(baseUrl + '/api/ai/transcribe?token=' + token, {
       method: 'POST',
-      body: formData
+      body: formData,
+      signal: options.signal
     })
       .then(async (res) => {
         const data = await res.json().catch(() => null);
@@ -67,14 +80,21 @@ export function transcribeAudioBlob(blob, filename = 'audio.webm') {
   });
 }
 
-export function transcribeAudioSegments(filePaths) {
+export async function transcribeAudioSegments(filePaths, options = {}) {
+  return localFirstAsr(
+    async () => { const result = await transcribeLocalAudio(filePaths, options); return result && { ...result, response: localResponse(result) }; },
+    () => transcribeAudioSegmentsCloud(filePaths), options
+  ).then(result => result.response || result);
+}
+
+function transcribeAudioSegmentsCloud(filePaths) {
   const paths = Array.isArray(filePaths) ? filePaths.filter(Boolean) : [];
   if (!paths.length) {
     return Promise.reject({ code: 1, msg: 'no audio segments' });
   }
 
   if (paths.length === 1) {
-    return transcribeAudio(paths[0]);
+    return transcribeAudioCloud(paths[0]);
   }
 
   return new Promise((resolve, reject) => {

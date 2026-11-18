@@ -1,10 +1,10 @@
 <template>
-  <view v-if="pending" class="mfa-overlay" :class="{ 'mfa-dark': dark }" @touchmove.stop.prevent>
+  <view v-if="pending && !externalMethod" class="mfa-overlay" :class="{ 'mfa-dark': dark }" @touchmove.stop.prevent>
     <view class="mfa-dialog">
       <view class="mfa-emblem">✓</view>
       <text class="mfa-title">双因素验证</text>
       <text class="mfa-description">{{ pending.accountName ? `正在登录 ${pending.accountName}` : '再验证一步，保护您的账号' }}</text>
-      <text v-if="pending.mfaAuthorizeQuick" class="mfa-description">系统认证已完成；此凭据首次用于双因素登录，请再验证一次</text>
+      <text v-if="pending.mfaAuthorizeQuick" class="mfa-description">系统认证已完成，请选择另一种方式完成验证</text>
       <text class="mfa-label">{{ recovery ? '一次性恢复码' : '验证器中的6位动态码' }}</text>
       <input v-model="code" class="mfa-input" :type="recovery ? 'text' : 'number'" :maxlength="recovery ? 40 : 6"
         :placeholder="recovery ? '输入已保存的恢复码' : '000000'" :disabled="busy" @confirm="verify" />
@@ -14,7 +14,9 @@
       <!-- #ifdef APP-PLUS || H5 || MP-WEIXIN -->
       <button v-if="canQuick" class="mfa-link" :disabled="busy" @click="verifyQuick">{{ quickLabel }}</button>
       <!-- #endif -->
-      <button v-if="pending.mfaWechatAvailable" class="mfa-link" :disabled="busy" @click="verifyWechat">使用微信验证</button>
+      <button v-if="reuse.password && pending.mfaPasswordAvailable === true" class="mfa-link" :disabled="busy" @click="selectExternal('password')">使用账号密码验证</button>
+      <button v-if="reuse.qr && pending.mfaQrAvailable === true" class="mfa-link" :disabled="busy" @click="selectExternal('qr')">使用微信扫码验证</button>
+      <button v-if="pending.mfaWechatAvailable && !reuse.qr" class="mfa-link" :disabled="busy" @click="verifyWechat">使用微信验证</button>
       <button class="mfa-cancel" :disabled="busy" @click="finish(null)">返回登录</button>
     </view>
   </view>
@@ -31,6 +33,9 @@ import { quickLogin, quickLoginForMfa, quickLoginApi, quickLoginPlatform } from 
 import { biometricErrorMessage } from '@/utils/biometric-login-core.mjs'
 // #endif
 const props = defineProps({ dark: Boolean, promptOwner: Object })
+const emit = defineEmits(['change'])
+const externalMethod = ref('')
+let reuse = { password: false, qr: false }
 const pending = ref(null), code = ref(''), error = ref(''), recovery = ref(false), busy = ref(false)
 const canQuick = ref(false), quickLabel = ref('使用系统认证')
 const wechatApproval = ref(null)
@@ -41,8 +46,40 @@ function finish(result) {
   generation++
   pending.value = null
   busy.value = false
+  externalMethod.value = ''
+  emit('change', null, result)
   if (previous?.mfaTicket) void mfaRequest('cancel', { mfaTicket: previous.mfaTicket }).catch(() => {})
   const resolve = resolvePending; resolvePending = null; resolve?.(result)
+}
+function publish() {
+  emit('change', pending.value ? { ...pending.value, method: externalMethod.value, error: error.value, busy: busy.value } : null)
+}
+function selectExternal(method) {
+  if (busy.value || !pending.value || !reuse[method] || pending.value[method === 'password' ? 'mfaPasswordAvailable' : 'mfaQrAvailable'] !== true) return false
+  externalMethod.value = method; error.value = ''; publish()
+  return true
+}
+function showChoices() {
+  if (busy.value || !pending.value) return
+  externalMethod.value = ''; error.value = ''; publish()
+}
+function acceptExternal(result, method = 'qr') {
+  if (!pending.value || externalMethod.value !== method || !current(generation)) return false
+  if (result?.token && result.mfaVerified === true && result.accountId != null && pending.value.accountId != null && String(result.accountId) === String(pending.value.accountId)) {
+    finish(result); return true
+  }
+  error.value = '验证账号不一致，请使用当前账号完成验证'; publish()
+  return false
+}
+async function submitPassword(password) {
+  if (busy.value || externalMethod.value !== 'password' || pending.value?.mfaPasswordAvailable !== true || !password) return
+  const revision = generation
+  busy.value = true; error.value = ''; publish()
+  try {
+    const result = await mfaRequest('password', { mfaTicket: pending.value.mfaTicket, password })
+    if (current(revision)) acceptExternal(result, 'password')
+  } catch (cause) { if (current(revision)) { error.value = cause.message; publish() } }
+  finally { if (current(revision)) { busy.value = false; publish() } }
 }
 async function verify() {
   if (busy.value || !pending.value || !code.value.trim()) return
@@ -83,11 +120,13 @@ async function verifyQuick() {
   finally { if (current(revision)) busy.value = false }
 }
 // #endif
-function open(result) {
+function open(result, options = {}) {
   if (!result?.requiresMfa) return Promise.resolve(result)
   finish(null)
   pending.value = result; code.value = ''; error.value = ''; recovery.value = result.mfaHasTotp === false; canQuick.value = false
   page = getCurrentPages().slice(-1)[0]
+  reuse = { password: options.password === true, qr: options.qr === true }
+  publish()
   const revision = generation
   // #ifdef APP-PLUS || H5 || MP-WEIXIN
   void quickLogin.capability().then(async support => {
@@ -116,7 +155,7 @@ function open(result) {
 }
 onHide(() => { if (pending.value && getCurrentPages().slice(-1)[0] !== page) finish(null) })
 onBeforeUnmount(() => finish(null))
-defineExpose({ open })
+defineExpose({ open, selectExternal, showChoices, submitPassword, acceptExternal, cancel: () => { if (!busy.value) finish(null) } })
 </script>
 
 <style scoped>

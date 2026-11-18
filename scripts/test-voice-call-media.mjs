@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createWebCallHandoff } from '../src/utils/web-call-handoff.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
@@ -43,7 +44,7 @@ let nextTimer = 0
 let videoAvailable = true
 let nativeRealtime = true
 let permissionGrants = ['android.permission.RECORD_AUDIO', 'android.permission.CAMERA']
-const context = {
+const context = { createWebCallHandoff,
   plus: {
     os: { name: 'Android' },
     android: { requestPermissions(permissions, success) { permissionRequests.push([...permissions]); success({ granted: permissionGrants }) } }
@@ -101,7 +102,7 @@ async function testWebMedia() {
   const audioContexts = []
   const offeredSender = { track: null, async replaceTrack(value) { this.track = value } }
   let peer
-  const context = {
+  const context = { createWebCallHandoff,
     isSecureContext: true,
     navigator: { mediaDevices: { getUserMedia: constraints => streamRequests(constraints),
       getDisplayMedia: constraints => displayRequests(constraints) } },

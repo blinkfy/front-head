@@ -99,7 +99,7 @@
 
                             <!-- AI 文本使用受限 Markdown，普通用户消息保持原有纯文本展示。 -->
                             <RealtimeActivityMessage v-if="realtimeActivityCard(msg)" :card="realtimeActivityCard(msg)" :self="msg.isSelf"
-                                :recording="localCallRecording(msg)" @open="openRealtimeActivity(msg)" @open-recording="openCallRecording(msg)" />
+                                :recording="localCallRecording(msg)" :actionable="communityChatSettings.enabled || realtimeActivityCard(msg).activity === 'location'" @open="openRealtimeActivity(msg)" @open-recording="openCallRecording(msg)" />
                             <CommunityPostMessage v-else-if="msg.type === 'others'" :card="communityPostCard(msg)" @open="openCommunityPost(msg)" />
                             <ChatMarkdown v-else-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" :dark="isDarkTheme" />
                             <text v-else-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
@@ -309,7 +309,7 @@
                         <text class="more-text">通话</text>
                     </view>
                     <!-- #ifndef APP-PLUS || H5 || MP-WEIXIN -->
-                    <view v-if="!isGroupChat" class="more-item" @click="showCallSupport">
+                    <view v-if="communityChatSettings.enabled && !isGroupChat" class="more-item" @click="showCallSupport">
                         <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
                         <text class="more-text">通话说明</text>
                     </view>
@@ -350,7 +350,7 @@
                         </view>
                         <text class="more-text">位置</text>
                     </view>
-                    <view v-if="!isGroupChat && liveLocationState.supported" class="more-item" @click="openLiveLocation">
+                    <view v-if="!isGroupChat && liveLocationState.supported && (communityChatSettings.enabled || hasLiveLocationEntry)" class="more-item" @click="openLiveLocation">
                         <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="nearby_map" :scale="1.9" /></view>
                         <text class="more-text">实时位置</text>
                     </view>
@@ -662,7 +662,9 @@ import { messageBus } from '@/utils/message-event-bus.js'
 import { setActiveChatConversation, isChatEventsConnected } from '@/utils/chat-events.js'
 import { getUserProfile } from '@/api/user.js'
 import { baseUrl } from '@/api/settings.js'
+import { communityChatSettings, readCommunityChatEnabled } from '@/utils/community-chat-settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
+import { readChatEntryAvatar } from '@/utils/chat-entry-avatar.mjs'
 import ChatCachedImage from '@/pages-nonTheme/components/ChatCachedImage.vue'
 import ChatCachedAvatar from '@/pages-nonTheme/components/ChatCachedAvatar.vue'
 import { prepareAvatarUpload } from '@/utils/upload-image.js'
@@ -771,6 +773,7 @@ export default {
 
             // 输入相关
             voiceCallState,
+            communityChatSettings,
             callRecordingIndex: {},
             callRecordingOwner: '',
             callRecordingRevision: 0,
@@ -907,8 +910,12 @@ export default {
             return this.conversationType === 'group' && !!this.groupId
         },
 
+        hasLiveLocationEntry() {
+            return !!this.liveLocationState.offers[String(this.otherUserId)] ||
+                (['joining', 'sharing'].includes(this.liveLocationState.phase) && String(this.liveLocationState.peer?.id) === String(this.otherUserId))
+        },
         callMenuOptions() {
-            if (this.isGroupChat || this.embeddedCallMode) return []
+            if (!this.communityChatSettings.enabled || this.isGroupChat || this.embeddedCallMode) return []
             const options = []
             // #ifdef MP-WEIXIN
             options.push({ mode: 'audio', label: '网页语音通话' }, { mode: 'video', label: '网页视频通话' })
@@ -1098,6 +1105,12 @@ export default {
             this.otherUserId = options.userId
         }
 
+        if (!this.isGroupChat && options.avatar == null) {
+            const cachedAvatar = readChatEntryAvatar(uni.getStorageSync('token') || '', this.otherUserId || this.chatId,
+                uni.getStorageSync(`chatlist_${this.getCurrentUserId()}`))
+            if (cachedAvatar) this.otherAvatar = cachedAvatar.avatar
+        }
+
         // 已有参数，直接加载消息
         if (!this.chatId) {
             this.chatId = 'chat_' + this.otherUserId + '_' + Date.now()
@@ -1119,6 +1132,7 @@ export default {
     },
 
     onShow() {
+        void readCommunityChatEnabled()
         this.syncChatFeedbackMedia()
         if (!this.callRecordingListener) {
             this.callRecordingListener = () => { void this.refreshCallRecordings() }
@@ -1173,6 +1187,7 @@ export default {
     // #endif
     onHide() {
         this.voicePlaybackRevision++
+        this.cancelVoiceTranscriptions()
         if (!this.currentPlayingMsg) this.playingVoiceId = null
         this.$refs.appConfirmDialog?.cancelAll()
         this.cancelRecord()
@@ -1192,6 +1207,7 @@ export default {
 
     onUnload() {
         this.callRecordingRevision++
+        this.cancelVoiceTranscriptions()
         if (this.callRecordingListener) uni.$off('call-recordings:changed', this.callRecordingListener)
         this.$refs.appConfirmDialog?.cancelAll()
         this.cancelRecord()
@@ -1229,6 +1245,7 @@ export default {
     },
     
     beforeDestroy() {
+        this.cancelVoiceTranscriptions()
         // 确保组件销毁时停止轮询
         this.isChatPageActive = false
         this.isChatPageDestroyed = true
@@ -1970,6 +1987,12 @@ export default {
                         thumbnail: local.type === 'video' && local.thumbnail?.startsWith('blob:') ? local.thumbnail : server.thumbnail }
                 } else if (server && local.originalLoaded && local.content === server.content) {
                     message = { ...server, originalLoaded: true }
+                }
+                // Device transcripts are cached on this device; a history refresh
+                // must not erase them or replace them with an older cloud result.
+                if (server && !server.isWithdraw && server.type === 'voice' && local.type === 'voice' &&
+                    local.content === server.content && local.voiceTextSource === 'local' && local.voiceText) {
+                    message = { ...message, voiceText: local.voiceText, voiceTextSource: 'local' }
                 }
                 merged.set(String(message.id), message)
             }

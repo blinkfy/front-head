@@ -4,6 +4,7 @@ import { miniIncomingCalls, installMiniIncomingSender } from './mini-call-incomi
 import { realtimeActivityCard } from './realtime-activity.mjs'
 import { webCallsAvailable, refreshWebCallAlert } from './web-call-support.js'
 import { baseUrl } from '@/api/settings.js'
+import { applyCommunityChatSettings, connectCommunityChatSettings } from './community-chat-settings.js'
 import { syncChatPush } from './chat-push.js'
 import { messageBus, triggerMessageNotification } from './message-event-bus.js'
 import { initChatNotificationNavigation } from './notification.js'
@@ -82,6 +83,7 @@ export function notifyChatEvent(event) {
 const transport = createChatEventsTransport({
     getToken: token, getBaseUrl: () => baseUrl, connectSocket: connectChatEventsSocket,
     onEvent(event) {
+        if (event.type === 'settings.changed') { applyCommunityChatSettings(event); return }
         // #ifdef MP-WEIXIN
         if (miniIncomingCalls.handle(event)) return
         // #endif
@@ -135,6 +137,7 @@ const transport = createChatEventsTransport({
         // #endif
         activityMessages = false; voiceCalls.connection(false); liveLocations.connection(false) },
     onConnected(event) {
+        connectCommunityChatSettings(event)
         // #ifdef MP-WEIXIN
         miniIncomingCalls.connection(event)
         // #endif

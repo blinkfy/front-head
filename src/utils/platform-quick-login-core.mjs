@@ -48,10 +48,10 @@ export function createPlatformQuickLogin({ runtime, adapter, api, scope }) {
       committed = true
       if (before.credentialId && before.credentialId !== result.credentialId) retire(before)
       await flush(token, user.id)
-      runtime.removeStorageSync('savedUser')
+      if (isActive() && runtime.getStorageSync('token') === token) runtime.removeStorageSync('savedUser')
       return true
     } finally {
-      if (!committed && result?.credentialId) {
+      if (!committed && result?.credentialId && ![before.credentialId, before.previousCredentialId, state(user.id).credentialId].includes(result.credentialId)) {
         try { await api(`/quick-login/credentials/${result.credentialId}`, {}, token, 'DELETE') } catch (_) {}
       }
     }
@@ -67,17 +67,28 @@ export function createPlatformQuickLogin({ runtime, adapter, api, scope }) {
       if (busy || !Number.isSafeInteger(Number(user?.id)) || Number(user.id) <= 0 || !isActive() || runtime.getStorageSync('token') !== token) return
       busy = true
       try {
-        const current = activate(user)
+        let current = activate(user)
+        const authenticated = adapter.consumeLogin?.(token, user.id)
+        if (authenticated) {
+          const binding = current.enabled && authenticated.credentialId ? { credentialId: authenticated.credentialId, previousCredentialId: '', previousUserId: null,
+            pendingRevocations: current.pendingRevocations.filter(item => item.credentialId !== authenticated.credentialId || String(item.userId) !== String(user.id)) } : {}
+          current = save({ prompted: true, enrollmentError: '', ...binding }, user.id)
+        }
         await flush(token, user.id)
         if (!isActive() || runtime.getStorageSync('token') !== token) return
+        current = state(user.id)
         if (current.credentialId) runtime.removeStorageSync('savedUser')
         if (!current.enabled || current.prompted || current.credentialId) return
         const support = await adapter.capability()
         if (!support.supported || !support.enrolled || !isActive() || runtime.getStorageSync('token') !== token) return
+        current = state(user.id)
+        if (!current.enabled || current.prompted || current.credentialId) return
         save({ prompted: true }, user.id)
         const accepted = await runtime.confirm({ title: `开启${support.label || adapter.label}`,
           content: adapter.offerText, confirmText: '开启', cancelText: '暂不开启' })
         if (!isActive() || runtime.getStorageSync('token') !== token) return
+        const confirmedState = state(user.id)
+        if (!confirmedState.enabled || confirmedState.credentialId) return
         if (!accepted) { save({ enabled: false }, user.id); return }
         try { await enroll(token, user, isActive, { owner }) }
         catch (error) {
@@ -95,8 +106,10 @@ export function createPlatformQuickLogin({ runtime, adapter, api, scope }) {
         save({ enabled: Boolean(enabled), prompted: true, enrollmentError: '' }, user.id)
         if (!enabled) { clearBinding(user.id); return await flush(token, user.id) }
         const support = await adapter.capability()
+        if (!isActive() || runtime.getStorageSync('token') !== token) throw { error: 'CANCELLED' }
         if (!support.supported || !support.enrolled) throw { error: 'UNAVAILABLE', msg: support.message }
-        if (!options.forceCreate && current.credentialId && accounts().some(item => item.credentialId === current.credentialId && String(item.userId) === String(user.id))) return
+        const latest = state(user.id)
+        if (!options.forceCreate && latest.credentialId && accounts().some(item => item.credentialId === latest.credentialId && String(item.userId) === String(user.id))) return
         await enroll(token, user, isActive, options)
       } catch (error) {
         if (enabled && !state(user.id).credentialId && runtime.getStorageSync('token') === token) save({ enabled: current.enabled }, user.id)
@@ -109,17 +122,17 @@ export function createPlatformQuickLogin({ runtime, adapter, api, scope }) {
       busy = true
       try { return await flush(token, userId) } finally { busy = false }
     },
-    async login(isActive = () => true, owner, { mfaSetupTicket, userId } = {}) {
+    async login(isActive = () => true, owner, { mfaSetupTicket, mfaTicket, userId } = {}) {
       const current = state(userId)
       if (busy || !current.enabled || !current.credentialId || !accounts().some(item => item.credentialId === current.credentialId && String(item.userId) === String(current.userId))) return null
       busy = true
       try {
-        const result = await adapter.login({ credentialId: current.credentialId, isActive, owner, ...(mfaSetupTicket ? { mfaSetupTicket } : {}) })
+        const result = await adapter.login({ credentialId: current.credentialId, isActive, owner, ...(mfaSetupTicket ? { mfaSetupTicket } : {}), ...(mfaTicket ? { mfaTicket } : {}) })
         if (!isActive()) return null
         if (String(result?.accountId) !== String(current.userId)) throw { error: 'ACCOUNT_MISMATCH', msg: '认证账号不匹配，请重新选择账号' }
         return result
       } catch (error) {
-        if (error?.reason === 'invalid_credential') clearBinding(current.userId)
+        if (error?.reason === 'invalid_credential' && state(current.userId).credentialId === current.credentialId) clearBinding(current.userId)
         throw error
       } finally { busy = false }
     },

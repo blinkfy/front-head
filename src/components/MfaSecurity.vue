@@ -14,7 +14,7 @@
       <button class="text-button" :disabled="busy" @click="show('verify')">重新验证</button>
       <button class="text-button" :disabled="busy" @click="show('recovery')">更新恢复码</button>
       <button v-if="status.totpEnabled === false" class="text-button" :disabled="busy" @click="show('totp-password')">添加验证器</button>
-      <button v-if="status.wechatAvailable" class="text-button" :disabled="busy" @click="show(status.wechatEnabled ? 'wechat-remove' : 'wechat-add')">{{ status.wechatEnabled ? '关闭微信验证' : '开启微信验证' }}</button>
+      <button v-if="status.wechatAvailable && !status.wechatAutomatic" class="text-button" :disabled="busy" @click="show(status.wechatEnabled ? 'wechat-remove' : 'wechat-add')">{{ status.wechatEnabled ? '关闭微信验证' : '开启微信验证' }}</button>
     </view>
     <view v-if="stage" class="security-overlay" @touchmove.stop.prevent>
       <view class="security-dialog">

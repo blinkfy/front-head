@@ -44,6 +44,7 @@
                             <text class="tables-title">表选择</text>
                             <text class="tables-subtitle">{{ currentTable ? getCurrentTableLabel() : '请选择表' }}</text>
                         </view>
+                        <view class="sql-header-toggle" @click="sqlExpanded = !sqlExpanded">{{ sqlExpanded ? '收起 SQL' : 'SQL 查询' }}</view>
                         <view class="tables-toggle" @click="toggleTablesCollapsed">
                             <ManifestIcon class="tables-toggle-icon" id="chevron_down" :scale="1" :style="{ transform: tablesCollapsed ? 'rotate(0deg)' : 'rotate(180deg)' }" />
                         </view>
@@ -60,6 +61,8 @@
                         </view>
                     </view>
                 </view>
+
+                <AdminReadonlySql ref="sqlPanel" v-show="sqlExpanded" :light="!isDark" :list-sql="editorListSql" :list-sql-revision="listSqlRevision" :sync-sql="syncSqlToTable" @result="showSqlResult" @query-start="beginDirectSql" @query-end="directSqlPending = false" />
 
                 <!-- 搜索栏 -->
                 <view class="search-card" v-if="currentTable">
@@ -80,31 +83,33 @@
                     </view>
 
                     <view v-if="databaseView === 'card' && currentColumnQuery.filters?.length" class="column-filter-notice" @click="setDatabaseView('table')">
-                        已启用 {{ currentColumnQuery.filters.length }} 个列筛选 · 切换表格查看
+                        已启用 {{ currentColumnQuery.filters.length }} 个列筛选{{ currentColumnQuery.columnsJoin === 'or' ? '（各列任意满足）' : '' }} · 切换表格查看
                     </view>
 
                     <!-- 时间筛选栏 -->
                     <view v-if="databaseView === 'card' || upperFiltersExpanded" class="filter-container">
-                        <view v-if="currentTable !== 'Chat'" class="filter-item">
+                        <view v-if="upperDateField()" class="filter-item">
                             <view class="filter-label"><ManifestIcon id="challenge_calendar" /> 开始日期</view>
-                            <picker mode="date" :value="startDate" @change="onStartDateChange"
-                                :end="endDate || getCurrentDate()">
+                            <picker mode="date" :value="startDate.slice(0, 10)" @change="onStartDateChange"
+                                :end="endDate.slice(0, 10) || getCurrentDate()">
                                 <view class="filter-picker">
                                     <text class="filter-value">{{ upperDateLabel('start', startDate) }}</text>
                                     <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                 </view>
                             </picker>
+                            <picker v-if="startDate && upperDateHasTime()" mode="time" :value="upperTime(startDate)" @change="onUpperTimeChange('start', $event)"><view class="upper-time-picker">时间 {{ upperTime(startDate) }} · 点击调整</view></picker>
                         </view>
 
-                        <view v-if="currentTable !== 'Chat'" class="filter-item">
+                        <view v-if="upperDateField()" class="filter-item">
                             <view class="filter-label"><ManifestIcon id="challenge_calendar" /> 结束日期</view>
-                            <picker mode="date" :value="endDate" @change="onEndDateChange" :start="startDate"
+                            <picker mode="date" :value="endDate.slice(0, 10)" @change="onEndDateChange" :start="startDate.slice(0, 10)"
                                 :end="getCurrentDate()">
                                 <view class="filter-picker">
                                     <text class="filter-value">{{ upperDateLabel('end', endDate) }}</text>
                                     <ManifestIcon class="picker-arrow" id="chevron_down" :scale="1.6" />
                                 </view>
                             </picker>
+                            <picker v-if="endDate && upperDateHasTime()" mode="time" :value="upperTime(endDate)" @change="onUpperTimeChange('end', $event)"><view class="upper-time-picker">时间 {{ upperTime(endDate) }} · 点击调整</view></picker>
                         </view>
 
                         <!-- Messages表专属筛选 -->
@@ -260,7 +265,39 @@
                 </view>
 
                 <!-- 当前表数据展示 -->
-                <view class="data-card" v-if="currentTable">
+                <view class="data-card sql-result-card" v-if="sqlResult">
+                    <view class="data-header">
+                        <text class="data-title">自定义 SQL 查询结果</text>
+                        <view class="data-actions" v-if="currentTable && canEditCurrentTable()">
+                            <template v-if="selectionMode && sqlEditable">
+                                <text class="selection-count">已选{{ selectedRecordKeys.length }}条</text>
+                                <view class="action-text-btn" @click="toggleSelectCurrentPage">{{ sqlGridRows.length && selectedRecordKeys.length === sqlGridRows.length ? '取消全选' : '全选结果' }}</view>
+                                <view class="action-text-btn" :class="{ disabled: !selectedRecordKeys.length }" @click="openBulkEdit">批量编辑</view>
+                                <view class="action-text-btn danger" :class="{ disabled: !selectedRecordKeys.length }" @click="handleBulkDelete">批量删除</view>
+                                <view class="action-text-btn" @click="exitSelectionMode">完成</view>
+                            </template>
+                            <template v-else>
+                                <view v-if="sqlEditable" class="action-text-btn" @click="enterSelectionMode">多选</view>
+                                <view class="action-text-btn" @click="handleAdd">新增到{{ getCurrentTableLabel() }}</view>
+                            </template>
+                        </view>
+                        <view class="action-text-btn" @click="returnToTable">返回数据表</view>
+                    </view>
+                    <text class="sql-result-info">{{ sqlDirectQuery ? 'SQL 查询 · 列筛选和排序与 SQL 同步' : '自定义 SQL 模式，当前表格筛选和排序未同步' }} · {{ sqlResult.rows.length }} 条结果{{ sqlResult.truncated ? '（超过 200 条，仅显示前 200 条）' : '' }} · {{ sqlEditableFields.length ? '当前表字段可双击编辑，提交后生效' : '结果只读（需包含当前表主键及可编辑字段）' }}</text>
+                    <view class="data-view-switch">
+                        <text class="data-view-label">展示方式</text>
+                        <view class="data-view-option" :class="{ active: databaseView === 'card' }" @click="setDatabaseView('card')">卡片</view>
+                        <view class="data-view-option" :class="{ active: databaseView === 'table' }" @click="setDatabaseView('table')">表格</view>
+                        <view v-if="databaseView === 'table'" class="data-view-option data-column-option" @click="sqlGrid?.toggleColumns()">选择列</view>
+                    </view>
+                    <AdminDatabaseGrid v-if="databaseView === 'table'" ref="sqlGrid" :light="!isDark" :table="currentTable || '__sql__'" :rows="sqlGridRows"
+                        :schema="getGenericSchema(currentTable)" :sql-columns="sqlGridColumns" :editable="sqlEditable" :sql-row-actions="sqlEditable" :selection-mode="selectionMode" :is-selected="isRecordSelected"
+                        :row-key="(_, index) => `sql:${index}`" :draft-key="getSelectionKey" :drafts="sqlEditable ? currentGridDrafts : {}"
+                        :edit-fields="sqlEditableFields" :submitting="gridSubmitting"
+                        :query-fields="sqlQueryFields" :column-query="sqlColumnQuery" @query-change="applySqlColumnQuery"
+                        @stage="stageGridEdit" @submit="submitGridEdits" @discard="discardGridEdits" @edit="editSqlRecord" @delete="handleDelete" @select="toggleRecordSelection" />
+                </view>
+                <view class="data-card" v-else-if="currentTable">
                     <view class="data-header">
                         <text class="data-title">{{ getCurrentTableLabel() }}</text>
                         <view class="data-actions" v-if="canEditCurrentTable()">
@@ -306,7 +343,7 @@
                         :edit-fields="getInlineEditFields()" :drafts="currentGridDrafts" :draft-key="getSelectionKey" :submitting="gridSubmitting"
                         :column-query="currentColumnQuery" @query-change="applyColumnQuery"
                         @stage="stageGridEdit" @submit="submitGridEdits" @discard="discardGridEdits"
-                        @edit="handleEdit" @delete="handleDelete" @select="toggleRecordSelection" @detail="recordDetail = $event" />
+                        @edit="handleEdit" @delete="handleDelete" @select="toggleRecordSelection" @detail="recordDetail = $event" @columns-change="onVisibleColumnsChange" />
                     <!-- 数据列表 -->
                     <view v-else class="data-list">
                         <view v-if="tableData.length > 0" class="data-item"
@@ -1014,7 +1051,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
+import { ref, computed, onMounted, onUnmounted, getCurrentInstance, nextTick } from 'vue'
 import { onShow, onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
@@ -1022,6 +1059,9 @@ import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
 import AdminDatabaseGrid from '@/components/AdminDatabaseGrid.vue'
+import AdminReadonlySql from '@/components/AdminReadonlySql.vue'
+import { parseTableSql, stripMirroredUpperFilters, projectListSql, updateTableSqlQuery } from './admin-sql-sync.mjs'
+import { withUserCostTotal } from './user-cost-summary.mjs'
 import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
 import {
     getUsersList, createUser, updateUser, deleteUser,
@@ -1032,11 +1072,193 @@ import {
     getMessagesList, createMessage, updateMessage, deleteMessage,
     getChatList, createChat, updateChat, deleteChat,
     getDatabaseStats,
-    getGenericTableList, createGenericTableRecord, updateGenericTableRecord, deleteGenericTableRecord,
+    getGenericTableList, getGenericTableRecord, createGenericTableRecord, updateGenericTableRecord, deleteGenericTableRecord,
     getAdminIdentityEvidence, updateAdminIdentityEvidence
 } from '@/api/database'
 
 const isDark = ref(false)
+const sqlExpanded = ref(false)
+const listSql = ref('')
+const visibleSqlColumns = ref(null)
+const availableSqlColumns = ref(null)
+const sqlSelectAll = ref(false)
+// Grid visibility includes calculated columns; native SQL projections exclude them.
+const userCostVisibleColumns = ref(null)
+const referenceKeyword = ref('')
+const editorListSql = computed(() => projectListSql(listSql.value, visibleSqlColumns.value, sqlSelectAll.value))
+function onVisibleColumnsChange({ table, columns, availableColumns }) {
+    if (table === 'UserCost') {
+        userCostVisibleColumns.value = columns.slice()
+        columns = columns.filter(key => key !== 'totalCost')
+        availableColumns = availableColumns.filter(key => key !== 'totalCost')
+    }
+    if (table === currentTable.value && !sqlResult.value && !directSqlPending.value) {
+        visibleSqlColumns.value = columns
+        availableSqlColumns.value = availableColumns
+        if (columns.length !== availableColumns.length) sqlSelectAll.value = false
+    }
+}
+const listSqlRevision = ref(0)
+const sqlResult = ref(null)
+const directSqlPending = ref(false)
+const sqlPanel = ref(null)
+const sqlGrid = ref(null)
+let sqlRecordRequestId = 0
+let nativeTableBeforeSql = ''
+function beginDirectSql() {
+    directSqlPending.value = true
+    tableLoadRequestId++
+    if (searchTimer.value) { clearTimeout(searchTimer.value); searchTimer.value = null }
+    if (tableLoadingRequestId) { tableLoadingRequestId = 0; uni.hideLoading() }
+}
+function showSqlResult(result) {
+    tableLoadRequestId++
+    if (!sqlResult.value) nativeTableBeforeSql = currentTable.value
+    // A custom result has no complete card record; keep it in the SQL grid.
+    setDatabaseView('table')
+    sqlRecordRequestId++
+    sqlResult.value = result
+    exitSelectionMode()
+    if (!sqlCanTarget(currentTable.value)) {
+        const candidates = tables.value.filter(table => sqlCanTarget(table.name))
+        if (candidates.length === 1) currentTable.value = candidates[0].name
+    }
+}
+function returnToTable({ restoreTable = true } = {}) {
+    const hadSqlResult = !!sqlResult.value || directSqlPending.value
+    sqlRecordRequestId++
+    sqlPanel.value?.cancelPending()
+    directSqlPending.value = false
+    sqlResult.value = null
+    if (restoreTable && nativeTableBeforeSql) currentTable.value = nativeTableBeforeSql
+    nativeTableBeforeSql = ''
+    exitSelectionMode()
+    if (hadSqlResult) listSqlRevision.value++
+}
+async function editSqlRecord(item) {
+    if (!sqlEditable.value) return
+    const table = currentTable.value
+    const requestId = ++sqlRecordRequestId
+    try {
+        uni.showLoading({ title: '加载记录…', mask: true })
+        const response = await getGenericTableRecord(table, getGenericRecordKey(item, table))
+        if (response?.code !== 0) throw new Error(response?.msg || '加载记录失败')
+        if (requestId === sqlRecordRequestId && sqlResult.value && currentTable.value === table) handleEdit(response.data)
+    } catch (error) { uni.showToast({ title: error?.msg || error?.message || '加载记录失败', icon: 'none' }) }
+    finally { uni.hideLoading() }
+}
+async function refreshAfterMutation() {
+    if (sqlResult.value) return sqlPanel.value?.rerunLast()
+    return loadTableData()
+}
+function syncSqlToTable(sql, { cardsOnly = databaseView.value === 'card' } = {}) {
+    if (currentTable.value && listSql.value && !sqlSelectAll.value && editorListSql.value.trim() === sql.trim()) {
+        returnToTable()
+        return true
+    }
+    let target = null, parsed = null
+    for (const table of tables.value) {
+        if (!table.sqlTableName) continue
+        const result = parseTableSql(sql, { tableName: table.sqlTableName, schema: getGenericSchema(table.name),
+            referenceSql: table.name === currentTable.value ? listSql.value : '', referenceKeyword: table.name === currentTable.value ? referenceKeyword.value : '', primaryKeys: table.primaryKeys || [],
+            nativeColumns: cardsOnly ? undefined : table.name === currentTable.value ? availableSqlColumns.value || Object.keys(tableData.value[0] || {}).filter(key => !/(password|passwd|secret|token|salt|hash|credential|privatekey)/i.test(key)) : [] })
+        if (result) { target = table; parsed = result; break }
+    }
+    if (!parsed) return false
+    if (searchTimer.value) { clearTimeout(searchTimer.value); searchTimer.value = null }
+    currentTable.value = target.name
+    searchKeyword.value = parsed.keyword || ''
+    startDate.value = ''
+    endDate.value = ''
+    selectionMode.value = false
+    selectedRecordKeys.value = []
+    recordDetail.value = null
+    columnQueries.value = { ...columnQueries.value, [target.name]: { filters: parsed.filters, columnsJoin: parsed.columnsJoin, sortField: parsed.sortField, direction: parsed.direction } }
+    syncUpperFiltersFromColumns()
+    currentPage.value = parsed.page
+    // Without LIMIT, start with the standard page size instead of reusing a previous SQL limit.
+    pageSize.value = parsed.pageSize ?? 20
+    if (!pageSizeOptions.includes(pageSize.value)) { pageSizeOptions.push(pageSize.value); pageSizeOptions.sort((a, b) => a - b) }
+    const loading = loadTableData()
+    const requestId = tableLoadRequestId
+    loading.then(async success => {
+        if (!success) return
+        await nextTick()
+        if (tableLoadRequestId === requestId && currentTable.value === target.name) {
+            sqlSelectAll.value = parsed.selectAll
+            visibleSqlColumns.value = parsed.columns
+            if (databaseView.value === 'table') databaseGrid.value?.setColumns(parsed.columns)
+        }
+    })
+    return true
+}
+const sqlGridColumns = computed(() => {
+    const names = sqlResult.value?.columns || []
+    const counts = new Map()
+    names.forEach(name => counts.set(name, (counts.get(name) || 0) + 1))
+    const used = new Set(names)
+    return names.map((name, index) => {
+        if (counts.get(name) === 1 && !['__proto__', 'constructor', 'prototype'].includes(name)) return { key: name, label: name }
+        let key = `_sql_column_${index}`
+        while (used.has(key)) key += '_'
+        used.add(key)
+        return { key, label: name }
+    })
+})
+const sqlGridRows = computed(() => (sqlResult.value?.rows || []).map(values => {
+    const row = Object.create(null)
+    sqlGridColumns.value.forEach((column, index) => { row[column.key] = values[index] })
+    return row
+}))
+const sqlDirectQuery = computed(() => {
+    const sql = sqlResult.value?.sql
+    if (!sql) return null
+    for (const table of tables.value) {
+        const options = { tableName: table.sqlTableName, schema: getGenericSchema(table.name), primaryKeys: table.primaryKeys || [] }
+        const parsed = parseTableSql(sql, options)
+        if (parsed) return { parsed, options, table: table.name }
+    }
+    return null
+})
+const sqlColumnQuery = computed(() => sqlDirectQuery.value?.parsed || { filters: [], sortField: '', direction: '' })
+const sqlQueryFields = computed(() => {
+    if (!sqlDirectQuery.value) return []
+    return sqlDirectQuery.value.options.schema.filter(field => {
+        const index = sqlGridColumns.value.findIndex(column => column.key === field.key)
+        const source = sqlResult.value.sources?.[index]
+        return index >= 0 && (!source || (source.model === sqlDirectQuery.value.table && source.field === field.key))
+    })
+})
+function applySqlColumnQuery(query) {
+    if (!sqlDirectQuery.value) return
+    const sql = updateTableSqlQuery(sqlResult.value.sql, query, sqlDirectQuery.value.options)
+    if (!sql) { uni.showToast({ title: '此条件暂不能转换为 SQL', icon: 'none' }); return }
+    sqlPanel.value?.executeDirect(sql)
+}
+function sqlCanTarget(tableName) {
+    if (!tableName || !sqlResult.value?.rows?.length) return false
+    const meta = getTableMeta(tableName)
+    if (!meta || meta.editable === false) return false
+    const schemaKeys = getGenericSchema(tableName).filter(field => field.primaryKey).map(field => field.key)
+    const primaryKeys = meta.primaryKeys?.length ? meta.primaryKeys : schemaKeys
+    if (!primaryKeys.length) return false
+    for (const key of primaryKeys) {
+        const index = sqlGridColumns.value.findIndex(column => column.key === key)
+        const source = sqlResult.value.sources?.[index]
+        if (index < 0 || source?.model !== tableName || source.field !== key || sqlResult.value.truncatedColumns?.[index]) return false
+    }
+    const keys = sqlGridRows.value.map(row => primaryKeys.map(key => row[key]))
+    return keys.every(parts => parts.every(value => value !== null && value !== undefined)) && new Set(keys.map(parts => JSON.stringify(parts))).size === keys.length
+}
+const sqlEditable = computed(() => canEditCurrentTable() && sqlCanTarget(currentTable.value))
+const sqlEditableFields = computed(() => {
+    if (!sqlEditable.value) return []
+    return getInlineEditFields().filter(field => {
+        const index = sqlGridColumns.value.findIndex(column => column.key === field.key)
+        const source = sqlResult.value.sources?.[index]
+        return index >= 0 && source?.model === currentTable.value && source.field === field.key && !sqlResult.value.truncatedColumns?.[index]
+    })
+})
 let unbindThemeStorage = () => {}
 function syncDatabaseTheme() { isDark.value = applyStoredTheme() === 'dark' }
 function onDatabaseThemeStorage(event) { if (!event || event.key === 'app_theme') syncDatabaseTheme() }
@@ -1150,9 +1372,32 @@ const databaseGrid = ref(null)
 const databaseView = ref('card')
 const upperFiltersExpanded = ref(false)
 function setDatabaseView(view) {
-    if (view === 'table' && databaseView.value !== 'table') upperFiltersExpanded.value = false
+    if (view === 'card' && sqlResult.value && !syncSqlToTable(sqlResult.value.sql, { cardsOnly: true })) {
+        uni.showToast({ title: '此查询无法转换为卡片记录筛选，请使用表格查看', icon: 'none' })
+        return
+    }
+    const enteringTable = view === 'table' && databaseView.value !== 'table'
+    const projection = (currentTable.value === 'UserCost' ? userCostVisibleColumns.value : visibleSqlColumns.value)?.slice() || null
+    const selectAll = sqlSelectAll.value
+    const querySql = editorListSql.value
+    if (enteringTable) upperFiltersExpanded.value = false
     databaseView.value = view
     try { uni.setStorageSync('admin-database-view', view) } catch {}
+    if (enteringTable && !sqlResult.value && (projection || selectAll)) {
+        const table = currentTable.value
+        nextTick(() => {
+            if (databaseView.value !== 'table' || sqlResult.value || currentTable.value !== table) return
+            const available = new Set(Object.keys(tableData.value[0] || {}).filter(key => !/(password|passwd|secret|token|salt|hash|credential|privatekey)/i.test(key)))
+            if (selectAll && getGenericSchema().some(field => !available.has(field.key))) {
+                // Cards use full native records; wildcard tables need the actual
+                // SQL when the native endpoint omits database columns.
+                sqlPanel.value?.executeDirect(querySql)
+                return
+            }
+            sqlSelectAll.value = selectAll
+            databaseGrid.value?.setColumns(projection)
+        })
+    }
 }
 function initializeDatabaseView() {
     try {
@@ -1195,7 +1440,10 @@ function columnSupportsUpperField(field) {
 function updateUpperColumnFilter(field, operators, condition) {
     if (!field || !columnSupportsUpperField(field)) return
     const query = currentColumnQuery.value
-    const filters = (query.filters || []).filter(item => item.field !== field || !operators.includes(item.operator))
+    const sameField = (query.filters || []).filter(item => item.field === field)
+    // The upper controls represent AND conditions; replace an OR group as a unit.
+    const replaceGroup = sameField.some(item => item.join === 'or')
+    const filters = (query.filters || []).filter(item => item.field !== field || (!replaceGroup && !operators.includes(item.operator)))
     if (condition && filters.length >= 20) {
         uni.showToast({ title: '最多添加20个条件', icon: 'none' })
         syncUpperFiltersFromColumns()
@@ -1203,6 +1451,7 @@ function updateUpperColumnFilter(field, operators, condition) {
     }
     if (condition) filters.push(condition)
     columnQueries.value = { ...columnQueries.value, [currentTable.value]: { ...query, filters } }
+    if (replaceGroup) syncUpperFiltersFromColumns()
 }
 function setUpperColumnSelection(field, index, options) {
     const value = options.value[Number(index)]?.value
@@ -1220,9 +1469,11 @@ function syncUpperFiltersFromColumns() {
     const field = upperDateField()
     if (field) {
         const matches = filters.filter(item => item.field === field)
+        const isOrGroup = matches.length > 1 && matches.some(item => item.join === 'or')
         const simpleDate = (operator, other) => {
+            if (isOrGroup) return ''
             const candidates = matches.filter(item => [operator, other].includes(item.operator))
-            return candidates.length === 1 && candidates[0].operator === operator && /^\d{4}-\d{2}-\d{2}$/.test(candidates[0].value) ? candidates[0].value : ''
+            return candidates.length === 1 && candidates[0].operator === operator && /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?$/.test(candidates[0].value) ? candidates[0].value : ''
         }
         startDate.value = simpleDate('gte', 'gt')
         endDate.value = simpleDate('lte', 'lt')
@@ -1249,6 +1500,15 @@ function upperDateLabel(bound, value) {
     const operators = bound === 'start' ? ['gte', 'gt', 'equals', 'null', 'notNull'] : ['lte', 'lt', 'equals', 'null', 'notNull']
     return field && (currentColumnQuery.value.filters || []).some(item => item.field === field && operators.includes(item.operator)) ? '列筛选中' : '选择日期'
 }
+function upperDateHasTime() { return getGenericSchema().find(field => field.key === upperDateField())?.type === 'DATE' }
+function upperTime(value) { return /[ T](\d{2}:\d{2})/.exec(value)?.[1] || '00:00' }
+function onUpperTimeChange(bound, event) {
+    const state = bound === 'start' ? startDate : endDate
+    const suffix = /[ T]\d{2}:\d{2}(:\d{2}(?:\.\d+)?)?$/.exec(state.value)?.[1] || ':00'
+    const change = { detail: { value: `${state.value.slice(0, 10)} ${event.detail.value}${suffix}` } }
+    if (bound === 'start') onStartDateChange(change)
+    else onEndDateChange(change)
+}
 
 const gridDrafts = ref({})
 const gridSubmitting = ref(false)
@@ -1258,13 +1518,15 @@ function getInlineEditFields() {
         const schema = getGenericSchema(currentTable.value)
         const fields = getBulkEditableFields().map(field => ({ ...(schema.find(column => column.key === field.key) || {}), ...field }))
         if (currentTable.value === 'Device') {
-            return [...fields, ...['longitude', 'latitude'].map(key => {
+            const labels = { longitude: '经度', latitude: '纬度', mapType: '地图类型', coordinateSystem: '坐标系', callback_url: '回调地址' }
+            return [...fields, ...Object.keys(labels).filter(key => schema.some(column => column.key === key)).map(key => {
                 const column = schema.find(entry => entry.key === key) || {}
-                return { ...column, ...makeBulkField(key, key === 'longitude' ? '经度' : '纬度', column.type || 'DECIMAL') }
+                return { ...column, ...makeBulkField(key, labels[key], column.type || 'STRING') }
             })]
         }
         if (currentTable.value === 'History') {
-            return [...fields, { ...(schema.find(column => column.key === 'userId') || {}), ...makeBulkField('userId', '用户 ID', 'INTEGER') }]
+            const additions = [makeBulkField('userId', '用户 ID', 'INTEGER'), makeBulkField('userDeleted', '用户已删除', 'BOOLEAN'), makeBulkField('userDeletedAt', '删除时间', 'DATE')]
+            return [...fields, ...additions.filter(field => schema.some(column => column.key === field.key)).map(field => ({ ...(schema.find(column => column.key === field.key) || {}), ...field }))]
         }
         if (currentTable.value === 'Message') {
             return [...fields, ...['senderId', 'receiverId', 'refId'].map(key => {
@@ -1324,7 +1586,7 @@ async function submitGridEdits() {
         gridSubmitting.value = false
         uni.hideLoading()
     }
-    if (currentTable.value === table && succeeded) await loadTableData()
+    if (currentTable.value === table && succeeded) await refreshAfterMutation()
     uni.showModal({ title: '提交结果', content: failed ? `成功 ${succeeded} 条，失败 ${failed} 条。失败草稿已保留。\n${firstError}` : `已提交 ${succeeded} 条记录。`, showCancel: false })
 }
 const selectionMode = ref(false)
@@ -1441,8 +1703,8 @@ const binTypeFilterOptions = ref([
 const currentPage = ref(1)
 const pageJumpInput = ref('')
 const pageSize = ref(20)
-// 管理接口最多返回 100 条；保留分批分页，避免单次请求过大。
-const pageSizeOptions = [10, 20, 50, 100]
+// 常用分页选项；SQL 中指定的其他条数会自动加入，默认仍为 20 条。
+const pageSizeOptions = [10, 20, 50, 100, 200]
 const totalCount = ref(0)
 const totalPages = ref(0)
 
@@ -1450,6 +1712,7 @@ const totalPages = ref(0)
 const legacyTableCatalog = [
     { name: 'UserIdentity', label: '用户实名认证记录表', icon: 'user_identity_table' },
     { name: 'User', label: '用户表', icon: 'user_table' },
+    { name: 'UserCost', label: '用户累计成本表', icon: 'user_cost_table' },
     { name: 'Device', label: '设备表', icon: 'device_table' },
     { name: 'Bin', label: '垃圾桶表', icon: '' },
     { name: 'FriendRequest', label: '好友申请表', icon: 'friend_request_table' },
@@ -1479,7 +1742,7 @@ const legacyTableCatalog = [
     { name: 'ChallengeRecord', label: '挑战记录表', icon: 'challenge_record_table' },
     { name: 'ChallengeQuestion', label: '挑战题库表', icon: 'challenge_question_table' },
     { name: 'BookingOrder', label: '预约订单表', icon: 'reservation_order_table' },
-    { name: 'WasteType', label: '垃圾分类表', icon: 'classification_table' },
+    { name: 'WasteType', label: '回收种类表', icon: 'classification_table' },
     { name: 'Community', label: '社区表', icon: 'community_table' },
     { name: 'RegionNode', label: '地区节点表', icon: 'region_node_table' },
     { name: 'UserCommunity', label: '用户社区表', icon: 'user_community_relation_table' },
@@ -1688,6 +1951,8 @@ async function hydrateMissingTableCounts(statsTables = []) {
 
 function getGenericSchema(tableName = currentTable.value) {
     const schema = tableSchemas.value?.[tableName]
+    if (tableName === 'UserCost' && Array.isArray(schema)) return [...schema,
+        { key: 'totalCost', label: '总成本（元）', type: 'DECIMAL', generated: true, readOnly: true }]
     return Array.isArray(schema) ? schema : []
 }
 
@@ -1903,6 +2168,9 @@ function openAiSettings() {
 }
 
 function selectTable(table) {
+    visibleSqlColumns.value = null
+    availableSqlColumns.value = null
+    sqlSelectAll.value = false
     recordDetail.value = null
     const tableName = typeof table === 'string' ? table : table.name
     currentTable.value = tableName
@@ -1943,7 +2211,7 @@ function getCurrentDate() {
 
 // 开始日期变化
 function onStartDateChange(e) {
-    startDate.value = e.detail.value
+    startDate.value = e.detail.value.length === 10 ? e.detail.value + (/([ T].*)$/.exec(startDate.value)?.[1] || '') : e.detail.value
     const field = upperDateField()
     updateUpperColumnFilter(field, ['gt', 'gte'], field && startDate.value ? { field, operator: 'gte', value: startDate.value } : null)
     console.log('开始日期:', startDate.value)
@@ -1953,7 +2221,7 @@ function onStartDateChange(e) {
 
 // 结束日期变化
 function onEndDateChange(e) {
-    endDate.value = e.detail.value
+    endDate.value = e.detail.value.length === 10 ? e.detail.value + (/([ T].*)$/.exec(endDate.value)?.[1] || '') : e.detail.value
     const field = upperDateField()
     updateUpperColumnFilter(field, ['lt', 'lte'], field && endDate.value ? { field, operator: 'lte', value: endDate.value } : null)
     console.log('结束日期:', endDate.value)
@@ -1965,6 +2233,8 @@ function onEndDateChange(e) {
 function resetDateFilter() {
     startDate.value = ''
     endDate.value = ''
+    const field = upperDateField()
+    updateUpperColumnFilter(field, ['gt', 'gte', 'lt', 'lte'], null)
     console.log('重置日期筛选')
     currentPage.value = 1  // 重置到第一页
     loadTableData()
@@ -2131,13 +2401,17 @@ function clearSearch() {
 }
 
 let tableLoadRequestId = 0
+let tableLoadingRequestId = 0
 async function loadTableData() {
+    if (searchTimer.value) { clearTimeout(searchTimer.value); searchTimer.value = null }
     const requestId = ++tableLoadRequestId
+    returnToTable({ restoreTable: false })
     selectedRecordKeys.value = []
     genericUserIdFields.value = []
     genericUserNames.value = {}
     try {
         uni.showLoading({ title: '加载中...', mask: true })
+        tableLoadingRequestId = requestId
 
         if (!currentTable.value) {
             tableData.value = []
@@ -2149,10 +2423,12 @@ async function loadTableData() {
         // 构建分页参数
         const params = {
             page: currentPage.value,
-            pageSize: pageSize.value
+            pageSize: pageSize.value,
+            includeSql: '1'
         }
         const columnQuery = currentColumnQuery.value
         if (columnQuery.filters?.length) params.columnFilters = JSON.stringify(columnQuery.filters)
+        if (columnQuery.columnsJoin === 'or') params.columnJoin = 'or'
         if (columnQuery.sortField) {
             params.columnSort = columnQuery.sortField
             params.columnDirection = columnQuery.direction
@@ -2231,13 +2507,22 @@ async function loadTableData() {
             }
         }
 
+        // Upper controls mirror column filters. Reapplying them as top-level
+        // AND conditions would silently narrow a cross-column OR expression.
+        stripMirroredUpperFilters(params, columnQuery, upperDateField())
+
         if (!isSpecialTable(currentTable.value)) {
             const response = await getGenericTableList(currentTable.value, params)
             if (requestId !== tableLoadRequestId) return false
             if (response && response.code === 0) {
+                sqlResult.value = null
+                listSql.value = response.data.listSql || ''
+                referenceKeyword.value = params.keyword || ''
+                listSqlRevision.value++
                 genericUserIdFields.value = Array.isArray(response.data.userIdFields) ? response.data.userIdFields : []
                 genericUserNames.value = response.data.userNames || {}
-                tableData.value = response.data.list || []
+                tableData.value = currentTable.value === 'UserCost'
+                    ? (response.data.list || []).map(withUserCostTotal) : (response.data.list || [])
                 totalCount.value = response.data.total || 0
                 totalPages.value = Math.ceil(totalCount.value / pageSize.value)
                 if (Array.isArray(response.data.schema) && response.data.schema.length) {
@@ -2285,6 +2570,10 @@ async function loadTableData() {
 
         if (requestId !== tableLoadRequestId) return false
         if (response && response.code === 0) {
+            sqlResult.value = null
+            listSql.value = response.data.listSql || ''
+            referenceKeyword.value = params.keyword || ''
+            listSqlRevision.value++
             tableData.value = response.data.list || []
             totalCount.value = response.data.total || 0
             totalPages.value = Math.ceil(totalCount.value / pageSize.value)
@@ -2329,7 +2618,7 @@ async function loadTableData() {
         totalPages.value = 0
         return false
     } finally {
-        if (requestId === tableLoadRequestId) uni.hideLoading()
+        if (requestId === tableLoadingRequestId) { tableLoadingRequestId = 0; uni.hideLoading() }
     }
 }
 
@@ -2421,16 +2710,17 @@ function exitSelectionMode() {
 }
 
 function toggleSelectCurrentPage() {
-    if (tableData.value.length && selectedRecordKeys.value.length === tableData.value.length) {
+    const rows = sqlResult.value ? sqlGridRows.value : tableData.value
+    if (rows.length && selectedRecordKeys.value.length === rows.length) {
         selectedRecordKeys.value = []
         return
     }
-    selectedRecordKeys.value = tableData.value.map(item => getSelectionKey(item))
+    selectedRecordKeys.value = rows.map(item => getSelectionKey(item))
 }
 
 function getSelectedRecords() {
     const selected = new Set(selectedRecordKeys.value)
-    return tableData.value.filter(item => selected.has(getSelectionKey(item)))
+    return (sqlResult.value ? sqlGridRows.value : tableData.value).filter(item => selected.has(getSelectionKey(item)))
 }
 
 function makeBulkField(key, label, type = 'STRING', options = []) {
@@ -2656,7 +2946,7 @@ async function handleDelete(item) {
                     if (response && response.code === 0) {
                         uni.showToast({ title: '删除成功', icon: 'success' })
                         // 重新加载数据
-                        await loadTableData()
+                        await refreshAfterMutation()
                     } else {
                         uni.showToast({
                             title: response?.msg || '删除失败',
@@ -2711,7 +3001,7 @@ function handleBulkDelete() {
                 uni.hideLoading()
             }
             exitSelectionMode()
-            await loadTableData()
+            await refreshAfterMutation()
             uni.showToast({
                 title: failed ? `删除${succeeded}条，失败${failed}条` : `成功删除${succeeded}条`,
                 icon: failed ? 'none' : 'success',
@@ -2793,7 +3083,7 @@ function confirmBulkEdit() {
                 uni.hideLoading()
             }
             exitSelectionMode()
-            await loadTableData()
+            await refreshAfterMutation()
             uni.showToast({
                 title: failed ? `更新${succeeded}条，失败${failed}条` : `成功更新${succeeded}条`,
                 icon: failed ? 'none' : 'success',
@@ -2824,7 +3114,7 @@ async function handleSave() {
             if (response && response.code === 0) {
                 uni.showToast({ title: '保存成功', icon: 'success' })
                 closeEditModal()
-                await loadTableData()
+                await refreshAfterMutation()
             } else {
                 uni.showToast({
                     title: response?.msg || '保存失败',
@@ -2986,7 +3276,7 @@ async function handleSave() {
             uni.showToast({ title: '保存成功', icon: 'success' })
             closeEditModal()
             // 重新加载数据
-            await loadTableData()
+            await refreshAfterMutation()
         } else {
             uni.showToast({
                 title: response?.msg || '保存失败',
@@ -3140,6 +3430,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.upper-time-picker { margin-top: 6rpx; color: #7bd8de; font-size: 20rpx; }
+.database-light .upper-time-picker { color: #087d60; }
+.sql-result-info { display: block; margin: 8rpx 0 16rpx; color: #9cc1cd; font-size: 22rpx; }
+.database-light .sql-result-info { color: #617a72; }
+.sql-header-toggle { margin-left: auto; margin-right: 12rpx; padding: 8rpx 16rpx; border: 1px solid #1f6077; border-radius: 10rpx; color: #6ed9eb; font-size: 22rpx; white-space: nowrap; }
+.database-light .sql-header-toggle { color: #087d60; background: #eaf7f0; border-color: #cce9da; }
 /* 页面根容器 */
 .database-page {
     height: 100vh;
@@ -3774,7 +4070,8 @@ onUnmounted(() => {
 /* 数据展示卡片 */
 .data-card {
     position: relative;
-    z-index: 10;
+    /* Grid dialogs must also sit above sibling cards and the footer tip. */
+    z-index: 11;
     margin: 0 40rpx 30rpx;
     background: rgba(0, 35, 65, 0.95);
     border-radius: 30rpx;

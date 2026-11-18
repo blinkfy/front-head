@@ -1,11 +1,11 @@
 <template>
   <view v-if="card" class="activity-message">
-    <view class="activity-main" role="button" :aria-label="summary" @click.stop="$emit('open')">
+    <view class="activity-main" :role="actionable ? 'button' : undefined" :aria-label="summary" @click.stop="actionable && $emit('open')">
       <view class="activity-symbol"><ManifestIcon :id="card.activity === 'location' ? 'map_location' : card.mode === 'video' ? 'chat_video_call' : 'chat_voice_call'" size="54rpx" /></view>
       <view class="activity-copy">
         <text class="activity-title">{{ card.activity === 'location' ? '实时位置共享' : card.mode === 'video' ? '视频通话' : '语音通话' }}</text>
         <text class="activity-detail">{{ detail }}</text>
-        <text class="activity-action">{{ card.activity === 'location' ? '查看共享状态' : '再次呼叫' }}<text class="activity-arrow">›</text></text>
+        <text v-if="actionable" class="activity-action">{{ card.activity === 'location' ? '查看共享状态' : '再次呼叫' }}<text class="activity-arrow">›</text></text>
       </view>
     </view>
     <button v-if="recording" class="activity-recording" @click.stop="$emit('open-recording')">
@@ -19,7 +19,7 @@
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { realtimeActivitySummary } from '@/utils/realtime-activity.mjs'
 export default {
-  components: { ManifestIcon }, props: { card: Object, self: Boolean, recording: Object }, emits: ['open', 'open-recording'],
+  components: { ManifestIcon }, props: { card: Object, self: Boolean, recording: Object, actionable: { type: Boolean, default: true } }, emits: ['open', 'open-recording'],
   computed: {
     summary() { return realtimeActivitySummary(this.card, this.self) },
     detail() { return this.card.activity === 'location' ? '发起了一次位置共享' : this.summary.split(' · ').slice(1).join(' · ') }

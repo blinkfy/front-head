@@ -1,0 +1,10 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import LocalAsrBridge from 'ftx.speech.LocalAsrBridge'
+
+export function localSpeechRequest(options: string, callback: (result: string) => void): void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) { callback('{"available":false}'); return }
+  LocalAsrBridge.request(context!, options, callback)
+}
+
+export function localSpeechCancel(id: string): void { LocalAsrBridge.cancel(id) }

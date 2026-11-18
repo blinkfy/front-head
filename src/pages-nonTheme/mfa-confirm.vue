@@ -79,7 +79,7 @@ const validScene = computed(() => /^mf_[0-9a-f]{28}$/.test(scene.value))
 const operationLabel = computed(() => ({ login: '登录验证', setup: '开启微信确认', bind: '添加微信确认' }[info.value?.operation] || '账号验证'))
 const confirmActionLabel = computed(() => ({ login: '确认登录', setup: '确认开启', bind: '确认添加' }[info.value?.operation] || '确认'))
 const operationDescription = computed(() => ({
-  login: '有人正在使用密码登录此账号。',
+  login: '有人正在登录此账号。',
   setup: '有人正在为此账号开启微信确认。',
   bind: '有人正在为此账号添加微信确认。'
 }[info.value?.operation] || '有人正在发起账号验证。'))

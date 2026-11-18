@@ -2,7 +2,7 @@
   <view class="wechat-login-panel" :class="{ 'panel-dark': dark }">
     <view class="panel-heading">
       <view class="heading-icon"><ManifestIcon id="wechat" :scale="2.7" /></view>
-      <view><text class="panel-title">{{ registrationAllowed ? '微信扫码登录' : (status === 'manual' ? '微信扫码注册' : '微信扫码登录 / 注册') }}</text><text class="panel-description">{{ registrationAllowed ? `已有账号可扫码登录${targetLabel}。` : (status === 'manual' ? '在小程序完成注册后，使用账号密码登录网页。' : `已有账号扫码登录；新用户可在小程序注册，确认后自动登录${targetLabel}。`) }}</text></view>
+      <view><text class="panel-title">{{ mfaTicket ? '扫码验证' : registrationAllowed ? '微信扫码登录' : (status === 'manual' ? '微信扫码注册' : '微信扫码登录 / 注册') }}</text><text class="panel-description">{{ mfaTicket ? `请使用当前账号扫码，完成${targetLabel}登录验证。` : registrationAllowed ? `已有账号可扫码登录${targetLabel}。` : (status === 'manual' ? '在小程序完成注册后，使用账号密码登录网页。' : `已有账号扫码登录；新用户可在小程序注册，确认后自动登录${targetLabel}。`) }}</text></view>
     </view>
     <view class="qr-halo">
       <view class="qr-leaf leaf-left"></view><view class="qr-leaf leaf-right"></view>
@@ -20,14 +20,14 @@
     <view class="scan-steps">
       <view v-for="(step, index) in steps" :key="step.icon" class="scan-step">
         <ManifestIcon :id="step.icon" :scale="2.3" /><text class="step-number">{{ index + 1 }}</text>
-        <text class="step-title">{{ registrationAllowed && index === 2 ? '账号登录' : (status === 'manual' && index === 3 ? '账号密码登录' : step.title) }}</text><text class="step-description">{{ registrationAllowed && index === 2 ? '使用已有账号' : (status === 'manual' && index === 3 ? '返回网页使用账号密码登录' : step.description) }}</text>
+        <text class="step-title">{{ mfaTicket && index === 2 ? '验证当前账号' : registrationAllowed && index === 2 ? '账号登录' : (status === 'manual' && index === 3 ? '账号密码登录' : step.title) }}</text><text class="step-description">{{ mfaTicket && index === 2 ? '确认当前账号' : registrationAllowed && index === 2 ? '使用已有账号' : (status === 'manual' && index === 3 ? '返回网页使用账号密码登录' : step.description) }}</text>
       </view>
     </view>
     <view class="scan-status" role="status" aria-live="polite">
       <view class="status-icon"><ManifestIcon id="camera_scan" :scale="2.1" /></view>
-      <view><text class="status-title">{{ message }}</text><text class="status-detail">{{ registrationAllowed ? `请在扫码端确认登录${targetLabel}${reference ? `，核对确认码 ${reference}` : '。'}` : (status === 'manual' ? '本页保留账号密码登录，注册完成后即可使用。' : `请在扫码端确认登录${targetLabel}${reference ? `，核对确认码 ${reference}` : '。'}`) }}</text></view>
+      <view><text class="status-title">{{ message }}</text><text class="status-detail">{{ mfaTicket ? `请在扫码端确认当前账号的登录验证${reference ? `，核对确认码 ${reference}` : '。'}` : registrationAllowed ? `请在扫码端确认登录${targetLabel}${reference ? `，核对确认码 ${reference}` : '。'}` : (status === 'manual' ? '本页保留账号密码登录，注册完成后即可使用。' : `请在扫码端确认登录${targetLabel}${reference ? `，核对确认码 ${reference}` : '。'}`) }}</text></view>
     </view>
-    <text v-if="!registrationAllowed" class="version-hint">若小程序未出现登录确认，完成注册后可用账号密码登录。</text>
+    <text v-if="!registrationAllowed && !mfaTicket" class="version-hint">若小程序未出现登录确认，完成注册后可用账号密码登录。</text>
     <button class="qr-refresh" :disabled="refreshing || status === 'loading' || status === 'consuming' || disabled" @click="refresh">↻　刷新二维码</button>
   </view>
   <WechatQrDownloadMenu :menu="qrMenu" :dark="dark" @close="closeQrMenu" @download="downloadQr" />
@@ -44,7 +44,7 @@ import { createH5RegistrationRelay } from '@/utils/registration-relay.mjs'
 import { useGeneratedRoundCode } from '@/utils/use-generated-roundcode.js'
 import { roundCodePreparationText } from '@/utils/roundcode-preparation-progress.mjs'
 
-const props = defineProps({ dark: Boolean, disabled: Boolean, registrationAllowed: Boolean })
+const props = defineProps({ dark: Boolean, disabled: Boolean, registrationAllowed: Boolean, mfaTicket: { type: String, default: '' } })
 const emit = defineEmits(['login', 'busy'])
 let targetLabel = '网页', appPlatform = false, pageActive = true
 // #ifdef APP-PLUS
@@ -74,9 +74,11 @@ const steps = [
 ]
 let stopped = false
 let fallbackAttempt = 0
-const relay = createH5RegistrationRelay({ api: registrationApi,
+function createRelay() {
+  const mfaTicket = props.mfaTicket
+  return createH5RegistrationRelay({ api: { ...registrationApi, create: () => registrationApi.create(mfaTicket ? { mfaTicket } : {}) },
   prepareRefresh: (session, current) => prepareRefresh(registrationApi.qrUrl(session), current),
-  onUnsupported() { reference.value = ''; qrSource.value = `${registrationApi.fixedQrUrl()}?v=${++fallbackAttempt}`; qrState.value = 'loading' },
+  onUnsupported: mfaTicket ? undefined : function () { reference.value = ''; qrSource.value = `${registrationApi.fixedQrUrl()}?v=${++fallbackAttempt}`; qrState.value = 'loading' },
   onState(state) {
     refreshing.value = state.refreshing === true
     status.value = state.status
@@ -94,8 +96,10 @@ const relay = createH5RegistrationRelay({ api: registrationApi,
     }
     if (terminal.value || (state.status === 'error' && !state.session)) { qrSource.value = ''; qrState.value = 'error' }
   },
-  onLogin(result) { emit('login', result) }
-})
+  onLogin(result) { emit('login', result, mfaTicket) }
+  })
+}
+let relay = createRelay()
 function resume() { if (!stopped && !props.disabled && visible()) relay.resume() }
 function pause() { relay.pause() }
 function stop() { if (stopped) return; stopped = true; relay.stop(); emit('busy', false) }
@@ -103,6 +107,11 @@ function refresh() { if (!props.disabled) void relay.refresh() }
 // #ifdef H5
 function visibilityChanged() { if (document.hidden) pause(); else resume() }
 // #endif
+watch(() => props.mfaTicket, () => {
+  relay.stop(); emit('busy', false)
+  qrSource.value = ''; qrState.value = 'loading'; reference.value = ''
+  relay = createRelay(); resume()
+}, { flush: 'sync' })
 watch(() => props.disabled, disabled => { if (disabled) pause(); else resume() }, { flush: 'sync' })
 onShow(() => { pageActive = true; resume() })
 onHide(() => { pageActive = false; pause() })

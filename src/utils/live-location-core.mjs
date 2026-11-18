@@ -1,6 +1,6 @@
 export const LOCATION_END_LABELS = {
   left: '已退出位置共享', disconnected: '连接已断开，已停止共享我的位置', background: '已离开前台，已停止共享我的位置',
-  forbidden: '当前无法共享，请检查联系人、免打扰和聊天开关', ended: '这次位置共享已结束',
+  forbidden: '当前无法共享，请检查联系人关系或对方免打扰设置', ended: '这次位置共享已结束',
   busy: '已有位置共享正在进行，请先退出后重试', existing: '双方已有共享，请从聊天顶部的入口加入',
   rate_limited: '操作过于频繁，请稍后重试', invalid: '位置共享信息无效',
   permission_denied: '未获得定位权限，未共享位置', unavailable: '暂时无法定位，请检查定位服务后重试',

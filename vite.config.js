@@ -24,7 +24,8 @@ export default defineConfig(async ({ mode }) => {
         exclude: [
           '@/uni_modules/ftx-huawei-push',
           '@/uni_modules/ftx-map-local-server',
-          '@/uni_modules/ftx-upload-webp'
+          '@/uni_modules/ftx-upload-webp',
+          '@/uni_modules/ftx-local-asr'
         ]
       }
     } : {}),

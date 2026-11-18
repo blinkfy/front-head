@@ -1,5 +1,5 @@
 export function createPasskeyAdapter({ environment, api, setTimer = setTimeout, clearTimer = clearTimeout }) {
-  let controller = null, capabilityCache = null, capabilityUntil = 0
+  let controller = null, capabilityCache = null, capabilityUntil = 0, authenticatedLogin = null
   const cancelled = () => ({ error: 'CANCELLED' })
   function decode(value) {
     const raw = environment.atob(value.replace(/-/g, '+').replace(/_/g, '/'))
@@ -75,11 +75,27 @@ export function createPasskeyAdapter({ environment, api, setTimer = setTimeout, 
       if (!isActive()) throw cancelled()
       return (await api('/quick-login/passkey/enrollment/finish', { challengeId: data.challengeId, response }, token)).data
     },
+    consumeLogin(token, userId) {
+      if (!authenticatedLogin || authenticatedLogin.token !== token || String(authenticatedLogin.userId) !== String(userId)) return null
+      const result = authenticatedLogin; authenticatedLogin = null
+      return result
+    },
     async login({ credentialId, mfaTicket, mfaSetupTicket, isActive }) {
+      authenticatedLogin = null
       const { data } = await api('/quick-login/passkey/login/options', { credentialId, ...(mfaTicket ? { mfaTicket } : {}) })
       const response = await ceremony(data.options, false, isActive)
       if (!isActive()) throw cancelled()
-      return api('/quick-login/passkey/login/finish', { challengeId: data.challengeId, response, ...(mfaSetupTicket ? { mfaSetupTicket } : {}) })
+      const result = await api('/quick-login/passkey/login/finish', { challengeId: data.challengeId, response, ...(mfaSetupTicket ? { mfaSetupTicket } : {}), ...(mfaTicket ? { mfaTicket } : {}) })
+      if (!isActive()) throw cancelled()
+      // MFA uses this adapter directly, without the normal quick-login binding.
+      // Retain only a completed login, scoped to its exact session and account.
+      if (result?.token && Number.isSafeInteger(Number(result.accountId)) && Number(result.accountId) > 0) {
+        const binding = result.quickLogin
+        authenticatedLogin = { token: result.token, userId: result.accountId,
+          credentialId: binding?.platform === 'passkey' && String(binding.userId) === String(result.accountId) &&
+            typeof binding.credentialId === 'string' ? binding.credentialId : '' }
+      }
+      return result
     },
     cancel() { controller?.abort(); controller = null }
   }

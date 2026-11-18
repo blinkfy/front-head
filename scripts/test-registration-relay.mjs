@@ -47,7 +47,10 @@ test('registration API tags only APP-created sessions', async () => {
   } }
   await createRegistrationApi({ runtime, baseUrl: 'https://example.test' }).create()
   await createRegistrationApi({ runtime, baseUrl: 'https://example.test', clientPlatform: 'app' }).create()
-  assert.deepEqual(calls.map(call => call.data), [{}, { clientPlatform: 'app' }])
+  await createRegistrationApi({ runtime, baseUrl: 'https://example.test' }).create({ mfaTicket: 'pending-account-ticket', accountId: 999 })
+  await createRegistrationApi({ runtime, baseUrl: 'https://example.test', clientPlatform: 'app' }).create({ mfaTicket: 'pending-account-ticket' })
+  assert.deepEqual(calls.map(call => call.data), [{}, { clientPlatform: 'app' },
+    { mfaTicket: 'pending-account-ticket' }, { clientPlatform: 'app', mfaTicket: 'pending-account-ticket' }])
 })
 
 test('route leave ignores stale status and creation responses and cancels session', async () => {

@@ -18,7 +18,7 @@
         <view class="booking-intro">
           <view class="intro-heading">
             <view class="intro-title"><text>让闲置</text><text>再出发</text></view>
-            <image class="recycling-loop" src="/static/icons/recycling-loop.png" mode="aspectFit" aria-hidden="true" />
+            <image class="recycling-loop" src="/static/icons/recycling-loop.webp.png" mode="aspectFit" aria-hidden="true" />
           </view>
           <text class="intro-note">选好物品和时间，回收员上门收取</text>
           <view class="booking-route"><text>确认地址</text><view class="route-line"></view><text>选择物品</text><view class="route-line"></view><text>预约上门</text></view>

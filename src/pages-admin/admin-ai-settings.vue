@@ -61,7 +61,7 @@
               <view class="row-dot dot-green"></view>
               <div>
                 <div class="label">社区互动与聊天关联</div>
-                <div class="desc">独立于 LLM：开启发帖、评论、作者联系、帖子分享、互动提醒及联系人、新朋友、找人、群聊管理；关闭后保留浏览、点赞、内容管理及已有会话聊天</div>
+                <div class="desc">独立于 LLM：开启发帖、评论、作者联系、帖子分享、互动提醒、联系人和群聊管理，以及发起通话和实时位置共享入口；关闭后保留浏览、点赞、内容管理、已有会话聊天及正在进行的通话与共享</div>
               </div>
             </div>
             <view class="switch-row">
@@ -105,16 +105,42 @@
             </picker>
           </div>
 
+          <div class="row">
+            <div class="row-label-group">
+              <view class="row-dot dot-purple"></view>
+              <div>
+                <div class="label">LLM 供应商</div>
+                <div class="desc">用于 AI 对话、识别增强及聊天 AI</div>
+              </div>
+            </div>
+            <picker :range="providerOptions" range-key="label" :value="providerIndex" @change="onProviderChange" class="picker-wrap">
+              <view class="picker-display">
+                <text>{{ providerOptions[providerIndex].label }}</text>
+                <ManifestIcon class="picker-arrow" id="chevron_down" :scale="0.8" />
+              </view>
+            </picker>
+          </div>
+          <div class="row">
+            <div class="row-label-group">
+              <view class="row-dot dot-blue"></view>
+              <div>
+                <div class="label">供应商密钥{{ llmCredentials[form.provider] ? '已配置' : '未配置' }}</div>
+                <div class="desc">{{ form.provider === 'deepseek' ? '在服务端配置 DEEPSEEK_API_KEY；可用 DEEPSEEK_BASE_URL 自定义接口地址。联网搜索请选择 deepseek-flash，工具调用按官方标准另行计费。' : '在服务端配置 DASHSCOPE_API_KEY 或 QWEN_API_KEY' }}</div>
+              </div>
+            </div>
+          </div>
+
           <!-- 模型名 -->
           <div class="row">
             <div class="row-label-group">
               <view class="row-dot dot-purple"></view>
               <div>
                 <div class="label">模型名</div>
-                <div class="desc">例如：qwen3.5-flash</div>
+                <div class="desc">{{ form.provider === 'deepseek' ? 'deepseek-flash 支持文字与图片；deepseek-v4-pro 仅支持文字' : '例如：qwen3.5-flash' }}</div>
               </div>
             </div>
-            <input class="input" type="text" :value="form.model" @input="form.model = $event.detail.value" placeholder="qwen3.5-flash" />
+            <input v-if="form.provider === 'deepseek'" class="input" type="text" :value="form.deepseekModel" @input="form.deepseekModel = $event.detail.value" placeholder="deepseek-flash" />
+            <input v-else class="input" type="text" :value="form.model" @input="form.model = $event.detail.value" placeholder="qwen3.5-flash" />
           </div>
 
           <!-- 推荐算法 -->
@@ -166,18 +192,22 @@
             </view>
           </div>
 
-          <!-- Thinking 预算 -->
+          <!-- Thinking 强度 -->
           <div class="row" :class="{ 'row-muted': !form.enableThinking }">
             <div class="row-label-group">
               <view class="row-dot dot-purple"></view>
               <div>
-                <div class="label">Thinking 预算 <text class="badge-range">256 – 81920</text></div>
-                <div class="desc">仅在 Thinking 模式开启时生效</div>
+                <div class="label">思考强度</div>
+                <div class="desc">{{ form.provider === 'qwen' ? 'Qwen3.5 通过指令调节；支持原生强度的型号使用对应参数' : 'deepseek 支持低、高、最高三档' }}</div>
               </div>
             </div>
-            <input class="input" type="number" :value="form.thinkingBudget"
-              @input="form.thinkingBudget = Number($event.detail.value) || 4096"
-              :disabled="!form.enableThinking" />
+            <picker :range="thinkingEffortOptions" range-key="label" :value="thinkingEffortIndex"
+              @change="onThinkingEffortChange" :disabled="!form.enableThinking" class="picker-wrap">
+              <view class="picker-display">
+                <text>{{ thinkingEffortOptions[thinkingEffortIndex].label }}</text>
+                <ManifestIcon class="picker-arrow" id="chevron_down" :scale="0.8" />
+              </view>
+            </picker>
           </div>
 
           <view class="divider"></view>
@@ -250,6 +280,7 @@ import AdminConsolePanel from './components/AdminConsolePanel.vue'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
+import { applyCommunityChatSettings } from '@/utils/community-chat-settings.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 
 let unbindThemeWatcher = null
@@ -264,6 +295,8 @@ const statusText = ref('')
 const statusCls = ref('')
 
 const DEFAULT_FORM = {
+  provider: 'qwen',
+  deepseekModel: 'deepseek-flash',
   allowWebRegistration: false,
   aiEnabled: true,
   communityChatEnabled: true,
@@ -272,17 +305,53 @@ const DEFAULT_FORM = {
   recommendAlgorithm: 'qwen',
   include3d: true,
   enableThinking: false,
-  thinkingBudget: 4096,
+  qwenThinkingEffort: 'auto',
+  deepseekThinkingEffort: 'high',
   enableUpcyclingImage: true,
   skipUnrecommendedUpcyclingImage: true
 }
 
 const form = reactive({ ...DEFAULT_FORM })
+const llmCredentials = reactive({ qwen: false, deepseek: false })
+const providerOptions = [
+  { label: '阿里云百炼', value: 'qwen' },
+  { label: 'DeepSeek 官方 API', value: 'deepseek' }
+]
+const providerIndex = computed(() => Math.max(0, providerOptions.findIndex(option => option.value === form.provider)))
+function onProviderChange(event) {
+  form.provider = providerOptions[Number(event.detail.value)]?.value || 'qwen'
+}
+
+const qwenThinkingEffortOptions = [
+  { label: '默认', value: 'auto' },
+  { label: '低', value: 'low' },
+  { label: '中', value: 'medium' },
+  { label: '高', value: 'high' }
+]
+const deepseekThinkingEffortOptions = [
+  { label: '低', value: 'low' },
+  { label: '高', value: 'high' },
+  { label: '最高', value: 'max' }
+]
+const thinkingEffortOptions = computed(() => form.provider === 'deepseek'
+  ? deepseekThinkingEffortOptions
+  : qwenThinkingEffortOptions)
+const thinkingEffortIndex = computed(() => {
+  const value = form.provider === 'deepseek' ? form.deepseekThinkingEffort : form.qwenThinkingEffort
+  const index = thinkingEffortOptions.value.findIndex(option => option.value === value)
+  return index >= 0 ? index : 0
+})
+function onThinkingEffortChange(event) {
+  const value = thinkingEffortOptions.value[Number(event.detail.value)]?.value
+  if (!value) return
+  if (form.provider === 'deepseek') form.deepseekThinkingEffort = value
+  else form.qwenThinkingEffort = value
+}
 
 // picker 选项配置
 const detectorModeOptions = [
   { label: 'yolo（默认）', value: 'yolo' },
-  { label: 'ai（Qwen）', value: 'ai' }
+  { label: 'ai（所选大模型）', value: 'ai' }
 ]
 const recommendOptions = [
   { label: 'qwen（千问）', value: 'qwen' },
@@ -323,9 +392,13 @@ function normalizeRecommendAlgorithm(input) {
 }
 
 function applyData(data) {
+  form.provider = data.provider === 'deepseek' ? 'deepseek' : 'qwen'
+  form.deepseekModel = data.deepseekModel || 'deepseek-flash'
+  if (data.llmCredentials) Object.assign(llmCredentials, data.llmCredentials)
   form.allowWebRegistration = !!data.allowWebRegistration
   form.aiEnabled = !!data.aiEnabled
   form.communityChatEnabled = data.communityChatEnabled !== false
+  applyCommunityChatSettings(data)
   form.detectorMode = data.detectorMode === 'ai' ? 'ai' : 'yolo'
   form.model = data.model || 'qwen3.5-flash'
   form.recommendAlgorithm = normalizeRecommendAlgorithm(
@@ -333,7 +406,10 @@ function applyData(data) {
   )
   form.include3d = !!data.include3d
   form.enableThinking = !!data.enableThinking
-  form.thinkingBudget = Number(data.thinkingBudget || 4096)
+  form.qwenThinkingEffort = ['auto', 'low', 'medium', 'high'].includes(data.qwenThinkingEffort)
+    ? data.qwenThinkingEffort : 'auto'
+  form.deepseekThinkingEffort = ['low', 'high', 'max'].includes(data.deepseekThinkingEffort)
+    ? data.deepseekThinkingEffort : 'high'
   form.enableUpcyclingImage = !!data.enableUpcyclingImage
   form.skipUnrecommendedUpcyclingImage = data.skipUnrecommendedUpcyclingImage !== false
 }
@@ -381,6 +457,8 @@ function saveSettings() {
   loading.value = true
   setStatus('保存中...')
   const payload = {
+    provider: form.provider,
+    deepseekModel: (form.deepseekModel || '').trim() || 'deepseek-flash',
     allowWebRegistration: form.allowWebRegistration,
     aiEnabled: form.aiEnabled,
     communityChatEnabled: form.communityChatEnabled,
@@ -389,7 +467,8 @@ function saveSettings() {
     recommendAlgorithm: normalizeRecommendAlgorithm(form.recommendAlgorithm),
     include3d: form.include3d,
     enableThinking: form.enableThinking,
-    thinkingBudget: Number(form.thinkingBudget || 4096),
+    qwenThinkingEffort: form.qwenThinkingEffort,
+    deepseekThinkingEffort: form.deepseekThinkingEffort,
     enableUpcyclingImage: form.enableUpcyclingImage,
     skipUnrecommendedUpcyclingImage: form.skipUnrecommendedUpcyclingImage
   }

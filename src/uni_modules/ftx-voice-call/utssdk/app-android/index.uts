@@ -18,6 +18,8 @@ let locationListener: ((event: string) => void) | null = null
 // on-prefix + a single callback keeps one app-lifetime JS callback alive.
 export function onVoicePeerEvent(callback: (event: string) => void): void { listener = callback }
 export function voiceRtcAvailable(): boolean { return true }
+export function voiceHandoffAvailable(): boolean { return true }
+export function voiceRecoveryAvailable(): boolean { return true }
 export function videoRtcAvailable(): boolean { return true }
 export function screenShareRtcAvailable(): boolean { return true }
 export function showOutgoingVideoPreview(options: string, onCancel: () => void): boolean {

@@ -1,5 +1,5 @@
 // #ifdef APP-PLUS
-import { voiceRtcAvailable, videoRtcAvailable, screenShareRtcAvailable, onVoicePeerEvent, openVoicePeer, signalVoicePeer, controlVoicePeer, closeVoicePeer, showVoicePeerVideo, minimizeVoicePeerVideo, showOutgoingVideoPreview, closeOutgoingVideoPreview } from '@/uni_modules/ftx-voice-call'
+import { voiceRtcAvailable, voiceRecoveryAvailable, voiceHandoffAvailable, videoRtcAvailable, screenShareRtcAvailable, onVoicePeerEvent, openVoicePeer, signalVoicePeer, controlVoicePeer, closeVoicePeer, showVoicePeerVideo, minimizeVoicePeerVideo, showOutgoingVideoPreview, closeOutgoingVideoPreview } from '@/uni_modules/ftx-voice-call'
 // #endif
 import { androidRealtimeAvailable } from './android-realtime.js'
 import { ensureFeaturePermission, isPermissionDenied, openFeaturePermissionSettings } from './feature-permission.js'
@@ -8,6 +8,7 @@ import { baseUrl } from '@/api/settings.js'
 import { callAvatarUrl } from './voice-call-core.mjs'
 // #endif
 // #ifdef H5
+import { createWebCallHandoff } from './web-call-handoff.mjs'
 import { createWebCallRecording, webRecordingSupported } from './web-call-recording.mjs'
 import { webRecordingStorage } from './web-recording-storage.mjs'
 // #endif
@@ -90,6 +91,37 @@ export const voiceCallMedia = {
     // #endif
     // #ifdef H5
     return !!(globalThis.isSecureContext && globalThis.RTCPeerConnection && navigator.mediaDevices?.getUserMedia)
+    // #endif
+    // #ifndef APP-PLUS || H5
+    return false
+    // #endif
+  },
+  prepareHandoff(callId) { stopped.delete(callId) },
+  supportsHandoffObserver() {
+    // #ifdef MP-WEIXIN
+    return true
+    // #endif
+    // #ifndef MP-WEIXIN
+    return false
+    // #endif
+  },
+  supportsHandoff() {
+    // #ifdef APP-PLUS
+    try { return typeof voiceHandoffAvailable === 'function' && voiceHandoffAvailable() === true } catch (_) { return false }
+    // #endif
+    // #ifdef H5
+    return this.supported()
+    // #endif
+    // #ifndef APP-PLUS || H5
+    return false
+    // #endif
+  },
+  supportsRecovery() {
+    // #ifdef APP-PLUS
+    try { return typeof voiceRecoveryAvailable === 'function' && voiceRecoveryAvailable() === true } catch (_) { return false }
+    // #endif
+    // #ifdef H5
+    return this.supported()
     // #endif
     // #ifndef APP-PLUS || H5
     return false
@@ -220,7 +252,8 @@ export const voiceCallMedia = {
           if (event.type === 'ready') { clearTimeout(timer); pendingNative.delete(callId); resolve(driver) }
           else onEvent(event.type === 'error' && event.reason === 'unavailable' ? { ...event, reason: 'failed' } : event)
         })
-        openVoicePeer(JSON.stringify({ callId, offerer: options.offerer, entryMode: options.entryMode,
+        openVoicePeer(JSON.stringify({ callId, offerer: options.offerer,
+          ...(options.handoffCandidate ? { handoffCandidate: true, transferId: options.transferId, initialGeneration: options.initialGeneration } : {}), ...(options.recoveryEnabled ? { recoveryEnabled: true } : {}), entryMode: options.entryMode,
           ...(options.recording?.admin ? { recordingOwner: options.recording.owner,
             peerName: String(options.peerName || '联系人').slice(0, 80) } : {}),
           ...(video ? { mode: 'video', cameraEnabled: options.cameraEnabled !== false && cameraGranted !== false, cameraRequested: options.cameraEnabled !== false, remoteCameraEnabled: options.cameraEnabled !== false, speaker: options.cameraEnabled !== false, peerName: String(options.peerName || '联系人').slice(0, 80),
@@ -234,9 +267,11 @@ export const voiceCallMedia = {
     await this.permission(callId, options.cameraEnabled === false ? 'audio' : options.mode)
     const stream = streams.get(callId)?.stream
     if (!stream || !isCurrent()) { this.cancel(callId); throw new Error('Cancelled') }
-    const peer = new RTCPeerConnection({ iceServers: options.stunUrls.filter(url => /^stuns?:/.test(url)).slice(0, 3).map(urls => ({ urls })) })
+    const createPeer = () => new RTCPeerConnection({ iceServers: options.stunUrls.filter(url => /^stuns?:/.test(url)).slice(0, 3).map(urls => ({ urls })) })
+    let peer = createPeer(), candidatePending = options.handoffCandidate === true
+    if (candidatePending) stream.getAudioTracks().forEach(track => { track.enabled = false })
     const audio = document.createElement('audio')
-    audio.autoplay = true; audio.setAttribute('playsinline', ''); audio.dataset.voiceCallAudio = 'true'
+    audio.autoplay = true; audio.muted = candidatePending; audio.setAttribute('playsinline', ''); audio.dataset.voiceCallAudio = 'true'
     audio.style.display = 'none'; document.body.appendChild(audio)
     const remote = video ? document.createElement('video') : null
     if (remote) {
@@ -254,7 +289,7 @@ export const voiceCallMedia = {
     if (video) for (const element of [local, remote]) {
       element.onresize = element.onloadedmetadata = () => updateVideoAspect(element)
     }
-    let remoteSet = false, closed = false, chain = Promise.resolve(), connectionState = ''
+    let remoteSet = false, closed = false, chain = Promise.resolve(), connectionState = '', generation = Number(options.initialGeneration) || 0
     let audioSender = null, videoSender = null, cameraEnabled = stream.getVideoTracks().some(track => track.readyState === 'live'), cameraDesired = cameraEnabled, facingMode = 'user', requestedFacing = 'user'
     let cameraRevision = 0, cameraChain = Promise.resolve()
     let videoChain = Promise.resolve()
@@ -277,7 +312,7 @@ export const voiceCallMedia = {
       error: error?.name || '', message: String(error?.message || '').slice(0, 360),
       signalingState: peer.signalingState, iceState: peer.iceConnectionState, connectionState: peer.connectionState
     })
-    const emit = event => { if (!closed && isCurrent()) onEvent(event) }
+    const emit = event => { if (!closed && isCurrent()) onEvent(options.recoveryEnabled && ['offer', 'answer', 'ice'].includes(event.type) ? { ...event, generation } : event) }
     const recordingContext = recordingContexts.get(callId)
     recordingContexts.delete(callId)
     const recorder = options.recording?.admin ? createWebCallRecording({
@@ -427,6 +462,7 @@ export const voiceCallMedia = {
     }
     const stopScreen = request => {
       if (screenRequest !== request) return
+      if (handoff.pending) emit({ type: 'handoff', kind: 'failed' })
       screenRequest = null
       request.track?.removeEventListener('ended', request.ended)
       releaseScreenAudio(request)
@@ -510,17 +546,67 @@ export const voiceCallMedia = {
         emit({ type: 'screen_error', reason: error?.name === 'NotAllowedError' ? 'screen_cancelled' : 'screen_unavailable' })
       }
     }
+    const attachRemoteTrack = track => {
+      const target = track.kind === 'video' ? remoteVideoStream : remoteStream
+      if (!target || target.getTracks().some(item => item.id === track.id)) return
+      target.addTrack(track)
+      if (track.kind === 'audio') recorder?.trackReady()
+      playRemote()
+    }
+    const bindPeer = bound => {
+      bound.onicecandidate = ({ candidate }) => { if (peer === bound && candidate && !/ typ relay(?: |$)/.test(candidate.candidate)) emit({ type: 'ice', candidate: candidate.toJSON() }) }
+      const reportConnection = () => {
+        if (peer !== bound || closed) return
+        const state = bound.connectionState || bound.iceConnectionState
+        const next = state === 'completed' ? 'connected' : state
+        if (!next || next === connectionState) return
+        connectionState = next
+        if (next === 'failed') diagnose('peer-connection-failed')
+        emit({ type: 'state', state: next })
+      }
+      bound.onconnectionstatechange = bound.oniceconnectionstatechange = reportConnection
+      bound.ontrack = event => { if (peer === bound && !closed) attachRemoteTrack(event.track) }
+    }
+    const handoff = createWebCallHandoff({ createPeer, stream, video, emit,
+      tracks: () => ({ audio: audioSender?.track, video: videoSender?.track }),
+      committed: stage => {
+        const old = peer
+        old.onicecandidate = old.ontrack = old.onconnectionstatechange = old.oniceconnectionstatechange = null
+        peer = stage.peer; audioSender = stage.audioSender; videoSender = stage.videoSender
+        generation = stage.generation; remoteSet = true; queued.length = 0; connectionState = 'connected'
+        for (const target of [remoteStream, remoteVideoStream]) if (target) for (const track of target.getTracks()) target.removeTrack(track)
+        for (const track of stage.remote) attachRemoteTrack(track)
+        bindPeer(peer)
+        old.close()
+        recorder?.trackReady(); playRemote()
+      }
+    })
     const driver = {
       signal(event) {
+        if (event.type?.startsWith('handoff-')) { handoff.signal(event); return }
+        const boundPeer = peer
+        let taskGeneration = generation
+        const currentTask = () => !closed && isCurrent() && peer === boundPeer && generation === taskGeneration
         chain = chain.then(async () => {
-          if (closed || !isCurrent()) return
+          taskGeneration = generation
+          if (!currentTask()) return
+          if (event.type === 'restart') {
+            if (!options.recoveryEnabled || !Number.isSafeInteger(event.generation) || event.generation <= generation) return
+            generation = event.generation; taskGeneration = generation; remoteSet = false; queued.length = 0
+            if (event.offerer) {
+              const offer = await boundPeer.createOffer({ iceRestart: true }); if (!currentTask()) return; await boundPeer.setLocalDescription(offer)
+              if (currentTask()) emit({ type: 'offer', sdp: peer.localDescription.sdp })
+            }
+            return
+          }
+          if (options.recoveryEnabled && (event.generation || 0) !== generation) return
           if (event.type === 'ice') {
             if (/ typ relay(?: |$)/.test(event.candidate?.candidate || '')) return
-            if (remoteSet) await peer.addIceCandidate(event.candidate)
+            if (remoteSet) await boundPeer.addIceCandidate(event.candidate)
             else if (queued.length < 64) queued.push(event.candidate)
           } else if (event.type === 'offer' || event.type === 'answer') {
-            await peer.setRemoteDescription({ type: event.type, sdp: event.sdp })
-            if (closed || !isCurrent()) return
+            await boundPeer.setRemoteDescription({ type: event.type, sdp: event.sdp })
+            if (!currentTask()) return
             if (video && event.type === 'offer' && !videoSender) {
               // Answerers must use the offered transceiver. A pre-created
               // addTransceiver sender is not associated with an incoming offer.
@@ -529,24 +615,27 @@ export const voiceCallMedia = {
               offeredVideo.direction = 'sendrecv'; videoSender = offeredVideo.sender
               videoSender.setStreams?.(stream)
               await reconcileCamera()
-              if (closed || !isCurrent()) return
+              if (!currentTask()) return
             }
             remoteSet = true
-            for (const candidate of queued.splice(0)) await peer.addIceCandidate(candidate)
+            for (const candidate of queued.splice(0)) { if (!currentTask()) return; await boundPeer.addIceCandidate(candidate) }
+            if (!currentTask()) return
             if (event.type === 'offer') {
-              const answer = await peer.createAnswer(); await peer.setLocalDescription(answer)
+              const answer = await boundPeer.createAnswer(); if (!currentTask()) return; await boundPeer.setLocalDescription(answer)
+              if (!currentTask()) return
               emit({ type: 'answer', sdp: peer.localDescription.sdp })
             }
           }
         }).catch(error => {
-          if (closed || !isCurrent()) return
+          if (!currentTask()) return
           diagnose(`signal-${event.type}`, error)
           emit({ type: 'error', reason: 'connect_failed' })
         })
       },
       control(value) {
-        recorder?.control(value)
-        if (typeof value.muted === 'boolean') stream.getAudioTracks().forEach(track => { track.enabled = !value.muted })
+        if (value.handoffActive) { candidatePending = false; audio.muted = false }
+        if (!candidatePending) recorder?.control(value)
+        if (typeof value.muted === 'boolean') stream.getAudioTracks().forEach(track => { track.enabled = !value.muted && !candidatePending })
         if (value.resumePlayback) playRemote()
         if (typeof value.screenShareSupported === 'boolean') {
           screenShareSupported = value.screenShareSupported
@@ -572,7 +661,7 @@ export const voiceCallMedia = {
       close() {
         if (closed) return
         const saving = recorder?.close()
-        closed = true; peer.onicecandidate = null; peer.ontrack = null; peer.onconnectionstatechange = null; peer.oniceconnectionstatechange = null
+        closed = true; handoff.cancel(); peer.onicecandidate = null; peer.ontrack = null; peer.onconnectionstatechange = null; peer.oniceconnectionstatechange = null
         if (screenRequest) {
           screenRequest.track?.removeEventListener('ended', screenRequest.ended)
           releaseScreenAudio(screenRequest, false)
@@ -589,23 +678,7 @@ export const voiceCallMedia = {
       }
     }
     try {
-      peer.onicecandidate = ({ candidate }) => { if (candidate && !/ typ relay(?: |$)/.test(candidate.candidate)) emit({ type: 'ice', candidate: candidate.toJSON() }) }
-      const reportConnection = () => {
-        const state = peer.connectionState || peer.iceConnectionState
-        const next = state === 'completed' ? 'connected' : state
-        if (!next || next === connectionState) return
-        connectionState = next
-        if (next === 'failed') diagnose('peer-connection-failed')
-        emit({ type: 'state', state: next })
-      }
-      peer.onconnectionstatechange = peer.oniceconnectionstatechange = reportConnection
-      peer.ontrack = event => {
-        const target = event.track.kind === 'video' ? remoteVideoStream : remoteStream
-        if (!target || target.getTracks().some(track => track.id === event.track.id)) return
-        target.addTrack(event.track)
-        if (event.track.kind === 'audio') recorder?.trackReady()
-        playRemote()
-      }
+      bindPeer(peer)
       for (const track of stream.getTracks()) {
         // On the answering side bind video to the transceiver associated with
         // the remote m-line, even when the camera was granted during preflight.

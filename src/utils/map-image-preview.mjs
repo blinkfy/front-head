@@ -15,7 +15,7 @@ function normalizeRemoteImagePath(src) {
 }
 
 // 原生预览只接收已下载、可解码的本地图片，避免远程加载失败后一直转圈。
-export function prepareAppMapImage(src, { downloadFile, getImageInfo, createBitmap }, timeout = 15000) {
+export function prepareAppMapImage(src, { downloadFile, getImageInfo, createBitmap, createName }, timeout = 15000) {
   return new Promise((resolve, reject) => {
     let settled = false
     let bitmap
@@ -41,7 +41,7 @@ export function prepareAppMapImage(src, { downloadFile, getImageInfo, createBitm
       src = src.trim()
       if (src.startsWith('data:image/')) {
         // APP 原生查看器在部分设备上无法直接加载 data URI。
-        const name = `map_preview_${Date.now()}`
+        const name = createName ? createName() : `map_preview_${Date.now()}`
         bitmap = createBitmap(name)
         bitmap.loadBase64Data(src, () => {
           if (settled) return

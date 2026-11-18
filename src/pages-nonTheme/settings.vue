@@ -65,7 +65,7 @@
                         <ManifestIcon class="item-icon" id="sound_toggle" />
                         <view class="item-info">
                             <text class="item-title">交互音效</text>
-                            <text class="item-desc">{{ soundEnabled ? '已开启，含聊天提示音，聊天跟随系统模式' : '已关闭提示音，聊天振动跟随系统模式' }}</text>
+                            <text class="item-desc">{{ soundEnabled ? '已开启，会播放交互音效和提示音' : '已关闭提示音，不会播放交互音效' }}</text>
                         </view>
                     </view>
                     <view class="toggle-switch" :class="{ active: soundEnabled }"><view class="toggle-dot"></view></view>
@@ -184,6 +184,7 @@
 import { mfaRequest } from '@/api/mfa'
 import { clearChatPush } from '@/utils/chat-push.js'
 import { communitySocialEnabled } from '@/pages-nonTheme/utils/community-social.js'
+import { communityChatSettings } from '@/utils/community-chat-settings.js'
 import { ensureFeaturePermission, openFeaturePermissionSettings } from '@/utils/feature-permission.js'
 import { syncChatPush } from '@/utils/chat-push.js'
 import { androidIncomingCallPresentation, openAndroidIncomingCallSettings, androidUnlockedIncomingCallAllowed,
@@ -197,8 +198,8 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
 import { canConfigureBackgroundMessages, readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '@/utils/background-message-preference.mjs'
 
-const communityChatEnabled = ref(false)
-onShow(async () => { communityChatEnabled.value = await communitySocialEnabled() })
+const communityChatEnabled = computed(() => communityChatSettings.enabled)
+onShow(() => { void communitySocialEnabled() })
 
 const soundEnabled = ref(areUiSoundsEnabled())
 const isAndroid = ref(false)

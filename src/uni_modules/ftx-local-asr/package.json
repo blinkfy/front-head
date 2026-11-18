@@ -1,0 +1,11 @@
+{
+  "id": "ftx-local-asr",
+  "displayName": "分投侠端侧语音识别",
+  "version": "0.1.0",
+  "description": "On-device recognition of existing audio, with no network recognizer fallback",
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": { "client": { "App": { "app-android": "y", "app-ios": "y" } } }
+  }
+}

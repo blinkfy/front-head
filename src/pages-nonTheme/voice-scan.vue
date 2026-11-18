@@ -130,6 +130,11 @@ import { chooseAppImage } from '@/utils/image-picker.js'
 import { transcribeAudio, transcribeAudioBlob, transcribeAudioSegments, recognizeByText } from '@/pages-nonTheme/api/voice.js';
 import { baseUrl } from '@/api/settings.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
+import { createAsrController } from '@/utils/local-asr-core.mjs';
+// #ifdef H5
+import { webAsrCaptureSupported } from '@/utils/web-asr-audio.mjs';
+import { createWebAsrSession } from '@/utils/web-asr-session.mjs';
+// #endif
 
 let recorderManager = null;
 
@@ -138,6 +143,9 @@ export default {
   data() {
     return {
       isListening: false,
+      h5AsrPending: false,
+      voiceRun: 0,
+      recordingOwner: '',
       textInput: '',
       currentResult: null,
       historyRecords: [],
@@ -152,6 +160,8 @@ export default {
       h5RecordingMimeType: '',
       realtimeSocket: null,
       realtimeReady: false,
+      realtimeDone: false,
+      realtimeStopping: false,
       realtimeFailed: false,
       realtimeText: '',
       realtimeCommittedText: '',
@@ -179,12 +189,17 @@ export default {
     this.initRecorder();
   },
   onShow() {
+    this.recognitionPageHidden = false;
     this.checkTheme();
   },
-  onHide() { this.stopListening(); },
+  onHide() {
+    this.recognitionPageHidden = true; this.voiceRun++;
+    this.recordHeld = false; this.permissionAttempt = (this.permissionAttempt || 0) + 1;
+    this.destroyRecorder(); this.isListening = false; this.h5AsrPending = false;
+  },
   onUnload() {
     this.recordHeld = false; this.permissionAttempt = (this.permissionAttempt || 0) + 1; this.permissionPageClosed = true;
-    this.destroyRecorder();
+    this.voiceRun++; this.destroyRecorder();
   },
   methods: {
     checkTheme() {
@@ -203,25 +218,40 @@ export default {
       }
 
       if (this.isH5) {
-        // H5 环境暂不支持原生录音，使用文字输入
+        // H5 在用户操作时启动浏览器音频采集。
         return;
       }
 
       recorderManager = uni.getRecorderManager();
+      const recorder = recorderManager;
+      const binding = { run: this.voiceRun, owner: uni.getStorageSync('token') || '', cleanup: [] };
+      this._recorderBinding = binding;
+      const bind = (name, handler) => {
+        const callback = (...args) => {
+          if (this._recorderBinding !== binding) return;
+          if (name === 'onStart') { binding.run = this.voiceRun; binding.owner = this.recordingOwner; }
+          if (binding.run !== this.voiceRun || binding.owner !== (uni.getStorageSync('token') || '') || this.permissionPageClosed || this.recognitionPageHidden) {
+            this.destroyRecorder(); this.isListening = false; return;
+          }
+          handler(...args);
+        };
+        recorder[name](callback);
+        binding.cleanup.push(() => { try { recorder['off' + name.slice(2)]?.(callback); } catch (_) {} });
+      };
       this.realtimeFrameSupported = !this.isApp && typeof recorderManager.onFrameRecorded === 'function';
-      recorderManager.onStart(() => {
-        if (!this.recordHeld || this.permissionPageClosed) { recorderManager?.stop(); return; }
+      bind('onStart', () => {
+        if (!this.recordHeld || this.permissionPageClosed || this.recognitionPageHidden) { recorderManager?.stop(); return; }
         this.statusText = '正在聆听...';
       });
       if (this.realtimeFrameSupported) {
-        recorderManager.onFrameRecorded((res) => {
+        bind('onFrameRecorded', (res) => {
           if (res && res.frameBuffer) {
             this.sendRealtimeAudioFrame(res.frameBuffer);
           }
         });
       }
-      recorderManager.onStop((res) => {
-        if (this.permissionPageClosed) return;
+      bind('onStop', (res) => {
+        if (this.permissionPageClosed || this.recognitionPageHidden) return;
         if (this.appSegmentMode) {
           this.handleAppSegmentStop(res);
           return;
@@ -236,7 +266,7 @@ export default {
           uni.showToast({ title: '录音失败', icon: 'none' });
         }
       });
-      recorderManager.onError((err) => {
+      bind('onError', (err) => {
         this.isListening = false;
         this.realtimeFailed = true;
         this.stopRealtimeAsr();
@@ -246,6 +276,17 @@ export default {
       });
     },
     destroyRecorder() {
+      this._voiceAsrController?.abort(); this._voiceAsrController = null;
+      const binding = this._recorderBinding; this._recorderBinding = null;
+      binding?.cleanup.forEach(cleanup => cleanup());
+      this.appSegmentMode = false; this.appSegmentStopRequested = true;
+      this._h5AsrSession?.dispose(); this._h5AsrSession = null;
+      if (this.h5MediaRecorder) {
+        this.h5MediaRecorder.onstop = null;
+        try { if (this.h5MediaRecorder.state !== 'inactive') this.h5MediaRecorder.stop(); } catch (_) {}
+        this.h5MediaRecorder = null;
+      }
+      this.h5AudioStream?.getTracks().forEach(track => track.stop()); this.h5AudioStream = null;
       if (recorderManager) {
         try { recorderManager.stop(); } catch (e) {}
         recorderManager = null;
@@ -284,7 +325,7 @@ export default {
       return 20 + Math.random() * 15;
     },
     async startListening() {
-      if (this.permissionPending || this.isListening) return;
+      if (this.permissionPending || this.isListening || this.h5AsrPending || this.realtimeStopping) return;
       const attempt = (this.permissionAttempt || 0) + 1;
       this.permissionAttempt = attempt; this.recordHeld = true; this.permissionPending = true;
       const owner = uni.getStorageSync('token') || '';
@@ -293,6 +334,8 @@ export default {
       try { granted = await ensureFeaturePermission('microphone', { isCurrent: current }); }
       finally { this.permissionPending = false; }
       if (!granted || !current()) return;
+      this.voiceRun++; this.recordingOwner = owner;
+      this._voiceAsrController?.abort(); this._voiceAsrController = createAsrController();
       if (this.isH5) {
         this.startH5Recording();
         return;
@@ -336,18 +379,67 @@ export default {
         recorderManager.stop();
       }
     },
+    // #ifdef H5
     async startH5Recording() {
+      if (this.isListening || this.h5AsrPending) return;
+      if (!webAsrCaptureSupported()) return this.startH5FileRecording();
+      const owner = uni.getStorageSync('token') || '';
+      let session;
+      const current = () => this._h5AsrSession === session && !this.permissionPageClosed && !this.recognitionPageHidden && owner === (uni.getStorageSync('token') || '');
+      session = createWebAsrSession({
+        url: this.getRealtimeWsUrl('pcm'), isCurrent: current, transcribe: transcribeAudioBlob,
+        onText: text => { if (current()) { this.realtimeText = text; this.textInput = text; } },
+        onState: state => {
+          if (current()) this.statusText = state === 'processing' ? '正在识别...' : state === 'realtime' ? '实时识别中...' : '正在录音...';
+        },
+        onLimit: () => { if (current()) { this.recordHeld = false; void this.stopH5Recording(); } }
+      });
+      this._h5AsrSession = session; this.realtimeText = ''; this.isListening = true;
+      try {
+        if (!await session.start() && current() && !this.h5AsrPending) { this.isListening = false; session.dispose(); this._h5AsrSession = null; }
+      } catch (error) {
+        const active = current(); session.dispose();
+        if (!active) return;
+        this._h5AsrSession = null; this.isListening = false; this.h5AsrPending = false; this.statusText = '录音启动失败';
+        if (isPermissionDenied(error)) await openFeaturePermissionSettings('microphone', { isCurrent: () => !this.permissionPageClosed && !this.recognitionPageHidden });
+        else uni.showToast({ title: error.message || '录音启动失败，请重试', icon: 'none' });
+      }
+    },
+    async stopH5Recording() {
+      const session = this._h5AsrSession;
+      if (!session) {
+        try { if (this.h5MediaRecorder?.state !== 'inactive') this.h5MediaRecorder?.stop(); } catch (_) {}
+        return;
+      }
+      if (this.h5AsrPending) return;
+      const run = this.voiceRun, owner = uni.getStorageSync('token') || '';
+      const current = () => this._h5AsrSession === session && this.voiceRun === run && !this.permissionPageClosed && !this.recognitionPageHidden && owner === (uni.getStorageSync('token') || '');
+      this.isListening = false; this.h5AsrPending = true; this.statusText = '正在识别...';
+      try {
+        const result = await session.stop();
+        if (!current()) return;
+        if (result?.text) await this.applyRecognizedText(result.text);
+        else this.statusText = '未识别到语音内容';
+      } catch (error) {
+        if (current()) { this.statusText = '识别失败，请重试'; uni.showToast({ title: error.msg || error.message || '语音识别失败', icon: 'none' }); }
+      } finally {
+        if (this._h5AsrSession === session) { this._h5AsrSession = null; this.h5AsrPending = false; }
+      }
+    },
+    async startH5FileRecording() {
       if (this.isListening) return;
-      if (!navigator || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
         uni.showToast({ title: '当前浏览器不支持录音', icon: 'none' });
         return;
       }
 
+      const run = this.voiceRun, owner = uni.getStorageSync('token') || '';
+      const current = () => this.voiceRun === run && !this.permissionPageClosed && !this.recognitionPageHidden && owner === (uni.getStorageSync('token') || '');
       try {
         this.statusText = '正在录音...';
         this.isListening = true;
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (!this.recordHeld || this.permissionPageClosed) { stream.getTracks().forEach(track => track.stop()); this.isListening = false; return; }
+        if (!this.recordHeld || !current()) { stream.getTracks().forEach(track => track.stop()); this.isListening = false; return; }
         this.h5AudioStream = stream;
         this.h5AudioChunks = [];
         const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
@@ -368,6 +460,7 @@ export default {
             stoppedStream.getTracks().forEach(track => track.stop());
           }
 
+          if (!current()) return;
           const blob = chunks.length ? new Blob(chunks, { type: this.h5RecordingMimeType || 'audio/webm' }) : null;
           this.isListening = false;
           if (!blob || !blob.size) {
@@ -376,9 +469,10 @@ export default {
           }
 
           try {
-            this.statusText = '识别中...';
+            this.h5AsrPending = true; this.statusText = '识别中...';
             const filename = this.h5RecordingMimeType.includes('mp4') ? 'audio.mp4' : 'audio.webm';
             const res = await transcribeAudioBlob(blob, filename);
+            if (!current()) return;
             const text = String((res && res.data && res.data.text) || '').trim();
             if (text) {
               await this.applyRecognizedText(text);
@@ -387,12 +481,14 @@ export default {
               uni.showToast({ title: '未识别到内容', icon: 'none' });
             }
           } catch (e) {
+            if (!current()) return;
             console.warn('[voice] h5 transcribe failed:', e);
             this.statusText = '识别失败，请重试';
             uni.showToast({ title: '识别失败', icon: 'none' });
-          }
+          } finally { if (current()) this.h5AsrPending = false; }
         };
         this.h5MediaRecorder.start();
+        setTimeout(() => { if (current() && this.isListening) this.stopListening(); }, 60000);
       } catch (e) {
         this.isListening = false;
         this.statusText = '录音启动失败';
@@ -401,14 +497,7 @@ export default {
         else if (!this.permissionPageClosed) uni.showToast({ title: '录音启动失败，请重试', icon: 'none' });
       }
     },
-    stopH5Recording() {
-      if (!this.h5MediaRecorder) return;
-      try {
-        this.h5MediaRecorder.stop();
-      } catch (e) {
-        console.warn('[voice] h5 recorder stop failed:', e);
-      }
-    },
+    // #endif
     startAppSegmentRecognition() {
       this.stopRealtimeAsr();
       this.appSegmentMode = true;
@@ -429,7 +518,7 @@ export default {
       this.startAppSegmentRecorder();
     },
     startAppSegmentRecorder() {
-      if (!recorderManager || !this.appSegmentMode || this.appSegmentStopRequested) return;
+      if (!recorderManager || !this.appSegmentMode || this.appSegmentStopRequested || this.recognitionPageHidden || this.permissionPageClosed) return;
       try {
         recorderManager.start({
           duration: this.appSegmentDuration,
@@ -453,7 +542,8 @@ export default {
       }
 
       if (!this.appSegmentStopRequested) {
-        setTimeout(() => this.startAppSegmentRecorder(), 80);
+        const run = this.voiceRun;
+        setTimeout(() => { if (this.voiceRun === run) this.startAppSegmentRecorder(); }, 80);
         return;
       }
 
@@ -465,7 +555,9 @@ export default {
       }
     },
     async transcribeAppSegmentWindow(isFinal = false) {
-      if (!this.appSegmentFiles.length) return;
+      const run = this.voiceRun, owner = this.recordingOwner;
+      const current = () => this.voiceRun === run && !this.permissionPageClosed && !this.recognitionPageHidden && owner === (uni.getStorageSync('token') || '');
+      if (!current() || !this.appSegmentFiles.length) return;
       if (this.appSegmentTranscribing) {
         this.appSegmentPendingTranscribe = true;
         this.appSegmentFinalizing = this.appSegmentFinalizing || isFinal;
@@ -479,20 +571,21 @@ export default {
       const windowStartIndex = Math.max(0, this.appSegmentFiles.length - windowFiles.length);
 
       try {
-        const res = await transcribeAudioSegments(windowFiles);
+        const res = await transcribeAudioSegments(windowFiles, { isCurrent: current, signal: this._voiceAsrController?.signal });
+        if (!current()) return;
         const text = String((res && res.data && res.data.text) || '').trim();
         if (text) {
-          this.appSegmentBaseText = text;
-          this.appSegmentWindowText = text;
-          this.appSegmentWindowStartIndex = windowStartIndex;
-          this.appSegmentCumulativeText = text;
-          this.realtimeText = text;
-          this.textInput = text;
+          const merged = this.mergeAppSegmentWindowText(text, windowStartIndex, isFinal);
+          this.appSegmentBaseText = merged;
+          this.realtimeText = merged;
+          this.textInput = merged;
           this.statusText = isFinal ? '识别完成' : '实时识别中...';
         }
       } catch (e) {
+        if (!current() || e?.name === 'AbortError') return;
         console.warn('[voice] app segment transcribe failed:', e);
       } finally {
+        if (!current()) return;
         this.appSegmentTranscribing = false;
         const shouldRunPending = this.appSegmentPendingTranscribe;
         const shouldFinalize = this.appSegmentFinalizing || (isFinal && this.appSegmentStopRequested);
@@ -525,17 +618,19 @@ export default {
       const previousWindowText = String(this.appSegmentWindowText || '').trim();
       const previousStartIndex = Number(this.appSegmentWindowStartIndex || 0);
       const previousFullText = String(this.appSegmentCumulativeText || this.textInput || '').trim();
-      let nextWindowText = currentWindowText;
-
-      if (previousWindowText) {
-        if (windowStartIndex === previousStartIndex) {
-          nextWindowText = this.mergeSameAppSegmentWindowText(previousWindowText, currentWindowText);
-        }
+      // Each response replaces the transcript of its entire audio window,
+      // including corrections and deletions from an earlier response.
+      let mergedText;
+      if (windowStartIndex === 0) {
+        mergedText = currentWindowText;
+      } else if (previousWindowText && windowStartIndex === previousStartIndex && previousFullText.endsWith(previousWindowText)) {
+        mergedText = previousFullText.slice(0, -previousWindowText.length) + currentWindowText;
+      } else {
+        mergedText = this.mergeAppSegmentCumulativeText(previousFullText, currentWindowText);
       }
 
       this.appSegmentWindowStartIndex = windowStartIndex;
-      this.appSegmentWindowText = nextWindowText;
-      const mergedText = this.mergeAppSegmentCumulativeText(previousFullText, nextWindowText);
+      this.appSegmentWindowText = currentWindowText;
       this.appSegmentCumulativeText = mergedText;
 
       if (isFinal) {
@@ -652,14 +747,18 @@ export default {
       const normalizedRight = b.replace(/^[。！？!?；;，,、：:]+/, '');
       return normalizedLeft + normalizedRight;
     },
-    getRealtimeWsUrl() {
+    getRealtimeWsUrl(format = 'mp3') {
       const token = uni.getStorageSync('token') || '';
-      const wsBaseUrl = baseUrl.replace(/^http/, 'ws');
-      return `${wsBaseUrl}/ws/ai/asr?token=${encodeURIComponent(token)}&format=mp3&sampleRate=16000`;
+      let origin = baseUrl;
+      // #ifdef H5
+      origin = new URL(baseUrl || '/', window.location.origin).origin;
+      // #endif
+      const wsBaseUrl = origin.replace(/^http/, 'ws').replace(/\/$/, '');
+      return `${wsBaseUrl}/ws/ai/asr?token=${encodeURIComponent(token)}&format=${format}&sampleRate=16000`;
     },
     startRealtimeAsr() {
       this.stopRealtimeAsr();
-      this.realtimeReady = false;
+      this.realtimeReady = false; this.realtimeDone = false; this.realtimeStopping = false;
       this.realtimeFailed = false;
       this.realtimeText = '';
       this.realtimeCommittedText = '';
@@ -693,6 +792,7 @@ export default {
           if (payload.type === 'ready') {
             this.realtimeReady = true;
             this.flushRealtimeFrames();
+            if (this.realtimeStopping) this.sendRealtimeFinish();
           } else if (payload.type === 'partial' || payload.type === 'final') {
             const text = this.mergeRealtimeTranscript(payload);
             if (text) {
@@ -700,7 +800,8 @@ export default {
               this.textInput = text;
               this.statusText = payload.type === 'final' ? '识别完成' : '实时识别中...';
             }
-          } else if (payload.type === 'done' && payload.text) {
+          } else if (payload.type === 'done') {
+            this.realtimeDone = true; this._realtimeFinishResolve?.();
             const text = this.mergeRealtimeTranscript({
               type: 'done',
               text: payload.text,
@@ -709,11 +810,11 @@ export default {
             this.realtimeText = text;
             this.textInput = text;
           } else if (payload.type === 'error') {
-            this.realtimeFailed = true;
+            this.realtimeFailed = true; this._realtimeFinishResolve?.();
             console.warn('[voice] realtime asr error:', payload);
           } else if (payload.type === 'closed') {
             this.realtimeReady = false;
-            this.realtimeFailed = true;
+            this.realtimeFailed = !this.realtimeDone; this._realtimeFinishResolve?.();
           }
         });
 
@@ -723,11 +824,13 @@ export default {
           this.realtimeSocket = null;
           this.realtimeFailed = true;
           this.realtimeReady = false;
+          this._realtimeFinishResolve?.();
           console.warn('[voice] realtime socket error:', err);
         });
 
         socketTask.onClose(() => {
           if (this.realtimeSocket !== socketTask) return;
+          this.realtimeFailed = !this.realtimeDone; this._realtimeFinishResolve?.();
           this.realtimeSocketState = 'closed';
           this.realtimeSocket = null;
           this.realtimeReady = false;
@@ -751,7 +854,9 @@ export default {
       this.realtimeReady = false;
       this.realtimeFailed = true;
       this.realtimeFrameQueue = [];
-      this.realtimeSocket = null;
+      const failedSocket = this.realtimeSocket; this.realtimeSocket = null;
+      try { failedSocket?.close(); } catch (_) {}
+      this._realtimeFinishResolve?.();
       const message = String((err && (err.errMsg || err.message)) || '');
       return /not connected|readyState is not OPEN|task not found|未完成的操作/i.test(message);
     },
@@ -762,6 +867,7 @@ export default {
         socketTask.send({
           data,
           fail: (err) => {
+            if (this.realtimeSocket !== socketTask) return;
             const expectedDisconnect = this.markRealtimeSendFailed(err);
             if (onFail) onFail(err, expectedDisconnect);
           }
@@ -778,7 +884,7 @@ export default {
       if (!this.isRealtimeSocketOpen()) {
         if (this.realtimeFrameQueue.length < 40) {
           this.realtimeFrameQueue.push(frameBuffer);
-        }
+        } else { this.realtimeFailed = true; this.stopRealtimeAsr(); }
         return;
       }
       this.safeSendRealtime(frameBuffer, (err, expectedDisconnect) => {
@@ -793,43 +899,31 @@ export default {
     },
     stopRealtimeAsr() {
       const socketTask = this.realtimeSocket;
-      const socketState = this.realtimeSocketState;
-      const shouldSendFinish = this.isRealtimeTransportOpen(socketTask) && !this.realtimeFinishSent;
-      this.realtimeSocket = null;
-      this.realtimeReady = false;
-      this.realtimeFrameQueue = [];
-      this.realtimeSocketState = 'closed';
-      if (!socketTask) return;
-      if (shouldSendFinish) {
-        this.realtimeFinishSent = true;
-        try {
-          socketTask.send({
-            data: JSON.stringify({ type: 'finish' }),
-            fail: () => {}
-          });
-        } catch (e) {}
-      }
-      if (socketState === 'open' && socketTask) {
-        setTimeout(() => {
-          try { socketTask.close(); } catch (e) {}
-        }, 800);
-      }
+      this.realtimeSocket = null; this.realtimeReady = false; this.realtimeFrameQueue = [];
+      this.realtimeSocketState = 'closed'; this.realtimeStopping = false;
+      this._realtimeFinishResolve?.(); this._realtimeFinishResolve = null;
+      try { socketTask?.close(); } catch (_) {}
     },
-    finishRealtimeOrFallback(filePath) {
-      if (!this.realtimeFinishSent && this.safeSendRealtime(JSON.stringify({ type: 'finish' }))) {
-        this.realtimeFinishSent = true;
+    sendRealtimeFinish() {
+      if (this.realtimeReady && !this.realtimeFinishSent && this.safeSendRealtime(JSON.stringify({ type: 'finish' }))) this.realtimeFinishSent = true;
+    },
+    async finishRealtimeOrFallback(filePath) {
+      const run = this.voiceRun, owner = this.recordingOwner;
+      this.realtimeStopping = true;
+      let timer;
+      if (!this.realtimeDone && !this.realtimeFailed) {
+        await new Promise(resolve => {
+          this._realtimeFinishResolve = resolve;
+          timer = setTimeout(() => { this.realtimeFailed = true; resolve(); }, 12000);
+          this.sendRealtimeFinish();
+        });
       }
-
-      setTimeout(() => {
-        const recognizedText = String(this.realtimeText || '').trim();
-        this.stopRealtimeAsr();
-        if (recognizedText) {
-          this.applyRecognizedText(recognizedText);
-          return;
-        }
-        this.statusText = '识别中...';
-        this.doTranscribe(filePath);
-      }, this.realtimeFailed ? 100 : 1200);
+      clearTimeout(timer);
+      const recognizedText = this.realtimeDone && !this.realtimeFailed ? String(this.realtimeText || '').trim() : '';
+      this.stopRealtimeAsr();
+      if (this.voiceRun !== run || this.permissionPageClosed || this.recognitionPageHidden || owner !== (uni.getStorageSync('token') || '')) return;
+      if (recognizedText) await this.applyRecognizedText(recognizedText);
+      else { this.statusText = '识别中...'; await this.doTranscribe(filePath); }
     },
     mergeRealtimeTranscript(payload) {
       const rawText = String((payload && payload.text) || '').trim();
@@ -871,22 +965,34 @@ export default {
       const fallback = this.getFallbackTextResult(fallbackText);
       const payload = (data && data.data) || data || {};
       if (!payload || typeof payload !== 'object') return fallback;
+      const category = payload.category || fallback.category;
+      const categoryIcon = {
+        '其他垃圾': 'bin_other',
+        '有害垃圾': 'bin_hazardous',
+        '可回收垃圾': 'bin_recyclable',
+        '可回收物': 'bin_recyclable',
+        '厨余垃圾': 'bin_kitchen'
+      }[category];
       return {
-        icon: payload.icon || fallback.icon,
-        category: payload.category || fallback.category,
+        icon: categoryIcon || fallback.icon,
+        category,
         description: payload.description || payload.advice || fallback.description,
         tags: Array.isArray(payload.tags) && payload.tags.length ? payload.tags.slice(0, 4) : fallback.tags,
         source: payload.source || 'ai'
       };
     },
     async classifyRecognizedText(text) {
+      const run = this.voiceRun, owner = uni.getStorageSync('token') || '';
+      const current = () => this.voiceRun === run && !this.permissionPageClosed && !this.recognitionPageHidden && owner === (uni.getStorageSync('token') || '');
       const fallback = this.getFallbackTextResult(text);
       this.currentResult = fallback;
       this.statusText = '正在判断垃圾分类...';
       try {
         const res = await recognizeByText(text);
+        if (!current()) return;
         this.currentResult = this.normalizeTextRecognitionResult(res, text);
       } catch (e) {
+        if (!current()) return;
         console.warn('[voice] text classify fallback:', e);
         this.currentResult = fallback;
       }
@@ -894,8 +1000,11 @@ export default {
       this.statusText = '识别完成';
     },
     async doTranscribe(filePath) {
+      const run = this.voiceRun, owner = this.recordingOwner;
+      const current = () => this.voiceRun === run && !this.permissionPageClosed && !this.recognitionPageHidden && owner === (uni.getStorageSync('token') || '');
       try {
-        const res = await transcribeAudio(filePath);
+        const res = await transcribeAudio(filePath, { isCurrent: current, signal: this._voiceAsrController?.signal });
+        if (!current()) return;
         const data = (res && res.data) || {};
         const recognizedText = data.text || '';
 
@@ -906,11 +1015,13 @@ export default {
         }
 
         await this.applyRecognizedText(recognizedText);
+        if (!current()) return;
         this.statusText = '识别完成';
         uni.showToast({ title: '识别成功', icon: 'success' });
         return;
         // 自动提交识别结果
       } catch (e) {
+        if (!current()) return;
         console.error('[voice] transcribe error:', e);
         this.statusText = '识别失败，请重试';
         uni.showToast({ title: (e && e.msg) || '语音识别失败', icon: 'none' });

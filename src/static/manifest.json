@@ -1264,7 +1264,7 @@
     "zh_name": "复制消息",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_copy_64.webp",
+    "file": "icons/chat_copy_64.webp.png",
     "mp_file": "icons/chat_copy_64.webp.png"
   },
   {
@@ -1272,7 +1272,7 @@
     "zh_name": "引用消息",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_quote_64.webp",
+    "file": "icons/chat_quote_64.webp.png",
     "mp_file": "icons/chat_quote_64.webp.png"
   },
   {
@@ -1280,7 +1280,7 @@
     "zh_name": "转发消息",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_forward_64.webp",
+    "file": "icons/chat_forward_64.webp.png",
     "mp_file": "icons/chat_forward_64.webp.png"
   },
   {
@@ -1288,7 +1288,7 @@
     "zh_name": "多选消息",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_multi_select_64.webp",
+    "file": "icons/chat_multi_select_64.webp.png",
     "mp_file": "icons/chat_multi_select_64.webp.png"
   },
   {
@@ -1296,7 +1296,7 @@
     "zh_name": "语音转文字",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_voice_text_64.webp",
+    "file": "icons/chat_voice_text_64.webp.png",
     "mp_file": "icons/chat_voice_text_64.webp.png"
   },
   {
@@ -1304,7 +1304,7 @@
     "zh_name": "撤回消息",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_recall_64.webp",
+    "file": "icons/chat_recall_64.webp.png",
     "mp_file": "icons/chat_recall_64.webp.png"
   },
   {
@@ -1312,7 +1312,7 @@
     "zh_name": "查找聊天记录",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_history_search_64.webp",
+    "file": "icons/chat_history_search_64.webp.png",
     "mp_file": "icons/chat_history_search_64.webp.png"
   },
   {
@@ -1320,7 +1320,7 @@
     "zh_name": "群昵称",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_group_alias_64.webp",
+    "file": "icons/chat_group_alias_64.webp.png",
     "mp_file": "icons/chat_group_alias_64.webp.png"
   },
   {
@@ -1328,7 +1328,7 @@
     "zh_name": "邀请成员",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_member_invite_64.webp",
+    "file": "icons/chat_member_invite_64.webp.png",
     "mp_file": "icons/chat_member_invite_64.webp.png"
   },
   {
@@ -1336,7 +1336,7 @@
     "zh_name": "移除成员",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_member_remove_64.webp",
+    "file": "icons/chat_member_remove_64.webp.png",
     "mp_file": "icons/chat_member_remove_64.webp.png"
   },
   {
@@ -1344,7 +1344,7 @@
     "zh_name": "群管理员",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_group_admin_64.webp",
+    "file": "icons/chat_group_admin_64.webp.png",
     "mp_file": "icons/chat_group_admin_64.webp.png"
   },
   {
@@ -1352,7 +1352,7 @@
     "zh_name": "转让群主",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_group_transfer_64.webp",
+    "file": "icons/chat_group_transfer_64.webp.png",
     "mp_file": "icons/chat_group_transfer_64.webp.png"
   },
   {
@@ -1360,7 +1360,7 @@
     "zh_name": "全员禁言",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_group_mute_64.webp",
+    "file": "icons/chat_group_mute_64.webp.png",
     "mp_file": "icons/chat_group_mute_64.webp.png"
   },
   {
@@ -1368,7 +1368,7 @@
     "zh_name": "解散群聊",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_group_dissolve_64.webp",
+    "file": "icons/chat_group_dissolve_64.webp.png",
     "mp_file": "icons/chat_group_dissolve_64.webp.png"
   },
   {
@@ -1376,7 +1376,7 @@
     "zh_name": "好友申请",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_friend_request_64.webp",
+    "file": "icons/chat_friend_request_64.webp.png",
     "mp_file": "icons/chat_friend_request_64.webp.png"
   },
   {
@@ -1384,7 +1384,7 @@
     "zh_name": "创建群聊",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_group_create_64.webp",
+    "file": "icons/chat_group_create_64.webp.png",
     "mp_file": "icons/chat_group_create_64.webp.png"
   },
   {
@@ -1392,7 +1392,7 @@
     "zh_name": "AI 执行动作表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/ai_chat_action_table_64.webp",
+    "file": "icons/ai_chat_action_table_64.webp.png",
     "mp_file": "icons/ai_chat_action_table_64.webp.png"
   },
   {
@@ -1400,7 +1400,7 @@
     "zh_name": "AI 设置表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/ai_setting_table_64.webp",
+    "file": "icons/ai_setting_table_64.webp.png",
     "mp_file": "icons/ai_setting_table_64.webp.png"
   },
   {
@@ -1408,7 +1408,7 @@
     "zh_name": "预约并发锁表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/booking_slot_table_64.webp",
+    "file": "icons/booking_slot_table_64.webp.png",
     "mp_file": "icons/booking_slot_table_64.webp.png"
   },
   {
@@ -1416,7 +1416,7 @@
     "zh_name": "聊天推送设备表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/chat_push_device_table_64.webp",
+    "file": "icons/chat_push_device_table_64.webp.png",
     "mp_file": "icons/chat_push_device_table_64.webp.png"
   },
   {
@@ -1424,7 +1424,7 @@
     "zh_name": "社区互动通知表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/community_notification_table_64.webp",
+    "file": "icons/community_notification_table_64.webp.png",
     "mp_file": "icons/community_notification_table_64.webp.png"
   },
   {
@@ -1432,7 +1432,7 @@
     "zh_name": "群消息删除记录表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/group_message_deletion_table_64.webp",
+    "file": "icons/group_message_deletion_table_64.webp.png",
     "mp_file": "icons/group_message_deletion_table_64.webp.png"
   },
   {
@@ -1440,7 +1440,7 @@
     "zh_name": "用户业务通知表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/user_notification_table_64.webp",
+    "file": "icons/user_notification_table_64.webp.png",
     "mp_file": "icons/user_notification_table_64.webp.png"
   },
   {
@@ -1448,199 +1448,207 @@
     "zh_name": "语音通话",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_voice_call_64.webp",
-    "mp_file": "icons/chat_voice_call_64.png"
+    "file": "icons/chat_voice_call_64.webp.png",
+    "mp_file": "icons/chat_voice_call_64.webp.png"
   },
   {
     "id": "chat_video_call",
     "zh_name": "视频通话",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/chat_video_call_64.webp",
-    "mp_file": "icons/chat_video_call_64.png"
+    "file": "icons/chat_video_call_64.webp.png",
+    "mp_file": "icons/chat_video_call_64.webp.png"
   },
   {
     "id": "call_recordings",
     "zh_name": "通话录音",
     "category": "05_chat",
     "recommended_size": 64,
-    "file": "icons/call_recordings_64.webp",
-    "mp_file": "icons/call_recordings_64.png"
+    "file": "icons/call_recordings_64.webp.png",
+    "mp_file": "icons/call_recordings_64.webp.png"
   },
   {
     "id": "shop_product_table",
     "zh_name": "商城商品表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/shop_product_table_64.webp",
-    "mp_file": "icons/shop_product_table_64.png"
+    "file": "icons/shop_product_table_64.webp.png",
+    "mp_file": "icons/shop_product_table_64.webp.png"
   },
   {
     "id": "user_login_location_table",
     "zh_name": "用户登录位置表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/user_login_location_table_64.webp",
-    "mp_file": "icons/user_login_location_table_64.png"
+    "file": "icons/user_login_location_table_64.webp.png",
+    "mp_file": "icons/user_login_location_table_64.webp.png"
   },
   {
     "id": "biometric_credential_table",
     "zh_name": "生物识别凭据表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/biometric_credential_table_64.webp",
-    "mp_file": "icons/biometric_credential_table_64.png"
+    "file": "icons/biometric_credential_table_64.webp.png",
+    "mp_file": "icons/biometric_credential_table_64.webp.png"
   },
   {
     "id": "biometric_challenge_table",
     "zh_name": "生物识别挑战表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/biometric_challenge_table_64.webp",
-    "mp_file": "icons/biometric_challenge_table_64.png"
+    "file": "icons/biometric_challenge_table_64.webp.png",
+    "mp_file": "icons/biometric_challenge_table_64.webp.png"
   },
   {
     "id": "platform_login_credential_table",
     "zh_name": "平台登录凭据表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/platform_login_credential_table_64.webp",
-    "mp_file": "icons/platform_login_credential_table_64.png"
+    "file": "icons/platform_login_credential_table_64.webp.png",
+    "mp_file": "icons/platform_login_credential_table_64.webp.png"
   },
   {
     "id": "platform_login_challenge_table",
     "zh_name": "平台登录挑战表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/platform_login_challenge_table_64.webp",
-    "mp_file": "icons/platform_login_challenge_table_64.png"
+    "file": "icons/platform_login_challenge_table_64.webp.png",
+    "mp_file": "icons/platform_login_challenge_table_64.webp.png"
   },
   {
     "id": "collector_profile_table",
     "zh_name": "回收员资料表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/collector_profile_table_64.webp",
-    "mp_file": "icons/collector_profile_table_64.png"
+    "file": "icons/collector_profile_table_64.webp.png",
+    "mp_file": "icons/collector_profile_table_64.webp.png"
   },
   {
     "id": "collector_application_table",
     "zh_name": "回收员申请表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/collector_application_table_64.webp",
-    "mp_file": "icons/collector_application_table_64.png"
+    "file": "icons/collector_application_table_64.webp.png",
+    "mp_file": "icons/collector_application_table_64.webp.png"
   },
   {
     "id": "collector_availability_table",
     "zh_name": "回收员排班表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/collector_availability_table_64.webp",
-    "mp_file": "icons/collector_availability_table_64.png"
+    "file": "icons/collector_availability_table_64.webp.png",
+    "mp_file": "icons/collector_availability_table_64.webp.png"
   },
   {
     "id": "recycling_service_area_table",
     "zh_name": "回收服务区域表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/recycling_service_area_table_64.webp",
-    "mp_file": "icons/recycling_service_area_table_64.png"
+    "file": "icons/recycling_service_area_table_64.webp.png",
+    "mp_file": "icons/recycling_service_area_table_64.webp.png"
   },
   {
     "id": "recycling_lock_table",
     "zh_name": "回收并发锁表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/recycling_lock_table_64.webp",
-    "mp_file": "icons/recycling_lock_table_64.png"
+    "file": "icons/recycling_lock_table_64.webp.png",
+    "mp_file": "icons/recycling_lock_table_64.webp.png"
   },
   {
     "id": "booking_order_event_table",
     "zh_name": "预约订单事件表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/booking_order_event_table_64.webp",
-    "mp_file": "icons/booking_order_event_table_64.png"
+    "file": "icons/booking_order_event_table_64.webp.png",
+    "mp_file": "icons/booking_order_event_table_64.webp.png"
   },
   {
     "id": "booking_chat_binding_table",
     "zh_name": "预约聊天绑定表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/booking_chat_binding_table_64.webp",
-    "mp_file": "icons/booking_chat_binding_table_64.png"
+    "file": "icons/booking_chat_binding_table_64.webp.png",
+    "mp_file": "icons/booking_chat_binding_table_64.webp.png"
   },
   {
     "id": "recycling_request_table",
     "zh_name": "回收请求去重表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/recycling_request_table_64.webp",
-    "mp_file": "icons/recycling_request_table_64.png"
+    "file": "icons/recycling_request_table_64.webp.png",
+    "mp_file": "icons/recycling_request_table_64.webp.png"
   },
   {
     "id": "recycling_delivery_table",
     "zh_name": "回收通知投递表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/recycling_delivery_table_64.webp",
-    "mp_file": "icons/recycling_delivery_table_64.png"
+    "file": "icons/recycling_delivery_table_64.webp.png",
+    "mp_file": "icons/recycling_delivery_table_64.webp.png"
   },
   {
     "id": "recycling_device_delivery_table",
     "zh_name": "回收设备投递回执表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/recycling_device_delivery_table_64.webp",
-    "mp_file": "icons/recycling_device_delivery_table_64.png"
+    "file": "icons/recycling_device_delivery_table_64.webp.png",
+    "mp_file": "icons/recycling_device_delivery_table_64.webp.png"
+  },
+  {
+    "id": "user_cost_table",
+    "zh_name": "用户累计成本表",
+    "category": "04_admin_data",
+    "recommended_size": 64,
+    "file": "icons/user_cost_table_64.webp.png",
+    "mp_file": "icons/user_cost_table_64.webp.png"
   },
   {
     "id": "user_identity_table",
     "zh_name": "用户实名认证表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/user_identity_table_64.png",
-    "mp_file": "icons/user_identity_table_64.png"
+    "file": "icons/user_identity_table_64.webp.png",
+    "mp_file": "icons/user_identity_table_64.webp.png"
   },
   {
     "id": "identity_attempt_table",
     "zh_name": "实名认证任务表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/identity_attempt_table_64.png",
-    "mp_file": "icons/identity_attempt_table_64.png"
+    "file": "icons/identity_attempt_table_64.webp.png",
+    "mp_file": "icons/identity_attempt_table_64.webp.png"
   },
   {
     "id": "identity_budget_table",
     "zh_name": "实名认证调用计数表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/identity_budget_table_64.png",
-    "mp_file": "icons/identity_budget_table_64.png"
+    "file": "icons/identity_budget_table_64.webp.png",
+    "mp_file": "icons/identity_budget_table_64.webp.png"
   },
   {
     "id": "collector_weekly_schedule_table",
     "zh_name": "回收员每周排班表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/collector_weekly_schedule_table_64.png",
-    "mp_file": "icons/collector_weekly_schedule_table_64.png"
+    "file": "icons/collector_weekly_schedule_table_64.webp.png",
+    "mp_file": "icons/collector_weekly_schedule_table_64.webp.png"
   },
   {
     "id": "collector_schedule_override_table",
     "zh_name": "回收员排班例外表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/collector_schedule_override_table_64.png",
-    "mp_file": "icons/collector_schedule_override_table_64.png"
+    "file": "icons/collector_schedule_override_table_64.webp.png",
+    "mp_file": "icons/collector_schedule_override_table_64.webp.png"
   },
   {
     "id": "recycling_photo_table",
     "zh_name": "回收照片表",
     "category": "04_admin_data",
     "recommended_size": 64,
-    "file": "icons/recycling_photo_table_64.png",
-    "mp_file": "icons/recycling_photo_table_64.png"
+    "file": "icons/recycling_photo_table_64.webp.png",
+    "mp_file": "icons/recycling_photo_table_64.webp.png"
   }
 ]

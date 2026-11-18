@@ -135,6 +135,52 @@ assert.equal(enrolledPasskey.options.challenge, bytesToBase64([0, 1, 254]))
 await passkey.login({ credentialId: 'credential', mfaSetupTicket: 'setup-ticket-passkey', isActive: () => true })
 assert.equal(passkeyApiCalls.at(-1)[0], '/quick-login/passkey/login/finish')
 assert.equal(passkeyApiCalls.at(-1)[1].mfaSetupTicket, 'setup-ticket-passkey')
+// A passkey used as MFA must suppress enrollment without a second ceremony.
+async function mfaPasskeyFixture({ enabled = true, metadata = true, completed = true } = {}) {
+  const storage = new Map(), prompts = [], apiCalls = []
+  const runtime = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value),
+    removeStorageSync: key => storage.delete(key), confirm: async options => { prompts.push(options); return true } }
+  const api = async (path, ...args) => {
+    apiCalls.push([path, ...args])
+    if (path.endsWith('/login/finish')) return completed ? { token: 'mfa-session', accountId: 7,
+      ...(metadata ? { quickLogin: { platform: 'passkey', credentialId: 'verified-server-key', userId: 7 } } : {}) } : { requiresMfa: true, accountId: 7 }
+    return passkeyApi(path, ...args)
+  }
+  const adapter = createPasskeyAdapter({ environment: passkeyEnv, api })
+  const manager = createPlatformQuickLogin({ runtime, adapter, api, scope: 'mfa-test' })
+  if (!enabled) storage.set('platform_quick_login_v1:mfa-test', { enabled: false, prompted: false, userId: 7 })
+  const result = await adapter.login({ mfaTicket: 'mfa-ticket', isActive: () => true })
+  return { storage, prompts, apiCalls, adapter, manager, result }
+}
+const mfaPasskey = await mfaPasskeyFixture()
+assert.equal(mfaPasskey.apiCalls.find(([path]) => path === '/quick-login/passkey/login/finish')[1].mfaTicket, 'mfa-ticket',
+  'WebAuthn passkey login forwards the MFA ticket to finish')
+assert.equal(mfaPasskey.adapter.consumeLogin('other-token', 7), null, 'authentication cannot be attached to another session')
+assert.equal(mfaPasskey.adapter.consumeLogin('mfa-session', 8), null, 'authentication cannot be attached to another account')
+mfaPasskey.storage.set('token', 'mfa-session')
+mfaPasskey.storage.set('platform_quick_login_v1:mfa-test', { enabled: true, userId: 7, pendingRevocations: [
+  { credentialId: 'verified-server-key', userId: 7 }, { credentialId: 'other-account-key', userId: 8 } ] })
+await mfaPasskey.manager.afterLogin('mfa-session', user)
+await mfaPasskey.manager.afterLogin('mfa-session', user)
+assert.equal(mfaPasskey.prompts.length, 0)
+assert.equal(mfaPasskey.manager.state().prompted, true)
+assert.equal(mfaPasskey.manager.state().credentialId, 'verified-server-key')
+assert.equal(mfaPasskey.apiCalls.some(([path]) => path.includes('/enrollment/')), false)
+assert.equal(mfaPasskey.apiCalls.some(([path, , , method]) => method === 'DELETE'), false, 'restoring the verified binding never revokes it or another account credential')
+assert.equal(mfaPasskey.adapter.consumeLogin('mfa-session', 7), null, 'authentication evidence is consumed once')
+const oldBackendMfa = await mfaPasskeyFixture({ metadata: false })
+oldBackendMfa.storage.set('token', 'mfa-session')
+await oldBackendMfa.manager.afterLogin('mfa-session', user)
+assert.equal(oldBackendMfa.prompts.length, 0, 'older backends still suppress the duplicate prompt after successful MFA')
+assert.equal(oldBackendMfa.manager.state().credentialId, undefined, 'the WebAuthn external ID is never mistaken for the server credential ID')
+const disabledMfa = await mfaPasskeyFixture({ enabled: false })
+disabledMfa.storage.set('token', 'mfa-session')
+await disabledMfa.manager.afterLogin('mfa-session', user)
+assert.equal(disabledMfa.manager.state().enabled, false, 'using MFA does not turn quick login back on')
+assert.equal(disabledMfa.prompts.length, 0)
+const incompleteMfa = await mfaPasskeyFixture({ completed: false })
+assert.equal(incompleteMfa.adapter.consumeLogin('mfa-session', 7), null, 'an incomplete MFA flow cannot update quick-login preferences')
+
 const unsupported = createPasskeyAdapter({ environment: { isSecureContext: false }, api: passkeyApi })
 assert.equal((await unsupported.capability()).supported, false)
 

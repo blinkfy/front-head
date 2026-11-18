@@ -343,28 +343,31 @@ function extractNamedFunction(source, name) {
 }
 
 async function testSettingsFlow() {
-  const source = (await readFile(new URL('../src/pages-nonTheme/settings.vue', import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
+  const source = (await readFile(new URL('../src/pages-nonTheme/account-security.vue', import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
+  const logoutSource = (await readFile(new URL('../src/pages-nonTheme/settings.vue', import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
   const vars = {
     allowOtherWechatLogin: { value: false },
     wechatCanManage: { value: false },
     wechatSettingsLoaded: { value: false },
-    wechatSettingsBusy: { value: false }
+    wechatSettingsBusy: { value: false },
+    wechatSettingsError: { value: false },
+    wechatBound: { value: false }
   }
   const toasts = []
   const updateCalls = []
   let firstUpdateResolve
   let updateAttempt = 0
   const uni = { getStorageSync: key => key === 'token' ? 'active-session' : undefined, showToast: message => toasts.push(message) }
-  const getSettings = async () => ({ data: { allowOtherWechatLogin: false, canManage: false } })
+  const getSettings = async () => ({ code: 0, data: { bound: false, allowOtherWechatLogin: false, canManage: false } })
   const updateSettings = value => {
     updateCalls.push(value)
     updateAttempt++
     if (updateAttempt === 1) return new Promise(resolve => { firstUpdateResolve = resolve })
     if (updateAttempt === 2) return Promise.reject(new Error('network unavailable'))
-    return Promise.resolve({ data: { allowOtherWechatLogin: false } })
+    return Promise.resolve({ code: 0, data: { allowOtherWechatLogin: false } })
   }
-  const load = new Function('wechatSettingsBusy', 'uni', 'getWechatLoginSettings', 'allowOtherWechatLogin', 'wechatCanManage', 'wechatSettingsLoaded', `return (${extractNamedFunction(source, 'loadWechatSettings')})`)(
-    vars.wechatSettingsBusy, uni, getSettings, vars.allowOtherWechatLogin, vars.wechatCanManage, vars.wechatSettingsLoaded
+  const load = new Function('wechatSettingsBusy', 'wechatSettingsError', 'wechatSettingsLoaded', 'uni', 'getWechatLoginSettings', 'wechatBound', 'allowOtherWechatLogin', 'wechatCanManage', `return (${extractNamedFunction(source, 'loadWechatSettings')})`)(
+    vars.wechatSettingsBusy, vars.wechatSettingsError, vars.wechatSettingsLoaded, uni, getSettings, vars.wechatBound, vars.allowOtherWechatLogin, vars.wechatCanManage
   )
   const toggle = new Function('wechatSettingsBusy', 'wechatSettingsLoaded', 'loadWechatSettings', 'wechatCanManage', 'uni', 'updateWechatLoginSettings', 'allowOtherWechatLogin', `return (${extractNamedFunction(source, 'toggleWechatSharing')})`)(
     vars.wechatSettingsBusy, vars.wechatSettingsLoaded, load, vars.wechatCanManage, uni, updateSettings, vars.allowOtherWechatLogin
@@ -374,35 +377,54 @@ async function testSettingsFlow() {
     await load()
     assert.equal(vars.wechatSettingsLoaded.value, true)
     assert.equal(vars.wechatCanManage.value, false)
-    await toggle()
+    await toggle({ detail: { value: true } })
     assert.equal(updateCalls.length, 0, 'a non-primary WeChat cannot change the setting')
 
     vars.wechatCanManage.value = true
-    const first = toggle()
+    const first = toggle({ detail: { value: true } })
     assert.equal(vars.wechatSettingsBusy.value, true)
-    await toggle()
+    await toggle({ detail: { value: false } })
     assert.equal(updateCalls.length, 1, 'the in-flight request blocks duplicate toggles')
-    firstUpdateResolve({ data: { allowOtherWechatLogin: true } })
+    firstUpdateResolve({ code: 0, data: { allowOtherWechatLogin: true } })
     await first
     assert.equal(vars.allowOtherWechatLogin.value, true)
     assert.equal(vars.wechatSettingsBusy.value, false)
 
-    await toggle()
+    await toggle({ detail: { value: false } })
     assert.equal(vars.allowOtherWechatLogin.value, true, 'a failed save leaves the prior UI value unchanged')
     assert.equal(vars.wechatSettingsBusy.value, false)
-    await toggle()
+    await toggle({ detail: { value: false } })
     assert.deepEqual(updateCalls, [true, false, false])
     assert.equal(vars.allowOtherWechatLogin.value, false)
   })
 
+  await scenario('account profile response is ignored after the active token changes', async () => {
+    let activeToken = 'account-a-token'
+    let resolveProfile
+    const accountProfile = { value: { id: 22, username: 'account-b' } }
+    const profileLoading = { value: false }, profileError = { value: false }, avatarFailed = { value: false }
+    const writes = []
+    const profileUni = { getStorageSync: key => key === 'token' ? activeToken : undefined, setStorageSync: (...args) => writes.push(args) }
+    const loadProfile = new Function('profileLoading', 'uni', 'profileError', 'getUserProfile', 'profile', 'avatarFailed', 'readCachedProfile', `return (${extractNamedFunction(source, 'loadProfile')})`)(
+      profileLoading, profileUni, profileError, () => new Promise(resolve => { resolveProfile = resolve }), accountProfile, avatarFailed, () => ({ id: 11 })
+    )
+    const pending = loadProfile()
+    activeToken = 'account-b-token'
+    resolveProfile({ code: 0, data: { id: 11, username: 'account-a' } })
+    await pending
+    assert.equal(accountProfile.value.username, 'account-b', 'a stale account response cannot replace the current profile')
+    assert.deepEqual(writes, [], 'a stale account response cannot overwrite cached userInfo')
+  })
+
   await scenario('settings logout clears shared resume credentials', () => {
-    const logout = extractNamedFunction(source, 'handleConfirm')
+    const logout = extractNamedFunction(logoutSource, 'handleConfirm')
     assert.ok(/confirmAction\.value === 'logout'[\s\S]*setStorageSync\('autoLogin', false\)[\s\S]*#ifdef MP-WEIXIN[\s\S]*removeStorageSync\('wechat_shared_session'\)[\s\S]*removeStorageSync\('wechat_last_login'\)[\s\S]*#endif/.test(logout))
   })
 }
 
 async function testThemeSourceGuards() {
   const entryComponent = await readFile(new URL('../src/components/WechatLoginEntry.vue', import.meta.url), 'utf8')
+  const h5LoginShell = await readFile(new URL('../src/components/H5LoginShell.vue', import.meta.url), 'utf8')
   assert.ok(!/@cancel=|\$emit\(['"]cancel/.test(entryComponent), 'WeChat entry should expose no cancel action')
 
   for (const theme of ['pages', 'pages-dark']) {
@@ -434,7 +456,8 @@ async function testThemeSourceGuards() {
     })
 
     await scenario(`${theme} remember UI is present and MP login passes the user's preference`, () => {
-      assert.ok(/<view class="options-row">[\s\S]*?toggleRememberMe[\s\S]*?rememberMe/.test(template))
+      assert.ok(/v-model:remember-me="rememberMe"/.test(template))
+      assert.ok(/<view v-if="!mfa" class="account-options">[\s\S]*?rememberMe/.test(h5LoginShell) || /<view v-if="!mfaState" class="options-row">[\s\S]*?toggleRememberMe[\s\S]*?rememberMe/.test(template))
       assert.ok(/const rememberMe = ref\(true\)/.test(page), `${theme}: keep the checkbox checked by default`)
       assert.ok(/rememberWechatLogin\(uni, res, rememberMe\.value\)/.test(page))
       assert.ok(/if \(wechatSession\) \{[\s\S]*setStorageSync\('autoLogin', rememberMe\.value\)/.test(page))
@@ -465,10 +488,11 @@ async function testLoginSfcPlatforms() {
     const source = await readFile(new URL(`../${filename}`, import.meta.url), 'utf8')
     const { descriptor, errors } = parse(source, { filename })
     assert.equal(errors.length, 0, `${theme}: SFC parse should succeed`)
-    compileScript(descriptor, { id: `wechat-${theme}` })
     for (const target of ['mp-weixin', 'h5']) {
       await scenario(`${theme} login SFC compiles for ${target}`, () => {
         const context = { ...defaults, ...(target === 'mp-weixin' ? { MP: true, MP_WEIXIN: true } : { H5: true, WEB: true }) }
+        const script = preprocess(descriptor.scriptSetup.content, context, 'js')
+        compileScript({ ...descriptor, scriptSetup: { ...descriptor.scriptSetup, content: script } }, { id: `wechat-${theme}-${target}` })
         const template = preprocess(descriptor.template.content, context, 'html')
         const result = compileTemplate({ source: template, filename, id: `wechat-${theme}-${target}` })
         assert.equal(result.errors.length, 0, result.errors.map(String).join('\n'))

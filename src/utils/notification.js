@@ -2,6 +2,7 @@ import { receiveChatFeedback } from './chat-feedback.js'
 import { queueBusinessNotification } from './business-notification.js'
 import { foregroundNotifications, notificationAvatarUrl } from './foreground-notification.mjs'
 import { baseUrl } from '@/api/settings.js'
+import { rememberChatEntryAvatar } from './chat-entry-avatar.mjs'
 
 /**
  * 前台统一使用可点击的顶部横幅，小程序由页面组件承载。
@@ -24,6 +25,9 @@ export function openChatNotification(data = {}) {
   const groupId = data.groupId || (String(data.conversationId || '').startsWith('group:') ? String(data.conversationId).slice(6) : '')
   const otherId = data.otherId || data.conversationId
   if (!groupId && !otherId) return
+  if (!groupId && (typeof data.senderAvatar === 'string' || typeof data.avatar === 'string')) {
+    rememberChatEntryAvatar(uni.getStorageSync('token') || '', otherId, notificationAvatarUrl(data.senderAvatar ?? data.avatar, baseUrl))
+  }
   const query = groupId
     ? `conversationType=group&groupId=${encodeURIComponent(groupId)}&chatId=${encodeURIComponent(`group:${groupId}`)}`
     : `chatId=${encodeURIComponent(otherId)}&userId=${encodeURIComponent(otherId)}`

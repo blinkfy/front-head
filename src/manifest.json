@@ -2,8 +2,8 @@
     "name" : "分投侠",
     "appid" : "__UNI__0B093BC",
     "description" : "",
-    "versionName" : "1.4.14",
-    "versionCode" : 139,
+    "versionName" : "1.4.15",
+    "versionCode" : 142,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -54,7 +54,8 @@
                     "NSPhotoLibraryUsageDescription" : "用于上传需要识别分类的照片",
                     "NSPhotoLibraryAddUsageDescription" : "用于保存分投侠小程序二维码到相册",
                     "NSLocationWhenInUseUsageDescription" : "用于寻找附近智能垃圾分类装置",
-                    "NSMicrophoneUsageDescription" : "用于发送语音消息"
+                    "NSMicrophoneUsageDescription" : "用于发送语音消息",
+                    "NSSpeechRecognitionUsageDescription" : "用于在设备支持时优先将语音识别为文字"
                 }
             },
             "sdkConfigs" : {
@@ -104,6 +105,15 @@
                     "hdpi" : "E:/大学日志/2024.07/集训/w_project/APP截图/begin.png",
                     "xhdpi" : "E:/大学日志/2024.07/集训/w_project/APP截图/begin.png",
                     "xxhdpi" : "E:/大学日志/2024.07/集训/w_project/APP截图/begin.png"
+                }
+            }
+        }
+    },
+    "h5" : {
+        "sdkConfigs" : {
+            "maps" : {
+                "tencent" : {
+                    "key" : "CSVBZ-ITPKL-HHHPD-MIWZA-X7FY5-ABB2I"
                 }
             }
         }

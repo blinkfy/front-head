@@ -65,11 +65,12 @@ export function createRegistrationApi({ runtime, baseUrl, clientPlatform = 'h5' 
   const privateRequest = (method, session, suffix = '') => request(method, '/' + session.sessionId + suffix,
     undefined, { 'X-Registration-Secret': session.pollSecret })
   return {
-    create: async () => {
-      const result = await request('POST', '', clientPlatform === 'app' ? { clientPlatform: 'app' } : {})
-      const data = result.data
-      if (!/^r_[a-f0-9]{24}$/.test(data?.sessionId || '') || !/^[a-f0-9]{64}$/.test(data?.pollSecret || '') ||
-          !Number.isFinite(data?.expiresAt) || typeof data?.qrUrl !== 'string') {
+    create: async ({ mfaTicket } = {}) => {
+      const data = { ...(clientPlatform === 'app' ? { clientPlatform: 'app' } : {}), ...(mfaTicket ? { mfaTicket } : {}) }
+      const result = await request('POST', '', data)
+      const session = result.data
+      if (!/^r_[a-f0-9]{24}$/.test(session?.sessionId || '') || !/^[a-f0-9]{64}$/.test(session?.pollSecret || '') ||
+          !Number.isFinite(session?.expiresAt) || typeof session?.qrUrl !== 'string') {
         throw Object.assign(new Error('当前服务暂不支持自动网页登录'), { reason: 'REGISTRATION_RELAY_UNSUPPORTED' })
       }
       return result

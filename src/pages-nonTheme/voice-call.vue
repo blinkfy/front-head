@@ -2,8 +2,8 @@
   <view class="call-page" :class="{ dark: darkTheme, 'video-mode': videoActive, 'video-waiting': outgoingVideoVisible, 'video-controls-hidden': videoActive && videoControlsHidden, 'screen-sharing': screenShareLabel }">
     <text class="page-title">{{ (['connecting', 'connected'].includes(state.phase) ? videoActive : isVideo) ? '视频通话' : '语音通话' }}</text>
     <view class="peer">
-      <ChatCachedAvatar v-if="!videoActive" class="avatar" :src="peerAvatar" :avatar-name="state.peer?.name || '聊'" :owner="avatarOwner" />
-      <text class="peer-name">{{ state.peer?.name || '语音通话' }}</text>
+      <ChatCachedAvatar v-if="!videoActive" class="avatar" :src="peerAvatar" :avatar-name="displayPeer?.name || '聊'" :owner="avatarOwner" />
+      <text class="peer-name">{{ displayPeer?.name || '语音通话' }}</text>
       <text class="status" aria-live="polite">{{ statusText }}</text>
       <text v-if="outgoingVideoVisible" class="preview-badge">本机预览</text>
       <text v-if="state.phase === 'connected' && !videoActive" class="route-hint">{{ routeAudio ? (state.speaker ? '免提播放' : '听筒 / 耳机播放') : '通过系统音频设备播放' }}</text>
@@ -33,6 +33,7 @@
       {{ state.recording ? '停止录音 · ' + recordingTime : '开始录音' }}
     </button>
     <text v-if="state.recordingError" class="route-hint">{{ state.recordingError }}</text>
+    <text v-if="state.handoffError" class="route-hint" aria-live="polite">{{ state.handoffError }}</text>
     <text v-if="state.mediaError" class="route-hint" aria-live="polite">{{ state.mediaError }}</text>
     <!-- #ifdef H5 -->
     <button v-if="state.phase === 'incoming' && ringtoneState.blocked" class="playback-button" @click="enableRingtone">点击开启来电铃声</button>
@@ -53,6 +54,7 @@
         <view class="action hangup-action"><button class="round danger" aria-label="挂断通话" @click="end('hangup')"><VoiceCallIcon kind="hangup" /></button><text>挂断</text></view>
       </template>
       <view v-else-if="state.phase === 'calling'" class="action"><button class="round danger" aria-label="取消呼叫" @click="end('cancelled')"><VoiceCallIcon kind="hangup" /></button><text>取消呼叫</text></view>
+      <button v-else-if="ongoingCall" class="return-button" :disabled="state.handoffPending" @click="takeover">{{ state.handoffPending ? '正在切换通话…' : '切换到本机通话' }}</button>
       <button v-else class="return-button" @click="back">返回聊天</button>
     </view>
   </view>
@@ -80,7 +82,9 @@ export default {
     },
     controlCount() { return 1 + Number(this.routeAudio) + Number(this.cameraSupported) + Number(this.showSwitchCamera) + Number(this.showScreenShare) },
     canMinimize() { return this.appRealtime || this.webRealtime },
-    isVideo() { return this.state.mode === 'video' },
+    ongoingCall() { return ['idle', 'ended'].includes(this.state.phase) && this.state.ongoing },
+    displayPeer() { return this.ongoingCall?.peer || this.state.peer },
+    isVideo() { return (this.ongoingCall?.mode || this.state.mode) === 'video' },
     cameraSupported() { return this.state.cameraSupported || this.isVideo },
     showSwitchCamera() { return this.cameraSupported && this.state.canSwitchCamera && !this.state.screenSharing },
     showScreenShare() { return this.state.phase === 'connected' && (this.appRealtime || this.state.screenShareSupported || voiceCallMedia.supportsScreenShare?.() === true) },
@@ -98,12 +102,15 @@ export default {
     mainIsLocal() {
       return this.localVideoVisible && (!this.remoteVideoVisible || (!this.state.remoteScreenSharing && (this.state.screenSharing || this.selfIsMain)))
     },
-    peerAvatar() { return callAvatarUrl(this.state.peer?.avatar, baseUrl) },
+    peerAvatar() { return callAvatarUrl(this.displayPeer?.avatar, baseUrl) },
     avatarOwner() { return this.pageOwner ? recordingIdentity().owner : '' },
     statusText() {
+      if (this.state.phase === 'connecting' && this.state.handoffPending) return '正在切换通话，原设备继续保持连接…'
+      if (this.ongoingCall) return '在其它设备通话中'
       if (this.incomingCallId && this.state.callId !== this.incomingCallId && ['idle', 'ended'].includes(this.state.phase))
         return this.now - this.incomingOpenedAt < 10000 ? '正在确认来电…' : '此来电已结束或暂时无法连接'
       if (this.state.phase === 'connected') {
+        if (this.state.reconnecting) return '连接不稳定，正在恢复…'
         const seconds = Math.max(0, Math.floor((this.now - this.state.startedAt) / 1000))
         return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
       }
@@ -161,11 +168,11 @@ export default {
   },
   methods: {
     returnAfterNormalEnd() {
-      if (!this.pageVisible || this.leaving || !this.ownsCurrentCall() || !shouldReturnFromCall(this.state)) return
+      if (!this.pageVisible || this.leaving || this.state.ongoing || this.state.handoffPending || !this.ownsCurrentCall() || !shouldReturnFromCall(this.state)) return
       const callId = this.pageCallId
       this.$nextTick(() => {
         // A new incoming call can arrive before navigation runs.
-        if (this.pageVisible && !this.leaving && this.pageCallId === callId && this.ownsCurrentCall() && shouldReturnFromCall(this.state)) this.back()
+        if (this.pageVisible && !this.leaving && this.pageCallId === callId && this.ownsCurrentCall() && !this.state.ongoing && !this.state.handoffPending && shouldReturnFromCall(this.state)) this.back()
       })
     },
     ownsCurrentCall() { return !!this.pageCallId && this.pageCallId === this.state.callId && this.pageOwner === (uni.getStorageSync('token') || '') },
@@ -184,6 +191,11 @@ export default {
       this.notificationsGranted = permission === 'granted'
       refreshWebCallAlert()
       if (!this.notificationsGranted) uni.showToast({ title: '可在浏览器网站设置中允许通知', icon: 'none' })
+    },
+    async takeover() {
+      if (this.leaving || !this.ongoingCall || this.state.handoffPending) return
+      try { await voiceCalls.takeover() }
+      catch (error) { uni.showToast({ title: error?.message || '暂时无法切换通话', icon: 'none' }) }
     },
     accept() { if (!this.leaving && this.ownsCurrentCall()) void voiceCalls.accept(this.pageCallId) },
     end(reason) { if (!this.leaving && this.ownsCurrentCall()) voiceCalls.end(reason) },

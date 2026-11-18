@@ -30,6 +30,7 @@ export function createWebCallRecording({ local, remote, metadata, storage, chang
         if (context.state !== 'running') throw new Error('请点击录音按钮启动录制')
         if (!canStart()) return
         destination = context.createMediaStreamDestination()
+        const sourceRemoteTrack = remote.getAudioTracks()[0]
         for (const stream of [local, remote]) {
           // An empty remote stream can receive its first audio track after setup.
           if (!stream.getAudioTracks().length) throw new Error('通话声音尚未就绪，请稍后重试')
@@ -47,7 +48,7 @@ export function createWebCallRecording({ local, remote, metadata, storage, chang
         await storage.create(row)
         if (!canStart()) { await storage.remove(id, metadata.owner, true); return }
         let resolveDone
-        run = { id, startedAt, encoder, context, destination, nodes, bytes: 0, count: 0, writes: Promise.resolve(),
+        run = { id, startedAt, encoder, context, destination, nodes, remoteTrack: sourceRemoteTrack, bytes: 0, count: 0, writes: Promise.resolve(),
           done: new Promise(resolve => { resolveDone = resolve }), resolveDone, stopping: false, failed: false,
           pending: 0, timer: null, stoppedAt: 0, stopNotice: '', committedBytes: 0, committedCount: 0, committedDuration: 0 }
         active = run
@@ -76,6 +77,7 @@ export function createWebCallRecording({ local, remote, metadata, storage, chang
         encoder.onerror = () => { run.failed = true; report(false, { recordingError: '录制中断，正在保存已有声音' }); void stop() }
         encoder.onstop = () => finish(run)
         encoder.start(1000)
+        trackReady()
         run.timer = setTimeout(() => { run.stopNotice = '录音达到一小时上限，已保存'; void stop() }, maxDuration)
         report(true)
       } catch (error) {
@@ -130,6 +132,13 @@ export function createWebCallRecording({ local, remote, metadata, storage, chang
     return run.done
   }
   function trackReady() {
+    const track = remote.getAudioTracks()[0]
+    if (active && !active.stopping && track && active.remoteTrack !== track) {
+      try {
+        const source = active.context.createMediaStreamSource(new environment.MediaStream([track]))
+        active.nodes[2].disconnect(); source.connect(active.nodes[3]); active.nodes[2] = source; active.remoteTrack = track
+      } catch (_) { active.stopNotice = '通话设备切换后录音已保存'; void stop() }
+    }
     if (!automaticPending || !remote.getAudioTracks().length) return
     automaticPending = false
     void start()

@@ -68,7 +68,7 @@ export function createChatEventsTransport({ getToken, getBaseUrl, connectSocket,
                             previouslyConnected = true
                             onConnected?.({ ...event, reconnected })
                         }
-                        else if (event.type === 'chat.changed' || event.type === 'community.changed' || event.type === 'notification.changed' || String(event.type || '').startsWith('voice.') || String(event.type || '').startsWith('location.')) onEvent(event)
+                        else if (event.type === 'settings.changed' || event.type === 'chat.changed' || event.type === 'community.changed' || event.type === 'notification.changed' || String(event.type || '').startsWith('voice.') || String(event.type || '').startsWith('location.')) onEvent(event)
                     } catch (_) {}
                 })
                 current.onClose(disconnected)

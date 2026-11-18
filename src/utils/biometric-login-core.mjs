@@ -36,8 +36,9 @@ export function createBiometricLoginManager({ runtime, native, api, scope }) {
     const { credentialId, payload, challengeId } = options.data
     let committed = false
     try {
-      if (!isActive()) throw { error: 'CANCELLED' }
+      if (!isActive() || runtime.getStorageSync('token') !== token) throw { error: 'CANCELLED' }
       const { publicKey } = await native({ operation: 'create', keyId: credentialId })
+      if (!isActive() || runtime.getStorageSync('token') !== token) throw { error: 'CANCELLED' }
       const { signature } = await native({ operation: 'sign', keyId: credentialId, payload })
       if (!isActive() || runtime.getStorageSync('token') !== token) throw { error: 'CANCELLED' }
       const result = await api('/biometric/enrollment/finish', { challengeId, publicKey, signature }, token)
@@ -50,7 +51,7 @@ export function createBiometricLoginManager({ runtime, native, api, scope }) {
       await removeKey(previous.credentialId)
       await flushRevocations(token, user.id)
       // Once provisioned, never keep a plaintext password as a biometric fallback.
-      runtime.removeStorageSync('savedUser')
+      if (isActive() && runtime.getStorageSync('token') === token) runtime.removeStorageSync('savedUser')
       return true
     } finally { if (!committed) await removeKey(credentialId) }
   }
@@ -61,19 +62,24 @@ export function createBiometricLoginManager({ runtime, native, api, scope }) {
       if (busy || !Number.isSafeInteger(Number(user?.id)) || Number(user.id) <= 0 || !isActive() || runtime.getStorageSync('token') !== token) return
       busy = true
       try {
-        const current = activate(user)
+        let current = activate(user)
         await flushRevocations(token, user.id)
         if (!isActive() || runtime.getStorageSync('token') !== token) return
+        current = state(user.id)
         if (current.credentialId) runtime.removeStorageSync('savedUser')
         if (!current.enabled || current.prompted || current.credentialId) return
         const support = await capability()
         if (!support.supported || !support.enrolled || !isActive() || runtime.getStorageSync('token') !== token) return
+        current = state(user.id)
+        if (!current.enabled || current.prompted || current.credentialId) return
         // Record before presenting: cancelling, errors, or a restart cannot repeat this offer.
         save({ prompted: true }, user.id)
         const accepted = await runtime.confirm({ title: `开启${support.label || '指纹或面容登录'}`,
           content: '下次未保持登录时，将优先使用系统指纹或面容认证。您可随时在「设置 → 账号与安全」中修改。',
           confirmText: '开启', cancelText: '暂不开启' })
         if (!isActive() || runtime.getStorageSync('token') !== token) return
+        const confirmedState = state(user.id)
+        if (!confirmedState.enabled || confirmedState.credentialId) return
         if (!accepted) { save({ enabled: false }, user.id); return }
         await bind(token, user, isActive)
       } finally { busy = false }
@@ -92,12 +98,17 @@ export function createBiometricLoginManager({ runtime, native, api, scope }) {
           return
         }
         const support = await capability()
+        if (!isActive() || runtime.getStorageSync('token') !== token) throw { error: 'CANCELLED' }
         if (!support.supported || !support.enrolled) throw { error: 'NOT_ENROLLED' }
-        if (current.credentialId && accounts().some(item => item.credentialId === current.credentialId && String(item.userId) === String(user.id))) return
+        const latest = state(user.id)
+        if (latest.credentialId && accounts().some(item => item.credentialId === latest.credentialId && String(item.userId) === String(user.id))) return
         await bind(token, user, isActive)
+      } catch (error) {
+        if (enabled && isActive() && runtime.getStorageSync('token') === token && !state(user.id).credentialId) save({ enabled: current.enabled }, user.id)
+        throw error
       } finally { busy = false }
     },
-    async login(isActive = () => true, owner, { mfaSetupTicket, userId } = {}) {
+    async login(isActive = () => true, owner, { mfaSetupTicket, mfaTicket, userId } = {}) {
       const current = state(userId)
       if (busy || !current.enabled || !current.credentialId || !accounts().some(item => item.credentialId === current.credentialId && String(item.userId) === String(current.userId))) return null
       busy = true
@@ -106,14 +117,14 @@ export function createBiometricLoginManager({ runtime, native, api, scope }) {
         if (!isActive()) throw { error: 'CANCELLED' }
         const { signature } = await native({ operation: 'sign', keyId: current.credentialId, payload: options.data.payload })
         if (!isActive()) throw { error: 'CANCELLED' }
-        const result = await api('/biometric/login/finish', { challengeId: options.data.challengeId, signature, ...(mfaSetupTicket ? { mfaSetupTicket } : {}) })
+        const result = await api('/biometric/login/finish', { challengeId: options.data.challengeId, signature, ...(mfaSetupTicket ? { mfaSetupTicket } : {}), ...(mfaTicket ? { mfaTicket } : {}) })
         if (!isActive()) return null
         if (String(result?.accountId) !== String(current.userId)) throw { error: 'ACCOUNT_MISMATCH', msg: '认证账号不匹配，请重新选择账号' }
         return result
       } catch (error) {
         if (error?.error === 'KEY_INVALID' || error?.reason === 'invalid_credential') {
           await removeKey(current.credentialId)
-          clearBinding(current.userId)
+          if (state(current.userId).credentialId === current.credentialId) clearBinding(current.userId)
         }
         throw error
       } finally { busy = false }

@@ -25,14 +25,32 @@ object VoiceCallBridge {
     private var initialized = false
     private var screenSequence = 0
     @Volatile private var current: Session? = null
+    // A trial owns only its PeerConnection; all capture/factory resources remain Session-owned.
+    private class PeerSlot(val transferId: String, val generation: Int) {
+        var peer: PeerConnection? = null
+        var videoSender: RtpSender? = null
+        var remoteVideo: VideoTrack? = null
+        val remoteAudio = mutableListOf<AudioTrack>()
+        val ice = mutableListOf<IceCandidate>()
+        var remoteSet = false
+        var connected = false
+    }
     private class Session(val id: String, val context: Context, val callback: (String) -> Unit,
                           val video: Boolean, val entryMode: String, activity: Activity? = null) {
         val activity = activity?.let { WeakReference(it) }
         var factory: PeerConnectionFactory? = null
         var peer: PeerConnection? = null
+        var config: PeerConnection.RTCConfiguration? = null
+        var shadow: PeerSlot? = null
+        var handoffCandidate = false
+        var candidateTransferId = ""
+        val candidateAudio = mutableListOf<AudioTrack>()
         var source: AudioSource? = null
         var track: AudioTrack? = null
         var remoteSet = false
+        var recoveryEnabled = false
+        @Volatile var generation = 0
+        val localIceGenerations = mutableMapOf<String, Int>()
         @Volatile var closed = false
         var egl: EglBase? = null
         var videoSource: VideoSource? = null
@@ -76,9 +94,11 @@ object VoiceCallBridge {
         var focus: AudioFocusRequest? = null
         var focusListener: AudioManager.OnAudioFocusChangeListener? = null
         var audioChanged = false
+        var focusSuspended = false
+        var focusDeadline: Runnable? = null
     }
     private fun emit(s: Session, type: String, data: JSONObject = JSONObject()) {
-        if (RealtimeBridge.callEvent(s.id, type, data)) return
+        if (!s.handoffCandidate && RealtimeBridge.callEvent(s.id, type, data)) return
         val json = data.put("type", type).put("callId", s.id).toString()
         main.post { s.callback(json) }
     }
@@ -91,9 +111,23 @@ object VoiceCallBridge {
     private fun requestAudioFocus(s: Session): Boolean {
         lateinit var listener: AudioManager.OnAudioFocusChangeListener
         listener = AudioManager.OnAudioFocusChangeListener { change ->
-            // Notification ducking does not interrupt the call.
-            if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
-                worker.execute { if (s.focusListener === listener) fail(s, "interrupted") }
+            when (change) {
+                AudioManager.AUDIOFOCUS_LOSS -> worker.execute { if (s.focusListener === listener) fail(s, "interrupted") }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> worker.execute {
+                    if (!valid(s) || s.focusListener !== listener) return@execute
+                    s.focusSuspended = true; updateAudioMute(s)
+                    if (s.focusDeadline == null) {
+                        val deadline = Runnable { if (valid(s) && s.focusSuspended) fail(s, "interrupted") }
+                        s.focusDeadline = deadline; main.postDelayed(deadline, 30000)
+                    }
+                }
+                AudioManager.AUDIOFOCUS_GAIN -> worker.execute {
+                    if (!valid(s) || s.focusListener !== listener) return@execute
+                    s.focusSuspended = false
+                    s.focusDeadline?.let(main::removeCallbacks); s.focusDeadline = null
+                    updateAudioMute(s)
+                }
+            }
         }
         s.focusListener = listener
         val result = try {
@@ -119,16 +153,154 @@ object VoiceCallBridge {
             else s.audio.abandonAudioFocus(listener)
         }
     }
-    private fun observer(s: Session, created: ((SessionDescription) -> Unit)? = null, done: (() -> Unit)? = null) = object : SdpObserver {
-        override fun onCreateSuccess(description: SessionDescription) { worker.execute { if (valid(s)) created?.invoke(description) } }
-        override fun onSetSuccess() { worker.execute { if (valid(s)) done?.invoke() } }
-        override fun onCreateFailure(error: String) { worker.execute { fail(s, "connect_failed") } }
-        override fun onSetFailure(error: String) { worker.execute { fail(s, "connect_failed") } }
+    private fun observer(s: Session, created: ((SessionDescription) -> Unit)? = null, done: (() -> Unit)? = null, peer: PeerConnection? = s.peer) = object : SdpObserver {
+        override fun onCreateSuccess(description: SessionDescription) { worker.execute { if (valid(s) && s.peer === peer) created?.invoke(description) } }
+        override fun onSetSuccess() { worker.execute { if (valid(s) && s.peer === peer) done?.invoke() } }
+        override fun onCreateFailure(error: String) { worker.execute { if (s.peer === peer) negotiationFailure(s) } }
+        override fun onSetFailure(error: String) { worker.execute { if (s.peer === peer) negotiationFailure(s) } }
     }
-    private fun localDescription(s: Session, description: SessionDescription) {
+    private fun negotiationFailure(s: Session) {
+        if (!valid(s)) return
+        if (s.recoveryEnabled) emit(s, "state", JSONObject().put("state", "failed")) else fail(s, "connect_failed")
+    }
+    private fun localDescription(s: Session, description: SessionDescription, generation: Int = s.generation) {
+        Regex("(?m)^a=ice-ufrag:([^\\r\\n]+)").findAll(description.description).forEach { s.localIceGenerations[it.groupValues[1]] = generation }
         s.peer?.setLocalDescription(observer(s, done = {
-            emit(s, description.type.canonicalForm(), JSONObject().put("sdp", description.description))
+            emit(s, description.type.canonicalForm(), JSONObject().put("sdp", description.description).put("generation", generation))
         }), description)
+    }
+    private fun handoffEmit(s: Session, slot: PeerSlot, kind: String, data: JSONObject = JSONObject()) {
+        if (valid(s) && s.shadow === slot) emit(s, "handoff", data.put("transferId", slot.transferId).put("generation", slot.generation).put("kind", kind))
+    }
+    private fun peerObserver(s: Session, slot: PeerSlot) = object : PeerConnection.Observer {
+        private fun active() = valid(s) && s.peer === slot.peer
+        private fun trial() = valid(s) && s.shadow === slot
+        override fun onSignalingChange(state: PeerConnection.SignalingState) {}
+        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {}
+        override fun onStandardizedIceConnectionChange(state: PeerConnection.IceConnectionState) {}
+        override fun onIceCandidateError(event: IceCandidateErrorEvent) {}
+        override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {}
+        override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {}
+        override fun onRemoveTrack(receiver: RtpReceiver) {}
+        override fun onIceConnectionReceivingChange(receiving: Boolean) {}
+        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
+        override fun onIceCandidate(candidate: IceCandidate) { worker.execute {
+            if (candidate.sdp.contains(" typ relay ")) return@execute
+            val data = JSONObject().put("candidate", JSONObject().put("candidate", candidate.sdp)
+                .put("sdpMid", candidate.sdpMid ?: "0").put("sdpMLineIndex", candidate.sdpMLineIndex))
+            if (trial()) handoffEmit(s, slot, "ice", data)
+            else if (active()) {
+                val ufrag = Regex("(?:^| )ufrag ([^ ]+)").find(candidate.sdp)?.groupValues?.get(1)
+                emit(s, "ice", data.put("generation", ufrag?.let { s.localIceGenerations[it] } ?: s.generation))
+            }
+        } }
+        override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) {}
+        override fun onAddStream(stream: MediaStream) {}
+        override fun onRemoveStream(stream: MediaStream) {}
+        override fun onDataChannel(channel: DataChannel) { channel.close() }
+        override fun onRenegotiationNeeded() {}
+        override fun onTrack(transceiver: RtpTransceiver) { worker.execute {
+            if (!active() && !trial()) return@execute
+            when (val track = transceiver.receiver.track()) {
+                is AudioTrack -> {
+                    if (trial()) { track.setEnabled(false); slot.remoteAudio.add(track) }
+                    else if (s.handoffCandidate) { track.setEnabled(false); s.candidateAudio.add(track) }
+                }
+                is VideoTrack -> if (trial()) slot.remoteVideo = track else {
+                    s.remoteVideo = track
+                    main.post { if (active()) s.videoView?.setRemoteTrack(track) }
+                }
+            }
+        } }
+        override fun onConnectionChange(state: PeerConnection.PeerConnectionState) { worker.execute {
+            if (trial()) {
+                if (state == PeerConnection.PeerConnectionState.CONNECTED) { slot.connected = true; handoffEmit(s, slot, "connected") }
+                else if (state == PeerConnection.PeerConnectionState.FAILED || state == PeerConnection.PeerConnectionState.CLOSED) {
+                    handoffEmit(s, slot, "failed"); cancelHandoff(s)
+                }
+            } else if (active()) {
+                if (state == PeerConnection.PeerConnectionState.FAILED && !s.recoveryEnabled) fail(s, "connect_failed")
+                else emit(s, "state", JSONObject().put("state", state.toString().lowercase()))
+            }
+        } }
+    }
+    private fun abortHandoff(s: Session) {
+        s.shadow?.let { handoffEmit(s, it, "failed") }
+        cancelHandoff(s)
+    }
+    @JvmStatic fun cancelCandidate(id: String, transferId: String) { worker.execute {
+        current?.takeIf { valid(it) && it.id == id && it.handoffCandidate && it.candidateTransferId == transferId }?.let(::release)
+    } }
+    private fun cancelHandoff(s: Session) {
+        val trial = s.shadow ?: return
+        s.shadow = null // Fence callbacks before close/dispose.
+        RealtimeBridge.forgetHandoff(s.id, trial.transferId)
+        runCatching { trial.peer?.close() }; runCatching { trial.peer?.dispose() }
+    }
+    private fun trialObserver(s: Session, slot: PeerSlot, created: ((SessionDescription) -> Unit)? = null, done: (() -> Unit)? = null) = object : SdpObserver {
+        override fun onCreateSuccess(description: SessionDescription) { worker.execute { if (valid(s) && s.shadow === slot) created?.invoke(description) } }
+        override fun onSetSuccess() { worker.execute { if (valid(s) && s.shadow === slot) done?.invoke() } }
+        override fun onCreateFailure(error: String) { failed() }
+        override fun onSetFailure(error: String) { failed() }
+        private fun failed() { worker.execute { if (valid(s) && s.shadow === slot) { handoffEmit(s, slot, "failed"); cancelHandoff(s) } } }
+    }
+    private fun trialLocal(s: Session, slot: PeerSlot, description: SessionDescription) {
+        slot.peer?.setLocalDescription(trialObserver(s, slot, done = {
+            handoffEmit(s, slot, description.type.canonicalForm(), JSONObject().put("sdp", description.description))
+        }), description)
+    }
+    private fun prepareHandoff(s: Session, input: JSONObject) {
+        val transferId = input.optString("transferId")
+        val generation = input.optInt("generation", -1)
+        if (transferId.isEmpty() || generation <= s.generation || s.handoffCandidate) return
+        if (s.shadow?.transferId == transferId) return
+        cancelHandoff(s)
+        val slot = PeerSlot(transferId, generation); s.shadow = slot
+        RealtimeBridge.noteHandoff(s.id, transferId)
+        slot.peer = s.factory?.createPeerConnection(s.config!!, peerObserver(s, slot)) ?: error("Shadow unavailable")
+        slot.peer!!.addTrack(s.track, listOf("ftx-voice"))
+        if (s.video) {
+            // The sender may currently own a screen track. Never create a second capturer.
+            slot.videoSender = slot.peer!!.addTrack(s.videoSender?.track() ?: s.videoTrack, listOf("ftx-voice"))
+        }
+        if (input.optBoolean("offerer", true)) slot.peer!!.createOffer(trialObserver(s, slot, created = { trialLocal(s, slot, it) }), MediaConstraints())
+    }
+    private fun signalHandoff(s: Session, input: JSONObject) {
+        val slot = s.shadow?.takeIf { it.transferId == input.optString("transferId") } ?: return
+        when (input.optString("kind")) {
+            "offer", "answer" -> {
+                val type = SessionDescription.Type.fromCanonicalForm(input.getString("kind"))
+                slot.peer!!.setRemoteDescription(trialObserver(s, slot, done = {
+                    slot.remoteSet = true
+                    slot.ice.forEach { slot.peer?.addIceCandidate(it) }; slot.ice.clear()
+                    if (type == SessionDescription.Type.OFFER) slot.peer!!.createAnswer(trialObserver(s, slot, created = { trialLocal(s, slot, it) }), MediaConstraints())
+                }), SessionDescription(type, input.getString("sdp")))
+            }
+            "ice" -> {
+                val data = input.getJSONObject("candidate")
+                val candidate = data.getString("candidate")
+                if (candidate.contains(" typ relay ")) return
+                val ice = IceCandidate(data.optString("sdpMid", "0"), data.optInt("sdpMLineIndex", 0), candidate)
+                if (slot.remoteSet) slot.peer?.addIceCandidate(ice) else if (slot.ice.size < 64) slot.ice.add(ice)
+            }
+        }
+    }
+    private fun commitHandoff(s: Session, input: JSONObject) {
+        val slot = s.shadow?.takeIf { it.transferId == input.optString("transferId") } ?: return
+        if (input.optInt("generation", slot.generation) != slot.generation || !slot.connected) return
+        val previous = s.peer
+        s.peer = slot.peer; s.shadow = null
+        s.videoSender = slot.videoSender; s.remoteVideo = slot.remoteVideo
+        s.generation = slot.generation; s.remoteSet = true; s.ice.clear(); s.localIceGenerations.clear()
+        slot.remoteAudio.forEach { runCatching { it.setEnabled(true) } }; slot.remoteAudio.clear()
+        // Detach the old renderer sink on main before disposing its remote track.
+        main.post {
+            try { if (valid(s) && s.peer === slot.peer) s.videoView?.setRemoteTrack(slot.remoteVideo) }
+            finally { worker.execute { runCatching { previous?.dispose() } } }
+        }
+        setVideoEncoding(s, s.screenSharing)
+        RealtimeBridge.handoffCommitted(s.id, input.toString())
+        runCatching { previous?.close() }
     }
     @JvmStatic fun open(context: Context, options: String, callback: (String) -> Unit) {
         worker.execute {
@@ -145,12 +317,18 @@ object VoiceCallBridge {
             val s = Session(id, context.applicationContext, callback, video, input.optString("entryMode", if (video) "video" else "audio"), context as? Activity); current = s
             try {
                 if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { fail(s, "permission_denied"); return@execute }
+                s.handoffCandidate = input.optBoolean("handoffCandidate")
+                s.candidateTransferId = input.optString("transferId")
+                s.generation = input.optInt("initialGeneration", 0).coerceAtLeast(0)
+                s.recoveryEnabled = input.optBoolean("recoveryEnabled")
+                s.muted = input.optBoolean("muted")
                 s.speaker = input.optBoolean("speaker", video)
                 s.screenShareSupported = video && input.optBoolean("screenShareSupported")
                 s.remoteCameraEnabled = input.optBoolean("remoteCameraEnabled", input.optBoolean("cameraRequested", true))
                 s.cameraEnabled = previewReleased && input.optBoolean("cameraEnabled", true) &&
                     context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                 RealtimeBridge.attachCall(context, id, video, s.cameraEnabled && video)
+                if (s.handoffCandidate) RealtimeBridge.noteCandidate(id, s.candidateTransferId, s.muted)
                 val urls = input.optJSONArray("stunUrls")
                 val servers = mutableListOf<PeerConnection.IceServer>()
                 if (urls != null) for (index in 0 until minOf(urls.length(), 3)) {
@@ -187,9 +365,10 @@ object VoiceCallBridge {
                     timestamp
                 }
                 val module = audioBuilder.createAudioDeviceModule()
-                if (s.supportsPlaybackCapture) {
+                module.setSpeakerMute(s.handoffCandidate)
+                if (s.supportsPlaybackCapture || s.handoffCandidate) {
                     s.audioModule = module
-                    module.setMicrophoneMute(s.muted)
+                    module.setMicrophoneMute(s.muted || s.handoffCandidate)
                 }
                 val factory = try {
                     val builder = PeerConnectionFactory.builder().setAudioDeviceModule(module)
@@ -203,46 +382,13 @@ object VoiceCallBridge {
                 s.factory = factory
                 val config = PeerConnection.RTCConfiguration(servers)
                 config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-                val listener = object : PeerConnection.Observer {
-                    override fun onSignalingChange(state: PeerConnection.SignalingState) {}
-                    override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {}
-                    // JNI calls these methods directly. Explicit overrides avoid missing
-                    // Java interface defaults after Android cloud-build desugaring.
-                    override fun onStandardizedIceConnectionChange(state: PeerConnection.IceConnectionState) {}
-                    override fun onIceCandidateError(event: IceCandidateErrorEvent) {}
-                    override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {}
-                    override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {}
-                    override fun onRemoveTrack(receiver: RtpReceiver) {}
-                    override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-                    override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
-                    override fun onIceCandidate(candidate: IceCandidate) {
-                        worker.execute { if (valid(s) && !candidate.sdp.contains(" typ relay ")) emit(s, "ice", JSONObject().put("candidate", JSONObject()
-                            .put("candidate", candidate.sdp).put("sdpMid", candidate.sdpMid ?: "0").put("sdpMLineIndex", candidate.sdpMLineIndex))) }
-                    }
-                    override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) {}
-                    override fun onAddStream(stream: MediaStream) {}
-                    override fun onRemoveStream(stream: MediaStream) {}
-                    override fun onDataChannel(channel: DataChannel) { channel.close() }
-                    override fun onRenegotiationNeeded() {}
-                    override fun onTrack(transceiver: RtpTransceiver) {
-                        worker.execute {
-                            if (!valid(s) || !s.video) return@execute
-                            val track = transceiver.receiver.track() as? VideoTrack ?: return@execute
-                            s.remoteVideo = track
-                            main.post { if (valid(s)) s.videoView?.setRemoteTrack(track) }
-                        }
-                    }
-                    override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
-                        worker.execute {
-                            if (!valid(s)) return@execute
-                            if (state == PeerConnection.PeerConnectionState.FAILED) fail(s, "connect_failed")
-                            else emit(s, "state", JSONObject().put("state", state.toString().lowercase()))
-                        }
-                    }
-                }
-                s.peer = factory.createPeerConnection(config, listener) ?: throw IllegalStateException("Peer unavailable")
+                s.config = config
+                val initial = PeerSlot("", s.generation)
+                initial.peer = factory.createPeerConnection(config, peerObserver(s, initial)) ?: throw IllegalStateException("Peer unavailable")
+                s.peer = initial.peer
                 s.source = factory.createAudioSource(MediaConstraints())
                 s.track = factory.createAudioTrack("ftx-audio", s.source)
+                updateAudioMute(s)
                 s.peer!!.addTrack(s.track, listOf("ftx-voice"))
                 if (video) {
                     createCamera(s, factory)
@@ -268,7 +414,8 @@ object VoiceCallBridge {
                 if (nativeAnswer && !RealtimeBridge.isNativeCall(id)) { release(s); return@execute }
                 emit(s, "ready")
                 if (recording.allowed) emit(s, "recording", recording.snapshot())
-                if (input.optBoolean("offerer")) s.peer!!.createOffer(observer(s, created = { localDescription(s, it) }), MediaConstraints())
+                if (input.optBoolean("recoveryEnabled")) s.recoveryEnabled = true
+                if (input.optBoolean("offerer")) s.peer!!.createOffer(observer(s, created = { localDescription(s, it, s.generation) }), MediaConstraints())
             } catch (error: Throwable) {
                 android.util.Log.w("ftx-call", "peer initialization: ${error.javaClass.simpleName}", error)
                 fail(s, "failed")
@@ -293,6 +440,7 @@ object VoiceCallBridge {
     }
     private fun cameraUnavailable(s: Session) {
         if (!valid(s)) return
+        abortHandoff(s)
         stopCamera(s); s.cameraEnabled = false; s.videoTrack?.setEnabled(false)
         RealtimeBridge.cancelCameraServiceAction(s.id)
         updateVideo(s)
@@ -303,6 +451,7 @@ object VoiceCallBridge {
         worker.execute { current?.takeIf { it.id == id }?.let(::cameraUnavailable) }
     }
     private fun startCamera(s: Session, legacy: Boolean = false) {
+        abortHandoff(s)
         stopCamera(s)
         val generation = s.cameraGeneration
         val useLegacy = legacy || !Camera2Enumerator.isSupported(s.context)
@@ -353,6 +502,7 @@ object VoiceCallBridge {
 
     private fun beginScreenShare(s: Session) {
         if (!s.video || !s.connected || !s.screenShareSupported || s.screenRequest != null) return
+        abortHandoff(s)
         val request = ++screenSequence
         s.screenRequest = request
         updateVideo(s)
@@ -399,10 +549,12 @@ object VoiceCallBridge {
     } }
 
     private fun installScreenTrack(s: Session) {
+        abortHandoff(s)
         s.screenDeadline?.let(main::removeCallbacks); s.screenDeadline = null
         try {
             val track = s.screenCapture?.track ?: error("Screen track unavailable")
             if (s.videoSender?.setTrack(track, false) != true) error("Screen track unavailable")
+            s.shadow?.videoSender?.setTrack(track, false)
             s.screenSharing = true
             stopCamera(s)
             s.videoTrack?.setEnabled(false)
@@ -443,8 +595,8 @@ object VoiceCallBridge {
 
     private fun updateAudioMute(s: Session) {
         // Keep ADM mute in sync before sharing starts, so no buffered mic frame escapes a muted call.
-        s.audioModule?.setMicrophoneMute(s.muted)
-        s.track?.setEnabled(!s.muted || s.screenAudio != null)
+        s.audioModule?.setMicrophoneMute(s.muted || s.focusSuspended || s.handoffCandidate)
+        s.track?.setEnabled((!s.muted || s.screenAudio != null) && !s.focusSuspended && !s.handoffCandidate)
     }
 
     internal fun screenServiceStopped(id: String, request: Int, failed: Boolean) { worker.execute {
@@ -454,6 +606,7 @@ object VoiceCallBridge {
 
     private fun stopScreenShare(s: Session, error: String? = null, ending: Boolean = false) {
         val request = s.screenRequest ?: return
+        if (!ending) abortHandoff(s)
         val sharing = s.screenSharing
         s.screenRequest = null
         s.screenConsent = null
@@ -464,6 +617,7 @@ object VoiceCallBridge {
         var reason = error
         val restored = !sharing || runCatching { s.videoSender?.setTrack(if (ending) null else s.videoTrack, false) == true }.getOrDefault(false)
         if (sharing && !restored && !ending) runCatching { s.videoSender?.setTrack(null, false) }
+        runCatching { s.shadow?.videoSender?.setTrack(if (ending) null else s.videoTrack, false) }
         s.screenCapture?.close(); s.screenCapture = null
         main.post { ScreenShareService.stop(s.id, request) }
         if (ending) return
@@ -529,10 +683,14 @@ object VoiceCallBridge {
         }
     }
     @JvmStatic fun videoClosed(id: String) { current?.let { s -> if (s.id == id && valid(s) && s.video) { emit(s, "hangup"); close(s.id) } } }
-    @JvmStatic fun resumeState() { current?.let { s -> if (valid(s)) {
+    @JvmStatic fun resumeState() { worker.execute {
+        val s = current ?: return@execute
+        if (!valid(s)) return@execute
+        RealtimeBridge.nativeGeneration(s.id, s.generation)
+        emit(s, "state", JSONObject().put("state", s.peer?.connectionState()?.toString()?.lowercase() ?: "new"))
         emit(s, "control", JSONObject().put("muted", s.muted).put("speaker", s.speaker))
         if (s.video) emit(s, "camera", JSONObject().put("cameraEnabled", s.cameraEnabled).put("frontFacing", s.frontFacing).put("canSwitchCamera", s.canSwitchCamera))
-    } } }
+    } }
     @JvmStatic fun signal(id: String, json: String) {
         worker.execute {
             val s = current ?: return@execute
@@ -540,17 +698,38 @@ object VoiceCallBridge {
             try {
                 val input = JSONObject(json)
                 when (input.optString("type")) {
+                    "handoff-prepare" -> { prepareHandoff(s, input); return@execute }
+                    "handoff-signal" -> { signalHandoff(s, input); return@execute }
+                    "handoff-commit" -> { commitHandoff(s, input); return@execute }
+                    "handoff-cancel" -> { if (input.optString("transferId").let { it.isEmpty() || it == s.shadow?.transferId }) cancelHandoff(s); return@execute }
+                    "restart" -> {
+                        if (!s.recoveryEnabled) return@execute
+                        val next = input.optInt("generation", -1)
+                        if (next < 1 || next < s.generation) return@execute
+                        cancelHandoff(s)
+                        s.generation = next; s.remoteSet = false; s.ice.clear()
+                        RealtimeBridge.nativeGeneration(id, next)
+                        if (input.optBoolean("offerer")) {
+                            val constraints = MediaConstraints().apply { mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true")) }
+                            s.peer!!.createOffer(observer(s, created = { localDescription(s, it, next) }), constraints)
+                        }
+                    }
                     "offer", "answer" -> {
+                        if (input.optInt("generation", 0) != s.generation) return@execute
                         val type = SessionDescription.Type.fromCanonicalForm(input.getString("type"))
+                        val descriptionGeneration = input.optInt("generation", 0)
                         val description = SessionDescription(type, input.getString("sdp"))
                         s.peer!!.setRemoteDescription(observer(s, done = {
-                            s.remoteSet = true
-                            for (ice in s.ice) s.peer?.addIceCandidate(ice)
-                            s.ice.clear()
-                            if (type == SessionDescription.Type.OFFER) s.peer!!.createAnswer(observer(s, created = { localDescription(s, it) }), MediaConstraints())
+                            if (descriptionGeneration == s.generation) {
+                                s.remoteSet = true
+                                for (ice in s.ice) s.peer?.addIceCandidate(ice)
+                                s.ice.clear()
+                                if (type == SessionDescription.Type.OFFER) s.peer!!.createAnswer(observer(s, created = { localDescription(s, it, descriptionGeneration) }), MediaConstraints())
+                            }
                         }), description)
                     }
                     "ice" -> {
+                        if (input.optInt("generation", 0) != s.generation) return@execute
                         val inputIce = input.getJSONObject("candidate")
                         val candidate = inputIce.getString("candidate")
                         if (candidate.contains(" typ relay ")) return@execute
@@ -558,7 +737,11 @@ object VoiceCallBridge {
                         if (s.remoteSet) s.peer?.addIceCandidate(ice) else if (s.ice.size < 64) s.ice.add(ice)
                     }
                 }
-            } catch (_: Exception) { fail(s, "connect_failed") }
+            } catch (_: Exception) {
+                if (runCatching { JSONObject(json).optString("type").startsWith("handoff-") }.getOrDefault(false)) {
+                    s.shadow?.let { handoffEmit(s, it, "failed") }; cancelHandoff(s)
+                } else fail(s, "connect_failed")
+            }
         }
     }
     @Suppress("DEPRECATION") private fun route(s: Session, speaker: Boolean) {
@@ -587,7 +770,18 @@ object VoiceCallBridge {
             if (s.id != id || !valid(s) || (cameraRevision != null && cameraRevision != s.cameraIntentRevision.get())) return@execute
             try {
                 val input = JSONObject(options)
-                if (input.optBoolean("connected") && !s.connected) {
+                if (input.has("recoveryEnabled")) s.recoveryEnabled = input.optBoolean("recoveryEnabled")
+                if (input.optBoolean("handoffActive") && s.handoffCandidate) {
+                    val commit = input.optJSONObject("handoffCommit") ?: JSONObject().put("generation", s.generation)
+                    s.generation = commit.optInt("generation", s.generation)
+                    RealtimeBridge.candidateCommitted(s.id, JSONObject(commit.toString()).put("callId", s.id).toString())
+                    s.handoffCandidate = false
+                    s.audioModule?.setSpeakerMute(false)
+                    s.candidateAudio.forEach { runCatching { it.setEnabled(true) } }
+                    s.candidateAudio.clear()
+                    updateAudioMute(s)
+                }
+                if (input.optBoolean("connected") && !s.connected && !s.handoffCandidate) {
                     s.connected = true
                     if (s.recording?.automatic == true) s.recording?.start()
                 }
@@ -607,6 +801,7 @@ object VoiceCallBridge {
                     if (!s.screenShareSupported || (input.has("screenSharing") && !input.optBoolean("screenSharing"))) stopScreenShare(s)
                     if (input.optBoolean("screenSharing")) beginScreenShare(s)
                     if (s.screenRequest == null && input.has("cameraEnabled") && s.cameraEnabled != input.getBoolean("cameraEnabled")) {
+                        abortHandoff(s)
                         if (input.getBoolean("cameraEnabled")) {
                             try { startCamera(s) } catch (_: Throwable) {
                                 try { startCamera(s, true) } catch (_: Throwable) { cameraUnavailable(s) }
@@ -615,6 +810,7 @@ object VoiceCallBridge {
                     }
                     if (input.has("remoteCameraEnabled")) s.remoteCameraEnabled = input.getBoolean("remoteCameraEnabled")
                     val generation = s.cameraGeneration
+                    if (input.optBoolean("switchCamera")) abortHandoff(s)
                     if (s.screenRequest == null && input.optBoolean("switchCamera") && s.cameraEnabled && s.canSwitchCamera) s.capturer?.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
                         override fun onCameraSwitchDone(front: Boolean) { worker.execute {
                             if (valid(s) && s.cameraGeneration == generation) { s.frontFacing = front; updateVideo(s); emit(s, "camera", JSONObject().put("frontFacing", front)) }
@@ -631,6 +827,9 @@ object VoiceCallBridge {
     @Suppress("DEPRECATION") private fun release(s: Session) {
         if (s.closed) return
         s.closed = true
+        cancelHandoff(s)
+        s.focusDeadline?.let(main::removeCallbacks); s.focusDeadline = null
+        if (s.handoffCandidate) s.audioModule?.setSpeakerMute(false)
         s.recording?.close()
         stopScreenShare(s, ending = true)
         RealtimeBridge.detachCall(s.id)

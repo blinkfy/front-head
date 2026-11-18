@@ -36,7 +36,7 @@ let direct = false
 // #ifdef MP-WEIXIN
 direct = true
 // #endif
-const operationLabel = computed(() => request.value?.operation === 'setup' ? '开启双因素验证' : request.value?.operation === 'bind' ? '开启微信确认' : '密码登录确认')
+const operationLabel = computed(() => request.value?.operation === 'setup' ? '开启双因素验证' : request.value?.operation === 'bind' ? '开启微信确认' : '登录验证')
 const requestTime = computed(() => request.value?.createdAt ? new Date(request.value.createdAt).toLocaleString() : '')
 let ticket = '', revision = 0, timer, resolver, page, foreground = true, pollingOwner = -1
 const current = owner => visible.value && owner === revision

@@ -10,7 +10,7 @@
 import { getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchChatMedia, forgetChatMedia, readChatMedia } from '../utils/chat-local-media.mjs'
 // #ifdef APP-PLUS
-import { forgetMissingChatAvatar, getCachedChatAvatar, loadChatAvatar } from '../utils/chat-avatar-cache.mjs'
+import { forgetMissingChatAvatar, getCachedChatAvatar, loadChatAvatar } from '@/utils/chat-avatar-cache.mjs'
 // #endif
 
 defineOptions({ options: { virtualHost: true } })
@@ -51,7 +51,7 @@ async function load() {
     display('')
     return
   }
-  if (!kind || !/^https?:\/\//i.test(src)) {
+  if (!kind || (!/^https?:\/\//i.test(src) && !(avatar && src.startsWith('data:image/')))) {
     display(src)
     return
   }

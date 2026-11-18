@@ -153,12 +153,15 @@ function updateRingtone(retry = false) {
   })
 }
 function renderCall() {
-  const phase = state.phase || 'idle', peerName = state.peer?.name || target?.name || '联系人'
+  const phase = state.phase || 'idle'
+  const ongoing = ['idle', 'ended'].includes(phase) && state.ongoing
+  const peer = ongoing?.peer || state.peer
+  const peerName = peer?.name || target?.name || '联系人'
   const idleLabel = incomingCallId ? '正在接听来电…' : voiceCallMedia.supported() ? (state.supported ? '已连接，可以开始通话' : '正在连接通话服务…') : '当前浏览器不支持通话'
   const labels = { idle: idleLabel, calling: '等待对方接听…', incoming: '对方邀请你通话', connecting: '正在建立连接…',
-    connected: '通话中', ended: VOICE_END_LABELS[state.reason] || '通话已结束' }
-  let actions = ''
-  if ((phase === 'idle' && !incomingCallId) || phase === 'ended') actions += target?.mode === 'video'
+    connected: state.reconnecting ? '连接不稳定，正在恢复…' : '通话中', ended: VOICE_END_LABELS[state.reason] || '通话已结束' }
+  let actions = ongoing ? callAction('切换到本机通话', 'takeover', 'phone', { kind: 'accept', disabled: state.handoffPending || !state.supported }) : ''
+  if (!ongoing && ((phase === 'idle' && !incomingCallId) || phase === 'ended')) actions += target?.mode === 'video'
     ? callAction('发起视频通话', 'start-video', 'camera', { kind: 'accept', disabled: !state.videoSupported })
     : callAction('发起语音通话', 'start-audio', 'phone', { kind: 'accept', disabled: !state.supported }) +
       callAction('视频通话', 'start-video', 'camera', { disabled: !state.videoSupported })
@@ -175,26 +178,26 @@ function renderCall() {
     if (phase === 'connected' && nativeChatAvailable) actions += callAction('打开聊天', 'open-chat', 'chat', { disabled: openingNativeChat })
     actions += callAction(phase === 'calling' ? '取消呼叫' : '挂断', 'hangup', 'hangup', { kind: 'danger end-call' })
   }
-  const mode = phase === 'idle' ? target?.mode : state.mode
+  const mode = ongoing?.mode || (phase === 'idle' ? target?.mode : state.mode)
   const title = mode === 'video' ? '视频通话' : '语音通话'
   document.title = `${title} · ${peerName}`
   callUi['card-title'].textContent = title
   content.dataset.phase = phase
   callUi.peer.textContent = peerName
   callUi.avatarInitial.textContent = Array.from(peerName)[0] || '聊'
-  const avatar = callAvatarUrl(state.peer?.avatar, base)
+  const avatar = callAvatarUrl(peer?.avatar, base)
   if (avatar !== (callUi.avatarImage.getAttribute('src') || '')) {
     callUi.avatarImage.hidden = true
     callUi.avatarInitial.hidden = false
     if (avatar) callUi.avatarImage.src = avatar
     else callUi.avatarImage.removeAttribute('src')
   }
-  callUi.status.textContent = labels[phase]
+  callUi.status.textContent = phase === 'connecting' && state.handoffPending ? '正在切换通话，原设备继续保持连接…' : ongoing ? '在其它设备通话中' : labels[phase]
   renderVideo((phase === 'calling' && state.outgoingPreview === true) ||
     (['connecting', 'connected'].includes(phase) && !!(state.cameraEnabled || state.remoteCameraEnabled || state.remoteScreenSharing)))
   callUi['call-duration'].hidden = phase !== 'connected'
   callUi.recording.hidden = !state.recording
-  callUi.error.textContent = state.recordingError || state.mediaError || (phase === 'connected' ? nativeChatError : '')
+  callUi.error.textContent = state.handoffError || state.recordingError || state.mediaError || (phase === 'connected' ? nativeChatError : '')
   callUi.error.hidden = !callUi.error.textContent
   callUi.actions.innerHTML = actions
   callUi['call-note'].textContent = state.supported ? '通话期间请保持页面打开。' : '如长时间无法连接，请检查网络后从小程序重新打开。'
@@ -446,7 +449,7 @@ async function boot() {
   callTimer = setInterval(updateClock, 1000)
   incomingCallId = /^[A-Za-z0-9_-]{12,80}$/.test(p.get('incomingCallId') || '') ? p.get('incomingCallId') : ''
   let initialCallPending = true
-  if (incomingCallId) initialCallPending = false
+  if (incomingCallId || p.get('ongoingCallId')) initialCallPending = false
   transport = voiceConnection(event => {
     controller.handle(event)
     if (incomingCallId && event.type === 'voice.incoming' && event.callId === incomingCallId &&
@@ -460,7 +463,7 @@ async function boot() {
     }
     if (event.type !== 'voice.ready' || !state.supported || !initialCallPending) return
     initialCallPending = false
-    if (state.phase === 'idle' && !event.pendingIncoming) {
+    if (state.phase === 'idle' && !state.ongoing && !event.ongoing && !event.pendingIncoming) {
       try { controller.start({ id: target.peerId, name: target.name }, target.mode) }
       catch (error) { callUi.error.textContent = error.message; callUi.error.hidden = false }
     }
@@ -470,7 +473,7 @@ async function boot() {
     getClaimCallId: () => incomingCallId,
     changed(value) {
       state = value
-      if (shouldReturnFromCall(state)) { updateRingtone(); void returnCompletedCall(); return }
+      if (!state.ongoing && !state.handoffPending && shouldReturnFromCall(state)) { updateRingtone(); void returnCompletedCall(); return }
       renderCall()
     },
     getRecording: () => ({ owner, admin: isAdmin, auto: recordOwner === owner && !!recordBridge && p.get('recordingAuto') === '1' }),
@@ -489,7 +492,8 @@ async function boot() {
     const action = event.target.closest('[data-action]')?.dataset.action
     if (!action) return
     try {
-      if (action === 'start-audio') controller.start({ id: target.peerId, name: target.name }, 'audio')
+      if (action === 'takeover') void controller.takeover().catch(error => { state.handoffError = error?.message || '暂时无法切换通话'; renderCall() })
+      else if (action === 'start-audio') controller.start({ id: target.peerId, name: target.name }, 'audio')
       else if (action === 'start-video') controller.start({ id: target.peerId, name: target.name }, 'video')
       else if (action === 'accept') void controller.accept()
       else if (action === 'reject') controller.end('rejected')
@@ -537,13 +541,13 @@ function returnToMini() {
 }
 async function returnCompletedCall() {
   // Do not pop the native chat stacked above this hidden web-view.
-  if (disposed || leaving || returningCallId || document.hidden || nativeChatVisit || !shouldReturnFromCall(state)) return
+  if (disposed || leaving || returningCallId || document.hidden || nativeChatVisit || state.ongoing || state.handoffPending || !shouldReturnFromCall(state)) return
   const callId = returningCallId = state.callId
   try {
     await controller.waitForRecordingSave()
     await syncCatalogBeforeReturn()
     await miniSdk().catch(() => {})
-    if (disposed || leaving || document.hidden || nativeChatVisit || state.callId !== callId || !shouldReturnFromCall(state)) return
+    if (disposed || leaving || document.hidden || nativeChatVisit || state.callId !== callId || state.ongoing || state.handoffPending || !shouldReturnFromCall(state)) return
     leaving = true
     controller.setActive(false)
     transport.setActive(false)

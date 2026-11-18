@@ -35,8 +35,9 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {}, ch
   }
   async function runLogin(pickAccount = false, userId) {
     if (!current()) return
-    const owner = generation
-    const isActive = () => active && generation === owner && isCurrentPage()
+    const owner = generation, token = uni.getStorageSync('token') || ''
+    const ownsPage = () => active && generation === owner && isCurrentPage()
+    const isActive = () => ownsPage() && (uni.getStorageSync('token') || '') === token
     loading.value = true
     ownedLoading = true
     try {
@@ -65,7 +66,12 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {}, ch
         if (message) uni.showToast({ title: message, icon: 'none' })
         await refresh()
       }
-    } finally { if (isActive()) ownedLoading = false }
+    } finally {
+      if (ownsPage()) {
+        if (ownedLoading && !isActive()) loading.value = false
+        ownedLoading = false
+      }
+    }
   }
   const login = () => runLogin(false)
   const switchAccount = () => runLogin(true)
@@ -73,19 +79,20 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {}, ch
     if (attempted) return true
     attempted = true
     const owner = generation
-    const isActive = () => active && generation === owner && isCurrentPage()
+    let sessionToken = uni.getStorageSync('token') || ''
+    const ownsPage = () => active && generation === owner && isCurrentPage()
+    const isActive = () => ownsPage() && (uni.getStorageSync('token') || '') === sessionToken
     const state = biometricLogin.state()
     const hasSelection = Number.isSafeInteger(Number(state.userId)) && Number(state.userId) > 0
     if (!hasSelection && (!state.enabled || (!state.credentialId && !state.prompted))) return false
     // Preserve an existing remembered, valid session before asking the system to authenticate.
-    const token = uni.getStorageSync('token')
+    const token = sessionToken
     if (token && uni.getStorageSync('autoLogin') === true) {
       loading.value = true
       ownedLoading = true
       try {
         const response = await biometricApi('/userinfo?avater=false', {}, token, 'GET')
         if (!isActive()) return true
-        if (uni.getStorageSync('token') !== token) { loading.value = false; return true }
         if (!response.data?.id || !Number.isSafeInteger(Number(response.data.id))) throw { code: 2, msg: '账号状态暂不可用' }
         if (hasSelection && String(response.data.id) !== String(state.userId)) { loading.value = false; return true }
         ownedLoading = false
@@ -97,8 +104,14 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {}, ch
         if (quickLoginPlatform !== 'app' && error.reason === 'unsupported') return hasSelection
         // A network outage is not proof that the session expired; leave all credentials intact.
         if (error.code !== 401 && error.reason !== 'invalid_credential' && !/过期|无效|未登录|账号不存在/.test(error.msg || '')) return true
-        if (uni.getStorageSync('token') === token) uni.removeStorageSync('token')
-      } finally { if (isActive()) ownedLoading = false }
+        uni.removeStorageSync('token')
+        sessionToken = ''
+      } finally {
+        if (ownsPage()) {
+          if (ownedLoading && !isActive()) loading.value = false
+          ownedLoading = false
+        }
+      }
     }
     // A known account must never fall through to another account's saved password/WeChat session.
     if (!state.enabled || !state.credentialId) return hasSelection
@@ -114,7 +127,7 @@ export function useBiometricLogin({ loading, onLogin, ready = async () => {}, ch
   }
   async function afterLogin(token, user) {
     const owner = generation
-    const isActive = () => active && generation === owner && isCurrentPage()
+    const isActive = () => active && generation === owner && isCurrentPage() && uni.getStorageSync('token') === token
     if (!isActive()) return false
     await ready()
     if (!isActive()) return false

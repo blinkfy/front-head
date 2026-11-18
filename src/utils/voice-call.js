@@ -7,13 +7,18 @@ import { sharedVoiceCallRuntime } from './voice-call-runtime.mjs'
 import { setUiSoundBlocked, areUiSoundsEnabled } from './ui-sounds.js'
 import { receiveChatFeedback, setChatFeedbackBlocked } from './chat-feedback.js'
 import { recordingConfiguration } from './call-recording-preference.mjs'
+// #ifdef MP-WEIXIN
+import { baseUrl } from '@/api/settings.js'
+import { embeddedWebCallUrl, requestWebCallTicket } from './web-call-entry.mjs'
+import { appendRecordingBridge } from './call-recordings.js'
+// #endif
 
 // Lazy pages and a cached application shell can temporarily load different
 // chunk revisions. They must still control the same media session in this realm.
 function createRuntime() {
   const voiceCallMedia = media
   const voiceCallState = reactive({ phase: 'idle', supported: false, videoSupported: false, mode: 'audio', peer: null, callId: '', muted: false, speaker: false,
-    outgoingPreview: false,
+    outgoingPreview: false, reconnecting: false, ongoing: null, handoffPending: false, handoffError: '',
     cameraSupported: false, canSwitchCamera: false, cameraEnabled: false, remoteCameraEnabled: false, facingMode: 'user', playbackBlocked: false, mediaError: '', startedAt: 0, endedAt: 0, reason: '',
     screenShareSupported: false, screenSharing: false, screenAudioSharing: false, screenSharePending: false, remoteScreenSharing: false })
   let sender = () => false
@@ -24,8 +29,24 @@ function createRuntime() {
   const getOwner = () => uni.getStorageSync('token') || ''
   const ownsNativeCall = () => nativeState && nativeOwner === getOwner()
   const pages = () => { try { return getCurrentPages() } catch (_) { return [] } }
-  const openVoiceCallPage = () => {
+  const openVoiceCallPage = async () => {
     if (openingPage) return
+    // #ifdef MP-WEIXIN
+    if (voiceCallState.ongoing && ['idle', 'ended'].includes(voiceCallState.phase)) {
+      openingPage = true
+      const owner = getOwner(), ongoing = voiceCallState.ongoing
+      try {
+        const ticket = await requestWebCallTicket(uni, baseUrl, owner)
+        if (owner !== getOwner() || voiceCallState.ongoing?.callId !== ongoing.callId) return
+        const user = uni.getStorageSync('userInfo') || {}
+        const url = ticket && embeddedWebCallUrl(baseUrl, { peerId: ongoing.peer?.id, name: ongoing.peer?.name, mode: ongoing.mode, selfId: user.id || user.userId || user.user?.id || user.data?.id }, ticket)
+        if (!url) throw new Error('网页通话暂不可用，请使用分投侠 App 切换通话')
+        await new Promise((resolve, reject) => uni.navigateTo({ url: `/pages-nonTheme/webview?url=${encodeURIComponent(appendRecordingBridge(url + `&ongoingCallId=${encodeURIComponent(ongoing.callId)}`))}`, success: resolve, fail: reject }))
+      } catch (error) { uni.showToast({ title: error?.message || '暂时无法打开通话', icon: 'none' }) }
+      finally { openingPage = false }
+      return
+    }
+    // #endif
     // #ifdef APP-PLUS
     if (voiceCallState.cameraSupported && ['connecting', 'connected'].includes(voiceCallState.phase)) {
       voiceCallMedia.showNativeVideo(voiceCallState.callId)
@@ -57,7 +78,7 @@ function createRuntime() {
     isMediaBusy: busyMedia,
     changed(state) {
       if (ownsNativeCall()) {
-        Object.assign(voiceCallState, state, nativeState)
+        Object.assign(voiceCallState, state, nativeState, { ongoing: state.ongoing, handoffPending: state.handoffPending, handoffError: state.handoffError })
         return
       }
       const transitioned = previousPhase !== state.phase
@@ -98,6 +119,7 @@ function createRuntime() {
       if (event.type === 'voice.minimized') { uni.$emit('voice-call:minimize', event.callId); return }
       if (event.type === 'voice.ended' && nativeState?.callId === event.callId)
         event = { ...nativeState, ...event, type: 'voice.native', phase: 'ended' }
+      if (event.type === 'voice.ongoing' || event.type === 'voice.local-handoff-committed') { controller.handle(event); return }
       if (event.type !== 'voice.native') { controller.handle(event); return }
       const user = uni.getStorageSync('userInfo') || {}
       const self = user.id || user.userId || user.user?.id || user.data?.id
@@ -113,7 +135,8 @@ function createRuntime() {
       }
       if (nativeState && nativeState.callId !== event.callId) return
       nativeOwner = getOwner()
-      nativeState = { ...event, nativeOwned: true }
+      const { ongoing, handoffPending, handoffError, ...snapshot } = event
+      nativeState = { ...snapshot, nativeOwned: true }
       Object.assign(voiceCallState, controller.state(), nativeState)
       setUiSoundBlocked('voice-call', true); setChatFeedbackBlocked('voice-call', true)
     },
@@ -126,6 +149,12 @@ function createRuntime() {
       controller.control(options)
     },
     connection(value, ...versions) {
+      if (!value && ownsNativeCall() && nativeState.phase === 'connected' && nativeState.recoveryVersion === 1) {
+        nativeState = { ...nativeState, reconnecting: true }
+        controller.connection(value, ...versions)
+        Object.assign(voiceCallState, nativeState)
+        return
+      }
       if (nativeState && (!value || !ownsNativeCall())) {
         const ended = ownsNativeCall() && { ...nativeState, phase: 'ended', reason: 'disconnected', endedAt: Date.now(), recording: false, recordingStartedAt: 0,
           screenShareSupported: false, screenSharing: false, screenAudioSharing: false, screenSharePending: false, remoteScreenSharing: false }

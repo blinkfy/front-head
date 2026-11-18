@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createWebCallHandoff } from '../src/utils/web-call-handoff.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
@@ -81,7 +82,7 @@ class PeerConnection {
   } }; this.senders.push(sender); this.transceivers.push({ mid: null, direction: 'sendrecv', sender, receiver: { track: new Track(track.kind) } }); return sender }
   addTransceiver(kind, options) { return this.makeTransceiver(kind, options) }
   getTransceivers() { return this.transceivers }
-  async createOffer() { return { type: 'offer', sdp: 'offer' } }
+  async createOffer(options) { this.offerOptions = options; return { type: 'offer', sdp: 'offer' } }
   async createAnswer() { return { type: 'answer', sdp: 'answer' } }
   async setRemoteDescription(value) {
     this.remoteDescription = value
@@ -91,7 +92,7 @@ class PeerConnection {
   close() { this.closed = true }
 }
 
-const context = {
+const context = { createWebCallHandoff,
   isSecureContext: true,
   RTCPeerConnection: PeerConnection,
   MediaStream: Stream,
@@ -401,6 +402,30 @@ async function main() {
   assert.equal(deniedCameraPeer.transceivers.filter(item => item.receiver.track.kind === 'video').length, 1,
     'camera-denied answerer has no orphan video transceiver')
   deniedCameraDriver.close()
+
+  const recoveryEvents = []
+  const recoveryIndex = captures.length
+  const recoveryOpening = media.open({ ...options('ice-restart-keeps-media', 'video', recoveryEvents), recoveryEnabled: true, offerer: true })
+  const recoveryAudio = new Track('audio'), recoveryCamera = new Track('video')
+  captures[recoveryIndex].resolve(new Stream([recoveryAudio]))
+  await tick()
+  captures[recoveryIndex + 1].resolve(new Stream([recoveryCamera]))
+  const recoveryDriver = await recoveryOpening
+  const recoveryPeer = peers.at(-1), captureCount = captures.length
+  recoveryDriver.signal({ type: 'restart', generation: 1, offerer: true })
+  await tick()
+  assert.equal(recoveryPeer.offerOptions.iceRestart, true)
+  assert.ok(recoveryEvents.some(event => event.type === 'offer' && event.generation === 1))
+  assert.equal(captures.length, captureCount, 'ICE restart never reacquires microphone/camera')
+  assert.equal(recoveryAudio.readyState, 'live')
+  assert.equal(recoveryCamera.readyState, 'live')
+  recoveryDriver.signal({ type: 'answer', generation: 0, sdp: 'obsolete-answer' })
+  await tick()
+  assert.notEqual(recoveryPeer.remoteDescription?.sdp, 'obsolete-answer', 'old negotiation cannot replace current SDP')
+  recoveryDriver.signal({ type: 'answer', generation: 1, sdp: 'current-answer' })
+  await tick()
+  assert.equal(recoveryPeer.remoteDescription.sdp, 'current-answer')
+  recoveryDriver.close()
 
   console.log('Video-call H5 camera adapter tests passed.')
 }

@@ -1,6 +1,6 @@
 <template>
   <view class="db-grid" :class="{ 'grid-light': light }">
-    <view v-if="draftCount" class="grid-tools">
+    <view v-if="draftCount && (!sqlColumns || editable)" class="grid-tools">
       <view class="grid-submit-tools">
         <text class="grid-pending">{{ draftCount }}条待提交</text>
         <view class="grid-column-button" @click="$emit('discard')">放弃</view>
@@ -9,6 +9,7 @@
     </view>
     <view v-if="hasActiveQuery" class="grid-query-bar">
       <text>{{ columnQuery.filters.length }} 个列筛选{{ columnQuery.sortField ? ' · 已排序' : '' }}</text>
+      <view v-if="(!sqlColumns || queryFields?.length) && columnQuery.filters.length > 1" class="grid-query-clear" @click="toggleColumnsJoin">各列：{{ columnQuery.columnsJoin === 'or' ? '任意满足（或）' : '全部满足（且）' }} ⇄</view>
       <view class="grid-query-clear" @click="clearColumnQuery">清除筛选与排序</view>
     </view>
     <view v-if="showColumns" class="grid-column-options">
@@ -17,19 +18,24 @@
       </view>
       <view class="grid-option reset" @click="resetColumns">恢复默认</view>
     </view>
-    <view v-if="rows.length" class="grid-layout">
+    <view class="grid-layout">
       <view class="grid-scroll-wrap">
-      <scroll-view class="grid-scroller" scroll-x :show-scrollbar="true" @scroll="onGridScroll">
+      <scroll-view class="grid-scroller" :scroll-x="!resizeState || resizeState.mouse" :show-scrollbar="true" @scroll="onGridScroll">
         <view class="grid-content">
           <view class="grid-row grid-header">
-            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell grid-heading" :class="{ 'grid-heading-filtered': columnFilterCount(column.key) }" @click.stop="openColumnMenu(column)">
+            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell grid-heading" :style="columnWidthStyle(column.key)" :class="{ 'grid-heading-filtered': columnFilterCount(column.key) }" @click.stop="openColumnMenu(column)">
               <text class="grid-heading-label">{{ column.label }}</text>
               <text v-if="columnFilterCount(column.key)" class="grid-filter-badge">筛{{ columnFilterCount(column.key) }}</text>
               <text v-if="columnType(column.key)" class="grid-heading-control" :class="{ active: columnIsActive(column.key) }">{{ columnSortIndicator(column.key) }}⌄</text>
+              <view class="grid-resize-handle" :class="{ resizing: resizeState?.key === column.key }"
+                @mousedown.stop.prevent="startColumnResize(column.key, $event)"
+                @touchstart.stop="startColumnResize(column.key, $event)"
+                @touchmove.stop.prevent="moveColumnResize($event)"
+                @touchend.stop="endColumnResize" @touchcancel.stop="endColumnResize" @click.stop />
             </view>
           </view>
           <view v-for="(item, index) in rows" :key="rowKey(item, index)" class="grid-row" :class="{ selected: selectionMode && isSelected(item) }" @click="onRowClick(item)">
-            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell" :class="{ changed: hasDraft(item, column.key) }" @click.stop="onCellClick(item, column)">
+            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell" :style="columnWidthStyle(column.key)" :class="{ changed: hasDraft(item, column.key) }" @click.stop="onCellClick(item, column)">
               <template v-if="isEditing(item, column.key)">
                 <switch v-if="editor.field.editor === 'switch'" :checked="editorBoolean" @change="editorBoolean = $event.detail.value; saveCellDraft()" color="#20b894" @click.stop />
                 <picker v-else-if="editor.field.editor === 'select' && editorOptions.length" class="grid-inline-picker" mode="selector" :range="editorOptions" range-key="label" :value="Math.max(0, editorOptionIndex)" @change="editorOptionIndex = Number($event.detail.value); saveCellDraft()" @click.stop>
@@ -50,7 +56,7 @@
       <view v-if="canScrollLeft" class="grid-edge grid-edge-left"><text>‹</text></view>
       <view v-if="canScrollRight" class="grid-edge grid-edge-right"><text>›</text></view>
       </view>
-      <view class="grid-fixed">
+      <view v-if="!sqlColumns || sqlRowActions" class="grid-fixed">
         <view class="grid-row grid-header grid-actions">{{ selectionMode ? '选择' : '操作' }}</view>
         <view v-for="(item, index) in rows" :key="rowKey(item, index)" class="grid-row grid-actions" :class="{ selected: selectionMode && isSelected(item) }">
           <view v-if="selectionMode" class="grid-action" @click.stop="$emit('select', item)">{{ isSelected(item) ? '✓ 已选' : '选择' }}</view>
@@ -62,7 +68,7 @@
         </view>
       </view>
     </view>
-    <view v-else class="grid-empty">暂无数据</view>
+    <view v-if="!rows.length" class="grid-empty">暂无数据</view>
     <view v-if="columnMenu" class="grid-detail-overlay" @click="columnMenu = null">
       <view class="grid-detail grid-column-menu" @click.stop>
         <view class="grid-detail-header"><text>{{ columnMenu.label }}</text><text class="grid-detail-close" @click="columnMenu = null">关闭</text></view>
@@ -72,7 +78,11 @@
           <view class="column-menu-choice" :class="{ selected: columnQuery.sortField === columnMenu.key && columnQuery.direction === 'DESC' }" @click="applyColumnSort('DESC')">降序 ↓</view>
           <view class="column-menu-choice" @click="applyColumnSort('')">取消排序</view>
         </view>
-        <text class="column-menu-label">筛选条件（全部满足）</text>
+        <text class="column-menu-label">本列筛选条件</text>
+        <view class="column-menu-actions column-join-options">
+          <view class="column-menu-choice" :class="{ selected: columnFilterJoin === 'and' }" @click="setColumnFilterJoin('and')">且 · 全部满足</view>
+          <view class="column-menu-choice" :class="{ selected: columnFilterJoin === 'or' }" @click="setColumnFilterJoin('or')">或 · 满足任一</view>
+        </view>
         <view v-if="currentColumnFilters.length" class="column-filter-list">
           <view v-for="filter in currentColumnFilters" :key="filter.index" class="column-filter-chip">
             <text>{{ formatColumnFilter(filter) }}</text>
@@ -102,7 +112,7 @@
           <view class="column-menu-choice" @click="clearColumnFilter">清除此列筛选</view>
           <view class="column-menu-choice primary" @click="applyColumnFilter">添加条件</view>
         </view>
-        <text class="column-menu-tip">筛选和排序作用于全部记录，与现有搜索条件同时生效。</text>
+        <text class="column-menu-tip">同一列按所选关系组合；各列{{ columnQuery.columnsJoin === 'or' ? '任意满足' : '全部满足' }}，另需满足上方搜索条件。</text>
       </view>
     </view>
     <view v-if="detail" class="grid-detail-overlay" @click="detail = null">
@@ -130,19 +140,26 @@ const props = defineProps({
   imageFields: Function, userNames: { type: Object, default: () => ({}) }, userIdFields: { type: Array, default: () => [] },
   editFields: { type: Array, default: () => [] }, drafts: { type: Object, default: () => ({}) }, draftKey: Function, submitting: Boolean,
   columnQuery: { type: Object, default: () => ({ filters: [], sortField: '', direction: '' }) },
-  light: Boolean
+  light: Boolean, sqlColumns: { type: Array, default: null }, sqlRowActions: Boolean,
+  queryFields: { type: Array, default: null }
 })
-const emit = defineEmits(['edit', 'delete', 'select', 'detail', 'stage', 'submit', 'discard', 'query-change'])
+const emit = defineEmits(['edit', 'delete', 'select', 'detail', 'stage', 'submit', 'discard', 'query-change', 'columns-change'])
 const selectedColumns = ref([]), showColumns = ref(false), detail = ref(null)
 function toggleColumns() { showColumns.value = !showColumns.value }
-defineExpose({ toggleColumns })
+function setColumns(keys) {
+  const available = new Set(availableColumns.value.map(column => column.key))
+  const selected = (keys || defaults()).filter(key => available.has(key))
+  if (selected.length) { selectedColumns.value = selected; saveColumns(); measureGridScroll() }
+}
+defineExpose({ toggleColumns, setColumns })
 const editor = ref(null), editorValue = ref(''), editorBoolean = ref(false), editorOptionIndex = ref(0)
-const columnMenu = ref(null), columnOperatorIndex = ref(0), columnFilterValue = ref(''), columnValueIndex = ref(0)
+const columnMenu = ref(null), columnOperatorIndex = ref(0), columnFilterValue = ref(''), columnValueIndex = ref(0), columnFilterJoin = ref('and')
 const hasActiveQuery = computed(() => !!(props.columnQuery.filters?.length || props.columnQuery.sortField))
 const columnTypes = new Set(['STRING', 'CHAR', 'TEXT', 'UUID', 'ENUM', 'INTEGER', 'BIGINT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'REAL', 'TINYINT', 'SMALLINT', 'BOOLEAN', 'DATE', 'DATEONLY'])
 function columnType(key) {
+  if (props.sqlColumns && !props.queryFields?.some(field => field.key === key)) return ''
   if (/(password|passwd|secret|token|salt|hash|credential|image|avatar|photo|blob|privatekey)/i.test(key)) return ''
-  const type = String(props.schema.find(field => field.key === key)?.type || (/^(createdAt|updatedAt|deletedAt)$/.test(key) ? 'DATE' : '')).toUpperCase()
+  const type = String((props.queryFields || props.schema).find(field => field.key === key)?.type || (/^(createdAt|updatedAt|deletedAt)$/.test(key) ? 'DATE' : '')).toUpperCase()
   return columnTypes.has(type) ? type : ''
 }
 function columnFilterCount(key) { return (props.columnQuery.filters || []).filter(filter => filter.field === key).length }
@@ -163,12 +180,18 @@ function formatColumnFilter(filter) {
   const value = columnMenu.value?.type === 'BOOLEAN' ? (filter.value === 'true' ? '是' : '否') : filter.value
   return ['null', 'notNull'].includes(filter.operator) ? label : `${label} ${value === '' ? '（空字符串）' : value}`
 }
+function setColumnFilterJoin(join) {
+  columnFilterJoin.value = join
+  const field = columnMenu.value?.key
+  const filters = (props.columnQuery.filters || []).map(filter => filter.field === field ? { ...filter, join } : filter)
+  if (filters.some(filter => filter.field === field)) emit('query-change', { ...props.columnQuery, filters })
+}
 function removeColumnFilter(index) {
   emit('query-change', { ...props.columnQuery, filters: (props.columnQuery.filters || []).filter((_, i) => i !== index) })
 }
 const columnValueOptions = computed(() => {
   if (columnMenu.value?.type === 'BOOLEAN') return [{ label: '是', value: 'true' }, { label: '否', value: 'false' }]
-  const field = props.schema.find(entry => entry.key === columnMenu.value?.key)
+  const field = (props.queryFields || props.schema).find(entry => entry.key === columnMenu.value?.key)
   return columnMenu.value?.type === 'ENUM' ? (field?.values || []).map(value => ({ label: String(value), value: String(value) })) : []
 })
 const columnFilterPlaceholder = computed(() => columnMenu.value?.type === 'DATE' ? '输入完整时间，例如 2026-11-14 12:00:00' : columnMenu.value?.type === 'DATEONLY' ? '例如 2026-11-14' : '输入筛选值')
@@ -196,6 +219,7 @@ function openColumnMenu(column) {
   if (!type || props.selectionMode) return
   if (editor.value && !saveCellDraft()) return
   columnMenu.value = { ...column, type }
+  columnFilterJoin.value = (props.columnQuery.filters || []).find(filter => filter.field === column.key)?.join === 'or' ? 'or' : 'and'
   columnOperatorIndex.value = 0
   columnFilterValue.value = ''
   columnValueIndex.value = 0
@@ -222,16 +246,89 @@ function applyColumnFilter() {
   }
   const filters = [...(props.columnQuery.filters || [])]
   if (filters.length >= 20) { uni.showToast({ title: '最多添加20个条件', icon: 'none' }); return }
-  const next = { field: columnMenu.value.key, operator, ...(!['null', 'notNull'].includes(operator) ? { value } : {}) }
+  const next = { field: columnMenu.value.key, join: columnFilterJoin.value, operator, ...(!['null', 'notNull'].includes(operator) ? { value } : {}) }
   if (filters.some(entry => entry.field === next.field && entry.operator === next.operator && entry.value === next.value)) { uni.showToast({ title: '该条件已存在', icon: 'none' }); return }
   filters.push(next)
   emit('query-change', { ...props.columnQuery, filters })
   columnFilterValue.value = '' 
 }
 function clearColumnQuery() { emit('query-change', { filters: [], sortField: '', direction: '' }) }
+function toggleColumnsJoin() { emit('query-change', { ...props.columnQuery, columnsJoin: props.columnQuery.columnsJoin === 'or' ? 'and' : 'or' }) }
 
 const draftCount = computed(() => Object.keys(props.drafts).length)
 const instance = getCurrentInstance()
+// Widths are stored per table, independently from column visibility and drafts.
+const columnWidths = ref({}), resizeState = ref(null)
+const columnWidthStorageKey = () => `admin-database-column-widths:${props.table}`
+const MIN_COLUMN_WIDTH = 80, MAX_COLUMN_WIDTH = 2400
+function defaultColumnWidth() {
+  const width = typeof uni.upx2px === 'function' ? Number(uni.upx2px(220)) : 110
+  return Number.isFinite(width) && width > 0 ? width : 110
+}
+function columnWidthStyle(key) {
+  const width = columnWidths.value[key]
+  if (!Number.isFinite(width)) return {}
+  return { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px`, flexShrink: 0 }
+}
+function loadColumnWidths() {
+  endColumnResize()
+  let saved
+  try { saved = uni.getStorageSync(columnWidthStorageKey()) } catch {}
+  const widths = {}
+  if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+    for (const [key, value] of Object.entries(saved)) {
+      if (typeof value === 'number' && Number.isFinite(value) && value >= MIN_COLUMN_WIDTH && value <= MAX_COLUMN_WIDTH) widths[key] = value
+    }
+  }
+  columnWidths.value = widths
+}
+function pointerX(event) {
+  const point = event?.touches?.[0] || event?.changedTouches?.[0] || event
+  return typeof point?.clientX === 'number' && Number.isFinite(point.clientX) ? point.clientX : null
+}
+function startColumnResize(key, event) {
+  const x = pointerX(event)
+  if (x === null || resizeState.value) return
+  // Uni-app's H5 mouse events also contain synthetic touches.
+  const mouse = /^mouse/i.test(event?.type || '')
+  let width = columnWidths.value[key] ?? defaultColumnWidth()
+  // #ifdef H5
+  const heading = event?.currentTarget?.parentElement || (mouse && typeof document !== 'undefined'
+    ? document.elementFromPoint(event.clientX, event.clientY)?.closest('.grid-heading') : null)
+  const measuredWidth = heading?.getBoundingClientRect?.().width
+  if (Number.isFinite(measuredWidth) && measuredWidth > 0) width = measuredWidth
+  // #endif
+  resizeState.value = { key, x, width, table: props.table, mouse }
+  // #ifdef H5
+  if (mouse && typeof window !== 'undefined') {
+    window.addEventListener('mousemove', moveColumnResize)
+    window.addEventListener('mouseup', endColumnResize)
+    window.addEventListener('blur', endColumnResize)
+  }
+  // #endif
+}
+function moveColumnResize(event) {
+  const state = resizeState.value, x = pointerX(event)
+  if (!state || x === null || state.table !== props.table) return
+  const width = Math.round(Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, state.width + x - state.x)))
+  columnWidths.value = { ...columnWidths.value, [state.key]: width }
+}
+function endColumnResize() {
+  const state = resizeState.value
+  resizeState.value = null
+  // #ifdef H5
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('mousemove', moveColumnResize)
+    window.removeEventListener('mouseup', endColumnResize)
+    window.removeEventListener('blur', endColumnResize)
+  }
+  // #endif
+  if (state && state.table === props.table) {
+    try { uni.setStorageSync(columnWidthStorageKey(), columnWidths.value) } catch {}
+    measureGridScroll()
+  }
+}
+watch(() => props.table, loadColumnWidths, { immediate: true })
 const gridViewportWidth = ref(0), gridContentWidth = ref(0), gridScrollLeft = ref(0)
 const maxGridScroll = computed(() => Math.max(0, gridContentWidth.value - gridViewportWidth.value))
 const hasHorizontalOverflow = computed(() => gridViewportWidth.value > 0 && maxGridScroll.value > 2)
@@ -244,7 +341,7 @@ function onGridScroll(event) {
 }
 async function measureGridScroll() {
   await nextTick()
-  if (!props.rows.length || !instance?.proxy || typeof uni.createSelectorQuery !== 'function') {
+  if (!instance?.proxy || typeof uni.createSelectorQuery !== 'function') {
     gridViewportWidth.value = 0; gridContentWidth.value = 0; gridScrollLeft.value = 0
     return
   }
@@ -316,7 +413,7 @@ function saveCellDraft() {
   } catch (error) { uni.showToast({ title: error instanceof SyntaxError ? 'JSON格式无效' : error.message || '数据格式无效', icon: 'none' }); return false }
 }
 
-const storageKey = () => `admin-database-columns:${props.table}`
+const storageKey = () => `admin-database-columns:${props.table}${props.sqlColumns ? ':sql' : ''}`
 const labels = { id: 'ID', userId: '用户', username: '用户名', userName: '用户名', otherName: '对方', senderName: '发送者', receiverName: '接收者', deviceName: '设备', imagePath: '图片', imageUrl: '识别图片', content: '内容', createdAt: '创建时间', updatedAt: '更新时间', connectedAt: '连接时间', sendTime: '发送时间', hasImage: '识别图片', confidence: '置信度', category: '分类', source: '来源', status: '状态', name: '名称', type: '类型', points: '积分', description: '说明', describe: '描述', isRead: '已读', isWithdraw: '已撤回' }
 const hidden = new Set(['password', 'token', 'deviceToken', 'device_token', 'encryptedData', 'documentHash', 'webSessionId', 'webCodeHash', 'webTokenHash', 'imageUrlLength'])
 function fieldLabel(key) {
@@ -324,9 +421,15 @@ function fieldLabel(key) {
   return labels[key] || (fromSchema && fromSchema !== key ? fromSchema : key.replace(/([a-z0-9])([A-Z])/g, '$1 $2'))
 }
 const availableColumns = computed(() => {
+  if (props.sqlColumns) return props.sqlColumns
   const keys = new Set()
   const relatedNames = new Set(['username', 'userName', 'otherName', 'senderName', 'receiverName'])
   const schemaKeys = new Set(props.schema.map(field => field.key))
+  // With no result rows, retain the actual table fields from the schema.
+  if (!props.rows.length) props.schema.forEach(field => {
+    const key = field.key
+    if (key && !field.writeOnly && !hidden.has(key) && !/(password|passwd|secret|token|salt|hash|credential|privatekey)/i.test(key)) keys.add(key)
+  })
   props.rows.forEach(row => Object.keys(row || {}).forEach(key => {
     if (relatedNames.has(key) && props.schema.length && !schemaKeys.has(key)) return
     if (!hidden.has(key) && !/(password|passwd|secret|token|salt|hash|credential|privatekey)/i.test(key)) keys.add(key)
@@ -344,12 +447,23 @@ function restoreColumns() {
   const available = new Set(availableColumns.value.map(column => column.key))
   selectedColumns.value = Array.isArray(saved) ? saved.filter(key => available.has(key)) : defaults()
   if (!selectedColumns.value.length && available.size) selectedColumns.value = defaults()
+  revealQueryColumns()
 }
-onBeforeUnmount(() => { if (clickTimer) clearTimeout(clickTimer); if (editor.value) saveCellDraft(); uni.offWindowResize?.(measureGridScroll) })
+function revealQueryColumns() {
+  if (props.sqlColumns) return
+  const available = new Set(availableColumns.value.map(column => column.key))
+  const active = [...(props.columnQuery.filters || []).map(filter => filter.field), props.columnQuery.sortField]
+  selectedColumns.value = [...new Set([...selectedColumns.value, ...active.filter(key => available.has(key))])]
+}
+watch(() => [props.columnQuery.filters?.map(filter => filter.field).join('|'), props.columnQuery.sortField], revealQueryColumns, { flush: 'post' })
+onBeforeUnmount(() => { endColumnResize(); if (clickTimer) clearTimeout(clickTimer); if (editor.value) saveCellDraft(); uni.offWindowResize?.(measureGridScroll) })
 watch(() => props.rows, () => { if (editor.value) saveCellDraft() }, { flush: 'sync' })
 watch(() => props.table, () => { columnMenu.value = null; if (clickTimer) clearTimeout(clickTimer); clickTimer = null; previousCell = ''; if (editor.value) saveCellDraft(); editor.value = null })
 watch(() => [props.table, availableColumns.value.map(column => column.key).join('|')], () => { showColumns.value = false; detail.value = null; restoreColumns() }, { immediate: true })
 const visibleColumns = computed(() => selectedColumns.value.map(key => availableColumns.value.find(column => column.key === key)).filter(Boolean))
+watch(() => visibleColumns.value.map(column => column.key), columns => {
+  if (!props.sqlColumns && columns.length) emit('columns-change', { table: props.table, columns, availableColumns: availableColumns.value.map(column => column.key) })
+}, { immediate: true, flush: 'post' })
 watch(() => [props.table, props.rows.length, visibleColumns.value.map(column => column.key).join('|')], measureGridScroll, { flush: 'post' })
 function saveColumns() { try { uni.setStorageSync(storageKey(), selectedColumns.value) } catch {} }
 function toggleColumn(key) {
@@ -359,13 +473,15 @@ function toggleColumn(key) {
   } else selectedColumns.value = [...selectedColumns.value, key]
   saveColumns()
 }
-function resetColumns() { selectedColumns.value = defaults(); saveColumns() }
+function resetColumns() { selectedColumns.value = defaults(); columnWidths.value = {}; saveColumns(); try { uni.removeStorageSync(columnWidthStorageKey()) } catch {}; measureGridScroll() }
 function images(item, key) {
+  if (props.sqlColumns) return []
   if ((props.table === 'Device' && key === 'imagePath') || (props.table === 'User' && key === 'avatar')) return item[key] ? [item[key]] : []
   return props.imageFields?.(props.table, key, item[key], item.type) || []
 }
 function displayValue(item, key) {
   const value = fieldValue(item, key)
+  if (props.sqlColumns) return value === null || value === undefined ? 'NULL' : typeof value === 'object' ? JSON.stringify(value) : String(value)
   if (value === undefined || value === null || value === '') return '—'
   if (props.userIdFields.includes(key)) return `${props.userNames[String(value)] || '未知'} (ID: ${value})`
   const relatedName = { userId: item.username || item.userName, otherId: item.otherName, senderId: item.senderName, receiverId: item.receiverName }[key]
@@ -398,6 +514,7 @@ function onCellClick(item, column) {
   clickTimer = setTimeout(() => { clickTimer = null; previousCell = ''; showCell(item, column) }, 300)
 }
 async function showCell(item, column) {
+  if (props.sqlColumns) return
   if (props.table === 'History' && column.key === 'hasImage' && item.hasImage) {
     uni.showLoading({ title: '图片加载中' })
     try {
@@ -437,13 +554,16 @@ async function showCell(item, column) {
 .grid-header { background: #10445b; color: #9eeeff; font-weight: 600; }
 .grid-cell { width: 220rpx; min-width: 220rpx; height: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 8rpx; padding: 0 16rpx; border-right: 1px solid rgba(64,224,255,.12); font-size: 22rpx; color: #eafaff; overflow: hidden; }
 .grid-cell.changed { background: rgba(240, 193, 77, .16); box-shadow: inset 0 -3rpx #f0c14d; }
-.grid-heading { justify-content: space-between; cursor: pointer; }
+.grid-heading { position: relative; justify-content: space-between; padding-right: 24rpx; cursor: pointer; }
+.grid-resize-handle { position: absolute; z-index: 2; right: 0; top: 0; bottom: 0; width: 20rpx; min-width: 12px; cursor: col-resize; touch-action: none; }
+.grid-resize-handle::after { content: ''; position: absolute; top: 25%; bottom: 25%; right: 4rpx; width: 3rpx; border-radius: 3rpx; background: rgba(158, 238, 255, .45); }
+.grid-resize-handle:hover::after, .grid-resize-handle.resizing::after { background: #f5d47d; }
 .grid-header .grid-heading-filtered { background: #235d65; box-shadow: inset 0 -5rpx #f5d47d; }
 .grid-filter-badge { flex-shrink: 0; padding: 3rpx 7rpx; border-radius: 7rpx; color: #183b3d; background: #f5d47d; font-size: 18rpx; line-height: 1.3; font-weight: 700; }
 .grid-heading-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .grid-heading-control { flex-shrink: 0; padding: 4rpx 6rpx; color: #8fc3ce; font-size: 23rpx; }
 .grid-heading-control.active { color: #ffe29a; }
-.grid-query-bar { display: flex; justify-content: space-between; align-items: center; gap: 10rpx; color: #b9dce5; font-size: 20rpx; padding: 0 0 12rpx; }
+.grid-query-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10rpx; color: #b9dce5; font-size: 20rpx; padding: 0 0 12rpx; }
 .grid-query-clear { color: #88e9f7; }
 .grid-header .grid-cell { color: #9eeeff; }
 .grid-value { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -475,6 +595,7 @@ async function showCell(item, column) {
 .column-filter-remove { color: #fff; font-size: 28rpx; line-height: 1; padding: 2rpx 4rpx; }
 .column-menu-label { display: block; color: #a5ccd7; font-size: 22rpx; margin: 18rpx 0 10rpx; }
 .column-menu-actions { display: flex; gap: 10rpx; flex-wrap: wrap; }
+.column-join-options { margin-bottom: 12rpx; }
 .column-menu-choice { color: #b6e9f1; border: 1px solid rgba(100,220,235,.3); background: rgba(64,224,255,.08); border-radius: 9rpx; padding: 11rpx 16rpx; font-size: 22rpx; }
 .column-menu-choice.selected, .column-menu-choice.primary { color: #06323a; background: #68dce7; border-color: #68dce7; }
 .column-menu-input { width: 100%; box-sizing: border-box; min-height: 68rpx; margin: 10rpx 0; padding: 12rpx 16rpx; border: 1px solid rgba(100,220,235,.35); border-radius: 9rpx; background: #123e52; color: #fff; font-size: 24rpx; }
@@ -504,6 +625,8 @@ async function showCell(item, column) {
 .db-grid.grid-light .grid-cell.changed { background: #eff8e9; box-shadow: inset 0 -3rpx #92c66d; }
 .db-grid.grid-light .grid-header .grid-heading-filtered { color: #185f43; background: #d5eee0; box-shadow: inset 0 -5rpx #219765; }
 .db-grid.grid-light .grid-filter-badge { color: #fff; background: #23865b; }
+.db-grid.grid-light .grid-resize-handle::after { background: #96beaa; }
+.db-grid.grid-light .grid-resize-handle:hover::after, .db-grid.grid-light .grid-resize-handle.resizing::after { background: #16865d; }
 .db-grid.grid-light .grid-heading-control { color: #789486; }
 .db-grid.grid-light .grid-heading-control.active { color: #26704d; }
 .db-grid.grid-light .grid-query-bar { color: #597368; }

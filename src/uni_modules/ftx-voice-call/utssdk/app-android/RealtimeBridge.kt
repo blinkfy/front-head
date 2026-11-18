@@ -68,6 +68,24 @@ object RealtimeBridge {
     private var nativeAcceptSent = false
     private var nativeReported = false
     private var nativeDeadline: Runnable? = null
+    @Volatile private var nativeHandoffTransferId = ""
+    @Volatile private var knownHandoffTransferId = ""
+    private var nativeRtcGeneration = 0
+    @Volatile private var candidateTransferId = ""
+    private var candidateAborting = false
+    private var candidateServerCommitted = false
+    private var recoveryEnabled = false
+    private var resumeToken = ""
+    private var reconnecting = false
+    private var signalingLost = false
+    private var mediaLost = false
+    private var pendingRecoveryCallId = ""
+    private var pendingRecoveryToken = ""
+    private var recoveryDeadline: Runnable? = null
+    private var restartTask: Runnable? = null
+    private var restartAttempts = 0
+    private var lastRestartAt = 0L
+    private val nativeSignalQueue = java.util.ArrayDeque<JSONObject>()
     @JvmStatic fun isNativeCall(id: String): Boolean = nativeAnswered && callId == id && id.isNotEmpty()
     internal fun incomingAvatar(peer: JSONObject?): String {
         val avatar = peer?.optString("avatar").orEmpty().trim()
@@ -76,6 +94,8 @@ object RealtimeBridge {
     }
     private fun nativeSnapshot(phase: String = if (callConnected) "connected" else "connecting", reason: String = ""): JSONObject =
         JSONObject().put("type", "voice.native").put("callId", callId).put("phase", phase).put("mode", nativeEntryMode).put("cameraSupported", video).put("canSwitchCamera", nativeCanSwitchCamera)
+            .put("recoveryVersion", if (recoveryEnabled) 1 else 0).put("reconnecting", reconnecting)
+            .put("generation", nativeRtcGeneration).put("resumeToken", resumeToken)
             .put("peer", nativePeer).put("userId", selfId).put("muted", muted).put("speaker", nativeSpeaker)
             .put("cameraEnabled", nativeCamera).put("remoteCameraEnabled", nativeRemoteCamera).put("startedAt", nativeStartedAt).put("reason", reason)
             .put("screenShareSupported", nativeScreenSupported).put("screenSharing", screenSharing == true)
@@ -169,9 +189,47 @@ object RealtimeBridge {
     }
 
     private fun announceVoiceCapability() {
-        raw(JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true)
-            .put("cameraToggle", true).put("screenShareReceive", true).put("voiceScreenShareReceive", true))
+        val capability = JSONObject().put("type", "voice.capability").put("version", 1).put("available", true).put("video", true)
+            .put("cameraToggle", true).put("screenShareReceive", true).put("voiceScreenShareReceive", true).put("recoveryVersion", 1).put("handoffVersion", 1)
+        if (recoveryEnabled && callId.isNotEmpty() && resumeToken.isNotEmpty()) capability.put("resumeCallId", callId).put("resumeToken", resumeToken)
+        raw(capability)
     }
+
+    private fun acceptedRecovery(event: JSONObject) {
+        val id = event.optString("callId")
+        val enabled = event.optInt("recoveryVersion") == 1 && event.optString("resumeToken").isNotEmpty()
+        if (id.isEmpty()) return
+        if (callId.isEmpty()) {
+            pendingRecoveryCallId = id
+            pendingRecoveryToken = if (enabled) event.optString("resumeToken") else ""
+            return
+        }
+        if (id != callId) return
+        recoveryEnabled = enabled
+        resumeToken = if (enabled) event.optString("resumeToken") else ""
+        VoiceCallBridge.control(callId, JSONObject().put("recoveryEnabled", recoveryEnabled).toString())
+    }
+
+    private fun requestVoiceRestart(id: String) {
+        if (callId != id || !recoveryEnabled || !mediaLost || restartAttempts >= 3) return
+        if (restartTask != null) return
+        if (!authenticated || socket == null) return
+        val now = SystemClock.elapsedRealtime()
+        val remaining = if (restartAttempts == 0) 0L else (8000L - (now - lastRestartAt)).coerceAtLeast(0L)
+        if (remaining > 0) {
+            if (restartTask == null) scheduleRestart(id, remaining)
+            return
+        }
+        if (!raw(JSONObject().put("type", "voice.restart").put("callId", id))) return
+        restartAttempts++; lastRestartAt = now
+        if (restartAttempts < 3) scheduleRestart(id, 8000L)
+    }
+    private fun scheduleRestart(id: String, delay: Long) {
+        if (restartTask != null || restartAttempts >= 3) return
+        val task = Runnable { restartTask = null; requestVoiceRestart(id) }
+        restartTask = task; main.postDelayed(task, delay)
+    }
+    private fun refreshReconnectState() { reconnecting = signalingLost || mediaLost }
 
     private fun resetScreenState() {
         nativeScreenSupported = false; screenSharing = null; screenPending = null; remoteScreenSharing = null; remoteCameraForScreen = null
@@ -313,12 +371,144 @@ object RealtimeBridge {
             if (close != null) deferred["close"] = close // Terminal reasons must precede socket disposal.
         }
     }
-    private fun raw(event: JSONObject): Boolean = authenticated && socket?.send(event.toString()) == true
-    @JvmStatic fun alive(): Boolean = authenticated && socket != null && System.currentTimeMillis() - lastSeen <= staleAfter()
+    private fun raw(event: JSONObject): Boolean {
+        if (authenticated && socket?.send(event.toString()) == true) return true
+        if ((nativeAnswered || !foreground) && recoveryEnabled && event.optString("type") in listOf("voice.media", "voice.offer", "voice.answer", "voice.ice", "voice.restart")) {
+            val size = event.toString().toByteArray(Charsets.UTF_8).size
+            val currentBytes = nativeSignalQueue.sumOf { it.toString().toByteArray(Charsets.UTF_8).size }
+            if (nativeSignalQueue.size >= 64 || currentBytes + size > 40 * 1024) return false
+            nativeSignalQueue.addLast(JSONObject(event.toString())); return true
+        }
+        return false
+    }
+    @JvmStatic fun alive(): Boolean = (authenticated && socket != null && System.currentTimeMillis() - lastSeen <= staleAfter()) ||
+        (callId.isNotEmpty() && recoveryEnabled && signalingLost && recoveryDeadline != null)
+    private fun flushNativeSignalQueue() {
+        if (!authenticated || socket == null) return
+        while (nativeSignalQueue.isNotEmpty()) {
+            val event = nativeSignalQueue.peekFirst() ?: break
+            if (socket?.send(event.toString()) != true) break
+            nativeSignalQueue.pollFirst()
+        }
+    }
+    @JvmStatic fun nativeGeneration(id: String, value: Int) {
+        main.post { if (callId == id) {
+            nativeRtcGeneration = value
+            if (!nativeAnswered) deliver(JSONObject().put("type", "voice.local-generation").put("callId", id).put("generation", value))
+        } }
+    }
+    @JvmStatic fun noteHandoff(id: String, transferId: String) { main.post {
+        if (callId == id) knownHandoffTransferId = transferId
+    } }
+    @JvmStatic fun forgetHandoff(id: String, transferId: String) { main.post {
+        if (callId != id) return@post
+        if (knownHandoffTransferId == transferId) knownHandoffTransferId = ""
+        if (nativeHandoffTransferId == transferId) nativeHandoffTransferId = ""
+    } }
+    private fun syncHandoffConnected(id: String, event: JSONObject) {
+        callConnected = true
+        nativeRtcGeneration = event.optInt("generation", nativeRtcGeneration)
+        if (event.has("recoveryVersion") && event.has("resumeToken")) acceptedRecovery(JSONObject(event.toString()).put("callId", id))
+        if (event.optLong("startedAt") > 0) nativeStartedAt = event.optLong("startedAt")
+        else if (nativeStartedAt == 0L) nativeStartedAt = System.currentTimeMillis()
+        if (event.has("cameraEnabled")) nativeCamera = event.optBoolean("cameraEnabled")
+        if (event.has("remoteCameraEnabled")) nativeRemoteCamera = event.optBoolean("remoteCameraEnabled")
+        if (event.has("remoteScreenSharing")) remoteScreenSharing = event.optBoolean("remoteScreenSharing")
+        nativeDeadline?.let(main::removeCallbacks); nativeDeadline = null
+        disconnectedTask?.let(main::removeCallbacks); disconnectedTask = null
+        recoveryDeadline?.let(main::removeCallbacks); recoveryDeadline = null
+        restartTask?.let(main::removeCallbacks); restartTask = null
+        mediaLost = false; signalingLost = false; restartAttempts = 0; lastRestartAt = 0L
+        refreshReconnectState()
+        nativeSignalQueue.removeAll { it.optString("type") in listOf("voice.offer", "voice.answer", "voice.ice", "voice.restart") }
+        val media = JSONObject()
+        if (event.has("remoteCameraEnabled")) media.put("remoteCameraEnabled", nativeRemoteCamera)
+        if (event.has("remoteScreenSharing")) media.put("remoteScreenSharing", remoteScreenSharing == true)
+        if (media.length() > 0) VoiceCallBridge.control(id, media.toString())
+        updateService(); publishNative()
+    }
+    @JvmStatic fun noteCandidate(id: String, transferId: String, initialMuted: Boolean) { main.post {
+        if (callId != id || transferId.isEmpty()) return@post
+        candidateTransferId = transferId; candidateAborting = false; candidateServerCommitted = false
+        muted = initialMuted
+        if (!foreground) abortCandidate()
+    } }
+    private fun abortCandidate() {
+        if (candidateTransferId.isEmpty() || candidateServerCommitted || candidateAborting) return
+        candidateAborting = true
+        // Keep the silent peer until the server resolves cancel versus an already committed trial.
+        raw(JSONObject().put("type", "voice.handoff.cancel").put("callId", callId).put("transferId", candidateTransferId))
+    }
+    @JvmStatic fun candidateCommitted(id: String, json: String) { main.post {
+        if (callId != id || nativeAnswered) return@post
+        val event = runCatching { JSONObject(json) }.getOrNull() ?: return@post
+        candidateServerCommitted = true; candidateAborting = false
+        syncHandoffConnected(id, event)
+        candidateTransferId = ""
+    } }
+    // Called only after the worker has atomically swapped the live PeerConnection.
+    @JvmStatic fun handoffCommitted(id: String, json: String) { main.post {
+        if (callId != id) return@post
+        val event = runCatching { JSONObject(json) }.getOrNull() ?: return@post
+        val consumedNatively = nativeHandoffTransferId.isNotEmpty() && nativeHandoffTransferId == event.optString("transferId")
+        knownHandoffTransferId = ""; nativeHandoffTransferId = ""
+        syncHandoffConnected(id, event)
+        if (consumedNatively && !nativeAnswered) {
+            // Insert generation first: deferred events are consumed in insertion order.
+            deliver(JSONObject().put("type", "voice.local-generation").put("callId", id).put("generation", nativeRtcGeneration))
+            deliver(JSONObject(event.toString()).put("type", "voice.local-handoff-committed").put("callId", id))
+        }
+    } }
+    private fun nativeHandoff(event: JSONObject): Boolean {
+        val type = event.optString("type")
+        if (!type.startsWith("voice.handoff.") || event.optString("callId") != callId || callId.isEmpty()) return false
+        val transferId = event.optString("transferId")
+        if (transferId.isNotEmpty() && transferId == candidateTransferId) {
+            when (type) {
+                "voice.handoff.commit" -> {
+                    candidateServerCommitted = true; candidateAborting = false
+                    syncHandoffConnected(callId, event)
+                    VoiceCallBridge.control(callId, JSONObject().put("handoffActive", true).put("connected", true)
+                        .put("handoffCommit", event).put("muted", muted).toString())
+                    return false // Foreground/deferred JS still updates its logical call state.
+                }
+                "voice.handoff.cancelled" -> if (!candidateServerCommitted) {
+                    VoiceCallBridge.cancelCandidate(callId, transferId)
+                    candidateTransferId = ""; candidateAborting = false
+                    deliver(event); return true
+                }
+                "voice.handoff.signal" -> if (candidateAborting) return true
+            }
+        }
+        if (type == "voice.handoff.prepare") {
+            if (event.optString("role") != "peer" || (!nativeAnswered && foreground)) return false
+            nativeHandoffTransferId = transferId
+            VoiceCallBridge.signal(callId, JSONObject(event.toString()).put("type", "handoff-prepare").put("offerer", true).toString())
+            return true
+        }
+        if (transferId.isNotEmpty() && transferId == knownHandoffTransferId && (nativeAnswered || !foreground)) nativeHandoffTransferId = transferId
+        if (transferId.isEmpty() || transferId != nativeHandoffTransferId) return false
+        val signalType = when (type) {
+            "voice.handoff.signal" -> "handoff-signal"
+            "voice.handoff.commit" -> "handoff-commit"
+            "voice.handoff.cancelled" -> "handoff-cancel"
+            else -> return false
+        }
+        VoiceCallBridge.signal(callId, JSONObject(event.toString()).put("type", signalType).toString())
+        if (signalType == "handoff-cancel") {
+            nativeHandoffTransferId = ""
+            if (!nativeAnswered) deliver(event)
+        }
+        return true
+    }
     @JvmStatic fun backgroundMask(): Int = if (!serverSupported) 0
-        else (if (RealtimeService.running && alive() && callId.isNotEmpty() && (callConnected || nativeAnswered)) 1 else 0) or
+        else (if ((RealtimeService.running || candidateTransferId.isNotEmpty() && startingService) && alive() && callId.isNotEmpty() && (callConnected || nativeAnswered || candidateTransferId.isNotEmpty())) 1 else 0) or
             (if (RealtimeService.running && alive() && watching) 2 else 0) or (if (messagesEnabled() && (RealtimeService.running || startingService)) 4 else 0)
     @JvmStatic fun open(ctx: Context, url: String, listener: (String) -> Unit) { main.post {
+        if (callId.isNotEmpty() && recoveryEnabled && url == socketUrl) {
+            callback = listener
+            return@post
+        }
         closeNow(false)
         context = ctx.applicationContext; callback = listener; foreground = true
         socketUrl = url
@@ -342,34 +532,82 @@ object RealtimeBridge {
                     if (epoch != generation) return@post
                     try {
                         val event = JSONObject(text); lastSeen = System.currentTimeMillis()
+                        if (nativeHandoff(event)) return@post
+                        if (event.optString("type") == "voice.handoff.commit" && event.optString("callId") == callId) acceptedRecovery(event)
+                        if (event.optString("type") == "voice.restart" && event.optString("callId") == callId) nativeHandoffTransferId = ""
                         if (isNativeCall(event.optString("callId"))) {
                             when (event.optString("type")) {
                                 "voice.accepted" -> {
+                                    acceptedRecovery(event)
                                     nativeScreenSupported = video && event.optBoolean("screenShareSupported")
                                     VoiceCallBridge.control(callId, JSONObject().put("screenShareSupported", nativeScreenSupported).toString())
                                     if (video) raw(JSONObject().put("type", "voice.media").put("callId", callId).put("cameraEnabled", nativeCamera))
+                                    return@post
+                                }
+                                "voice.ready" -> if (event.optString("callId") == callId) {
+                                    if (event.optInt("recoveryVersion") == 1) recoveryEnabled = true
                                     return@post
                                 }
                                 "voice.offer", "voice.answer", "voice.ice" -> {
                                     VoiceCallBridge.signal(callId, JSONObject(event.toString()).put("type", event.optString("type").removePrefix("voice.")).toString())
                                     return@post
                                 }
+                                "voice.restart" -> {
+                                    VoiceCallBridge.signal(callId, JSONObject(event.toString()).put("type", "restart").toString())
+                                    return@post
+                                }
+                                "resumed", "voice.resumed" -> if (event.optString("callId") == callId) {
+                                    recoveryDeadline?.let(main::removeCallbacks); recoveryDeadline = null
+                                    signalingLost = false; refreshReconnectState()
+                                    flushNativeSignalQueue()
+                                    requestVoiceRestart(callId)
+                                    if (nativeAnswered) publishNative() else deliver(event)
+                                    return@post
+                                }
+                                "resume-failed", "voice.resume-failed" -> if (event.optString("callId") == callId) {
+                                    endCall("disconnected", true); return@post
+                                }
                                 "voice.media" -> {
                                     updateRemoteMedia(event, true)
                                     publishNative(); return@post
                                 }
                                 "voice.connected" -> {
-                                    callConnected = true; nativeStartedAt = System.currentTimeMillis()
+                                    callConnected = true
+                                    if (nativeStartedAt == 0L) nativeStartedAt = System.currentTimeMillis()
+                                    recoveryDeadline?.let(main::removeCallbacks); recoveryDeadline = null
+                                    signalingLost = false; refreshReconnectState()
                                     nativeDeadline?.let(main::removeCallbacks); nativeDeadline = null
                                     VoiceCallBridge.control(callId, "{\"connected\":true}"); publishNative(); return@post
                                 }
                                 "voice.ended" -> { endCall(event.optString("reason", "hangup"), false); return@post }
                             }
                         }
+                        if (event.optString("callId") == callId && callId.isNotEmpty() && !foreground) {
+                            when (event.optString("type")) {
+                                "voice.offer", "voice.answer", "voice.ice" -> {
+                                    VoiceCallBridge.signal(callId, JSONObject(event.toString()).put("type", event.optString("type").removePrefix("voice.")).toString())
+                                    return@post
+                                }
+                                "voice.restart" -> {
+                                    VoiceCallBridge.signal(callId, JSONObject(event.toString()).put("type", "restart").toString())
+                                    return@post
+                                }
+                            }
+                        }
+                        if (event.optString("callId") == callId && event.optString("type") in listOf("resumed", "voice.resumed")) {
+                            recoveryDeadline?.let(main::removeCallbacks); recoveryDeadline = null
+                            signalingLost = false; refreshReconnectState()
+                            flushNativeSignalQueue()
+                            requestVoiceRestart(callId); deliver(event); return@post
+                        }
+                        if (event.optString("callId") == callId && event.optString("type") in listOf("resume-failed", "voice.resume-failed")) {
+                            endCall("disconnected", true); return@post
+                        }
                         when (event.optString("type")) {
                             "connected" -> {
                                 authenticated = true; selfId = event.optString("userId"); serverSupported = event.optInt("realtimeBackgroundVersion") == 1
                                 messageServerSupported = event.optInt("backgroundMessagesVersion") == 1
+                                if (callId.isNotEmpty() && recoveryEnabled) announceVoiceCapability()
                                 announceMessaging()
                                 if (!foreground) {
                                     raw(JSONObject().put("type", "background").put("keepRealtime", true))
@@ -380,15 +618,29 @@ object RealtimeBridge {
                             }
                             "voice.incoming" -> if (!foreground) { receiveIncoming(event); return@post }
                                 else if (callId.isEmpty()) context?.let { RealtimeNotifications.incoming(it, event, soundEnabled, background = false) }
-                            "voice.ready" -> if (foreground && incoming != null) {
-                                deliver(event)
-                                val invitation = incoming; clearIncoming(transfer = true)
-                                if (invitation != null) deliver(invitation)
-                                return@post
+                            "voice.ready" -> {
+                                if (event.optString("callId") == callId && event.optInt("recoveryVersion") == 1) recoveryEnabled = true
+                                if (foreground && incoming != null) {
+                                    deliver(event)
+                                    val invitation = incoming; clearIncoming(transfer = true)
+                                    if (invitation != null) deliver(invitation)
+                                    return@post
+                                }
                             }
                             "pong" -> reconnectAttempts = 0
+                            "voice.accepted" -> if (event.optString("callId") == callId) {
+                                acceptedRecovery(event)
+                                deliver(event)
+                            } else if (callId.isEmpty()) { acceptedRecovery(event); deliver(event) }
+                            "voice.restart" -> if (event.optString("callId") == callId && nativeAnswered) {
+                                VoiceCallBridge.signal(callId, JSONObject(event.toString()).put("type", "restart").toString())
+                            }
                             "voice.connected" -> if (event.optString("callId") == callId) {
-                                callConnected = true; VoiceCallBridge.control(callId, "{\"connected\":true}")
+                                callConnected = true
+                                if (nativeStartedAt == 0L) nativeStartedAt = System.currentTimeMillis()
+                                recoveryDeadline?.let(main::removeCallbacks); recoveryDeadline = null
+                                signalingLost = false; refreshReconnectState()
+                                VoiceCallBridge.control(callId, "{\"connected\":true}")
                             }
                             "voice.ended" -> {
                                 context?.let { RealtimeNotifications.cancelIncoming(it, event.optString("callId")) }
@@ -423,15 +675,23 @@ object RealtimeBridge {
     @JvmStatic fun send(json: String) { main.post {
         try {
             val event = JSONObject(json)
+            if (candidateAborting && event.optString("transferId") == candidateTransferId &&
+                event.optString("type") in listOf("voice.handoff.signal", "voice.handoff.ready")) return@post
             if (event.optString("type") in listOf("voice.accept", "voice.end"))
                 context?.let { RealtimeNotifications.cancelIncoming(it, event.optString("callId")) }
             // Native owns heartbeat and Android location sequence/throttle, even in foreground.
             if (event.optString("type") in listOf("ping", "location.point")) return@post
-            if (!raw(event)) failSocket()
+            if (event.optString("type") == "voice.end") {
+                raw(event)
+                if (event.optString("callId") == callId) endCall(event.optString("reason", "hangup"), false)
+            } else if (!raw(event)) failSocket()
         } catch (_: Exception) { failSocket() }
     } }
     @JvmStatic fun stopIncomingAlert(id: String) { main.post { context?.let { RealtimeNotifications.cancelIncoming(it, id) } } }
-    @JvmStatic fun close() { main.post { closeNow(false); context?.let { RealtimeNotifications.clear(it) } } }
+    @JvmStatic fun close() { main.post {
+        if (nativeAnswered || callId.isNotEmpty() && recoveryEnabled) return@post
+        closeNow(false); context?.let { RealtimeNotifications.clear(it) }
+    } }
     private fun closeNow(notify: Boolean, code: Int = 1000) {
         incoming?.let { raw(JSONObject().put("type", "voice.end").put("callId", it.optString("callId")).put("reason", "rejected")) }
         generation++; authenticated = false; serverSupported = false; messageServerSupported = false; socketUrl = ""
@@ -447,7 +707,30 @@ object RealtimeBridge {
         callback = null
     }
     private fun failSocket(code: Int = 1006, graceful: Boolean = false) {
+        if (callId.isNotEmpty()) VoiceCallBridge.signal(callId, "{\"type\":\"handoff-cancel\"}")
+        nativeHandoffTransferId = ""
         if (closing) return
+        if (callId.isNotEmpty() && recoveryEnabled && code != 4000 && code != 4001 && socketUrl.isNotEmpty() &&
+            (tokenExpiry == 0L || tokenExpiry > System.currentTimeMillis())) {
+            closing = true
+            authenticated = false
+            val previous = socket; socket = null
+            if (graceful) previous?.close(1000, "Realtime reconnect") else previous?.cancel()
+            generation++; main.removeCallbacks(heartbeat)
+            if (!signalingLost) {
+                signalingLost = true; refreshReconnectState()
+                if (nativeAnswered) publishNative()
+                val deadline = Runnable { if (callId.isNotEmpty() && signalingLost) endCall("disconnected", true) }
+                recoveryDeadline = deadline; main.postDelayed(deadline, 30000)
+            }
+            val wait = (1000L shl reconnectAttempts.coerceAtMost(5)).coerceAtMost(16000L)
+            reconnectAttempts++
+            reconnectTask?.let(main::removeCallbacks)
+            val task = Runnable { reconnectTask = null; if (callId.isNotEmpty() && signalingLost) connectNative() }
+            reconnectTask = task; main.postDelayed(task, wait)
+            closing = false
+            return
+        }
         closing = true
         if (!foreground) {
             stopLocation(false); endCall("disconnected", false); clearIncoming()
@@ -497,9 +780,10 @@ object RealtimeBridge {
             syncScreenState()
             VoiceCallBridge.resumeState(); publishNative()
         } else {
+            abortCandidate()
             if (backgroundMask() == 0) { closeNow(true); return@post }
             raw(JSONObject().put("type", "background").put("keepRealtime", true))
-            if (!callConnected && !nativeAnswered && callId.isNotEmpty()) endCall("background", true)
+            if (!callConnected && !nativeAnswered && candidateTransferId.isEmpty() && callId.isNotEmpty()) endCall("background", true)
         }
     } }
     private fun updateService(reportFailure: Boolean = true): Boolean {
@@ -526,7 +810,17 @@ object RealtimeBridge {
     }
     @JvmStatic fun attachCall(ctx: Context, id: String, isVideo: Boolean, cameraEnabled: Boolean) { main.post {
         if (nativeAnswered && callId == id) return@post
+        if (pendingRecoveryCallId == id) {
+            recoveryEnabled = pendingRecoveryToken.isNotEmpty()
+            resumeToken = pendingRecoveryToken
+            pendingRecoveryCallId = ""; pendingRecoveryToken = ""
+        } else if (callId != id) {
+            recoveryEnabled = false; resumeToken = ""
+        }
         context = ctx.applicationContext; callId = id; video = isVideo; muted = false; callConnected = false
+        signalingLost = false; mediaLost = false; reconnecting = false
+        restartAttempts = 0; lastRestartAt = 0L
+        if (recoveryEnabled) VoiceCallBridge.control(id, JSONObject().put("recoveryEnabled", true).toString())
         resetScreenState()
         cameraServiceNeeded = cameraEnabled
         refreshHeartbeat()
@@ -536,6 +830,7 @@ object RealtimeBridge {
         if (callId != id) return@post
         if (nativeAnswered) { endCall("failed", true); return@post }
         pendingCameraAction = null
+        candidateTransferId = ""; candidateAborting = false; candidateServerCommitted = false
         callId = ""; callConnected = false; video = false; cameraServiceNeeded = false
         resetScreenState()
         disconnectedTask?.let(main::removeCallbacks); disconnectedTask = null
@@ -576,19 +871,30 @@ object RealtimeBridge {
     @JvmStatic fun callEvent(id: String, type: String, data: JSONObject): Boolean {
         val background = !foreground
         val owned = isNativeCall(id)
+        val handoffEvent = type == "handoff" && callId == id && nativeHandoffTransferId == data.optString("transferId") && nativeHandoffTransferId.isNotEmpty()
         val screenEvent = type == "screen" || type == "screen_pending" || type == "screen_error"
         val nativeScreen = screenEvent && callId == id && authenticated && socket != null
         if (screenEvent && !owned && !nativeScreen) return false
         // Native owns the disconnect grace period on both sides of a JS pause.
-        if (!owned && !background && !nativeScreen && type != "state" && type != "control") return false
+        if (!owned && !background && !nativeScreen && !handoffEvent && type != "state" && type != "control") return false
         main.post {
             if (callId != id) return@post
             when (type) {
+                "handoff" -> {
+                    val kind = data.optString("kind")
+                    val wireType = when (kind) {
+                        "offer", "answer", "ice" -> "voice.handoff.signal"
+                        "connected" -> "voice.handoff.ready"
+                        else -> "voice.handoff.cancel"
+                    }
+                    raw(JSONObject(data.toString()).put("type", wireType).put("callId", id))
+                }
                 "ready" -> if (owned && !nativeAcceptSent) {
                     nativeAcceptSent = true
                     if (!raw(JSONObject().put("type", "voice.accept").put("callId", id))) endCall("disconnected", false)
                 }
                 "offer", "answer", "ice" -> raw(JSONObject(data.toString()).put("type", "voice.$type").put("callId", id))
+                "restart" -> if (owned) VoiceCallBridge.signal(id, JSONObject(data.toString()).put("type", "restart").toString())
                 "camera" -> {
                     if (data.has("canSwitchCamera")) nativeCanSwitchCamera = data.optBoolean("canSwitchCamera")
                     if (data.has("cameraEnabled")) {
@@ -621,36 +927,59 @@ object RealtimeBridge {
                     deliver(JSONObject(data.toString()).put("type", "voice.local-screen-error").put("callId", id))
                 "hangup", "error" -> endCall(if (type == "hangup") "hangup" else data.optString("reason", "failed"), true)
                 "state" -> when (data.optString("state")) {
-                    "failed" -> endCall("connect_failed", true)
+                    "failed" -> if (!recoveryEnabled) endCall("connect_failed", true) else scheduleCallRecovery(id)
                     "disconnected" -> {
-                        disconnectedTask?.let(main::removeCallbacks)
-                        val task = Runnable { if (callId == id) endCall("disconnected", true) }
-                        disconnectedTask = task; main.postDelayed(task, 8000)
+                        if (recoveryEnabled) scheduleCallRecovery(id) else {
+                            disconnectedTask?.let(main::removeCallbacks)
+                            val task = Runnable { if (callId == id) endCall("disconnected", true) }
+                            disconnectedTask = task; main.postDelayed(task, 8000)
+                        }
                     }
                     "connected" -> {
                         disconnectedTask?.let(main::removeCallbacks); disconnectedTask = null
+                        mediaLost = false; refreshReconnectState()
+                        restartAttempts = 0; lastRestartAt = 0L
+                        restartTask?.let(main::removeCallbacks); restartTask = null
                         if (owned && !nativeReported) { nativeReported = true; raw(JSONObject().put("type", "voice.connected").put("callId", id)) }
+                        if (owned) publishNative()
                     }
                 }
             }
         }
-        return background || owned || nativeScreen || type == "control"
+        return background || owned || nativeScreen || handoffEvent || type == "control"
+    }
+    private fun scheduleCallRecovery(id: String) {
+        if (callId != id || !recoveryEnabled) return
+        if (!mediaLost) {
+            mediaLost = true; refreshReconnectState()
+            restartAttempts = 0; lastRestartAt = 0L
+            if (nativeAnswered) publishNative()
+            val deadline = Runnable { if (callId == id && recoveryEnabled) endCall("disconnected", true) }
+            disconnectedTask = deadline; main.postDelayed(deadline, 30000)
+            scheduleRestart(id, 1500L)
+        }
     }
     private fun endCall(reason: String, signal: Boolean) {
         val id = callId
         if (id.isEmpty()) return
         val nativeEnd = if (nativeAnswered) nativeSnapshot("ended", reason) else null
         pendingCameraAction = null
+        nativeHandoffTransferId = ""; knownHandoffTransferId = ""; nativeRtcGeneration = 0
+        candidateTransferId = ""; candidateAborting = false; candidateServerCommitted = false
         nativeAnswered = false; nativePeer = null
         nativeDeadline?.let(main::removeCallbacks); nativeDeadline = null
         callId = ""; video = false; callConnected = false; cameraServiceNeeded = false
         resetScreenState()
         deferred.keys.filter { it.startsWith("voice.") && it.endsWith(":$id") }.forEach(deferred::remove)
         disconnectedTask?.let(main::removeCallbacks); disconnectedTask = null
+        recoveryDeadline?.let(main::removeCallbacks); recoveryDeadline = null
+        restartTask?.let(main::removeCallbacks); restartTask = null
+        reconnecting = false; signalingLost = false; mediaLost = false; restartAttempts = 0; lastRestartAt = 0L
+        recoveryEnabled = false; resumeToken = ""; pendingRecoveryCallId = ""; pendingRecoveryToken = ""; nativeSignalQueue.clear()
         if (signal) raw(JSONObject().put("type", "voice.end").put("callId", id).put("reason", reason))
         VoiceCallBridge.close(id)
         if (nativeEnd != null) { deliver(nativeEnd); incomingObserver?.invoke(null) }
-        if (signal || !foreground) deliver(JSONObject().put("type", "voice.ended").put("callId", id).put("reason", reason))
+        if (signal || !foreground || nativeEnd != null) deliver(JSONObject().put("type", "voice.ended").put("callId", id).put("reason", reason))
         updateService()
     }
     @JvmStatic fun notificationAction(action: String, id: String) { main.post {

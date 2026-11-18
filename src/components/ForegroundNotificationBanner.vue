@@ -3,8 +3,8 @@
     <view class="foreground-notice-body" role="button" tabindex="0" :aria-label="notice.title + '，' + notice.content" @click="open" @keydown.enter.prevent="open" @keydown.space.prevent="open"
       @touchstart="touchStart" @touchend="touchEnd">
       <view class="foreground-notice-avatar">
-        <text v-if="!notice.avatar || avatarFailed" class="foreground-notice-icon">{{ notice.icon }}</text>
-        <image v-else :key="notice.id" class="foreground-notice-image" :src="notice.avatar" :data-notice-id="notice.id" mode="aspectFill" @error="failAvatar" />
+        <text v-if="!avatarSrc || avatarFailed" class="foreground-notice-icon">{{ notice.icon }}</text>
+        <image v-else :key="notice.id" class="foreground-notice-image" :src="avatarSrc" :data-notice-id="notice.id" mode="aspectFill" @error="failAvatar" />
       </view>
       <view class="foreground-notice-copy">
         <text class="foreground-notice-title">{{ notice.title }}</text>
@@ -19,10 +19,14 @@
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { foregroundNotifications } from '@/utils/foreground-notification.mjs'
 import { ThemeManager } from '@/utils/theme.js'
+// #ifdef APP-PLUS
+import { forgetMissingChatAvatar, getCachedChatAvatar, loadChatAvatar } from '@/utils/chat-avatar-cache.mjs'
+// #endif
 
+const avatarSrc = ref('')
 const notice = ref(null), avatarFailed = ref(false), dark = ref(false), top = ref(12)
 const props = defineProps({ nativeNavigation: Boolean, pagePath: { type: String, default: '' } })
-let unsubscribe, touchY = null
+let unsubscribe, touchY = null, avatarRevision = 0, avatarRetried = false
 onMounted(() => {
   try {
     const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
@@ -39,13 +43,46 @@ onMounted(() => {
     if (value?.id !== notice.value?.id) avatarFailed.value = false
     dark.value = ThemeManager.getTheme() === 'dark'
     notice.value = value
+    avatarRetried = false
+    updateAvatar(value)
   })
 })
-onBeforeUnmount(() => unsubscribe?.())
+onBeforeUnmount(() => { avatarRevision++; unsubscribe?.() })
 function open() { if (notice.value) foregroundNotifications.tap(notice.value.id) }
 function dismiss() { if (notice.value) foregroundNotifications.dismiss(notice.value.id) }
+function avatarOwner() {
+  let user = uni.getStorageSync('userInfo') || {}
+  try { if (typeof user === 'string') user = JSON.parse(user) } catch (_) { return '' }
+  return user?.id || user?.userId || user?.user?.id || user?.data?.id || ''
+}
+function updateAvatar(value) {
+  const revision = ++avatarRevision
+  avatarSrc.value = value?.avatar || ''
+  // #ifdef APP-PLUS
+  const owner = avatarOwner(), token = uni.getStorageSync('token') || ''
+  if (!value?.avatar || !owner) return
+  const cached = getCachedChatAvatar(owner, value.avatar)
+  if (cached) { avatarSrc.value = cached; return }
+  // The native image view uses local files for both remote and Base64 avatars.
+  avatarSrc.value = ''
+  void loadChatAvatar(owner, value.avatar).then(path => {
+    if (revision !== avatarRevision || notice.value?.id !== value.id ||
+      (uni.getStorageSync('token') || '') !== token || foregroundNotifications.snapshot()?.id !== value.id) return
+    avatarSrc.value = path || value.avatar
+  })
+  // #endif
+}
 function failAvatar(event) {
-  if (String(event.currentTarget?.dataset?.noticeId) === String(notice.value?.id)) avatarFailed.value = true
+  if (String(event.currentTarget?.dataset?.noticeId) !== String(notice.value?.id)) return
+  // #ifdef APP-PLUS
+  if (!avatarRetried && avatarSrc.value && avatarSrc.value !== notice.value.avatar) {
+    forgetMissingChatAvatar(avatarOwner(), notice.value.avatar, avatarSrc.value)
+    avatarRetried = true
+    updateAvatar(notice.value)
+    return
+  }
+  // #endif
+  avatarFailed.value = true
 }
 function touchStart(event) { touchY = event.touches?.[0]?.clientY ?? null }
 function touchEnd(event) {

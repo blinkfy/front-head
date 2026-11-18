@@ -1,6 +1,6 @@
 <template>
   <QuickLoginAccountPicker ref="quickAccountPicker" :dark="false" />
-  <MfaLoginPanel ref="mfaPanel" :dark="false" :prompt-owner="biometricPromptOwner" />
+  <MfaLoginPanel ref="mfaPanel" :dark="false" :prompt-owner="biometricPromptOwner" @change="onMfaChange" />
   <!-- #ifdef APP-PLUS -->
   <app-splash v-if="showSplash" @loaded="onSplashLoaded" />
   <!-- #endif -->
@@ -8,8 +8,8 @@
   <H5LoginShell ref="captchaRef" :dark="false"
     v-model:username="username" v-model:password="password" v-model:show-password="showPwd"
     v-model:remember-me="rememberMe" v-model:captcha-input="captchaInput"
-    :loading="isLoading" :show-captcha="showCaptcha" :captcha-hint="captchaHint"
-    @login="onLogin(false)" @qr-login="onQrLogin">
+    :loading="isLoading" :mfa="mfaState" :show-captcha="showCaptcha" :captcha-hint="captchaHint"
+    @login="onLogin(false)" @qr-login="onQrLogin" @mfa-method="mfaPanel?.selectExternal($event)" @mfa-choices="mfaPanel?.showChoices()" @mfa-cancel="mfaPanel?.cancel()">
     <!-- #ifdef H5 || APP-PLUS -->
     <template #biometric><button v-if="biometricAvailable" class="biometric-login-entry" :disabled="isLoading" @click.stop.prevent="onBiometricLogin">{{ biometricLabel }}</button><button v-if="biometricSwitchable" class="biometric-account-switch" :disabled="isLoading" @click.stop.prevent="onSwitchBiometricAccount">切换账号</button></template>
     <!-- #endif -->
@@ -74,6 +74,11 @@
           <text class="form-subtitle">请使用您的账号密码登录</text>
         </view>
         
+        <view v-if="mfaState" class="login-mfa-notice">
+          <text>请输入账号 {{ mfaState.accountName }} 的密码，完成双因素验证</text>
+          <text v-if="mfaState.error" class="login-mfa-error" role="alert">{{ mfaState.error }}</text>
+          <view class="registration-relay-actions"><button size="mini" :disabled="isLoading" @click="mfaPanel?.showChoices()">其他验证方式</button><button size="mini" :disabled="isLoading" @click="mfaPanel?.cancel()">返回登录</button></view>
+        </view>
         <form class="login-form" @submit.prevent="onLogin(false)">
           <!-- 用户名输入 -->
           <view class="input-group">
@@ -84,6 +89,7 @@
             <view class="input-wrap">
               <input
                 v-model="username"
+                :disabled="Boolean(mfaState)"
                 placeholder="请输入用户名"
                 maxlength="20"
                 class="form-input"
@@ -142,7 +148,7 @@
           </view>
           
           <!-- 验证码区域 -->
-          <view class="input-group captcha-group" v-if="showCaptcha">
+          <view class="input-group captcha-group" v-if="showCaptcha && !mfaState">
             <view class="input-label">
               <ManifestIcon class="label-icon" id="shield_captcha" />
               <text class="label-text">验证码</text>
@@ -152,7 +158,7 @@
           </view>
           
           <!-- 记住我选项 -->
-          <view class="options-row">
+          <view v-if="!mfaState" class="options-row">
             <view class="remember-me" @click="toggleRememberMe">
               <view class="checkbox" :class="{ 'checked': rememberMe }">
                 <ManifestIcon class="check-mark" v-if="rememberMe" id="confirm" :scale="1.2" />
@@ -165,7 +171,7 @@
             <view class="light-track"></view>
             <view class="btn-content" v-if="!isLoading">
               <ManifestIcon class="btn-icon" id="submit_action" :scale="1.2" />
-              <text class="btn-text">{{ wechatBindPending ? '登录并绑定微信' : '登 录' }}</text>
+              <text class="btn-text">{{ mfaState ? '验证并登录' : wechatBindPending ? '登录并绑定微信' : '登 录' }}</text>
             </view>
             <view class="loading-content" v-else>
               <view class="loading-spinner"></view>
@@ -174,13 +180,13 @@
           </button>
           
           <!-- 注册链接 -->
-          <view class="register-row">
+          <view v-if="!mfaState" class="register-row">
             <text class="register-text">还没有账号？</text>
             <text class="register-link" @click="onRegister">立即注册</text>
           </view>
         </form>
         <!-- #ifdef MP-WEIXIN -->
-        <WechatLoginEntry :pending="wechatBindPending" :loading="isLoading" :biometric-available="biometricAvailable" :biometric-label="biometricLabel" :biometric-switchable="biometricSwitchable" @biometric-switch="onSwitchBiometricAccount" @login="onWechatLogin" @biometric-login="onBiometricLogin" />
+        <WechatLoginEntry v-if="!mfaState" :pending="wechatBindPending" :loading="isLoading" :biometric-available="biometricAvailable" :biometric-label="biometricLabel" :biometric-switchable="biometricSwitchable" @biometric-switch="onSwitchBiometricAccount" @login="onWechatLogin" @biometric-login="onBiometricLogin" />
         <!-- #endif -->
       </view>
       
@@ -229,6 +235,7 @@ import { resumeRememberedQrLogin } from '@/utils/remembered-qr-login.mjs'
 import { useBiometricLogin } from '@/utils/use-biometric-login.js'
 // #endif
 import MfaLoginPanel from '@/components/MfaLoginPanel.vue'
+import { useLoginMfa } from '@/utils/use-login-mfa.js'
 import QuickLoginAccountPicker from '@/components/QuickLoginAccountPicker.vue'
 import { userinfoForToken } from '@/api/mfa'
 import { ref, onMounted, watch } from 'vue'
@@ -268,6 +275,8 @@ const showPwd = ref(false)
 const rememberMe = ref(true)
 const isLoading = ref(false)
 const quickAccountPicker = ref(null)
+const mfaPanel = ref(null)
+const { state: mfaState, onChange: onMfaChange, open: openMfa, submitPassword: submitMfaPassword, acceptQr: acceptMfaQr } = useLoginMfa({ panel: mfaPanel, username, password, loading: isLoading })
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
 const { available: biometricAvailable, switchable: biometricSwitchable, label: biometricLabel, login: onBiometricLogin, switchAccount: onSwitchBiometricAccount,
   prefer: preferBiometricLogin, afterLogin: offerBiometricLogin, promptOwner: biometricPromptOwner } = useBiometricLogin({
@@ -278,10 +287,9 @@ const { available: biometricAvailable, switchable: biometricSwitchable, label: b
       const stop = watch(showSplash, visible => { if (!visible) { stop(); resolve() } })
     })
   },
-  onLogin: result => completeLogin(result, true, false, true)
+  onLogin: result => { if (!mfaState.value) return completeLogin(result, true, false, true) }
 })
 // #endif
-const mfaPanel = ref(null)
 // #ifndef APP-PLUS || H5 || MP-WEIXIN
 const biometricPromptOwner = null
 // #endif
@@ -329,7 +337,7 @@ onLoad(options => {
 })
 
 async function onWechatLogin(isauto = false) {
-  if (isLoading.value || profileCompletionVisible.value) return
+  if (isLoading.value || mfaState.value || profileCompletionVisible.value) return
   isLoading.value = true
   try {
     const result = await wechatFlow.begin(isauto === true)
@@ -464,12 +472,13 @@ function handleKeyup(event) {
 }
 
 // #ifdef H5 || APP-PLUS
-async function onQrLogin(result) {
-  if (isLoading.value) return
+async function onQrLogin(result, mfaTicket = '') {
+  if (mfaState.value) { acceptMfaQr(result, mfaTicket); return }
+  if (mfaTicket || isLoading.value) return
   isLoading.value = true
   if (result?.requiresMfa) {
     try {
-      result = await mfaPanel.value.open(result)
+      result = await openMfa(result)
       if (!result?.token) { isLoading.value = false; return }
       const profile = await userinfoForToken(result.token)
       result.userInfo = profile.data
@@ -496,7 +505,7 @@ async function onQrLogin(result) {
 
 async function completeLogin(res, isauto, isWechat = false, isBiometric = false) {
   if (res?.requiresMfa) {
-    res = await mfaPanel.value.open(res)
+    res = await openMfa(res)
     if (!res?.token) { isLoading.value = false; return }
   }
   if (!res?.token) { isLoading.value = false; return }
@@ -585,6 +594,7 @@ async function completeLogin(res, isauto, isWechat = false, isBiometric = false)
 
 function onLogin(isauto) {
   if (isLoading.value) return
+  if (mfaState.value) { void submitMfaPassword(); return }
   // #ifdef MP-WEIXIN
   if (profileCompletionVisible.value) return
   // #endif
@@ -675,6 +685,7 @@ function onRegister() {
 </script>
 
 <style scoped>
+.login-mfa-notice { margin-bottom: 28rpx; padding: 22rpx; border-radius: 16rpx; background: rgba(128, 188, 155, .18); color: #047857; font-size: 25rpx; line-height: 1.7; }.login-mfa-error { display: block; color: #ee6874; margin-top: 10rpx; }
 .biometric-login-entry { margin: 14px auto 0; padding: 5px 16px; font-size: 14px; line-height: 1.8; color: var(--green, #059669); background: transparent; }
 .biometric-login-entry::after, .biometric-account-switch::after { border: 0; }
 .biometric-account-switch { margin: 0 auto; padding: 2px 16px; font-size: 13px; line-height: 1.8; background: transparent; color: var(--green, #059669); }

@@ -1,6 +1,7 @@
 <template>
   <map v-if="rendererFallback && !mapExpired" v-show="!covered" :id="hostId + '-normal'" class="app-tencent-map"
     :latitude="latitude" :longitude="longitude" :scale="scale" :markers="markers" show-location
+    @updated="$emit('updated', $event)" @error="$emit('error', $event)"
     @regionchange="$emit('regionchange', $event)" @markertap="$emit('markertap', $event)" @tap="$emit('tap', $event)" />
   <view v-else :id="hostId" class="app-tencent-map" :map-packet="packet" :change:map-packet="mapView.update" />
 </template>
@@ -12,6 +13,9 @@ import { baseUrl } from '@/api/settings.js'
 import { getCurrentInstance } from 'vue'
 import { createAppMapRetention } from '../utils/app-map-retention.mjs'
 import { onHide, onShow, onUnload } from '@dcloudio/uni-app'
+// #ifdef H5
+import { resolveH5MapAssets } from '../utils/h5-map-assets.mjs'
+// #endif
 // #ifdef APP-PLUS
 import { startLocalMapServer, stopLocalMapServer } from '../utils/app-map-local-server-app.js'
 import { pauseAppMapPreload, markAppMapSdkReady } from '../utils/app-map-preload-app.js'
@@ -25,9 +29,12 @@ export default {
   },
   emits: ['updated', 'error', 'regionchange', 'tap', 'markertap'],
   data() {
+    let mapAssets = { assetBase: baseUrl.replace(/\/$/, '') + '/web/', frameUrl: baseUrl.replace(/\/$/, '') + '/web/static/app-map/index.html' }
+    // #ifdef H5
+    mapAssets = resolveH5MapAssets(import.meta.url)
+    // #endif
     return { hostId: `app-tencent-map-${Date.now()}-${++serial}`, command: null, rendererFallback: false, mapActive: true, mapDisposed: false, mapExpired: false, frameGeneration: 0,
-      assetBase: baseUrl.replace(/\/$/, '') + '/web/',
-      frameUrl: baseUrl.replace(/\/$/, '') + '/web/static/app-map/index.html' }
+      ...mapAssets }
   },
   watch: {
     enableSatellite(value) {

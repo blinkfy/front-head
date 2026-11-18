@@ -1,6 +1,8 @@
 import { ensureFeaturePermission } from '@/utils/feature-permission.js'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { baseUrl } from '@/api/settings.js'
+import { localAsrAvailable, transcribeLocalAudio, localFirstAsr } from '@/utils/local-asr.js'
+import { createAsrController, assertAsrCurrent } from '@/utils/local-asr-core.mjs'
 
 export const audioInitializationMethods = {
     initRecorder() {
@@ -259,15 +261,48 @@ export const voicePlaybackMethods = {
 }
 
 export const voiceTranscriptionMethods = {
+    cancelVoiceTranscriptions() {
+            for (const job of this._voiceTranscriptions?.values() || []) job.controller.abort()
+            this._voiceTranscriptions?.clear()
+            this.transcribingVoiceIds = {}
+        },
     async transcribeVoiceMessage(msg) {
             if (!msg || msg.type !== 'voice' || !msg.id || this.transcribingVoiceIds[msg.id]) return
+            const owner = this.getCurrentUserId(), token = uni.getStorageSync('token') || ''
+            const peer = this.otherUserId || this.chatId
+            const audioContent = msg.content
+            const jobs = this._voiceTranscriptions || (this._voiceTranscriptions = new Map())
+            const job = { controller: createAsrController() }
+            jobs.set(msg.id, job)
+            const current = () => jobs.get(msg.id) === job && !this.isChatPageDestroyed && this.isChatPageActive &&
+                String(owner) === String(this.getCurrentUserId()) && token === (uni.getStorageSync('token') || '') &&
+                peer === (this.otherUserId || this.chatId) && this.messages.some(item => item.id === msg.id &&
+                    item.type === 'voice' && !item.isWithdraw && item.content === audioContent)
+            const options = { isCurrent: current, signal: job.controller.signal }
             this.$set(this.transcribingVoiceIds, msg.id, true)
             try {
-                const res = await chatApi.transcribeVoiceMessage(msg.id)
-                const toText = String(res?.data?.toText || '').trim()
+                const result = await localFirstAsr(async () => {
+                    if (!await localAsrAvailable(options)) return null
+                    assertAsrCurrent(options)
+                    let source = msg.content
+                    if (source && typeof source === 'object') source = source.path
+                    if (typeof source !== 'string' || !source) return null
+                    if (!/^(?:https?:|file:|blob:|wxfile:|_doc\/|\/)/i.test(source)) source = `${baseUrl}/files/download/${source}`
+                    const cached = this.getHeldChatMediaSource('attachment', source) ||
+                        await this.getChatMediaSource('attachment', source, { download: true, size: msg.fileSize })
+                    assertAsrCurrent(options)
+                    if (!cached) return null
+                    return transcribeLocalAudio([cached], options)
+                }, async () => {
+                    const res = await chatApi.transcribeVoiceMessage(msg.id)
+                    return { text: String(res?.data?.toText || '').trim() }
+                }, options)
+                assertAsrCurrent(options)
+                const toText = String(result?.text || '').trim()
                 const target = this.messages.find(item => item.id === msg.id)
                 if (target) {
                     target.voiceText = toText
+                    target.voiceTextSource = result?.local ? 'local' : 'cloud'
                     this.saveMessagesToStorage()
                 }
                 uni.showToast({
@@ -275,10 +310,14 @@ export const voiceTranscriptionMethods = {
                     icon: 'none'
                 })
             } catch (e) {
+                if (!current() || job.controller.signal.aborted || e?.name === 'AbortError') return
                 console.error('转写语音消息失败:', e)
                 uni.showToast({ title: '转文字失败', icon: 'none' })
             } finally {
-                delete this.transcribingVoiceIds[msg.id]
+                if (jobs.get(msg.id) === job) {
+                    jobs.delete(msg.id)
+                    delete this.transcribingVoiceIds[msg.id]
+                }
             }
         }
 }
