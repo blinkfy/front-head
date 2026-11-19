@@ -34,7 +34,7 @@ def build():
                      *['vfs/system/lib64/' + name for name in
                        ('libc.so', 'libm.so', 'libdl.so', 'liblog.so', 'libstdc++.so', 'libc++.so')]]:
         files[relative] = (EMU / relative).read_bytes()
-    kernel = (ROOT.parent / 'back-end/native/qbar/libwechatQrMod.so').read_bytes()
+    kernel = (ROOT / 'scripts/roundcode_inputs/libwechatQrMod.so').read_bytes()
     assert hashlib.sha256(kernel).hexdigest() == NATIVE_SHA
     files['libwechatQrMod.so'] = kernel
     manifest = {'version': 1, 'emulatorCommit': COMMIT,

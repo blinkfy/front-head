@@ -66,7 +66,7 @@ python scripts/roundcode_worker.py --server https://your-backend.example
 
 仅这项共享 worker 功能需要在后端与受控主机配置相同的 `ROUND_CODE_WORKER_KEY`（至少 32 字符）。密钥不要写进前端、Git、命令参数或日志。不运行 worker 时，设备只处理自己生成的码，不轮询共享队列。
 
-资源来源和逐文件 SHA-256 保存在 runtime.zip 的 manifest.json；包整体校验值在 runtime.sha256。开发者可用 `scripts/build-roundcode-runtime.py` 从固定输入重建资源。只会在设备端使用，Node 服务无需安装这些 Python 依赖。
+资源来源和逐文件 SHA-256 保存在 runtime.zip 的 manifest.json；包整体校验值在 runtime.sha256。开发者可用 `scripts/build-roundcode-runtime.py` 从固定输入重建资源，ARM64 解码库位于 `scripts/roundcode_inputs/libwechatQrMod.so`，脚本会校验其 SHA-256。只会在设备端使用，Node 服务无需安装这些 Python 依赖。
 
 ## 验证边界
 

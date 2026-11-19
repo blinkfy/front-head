@@ -87,7 +87,7 @@ APP 不接管已由其他 APP 账号或微信身份占用的会话。APP 切换�
 
 ## 验证范围
 
-源码包含：`scripts/test-app-qr-scanner.mjs`、后端 `scripts/verify-app-roundcode.js`、原有设备码/接力回归脚本；测试不使用生产数据库或真实登录凭证。
+源码包含：`scripts/test-app-qr-scanner.mjs`、后端 `scripts/verify/verify-app-roundcode.js`、原有设备码/接力回归脚本；测试不使用生产数据库或真实登录凭证。
 
 已验证真实样本的 native 解码；旋转 90°/180°/270°、轻微模糊、缩小至 70%、角点约 5% 透视、亮度乘 0.70 / 1.15 均读出与原图相同的 48 字节内容。普通二维码控制串逐字节核对正确，空白图没有误报。
 
@@ -110,7 +110,7 @@ APP 不接管已由其他 APP 账号或微信身份占用的会话。APP 切换�
 
 若 APP 显示“服务器未提供解析接口（HTTP 404/405/501）”，说明 native 已返回 `WX_CODE`，失败在后续 `POST /api/device/wechat-qr/resolve-raw` 请求。先核对 APP 的 `src/api/config.js` 域名，更新该域名实际提供服务的后端并重启进程，检查代理保留 `/api` 路径和 POST 方法；这类错误不是镜头/透视识别失败。
 
-此仓库已有该 route 和 controller。后端还需按前文部署 Java 和 `native/qbar` 运行资源以在生成码时登记索引；多副本需共享 Redis。部署完成后刷新设备码或网页登录码，未登记的旧码不会猜测 scene。缺少索引通常为 422，缓存异常为 503，应与路由不存在区分。不要在日志中输出扫码载荷或 JWT。
+该接口由 Node 后端提供。生成端或受控 worker 负责解码并登记索引，多副本共享 Redis。部署完成后刷新设备码或网页登录码。缓存异常与接口不存在需分别排查。日志中不要记录扫码载荷或 JWT。
 
 ### 本轮离线验证记录
 
