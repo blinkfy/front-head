@@ -7,6 +7,8 @@ import { createChatEventsTransport } from '../utils/chat-events-transport.mjs'
 import { stripWebCallTicket, webCallTarget, miniCallChatPath } from '../utils/web-call-entry.mjs'
 import { listWebRecordings, readWebRecording, renameWebRecording, deleteWebRecording } from '../utils/web-recording-storage.mjs'
 import { matchesRecording, validRecordingCallId, recordingPlayable } from '../utils/call-recording-preference.mjs'
+import { activeTranscriptIndices, cloudTranscriptConsentMessage, transcriptSpeakerLabel } from '../utils/call-transcript.mjs'
+import { transcribeWebCall } from '../utils/web-call-transcript.mjs'
 
 const content = document.querySelector('#content')
 const base = location.origin
@@ -14,6 +16,7 @@ let token = '', owner = '', isAdmin = false, controller, transport, state = {}, 
 let recordBridge = '', recordOwner = '', disposed = false, managerRows = []
 let callUi, callTimer, leaving = false, incomingRing = '', ringBlocked = false
 let playingUrl = '', playbackRevision = 0, disposePlayback = null
+let playingRecordingId = '', playingPosition = 0, transcriptJob = null, managerTranscript = null
 let incomingCallId = '', incomingTimer
 let nativeChatAvailable = false, openingNativeChat = false, nativeChatVisit = false
 let nativeChatError = '', returningCallId = ''
@@ -37,6 +40,8 @@ function stopPlayback() {
   disposePlayback?.(); disposePlayback = null
   if (playingUrl) URL.revokeObjectURL(playingUrl)
   playingUrl = ''
+  playingRecordingId = ''; playingPosition = 0
+  markCurrentTranscript()
 }
 async function sendMiniCatalog(rows) {
   if (!recordBridge || !isAdmin || owner !== recordOwner) return
@@ -235,7 +240,7 @@ function renderManager(rows = managerRows) {
     const id = row.id
     const status = { saved: '', recording: ' · 正在录制', interrupted: ' · 录制中断，已保留部分声音' }[row.status]
     const saved = recordingPlayable(row)
-      ? `<div class="row-playback"><button class="row-play" aria-label="播放" data-action="play:${id}"><span class="play-triangle"></span></button><span class="row-duration">${duration(row.durationMs)}</span><span class="row-play-hint">点击播放</span></div><div id="audio-${id}"></div>` : ''
+      ? `<div class="row-playback"><button class="row-play" aria-label="播放" data-action="play:${id}"><span class="play-triangle"></span></button><span class="row-duration">${duration(row.durationMs)}</span><span class="row-play-hint">点击播放</span></div><div id="audio-${id}"></div><div class="recording-transcript" id="transcript-${id}">${button('转文字', `transcribe:${id}`, 'secondary')}</div>` : ''
     const editable = row.status !== 'recording' && !managerSelecting ? `<details class="row-menu"><summary aria-label="更多操作 · ${escapeHtml(row.name)}"><span class="more-dots" aria-hidden="true"><span class="more-dot"></span><span class="more-dot"></span><span class="more-dot"></span></span></summary>
       <div class="row-menu-items">${button('重命名', `rename:${id}`)}${recordingPlayable(row) ? button('导出录音', `download:${id}`) : ''}
         ${button('选择录音', `select:${id}`)}${button('删除录音', `delete:${id}`, 'danger')}</div></details>` : ''
@@ -248,6 +253,8 @@ function renderManager(rows = managerRows) {
     </article>`
   }).join('')
   content.querySelector('.list').innerHTML = cards || '<div class="empty">没有匹配的录音</div>'
+  if (managerTranscript && (managerSelecting || !visible.some(row => row.id === managerTranscript.id))) closeManagerTranscript()
+  else renderManagerTranscript()
   const select = content.querySelector('[data-action="select-mode"]')
   content.classList.toggle('manager-selecting', managerSelecting)
   select.textContent = managerSelecting ? '完成' : '选择'
@@ -256,6 +263,66 @@ function renderManager(rows = managerRows) {
   bar.hidden = !managerSelecting
   bar.innerHTML = managerSelecting ? button(selected && selected === eligible.length ? '取消全选' : '全选', 'select-all', 'secondary', !eligible.length || managerDeleting)
     + button(managerDeleting ? '正在删除…' : selected ? `删除（${selected}）` : '删除', 'delete-selected', 'danger', !selected || managerDeleting) : ''
+}
+function closeManagerTranscript() {
+  transcriptJob?.abort(); transcriptJob = null
+  const id = managerTranscript?.id
+  managerTranscript = null
+  if (!id) return
+  const slot = document.getElementById(`transcript-${id}`)
+  if (slot) slot.innerHTML = button('转文字', `transcribe:${id}`, 'secondary')
+}
+function markCurrentTranscript() {
+  const current = managerTranscript
+  if (!current) return
+  const slot = document.getElementById(`transcript-${current.id}`)
+  if (!slot) return
+  const indices = playingRecordingId === current.id ? activeTranscriptIndices(current.segments, playingPosition) : []
+  for (const line of slot.querySelectorAll('.transcript-current')) {
+    if (!indices.includes(Number(line.dataset.transcriptIndex))) line.classList.remove('transcript-current')
+  }
+  for (const index of indices) slot.querySelector(`[data-transcript-index="${index}"]`)?.classList.add('transcript-current')
+}
+function renderManagerTranscript() {
+  const current = managerTranscript
+  if (!current) return
+  const slot = document.getElementById(`transcript-${current.id}`)
+  if (!slot) return
+  const id = current.id
+  const lines = current.segments.map((segment, index) => `<button type="button" class="transcript-line" data-action="seek-transcript:${id}" data-transcript-index="${index}">
+    <span class="transcript-time">${duration(segment.startMs)}–${duration(segment.endMs)}</span><span>${transcriptSpeakerLabel(segment.speaker) ? transcriptSpeakerLabel(segment.speaker) + '：' : ''}${escapeHtml(segment.text)}</span>
+    <span class="transcript-kind">${segment.source === 'local' ? '本地' : '云端'} · ${segment.timing === 'sentence' ? '句级' : '片段级'}</span></button>`).join('')
+  const message = current.error || (current.partial ? '部分片段未转写，已显示完成的字幕。' : !current.busy && !lines ? '这段录音未识别到文字。' : '')
+  slot.innerHTML = `<div class="transcript-heading"><span aria-live="polite">${escapeHtml(current.busy ? current.progress : '通话转写')}</span>
+    ${button(current.busy ? '取消' : '收起', `close-transcript:${id}`, 'secondary')}</div>
+    ${message ? `<p class="transcript-kind">${escapeHtml(message)}</p>` : ''}${current.error || current.partial ? button(current.partial ? '重新转写' : '重试', `transcribe:${id}`, 'secondary') : ''}${lines}`
+  markCurrentTranscript()
+}
+async function openManagerTranscript(row) {
+  if (!isAdmin || owner !== row.owner || !recordingPlayable(row)) return
+  closeManagerTranscript()
+  const job = new AbortController(), account = owner, sessionToken = token
+  transcriptJob = job
+  managerTranscript = { id: row.id, busy: true, progress: '正在读取录音…', segments: [] }
+  renderManagerTranscript()
+  const isCurrent = () => !leaving && !disposed && transcriptJob === job && isAdmin && owner === account && token === sessionToken
+  try {
+    const result = await transcribeWebCall(row, { token: sessionToken, baseUrl: base, signal: job.signal, isCurrent,
+      onProgress: (index, total, segments) => {
+        if (isCurrent()) {
+          Object.assign(managerTranscript, { progress: `正在转写 ${index + 1}/${total}`, segments: segments.slice() })
+          renderManagerTranscript()
+        }
+      },
+      allowCloud: reason => showDialog({ title: '使用云端转写？',
+        message: cloudTranscriptConsentMessage(reason), confirmLabel: '继续' }) })
+    if (isCurrent()) Object.assign(managerTranscript, result)
+  } catch (error) {
+    if (isCurrent() && error.name !== 'AbortError') managerTranscript.error = error.message || '转写失败，请重试'
+  } finally {
+    if (isCurrent()) { managerTranscript.busy = false; renderManagerTranscript() }
+    if (transcriptJob === job) transcriptJob = null
+  }
 }
 function updateManagerSelection() {
   const eligible = visibleManagerRows().filter(row => row.status !== 'recording')
@@ -268,6 +335,7 @@ async function removeManagerRows(rows) {
   if (!rows.length || managerDeleting || dialogOpen()) return
   const confirmed = await showDialog({ title: '删除录音', message: rows.length === 1 ? `确定删除“${rows[0].name}”？删除后无法恢复。` : `确定删除选中的 ${rows.length} 条录音？删除后无法恢复。`, danger: true, confirmLabel: '删除' })
   if (!confirmed || disposed) return
+  if (rows.some(row => row.id === managerTranscript?.id)) closeManagerTranscript()
   managerDeleting = true
   const errorText = content.querySelector('#file-error')
   errorText.hidden = true
@@ -284,7 +352,7 @@ async function removeManagerRows(rows) {
   } catch (error) { errorText.textContent = error.message; errorText.hidden = false }
   finally { managerDeleting = false; if (!disposed) renderManager() }
 }
-async function performManagerAction(action, row) {
+async function performManagerAction(action, row, startMs = 0) {
   const errorText = document.querySelector('#file-error')
   errorText.hidden = true
   try {
@@ -299,7 +367,9 @@ async function performManagerAction(action, row) {
         if (!slot) return
         playingUrl = URL.createObjectURL(blob)
         const audio = new Audio(playingUrl)
-        const player = createRecordingPlayer(audio, slot, { durationMs: row.durationMs, onError: message => {
+        playingRecordingId = row.id
+        const player = createRecordingPlayer(audio, slot, { durationMs: row.durationMs, startMs,
+          onPosition: position => { playingPosition = position; markCurrentTranscript() }, onError: message => {
           if (!disposed && revision === playbackRevision) { errorText.textContent = message; errorText.hidden = false }
         } })
         disposePlayback = player.dispose
@@ -320,7 +390,8 @@ async function performManagerAction(action, row) {
         link.remove()
         setTimeout(() => URL.revokeObjectURL(url), 60000)
       }
-    } else if (action === 'rename') {
+    } else if (action === 'transcribe') await openManagerTranscript(row)
+    else if (action === 'rename') {
       const name = await showDialog({ title: '重命名录音', value: row.name, confirmLabel: '保存' }); if (name == null || disposed) return
       await renameWebRecording(owner, row.id, name)
       renderManager(await refreshCatalog(true))
@@ -400,7 +471,7 @@ async function boot() {
     if (p.get('recordingId')) {
       document.getElementById('recording-' + p.get('recordingId'))?.scrollIntoView({ block: 'center' })
       const row = managerRows.find(item => item.id === p.get('recordingId'))
-      if (row && ['play', 'rename', 'delete'].includes(p.get('action'))) void performManagerAction(p.get('action'), row)
+      if (row && ['play', 'rename', 'delete', 'transcribe'].includes(p.get('action'))) void performManagerAction(p.get('action'), row)
     }
     content.addEventListener('change', event => {
       const id = event.target.dataset.recordingId
@@ -414,13 +485,15 @@ async function boot() {
       if (event.target.matches('.row-menu[open]')) content.querySelectorAll('.row-menu[open]').forEach(menu => { if (menu !== event.target) menu.open = false })
     }, true)
     document.addEventListener('click', event => {
-      const raw = event.target.closest('[data-action]')?.dataset.action
+      const clicked = event.target.closest('[data-action]')
+      const raw = clicked?.dataset.action
       if (!raw || managerDeleting || dialogOpen()) return
       content.querySelectorAll('.row-menu[open]').forEach(menu => { menu.open = false })
       if (raw === 'back') {
         if (leaving) return
         leaving = true
         stopPlayback()
+        closeManagerTranscript()
         void syncCatalogBeforeReturn().then(returnToMini)
         return
       }
@@ -436,10 +509,17 @@ async function boot() {
       if (raw === 'delete-selected') { void removeManagerRows(visibleManagerRows().filter(row => managerSelection.has(row.id))); return }
       const split = raw.indexOf(':'), action = raw.slice(0, split), id = raw.slice(split + 1)
       const row = managerRows.find(item => item.id === id)
+      if (row && action === 'close-transcript') { closeManagerTranscript(); return }
+      if (row && action === 'seek-transcript') {
+        const index = Number(clicked.dataset.transcriptIndex)
+        const segment = managerTranscript?.id === row.id && managerTranscript.segments[index]
+        if (segment) void performManagerAction('play', row, segment.startMs)
+        return
+      }
       if (row && action === 'select') { managerSelecting = true; managerSelection.clear(); managerSelection.add(id); renderManager(); return }
       if (row) void performManagerAction(action, row)
     })
-    addEventListener('pagehide', () => { disposed = true; stopPlayback() }, { once: true })
+    addEventListener('pagehide', () => { disposed = true; stopPlayback(); closeManagerTranscript() }, { once: true })
     return
   }
   target = webCallTarget({ peerId: p.get('peerId'), selfId: owner, mode: p.get('mode'), name: p.get('name') })

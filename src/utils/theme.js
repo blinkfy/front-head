@@ -1,3 +1,4 @@
+import { getAppCurrentPages } from '@/utils/app-tab-context.js'
 import { DEVICE_SCAN_PAGE, appendPageQuery, resolveLegacyDeviceScanUrl } from './device-qr-entry.mjs'
 
 // 这里的页面映射表需要跟pages.json保持一致
@@ -42,7 +43,7 @@ export const ThemeManager = {
     this.setTheme(newTheme)
     
     // 获取当前页面栈
-    const pages = getCurrentPages()
+    const pages = getAppCurrentPages()
     const currentPage = pages[pages.length - 1]
     const currentRoute = currentPage.route
     if ('/' + currentRoute.replace(/^\//, '') === DEVICE_SCAN_PAGE) return
@@ -108,6 +109,7 @@ export const ThemeManager = {
       return
     }
     if ('/' + String(launchPath || '').replace(/^\//, '') === DEVICE_SCAN_PAGE) return
+    if (String(launchPath || '').replace(/^\//, '') === 'pages/app-tabs/index') return
     console.log('App Launch Theme Check:', theme, 'Path:', launchPath)
     
     // 默认进入的是 pages/ 下的页面

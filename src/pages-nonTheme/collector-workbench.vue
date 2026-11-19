@@ -31,7 +31,7 @@
           <view v-if="nextJob" class="next-job"><view class="next-dot"></view><view class="next-copy"><text class="next-title">{{ nextJob.status === 'picking' ? '正在进行' : '下一单预计上门' }} {{ jobTime(nextJob) }}</text><text class="recycle-muted">订单 {{ nextJob.orderNo }} · {{ nextJob.serviceAreaName || areaName(nextJob.serviceAreaId) }} · 用户预约 {{ nextJob.appointmentTimeSlot }}</text></view><button class="toolbar-link" @click="detail(nextJob)">详情</button></view>
           <text v-else-if="timeline && !timelineLoading" class="recycle-muted next-empty">{{ taskStats.total ? '当日任务已全部完成' : '当日暂无已接任务' }}</text>
         </view>
-        <view class="task-section-heading"><text class="task-section-title">{{ tab === 'available' ? '可接任务' : '我的任务' }}</text><text class="recycle-muted">{{ tab === 'available' ? '大厅隐藏详细地址与电话，接单后可联系用户。' : '查看履约进度，与用户沟通上门安排。' }}</text></view>
+        <view class="task-section-heading"><text class="task-section-title">{{ tab === 'available' ? '可接任务' : '我的任务' }}</text><text class="recycle-muted">{{ tab === 'available' ? '接单后可查看上门地址并联系用户。' : '查看履约进度，与用户沟通上门安排。' }}</text></view>
         <view class="task-toolbar"><picker class="task-date" mode="date" :value="date" @change="setDate"><view class="recycle-select">{{ date || '全部日期' }}<view class="field-chevron"></view></view></picker><button v-if="date" class="toolbar-link" @click="clearDate">重置</button><button class="toolbar-link" :disabled="loadingOrders" @click="loadOrders(true)">{{ loadingOrders ? '刷新中…' : '刷新' }}</button></view>
         <view v-if="tab === 'mine'" class="recycle-pills view-switch"><button class="recycle-pill" :class="{ selected: viewMode === 'timeline' }" @click="viewMode = 'timeline'">时间轴</button><button class="recycle-pill" :class="{ selected: viewMode === 'list' }" @click="viewMode = 'list'">任务列表</button></view>
         <view v-if="tab === 'mine' && viewMode === 'list'" class="recycle-pills task-filters"><button v-for="filter in filters" :key="filter.key" class="recycle-pill" :class="{ selected: status === filter.key }" @click="setStatus(filter.key)">{{ filter.label }}</button></view>
@@ -41,7 +41,6 @@
           <view v-if="timelineError" class="recycle-error" role="alert"><text>{{ timelineError }}</text><button class="recycle-secondary" :disabled="timelineLoading" @click="loadTimeline">重新加载</button></view>
           <view v-else-if="timelineLoading && !timeline" class="recycle-empty" role="status">正在加载时间轴…</view>
           <RecyclingTimeline v-else :lanes="displayLanes" :mode="tab === 'mine' ? 'status' : 'scheduled'" :show-free="tab === 'available'" :ghosts="ghosts" :actions="tab === 'mine' ? ['detail', 'contact', 'navigate'] : []" :now-minutes="nowMinutes" :empty-text="tab === 'available' ? '当天暂无排班，发布排班后可在此查看接单空间' : '当天暂无已接任务'" @detail="detail" @contact="contactUser" @navigate="navigateTo" />
-          <text class="recycle-muted timeline-note">时间轴展示服务端按装箱排程实时计算的预计上门时间；用户预约时段与实际执行时间分别标注。</text>
         </view>
         <view v-if="orders.length && (tab === 'available' || viewMode === 'list')" class="task-list">
           <view v-for="order in orders" :key="order.id" class="task-item" @click="detail(order)">
@@ -51,7 +50,7 @@
             <view v-if="tab === 'available'" class="task-detail-line"><text class="task-detail-label">预计可插入</text><text :class="order.placement ? 'placement-ok' : 'placement-conflict'">{{ placementText(order) }}</text></view>
             <view v-else-if="jobFor(order)" class="task-detail-line"><text class="task-detail-label">{{ execLabel(order) }}</text><text>{{ jobTime(jobFor(order)) }}</text></view>
             <view class="task-detail-line"><text class="task-detail-label">回收物品</text><text>{{ itemsText(order) || '查看任务了解物品详情' }}</text></view>
-            <view class="task-price"><text>{{ orderPriceText(order) }}</text><text class="recycle-muted">以现场确认记录为准</text></view>
+            <view class="task-price"><text>{{ orderPriceText(order) }}</text><text class="recycle-muted">上门时确认数量和金额</text></view>
             <view v-if="tab === 'available' && previewId === order.id" class="preplan"><text class="preplan-title">接单后预排程</text><text class="recycle-copy">{{ preplanText(order) }}</text></view>
             <view class="task-actions"><button v-if="tab === 'available'" class="recycle-secondary task-action" :disabled="!order.placement" @click.stop="togglePreview(order)">{{ previewId === order.id ? '收起预排程' : '预览接单后排程' }}</button><button v-if="tab === 'mine' && ['confirmed', 'picking'].includes(order.status)" class="recycle-secondary task-action" @click.stop="navigateTo(order)">开始导航</button><button v-if="tab === 'mine' && ['confirmed', 'picking'].includes(order.status)" class="recycle-secondary task-action" @click.stop="contactUser(order)">联系用户</button><button class="recycle-primary task-action" @click.stop="detail(order)">{{ tab === 'available' ? '查看并接单' : '订单详情' }}</button></view>
           </view>
@@ -68,13 +67,13 @@
           <view class="settings-heading"><text class="settings-number">01</text><view><text class="recycle-heading">接单与提醒</text><text class="recycle-muted">安排接单状态，及时收到新任务</text></view></view>
           <view class="settings-switch-row"><view><text class="setting-title">接收新单</text><text class="recycle-muted">暂停后仍可继续处理已接任务</text></view><switch :checked="me.profile.acceptingOrders" color="#10b981" :disabled="saving" @change="changeSetting('acceptingOrders', $event.detail.value)" /></view>
           <view class="settings-switch-row"><view><text class="setting-title">新单提醒</text><text class="recycle-muted">关闭后仍保留站内通知和任务状态通知</text></view><switch :checked="me.profile.newOrderNotifications" color="#10b981" :disabled="saving" @change="changeSetting('newOrderNotifications', $event.detail.value)" /></view>
-          <button class="settings-disclosure" :aria-expanded="showNotificationDetails" @click="showNotificationDetails = !showNotificationDetails"><text>通知送达检查</text><view :class="['field-chevron', { expanded: showNotificationDetails }]"></view></button>
-          <view v-if="showNotificationDetails" class="notification-details"><text class="recycle-copy">服务端离线推送：{{ me.notificationStatus?.pushEnabled ? '已启用支持通道' : '尚未启用' }}</text><text class="recycle-copy">账号有效绑定设备：{{ me.notificationStatus?.boundDevices || 0 }} 台</text><text class="recycle-copy">当前设备系统通知：{{ deviceNotificationStatus }}</text><text class="recycle-muted">服务端开启和设备绑定不代表通知已在手机展示，站内通知始终可从消息页查看。</text></view>
+          <button class="settings-disclosure" :aria-expanded="showNotificationDetails" @click="showNotificationDetails = !showNotificationDetails"><text>通知设置</text><view :class="['field-chevron', { expanded: showNotificationDetails }]"></view></button>
+          <view v-if="showNotificationDetails" class="notification-details"><text class="recycle-copy">当前设备系统通知：{{ deviceNotificationStatus }}</text><text class="recycle-muted">如需接收提醒，请在设备设置中允许通知。</text></view>
           <button class="settings-disclosure" @click="systemNotices"><text>查看系统通知</text><view class="field-chevron forward"></view></button>
         </view>
 
         <view class="settings-section">
-          <view class="settings-heading"><text class="settings-number">02</text><view><text class="recycle-heading">回收种类与参考价</text><text class="recycle-muted">管理获批品类和报价，最终金额以现场确认为准</text></view></view>
+          <view class="settings-heading"><text class="settings-number">02</text><view><text class="recycle-heading">回收种类与参考价</text><text class="recycle-muted">设置回收品类、计价单位和参考价</text></view></view>
           <text v-if="me.profile.serviceOffers == null" class="recycle-muted recycle-copy">已预填平台公斤参考价，保存后成为您的服务配置。</text>
           <text v-if="!serviceOffers.length" class="recycle-copy">暂无获批品类，请先申请服务品类。</text>
           <view v-for="offer in serviceOffers" :key="offer.typeId" class="offer-item">
@@ -144,7 +143,7 @@ const clock = minutes => `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)
 const toMinutes = value => { const [h, m] = String(value).split(':').map(Number); return h * 60 + m }
 export default {
   components: { RecyclingShell, RecyclingServiceMap, RecyclingTimeline },
-  data: () => ({ timeline: null, timelineLoading: false, timelineError: '', timelineDate: '', timelineVersion: 0, availableCount: 0, viewMode: 'timeline', previewId: null, previewDate: '', previewTimeline: null, previewLoading: false, previewError: '', previewVersion: 0, writes: {}, isDark: false, loading: false, loadingOrders: false, saving: false, error: '', me: null, catalog: { areas: [], types: [], timeSlots: [] }, tab: 'available', tabs: [{ key: 'available', label: '待接单' }, { key: 'mine', label: '我的任务' }, { key: 'settings', label: '接单设置' }], filters: [{ key: 'active', label: '进行中' }, { key: 'completed', label: '已完成' }, { key: 'cancelled', label: '已取消' }, { key: '', label: '全部' }], status: 'active', date: '', orders: [], page: 0, hasMore: false, queryVersion: 0, scheduleMode: 'weekly', scheduleNotice: '', weekdays: [{ value: 1, label: '周一' }, { value: 2, label: '周二' }, { value: 3, label: '周三' }, { value: 4, label: '周四' }, { value: 5, label: '周五' }, { value: 6, label: '周六' }, { value: 7, label: '周日' }], selectedWeekdays: [], weeklyEdited: false, weeklyMismatch: false, weeklyMismatchText: '', scheduleDate: '', today: '', lastDay: '', areaIndex: 0, selectedSlots: [], serviceOffers: [], offerUnits: [{ value: 'kg', label: '公斤' }, { value: 'piece', label: '件' }, { value: 'unit', label: '台' }, { value: 'bag', label: '袋' }], priceModes: [{ value: 'fixed', label: '固定参考单价' }, { value: 'negotiable', label: '现场议价' }], serviceDurations: Array.from({ length: 12 }, (_, index) => (index + 1) * 15), travelBuffers: [0,15,30,45,60], arrivalWindows: [30,60], serviceDurationMinutes: 30, travelBufferMinutes: 0, arrivalWindowMinutes: 60, workTimes: Array.from({ length: 49 }, (_, index) => `${String(Math.floor(index / 2)).padStart(2, '0')}:${index % 2 ? '30' : '00'}`), editingOfferId: null, showNotificationDetails: false, deviceNotificationStatus: '当前平台未提供状态查询' }),
+  data: () => ({ timeline: null, timelineLoading: false, timelineError: '', timelineDate: '', timelineVersion: 0, availableCount: 0, viewMode: 'timeline', previewId: null, previewDate: '', previewTimeline: null, previewLoading: false, previewError: '', previewVersion: 0, writes: {}, isDark: false, loading: false, loadingOrders: false, saving: false, error: '', me: null, catalog: { areas: [], types: [], timeSlots: [] }, tab: 'available', tabs: [{ key: 'available', label: '待接单' }, { key: 'mine', label: '我的任务' }, { key: 'settings', label: '接单设置' }], filters: [{ key: 'active', label: '进行中' }, { key: 'completed', label: '已完成' }, { key: 'cancelled', label: '已取消' }, { key: '', label: '全部' }], status: 'active', date: '', orders: [], page: 0, hasMore: false, queryVersion: 0, scheduleMode: 'weekly', scheduleNotice: '', weekdays: [{ value: 1, label: '周一' }, { value: 2, label: '周二' }, { value: 3, label: '周三' }, { value: 4, label: '周四' }, { value: 5, label: '周五' }, { value: 6, label: '周六' }, { value: 7, label: '周日' }], selectedWeekdays: [], weeklyEdited: false, weeklyMismatch: false, weeklyMismatchText: '', scheduleDate: '', today: '', lastDay: '', areaIndex: 0, selectedSlots: [], serviceOffers: [], offerUnits: [{ value: 'kg', label: '公斤' }, { value: 'piece', label: '件' }, { value: 'unit', label: '台' }, { value: 'bag', label: '袋' }], priceModes: [{ value: 'fixed', label: '固定参考单价' }, { value: 'negotiable', label: '现场议价' }], serviceDurations: Array.from({ length: 12 }, (_, index) => (index + 1) * 15), travelBuffers: [0,15,30,45,60], arrivalWindows: [30,60], serviceDurationMinutes: 30, travelBufferMinutes: 0, arrivalWindowMinutes: 60, workTimes: Array.from({ length: 49 }, (_, index) => `${String(Math.floor(index / 2)).padStart(2, '0')}:${index % 2 ? '30' : '00'}`), editingOfferId: null, showNotificationDetails: false, deviceNotificationStatus: '请在设备设置中查看' }),
   computed: {
     dayWord() { return this.timelineDate && this.timelineDate !== this.today ? '当日' : '今日' },
     summary() { return this.timeline?.summary || null },
@@ -326,7 +325,7 @@ export default {
       try { if (typeof plus !== 'undefined' && plus.android) { const manager = plus.android.importClass('androidx.core.app.NotificationManagerCompat'); this.deviceNotificationStatus = manager.from(plus.android.runtimeMainActivity()).areNotificationsEnabled() ? '已允许' : '未允许，请在系统设置中开启' } } catch (_) { this.deviceNotificationStatus = '请在手机系统设置中查看' }
       // #endif
       // #ifdef H5
-      this.deviceNotificationStatus = typeof Notification === 'undefined' ? '浏览器未提供系统通知' : ({ granted: '浏览器已允许（不等于支持离线送达）', denied: '浏览器已拒绝', default: '浏览器尚未授权' }[Notification.permission] || '未知')
+      this.deviceNotificationStatus = typeof Notification === 'undefined' ? '浏览器未提供系统通知' : ({ granted: '浏览器已允许', denied: '浏览器已拒绝', default: '浏览器尚未授权' }[Notification.permission] || '未知')
       // #endif
     }
   }
@@ -382,7 +381,6 @@ export default {
 .next-empty { display: block; margin-top: 16rpx; font-size: 24rpx; }
 .view-switch { margin-bottom: 20rpx; }
 .view-switch .recycle-pill { flex: 1; text-align: center; }
-.timeline-note { display: block; margin-top: 14rpx; font-size: 22rpx; line-height: 1.5; }
 .placement-ok { color: var(--workbench-green); font-weight: 600; }
 .placement-conflict { color: var(--workbench-warning); font-weight: 600; }
 .preplan { margin-top: 16rpx; padding: 16rpx 18rpx; background: var(--workbench-soft); border: 1rpx dashed var(--workbench-green); border-radius: 12rpx; }

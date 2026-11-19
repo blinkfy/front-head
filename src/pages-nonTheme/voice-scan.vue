@@ -74,6 +74,8 @@
               placeholder-class="input-placeholder"
               auto-height
             ></textarea>
+            <LocalSpeechButton v-if="finalTranscript" :text="finalTranscript" :dark="isDark"
+              :disabled="isListening || permissionPending" label="播报识别文字" />
           </view>
           <view class="text-submit-btn" @click="submitText">
             <text>识别</text>
@@ -107,6 +109,8 @@
             <view class="result-detail">
               <text class="result-text">{{ currentResult.description }}</text>
             </view>
+            <LocalSpeechButton v-if="currentResult === classifiedResult" ref="classificationSpeech"
+              :text="classificationSpeechText" :dark="isDark" :disabled="isListening || permissionPending" label="播报分类" />
             <view class="result-tags">
               <view v-for="(tag, idx) in currentResult.tags" :key="idx" class="result-tag">
                 <text>{{ tag }}</text>
@@ -117,7 +121,7 @@
 
         <!-- 底部提示 -->
         <view class="bottom-hint">
-          <text>{{ isH5 ? 'H5 环境暂不支持录音，请使用文字输入' : '长按录音，松开后自动识别' }}</text>
+          <text>{{ isH5 ? '长按录音，浏览器需要麦克风权限' : '长按录音，松开后自动识别' }}</text>
         </view>
       </view>
     </scroll-view>
@@ -130,6 +134,8 @@ import { chooseAppImage } from '@/utils/image-picker.js'
 import { transcribeAudio, transcribeAudioBlob, transcribeAudioSegments, recognizeByText } from '@/pages-nonTheme/api/voice.js';
 import { baseUrl } from '@/api/settings.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
+import LocalSpeechButton from '@/components/LocalSpeechButton.vue';
+import { localSpeechAvailable, refreshLocalSpeech, stopLocalSpeech } from '@/utils/local-tts.js';
 import { createAsrController } from '@/utils/local-asr-core.mjs';
 // #ifdef H5
 import { webAsrCaptureSupported } from '@/utils/web-asr-audio.mjs';
@@ -139,10 +145,14 @@ import { createWebAsrSession } from '@/utils/web-asr-session.mjs';
 let recorderManager = null;
 
 export default {
-  components: { ManifestIcon },
+  components: { ManifestIcon, LocalSpeechButton },
   data() {
     return {
       isListening: false,
+      permissionPending: false,
+      finalTranscript: '',
+      classifiedResult: null,
+      classificationRevision: 0,
       h5AsrPending: false,
       voiceRun: 0,
       recordingOwner: '',
@@ -183,6 +193,13 @@ export default {
       appSegmentWindowStartIndex: 0
     };
   },
+  computed: {
+    canSpeakLocally() { return localSpeechAvailable.value; },
+    classificationSpeechText() {
+      const result = this.classifiedResult;
+      return result ? `分类结果是${result.category}。${result.description || ''}` : '';
+    }
+  },
   onLoad() {
     this.checkTheme();
     this.loadHistory();
@@ -191,13 +208,16 @@ export default {
   onShow() {
     this.recognitionPageHidden = false;
     this.checkTheme();
+    refreshLocalSpeech();
   },
   onHide() {
+    stopLocalSpeech();
     this.recognitionPageHidden = true; this.voiceRun++;
     this.recordHeld = false; this.permissionAttempt = (this.permissionAttempt || 0) + 1;
     this.destroyRecorder(); this.isListening = false; this.h5AsrPending = false;
   },
   onUnload() {
+    stopLocalSpeech();
     this.recordHeld = false; this.permissionAttempt = (this.permissionAttempt || 0) + 1; this.permissionPageClosed = true;
     this.voiceRun++; this.destroyRecorder();
   },
@@ -326,6 +346,7 @@ export default {
     },
     async startListening() {
       if (this.permissionPending || this.isListening || this.h5AsrPending || this.realtimeStopping) return;
+      stopLocalSpeech();
       const attempt = (this.permissionAttempt || 0) + 1;
       this.permissionAttempt = attempt; this.recordHeld = true; this.permissionPending = true;
       const owner = uni.getStorageSync('token') || '';
@@ -335,6 +356,7 @@ export default {
       finally { this.permissionPending = false; }
       if (!granted || !current()) return;
       this.voiceRun++; this.recordingOwner = owner;
+      this.finalTranscript = '';
       this._voiceAsrController?.abort(); this._voiceAsrController = createAsrController();
       if (this.isH5) {
         this.startH5Recording();
@@ -953,10 +975,11 @@ export default {
       }
       return [this.realtimeCommittedText, this.realtimeLiveText].filter(Boolean).join('').trim();
     },
-    async applyRecognizedText(recognizedText) {
+    async applyRecognizedText(recognizedText, fromSpeech = true) {
       const normalizedText = String(recognizedText || '').trim();
       if (!normalizedText) return;
       this.textInput = normalizedText;
+      this.finalTranscript = fromSpeech ? normalizedText : '';
       this.statusText = '识别完成';
       uni.showToast({ title: '识别成功', icon: 'success' });
       await this.classifyRecognizedText(normalizedText);
@@ -983,7 +1006,9 @@ export default {
     },
     async classifyRecognizedText(text) {
       const run = this.voiceRun, owner = uni.getStorageSync('token') || '';
-      const current = () => this.voiceRun === run && !this.permissionPageClosed && !this.recognitionPageHidden && owner === (uni.getStorageSync('token') || '');
+      const revision = ++this.classificationRevision;
+      const recordingAttempt = this.permissionAttempt;
+      const current = () => this.voiceRun === run && this.classificationRevision === revision && !this.permissionPageClosed && !this.recognitionPageHidden && owner === (uni.getStorageSync('token') || '');
       const fallback = this.getFallbackTextResult(text);
       this.currentResult = fallback;
       this.statusText = '正在判断垃圾分类...';
@@ -996,8 +1021,16 @@ export default {
         console.warn('[voice] text classify fallback:', e);
         this.currentResult = fallback;
       }
+      this.classifiedResult = this.currentResult;
       this.addToHistory(text, this.currentResult);
       this.statusText = '识别完成';
+      if (this.canSpeakLocally) {
+        this.$nextTick(() => {
+          if (current() && recordingAttempt === this.permissionAttempt && !this.recordHeld && !this.isListening && !this.permissionPending) {
+            this.$refs.classificationSpeech?.play();
+          }
+        });
+      }
     },
     async doTranscribe(filePath) {
       const run = this.voiceRun, owner = this.recordingOwner;
@@ -1034,7 +1067,7 @@ export default {
       }
       this.statusText = '识别中...';
       const normalizedText = this.textInput.trim();
-      await this.applyRecognizedText(normalizedText);
+      await this.applyRecognizedText(normalizedText, false);
       this.statusText = '识别完成';
       return;
     },
@@ -1115,6 +1148,7 @@ export default {
     },
     useRecord(record) {
       this.textInput = record.text;
+      this.finalTranscript = '';
     },
     formatTime(isoStr) {
       const d = new Date(isoStr);

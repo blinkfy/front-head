@@ -24,7 +24,7 @@
         <button class="shop-button shop-outline shop-small" @click="viewOrder(order)">查看详情 ›</button>
       </view>
     </view>
-    <view v-if="error" class="shop-card shop-state"><text class="shop-error">{{ error }}</text><button class="shop-button" @click="load(nextPage)">重新加载</button></view>
+    <view v-if="error" class="shop-card shop-state"><text class="shop-error">{{ error }}</text><button class="shop-button" @click="load(failedPage)">重新加载</button></view>
     <view v-else-if="orders.length" class="shop-state">
       <button v-if="hasMore" class="shop-button shop-outline" :disabled="loading" @click="load(nextPage)">{{ loading ? '正在加载...' : '加载更多' }}</button>
       <text v-else>已显示全部 {{ total }} 条订单</text>
@@ -46,18 +46,26 @@ const nextPage = ref(1)
 const hasMore = ref(false)
 const loading = ref(false)
 const error = ref('')
+const failedPage = ref(1)
 const currentLabel = computed(() => shopStatusTabs.find(tab => tab.value === status.value)?.label.replace('全部', '') || '')
 let version = 0
-onShow(() => reset())
+onShow(() => reset({
+  // #ifdef APP-PLUS
+  keepOrders: true
+  // #endif
+}))
 onUnload(() => { version++ })
 onReachBottom(() => { if (hasMore.value && !error.value) load(nextPage.value) })
-function reset() {
-  version++
-  loading.value = false
+function clearOrders() {
   orders.value = []
   total.value = 0
   nextPage.value = 1
   hasMore.value = false
+}
+function reset({ keepOrders = false } = {}) {
+  version++
+  loading.value = false
+  if (!keepOrders) clearOrders()
   load(1)
 }
 function changeStatus(value) {
@@ -79,7 +87,13 @@ async function load(page) {
     total.value = Number(data.total)
     nextPage.value = page + 1
     hasMore.value = page < Number(data.totalPages)
-  } catch (reason) { if (ticket === version) error.value = shopError(reason) }
+  } catch (reason) {
+    if (ticket === version) {
+      if (page === 1 && !reason?.networkUnavailable) clearOrders()
+      failedPage.value = page
+      error.value = shopError(reason)
+    }
+  }
   finally { if (ticket === version) loading.value = false }
 }
 function viewOrder(order) { uni.navigateTo({ url: `/pages-nonTheme/shop-order-detail?id=${encodeURIComponent(order.id)}` }) }

@@ -39,10 +39,10 @@
     <!-- #endif -->
     <template v-if="!readonly">
       <!-- #ifdef H5 -->
-      <text class="map-hint">{{ mode === 'circle' ? '点击地图设置圆心，再调整半径。无需开启定位权限。' : '按顺序点击地图添加顶点（3–30 个），完成后保存范围。边界不能相交。' }}</text>
+      <text class="map-hint">{{ mode === 'circle' ? '点击地图设置圆心，再调整半径。' : '按顺序点击地图添加顶点（3–30 个），完成后保存范围。边界不能相交。' }}</text>
       <!-- #endif -->
       <!-- #ifndef H5 -->
-      <text class="map-hint">{{ mode === 'circle' ? '移动地图，让十字对准圆心，再点击上方按钮设置。无需开启定位权限。' : '移动地图，让十字依次对准顶点并点击上方按钮添加（3–30 个），再点击完成。边界不能相交。' }}</text>
+      <text class="map-hint">{{ mode === 'circle' ? '移动地图，让十字对准圆心，再点击上方按钮设置。' : '移动地图，让十字依次对准顶点并点击上方按钮添加（3–30 个），再点击完成。边界不能相交。' }}</text>
       <!-- #endif -->
       <view v-if="mode === 'circle'" class="radius-row">
         <text>半径（米）</text><input class="map-input radius-input" type="number" :value="radius" :disabled="disabled" @input="radiusInput" />
@@ -253,7 +253,7 @@ async function locateInitialViewport(token) {
     point = gcj02ToWgs84(await getUserLocationOnce('gcj02', { interactive: true, isCurrent }))
     // #endif
     if (!isCurrent()) return
-    if (!point) throw new Error('当前坐标无法用于地图')
+    if (!point) throw new Error('无法找到该位置，请重新选择')
     focusMapPoint(point)
     locationHint.value = ''
   } catch (_) {

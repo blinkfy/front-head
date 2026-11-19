@@ -3,6 +3,7 @@ import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { baseUrl } from '@/api/settings.js'
 import { localAsrAvailable, transcribeLocalAudio, localFirstAsr } from '@/utils/local-asr.js'
 import { createAsrController, assertAsrCurrent } from '@/utils/local-asr-core.mjs'
+import { stopLocalSpeech } from '@/utils/local-tts.js'
 
 export const audioInitializationMethods = {
     initRecorder() {
@@ -149,6 +150,7 @@ export const voiceRecordingMethods = {
             // #endif
             // #ifndef H5
             if (this.recordPermissionPending || this.isRecording) return
+            stopLocalSpeech()
             this.startY = e.touches[0].clientY
             this.isCancelVoice = false
             const attempt = (this.recordAttempt || 0) + 1
@@ -194,7 +196,7 @@ export const voiceRecordingMethods = {
 export const voicePlaybackMethods = {
     async playVoice(msg) {
             // 如果已经标记失败，点击重试
-            if (this.mediaLoadErrors[msg.id]?.type === 'voice') {
+            if (!this.chatOffline && this.mediaLoadErrors[msg.id]?.type === 'voice') {
                 this.retryLoadMedia(msg, 'voice')
                 return
             }
@@ -240,8 +242,12 @@ export const voicePlaybackMethods = {
             this.voiceGestureRetry = null
             const retryPath = retry?.owner === owner && retry.messageId === msg.id && retry.source === audioSrc ? retry.path : ''
             const cached = retryPath || this.getHeldChatMediaSource('attachment', audioSrc)
-                || await this.getChatMediaSource('attachment', audioSrc, { download: true, size: msg.fileSize })
+                || await this.getChatMediaSource('attachment', audioSrc, { download: !this.chatOffline, size: msg.fileSize })
             if (revision !== this.voicePlaybackRevision || this.isChatPageDestroyed || owner !== this.getCurrentUserId()) return
+            if (this.chatOffline && !cached && /^https?:\/\//i.test(audioSrc)) {
+                this.playingVoiceId = null
+                return this.showChatOfflineToast()
+            }
             this.currentPlayingMsg = msg
             this.currentVoiceCache = { owner, source: audioSrc, path: cached || audioSrc }
             

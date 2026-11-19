@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.media.MediaExtractor
 import android.media.MediaMuxer
 import android.media.MediaPlayer
 import android.media.AudioAttributes
@@ -101,9 +102,18 @@ object CallRecordingFiles {
             if (!permits(owner)) throw IllegalStateException("登录账号已变更")
             player.setOnCompletionListener { current.ended = true }
             player.setOnErrorListener { _, _, _ -> current.failed = true; true }
-            player.start()
-            playbackState(current, result)
             playback = current
+            val start = request.optInt("positionMs").coerceIn(0, player.duration.coerceAtLeast(0))
+            if (start > 0) {
+                player.setOnSeekCompleteListener {
+                    if (playback === current && permits(owner)) it.start()
+                    it.setOnSeekCompleteListener(null)
+                }
+                if (Build.VERSION.SDK_INT >= 26) player.seekTo(start.toLong(), MediaPlayer.SEEK_CLOSEST)
+                else player.seekTo(start)
+            } else player.start()
+            playbackState(current, result)
+            if (start > 0) result.put("positionMs", start)
         } catch (error: Exception) {
             if (playback === current) playback = null
             player.release()
@@ -166,6 +176,12 @@ object CallRecordingFiles {
             } else {
                 val id = request.optString("id")
                 if (!idPattern.matches(id)) throw IllegalArgumentException("录音编号无效")
+                if (action == "release-clip") {
+                    val clip = request.optString("clip")
+                    if (idPattern.matches(clip)) File(clipDir(ctx, cfg.owner), "${id}_$clip.m4a").delete()
+                    if (idPattern.matches(clip)) File(clipDir(ctx, cfg.owner), "${id}_$clip.wav").delete()
+                    return result.put("ok", true).toString()
+                }
                 if (action.startsWith("playback-") && action != "playback-start") {
                     controlPlayback(cfg.owner, id, request, action, result)
                     return result.toString()
@@ -174,6 +190,14 @@ object CallRecordingFiles {
                 val audio = File(dir, "$id.m4a")
                 val meta = readMeta(metaFile) ?: throw IllegalArgumentException("录音不存在")
                 if (meta.optString("owner") != cfg.owner || !audio.isFile) throw IllegalArgumentException("录音不存在")
+                val channel = when (request.optString("speaker")) {
+                    "self" -> 0
+                    "peer" -> 1
+                    "" -> null
+                    else -> throw IllegalArgumentException("录音音轨无效")
+                }
+                if (action == "clip" || action == "audio-energy")
+                    require((channel != null) == meta.optBoolean("splitTracks")) { "录音音轨信息不匹配" }
                 when (action) {
                     "delete" -> {
                         if (playback?.let { it.owner == cfg.owner && it.id == id } == true) releasePlayback()
@@ -183,6 +207,9 @@ object CallRecordingFiles {
                     }
                     "playback-start" -> startPlayback(cfg.owner, id, request, audio, result)
                     "file" -> result.put("path", audio.absolutePath).put("mimeType", "audio/mp4").put("name", meta.optString("name", "通话录音.m4a"))
+                    "audio-energy" -> result.put("levels", CallRecordingAnalysis.analyze(audio, request.optLong("startMs", -1),
+                        request.optLong("endMs", -1), channel, null) { permits(cfg.owner) })
+                    "clip" -> createTranscriptClip(ctx, cfg.owner, id, audio, request, result, channel)
                     "rename" -> {
                         val name = request.optString("name").trim().take(80)
                         if (name.isEmpty() || name.any { it == '/' || it == '\\' || it.code < 32 }) throw IllegalArgumentException("名称无效")
@@ -194,6 +221,66 @@ object CallRecordingFiles {
             }
         } catch (e: Throwable) { result.put("ok", false).put("error", e.message ?: "录音操作失败") }
         return result.toString()
+    }
+
+    private fun clipDir(ctx: Context, owner: String) = File(File(ctx.cacheDir, "ftx-call-asr"), owner)
+
+    // Recordings are AAC in an MP4 container. Copy complete compressed samples;
+    // report the real first sample time so transcript offsets follow playback.
+    private fun createTranscriptClip(ctx: Context, owner: String, id: String, audio: File, request: JSONObject, result: JSONObject, channel: Int?) {
+        val start = request.optLong("startMs", -1)
+        val end = request.optLong("endMs", -1)
+        require(start in 0..3_600_000 && end > start && end - start <= 120_000) { "录音时间范围无效" }
+        val dir = clipDir(ctx, owner)
+        dir.mkdirs()
+        val staleBefore = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(2)
+        dir.listFiles()?.filter { it.lastModified() < staleBefore }?.forEach { it.delete() }
+        val clip = UUID.randomUUID().toString().replace("-", "")
+        if (channel != null) {
+            val wav = File(dir, "${id}_$clip.wav")
+            try {
+                CallRecordingAnalysis.analyze(audio, start, end, channel, wav) { permits(owner) }
+                result.put("clip", clip).put("path", wav.absolutePath).put("startMs", start).put("endMs", end)
+            } catch (e: Throwable) { wav.delete(); throw e }
+            return
+        }
+        val target = File(dir, "${id}_$clip.m4a")
+        val extractor = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        var complete = false
+        try {
+            extractor.setDataSource(audio.absolutePath)
+            val index = (0 until extractor.trackCount).first { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
+            val format = extractor.getTrackFormat(index)
+            extractor.selectTrack(index)
+            extractor.seekTo(start * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            while (extractor.sampleTime in 0 until start * 1000) extractor.advance()
+            val first = extractor.sampleTime
+            if (first < 0 || first >= end * 1000) return
+            val writer = MediaMuxer(target.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = writer
+            val track = writer.addTrack(format)
+            writer.start()
+            val bufferSize = if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE) else 0
+            val buffer = ByteBuffer.allocate(bufferSize.coerceIn(64 * 1024, 1024 * 1024))
+            val info = MediaCodec.BufferInfo()
+            while (extractor.sampleTime in first until end * 1000) {
+                if (!permits(owner)) throw IllegalStateException("登录账号已变更")
+                buffer.clear()
+                val size = extractor.readSampleData(buffer, 0)
+                if (size < 0) break
+                info.set(0, size, extractor.sampleTime - first, MediaCodec.BUFFER_FLAG_KEY_FRAME)
+                writer.writeSampleData(track, buffer, info)
+                if (!extractor.advance()) break
+            }
+            writer.stop()
+            complete = true
+            result.put("clip", clip).put("path", target.absolutePath).put("startMs", first / 1000).put("endMs", end)
+        } finally {
+            extractor.release()
+            muxer?.release()
+            if (!complete) target.delete()
+        }
     }
 
     @JvmStatic fun perform(ctx: Context, requestJSON: String, callback: (String) -> Unit) {
@@ -348,13 +435,14 @@ class CallAudioRecording internal constructor(
         var metaTemp: File? = null
         var containerFinalized = false
         var encodedDuration = 0L
+        var outputChannels = 2
         fun persistRecording() {
             val target = outputFile ?: throw IllegalStateException("录音文件不存在")
             val source = partial ?: throw IllegalStateException("录音文件不存在")
             if (!target.isFile && !source.renameTo(target)) throw IllegalStateException("录音文件保存失败")
             CallRecordingFiles.saveMetadata(File(dir, "$id.json"), JSONObject().put("id", id).put("owner", owner)
                 .put("peerName", peerName.take(80)).put("mode", mode.take(16)).put("createdAt", startMillis).put("callId", callId)
-                .put("durationMs", encodedDuration).put("size", target.length()).put("mimeType", "audio/mp4")
+                .put("durationMs", encodedDuration).put("size", target.length()).put("mimeType", "audio/mp4").put("splitTracks", outputChannels == 2)
                 .put("name", "${peerName.take(60)}的通话录音").put("status", "saved"))
             saved = true
         }
@@ -363,13 +451,23 @@ class CallAudioRecording internal constructor(
             val stats = StatFs(dir.absolutePath)
             if (stats.availableBytes < 8L * 1024 * 1024) throw IllegalStateException("存储空间不足")
             partial = File(dir, "$id.partial.m4a"); outputFile = File(dir, "$id.m4a"); metaTemp = File(dir, "$id.json.tmp")
-            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, OUT_RATE, 1)
-            format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-            format.setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE); format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 8192)
-            val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+            fun startEncoder(channels: Int): MediaCodec {
+                val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, OUT_RATE, channels)
+                format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                format.setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
+                format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 8192)
+                val candidate = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+                try {
+                    candidate.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                    candidate.start()
+                    return candidate
+                } catch (e: Exception) { candidate.release(); throw e }
+            }
+            val encoder = try { startEncoder(2) } catch (_: Exception) {
+                outputChannels = 1
+                startEncoder(1).also { error = "当前编码器仅支持混音录制" }
+            }
             codec = encoder
-            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            encoder.start()
             val writer = MediaMuxer(partial.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             muxer = writer
             val ringSize = OUT_RATE * 8
@@ -431,11 +529,14 @@ class CallAudioRecording internal constructor(
                         val frame = cursorAt + offset; val slot = (frame % ringSize).toInt()
                         val m = if (stampMic[slot] == frame) ringMic[slot] else 0f
                         val p = if (stampPlay[slot] == frame) ringPlay[slot] else 0f
-                        val sample = ((m + p) * 0.5f).coerceIn(-1f, 1f)
-                        val v = (sample * 32767f).roundToInt().coerceIn(-32768, 32767)
-                        input.put(v.toByte()); input.put((v shr 8).toByte())
+                        val left = ((if (outputChannels == 2) m else (m + p) * .5f) * 32767f).roundToInt().coerceIn(-32768, 32767)
+                        input.put(left.toByte()); input.put((left shr 8).toByte())
+                        if (outputChannels == 2) {
+                            val right = (p * 32767f).roundToInt().coerceIn(-32768, 32767)
+                            input.put(right.toByte()); input.put((right shr 8).toByte())
+                        }
                     }
-                    encoder.queueInputBuffer(inputIndex, 0, FRAME_SAMPLES * 2, cursor * 1_000_000L / OUT_RATE, 0)
+                    encoder.queueInputBuffer(inputIndex, 0, FRAME_SAMPLES * 2 * outputChannels, cursor * 1_000_000L / OUT_RATE, 0)
                     cursor += FRAME_SAMPLES
                 }
                 drain(0)

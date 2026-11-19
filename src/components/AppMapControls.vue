@@ -3,9 +3,10 @@
 <script setup>
 // #ifdef APP-PLUS
 import { getCurrentInstance, onBeforeUnmount, onMounted, watch } from 'vue'
-import { onReady, onShow, onHide, onUnload } from '@dcloudio/uni-app'
+import { onReady, onShow, onHide, onUnload } from '@/utils/app-tab-lifecycle.js'
 import { createAppMapControlsController } from '@/utils/app-map-controls.mjs'
 import { pageSubNVue } from '@/utils/page-subnvue.mjs'
+import { useAppTabContext } from '@/utils/app-tab-context.js'
 
 const props = defineProps({
   controlId: { type: String, required: true },
@@ -21,6 +22,8 @@ const props = defineProps({
 const emit = defineEmits(['basemap', 'cancel', 'confirm', 'center', 'locate'])
 const topic = `app-map-controls:${props.controlId}`
 const page = getCurrentInstance().root
+const tabContext = useAppTabContext()
+const foreground = () => tabContext ? tabContext.foreground.value : true
 const controller = createAppMapControlsController({
   getSize: () => {
     const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
@@ -47,9 +50,10 @@ function receive(message) {
 }
 uni.$on(`${topic}:action`, receive)
 watch(() => [props.visible, props.selectMode, props.dark, props.top, props.satellite, props.loading, props.latitude, props.longitude], sync, { immediate: true })
-onMounted(() => { attach(); controller.activate(true); uni.onWindowResize?.(controller.refresh) })
+onMounted(() => { attach(); controller.activate(foreground()); uni.onWindowResize?.(controller.refresh) })
 onReady(attach, page)
-onShow(() => { attach(); controller.activate(true) }, page)
+onShow(() => { attach(); controller.activate(foreground()) }, page)
+if (tabContext) watch(tabContext.foreground, value => { attach(); controller.activate(value) }, { flush: 'sync' })
 onHide(() => controller.activate(false), page)
 let disposed = false
 function dispose() {

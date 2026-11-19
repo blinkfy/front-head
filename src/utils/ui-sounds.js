@@ -1,8 +1,9 @@
+import { getAppCurrentPages } from '@/utils/app-tab-context.js'
 import { baseUrl } from '@/api/settings.js'
 import { createUiSoundController, UI_SOUNDS, UI_SOUND_STORAGE_KEY } from './ui-sound-core.mjs'
 
 const currentPage = () => {
-  try { const pages = getCurrentPages(); return pages[pages.length - 1]?.route || '' } catch (_) { return '' }
+  try { const pages = getAppCurrentPages(); return pages[pages.length - 1]?.route || '' } catch (_) { return '' }
 }
 const visible = () => {
   if (['pages-nonTheme/chat', 'pages-nonTheme/voice-scan'].includes(currentPage())) return false

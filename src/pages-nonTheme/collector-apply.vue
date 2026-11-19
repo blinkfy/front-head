@@ -41,11 +41,11 @@
             <view class="range-heading"><text>范围 {{ index + 1 < 10 ? '0' : '' }}{{ index + 1 }}</text><button v-if="form.serviceAreas.length > 1" class="apply-text-button remove-range" :disabled="submitting" @click="form.serviceAreas.splice(index, 1)">移除此范围</button></view>
             <text class="recycle-label">范围名称</text><input class="recycle-input" v-model="area.name" maxlength="80" placeholder="例如：城南上门回收" :disabled="submitting" />
             <text class="recycle-label">所在地区</text><ShopRegionPicker v-model="area.region" :disabled="submitting" />
-            <text class="recycle-muted range-note">地区用于查找，实际边界以地图圈选为准。定位不准时可搜索或移动地图。</text>
+            <text class="recycle-muted range-note">选择地区后，在地图上圈出上门范围。</text>
             <RecyclingServiceMap class="application-map" v-model:geometry="area.geometry" :disabled="submitting" auto-locate />
           </view>
           <button class="recycle-secondary add-range" :disabled="submitting || form.serviceAreas.length >= 10" @click="form.serviceAreas.push({ name: '', region: ['', '', ''], geometry: null })">增加服务范围</button>
-          <text class="recycle-muted range-footnote">边界可以跨区县，以地图范围核验上门位置。审核通过后还需发布排班才会开放预约。</text>
+          <text class="recycle-muted range-footnote">服务范围可跨区县。审核通过后，请到工作台发布排班。</text>
         </view>
 
         <view class="apply-section">

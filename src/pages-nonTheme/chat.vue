@@ -23,7 +23,7 @@
                 <text class="chat-title">{{ chatTitle }}{{ isGroupChat ? ' · 群聊' : '' }}</text>
             </view>
             <view class="header-right" @click="showMoreOptions">
-                <ManifestIcon class="more-icon" id="more" :scale="1.1" />
+                <ManifestIcon v-if="!chatOffline" class="more-icon" id="more" :scale="1.1" />
             </view>
         </view>
 
@@ -37,25 +37,26 @@
             <text class="location-share-arrow">›</text>
         </view>
         <!-- #endif -->
-        <view v-if="!isGroupChat && (liveLocationState.offers[String(otherUserId)] || (liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId)))" class="location-share-entry" @click="openLiveLocation">
+        <view v-if="!chatOffline && !isGroupChat && (liveLocationState.offers[String(otherUserId)] || (liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId)))" class="location-share-entry" @click="openLiveLocation">
             <ManifestIcon id="map_location" size="26px" />
             <view class="location-share-copy"><text class="location-share-title">{{ liveLocationState.phase === 'sharing' && String(liveLocationState.peer?.id) === String(otherUserId) ? '实时位置共享' : '对方发起的位置共享' }}</text><text class="location-share-subtitle">点击查看位置状态</text></view>
             <text class="location-share-arrow">›</text>
         </view>
 
-        <RealtimeActivityEntry :show-location="false" />
+        <view v-if="chatOffline" class="chat-offline-notice">当前离线 · 显示已缓存的消息</view>
+        <RealtimeActivityEntry v-else :show-location="false" />
 
         <!-- 消息列表区域 -->
-        <scroll-view class="message-list" scroll-y :scroll-top="scrollTop" :scroll-into-view="scrollToMessage"
+        <scroll-view class="message-list" scroll-y scroll-anchoring :scroll-top="scrollTop" :scroll-into-view="scrollToMessage"
             @scrolltoupper="loadMoreMessages">
             <!-- 加载更多提示 -->
-            <view class="load-more" v-if="hasMoreMessages">
+            <view class="load-more" v-if="!chatOffline && !historyLoading && hasMoreMessages">
                 <text class="load-more-text" @click="loadMoreMessages">{{ isLoadingMore ? '加载中...' : '点击加载更多' }}</text>
             </view>
 
             <!-- 空消息提示 -->
             <view v-if="timelineMessages.length === 0 && !bookingContextError" class="empty-tip">
-                <text class="empty-text">暂无消息，开始聊天吧</text>
+                <text class="empty-text">{{ historyLoading ? '正在读取聊天记录' : chatOffline ? '暂无已缓存的消息' : '暂无消息，开始聊天吧' }}</text>
             </view>
 
             <!-- 消息项 -->
@@ -99,7 +100,7 @@
 
                             <!-- AI 文本使用受限 Markdown，普通用户消息保持原有纯文本展示。 -->
                             <RealtimeActivityMessage v-if="realtimeActivityCard(msg)" :card="realtimeActivityCard(msg)" :self="msg.isSelf"
-                                :recording="localCallRecording(msg)" :actionable="communityChatSettings.enabled || realtimeActivityCard(msg).activity === 'location'" @open="openRealtimeActivity(msg)" @open-recording="openCallRecording(msg)" />
+                                :recording="localCallRecording(msg)" :actionable="!chatOffline && (communityChatSettings.enabled || realtimeActivityCard(msg).activity === 'location')" @open="openRealtimeActivity(msg)" @open-recording="openCallRecording(msg)" />
                             <CommunityPostMessage v-else-if="msg.type === 'others'" :card="communityPostCard(msg)" @open="openCommunityPost(msg)" />
                             <ChatMarkdown v-else-if="msg.type === 'text' && msg.isAi" class="text-content ai-markdown-content" :markdown="msg.content" :dark="isDarkTheme" />
                             <text v-else-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
@@ -108,6 +109,7 @@
                             <view v-else-if="msg.type === 'image'" class="image-content" @click="previewImage(msg)">
                                 <!-- 原图已预加载时直接复用；未缓存时仍优先使用缩略图以节省首次流量 -->
                                 <ChatCachedImage :src="getImageDisplaySrc(msg)" :owner="avatarCacheOwner"
+                                    :original-src="msg.content" :conversation-id="chatId" @original-cached="loadOriginalImage(msg)"
                                     :kind="loadedOriginalImages[msg.id] || thumbnailFallbackIds[msg.id] || imageRetryLoadingIds[msg.id] ? '' : 'preview'"
                                     :message-id="msg.id" :original-token="loadedOriginalImageTokens[msg.id] || ''" :retry-nonce="imageRetryNonces[msg.id] || ''" mode="widthFix" class="msg-image"
                                     :class="{ 'image-error': mediaLoadErrors[msg.id]?.type === 'image' }"
@@ -179,7 +181,7 @@
                                     <ManifestIcon :id="getFileIcon(msg.fileName)" :scale="1.1" />
                                 </view>
                                 <view class="file-info">
-                                    <text class="file-name">{{ msg.fileName }}</text>
+                                    <ChatFileName :name="msg.fileName" />
                                     <view class="file-meta" v-if="!mediaLoadErrors[msg.id]?.type">
                                         <text class="file-size">{{ formatFileSize(msg.fileSize) }}</text>
                                         <text v-if="isFilePreviewable(msg)" class="file-preview-hint" @click.stop="previewChatFile(msg)">在线预览</text>
@@ -236,7 +238,7 @@
 
         <!-- 底部输入区域 -->
         <view v-if="!selectingMessages && groupSendBlockReason" class="group-muted-notice">{{ groupSendBlockReason }}</view>
-        <view v-if="!selectingMessages && !groupSendBlockReason" class="input-area" :class="{ 'input-area-expanded': showMorePanel }">
+        <view v-if="!historyLoading && !selectingMessages && !groupSendBlockReason" class="input-area" :class="{ 'input-area-expanded': showMorePanel }">
             <!-- 引用消息提示 -->
             <view v-if="showRefSuggestion && refMessageId" class="ref-tip-container">
                 <view class="ref-tip">
@@ -580,63 +582,16 @@
             </view>
         </view>
 
-        <!-- 图片预览面板 -->
-        <view v-if="showImagePreview && currentPreviewMessage" class="image-preview-modal" @touchmove.stop.prevent @click="closeImagePreview">
-            <!-- 背景层 -->
-            <view class="preview-bg-layer"></view>
-            
-            <!-- 预览主容器 -->
-            <view class="preview-container">
-                <!-- 顶部 -->
-                <view class="preview-header">
-                    <view class="preview-close-box">
-                        <ManifestIcon class="close-icon" id="close" />
-                    </view>
-                    <text class="count-tag" v-if="previewImageList.length > 1">{{ previewCurrentIndex + 1 }} / {{ previewImageList.length }}</text>
-                    <view class="header-placeholder"></view>
-                </view>
-                
-                <!-- 图片主体 -->
-                <view class="preview-content-box">
-                    <ChatCachedImage :key="'preview-image-' + currentPreviewMessage.id" :src="getImageDisplaySrc(currentPreviewMessage)"
-                        :owner="avatarCacheOwner" :kind="loadedOriginalImages[currentPreviewMessage.id] || thumbnailFallbackIds[currentPreviewMessage.id] || imageRetryLoadingIds[currentPreviewMessage.id] ? '' : 'preview'"
-                        :message-id="currentPreviewMessage.id" :original-token="loadedOriginalImageTokens[currentPreviewMessage.id] || ''" :retry-nonce="imageRetryNonces[currentPreviewMessage.id] || ''" mode="aspectFit" class="preview-img-main" @error="onImageError(currentPreviewMessage, $event)" @load="onImageLoad(currentPreviewMessage, $event)"/>
-                    
-                    <!-- 加载中遮罩 -->
-                    <view v-if="isCurrentPreviewImageRetrying" class="loading-overlay">
-                        <view class="loading-spinner"></view>
-                        <text class="loading-text">重新加载中</text>
-                    </view>
-                    <view v-else-if="isCurrentPreviewImageLoading" class="loading-overlay">
-                        <view class="loading-spinner"></view>
-                        <text class="loading-text">正在加载高清原图...</text>
-                    </view>
-                </view>
-                
-                <!-- 左右导航 -->
-                <template v-if="previewImageList.length > 1">
-                    <view class="preview-nav preview-prev" @click.stop="prevPreviewImage">
-                        <ManifestIcon class="nav-symbol" id="chevron_left" :scale="1" />
-                    </view>
-                    <view class="preview-nav preview-next" @click.stop="nextPreviewImage">
-                        <ManifestIcon class="nav-symbol" id="chevron_right" :scale="1" />
-                    </view>
-                </template>
-                
-                <!-- 底部交互层 -->
-                <view class="preview-bottom-bar">
-                    <view class="bar-inner">
-                        <view v-if="isLargeImage(currentPreviewMessage) && !loadedOriginalImages[currentPreviewMessage.id] && !isCurrentPreviewImageLoading && !isCurrentPreviewImageRetrying"
-                            class="action-btn-primary" @click.stop="loadOriginalImage(currentPreviewMessage)">
-                            <text class="btn-inner-text">查看原图 ({{ formatFileSize(currentPreviewMessage.fileSize) }})</text>
-                        </view>
-                        <text v-else-if="isLargeImage(currentPreviewMessage) && isCurrentPreviewImageRetrying" class="status-badge">重新加载中</text>
-                        <text v-else-if="isLargeImage(currentPreviewMessage) && isCurrentPreviewImageLoading" class="status-badge">正在加载原图</text>
-                        <text v-else-if="isLargeImage(currentPreviewMessage) && loadedOriginalImages[currentPreviewMessage.id]" class="status-badge">已加载原图</text>
-                    </view>
-                </view>
-            </view>
-        </view>
+        <ChatImagePreview v-if="showImagePreview && currentPreviewMessage" :key="currentPreviewMessage.id"
+            :src="getImageDisplaySrc(currentPreviewMessage)" :owner="avatarCacheOwner"
+            :original-src="currentPreviewMessage.content" :conversation-id="chatId" @original-cached="loadOriginalImage(currentPreviewMessage)"
+            :kind="loadedOriginalImages[currentPreviewMessage.id] || thumbnailFallbackIds[currentPreviewMessage.id] || imageRetryLoadingIds[currentPreviewMessage.id] ? '' : 'preview'"
+            :message-id="currentPreviewMessage.id" :original-token="loadedOriginalImageTokens[currentPreviewMessage.id] || ''" :retry-nonce="imageRetryNonces[currentPreviewMessage.id] || ''"
+            :index="previewCurrentIndex" :count="previewImageList.length" :original-loaded="!!loadedOriginalImages[currentPreviewMessage.id]"
+            :loading="isCurrentPreviewImageLoading" :retrying="isCurrentPreviewImageRetrying"
+            :file-size="currentPreviewMessage.fileSize ? formatFileSize(currentPreviewMessage.fileSize) : ''"
+            @close="closeImagePreview" @previous="prevPreviewImage" @next="nextPreviewImage" @original="loadOriginalImage(currentPreviewMessage)"
+            @error="onImageError(currentPreviewMessage, $event)" @load="onImageLoad(currentPreviewMessage, $event)" />
     </view>
 </template>
 
@@ -654,6 +609,9 @@ import { videoPlaybackMethods, fileAccessMethods, mediaFormattingMethods } from 
 import { historyCacheMethods, localFileCacheMethods } from '@/pages-nonTheme/chat/cache-methods.js'
 import ChatHistorySearch from '@/pages-nonTheme/components/ChatHistorySearch.vue'
 import { messageActionsMethods } from '@/pages-nonTheme/chat/message-actions-methods.js'
+// #ifdef APP-PLUS
+import { appOfflineSession, getAppSessionAccountId } from '@/utils/app-offline-session.js'
+// #endif
 import ChatSelectionDialog from '@/pages-nonTheme/components/ChatSelectionDialog.vue'
 import { groupManagementMethods } from '@/pages-nonTheme/chat/group-management-methods.js'
 import { messageSyncMethods } from '@/pages-nonTheme/chat/sync-methods.js'
@@ -666,7 +624,9 @@ import { communityChatSettings, readCommunityChatEnabled } from '@/utils/communi
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { readChatEntryAvatar } from '@/utils/chat-entry-avatar.mjs'
 import ChatCachedImage from '@/pages-nonTheme/components/ChatCachedImage.vue'
+import ChatFileName from '@/pages-nonTheme/components/ChatFileName.vue'
 import ChatCachedAvatar from '@/pages-nonTheme/components/ChatCachedAvatar.vue'
+import ChatImagePreview from '@/pages-nonTheme/components/ChatImagePreview.vue'
 import { prepareAvatarUpload } from '@/utils/upload-image.js'
 import { triggerMessageNotification } from '@/utils/message-event-bus.js'
 import { setChatFeedbackBlocked } from '@/utils/chat-feedback.js'
@@ -702,7 +662,9 @@ const chatRelationshipLabels = {
 export default {
     components: { AppConfirmDialog, RealtimeActivityEntry, BookingChatContext,
         ChatCachedImage,
+        ChatFileName,
         ChatCachedAvatar,
+        ChatImagePreview,
         ChatMarkdown,
         CommunityPostMessage, RealtimeActivityMessage,
         ChatSelectionDialog,
@@ -711,6 +673,7 @@ export default {
     },
     data() {
         return {
+            appSessionToken: '',
             bookingOrderId: '', bookingOrders: [], bookingContextRevision: 0, bookingContextError: false,
             chatId: '', // 聊天会话ID
             conversationType: 'direct',
@@ -734,6 +697,7 @@ export default {
             savingAnnouncement: false,
             removingGroupMemberId: '',
             lastSyncedMessageId: null,
+            messageHistoryVersion: 0,
             lastHistoryReconcileAt: 0,
             isMentionStreaming: false,
             aiStreamingMessageId: '',
@@ -900,12 +864,43 @@ export default {
     },
 
     watch: {
+        chatOffline(offline) {
+            if (!this.isChatPageActive || this.isChatPageDestroyed) return
+            if (offline) {
+                this.stopMessagePolling()
+                this.bookingContextRevision++
+                this.cancelRecord()
+                this.isVoiceMode = false
+                this.showMorePanel = false
+                this.showSettingsModal = false
+                this.messageMenu = null
+                this.$refs.appConfirmDialog?.cancelAll()
+                this.cancelMessageSelection()
+            } else if (uni.getStorageSync('token')) {
+                void readCommunityChatEnabled()
+                this.loadBookingContext()
+                this.loadUserInfo()
+                if (this.isGroupChat) this.loadGroupDetail()
+                else if (this.otherUserId) this.loadContactSettings()
+                this.markCurrentChatRead()
+                if (this.messageCacheReady) this.startMessagePolling()
+            }
+        },
         isRecording() { this.syncChatFeedbackMedia() },
         playingVoiceId() { this.syncChatFeedbackMedia() },
         inputText() { this.queueChatDraftSave() },
         refMessageId() { this.queueChatDraftSave() }
     },
     computed: {
+        historyLoading() {
+            return Boolean(this.appSessionToken && !this.messageCacheReady)
+        },
+        chatOffline() {
+            // #ifdef APP-PLUS
+            return appOfflineSession.unavailable
+            // #endif
+            return false
+        },
         isGroupChat() {
             return this.conversationType === 'group' && !!this.groupId
         },
@@ -978,7 +973,7 @@ export default {
         // 仅当前正在预览的那一张大图展示加载遮罩，其他图片的异步完成不会影响它。
         isCurrentPreviewImageLoading() {
             const message = this.currentPreviewMessage
-            return Boolean(message && this.isLargeImage(message) && this.originalImageLoadingIds[message.id])
+            return Boolean(message && this.originalImageLoadingIds[message.id])
         },
 
         isCurrentPreviewImageRetrying() {
@@ -1066,6 +1061,14 @@ export default {
     },
 
     onLoad(options) {
+        // #ifdef APP-PLUS
+        this.appSessionToken = uni.getStorageSync('token')
+        if (!this.appSessionToken) {
+            const path = uni.getStorageSync('app_theme') === 'dark' ? '/pages-dark/index/index' : '/pages/index/index'
+            uni.reLaunch({ url: path + '?manualLogin=1' })
+            return
+        }
+        // #endif
         this.bookingOrderId = /^\d+$/.test(String(options.bookingOrderId || '')) ? options.bookingOrderId : ''
         console.log('=== chat页面 onLoad 触发 ===', 'chatId:', options.chatId)
         
@@ -1122,9 +1125,9 @@ export default {
         this.loadLocalFileCache()
         
         // 加载联系人设置
-        if (this.isGroupChat) {
+        if (!this.chatOffline && this.isGroupChat) {
             this.loadGroupDetail()
-        } else if (this.otherUserId) {
+        } else if (!this.chatOffline && this.otherUserId) {
             this.loadContactSettings()
         }
         
@@ -1132,7 +1135,10 @@ export default {
     },
 
     onShow() {
-        void readCommunityChatEnabled()
+        // #ifdef APP-PLUS
+        if (!this.appSessionToken || this.appSessionToken !== uni.getStorageSync('token')) return
+        // #endif
+        if (!this.chatOffline) void readCommunityChatEnabled()
         this.syncChatFeedbackMedia()
         if (!this.callRecordingListener) {
             this.callRecordingListener = () => { void this.refreshCallRecordings() }
@@ -1171,7 +1177,7 @@ export default {
         // 从存储中读取选择的位置（H5、APP、小程序都支持）
         const locationData = uni.getStorageSync('selectedLocation')
         if (locationData) {
-            this.handleLocationSelected(locationData)
+            if (!this.chatOffline) this.handleLocationSelected(locationData)
             // 立即清除存储的数据,防止重复处理
             uni.removeStorageSync('selectedLocation')
         }
@@ -1179,6 +1185,7 @@ export default {
     
     // #ifdef APP-PLUS
     onBackPress(event) {
+      if (this.showImagePreview) { this.closeImagePreview(); return true }
       if (event.from === 'backbutton' && this.$refs.appConfirmDialog?.current) {
         this.$refs.appConfirmDialog.settle(false)
         return true
@@ -1255,6 +1262,7 @@ export default {
 
     methods: {
         async loadBookingContext() {
+            if (this.chatOffline) return
             const peer = this.otherUserId || this.chatId
             if (this.isGroupChat || !/^\d+$/.test(String(peer))) return
 
@@ -1451,7 +1459,7 @@ export default {
                         this.userAvatar = userInfo.avatar
                     }
                 }
-                if (!this.hasSyncedUserProfile) {
+                if (!this.chatOffline && !this.hasSyncedUserProfile) {
                     this.loadUserProfileForAvatar()
                 }
             } catch (e) {
@@ -1461,10 +1469,13 @@ export default {
 
         async loadUserProfileForAvatar() {
             if (this.loadingUserProfile) return
+            const token = uni.getStorageSync('token')
             this.loadingUserProfile = true
             try {
                 const res = await getUserProfile()
+                if (token !== uni.getStorageSync('token') || this.isChatPageDestroyed) return
                 if (res && res.code === 0 && res.data) {
+                    this.hasSyncedUserProfile = true
                     if (this.hasUsableAvatar(res.data.avatar)) {
                         this.userAvatar = res.data.avatar
                     }
@@ -1487,7 +1498,6 @@ export default {
                 console.warn('加载当前用户头像失败:', e?.message || e)
             } finally {
                 this.loadingUserProfile = false
-                this.hasSyncedUserProfile = true
             }
         },
 
@@ -1565,6 +1575,13 @@ export default {
                 return
             }
             if (event.kind === 'group.updated') this.loadGroupDetail()
+            // #ifdef APP-PLUS
+            if (!this.messageCacheReady) {
+                this.pendingHistoryReconcile = true
+                this.chatEventsDirty = true
+                return
+            }
+            // #endif
             if (event.kind === 'message' && event.message?.id) {
                 // Render the received record immediately. Batch HTTP catch-up/read
                 // updates on the existing timer instead of fetching for every event.
@@ -1621,9 +1638,10 @@ export default {
         },
 
         canPollMessages() {
-            if (!this.isChatPageActive || this.isChatPageDestroyed || !this.chatId) return false
+            if (this.chatOffline || !this.isChatPageActive || this.isChatPageDestroyed || !this.chatId) return false
             try {
-                return Boolean(uni.getStorageSync('token'))
+                const token = uni.getStorageSync('token')
+                return Boolean(token && (!this.appSessionToken || token === this.appSessionToken))
             } catch (e) {
                 return false
             }
@@ -1664,8 +1682,10 @@ export default {
             }
             try {
                 // 静默获取最新消息（不显示加载提示）
+                const previousCursor = this.lastSyncedMessageId
+                const historyVersion = this.messageHistoryVersion
                 const messageList = await this.fetchConversationUpdates(pollingVersion)
-                if (!this.canPollMessages() || pollingVersion !== this.messagePollingVersion) return
+                if (!this.canPollMessages() || pollingVersion !== this.messagePollingVersion || historyVersion !== this.messageHistoryVersion) return
 
                 if (messageList.length > 0) {
                     const serverMessages = messageList.map(m => this.formatServerMessage(m))
@@ -1695,6 +1715,9 @@ export default {
                         this.mergeMessages(serverMessages)
                     }
                 }
+                // #ifdef APP-PLUS
+                if (this.lastSyncedMessageId !== previousCursor) this.saveMessagesToStorage()
+                // #endif
                 this.positionInitialChatAtBottom()
             } catch (e) {
                 if (this.canPollMessages() && pollingVersion === this.messagePollingVersion) {
@@ -1869,6 +1892,7 @@ export default {
         },
 
         markCurrentChatRead() {
+            if (this.chatOffline) return
             if (this.isGroupChat) {
                 this.markChatListCacheRead(`group:${this.groupId}`)
                 return
@@ -1882,19 +1906,14 @@ export default {
         },
 
         markChatListCacheRead(targetId) {
-            try {
-                const currentUserId = this.getCurrentUserId()
-                if (!currentUserId || !targetId) return
-                const cacheKey = `chatlist_${currentUserId}`
-                const cached = uni.getStorageSync(cacheKey)
-                if (!cached || typeof cached !== 'string') return
-                const cacheData = JSON.parse(cached)
-                if (!cacheData || !Array.isArray(cacheData.userList)) return
-
+            if (!targetId) return
+            this.mutateChatListCache(cacheData => {
                 let changed = false
+                let unread = 0
                 cacheData.userList = cacheData.userList.map(user => {
-                    if (String(user.otherId) !== String(targetId)) return user
+                    if (String(user.otherId) !== String(targetId) || (!user.unreadCount && user.latestContent?.isRead !== false)) return user
                     changed = true
+                    unread += Math.max(0, Number(user.unreadCount) || 0)
                     return {
                         ...user,
                         unreadCount: 0,
@@ -1903,25 +1922,14 @@ export default {
                             : user.latestContent
                     }
                 })
-                if (changed) {
-                    cacheData.timestamp = Date.now()
-                    uni.setStorageSync(cacheKey, JSON.stringify(cacheData))
-                }
-            } catch (e) {
-                console.warn('同步聊天列表已读缓存失败:', e?.message || e)
-            }
+                if (Number.isFinite(cacheData.unreadTotal)) cacheData.unreadTotal = Math.max(0, cacheData.unreadTotal - unread)
+                return changed
+            })
         },
 
         syncChatListTopCache(targetId, top) {
-            try {
-                const currentUserId = this.getCurrentUserId()
-                if (!currentUserId || !targetId) return
-                const cacheKey = `chatlist_${currentUserId}`
-                const cached = uni.getStorageSync(cacheKey)
-                if (!cached || typeof cached !== 'string') return
-                const cacheData = JSON.parse(cached)
-                if (!cacheData || !Array.isArray(cacheData.userList)) return
-
+            if (!targetId) return
+            this.mutateChatListCache(cacheData => {
                 let changed = false
                 cacheData.userList = cacheData.userList.map(user => {
                     if (String(user.otherId) !== String(targetId)) return user
@@ -1938,18 +1946,17 @@ export default {
                     return timeB - timeA
                 })
 
-                if (changed) {
-                    cacheData.timestamp = Date.now()
-                    uni.setStorageSync(cacheKey, JSON.stringify(cacheData))
-                }
-            } catch (e) {
-                console.warn('同步聊天置顶缓存失败:', e?.message || e)
-            }
+                return changed
+            })
         },
 
         // 获取当前用户ID
         getCurrentUserId() {
             try {
+                // #ifdef APP-PLUS
+                const activeAccount = getAppSessionAccountId()
+                if (activeAccount) return activeAccount
+                // #endif
                 const userInfo = uni.getStorageSync('userInfo')
                 const userId =
                     userInfo?.id ||
@@ -2005,10 +2012,51 @@ export default {
         },
 
         // ==================== 消息加载 ====================
+        measureHistoryScroll(messageId) {
+            return new Promise(resolve => {
+                const query = uni.createSelectorQuery().in(this)
+                query.select('.message-list').fields({ rect: true, scrollOffset: true })
+                if (messageId) query.select(`#${messageId}`).boundingClientRect()
+                else query.selectAll('.message-item').fields({ id: true, rect: true })
+                query.exec(results => {
+                    const [viewport, result] = results || []
+                    if (!viewport || !Number.isFinite(viewport.scrollTop)) {
+                        resolve(null)
+                        return
+                    }
+                    const message = messageId ? result : (Array.isArray(result) ? result : []).find(item => (
+                        /^msg-[\w-]+$/.test(item.id) && item.bottom > viewport.top && item.top < viewport.bottom
+                    ))
+                    // 以消息底边为锚点，旧首条消息的时间分隔行消失时也能保持气泡位置。
+                    resolve(Number.isFinite(message?.bottom) ? {
+                        id: messageId || message.id,
+                        offset: message.bottom - viewport.top,
+                        scrollTop: viewport.scrollTop
+                    } : null)
+                })
+            }).catch(() => null)
+        },
+        async restoreHistoryScroll(anchor) {
+            if (!anchor) return
+            await this.$nextTick()
+            const current = await this.measureHistoryScroll(anchor.id)
+            if (!current || this.isChatPageDestroyed || this.scrollToMessage) return
+            const target = Math.max(0, current.scrollTop + current.offset - anchor.offset)
+            // 某些平台已经自动保持位置，只补偿还存在的偏移。
+            if (Math.abs(target - current.scrollTop) < 1) return
+            if (target === this.scrollTop) {
+                this.scrollTop = current.scrollTop
+                await this.$nextTick()
+                if (this.isChatPageDestroyed || this.scrollToMessage) return
+            }
+            this.scrollTop = target
+        },
         async loadMoreMessages() {
+            if (this.chatOffline) return
             if (this.isLoadingMore || !this.hasMoreMessages) return
 
             this.isLoadingMore = true
+            const historyVersion = this.messageHistoryVersion
 
             try {
                 this.currentPage++
@@ -2034,6 +2082,14 @@ export default {
                     messageList = res.data.list
                 }
 
+                const hasMore = messageList.length >= this.pageSize
+                const anchor = this.timelineMessages.length ? await this.measureHistoryScroll() : null
+                if (this.isChatPageDestroyed || historyVersion !== this.messageHistoryVersion) return
+                // #ifdef APP-PLUS
+                if (this.appSessionToken && this.appSessionToken !== uni.getStorageSync('token')) return
+                // #endif
+                if (anchor) this.scrollToMessage = ''
+
                 if (messageList.length > 0) {
                     const serverMessages = messageList.map(m => this.formatServerMessage(m))
                     // 插入到消息列表前面
@@ -2042,11 +2098,9 @@ export default {
                     this.messages = [...newMessages, ...this.messages]
                     this.messages.sort((a, b) => a.timestamp - b.timestamp)
                     this.saveMessagesToStorage()
-
-                    this.hasMoreMessages = messageList.length >= this.pageSize
-                } else {
-                    this.hasMoreMessages = false
                 }
+                this.hasMoreMessages = hasMore
+                await this.restoreHistoryScroll(anchor)
             } catch (e) {
                 console.error('加载更多消息失败', e)
                 this.currentPage--
@@ -2057,6 +2111,7 @@ export default {
 
         // ==================== 消息发送 ====================
         async sendTextMessage() {
+            if (this.chatOffline) return this.showChatOfflineToast()
             const text = this.inputText.trim()
             if (!text) return
 
@@ -2378,6 +2433,7 @@ export default {
         },
 
         async resendMessage(msg) {
+            if (this.chatOffline) return this.showChatOfflineToast()
             if (!msg || msg.status === 'sending') return
             if (!msg.clientMessageId && String(msg.id).includes('_')) msg.clientMessageId = String(msg.id)
             const originalId = msg.id
@@ -2582,6 +2638,7 @@ export default {
         },
 
         showMoreOptions() {
+            if (this.chatOffline) return
             this.showSettingsModal = true
             if (this.isGroupChat) this.loadGroupDetail()
         },
@@ -2721,8 +2778,7 @@ export default {
                     if (res.confirm) {
                         try {
                             await (this.isGroupChat ? chatApi.clearGroupHistory(this.groupId) : chatApi.clearChatHistory(this.chatId))
-                            this.messages = []
-                            this.saveMessagesToStorage()
+                            this.clearLocalConversationHistory()
                             uni.showToast({ title: '已清空', icon: 'success' })
                         } catch (e) {
                             console.error('清空聊天记录失败:', e)
@@ -2950,8 +3006,7 @@ export default {
                                         console.error('清空服务器聊天记录失败', e)
                                     }
 
-                                    this.messages = []
-                                    this.saveMessagesToStorage()
+                                    this.clearLocalConversationHistory()
                                     uni.showToast({ title: '已清空', icon: 'success' })
                                 }
                             }
@@ -2962,6 +3017,7 @@ export default {
         },
 
         toggleVoiceMode() {
+            if (this.chatOffline) return this.showChatOfflineToast()
             this.isVoiceMode = !this.isVoiceMode
             this.showEmojiPanel = false
             this.showMorePanel = false
@@ -2973,6 +3029,7 @@ export default {
         },
 
         toggleMorePanel() {
+            if (this.chatOffline) return this.showChatOfflineToast()
             this.showMorePanel = !this.showMorePanel
             this.showEmojiPanel = false
         },
@@ -2990,6 +3047,9 @@ export default {
         ...attachmentIngressMethods,
 
         ...messageActionsMethods,
+        showChatOfflineToast() {
+            uni.showToast({ title: '当前离线，请联网后重试', icon: 'none' })
+        },
 
         ...voiceTranscriptionMethods,
 
@@ -3589,6 +3649,12 @@ page {
     position: relative; // 为撤回标识定位
 }
 
+@media (max-width: 480px) {
+    .bubble-wrapper {
+        max-width: 70%;
+    }
+}
+
 .group-sender-name {
     margin: 0 0 6rpx 4rpx;
     color: #8a94a6;
@@ -3933,6 +3999,9 @@ page {
 
 // 文件气泡
 .bubble-file {
+    box-sizing: border-box;
+    max-width: 100%;
+    min-width: 0;
     padding: 20rpx;
     background: #fff;
 
@@ -3949,6 +4018,7 @@ page {
     .file-icon {
         width: 80rpx;
         height: 80rpx;
+        flex-shrink: 0;
         background: #f5f5f5;
         border-radius: 12rpx;
         display: flex;
@@ -3962,15 +4032,7 @@ page {
         display: flex;
         flex-direction: column;
         gap: 8rpx;
-        min-width: 200rpx;
-    }
-
-    .file-name {
-        font-size: 28rpx;
-        color: #333;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        min-width: 0;
     }
 
     .file-size {
@@ -3980,6 +4042,7 @@ page {
 
     .file-meta {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: 10rpx;
     }
@@ -3991,6 +4054,7 @@ page {
         color: #2563eb;
         font-size: 20rpx;
         line-height: 1.4;
+        white-space: nowrap;
     }
     
     .file-error-text {
@@ -4080,6 +4144,15 @@ page {
 }
 
 // ==================== 底部输入区域 ====================
+.chat-offline-notice {
+    padding: 14rpx 24rpx;
+    flex-shrink: 0;
+    font-size: 24rpx;
+    color: #606a65;
+    background: #eef2ef;
+}
+.dark-theme .chat-offline-notice { color: #c2ceca; background: #27322e; }
+
 .group-muted-notice {
     flex-shrink: 0;
     padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
@@ -4971,171 +5044,4 @@ page {
     }
 }
 
-// 图片预览面板 - 仿系统级沉浸式体验
-.image-preview-modal {
-    position: fixed;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    z-index: 999999;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background: #000;
-}
-
-.preview-bg-layer {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.95);
-}
-
-.preview-container {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    z-index: 10;
-}
-
-// 顶部栏
-.preview-header {
-    height: 100rpx;
-    padding: var(--status-bar-height) 30rpx 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
-    z-index: 100;
-
-    .header-placeholder { width: 70rpx; }
-}
-
-.preview-close-box {
-    width: 70rpx;
-    height: 70rpx;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 50%;
-    
-    .close-icon {
-        color: #fff;
-        font-size: 32rpx;
-    }
-}
-
-.count-tag {
-    color: #fff;
-    font-size: 32rpx;
-    font-weight: 500;
-}
-
-// 内容区域
-.preview-content-box {
-    flex: 1;
-    width: 100%;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.preview-img-main {
-    width: 100%;
-    height: 100%;
-}
-
-// 加载遮罩
-.loading-overlay {
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    background: rgba(0,0,0,0.3);
-    padding: 30rpx;
-    border-radius: 20rpx;
-
-    .loading-spinner {
-        width: 60rpx;
-        height: 60rpx;
-        border: 4rpx solid rgba(255,255,255,0.3);
-        border-top-color: #07c160;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-bottom: 20rpx;
-    }
-    
-    .loading-text {
-        color: #fff;
-        font-size: 24rpx;
-    }
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-// 导航
-.preview-nav {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 120rpx;
-    height: 200rpx;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 200;
-    
-    .nav-symbol {
-        color: rgba(255, 255, 255, 0.4);
-        font-size: 120rpx;
-    }
-
-    &:active {
-        opacity: 0.7;
-    }
-}
-.preview-prev { left: 0; }
-.preview-next { right: 0; }
-
-// 底部栏
-.preview-bottom-bar {
-    padding-bottom: calc(var(--window-bottom) + 60rpx);
-    padding-top: 40rpx;
-    background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
-}
-
-.bar-inner {
-    display: flex;
-    justify-content: center;
-}
-
-.action-btn-primary {
-    background: rgba(7, 193, 96, 0.9);
-    padding: 16rpx 40rpx;
-    border-radius: 100rpx;
-    backdrop-filter: blur(10px);
-    
-    .btn-inner-text {
-        color: #fff;
-        font-size: 28rpx;
-        font-weight: 500;
-    }
-}
-
-.status-badge {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 24rpx;
-    background: rgba(255, 255, 255, 0.1);
-    padding: 8rpx 20rpx;
-    border-radius: 10rpx;
-}
 </style>

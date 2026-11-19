@@ -1,3 +1,4 @@
+import { getAppCurrentPages } from './app-tab-context.js'
 import { baseUrl } from '@/api/settings'
 import manifest from '@/manifest.json'
 import { createAppVersionGuard } from './app-version-guard-core.mjs'
@@ -10,11 +11,12 @@ export function installAppVersionGuard() {
   const info = uni.getSystemInfoSync()
   // Preserve the actual uni object: assigning a spread copy would not wrap APIs.
   const runtime = uni
-  runtime.currentRoute = () => getCurrentPages().slice(-1)[0]?.route || ''
+  runtime.currentRoute = () => getAppCurrentPages().slice(-1)[0]?.route || ''
   runtime.pageCount = () => getCurrentPages().length
   runtime.homeUrl = () => {
     const prefix = uni.getStorageSync('app_theme') === 'dark' ? '/pages-dark' : '/pages'
-    return `${prefix}/${uni.getStorageSync('token') ? 'home/home' : 'index/index'}`
+    if (!uni.getStorageSync('token')) return `${prefix}/index/index`
+    return '/pages/app-tabs/index?target=' + encodeURIComponent(`${prefix}/home/home`)
   }
   guard = createAppVersionGuard({ runtime, baseUrl, version: manifest.versionName,
     platform: String(info.platform || '').toLowerCase(), openURL: url => plus.runtime.openURL(url) })

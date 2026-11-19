@@ -36,7 +36,8 @@ function fakeTimers() {
       }
       now = end
     },
-    get pending() { return tasks.size }
+    get pending() { return tasks.size },
+    get now() { return now }
   }
 }
 
@@ -51,26 +52,49 @@ test('APP retained-map transitions follow tab order in both themes instead of th
     const map = { route: `${prefix}/map/map` }, home = { route: `${prefix}/home/home` }, shop = { route: `${prefix}/shop/shop` }
     let pages = [map]
     const calls = []
-    const uni = { setStorageSync() {}, getStorageSync() { return 'u1' } }
+    let transition
+    const uni = { setStorageSync(key, value) { transition = value }, getStorageSync() { return 'u1' } }
     for (const method of ['navigateTo', 'navigateBack', 'redirectTo', 'reLaunch']) uni[method] = options => calls.push({ method, ...options })
-    const context = { uni, getCurrentPages: () => pages, appMapTabCache: createAppMapTabCache(),
-      TAB_POSITIONS: { home: 0, map: 1, shop: 2, profile: 3 }, STORAGE_KEY: 'test', TRANSITION_DURATION: 180,
+    let prepareBack
+    const context = { getAppTabShell: () => null, uni, getCurrentPages: () => pages, appMapTabCache: createAppMapTabCache(),
+      preparingMapTab: false, TRANSITION_DURATION: 180,
+      holdAppTabFrame: page => ({ id: `hold-${page.route}`, cancel() {} }),
+      prepareAppMapTabEntrance(page, direction, duration, done) { prepareBack = { page, direction, duration, done } },
+      TAB_POSITIONS: { home: 0, map: 1, shop: 2, profile: 3 }, STORAGE_KEY: 'test',
       normalizeRoute: url => url.split('?')[0].replace(/^\//, '') }
     vm.runInNewContext(navigate, context)
     context.navigateBottomTab('map', 'home', `/${home.route}`)
-    assert.equal(calls.at(-1).animationType, 'slide-in-left', 'home enters from the left')
+    assert.equal(calls.at(-1).animationType, 'none', 'the bottom bar stays outside the slide')
+    assert.equal(transition.direction, 'right', 'home enters from the left')
     pages = [map, home]
     context.navigateBottomTab('home', 'map', `/${map.route}?from=home`, 'navigateTo')
+    assert.equal(calls.at(-1).method, 'navigateTo', 'the cached view gets its start position before navigation')
+    assert.equal(prepareBack.page, map)
+    assert.equal(prepareBack.direction, 'left')
+    prepareBack.done(() => {})
     assert.equal(calls.at(-1).method, 'navigateBack', 'return still reuses the retained map')
     assert.equal(calls.at(-1).delta, 1)
-    assert.equal(calls.at(-1).animationType, 'slide-out-left', 'home leaves to the left when opening map')
-    assert.equal(calls.at(-1).animationDuration, 180)
+    assert.equal(calls.at(-1).animationType, 'none')
+    assert.equal(transition.direction, 'left', 'cached map enters from the right')
+    assert.equal(transition.preparedByAppView, true, 'onShow must not replay the native-view entrance')
+    assert.equal(transition.handoffId, '', 'cached map returns do not request a snapshot')
+    assert.equal(calls.at(-1).animationDuration, 0)
     pages = [map]
     context.navigateBottomTab('map', 'shop', `/${shop.route}`, 'navigateTo')
-    assert.equal(calls.at(-1).animationType, 'slide-in-right', 'shop enters from the right')
+    assert.equal(calls.at(-1).animationType, 'none')
+    assert.equal(transition.direction, 'left', 'shop enters from the right')
     pages = [map, shop]
     context.navigateBottomTab('shop', 'map', `/${map.route}`)
-    assert.equal(calls.at(-1).animationType, 'slide-out-right', 'shop leaves to the right when opening map')
+    assert.equal(prepareBack.direction, 'right')
+    prepareBack.done()
+    assert.equal(calls.at(-1).animationType, 'none')
+    assert.equal(transition.direction, 'right', 'cached map enters from the left')
+    pages = [home]
+    context.navigateBottomTab('home', 'map', `/${map.route}?from=home`, 'navigateTo')
+    assert.equal(calls.at(-1).method, 'navigateTo', 'opening the map without a retained instance keeps the normal push')
+    assert.equal(calls.at(-1).animationType, 'none')
+    assert.equal(transition.direction, 'left')
+    assert.equal(transition.handoffId, `hold-${home.route}`, 'the cold navigation starts immediately with a cover id')
   }
 })
 
@@ -185,6 +209,21 @@ await testAsync('preloader waits 1.2s and warms the SDK once; a loaded signal ma
   assert.equal(windows.length, 1, 'successful warmup does not retry')
 })
 
+await testAsync('SDK cache expiry allows one later refresh without periodic requests', async () => {
+  const clock = fakeTimers(), completions = []
+  const url = 'https://map.qq.com/api/gljs?v=1.exp&key=test'
+  const preloader = createAppMapPreloader({
+    successTtlMs: 30000, now: () => clock.now, getNetworkType: async () => 'wifi',
+    createWindow: (_, finish) => { completions.push(finish); return { close() {} } },
+    setTimer: clock.setTimeout, clearTimer: clock.clearTimeout
+  })
+  preloader.schedule(url); clock.tick(1200); await flushPromises(); completions[0]('loaded')
+  clock.tick(29999); preloader.schedule(url); assert.equal(clock.pending, 0)
+  clock.tick(1); assert.equal(clock.pending, 0, 'expiry does not itself start a background request')
+  preloader.schedule(url); clock.tick(1200); await flushPromises(); completions[1]('loaded')
+  clock.tick(30000); preloader.schedule(url); assert.equal(clock.pending, 0, 'keep the existing two-attempt budget')
+})
+
 await testAsync('preloader retries a failed warmup once, then stops at the attempt limit', async () => {
   const clock = fakeTimers(), completions = [], calls = []
   const preloader = createAppMapPreloader({ getNetworkType: async () => 'wifi',
@@ -214,6 +253,51 @@ await testAsync('preloader skips offline network and cancel ignores a late netwo
   clock.tick(1200); preloader.cancel(); resolveNetwork('wifi'); await flushPromises()
   assert.equal(creates, 0, 'cancel invalidates the in-flight network callback')
   assert.equal(clock.pending, 0)
+})
+
+await testAsync('home eligibility is checked again after the network probe', async () => {
+  const clock = fakeTimers()
+  let idle = true, resolveNetwork, creates = 0
+  const preloader = createAppMapPreloader({
+    canStart: () => idle,
+    getNetworkType: () => new Promise(resolve => { resolveNetwork = resolve }),
+    createWindow: () => { creates++; return { close() {} } },
+    setTimer: clock.setTimeout, clearTimer: clock.clearTimeout
+  })
+  preloader.schedule('https://map.qq.com/api/gljs?v=1.exp&key=test')
+  clock.tick(1200)
+  idle = false
+  resolveNetwork('wifi')
+  await flushPromises()
+  assert.equal(creates, 0, 'a changed page or busy home never opens a late WebView')
+})
+
+test('home warmup follows first render, picker, recognition and visibility', () => {
+  const source = fs.readFileSync(new URL('../src/utils/use-app-map-preload-page.js', import.meta.url), 'utf8')
+  const hooks = {}, updates = []
+  const page = { route: 'pages/home/home' }
+  const processing = { value: false }, onboarding = { value: false }
+  let changed
+  const context = {
+    getAppCurrentPages: () => [page],
+    setAppMapPreloadPageIdle: (owner, idle) => { if (owner) updates.push(idle) },
+    watch: (_, callback, options) => { assert.equal(options.flush, 'sync'); changed = callback },
+    ...Object.fromEntries(['onReady', 'onShow', 'onHide', 'onUnload', 'onScopeDispose'].map(name => [name, callback => { hooks[name] = callback }]))
+  }
+  const code = source.replace(/^import .*$/gm, '').replace(/^export /gm, '')
+  vm.runInNewContext(code, context)
+  const picker = context.useAppHomeMapPreload(processing, onboarding)
+  hooks.onShow(); assert.equal(updates.at(-1), false)
+  hooks.onReady(); assert.equal(updates.at(-1), true)
+  assert.equal(picker.startChoosing(), true)
+  assert.equal(updates.at(-1), false, 'pause before opening the picker')
+  processing.value = true; changed(); picker.finishChoosing()
+  assert.equal(updates.at(-1), false, 'picker success remains blocked during recognition')
+  processing.value = false; changed(); assert.equal(updates.at(-1), true)
+  picker.startChoosing(); picker.finishChoosing(); assert.equal(updates.at(-1), true, 'cancelling a pick can resume warmup')
+  onboarding.value = true; changed(); assert.equal(updates.at(-1), false)
+  hooks.onHide(); onboarding.value = false; changed(); assert.equal(updates.at(-1), false)
+  hooks.onShow(); assert.equal(updates.at(-1), true, 'returning to the rendered home can warm again')
 })
 
 await testAsync('preloader cancel closes a live window; close event retries; dispose never restarts', async () => {
@@ -273,13 +357,18 @@ test('App.vue script parses and wires ready, show, hide, and dispose lifecycle',
   assert.match(wrapper, /setAppMapPreloadActive\(value\)[\s\S]*?if \(active\) schedule\(\); else preloader\.cancel\(\)/)
   assert.match(wrapper, /disposeAppMapPreload\(\)\s*\{\s*preloader\.dispose\(\)/)
 
-  let preloadOptions, acquired = 0, viewIndex = 0
-  const released = [], nativeViews = []
+  let preloadOptions, appReady, networkChanged, recognitionChanged, acquired = 0, viewIndex = 0, cancels = 0
+  const released = [], nativeViews = [], scheduled = []
+  const home = { route: 'pages/home/home' }, darkHome = { route: 'pages-dark/home/home' }
+  const shop = { route: 'pages/shop/shop' }, profile = { route: 'pages-dark/profile/profile' }
+  let currentPage = { route: 'pages/index/index' }
   const base = 'http://127.0.0.1:43129/map-cache/'
   const context = {
-    mapConfig: { qqMapKey: 'test-key' }, onAppPageReady() {},
-    uni: { onNetworkStatusChange() {} },
-    createAppMapPreloader(options) { preloadOptions = options; return { schedule() {}, cancel() {}, dispose() {} } },
+    mapConfig: { qqMapKey: 'test-key' }, onAppPageReady(callback) { appReady = callback },
+    subscribeRecognitionTask(callback) { recognitionChanged = callback; callback(null); return () => {} },
+    uni: { onNetworkStatusChange(callback) { networkChanged = callback } },
+    getAppCurrentPages: () => [currentPage],
+    createAppMapPreloader(options) { preloadOptions = options; return { schedule: url => scheduled.push(url), cancel() { cancels++ }, dispose() {} } },
     startLocalMapServer() { acquired++; return base },
     stopLocalMapServer(url) { released.push(url) },
     plus: { webview: { create(...args) {
@@ -295,8 +384,24 @@ test('App.vue script parses and wires ready, show, hide, and dispose lifecycle',
     console: { info() {} }
   }
   const executable = wrapper.replace(/^import .*?\r?\n/gm, '').replace(/export function /g, 'function ')
-    + '\nglobalThis.__preloadTest = { setAppMapPreloadActive, disposeAppMapPreload }'
+    + '\nglobalThis.__preloadTest = { setAppMapPreloadActive, setAppMapPreloadPageIdle }'
   vm.runInNewContext(executable, context)
+  const { setAppMapPreloadActive, setAppMapPreloadPageIdle } = context.__preloadTest
+  appReady(); networkChanged({ isConnected: true }); assert.equal(scheduled.length, 0)
+  currentPage = home; setAppMapPreloadPageIdle(home, true); assert.equal(scheduled.length, 1)
+  currentPage = darkHome; assert.equal(preloadOptions.canStart(), false)
+  setAppMapPreloadPageIdle(darkHome, true); assert.equal(scheduled.length, 2)
+  setAppMapPreloadPageIdle(home, false); assert.equal(cancels, 0, 'an old page unload does not cancel the current owner')
+  setAppMapPreloadPageIdle(darkHome, false); assert.equal(cancels, 1)
+  networkChanged({ isConnected: true }); assert.equal(scheduled.length, 2, 'network changes respect busy home')
+  setAppMapPreloadActive(false); setAppMapPreloadPageIdle(darkHome, true); assert.equal(scheduled.length, 2)
+  setAppMapPreloadActive(true); assert.equal(scheduled.length, 3)
+  recognitionChanged({ status: 'pending' }); assert.equal(cancels, 3, 'starting recognition cancels a scheduled warmup')
+  currentPage = shop; setAppMapPreloadPageIdle(shop, true)
+  networkChanged({ isConnected: true }); assert.equal(scheduled.length, 3, 'recognition still blocks warmup when switching to shop')
+  recognitionChanged({ status: 'succeeded' }); assert.equal(scheduled.length, 4, 'shop may warm when recognition finishes')
+  currentPage = profile; setAppMapPreloadPageIdle(profile, true); assert.equal(scheduled.length, 5)
+  currentPage = { route: 'pages/map/map' }; setAppMapPreloadPageIdle(currentPage, true); assert.equal(scheduled.length, 5)
   const firstLease = preloadOptions.createWindow('https://map.qq.com/api/gljs?v=1.exp&key=test-key')
   assert.equal(acquired, 1)
   assert.equal(nativeViews[0].args[3].sdkPreloadUrl, 'https://map.qq.com/api/gljs?v=1.exp&key=test-key')

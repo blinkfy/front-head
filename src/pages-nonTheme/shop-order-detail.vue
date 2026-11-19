@@ -1,8 +1,8 @@
 <template>
   <ShopShell title="订单详情" @back="backFromShopPage('orders')">
-    <view v-if="loading" class="shop-state">正在加载订单详情...</view>
+    <view v-if="loading && !keepOrderVisible" class="shop-state">正在加载订单详情...</view>
     <view v-else-if="error" class="shop-card shop-state"><text class="shop-error">{{ error }}</text><button class="shop-button" @click="load">重新加载</button></view>
-    <template v-else-if="order">
+    <template v-if="order && (keepOrderVisible || (!loading && !error))">
       <view class="shop-card">
         <view class="shop-heading"><ManifestIcon :id="statusIcon" :scale="1.5" /><text class="shop-green">{{ orderStatus(order.status) }}</text></view>
         <text class="shop-description">{{ statusDescription }}</text>
@@ -44,9 +44,9 @@
         <view v-for="item in orderDates" :key="item.label" class="shop-row"><text class="shop-label">{{ item.label }}</text><text class="shop-value">{{ orderTime(item.time) }}</text></view>
       </view>
       <view v-if="order.status === 'historical'" class="shop-notice">历史兑换待核实：这是旧版兑换记录，收货及物流信息可能未记录，不支持取消或确认收货。</view>
-      <view v-if="actionError" class="shop-card shop-state">
+      <view v-if="actionError && !error" class="shop-card shop-state">
         <text class="shop-error">{{ actionError }}</text><view class="shop-description">请先刷新订单状态，核实上一次操作结果后再继续。</view>
-        <button class="shop-button shop-outline" :disabled="busy" @click="load">刷新订单状态</button>
+        <button class="shop-button shop-outline" :disabled="busy || loading" @click="load">刷新订单状态</button>
       </view>
       <button class="shop-button shop-outline" @click="goOrders">返回我的订单</button>
     </template>
@@ -89,6 +89,7 @@ onBackPress(event => {
 // #endif
 const id = ref('')
 const order = ref(null)
+const keepOrderVisible = ref(false)
 const loading = ref(false)
 const error = ref('')
 const busy = ref(false)
@@ -109,6 +110,9 @@ onShow(() => { load() })
 async function load() {
   if (loading.value || busy.value) return
   if (!id.value) { error.value = '缺少订单信息，请返回我的订单'; return }
+  // #ifdef APP-PLUS
+  keepOrderVisible.value = !!order.value && (!error.value || keepOrderVisible.value)
+  // #endif
   loading.value = true
   error.value = ''
   try {
@@ -116,7 +120,10 @@ async function load() {
     if (!response.data?.id || !response.data.status) throw new Error('订单详情异常，请重试')
     order.value = response.data
     actionError.value = ''
-  } catch (reason) { error.value = shopError(reason) }
+  } catch (reason) {
+    keepOrderVisible.value = keepOrderVisible.value && !!reason?.networkUnavailable
+    error.value = shopError(reason)
+  }
   finally { loading.value = false }
 }
 async function act() {

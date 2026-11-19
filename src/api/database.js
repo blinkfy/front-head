@@ -597,3 +597,7 @@ export function getAdminIdentityEvidence(id) {
 export function updateAdminIdentityEvidence(id, data) {
   return request({ url: `/api/admin/identity-evidence/${encodeURIComponent(id)}`, method: 'PUT', data, needAuth: true })
 }
+
+export function batchDatabaseRecords(tableName, action, keys, data = {}) {
+  return request({ url: `/api/admin/tables/${encodeURIComponent(tableName)}/batch`, method: 'POST', data: { action, keys, data }, needAuth: true })
+}

@@ -254,6 +254,13 @@ header {
 .recording-times { display:flex; justify-content:space-between; gap:12px; color:#5d7567; font-size:12px; font-variant-numeric:tabular-nums }
 .row-play-hint { margin-left:auto; font-size:12px; color:#738278 }
 .has-player .row-playback { display:none }
+.recording-transcript { margin-top: 12px }
+.recording-transcript .button { font-size: 13px; padding: 7px 11px }
+.transcript-heading { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600 }
+.transcript-line { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; margin-top: 6px; padding: 9px 12px; border: 1px solid #e0e8e2; border-radius: 9px; background: transparent; color: inherit; text-align: left; font-size: 14px; overflow-wrap: anywhere }
+.transcript-current { background: #e6f1ea; border-color: #70ac8b }
+.transcript-time { color: #23734f; font-size: 12px; font-variant-numeric: tabular-nums }
+.transcript-kind { color: #63756a; font-size: 12px }
 .empty {
   padding:18px;
   color:#738278

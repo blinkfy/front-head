@@ -5,7 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>地图</title>
   <link rel="preconnect" href="https://map.qq.com">
+  <link rel="preconnect" href="https://mapvectors.map.qq.com" crossorigin>
+  <link rel="preconnect" href="https://vectorsdk.map.qq.com" crossorigin>
   <link rel="modulepreload" href="./renderer.mjs">
+  <script>
+    // Start the SDK download while the iframe and its bridge are being initialized.
+    const options = new URLSearchParams(location.hash.split('?')[1] || '')
+    const sdkKey = options.get('sdk')
+    if (sdkKey) {
+      const preload = document.createElement('link')
+      preload.rel = 'preload'
+      preload.as = 'script'
+      preload.href = 'https://map.qq.com/api/gljs?v=1.exp&key=' + encodeURIComponent(sdkKey)
+      document.head.appendChild(preload)
+    }
+  </script>
   <style>
     html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; }
     #map { touch-action: none; }

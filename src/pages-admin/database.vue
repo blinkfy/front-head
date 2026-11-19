@@ -348,7 +348,7 @@
                     <view v-else class="data-list">
                         <view v-if="tableData.length > 0" class="data-item"
                             :class="{ selected: isRecordSelected(item), selectable: selectionMode }"
-                            @click="handleDataItemClick(item)" v-for="(item, index) in tableData"
+                            @click="handleDataItemClick(item, $event)" v-for="(item, index) in tableData"
                             :key="getTableRowKey(item, index)">
                             <!-- 左侧ID列（所有表统一显示） -->
                             <view class="data-id-column">
@@ -1032,6 +1032,7 @@
                             <text>{{ bulkEditBoolean ? '是' : '否' }}</text>
                             <switch :checked="bulkEditBoolean" @change="bulkEditBoolean = !!$event.detail.value" color="#40e0ff" />
                         </view>
+                        <textarea v-else-if="selectedBulkField.editor === 'textarea'" class="form-input" v-model="bulkEditValue" :placeholder="selectedBulkField.placeholder || '请输入要设置的值'" />
                         <input v-else class="form-input" v-model="bulkEditValue" :type="selectedBulkField.inputType || 'text'"
                             :placeholder="`请输入${selectedBulkField.label}`" />
                     </view>
@@ -1051,11 +1052,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, getCurrentInstance, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, getCurrentInstance, nextTick } from 'vue'
 import { onShow, onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import { showAppModal } from '@/utils/app-confirm-dialog.js'
+// #ifdef APP-PLUS
+import { appOfflineSession } from '@/utils/app-offline-session.js'
+// #endif
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
 import AdminDatabaseGrid from '@/components/AdminDatabaseGrid.vue'
@@ -1073,7 +1077,7 @@ import {
     getChatList, createChat, updateChat, deleteChat,
     getDatabaseStats,
     getGenericTableList, getGenericTableRecord, createGenericTableRecord, updateGenericTableRecord, deleteGenericTableRecord,
-    getAdminIdentityEvidence, updateAdminIdentityEvidence
+    getAdminIdentityEvidence, updateAdminIdentityEvidence, batchDatabaseRecords
 } from '@/api/database'
 
 const isDark = ref(false)
@@ -2402,13 +2406,15 @@ function clearSearch() {
 
 let tableLoadRequestId = 0
 let tableLoadingRequestId = 0
-async function loadTableData() {
+async function loadTableData({ keepRowsOnNetworkFailure = false } = {}) {
     if (searchTimer.value) { clearTimeout(searchTimer.value); searchTimer.value = null }
     const requestId = ++tableLoadRequestId
     returnToTable({ restoreTable: false })
     selectedRecordKeys.value = []
-    genericUserIdFields.value = []
-    genericUserNames.value = {}
+    if (!keepRowsOnNetworkFailure) {
+        genericUserIdFields.value = []
+        genericUserNames.value = {}
+    }
     try {
         uni.showLoading({ title: '加载中...', mask: true })
         tableLoadingRequestId = requestId
@@ -2601,6 +2607,7 @@ async function loadTableData() {
             title: '加载失败：' + (error.msg || error.message || '网络错误'),
             icon: 'none'
         })
+        if (keepRowsOnNetworkFailure && error?.networkUnavailable) return false
         if(error.msg&&error.msg.includes('登录')) {
             setTimeout(() => {
                 uni.setStorageSync('autoLogin', false)
@@ -2624,11 +2631,21 @@ async function loadTableData() {
 
 async function handleRefresh() {
     if (isRefreshing.value) return
+    // #ifdef APP-PLUS
+    if (appOfflineSession.unavailable) {
+        uni.showToast({ title: '当前离线，联网后可刷新', icon: 'none' })
+        return
+    }
+    // #endif
 
     isRefreshing.value = true
 
     try {
-        const success = await loadTableData()
+        const success = await loadTableData({
+            // #ifdef APP-PLUS
+            keepRowsOnNetworkFailure: true
+            // #endif
+        })
         if (!success) return
         lastUpdateTime.value = Date.now()
         uni.showToast({ title: '刷新完成', icon: 'success' })
@@ -2687,29 +2704,60 @@ function isRecordSelected(item) {
     return selectedRecordKeys.value.includes(getSelectionKey(item))
 }
 
-function toggleRecordSelection(item) {
+let selectionAnchor = null
+let shiftClick = false
+// #ifdef H5
+// uni-app normalizes click events and drops keyboard modifiers; capture the native click first.
+function trackSelectionClick(event) { shiftClick = !!event.shiftKey }
+onMounted(() => window.addEventListener('click', trackSelectionClick, true))
+onUnmounted(() => window.removeEventListener('click', trackSelectionClick, true))
+// #endif
+// A range is meaningful only for the current set and order of displayed rows.
+watch(() => [tableData.value, sqlResult.value, currentTable.value], () => { selectionAnchor = null })
+function toggleRecordSelection(item, event) {
     const key = getSelectionKey(item)
-    selectedRecordKeys.value = isRecordSelected(item)
-        ? selectedRecordKeys.value.filter(selectedKey => selectedKey !== key)
-        : [...selectedRecordKeys.value, key]
+    const rows = sqlResult.value ? sqlGridRows.value : tableData.value
+    const targetIndex = rows.findIndex(row => getSelectionKey(row) === key)
+    const anchorIndex = selectionAnchor === null ? -1 : rows.findIndex(row => getSelectionKey(row) === selectionAnchor)
+    if ((event?.shiftKey || event?.nativeEvent?.shiftKey || shiftClick) && anchorIndex >= 0 && targetIndex >= 0) {
+        const from = Math.min(anchorIndex, targetIndex), to = Math.max(anchorIndex, targetIndex)
+        const range = rows.slice(from, to + 1).map(getSelectionKey)
+        const selected = new Set(selectedRecordKeys.value)
+        // The previous click may itself have toggled the anchor off.
+        const remaining = range.filter(rangeKey => rangeKey !== selectionAnchor)
+        if ((remaining.length ? remaining : range).every(rangeKey => selected.has(rangeKey))) {
+            const rangeKeys = new Set(range)
+            selectedRecordKeys.value = selectedRecordKeys.value.filter(selectedKey => !rangeKeys.has(selectedKey))
+        } else {
+            selectedRecordKeys.value = [...new Set([...selectedRecordKeys.value, ...range])]
+        }
+    } else {
+        selectedRecordKeys.value = isRecordSelected(item)
+            ? selectedRecordKeys.value.filter(selectedKey => selectedKey !== key)
+            : [...selectedRecordKeys.value, key]
+    }
+    selectionAnchor = key
 }
 
-function handleDataItemClick(item) {
-    if (selectionMode.value) toggleRecordSelection(item)
+function handleDataItemClick(item, event) {
+    if (selectionMode.value) toggleRecordSelection(item, event)
 }
 
 function enterSelectionMode() {
+    selectionAnchor = null
     if (!canEditCurrentTable()) return
     selectionMode.value = true
     selectedRecordKeys.value = []
 }
 
 function exitSelectionMode() {
+    selectionAnchor = null
     selectionMode.value = false
     selectedRecordKeys.value = []
 }
 
 function toggleSelectCurrentPage() {
+    selectionAnchor = null
     const rows = sqlResult.value ? sqlGridRows.value : tableData.value
     if (rows.length && selectedRecordKeys.value.length === rows.length) {
         selectedRecordKeys.value = []
@@ -2721,6 +2769,14 @@ function toggleSelectCurrentPage() {
 function getSelectedRecords() {
     const selected = new Set(selectedRecordKeys.value)
     return (sqlResult.value ? sqlGridRows.value : tableData.value).filter(item => selected.has(getSelectionKey(item)))
+}
+
+function getBatchRecordKey(item, table) {
+    if (table === 'UserDevice') return { userId: item.userId, deviceId: item.deviceId }
+    if (table === 'Chat') return { userId: item.userId, otherId: item.otherId }
+    const primaryKeys = getGenericSchema(table).filter(field => field.primaryKey).map(field => field.key)
+    if (primaryKeys.length > 1) return Object.fromEntries(primaryKeys.map(key => [key, item[key]]))
+    return getGenericRecordKey(item, table)
 }
 
 function makeBulkField(key, label, type = 'STRING', options = []) {
@@ -2764,22 +2820,34 @@ function getBulkEditableFields() {
             makeBulkField('latestContentId', '最新消息ID', 'INTEGER')
         ]
     }
-    if (Object.prototype.hasOwnProperty.call(fieldsByTable, currentTable.value)) {
-        return fieldsByTable[currentTable.value]
+    const table = currentTable.value
+    const existing = fieldsByTable[table] || []
+    // Special endpoints only accept their declared fields; retain their tailored editors.
+    const extraSpecialFields = {
+        User: ['nickname', 'bio', 'phone', 'email', 'location'],
+        History: ['userId', 'userDeleted', 'userDeletedAt', 'resultDetail', 'communityNorm', 'communityDistrict'],
+        Message: ['senderId', 'receiverId', 'refId'],
+        Device: [], UserDevice: [], Chat: []
     }
-
+    const special = Object.prototype.hasOwnProperty.call(extraSpecialFields, table)
+    const existingKeys = new Set(existing.map(field => field.key))
     const sensitiveField = /(password|passwd|secret|token|salt|hash|credential|image|avatar|photo|blob)/i
-    return getGenericSchema(currentTable.value)
-        .filter(field => !field.primaryKey && !field.autoIncrement && !field.unique)
+    const additional = getGenericSchema(table)
+        .filter(field => !existingKeys.has(field.key))
+        .filter(field => !special || extraSpecialFields[table].includes(field.key))
+        .filter(field => !field.primaryKey && !field.autoIncrement && !field.unique && !field.generated && !field.readOnly)
         .filter(field => !['createdAt', 'updatedAt', 'deletedAt'].includes(field.key))
+        .filter(field => !(table === 'UserIdentity' && ['userId', 'evidenceAttemptId', 'maskedName', 'maskedNumber'].includes(field.key)))
         .filter(field => !sensitiveField.test(String(field.key || '')))
-        .filter(field => !String(field.key || '').toLowerCase().endsWith('id'))
-        .filter(field => !['JSON', 'JSONB', 'ARRAY', 'BLOB', 'TEXT', 'CLOB'].includes(String(field.type || '').toUpperCase()))
+        .filter(field => !['BLOB', 'BINARY', 'VARBINARY'].includes(String(field.type || '').toUpperCase()))
         .map(field => {
             const type = String(field.type || 'STRING').toUpperCase()
-            return makeBulkField(field.key, field.label || formatGenericFieldLabel(field.key), type,
+            const result = makeBulkField(field.key, field.label || formatGenericFieldLabel(field.key), type,
                 type === 'ENUM' ? selectOptions(field.values || []) : [])
+            if (isTextSchemaType(type) || isJsonSchemaType(type)) result.editor = 'textarea'
+            return { ...field, ...result, placeholder: isJsonSchemaType(type) ? '请输入 JSON' : undefined }
         })
+    return [...existing, ...additional]
 }
 
 function openBulkEdit() {
@@ -2983,20 +3051,15 @@ function handleBulkDelete() {
             let succeeded = 0
             let failed = 0
             try {
-                for (let index = 0; index < records.length; index += 4) {
-                    const batch = records.slice(index, index + 4)
-                    const results = await Promise.all(batch.map(async item => {
-                        try {
-                            const response = await deleteDatabaseRecord(item)
-                            return response?.code === 0
-                        } catch (error) {
-                            console.error('批量删除记录失败:', error)
-                            return false
-                        }
-                    }))
-                    succeeded += results.filter(Boolean).length
-                    failed += results.length - results.filter(Boolean).length
-                }
+                const table = currentTable.value
+                const keys = records.map(item => getBatchRecordKey(item, table))
+                const response = await batchDatabaseRecords(table, 'delete', keys, {})
+                if (response?.code !== 0) throw new Error(response?.msg || '批量操作失败')
+                succeeded = response.data?.succeeded || 0
+                failed = response.data?.failed || 0
+            } catch (error) {
+                uni.showToast({ title: error?.message || '批量操作失败', icon: 'none' })
+                return
             } finally {
                 uni.hideLoading()
             }
@@ -3042,6 +3105,14 @@ function confirmBulkEdit() {
             uni.showToast({ title: '请选择要设置的值', icon: 'none' })
             return
         }
+    } else if (isJsonSchemaType(field.type)) {
+        try { value = JSON.parse(bulkEditValue.value) }
+        catch (_) { uni.showToast({ title: '请输入有效的 JSON', icon: 'none' }); return }
+    } else if (String(field.type).toUpperCase() === 'BIGINT') {
+        if (!/^-?\d+$/.test(bulkEditValue.value.trim())) {
+            uni.showToast({ title: `请输入有效的${field.label}`, icon: 'none' }); return
+        }
+        value = bulkEditValue.value.trim()
     } else if (isNumericSchemaType(field.type)) {
         if (bulkEditValue.value.trim() === '' || !Number.isFinite(Number(bulkEditValue.value))) {
             uni.showToast({ title: `请输入有效的${field.label}`, icon: 'none' })
@@ -3065,20 +3136,15 @@ function confirmBulkEdit() {
             let succeeded = 0
             let failed = 0
             try {
-                for (let index = 0; index < records.length; index += 4) {
-                    const batch = records.slice(index, index + 4)
-                    const results = await Promise.all(batch.map(async item => {
-                        try {
-                            const response = await updateDatabaseRecord(item, payload)
-                            return response?.code === 0
-                        } catch (error) {
-                            console.error('批量更新记录失败:', error)
-                            return false
-                        }
-                    }))
-                    succeeded += results.filter(Boolean).length
-                    failed += results.length - results.filter(Boolean).length
-                }
+                const table = currentTable.value
+                const keys = records.map(item => getBatchRecordKey(item, table))
+                const response = await batchDatabaseRecords(table, 'update', keys, payload)
+                if (response?.code !== 0) throw new Error(response?.msg || '批量操作失败')
+                succeeded = response.data?.succeeded || 0
+                failed = response.data?.failed || 0
+            } catch (error) {
+                uni.showToast({ title: error?.message || '批量操作失败', icon: 'none' })
+                return
             } finally {
                 uni.hideLoading()
             }

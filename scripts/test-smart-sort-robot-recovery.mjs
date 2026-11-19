@@ -40,6 +40,9 @@ appContext.listener(true)
 assert.equal(appComponent.resumeVersion, 1, 'foreground visibility advances resumeVersion')
 appComponent.methods.handleRecovering.call(appComponent)
 assert.deepEqual(appComponent.events, ['suspended', 'recovering'], 'foreground recovery emits recovering')
+appComponent.active = false
+appComponent.methods.handleSuspended.call(appComponent)
+assert.deepEqual(appComponent.events, ['suspended', 'recovering', 'suspended'], 'inactive APP owner accepts suspension notification')
 appComponent.beforeUnmount.call(appComponent)
 assert.equal(appContext.unsubscribed, appComponent.appVisibilityListener, 'APP visibility listener is removed on unmount')
 
@@ -48,14 +51,42 @@ const robot3dDescriptor = parseSfc(robot3dSource, { filename: 'SmartSortRobot3D.
 initPreContext('app-plus')
 const parentScript = preJs(robot3dDescriptor.scriptSetup.content, 'SmartSortRobot3D.vue')
 const parentAst = parseJavaScript(parentScript, { sourceType: 'module' })
-const suspendedFn = parentAst.program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'handleSuspended')
-assert.ok(suspendedFn, 'parent suspended handler exists')
-const clearedTimers = []
-const parentContext = { clearTimeout(id) { clearedTimers.push(id) } }
-runInNewContext(`let loadingTimer = 42; const ready = { value: true }; globalThis.resultReady = ready; function clearLoadingTimer() { clearTimeout(loadingTimer); loadingTimer = null }; ${parentScript.slice(suspendedFn.start, suspendedFn.end)}`, parentContext)
+const parentFunctions = ['clearLoadingTimer', 'watchLoading', 'handleSuspended', 'handleRecovering', 'handleReady']
+const parentFunctionSources = parentFunctions.map(name => {
+  const node = parentAst.program.body.find(item => item.type === 'FunctionDeclaration' && item.id.name === name)
+  assert.ok(node, `parent ${name} function exists`)
+  return parentScript.slice(node.start, node.end)
+}).join('\n')
+let parentTimerId = 0
+const parentTimers = new Map(), clearedTimers = [], fallbacks = []
+const parentContext = {
+  clearTimeout(id) { clearedTimers.push(id); parentTimers.delete(id) },
+  setTimeout(fn, ms) { const id = ++parentTimerId; parentTimers.set(id, { fn, ms }); return id },
+  useFallback(error) { fallbacks.push(error) },
+  emit() {}
+}
+runInNewContext(`let loadingTimer = 42; let loadingVersion = 0; let renderingSuspended = true; let destroyed = false; const props = { active: true }; const overlayFallback = { value: false }; const ready = { value: true }; const failed = { value: false }; const loadingStage = { value: 'loading' }; globalThis.resultReady = ready; ${parentFunctionSources}`, parentContext)
 parentContext.handleSuspended()
 assert.deepEqual(clearedTimers, [42], 'parent suspended handler clears its loading timeout')
 assert.equal(parentContext.resultReady.value, false, 'parent suspended handler clears ready state')
+parentContext.watchLoading()
+assert.equal(parentTimers.size, 0, 'background active changes cannot start a loading timeout')
+parentContext.handleReady()
+assert.equal(parentContext.resultReady.value, false, 'a late ready event while suspended is ignored')
+parentContext.handleRecovering()
+assert.equal(parentTimers.size, 1, 'foreground recovery starts a fresh timeout')
+const [freshTimerId, freshTimer] = [...parentTimers.entries()][0]
+assert.equal(freshTimer.ms, 15000, 'foreground recovery receives the full loading timeout')
+parentContext.handleSuspended()
+assert.equal(parentTimers.size, 0, 'suspension clears the foreground timeout')
+freshTimer.fn()
+assert.equal(fallbacks.length, 0, 'a cleared timeout callback cannot trigger fallback')
+parentContext.handleRecovering()
+freshTimer.fn()
+assert.equal(fallbacks.length, 0, 'a previous foreground timeout stays invalid after resuming')
+const [foregroundTimerId, foregroundTimer] = [...parentTimers.entries()][0]
+foregroundTimer.fn()
+assert.equal(fallbacks.length, 1, 'a real foreground timeout triggers fallback')
 
 const engineSource = readFileSync(new URL('../src/components/smart-sort-robot-engine.mjs', import.meta.url), 'utf8')
 const renderStart = engineSource.indexOf('const render = timestamp => {')
@@ -135,14 +166,18 @@ const x = makeHarness(); x.document.hidden = true
 x.add('pending', true); x.runFrame()
 await Promise.resolve(); await Promise.resolve()
 assert.equal(x.requests.length, 0, 'hidden view does not begin a load')
+assert.ok(x.calls.some(([, name]) => name === 'handleSuspended'), 'initial hidden render notifies the owner that rendering is suspended')
 x.document.hidden = false; x.emit('d:visibilitychange', { type: 'visibilitychange' })
-x.runFrame(); await Promise.resolve(); await Promise.resolve()
+x.runFrames()
+assert.ok(x.calls.some(([, name]) => name === 'handleRecovering'), 'initial visible start marks recovery before loading completes')
+await Promise.resolve(); await Promise.resolve()
 assert.equal(x.requests.length, 1)
 x.requests[0].finish(); await flush()
 assert.equal(x.mounts.length, 1, 'visible return starts the pending mount')
 
 const inactive = makeHarness(); inactive.add('inactive', false); inactive.runFrame()
 assert.equal(inactive.timers.size, 0, 'inactive robot has no watchdog')
+assert.ok(inactive.calls.some(([, name]) => name === 'handleSuspended'), 'inactive initial packet notifies the owner of suspension')
 
 const resume = makeHarness(); resume.add('resume'); resume.runFrame(); await Promise.resolve(); await Promise.resolve()
 resume.requests[0].finish(); await flush()
@@ -175,6 +210,19 @@ race.document.hidden = false; race.emit('d:visibilitychange', { type: 'visibilit
 pending.finish(); await flush()
 assert.equal(race.mounts.length, 1, 'stale initial completion does not create a duplicate engine')
 assert.equal(race.requests.length, 1, 'hide and resume during loading retain the shared in-flight read')
+
+const backgroundLoss = makeHarness(); backgroundLoss.add('background-loss'); backgroundLoss.runFrame()
+await Promise.resolve(); await Promise.resolve()
+backgroundLoss.requests[0].finish(); await flush()
+const backgroundEngine = backgroundLoss.mounts[0]
+backgroundLoss.document.hidden = true
+backgroundLoss.emit('d:visibilitychange', { type: 'visibilitychange' })
+const frameCountBeforeLoss = backgroundLoss.frames.size
+backgroundEngine.options.onError(new Error('WebGL context lost'))
+assert.equal(backgroundEngine.disposed, true, 'background context loss disposes the stale engine')
+assert.equal(backgroundLoss.frames.size, frameCountBeforeLoss, 'background context loss does not schedule a recovery start')
+assert.equal(backgroundLoss.mounts.length, 1, 'background context loss does not mount a replacement engine')
+assert.equal(backgroundLoss.calls.at(-1)[1], 'handleSuspended', 'background context loss reports suspension instead of foreground recovery')
 
 const cleanup = makeHarness(); const { host } = cleanup.add('removed'); cleanup.runFrame(); await Promise.resolve(); await Promise.resolve()
 host.isConnected = false; cleanup.observers[0].cb()

@@ -9,6 +9,10 @@ export const messageActionsMethods = {
         if (this.selectingMessages) return
         const actions = []
         if (message.type === 'text' || message.type === 'location' || (message.type === 'voice' && message.voiceText)) actions.push({ key: 'copy', label: '复制' })
+        if (this.chatOffline) {
+            if (actions.length) this.messageMenu = { message, actions }
+            return
+        }
         actions.push({ key: 'delete', label: '删除' })
         if (message.status === 'sent' && !message.isWithdraw) {
             actions.push({ key: 'quote', label: '引用' }, { key: 'forward', label: '转发' }, { key: 'select', label: '多选' })
@@ -21,6 +25,7 @@ export const messageActionsMethods = {
         const message = this.messageMenu?.message
         this.messageMenu = null
         if (!message) return
+        if (this.chatOffline && action !== 'copy') return this.showChatOfflineToast()
         if (action === 'copy') {
             const data = message.type === 'text' ? message.content : message.type === 'voice' ? message.voiceText : `位置 ${message.locationName}\n${message.locationAddress}`
             uni.setClipboardData({ data })

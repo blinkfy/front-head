@@ -281,6 +281,9 @@ import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
 import { applyCommunityChatSettings } from '@/utils/community-chat-settings.js'
+// #ifdef APP-PLUS
+import { invalidateAppHomeAiSettings } from '@/utils/app-home-ai-settings.js'
+// #endif
 import ManifestIcon from '@/components/ManifestIcon.vue'
 
 let unbindThemeWatcher = null
@@ -485,6 +488,9 @@ function saveSettings() {
       }
       applyData(json.data)
       setStatus('保存成功', 'ok')
+      // #ifdef APP-PLUS
+      invalidateAppHomeAiSettings()
+      // #endif
     },
     fail() {
       setStatus('保存失败：网络错误', 'err')

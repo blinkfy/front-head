@@ -15,12 +15,16 @@ function harness({ version = '1.5.0', platform = 'android', baseUrl = 'https://a
   const interceptors = new Map(), navigation = [], modals = [], toasts = [], opened = [], rawCalls = []
   let lastSocketTask = null
   let currentRoute = 'pages-nonTheme/home', currentPolicy = policyData, failPolicy = requestFailure
+  let deferPolicy = false
+  const deferred = []
   const runtime = {
     addInterceptor(name, value) { const list = interceptors.get(name) || []; list.push(value); interceptors.set(name, list) },
     request(options) {
       rawCalls.push(['request', options])
       if (failPolicy) { options.fail?.({ errMsg: 'offline' }); return }
-      options.success?.({ statusCode: 200, data: { code: 0, data: currentPolicy } })
+      const deliver = () => options.success?.({ statusCode: 200, data: { code: 0, data: currentPolicy } })
+      if (deferPolicy) deferred.push(deliver)
+      else deliver()
     },
     uploadFile(options) { rawCalls.push(['uploadFile', options]); return { abort() {} } },
     connectSocket(options) {
@@ -44,7 +48,8 @@ function harness({ version = '1.5.0', platform = 'android', baseUrl = 'https://a
   const intercept = (name, hook) => (interceptors.get(name) || []).find(item => item[hook])
   return { guard, runtime, interceptors, navigation, modals, toasts, opened, rawCalls, intercept,
     get rawSocketTask() { return lastSocketTask },
-    setPolicy(value) { currentPolicy = value }, failPolicy(value) { failPolicy = value }, setRoute(value) { currentRoute = value } }
+    setPolicy(value) { currentPolicy = value }, failPolicy(value) { failPolicy = value }, setRoute(value) { currentRoute = value },
+    deferPolicy() { deferPolicy = true }, deliverPolicy() { deferred.shift()() } }
 }
 
 async function refresh(guard) { await guard.refresh({ force: true }) }
@@ -135,6 +140,39 @@ async function main() {
   assert.equal(stale.guard.getState().blocked, null, 'successful forced rollback refresh clears the global gate')
   await stale.runtime.navigateTo({ url: '/pages-nonTheme/home' })
   assert.equal(stale.navigation.filter(([type]) => type === 'navigateTo').length, 1, 'navigation resumes after verified rollback')
+
+  const tabs = harness({ policyData: policy({ checkIntervalMs: -1 }) })
+  await refresh(tabs.guard)
+  tabs.deferPolicy()
+  assert.equal(await tabs.guard.ensure({ page: '/pages/shop/shop', useCached: true }), true,
+    'an allowed tab can open before a stale policy refresh completes')
+  assert.equal(await tabs.guard.ensure({ page: '/pages-nonTheme/booking', useCached: true }), false,
+    'the known feature restriction applies during background refresh')
+  assert.equal(tabs.rawCalls.length, 2, 'tab taps share the in-flight refresh')
+  tabs.setRoute('pages/shop/shop')
+  tabs.setPolicy(policy({ features: { shop: { name: '商城', minVersion: '2.0.0', pages: ['^pages/shop/shop$'] } } }))
+  tabs.deliverPolicy()
+  await new Promise(setImmediate)
+  assert.equal(tabs.navigation.at(-1)?.[1].url, '/pages/home/home', 'new restrictions are applied to the now-visible tab')
+
+  const inFlight = harness({ policyData: policy({ checkIntervalMs: -1 }) })
+  await refresh(inFlight.guard)
+  inFlight.deferPolicy()
+  assert.equal(await inFlight.guard.ensure({ page: '/pages/home/home', useCached: true }), true)
+  inFlight.guard.handleUpgrade({ code: 'APP_UPGRADE_REQUIRED', data: { scope: 'global', minVersion: '2.0.0' } })
+  inFlight.deliverPolicy()
+  await new Promise(setImmediate)
+  assert.equal(inFlight.guard.getState().blocked?.data.minVersion, '2.0.0', 'an older refresh cannot clear a newer server rejection')
+  assert.equal(await inFlight.guard.ensure({ page: '/pages/home/home', useCached: true }), false)
+
+  const newlyBlocked = harness({ policyData: policy({ checkIntervalMs: -1 }) })
+  await refresh(newlyBlocked.guard)
+  newlyBlocked.deferPolicy()
+  assert.equal(await newlyBlocked.guard.ensure({ page: '/pages/home/home', useCached: true }), true)
+  newlyBlocked.setPolicy(policy({ minSupportedVersion: '2.0.0' }))
+  newlyBlocked.deliverPolicy()
+  await new Promise(setImmediate)
+  assert.equal(newlyBlocked.navigation.at(-1)?.[1].url, APP_UPGRADE_PAGE, 'a new global minimum opens the upgrade page')
 
   const query = harness({ baseUrl: 'https://api.example.test/v1/' })
   assert.equal(query.guard.socketUrl('wss://api.example.test/v1/ws/chat/events?token=a'),

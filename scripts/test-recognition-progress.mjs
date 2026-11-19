@@ -350,6 +350,8 @@ function makeProcessImageContext(task, functions, options = {}) {
     isRecognitionTaskCurrent: task.isRecognitionTaskCurrent,
     updateRecognitionTask: task.updateRecognitionTask,
     updateRecognitionPreview: task.updateRecognitionPreview,
+    // Upload cleanup is a production side effect; keep extracted lifecycle tests isolated.
+    discardUploadImage() {},
     getRecognitionRobotState,
     startElapsedClock() {},
     stopElapsedClock() {},
@@ -406,6 +408,7 @@ function makeOnShowContext(task, functions, { pendingImage, processImage } = {})
   }
   const context = {
     pageVisible: false,
+    upcyclingTaskId: { value: '' }, imageLoading: { value: false }, startUpcyclingPoll() {},
     // The extracted onShow callback includes the MP-WEIXIN preprocessor block.
     // Keep its unrelated camera-selection branch inert in this VM harness.
     pendingCameraImage: null,
@@ -413,6 +416,7 @@ function makeOnShowContext(task, functions, { pendingImage, processImage } = {})
     isProcessing: ref(false),
     getRecognitionTask: task.getRecognitionTask,
     updateHomeAdaptiveStyle() {},
+    refreshLocalSpeech() {},
     refreshAiServiceState() {},
     restoreRecognitionTask() {},
     restoreRecentPresentation() {},

@@ -1,6 +1,8 @@
 // Runs in the App render layer; the logic layer never accesses DOM or SDK objects.
-export function createAppTencentMap({ sdk, container, emit, assetUrl = value => value, setTimer = setTimeout, clearTimer = clearTimeout }) {
+export function createAppTencentMap({ sdk, container, emit, assetUrl = value => value, initialMarkerDelayMs = 0,
+  setTimer = setTimeout, clearTimer = clearTimeout }) {
   let map, layer, detail, state, markerKey, basemap, boundsTimer, destroyed = false
+  let markerTimer = null
   const listeners = []
   const location = () => {
     const center = map.getCenter()
@@ -19,7 +21,14 @@ export function createAppTencentMap({ sdk, container, emit, assetUrl = value => 
         viewMode: '2D', mapTypeControl: false,
         baseMap: getTencentBasemapOptions(basemap)
       })
-      listen('tilesloaded', () => send('updated', { satellite: basemap === true }))
+      if (!basemap && initialMarkerDelayMs > 0) markerTimer = setTimer(releaseInitialMarkers, initialMarkerDelayMs)
+      listen('tilesloaded', () => {
+        send('updated', { satellite: basemap === true })
+        if (markerTimer !== null) {
+          clearTimer(markerTimer)
+          markerTimer = setTimer(releaseInitialMarkers, 0)
+        }
+      })
       listen('error', event => {
         const message = String(event?.message || event?.error?.message || event?.msg || '').replace(/https?:\/\/[^\s]+/g, '[url]').slice(0, 160)
         send('error', { code: 'sdk_error', sdkCode: event?.code || event?.error?.code, message, satellite: basemap === true })
@@ -50,6 +59,27 @@ export function createAppTencentMap({ sdk, container, emit, assetUrl = value => 
       map.setBaseMap(getTencentBasemapOptions(basemap))
       send('switching', { satellite: basemap })
     }
+    if (markerTimer === null) updateMarkers()
+    if (state.command && state.command.id !== previous?.command?.id) {
+      if (state.command.type === 'move') {
+        const { latitude, longitude } = state.command
+        if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+          const center = location()
+          if (Math.abs(center.latitude - latitude) > 1e-7 || Math.abs(center.longitude - longitude) > 1e-7) {
+            map.setCenter(new sdk.LatLng(latitude, longitude))
+          }
+        }
+      } else {
+        send('center', { requestId: state.command.id, ...location() })
+      }
+    }
+  }
+  function releaseInitialMarkers() {
+    markerTimer = null
+    if (destroyed) return
+    try { updateMarkers() } catch (_) { send('error', { code: 'map_render_failed', stage: 'render', satellite: basemap === true }) }
+  }
+  function updateMarkers() {
     const key = JSON.stringify([state.markers || [], state.userLocation])
     if (key !== markerKey) {
       markerKey = key
@@ -71,20 +101,10 @@ export function createAppTencentMap({ sdk, container, emit, assetUrl = value => 
         geometries.push({ id: 'user', styleId: 'user', position: new sdk.LatLng(Number(user.latitude), Number(user.longitude)) })
       }
       if (layer) layer.setMap(null)
-      layer = new sdk.MultiMarker({ map, styles, geometries })
-      layer.on('click', event => { if (ids.has(event.geometry?.id)) send('markertap', { markerId: ids.get(event.geometry.id) }) })
-    }
-    if (state.command && state.command.id !== previous?.command?.id) {
-      if (state.command.type === 'move') {
-        const { latitude, longitude } = state.command
-        if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-          const center = location()
-          if (Math.abs(center.latitude - latitude) > 1e-7 || Math.abs(center.longitude - longitude) > 1e-7) {
-            map.setCenter(new sdk.LatLng(latitude, longitude))
-          }
-        }
-      } else {
-        send('center', { requestId: state.command.id, ...location() })
+      layer = null
+      if (geometries.length) {
+        layer = new sdk.MultiMarker({ map, styles, geometries })
+        layer.on('click', event => { if (ids.has(event.geometry?.id)) send('markertap', { markerId: ids.get(event.geometry.id) }) })
       }
     }
   }
@@ -94,6 +114,7 @@ export function createAppTencentMap({ sdk, container, emit, assetUrl = value => 
       if (destroyed) return
       destroyed = true
       if (boundsTimer) clearTimer(boundsTimer)
+      if (markerTimer !== null) clearTimer(markerTimer)
       if (layer) layer.setMap(null)
       detail?.destroy()
       if (map) { listeners.forEach(([type, handler]) => map.off(type, handler)); map.destroy() }

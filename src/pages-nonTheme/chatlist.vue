@@ -11,7 +11,7 @@
 				</view>
 				<view class="nav-title">用户消息</view>
 			<view class="nav-right">
-				<ManifestIcon v-if="communityChatEnabled" class="add-icon" id="add" :scale="1.1" @click.stop="openContacts" />
+				<ManifestIcon v-if="communityChatEnabled && !chatOffline" class="add-icon" id="add" :scale="1.1" @click.stop="openContacts" />
 				<ManifestIcon class="search-icon nav-white-icon" id="search" :scale="1.1" @click="toggleSearch" />
 				</view>
 			</view>
@@ -30,9 +30,12 @@
 		<!-- 用户列表 -->
 		<scroll-view ref="userScroll" class="user-list" scroll-y :scroll-top="scrollTop" :style="{ height: listHeight, backgroundColor: 'var(--list-bg)', paddingTop: headerOffset + 'px' }" @scrolltolower="loadMore"
 			refresher-enabled :refresher-triggered="isRefreshing" @refresherrefresh="onRefresh" @click.stop @click="handleContainerClick">
-            <SystemNotificationEntry :active="isPageActive" />
-            <CommunityActivityEntry :enabled="communityChatEnabled" :active="isPageActive" />
-            <RealtimeActivityEntry show-notification-setting />
+            <view v-if="chatOffline" class="chat-offline-notice">当前离线 · 显示已缓存的会话</view>
+            <template v-else>
+                <SystemNotificationEntry :active="isPageActive" />
+                <CommunityActivityEntry :enabled="communityChatEnabled" :active="isPageActive" />
+                <RealtimeActivityEntry show-notification-setting />
+            </template>
 			<!-- 加载中 -->
 			<view class="loading-wrap" v-if="(isSearching ? searchLoading : loading) && filteredUserList.length === 0">
 				<view class="loading-spinner"></view>
@@ -42,7 +45,7 @@
 			<!-- 空状态 -->
 			<view class="empty-wrap" v-else-if="!(isSearching ? searchLoading : loading) && filteredUserList.length === 0">
 				<ManifestIcon class="empty-icon" id="empty_chat" :scale="1" />
-				<text class="empty-text">{{ searchKeyword ? '未找到匹配的用户' : '暂无用户消息' }}</text>
+				<text class="empty-text">{{ searchKeyword ? '未找到匹配的用户' : chatOffline ? '暂无已缓存的会话' : '暂无用户消息' }}</text>
 			</view>
 
 			<!-- 用户列表 -->
@@ -76,10 +79,10 @@
 			</view>
 
 			<!-- 加载更多 -->
-			<view class="load-more" v-if="filteredUserList.length > 0 && displayHasMore">
+			<view class="load-more" v-if="!chatOffline && filteredUserList.length > 0 && displayHasMore">
 				<text class="load-more-text">{{ displayLoadingMore ? '加载中...' : '上拉加载更多' }}</text>
 			</view>
-			<view class="no-more" v-else-if="filteredUserList.length > 0 && !displayHasMore">
+			<view class="no-more" v-else-if="!chatOffline && filteredUserList.length > 0 && !displayHasMore">
 				<text class="no-more-text">没有更多了</text>
 			</view>
 		</scroll-view>
@@ -116,6 +119,11 @@ import CommunityActivityEntry from './components/CommunityActivityEntry.vue'
 import SystemNotificationEntry from './components/SystemNotificationEntry.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { getDisplayName } from '@/utils/display-name.js'
+// #ifdef APP-PLUS
+import { appOfflineSession, getAppSessionAccountId, retryAppOfflineSession } from '@/utils/app-offline-session.js'
+import { appChatStorage } from '@/pages-nonTheme/utils/app-chat-storage-native.js'
+const appListScopes = new WeakMap()
+// #endif
 export default {
 	components: {
 		AppConfirmDialog, ManifestIcon, CommunityActivityEntry, SystemNotificationEntry, RealtimeActivityEntry,
@@ -164,6 +172,12 @@ export default {
 	},
 
 computed: {
+        chatOffline() {
+            // #ifdef APP-PLUS
+            return appOfflineSession.unavailable
+            // #endif
+            return false
+        },
         communityChatEnabled() { return this.communityChatSettings.enabled },
 		avatarCacheOwner() {
 			return this.cacheKey.slice('chatlist_'.length)
@@ -189,7 +203,7 @@ computed: {
 			return this.isSearching ? this.searchLoadingMore : this.loadingMore
 		},
 		filteredUserList() {
-			const list = this.deduplicateConversations(this.isSearching ? this.searchResults : this.userList)
+			const list = this.deduplicateConversations(this.isSearching && !this.chatOffline ? this.searchResults : this.userList)
 			const keyword = String(this.searchKeyword || '').toLowerCase()
 			if (!keyword) return list
 			return list.filter(user => {
@@ -210,12 +224,29 @@ computed: {
 		}
 	},
 
+    watch: {
+        chatOffline(offline) {
+            if (!this.isPageActive) return
+            if (offline) {
+                this.invalidatePendingRequests()
+                this.stopPeriodicRefresh()
+            } else {
+                if (!uni.getStorageSync('token')) return
+                void this.refreshCommunityVisibility()
+                void this.refreshList()
+                this.startPeriodicRefresh()
+            }
+        }
+    },
+
 	onLoad() {
 		this.isPageActive = true
 		const token = uni.getStorageSync('token')
 		if (!token) {
+			this.isPageActive = false
 			uni.setStorageSync('autoLogin', false)
 			uni.navigateTo({ url: '/pages/index/index' })
+			return
 		}
 		
 		// 检测主题
@@ -226,15 +257,26 @@ computed: {
 		this.initCacheKey()
 		
 		// 从本地缓存加载用户列表
+		// #ifndef APP-PLUS
 		this.loadFromCache()
+		// #endif
 		
 		// 首次网络刷新由 onShow 统一触发；onLoad 仅恢复本账号缓存。
 	},
 
-	onShow() {
+	async onShow() {
+        if (!uni.getStorageSync('token')) return
+		this.isPageActive = true
+		this.syncAccountContext()
+		// #ifdef APP-PLUS
+		const generation = this.requestGeneration
+		const identity = this.activeAccountIdentity
+		await this.loadFromCache()
+		if (!this.isPageActive || generation !== this.requestGeneration || this.getAccountSnapshot().identity !== identity) return
+		// #endif
         if (!this.chatEventListener) {
             this.chatEventListener = (event = {}) => {
-                if (!this.isPageActive) return
+                if (!this.isPageActive || this.chatOffline) return
                 if (['conversation.hidden', 'contact.deleted', 'group.removed'].includes(event.kind)) {
                     this.userList = this.userList.filter(user => String(user.otherId) !== String(event.conversationId))
                     this.saveToCache()
@@ -244,8 +286,7 @@ computed: {
             messageBus.on('chat.changed', this.chatEventListener)
             messageBus.on('chat.reconnected', this.chatEventListener)
         }
-		this.isPageActive = true
-		this.syncAccountContext()
+		if (this.chatOffline) return
 		this.refreshCommunityVisibility()
 		
 		// 初始化加载/刷新
@@ -349,7 +390,9 @@ computed: {
 			this.searchHasMore = false
 			this.searchTotal = null
 			this.searchUnreadTotal = null
+			// #ifndef APP-PLUS
 			this.loadFromCache()
+			// #endif
 			return true
 		},
 
@@ -413,33 +456,42 @@ computed: {
 		 * 从本地缓存加载用户列表
 		 */
 		loadFromCache() {
+			// #ifdef APP-PLUS
+			const account = this.getAccountSnapshot()
+			const owner = getAppSessionAccountId()
+			if (!account.token || owner !== account.userId || account.identity !== this.activeAccountIdentity) return
+			const scope = appChatStorage.scope(owner)
+			const generation = this.requestGeneration
+			const version = this.normalRequestVersion
+			appListScopes.set(this, { scope, identity: account.identity })
+			return appChatStorage.updateConversations(scope).then(snapshot => {
+				if (!this.isPageActive || !appChatStorage.active(scope) || generation !== this.requestGeneration ||
+					version !== this.normalRequestVersion || this.getAccountSnapshot().identity !== account.identity) return
+				if (snapshot) this.applyCacheSnapshot(snapshot)
+				else this.applyCacheSnapshot({ userList: [] })
+			}).catch(error => console.warn('读取本地会话列表失败', error))
+			// #endif
+			// #ifndef APP-PLUS
 			try {
 				if (!this.cacheKey) return
-				
 				const cached = uni.getStorageSync(this.cacheKey)
-				if (cached && typeof cached === 'string') {
-					const cacheData = JSON.parse(cached)
-					if (cacheData && Array.isArray(cacheData.userList)) {
-						this.userList = this.deduplicateConversations(cacheData.userList)
-						this.sortUserList()
-						this.lastRefreshTime = cacheData.timestamp || 0
-						if (cacheData.pageSize === this.pageSize && Number.isInteger(cacheData.page) && cacheData.page >= 1 && typeof cacheData.hasMore === 'boolean') {
-							this.pageSize = cacheData.pageSize
-							this.page = cacheData.page
-							this.hasMore = cacheData.hasMore
-						} else {
-							// 旧版缓存可能包含全量数据，但没有可验证的分页游标；始终从第一页继续。
-							this.page = 1
-							this.hasMore = true
-						}
-						this.listTotal = Number.isFinite(cacheData.total) ? cacheData.total : null
-						this.listUnreadTotal = Number.isFinite(cacheData.unreadTotal) ? cacheData.unreadTotal : null
-						console.log('从缓存加载用户列表，共', this.userList.length, '个用户')
-					}
-				}
+				if (cached && typeof cached === 'string') this.applyCacheSnapshot(JSON.parse(cached))
 			} catch (e) {
 				console.error('从缓存加载数据失败:', e)
 			}
+			// #endif
+		},
+
+		applyCacheSnapshot(cacheData) {
+			if (!Array.isArray(cacheData?.userList)) return
+			this.userList = this.deduplicateConversations(cacheData.userList)
+			this.sortUserList()
+			this.lastRefreshTime = cacheData.timestamp || 0
+			const hasCursor = cacheData.pageSize === this.pageSize && Number.isInteger(cacheData.page) && cacheData.page >= 1 && typeof cacheData.hasMore === 'boolean'
+			this.page = hasCursor ? cacheData.page : 1
+			this.hasMore = hasCursor ? cacheData.hasMore : true
+			this.listTotal = Number.isFinite(cacheData.total) ? cacheData.total : null
+			this.listUnreadTotal = Number.isFinite(cacheData.unreadTotal) ? cacheData.unreadTotal : null
 		},
 		
 		/**
@@ -459,7 +511,17 @@ computed: {
 					total: this.listTotal,
 					unreadTotal: this.listUnreadTotal
 				}
-				uni.setStorageSync(this.cacheKey, JSON.stringify(cacheData))
+				const payload = JSON.stringify(cacheData)
+				// #ifdef APP-PLUS
+				const account = this.getAccountSnapshot()
+				const context = appListScopes.get(this)
+				if (context && account.identity === context.identity && context.identity === this.activeAccountIdentity) {
+					void appChatStorage.updateConversations(context.scope, () => JSON.parse(payload))
+						.catch(error => console.warn('保存本地会话列表失败', error))
+				}
+				return
+				// #endif
+				uni.setStorageSync(this.cacheKey, payload)
 			} catch (e) {
 				console.error('保存缓存失败:', e)
 			}
@@ -487,6 +549,7 @@ computed: {
 		startPeriodicRefresh() {
 			// 清除旧的定时器
 			this.stopPeriodicRefresh()
+			if (this.chatOffline) return
 			
 			// 设置新的定时器，每 10 秒刷新一次第一页
 			this.refreshTimer = setInterval(() => {
@@ -496,7 +559,7 @@ computed: {
 
         scheduleChatRefresh() {
             this.chatListDirty = true
-            if (this.chatRefreshTimer || !this.isPageActive || this.isSearching) return
+            if (this.chatOffline || this.chatRefreshTimer || !this.isPageActive || this.isSearching) return
             const delay = Math.max(100, this.refreshInterval - (Date.now() - this.lastRefreshTime))
             this.chatRefreshTimer = setTimeout(() => {
                 this.chatRefreshTimer = null
@@ -587,7 +650,7 @@ computed: {
 		 * 刷新第一页
 		 */
 		async refreshFirstPage() {
-			if (!this.isPageActive || this.isSearching) return false
+			if (this.chatOffline || !this.isPageActive || this.isSearching) return false
 			this.syncAccountContext()
 			if (this.loading || this.loadingMore) return false
 			const generation = this.requestGeneration
@@ -775,7 +838,7 @@ computed: {
 			this.searchHasMore = Boolean(keyword)
 			this.searchTotal = null
 			this.searchUnreadTotal = null
-			if (!keyword) return
+			if (!keyword || this.chatOffline) return
 
 			this.searchLoading = true
 			const version = ++this.searchRequestVersion
@@ -799,7 +862,7 @@ computed: {
 		},
 
 		async fetchSearchPage(page, version, generation, identity) {
-			if (!this.isPageActive || !this.isSearching) return false
+			if (this.chatOffline || !this.isPageActive || !this.isSearching) return false
 			const requestVersion = version === undefined ? ++this.searchRequestVersion : version
 			const requestGeneration = generation === undefined ? this.requestGeneration : generation
 			const requestIdentity = identity === undefined ? this.activeAccountIdentity : identity
@@ -920,6 +983,10 @@ computed: {
 		// 获取当前用户ID
 		getCurrentUserId() {
 			try {
+				// #ifdef APP-PLUS
+				const activeAccount = getAppSessionAccountId()
+				if (activeAccount) return activeAccount
+				// #endif
 				const userInfo = uni.getStorageSync('userInfo')
 				const userId =
 					userInfo?.id ||
@@ -940,7 +1007,7 @@ computed: {
 
 		// 刷新列表
 		async refreshList() {
-			if (!this.isPageActive) return
+			if (this.chatOffline || !this.isPageActive) return
 			this.syncAccountContext()
 			if (this.isSearching) this.onSearchInput()
 			else await this.refreshFirstPage()
@@ -958,6 +1025,13 @@ computed: {
 
 		// 下拉刷新
 		async onRefresh() {
+			// #ifdef APP-PLUS
+			if (this.chatOffline) {
+				this.isRefreshing = true
+				try { await retryAppOfflineSession() } finally { this.isRefreshing = false }
+				return
+			}
+			// #endif
 			this.isRefreshing = true
 			await this.refreshList()
 			// 结束刷新，确保滚动位置在 header 下方
@@ -970,7 +1044,7 @@ computed: {
 
 		// 加载更多
 		async loadMore() {			
-			if (!this.isPageActive) return
+			if (this.chatOffline || !this.isPageActive) return
 			const accountChanged = this.syncAccountContext()
 			if (accountChanged) {
 				if (this.isSearching) this.onSearchInput()
@@ -1029,6 +1103,7 @@ computed: {
 
 		// 打开聊天
         showConversationActions(user) {
+            if (this.chatOffline) return
             uni.showActionSheet({ itemList: [user.top ? '取消置顶' : '置顶聊天', '删除会话'],
                 success: async ({ tapIndex }) => {
                     try {
@@ -1052,14 +1127,15 @@ computed: {
         },
 
 		openChat(user) {
-			this.markLocalChatRead(user.otherId)
+			if (!uni.getStorageSync('token')) return
+			if (!this.chatOffline) this.markLocalChatRead(user.otherId)
 			if (user.conversationType === 'group' && user.groupId) {
 				uni.navigateTo({
 					url: `/pages-nonTheme/chat?conversationType=group&groupId=${encodeURIComponent(user.groupId)}&chatId=${encodeURIComponent(user.otherId)}&title=${encodeURIComponent(user.note || getDisplayName(user))}&avatar=${encodeURIComponent(user.avatar || '')}`
 				})
 				return
 			}
-			chatApi.markAsRead(user.otherId).catch(e => {
+			if (!this.chatOffline) chatApi.markAsRead(user.otherId).catch(e => {
 				console.warn('标记消息已读失败:', e?.message || e)
 			})
 
@@ -1267,6 +1343,13 @@ computed: {
 </script>
 
 <style lang="scss" scoped>
+.chat-offline-notice {
+	padding: 16rpx 24rpx;
+	font-size: 24rpx;
+	color: #606a65;
+	background: #eef2ef;
+}
+.dark-theme .chat-offline-notice { color: #c2ceca; background: #27322e; }
 .chat-admin-container {
 	min-height: 100vh;
 	background-color: var(--bg-primary);

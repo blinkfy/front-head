@@ -3,7 +3,7 @@
     "appid" : "__UNI__0B093BC",
     "description" : "",
     "versionName" : "1.4.15",
-    "versionCode" : 142,
+    "versionCode" : 144,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -20,7 +20,8 @@
             "Camera" : {},
             "Barcode" : {},
             "VideoPlayer" : {},
-            "Push" : {}
+            "Push" : {},
+            "SQLite" : {}
         },
         "distribute" : {
             "android" : {

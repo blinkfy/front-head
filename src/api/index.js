@@ -2,6 +2,7 @@ import { baseUrl } from './settings'
 import { isMfaTransition } from '@/utils/mfa-session-transition.mjs'
 // #ifdef APP-PLUS
 import { appVersionGuard } from '@/utils/app-version-guard.js'
+import { appOfflineSession } from '@/utils/app-offline-session.js'
 // #endif
 import { clearChatBadge } from '@/utils/app-chat-badge.js'
 import {
@@ -27,7 +28,7 @@ function isExplicitlyLoggedOut() {
   }
 }
 
-function handleUnauthorized(requestToken) {
+function handleUnauthorized(requestToken, manualLogin = false) {
   // A response from an old session must not erase a newer login/MFA grant.
   if (requestToken !== getToken() || isMfaTransition(requestToken)) return
   // 用户已主动退出时，旧页面中尚未完成的请求不应再提示或重新跳转登录页。
@@ -35,12 +36,20 @@ function handleUnauthorized(requestToken) {
 
   loginPromptActive = true
   uni.showToast({ title: '请重新登录', icon: 'none' })
-  redirectToLogin()
+  redirectToLogin(manualLogin)
 }
 
-function redirectToLogin() {
+export function requireAppSessionLogin(token) {
+  handleUnauthorized(token, true)
+}
+
+function redirectToLogin(manualLogin) {
   try {
     uni.removeStorageSync('token')
+    if (manualLogin) {
+      uni.removeStorageSync('isAdmin')
+      uni.setStorageSync('autoLogin', false)
+    }
     clearChatBadge()
   } catch (e) {
     // Storage failures should not prevent recovery to the login page.
@@ -49,6 +58,7 @@ function redirectToLogin() {
   if (loginRedirectTimer) return
   loginRedirectTimer = setTimeout(() => {
     loginRedirectTimer = null
+    try { if (uni.getStorageSync('token')) return } catch (_) {}
     let theme = 'light'
     try {
       theme = uni.getStorageSync('app_theme') || 'light'
@@ -56,7 +66,7 @@ function redirectToLogin() {
       // Fall back to the default login page when theme storage is unavailable.
     }
     uni.reLaunch({
-      url: theme === 'dark' ? '/pages-dark/index/index' : '/pages/index/index'
+      url: (theme === 'dark' ? '/pages-dark/index/index' : '/pages/index/index') + (manualLogin ? '?manualLogin=1' : '')
     })
   }, 1000)
 }
@@ -145,9 +155,16 @@ function request({
   header = {},
   needAuth = false,
   silent = false,
+  sessionProbe = false,
   timeout,
   contentType
 }) {
+  // #ifdef APP-PLUS
+  if (appOfflineSession.unavailable && !sessionProbe) {
+    const message = '当前离线，请联网后重试'
+    return Promise.reject({ msg: message, message, networkUnavailable: true })
+  }
+  // #endif
   const token = getToken()
   const requestMethod = String(method || 'GET').toUpperCase()
   const headers = {
@@ -199,7 +216,7 @@ function request({
           ) {
             resolve(res.data)
           } else if (responseData.code === 401 || responseData.error === 'Unauthorized') {
-            handleUnauthorized(token)
+            if (!sessionProbe) handleUnauthorized(token)
             reject(requestError(responseData, responseErrorMessage(responseData, '请重新登录')))
           } else if (responseData.code === 2) {
             // 数据库临时关闭：持久化降级状态，并对连续失败做 toast 去重。
@@ -220,7 +237,7 @@ function request({
         } else {
           const message = httpErrorMessage(res)
           if (res?.statusCode === 401) {
-            handleUnauthorized(token)
+            if (!sessionProbe) handleUnauthorized(token)
           } else if (responseData.code === 2) {
             markDatabaseOffline({ runtime: databaseStatusRuntime, message, source: url, notify: !silent })
           } else if (!silent) {
@@ -232,7 +249,7 @@ function request({
       fail: err => {
         const message = networkErrorMessage(err)
         if (!silent) uni.showToast({ title: message, icon: 'none' })
-        reject(requestError(err, message))
+        reject(requestError({ ...err, networkUnavailable: true }, message))
       }
     })
   })

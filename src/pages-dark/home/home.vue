@@ -140,6 +140,7 @@
               <view class="ai-helper-btn" v-if="!isProcessing && aiServiceEnabled && aiEnabled" @click="goAiChatFromResult">AI对话</view>
             </view>
 
+            <LocalSpeechButton v-if="!isProcessing" :text="photoSpeechText" dark label="播报识别结果" />
             <view v-if="displayRecognizedItems.length" class="recognized-items-box">
               <text class="recognized-items-title">识别到的具体物品</text>
               <view class="recognized-items-list">
@@ -166,6 +167,7 @@
               >
                 <text class="upcycling-plan-title">{{ section.title }}</text>
                 <view class="upcycling-plan-content" v-html="formatSemicolonNewline(section.content)"></view>
+                <LocalSpeechButton v-if="!isProcessing" :text="recognitionSectionSpeech(section, displayAdviceSections)" dark label="播报本条建议" />
               </view>
             </view>
 
@@ -194,6 +196,7 @@
             <view v-else-if="!isProcessing && resultDesc" class="description-panel">
               <view class="desc-label"><ManifestIcon id="eco_tip" /> 处理建议</view>
               <view class="desc-content" v-html="formatSemicolonNewline(resultDesc)"></view>
+              <LocalSpeechButton :text="resultDesc" dark label="播报处理建议" />
             </view>
           </view>
         </view>
@@ -380,7 +383,10 @@ import { handleRegistrationQrScan } from '@/utils/registration-relay.mjs'
 // #endif
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch, getCurrentInstance } from 'vue'
 import { trackOnboardingFocus, queryOnboardingRects, getOnboardingViewport, getOnboardingScrollTop } from '@/utils/onboarding-focus.mjs'
-import { onPageScroll, onShow, onHide, onUnload, onResize } from '@dcloudio/uni-app'
+import { onPageScroll, onShow, onHide, onUnload, onResize } from '@/utils/app-tab-lifecycle.js'
+import { useAppTabContext } from '@/utils/app-tab-context.js'
+import { getCachedAppHomeAiEnabled, readAppHomeAiSettings } from '@/utils/app-home-ai-settings.js'
+import { appShopPoints } from '@/utils/app-shop-cache.mjs'
 import { recognizeImage } from '@/api/recognize'
 import { useRecognitionBboxes } from '@/utils/use-recognition-bboxes'
 import RecognitionImagePreview from '@/components/RecognitionImagePreview.vue'
@@ -399,9 +405,14 @@ import { wasteCategoryGuides } from '@/utils/waste-category-guides'
 import SmartSortRobot3D from '@/components/SmartSortRobot3D.vue'
 import { playUiSound } from '@/utils/ui-sounds.js'
 import { chooseRecognitionImage } from '@/utils/recognition-picker.js'
+// #ifdef APP-PLUS
+import { useAppHomeMapPreload } from '@/utils/use-app-map-preload-page.js'
+// #endif
 import { getRecognitionRobotState } from '@/utils/recognition-robot-state.mjs'
 import SmartSortRecognitionVisual from '@/components/SmartSortRecognitionVisual.vue'
 import NearbyDisposalCard from '@/components/NearbyDisposalCard.vue'
+import LocalSpeechButton from '@/components/LocalSpeechButton.vue'
+import { refreshLocalSpeech, stopLocalSpeech } from '@/utils/local-tts.js'
 import { useNearbyDisposal } from '@/utils/use-nearby-disposal'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
@@ -411,6 +422,8 @@ import {
   buildSeedFromRecognizeData,
   extractRecognizedItems,
   parseLabelBbox,
+  photoClassificationSpeech,
+  recognitionSectionSpeech,
   saveSeed,
   splitUpcyclingSections
 } from '@/utils/recognition-sync'
@@ -495,7 +508,8 @@ const resultCategory = ref('')
 const resultConfidence = ref('')
 const resultDesc = ref('')
 const aiEnabled = ref(false)
-const aiServiceEnabled = ref(false)
+const appTab = useAppTabContext()
+const aiServiceEnabled = ref(appTab ? getCachedAppHomeAiEnabled() ?? false : false)
 const isProcessing = ref(false)
 const recognitionVisual = ref(null)
 const robotState = ref('idle')
@@ -558,6 +572,8 @@ const displayAdviceSections = computed(() => {
     return { ...section, renderKey: `${section.title}:${occurrence}` }
   })
 })
+const photoSpeechText = computed(() => photoClassificationSpeech(displayResultCategory.value, displayRecognizedItems.value,
+  displayAdviceSections.value, resultDesc.value))
 const upcyclingImageUrl = ref('')
 let pendingUpcyclingSound = ''
 function onUpcyclingImageLoaded() {
@@ -585,6 +601,10 @@ let elapsedTimer = null
 
 async function refreshAiServiceState() {
   try {
+    if (appTab) {
+      aiServiceEnabled.value = (await readAppHomeAiSettings()).aiEnabled
+      return
+    }
     const response = await new Promise((resolve, reject) => {
       uni.request({ url: `${baseUrl}/api/ai/settings`, success: resolve, fail: reject })
     })
@@ -592,7 +612,7 @@ async function refreshAiServiceState() {
     aiServiceEnabled.value = !!(payload?.code === 0 && payload.data?.aiEnabled === true)
   } catch (error) {
     console.warn('[home-dark] check AI settings failed:', error)
-    aiServiceEnabled.value = false
+    if (!appTab) aiServiceEnabled.value = false
   }
 }
 
@@ -607,6 +627,9 @@ const shownAchievementKeys = new Set()
 const ONBOARDING_STORAGE_KEY = 'app_onboarding_completed_v1'
 const ONBOARDING_FORCE_KEY = 'app_onboarding_force_open'
 const showAppOnboarding = ref(false)
+// #ifdef APP-PLUS
+const homeMapPreload = useAppHomeMapPreload(isProcessing, showAppOnboarding)
+// #endif
 const onboardingResumeStep = ref(0)
 const onboardingTrialState = ref('idle')
 let onboardingTrialTimer = null
@@ -905,7 +928,6 @@ onMounted(() => {
     if (!pageVisible || !task || task.id === activeRecognitionTaskId) return
     restoreRecognitionTask(task)
   })
-  refreshAiServiceState()
   // 更精确的平台检测
   let platform
   let uniPlatform
@@ -955,6 +977,7 @@ onMounted(() => {
 })
 
 onShow(() => {
+  refreshLocalSpeech()
   pageVisible = true
   robotPageActive.value = true
   refreshAiServiceState()
@@ -962,6 +985,7 @@ onShow(() => {
   restoreRecentPresentation()
   homeWasHidden = false
   preserveResultOnReturn = false
+  if (upcyclingTaskId.value && imageLoading.value) startUpcyclingPoll()
   queueRefreshDisplayBboxes()
   // #ifdef MP-WEIXIN
   if (pendingCameraImage) {
@@ -973,13 +997,16 @@ onShow(() => {
 })
 
 onHide(() => {
+  stopLocalSpeech()
   homeWasHidden = true
   pageVisible = false
   robotPageActive.value = false
   stopElapsedClock()
+  stopUpcyclingPoll()
 })
 
 onUnload(() => {
+  stopLocalSpeech()
   recentResultUnsubscribe?.()
   recentResultUnsubscribe = null
   clearTimeout(onboardingTrialTimer)
@@ -1275,7 +1302,7 @@ async function startUpcyclingPoll() {
   const revision = upcyclingPollRevision
   const resultId = displayedRecentId
   const taskId = upcyclingTaskId.value
-  if (!taskId) return
+  if (!taskId || !pageVisible) return
 
   const maxRetries = 30
   let retries = 0
@@ -1432,6 +1459,7 @@ async function processImage(filePath, selectedFile = null) {
     robotState.value = 'processing'
     const res = await recognitionRequest
     if (!isRecognitionTaskCurrent(taskId)) return
+    if (appTab && res.pointsInfo?.pointsAwarded > 0) appShopPoints.invalidate()
     recentRecognition.save(taskId, res)
     displayedRecentId = taskId
     recentResult.value = recentRecognition.get()
@@ -1554,6 +1582,9 @@ function onAddImage() {
     return
   }
 
+  // #ifdef APP-PLUS
+  if (!homeMapPreload.startChoosing()) return
+  // #endif
   recognitionVisual.value?.prepareEntry()
   const keepFailureFeedback = robotFeedbackActive.value && robotState.value === 'fail'
   if (!keepFailureFeedback) robotState.value = 'tap'
@@ -1561,6 +1592,9 @@ function onAddImage() {
     count: 1,
     sizeType: ['compressed'],
     sourceType: ['album', 'camera'],
+    // #ifdef APP-PLUS
+    complete: homeMapPreload.finishChoosing,
+    // #endif
     success: acceptRecognitionImage,
     fail: () => {
       if (onboardingTrialState.value === 'picking') onboardingTrialState.value = 'cancelled'

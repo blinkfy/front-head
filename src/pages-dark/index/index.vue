@@ -150,6 +150,9 @@
 import { clearChatPush } from '@/utils/chat-push.js'
 import { loginNavigationRuntime } from '@/utils/login-navigation-runtime.js'
 // #ifdef APP-PLUS
+import { appOfflineSession, resumeRememberedAppSession } from '@/utils/app-offline-session.js'
+// #endif
+// #ifdef APP-PLUS
 import { resumeRememberedQrLogin } from '@/utils/remembered-qr-login.mjs'
 // #endif
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
@@ -300,6 +303,11 @@ onMounted(async () => {
   const loginPage = getCurrentPages().slice(-1)[0]
   const loginOptions = loginPage?.options || loginPage?.$page?.options || {}
   if (String(loginOptions.manualLogin || '') === '1') return
+  // #ifdef APP-PLUS
+  if (await resumeRememberedAppSession({ options: loginOptions,
+    isActive: () => getCurrentPages().slice(-1)[0] === loginPage,
+    setLoading: value => { isLoading.value = value }, navigate: navigateSignedInHome })) return
+  // #endif
   // #ifdef APP-PLUS || H5 || MP-WEIXIN
   if (await preferBiometricLogin()) return
   // #endif
@@ -360,7 +368,7 @@ async function onQrLogin(result, mfaTicket = '') {
   isLoading.value = true
   if (result?.requiresMfa) {
     try {
-      result = await openMfa(result)
+      result = await openMfa(result, { qrFirst: true })
       if (!result?.token) { isLoading.value = false; return }
       const profile = await userinfoForToken(result.token)
       result.userInfo = profile.data
@@ -387,7 +395,7 @@ async function onQrLogin(result, mfaTicket = '') {
 
 async function completeLogin(res, isauto, isWechat = false, isBiometric = false) {
   if (res?.requiresMfa) {
-    res = await openMfa(res)
+    res = await openMfa(res, { passwordFirst: !isWechat && !isBiometric })
     if (!res?.token) { isLoading.value = false; return }
   }
   if (!res?.token) { isLoading.value = false; return }
@@ -448,6 +456,9 @@ async function completeLogin(res, isauto, isWechat = false, isBiometric = false)
   } else {
     // 如果没有勾选"记住我"，则清除保存的信息
     uni.removeStorageSync('savedUser')
+    // #ifdef APP-PLUS
+    uni.setStorageSync('autoLogin', false)
+    // #endif
   }
   // #ifdef H5 || APP-PLUS
   if (!(await offerBiometricLogin(res.token, loggedInUser))) { isLoading.value = false; return }
@@ -467,9 +478,13 @@ async function completeLogin(res, isauto, isWechat = false, isBiometric = false)
   if (!wechatPageActive) return
   if (!(await offerBiometricLogin(res.token, loggedInUser))) { isLoading.value = false; return }
   // #endif
-  const pendingScene = getPendingDeviceQrScene(loginNavigationRuntime)
+  await navigateSignedInHome()
+}
+
+function navigateSignedInHome(offline = false) {
+  const pendingScene = offline ? '' : getPendingDeviceQrScene(loginNavigationRuntime)
   const pendingUrl = pendingScene ? buildDeviceQrScanUrl(pendingScene, true) : ''
-  await navigateAfterLogin({
+  return navigateAfterLogin({
     runtime: loginNavigationRuntime, url: pendingUrl || '/pages-dark/home/home',
     setLoading: value => { isLoading.value = value }
   })
@@ -512,6 +527,12 @@ function onLogin(isauto) {
   }).catch(err => {
     isLoading.value = false
     if (err?.handled) return
+    // #ifdef APP-PLUS
+    if (err?.networkUnavailable) {
+      if (appOfflineSession.unavailable) uni.showToast({ title: err.msg, icon: 'none' })
+      return
+    }
+    // #endif
     if (err?.reason) {
       uni.showToast({ title: err.msg || err.message, icon: 'none' })
       return

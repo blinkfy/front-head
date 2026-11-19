@@ -21,7 +21,10 @@ function nativeRequest(input, options = {}) {
     const cancel = () => { try { localSpeechCancel(id) } catch (_) {}; done(null) }
     if (options.signal?.aborted || options.isCurrent?.() === false) { done(null); return }
     options.signal?.addEventListener('abort', cancel, { once: true })
-    timer = setTimeout(cancel, input.action === 'available' ? 1500 : 22000)
+    timer = setTimeout(() => {
+      done({ error: 'TIMEOUT' })
+      try { localSpeechCancel(id) } catch (_) {}
+    }, input.action === 'available' ? 1500 : 22000)
     watcher = setInterval(() => { if (options.isCurrent?.() === false) cancel() }, 250)
     try {
       localSpeechRequest(JSON.stringify({ ...input, id }), result => {
@@ -60,13 +63,16 @@ export async function transcribeLocalAudio(files, options = {}) {
     const paths = list.map(path => {
       const local = String(path)
       if (/^https?:|^blob:|^wxfile:/i.test(local)) return ''
+      if (local.startsWith('/')) return local
       return plus.io.convertLocalFileSystemURL(local).replace(/^file:\/\//i, '')
     })
     if (paths.every(Boolean)) result = await nativeRequest({ action: 'recognize', paths }, options)
   }
   // #endif
   assertAsrCurrent(options)
-  return String(result?.text || '').trim() ? { text: result.text.trim(), local: true } : null
+  const text = String(result?.text || '').trim()
+  if (text) return { text, local: true }
+  return options.includeFailureReason && result?.error ? { reason: result.error } : null
 }
 
 export { localFirstAsr }

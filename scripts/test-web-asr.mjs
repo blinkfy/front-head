@@ -249,7 +249,8 @@ for (const platform of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
     },
     showToast() {}
   }
-  const context = { console, uni, ManifestIcon: {}, setTimeout, clearTimeout, Promise, Object, Array, String, Number, Error, JSON }
+  const context = { console, uni, ManifestIcon: {}, LocalSpeechButton: {}, refreshLocalSpeech() {}, stopLocalSpeech() {},
+    setTimeout, clearTimeout, Promise, Object, Array, String, Number, Error, JSON }
   vm.createContext(context); vm.runInContext(`${script}\nglobalThis.__component = __component`, context)
   const component = context.__component
   const page = { voiceRun: 1, recordingOwner: 'owner-1', recordHeld: true, isListening: false,
@@ -275,6 +276,26 @@ for (const platform of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
   page.recordHeld = false
   freshStop({ tempFilePath: 'fresh.wav' })
   assert.deepEqual(page.finishCalls, ['fresh.wav'], 'current onStart and released onStop still complete')
+
+  const speechResults = []
+  const classification = { ...component.data(), canSpeakLocally: true, permissionAttempt: 1,
+    $nextTick: fn => fn(), $refs: { classificationSpeech: { play: () => speechResults.push(classification.currentResult.category) } } }
+  for (const [name, method] of Object.entries(component.methods)) classification[name] = method.bind(classification)
+  classification.addToHistory = () => {}
+  context.recognizeByText = async () => ({ category: '有害垃圾' })
+  await classification.classifyRecognizedText('废电池')
+  assert.deepEqual(speechResults, ['有害垃圾'], 'a final category is read once without a preference')
+  classification.canSpeakLocally = false
+  await classification.classifyRecognizedText('废电池')
+  assert.deepEqual(speechResults, ['有害垃圾'], 'without a local voice, classification is text only')
+  classification.canSpeakLocally = true
+  let finishRecognition
+  context.recognizeByText = () => new Promise(resolve => { finishRecognition = resolve })
+  const classificationPending = classification.classifyRecognizedText('报纸')
+  classification.permissionAttempt++
+  finishRecognition({ category: '可回收物' })
+  await classificationPending
+  assert.deepEqual(speechResults, ['有害垃圾'], 'an intervening microphone press suppresses late automatic playback')
 
   const mergePage = { appSegmentWindowText: '', appSegmentWindowStartIndex: 0,
     appSegmentCumulativeText: '', textInput: '', appSegmentBaseText: '' }

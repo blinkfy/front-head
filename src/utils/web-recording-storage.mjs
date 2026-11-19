@@ -47,9 +47,9 @@ async function changeRow(id, owner, stores, action) {
 }
 export const webRecordingStorage = {
   create: row => transaction(['recordings'], 'readwrite', tx => tx.objectStore('recordings').add(row)),
-  append: (id, index, blob, owner) => changeRow(id, owner, ['chunks'], (row, store, tx) => {
+  append: (id, index, blob, owner, speaker) => changeRow(id, owner, ['chunks'], (row, store, tx) => {
     if (row.status !== 'recording') return '录音已结束'
-    tx.objectStore('chunks').add({ id, index, blob })
+    tx.objectStore('chunks').add({ id, index, blob, speaker })
     store.put({ ...row, updatedAt: Date.now(), size: row.size + blob.size, durationMs: Date.now() - row.createdAt })
   }),
   finish: (id, patch, owner) => changeRow(id, owner, [], (row, store) => { store.put({ ...row, ...patch }) }),
@@ -67,7 +67,7 @@ export async function listWebRecordings(owner) {
   return rows.map(row => recordingRow({ ...row, status: row.status === 'recording' && !recordingInProgress(row) ? 'interrupted' : row.status }, owner))
     .filter(Boolean).sort((a, b) => b.createdAt - a.createdAt)
 }
-export async function readWebRecording(owner, id) {
+export async function readWebRecording(owner, id, speaker) {
   const blob = await transaction(['recordings', 'chunks'], 'readonly', tx => {
     const request = tx.objectStore('recordings').get(id)
     let result
@@ -75,13 +75,23 @@ export async function readWebRecording(owner, id) {
       const row = request.result
       if (row?.owner !== owner || recordingInProgress(row) || !['saved', 'recording', 'interrupted'].includes(row.status)) return
       const chunks = tx.objectStore('chunks').getAll(chunkRange(id))
-      chunks.onsuccess = () => { result = new Blob(chunks.result.map(chunk => chunk.blob), { type: row.mimeType }) }
+      chunks.onsuccess = () => { result = new Blob(chunks.result.filter(chunk => chunk.speaker === speaker)
+        .map(chunk => chunk.blob), { type: row.mimeType }) }
     }
     return () => result
   })
   if (!blob?.size) throw new Error('录音未完整保存或不属于当前账号')
   return blob
 }
+export function readWebRecordingTranscript(owner, id) {
+  return transaction(['recordings'], 'readonly', tx => {
+    const request = tx.objectStore('recordings').get(id)
+    return () => request.result?.owner === owner ? request.result.transcript || null : null
+  })
+}
+export const saveWebRecordingTranscript = (owner, id, transcript, current) => changeRow(id, owner, [], (row, store) => {
+  if (current() && !recordingInProgress(row)) store.put({ ...row, transcript })
+})
 export const deleteWebRecording = (owner, id) => webRecordingStorage.remove(id, owner)
 export async function renameWebRecording(owner, id, name) {
   const trimmed = String(name).trim().slice(0, 80)

@@ -10,24 +10,24 @@
       <view class="stage-orb stage-blue"><view class="saturn-ring"></view></view><view class="stage-orb stage-green"><LoginGreenPlanet /></view><view class="stage-orb stage-yellow"><view class="saturn-ring"></view></view>
       <view class="login-glass">
         <view class="mobile-tabs" role="tablist" aria-label="登录方式">
-          <button role="tab" :aria-selected="mode === 'account'" :class="{ selected: mode === 'account' }" :disabled="loading || qrBusy || (mfa && !mfa.mfaPasswordAvailable)" @click="selectMode('account')">账号登录</button>
-          <button role="tab" :aria-selected="mode === 'wechat'" :class="{ selected: mode === 'wechat' }" :disabled="loading || qrBusy || (mfa && !mfa.mfaQrAvailable)" @click="selectMode('wechat')">微信扫码</button>
+          <button role="tab" :aria-selected="mode === 'account'" :class="{ selected: mode === 'account' }" :disabled="loading || qrBusy || (mfa && !mfa.passwordFirst && !mfa.mfaPasswordAvailable)" @click="selectMode('account')">账号登录</button>
+          <button role="tab" :aria-selected="mode === 'wechat'" :class="{ selected: mode === 'wechat' }" :disabled="loading || qrBusy || (mfa && !mfa.qrFirst && !mfa.mfaQrAvailable)" @click="selectMode('wechat')">微信扫码</button>
         </view>
         <view v-if="mfa" class="mfa-inline" role="status">
-          <text>{{ mfa.method === 'password' ? '请输入账号 ' + mfa.accountName + ' 的密码，完成双因素验证' : '请使用账号 ' + mfa.accountName + ' 扫码完成双因素验证' }}</text>
+          <text>{{ mfa.method === 'password' ? (mfa.qrFirst ? '扫码已确认，请输入账号 ' : '请输入账号 ') + mfa.accountName + ' 的密码，完成登录' : mfa.method === 'qr' ? '请用绑定微信扫码，完成登录' : '请选择其他方式完成登录验证' }}</text>
           <text v-if="mfa.error" class="mfa-inline-error" role="alert">{{ mfa.error }}</text>
-          <view class="mfa-inline-actions"><button class="mfa-inline-action" :disabled="loading || qrBusy" @click="emit('mfaChoices')">其他验证方式</button><button class="mfa-inline-action" :disabled="loading || qrBusy" @click="emit('mfaCancel')">返回登录</button></view>
+          <view class="mfa-inline-actions"><button class="mfa-inline-action" :disabled="loading || qrBusy" @click="emit('mfaChoices')">其他验证方式</button><button class="mfa-inline-action" :disabled="loading || qrBusy" @click="mfa.qrFirst ? restartWechatLogin() : restartAccountLogin()">{{ mfa.qrFirst ? '重新扫码' : '返回登录' }}</button></view>
         </view>
         <text v-if="!mfa" class="mobile-hint">{{ mode === 'account' ? '可切换到微信扫码登录' : '使用微信扫码登录已有账号' }}</text>
         <view class="login-columns" :class="{ 'mfa-password': mfa?.method === 'password' }">
           <view v-show="wide || mode === 'account'" class="account-column">
-            <view class="account-heading"><view class="account-icon"><ManifestIcon id="user_profile" :scale="2.5" /></view><view><text class="account-title">{{ mfa ? '账号验证' : '账号密码登录' }}</text><text class="account-description">{{ mfa ? '完成验证后即可登录当前账号' : '使用您的账号密码登录分投侠' }}</text></view></view>
+            <view class="account-heading"><view class="account-icon"><ManifestIcon id="user_profile" :scale="2.5" /></view><view><text class="account-title">{{ mfa && !mfa.passwordFirst ? '账号验证' : '账号密码登录' }}</text><text class="account-description">{{ mfa?.passwordFirst ? '返回账号登录，重新选择登录方式' : mfa ? '完成验证后即可登录当前账号' : '使用您的账号密码登录分投侠' }}</text></view></view>
             <form class="account-form" @submit="submitAccount">
               <view class="account-input"><ManifestIcon id="user_profile" :scale="1.8" /><input v-model="usernameModel" :disabled="Boolean(mfa)" type="text" placeholder="用户名" maxlength="20" aria-label="用户名" @confirm="submitAccount" /></view>
               <view class="account-input"><ManifestIcon id="password" :scale="1.8" /><input v-model="passwordModel" :disabled="Boolean(mfa && mfa.method !== 'password')" :type="showPassword ? 'text' : 'password'" placeholder="密码" maxlength="20" aria-label="密码" @confirm="submitAccount" /><button type="button" class="eye-toggle" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="emit('update:showPassword', !showPassword)"><ManifestIcon :id="showPassword ? 'visibility_off' : 'visibility'" :scale="1.8" /></button></view>
               <view v-if="showCaptcha && !mfa" class="captcha-section"><text>验证码</text><component :is="dark ? CaptchaDark : CaptchaBox" ref="captcha" :model-value="captchaInput" @update:model-value="emit('update:captchaInput', $event)" @confirm="submitAccount" /><text v-if="captchaHint" class="captcha-hint">{{ captchaHint }}</text></view>
               <view v-if="!mfa" class="account-options"><button type="button" class="remember-toggle" role="checkbox" :aria-checked="rememberMe" @click="emit('update:rememberMe', !rememberMe)"><view class="remember-check" :class="{ checked: rememberMe }"><text v-if="rememberMe">✓</text></view><text>记住我</text></button></view>
-              <button form-type="submit" class="account-submit" :disabled="loading || qrBusy || Boolean(mfa && mfa.method !== 'password')"><ManifestIcon v-if="!loading" id="submit_action" :scale="1.8" /><view v-else class="submit-spinner"></view><text>{{ loading || qrBusy ? '正在登录…' : mfa ? '验证并登录' : '登 录' }}</text></button>
+              <button form-type="submit" class="account-submit" :disabled="loading || qrBusy || Boolean(mfa && !mfa.passwordFirst && mfa.method !== 'password')"><ManifestIcon v-if="!loading" id="submit_action" :scale="1.8" /><view v-else class="submit-spinner"></view><text>{{ loading || qrBusy ? '正在登录…' : mfa?.passwordFirst ? '账号登录' : mfa ? '验证并登录' : '登 录' }}</text></button>
               <slot v-if="!mfa" name="biometric"></slot>
               <text v-if="!mfa" class="account-caption">已有账号可直接登录</text>
               <view v-if="!mfa" class="register-entry"><text>还没有账号？</text><button type="button" @click="openRegistration">{{ registrationAllowed ? '立即注册 ›' : (wide ? '扫码注册 ›' : '切换到微信扫码注册') }}</button></view>
@@ -86,14 +86,26 @@ function syncMotionVisibility() {
 }
 function resize(event) { wide.value = event.matches }
 function selectMode(value) {
+  if (props.loading || qrBusy.value) return
+  if (props.mfa?.passwordFirst && value === 'account') { restartAccountLogin(); return }
+  if (props.mfa?.qrFirst && value === 'wechat') { restartWechatLogin(); return }
   if (props.mfa) emit('mfaMethod', value === 'account' ? 'password' : 'qr')
   else mode.value = value
 }
+function restartLogin(value) {
+  if (props.loading || qrBusy.value) return
+  qrPanel.value?.pause()
+  mode.value = value
+  emit('mfaCancel')
+}
+function restartAccountLogin() { restartLogin('account') }
+function restartWechatLogin() { restartLogin('wechat') }
 watch(() => props.mfa?.method, method => {
   if (method) mode.value = method === 'password' ? 'account' : 'wechat'
   qrBusy.value = false
 }, { flush: 'sync' })
 function submitAccount() {
+  if (props.mfa?.passwordFirst) { restartAccountLogin(); return }
   if (props.loading || qrBusy.value || (props.mfa && props.mfa.method !== 'password')) return
   // Pause before emitting so a simultaneous QR response cannot race the password request.
   qrPanel.value?.pause()

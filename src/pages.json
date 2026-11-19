@@ -15,6 +15,20 @@
 				"navigationBarTextStyle": "white"
 			}
 		},
+		// #ifdef APP-PLUS
+		{
+			"path": "pages/app-tabs/index",
+			"style": {
+				"navigationStyle": "custom", "navigationBarTextStyle": "white", "disableScroll": true,
+				"app-plus": { "popGesture": "none", "subNVues": [
+					{ "id": "nearby-disposal-light", "path": "pages/map/nearby-panel", "style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 90 } },
+					{ "id": "map-controls-light", "path": "pages/map/controls", "style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 95 } },
+					{ "id": "nearby-disposal-dark", "path": "pages-dark/map/nearby-panel", "style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 90 } },
+					{ "id": "map-controls-dark", "path": "pages-dark/map/controls", "style": { "position": "absolute", "top": "0px", "left": "0px", "width": "1px", "height": "1px", "background": "transparent", "zindex": 95 } }
+				] }
+			}
+		},
+		// #endif
 		{
 			"path": "pages/home/home",
 			"style": {

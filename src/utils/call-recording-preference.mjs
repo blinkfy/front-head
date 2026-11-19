@@ -33,6 +33,9 @@ export function recordingRow(value, owner) {
   return { id: value.id, owner, name: String(value.name || '通话录音').slice(0, 80), peerName: String(value.peerName || '联系人').slice(0, 80),
     mode: value.mode === 'video' ? 'video' : 'audio', createdAt: value.createdAt, size: value.size,
     ...(validRecordingCallId(value.callId) ? { callId: value.callId } : {}),
+    ...(value.splitTracks === true ? { splitTracks: true, trackOffsets: {
+      self: Math.max(0, Number(value.trackOffsets?.self) || 0), peer: Math.max(0, Number(value.trackOffsets?.peer) || 0)
+    } } : {}),
     durationMs: value.durationMs, status: value.status, mimeType: String(value.mimeType || 'audio/webm').slice(0, 80) }
 }
 export function matchesRecording(row, query) {

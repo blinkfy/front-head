@@ -69,9 +69,17 @@ function plainSections(sections) {
 
 const helperSource = readFileSync(new URL('../src/utils/recognition-sync.js', import.meta.url), 'utf8')
   .replace(/^export\s+/gm, '')
-  .concat('\nthis.buildExpandedUpcyclingText = buildExpandedUpcyclingText; this.splitUpcyclingSections = splitUpcyclingSections;')
+  .concat('\nObject.assign(this, { buildExpandedUpcyclingText, splitUpcyclingSections, photoClassificationSpeech, recognitionSectionSpeech })')
 const helperContext = {}
 runInNewContext(helperSource, helperContext, { filename: 'recognition-sync.js' })
+
+const advice = [
+  { title: '投放建议', content: '倒空瓶内液体。' },
+  { title: '回收利用', content: '可用作育苗盆。' },
+  { title: '安全提醒', content: '把瓶口磨平。' }
+]
+assert.match(helperContext.photoClassificationSpeech('可回收物', ['饮料瓶'], advice, ''), /饮料瓶.*可回收物.*倒空瓶内液体/)
+assert.equal(helperContext.recognitionSectionSpeech(advice[1], advice), '回收利用。可用作育苗盆。\n安全提醒。把瓶口磨平。')
 
 for (const path of ['../src/pages/home/home.vue', '../src/pages-dark/home/home.vue']) {
   const { source, script, expression } = getSectionsExpression(path)

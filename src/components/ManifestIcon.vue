@@ -1,5 +1,6 @@
 <template>
-  <view v-if="id === 'back'" class="manifest-icon manifest-icon-back" :style="iconStyle" @click="emitClick">
+  <view v-if="appTabIcon" class="manifest-icon manifest-icon-tab" :class="'manifest-icon-tab-' + id" :style="iconStyle" @click="emitClick"></view>
+  <view v-else-if="id === 'back'" class="manifest-icon manifest-icon-back" :style="iconStyle" @click="emitClick">
     <image
       v-if="source && !placeholderOnly"
       class="manifest-icon-back-image"
@@ -34,6 +35,14 @@ const props = defineProps({
   size: { type: String, default: '' }
 })
 const emit = defineEmits(['click'])
+const appTabIcon = computed(() => {
+  // #ifdef APP-PLUS
+  return ['home', 'map_location', 'store', 'user_profile'].includes(props.id)
+  // #endif
+  // #ifndef APP-PLUS
+  return false
+  // #endif
+})
 
 const fallbackSource = getManifestIconPath('help')
 const failedSource = ref('')
@@ -82,6 +91,19 @@ watch(() => props.id, () => {
   vertical-align: middle;
   flex: 0 0 auto;
 }
+
+/* #ifdef APP-PLUS */
+/* Local navigation artwork paints directly instead of waiting for uni-image's load callback. */
+.manifest-icon-tab {
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+.manifest-icon-tab-home { background-image: url('/static/icons/home_128.webp.png'); }
+.manifest-icon-tab-map_location { background-image: url('/static/icons/map_location_128.webp.png'); }
+.manifest-icon-tab-store { background-image: url('/static/icons/store_128.webp.png'); }
+.manifest-icon-tab-user_profile { background-image: url('/static/icons/user_profile_128.webp.png'); }
+/* #endif */
 
 .manifest-icon-placeholder {
   opacity: 0;

@@ -1,7 +1,7 @@
 import { createAppTencentMap } from './renderer.mjs'
 
 const channel = 'app-tencent-map'
-const token = location.hash.slice(1)
+const token = location.hash.slice(1).split('?')[0]
 const container = document.getElementById('map')
 const errorElement = document.getElementById('map-error')
 let parentOrigin
@@ -107,6 +107,7 @@ async function initialize() {
     renderer = createAppTencentMap({
       sdk,
       container,
+      initialMarkerDelayMs: latestPacket.prioritizeFirstTiles ? 350 : 0,
       assetUrl: value => {
         if (typeof value !== 'string') return value
         if (/^(?:file:|_www(?:\/|$))/i.test(value)) return '/static/normal-marker.png'

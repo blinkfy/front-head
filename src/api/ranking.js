@@ -8,10 +8,17 @@ export const getRanking = async () => {
   try {
     const response = await request({
       url: '/api/ranking',
-      method: 'GET'
+      method: 'GET',
+      // #ifdef APP-PLUS
+      silent: true
+      // #endif
     });
     return response;
   } catch (error) {
+    // #ifdef APP-PLUS
+    throw error;
+    // #endif
+    // #ifndef APP-PLUS
     console.error('获取排行榜失败:', error);
     
     // Mock数据作为降级处理
@@ -99,5 +106,6 @@ export const getRanking = async () => {
         update_time: "2025-09-15T10:30:00.000Z"
       }
     };
+    // #endif
   }
 }

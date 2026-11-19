@@ -1,5 +1,5 @@
 import { getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { onReady, onUnload, onShow, onHide } from '@dcloudio/uni-app'
+import { onReady, onUnload, onShow, onHide } from '@/utils/app-tab-lifecycle.js'
 import { createMapBasemapController, isBinLocationPicker } from './map-basemap-core.mjs'
 import { captureSatelliteReference } from './bin-satellite-reference.mjs'
 import { getTencentBasemapOptions, createSatelliteDetailController } from './app-tencent-map.mjs'

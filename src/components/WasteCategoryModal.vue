@@ -32,7 +32,7 @@
 
 <script setup>
 import { computed, ref, watch, nextTick, getCurrentInstance, onBeforeUnmount } from 'vue'
-import { onHide, onShow } from '@dcloudio/uni-app'
+import { onHide, onShow } from '@/utils/app-tab-lifecycle.js'
 import ManifestIcon from './ManifestIcon.vue'
 import { baseUrl } from '@/api/settings'
 import { wasteCategoryGuides } from '@/utils/waste-category-guides'

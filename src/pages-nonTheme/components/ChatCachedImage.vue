@@ -2,13 +2,13 @@
   <image :key="sourceKey" class="chat-cached-image" :src="displaySrc" :mode="mode"
     :style="!displaySrc && mode === 'widthFix' ? { height: '120rpx' } : null"
     v-show="kind !== 'avatar' || displaySrc"
-    :data-message-id="messageId" :data-original-token="originalToken" :data-retry-nonce="retryNonce"
-    @load="$emit('load', $event)" @error="onImageError" />
+    :data-message-id="messageId" :data-original-token="originalToken" :data-retry-nonce="retryNonce" :data-source-key="sourceKey"
+    @load="onImageLoad" @error="onImageError" @tap="onTap" />
 </template>
 
 <script setup>
 import { getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchChatMedia, forgetChatMedia, readChatMedia } from '../utils/chat-local-media.mjs'
+import { fetchChatMedia, forgetChatMedia, forgetChatOriginalMedia, readChatMedia, readChatImageMedia } from '../utils/chat-local-media.js'
 // #ifdef APP-PLUS
 import { forgetMissingChatAvatar, getCachedChatAvatar, loadChatAvatar } from '@/utils/chat-avatar-cache.mjs'
 // #endif
@@ -21,9 +21,10 @@ const props = defineProps({
   mode: { type: String, default: 'aspectFill' },
   messageId: { type: [String, Number], default: '' },
   originalToken: { type: String, default: '' },
-  retryNonce: { type: [String, Number], default: '' }
+  retryNonce: { type: [String, Number], default: '' },
+  originalSrc: { type: String, default: '' }, conversationId: { type: [String, Number], default: '' }, eager: Boolean
 })
-const emit = defineEmits(['load', 'error', 'avatar-loading'])
+const emit = defineEmits(['load', 'error', 'tap', 'avatar-loading', 'original-cached'])
 const displaySrc = ref('')
 const sourceKey = ref(0)
 const instance = getCurrentInstance()
@@ -67,13 +68,31 @@ async function load() {
     return
   }
   // #endif
-  const result = await (visible ? fetchChatMedia(owner, kind, src) : readChatMedia(owner, kind, src))
+  const result = kind === 'preview' && props.originalSrc
+    ? await readChatImageMedia(owner, src, props.originalSrc, [props.conversationId, props.messageId], { download: visible })
+    : await (visible ? fetchChatMedia(owner, kind, src) : readChatMedia(owner, kind, src))
   if (current !== revision) { result?.release?.(); return }
   local = result
   if (result || visible) display(result?.url || src)
 }
 
-function onImageError(event) {
+function onImageLoad(event) {
+  if (!isCurrentSource(event)) return
+  emit('load', event)
+  if (local?.original) emit('original-cached')
+}
+
+function onTap(event) {
+  if (props.kind === 'community' && isCurrentSource(event)) emit('tap', event)
+}
+
+function isCurrentSource(event) {
+  const key = event.currentTarget?.dataset?.sourceKey
+  return !disposed && (key == null || String(key) === String(sourceKey.value))
+}
+
+async function onImageError(event) {
+  if (!isCurrentSource(event)) return
   const { src, owner, kind } = props
   const path = displaySrc.value
   if (!path) return
@@ -85,7 +104,14 @@ function onImageError(event) {
   }
   // #endif
   if (local?.url === path) {
+    const original = local.original
     releaseLocal()
+    if (original) {
+      const current = revision
+      await forgetChatOriginalMedia(owner, props.originalSrc, path)
+      if (current === revision) void load()
+      return
+    }
     void forgetChatMedia(owner, kind, src, path)
     display(src)
     return
@@ -101,10 +127,10 @@ function activate() {
   if (!displaySrc.value) void load()
 }
 
-watch(() => [props.owner, props.src, props.kind], load, { immediate: true })
+watch(() => [props.owner, props.src, props.kind, props.originalSrc, props.conversationId, props.messageId], load, { immediate: true })
 onMounted(() => nextTick(() => {
   if (disposed) return
-  if (props.kind !== 'preview') { activate(); return }
+  if (props.eager || (props.kind !== 'preview' && props.kind !== 'community')) { activate(); return }
   try {
     // #ifdef H5
     const element = instance.proxy.$el

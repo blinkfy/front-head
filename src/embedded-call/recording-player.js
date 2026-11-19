@@ -4,9 +4,9 @@ const timeLabel = value => {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
 }
 
-export function createRecordingPlayer(audio, host, { durationMs = 0, onError = () => {} } = {}) {
+export function createRecordingPlayer(audio, host, { durationMs = 0, startMs = 0, onError = () => {}, onPosition = () => {} } = {}) {
   const savedDuration = seconds(Number(durationMs) / 1000)
-  let elapsed = 0, dragging = false, closed = false
+  let elapsed = seconds(startMs / 1000), dragging = false, closed = false
   const root = document.createElement('div')
   root.className = 'recording-player'
   root.innerHTML = `<button type="button" class="recording-toggle" aria-label="播放录音"><span class="recording-play-icon" aria-hidden="true"></span></button>
@@ -30,6 +30,7 @@ export function createRecordingPlayer(audio, host, { durationMs = 0, onError = (
     seek.setAttribute('aria-valuetext', `${timeLabel(position)} / ${length ? timeLabel(length) : '未知时长'}`)
     toggle.setAttribute('aria-label', audio.paused ? audio.ended ? '重新播放录音' : '播放录音' : '暂停录音')
     root.classList.toggle('recording-playing', !audio.paused)
+    if (!dragging) onPosition(elapsed * 1000)
   }
   const update = force => {
     if (closed || dragging) return
@@ -73,6 +74,10 @@ export function createRecordingPlayer(audio, host, { durationMs = 0, onError = (
   audio.preload = 'metadata'
   audio.hidden = true
   host.replaceChildren(root, audio)
+  if (startMs > 0) {
+    try { audio.currentTime = elapsed }
+    catch (_) { onError('暂时无法跳转，请播放后重试') }
+  }
   render()
   return { play, dispose() {
     if (closed) return

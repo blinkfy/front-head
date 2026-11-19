@@ -39,10 +39,10 @@
             <button @click="goToOrders">查看回收订单</button>
           </template>
           <template v-else-if="draftExpired">
-            <text>预约草稿{{ draft?.status === 'cancelled' ? '已取消' : '已过期' }}，尚未创建订单。</text>
+            <text>预约草稿{{ draft?.status === 'cancelled' ? '已取消' : '已过期' }}。</text>
             <button :disabled="submitting" @click="recreateBookingDraft">重新准备预约</button>
           </template>
-          <text v-else>请核对物品、预估数量和日期，选择可用时段后确认。当前尚未创建订单。</text>
+          <text v-else>请核对物品、预估数量和日期，选择上门时段后确认预约。</text>
         </view>
 
         <view v-if="!draftId || (draft && !draftLoading && !draftError && !draftReceipt && !draftExpired)" :class="['booking-form', { 'booking-form-busy': submitting }]">
@@ -68,12 +68,11 @@
             </view>
             <view class="coverage-block">
               <RecyclingServiceMap v-if="bookingPoint && matchingAreas.length" class="coverage-map" :areas="matchingAreas" :point="bookingPoint" readonly />
-              <view v-if="catalogLoading" class="time-feedback" role="status">正在核验该地址的服务排班…</view>
+              <view v-if="catalogLoading" class="time-feedback" role="status">正在查找可预约的服务…</view>
               <view v-else-if="catalogError" class="time-feedback" role="alert"><text>{{ catalogError }}</text><button class="text-retry" @click="loadServiceAreas">重新加载</button></view>
               <text v-else-if="!bookingPoint" class="estimate-note">请通过地图选址或当前位置确认上门位置，查看附近的回收服务。</text>
               <view v-else-if="!selectedServiceArea" class="coverage-empty"><text class="estimate-note">该地址暂未有回收员提供服务，试试其他位置或稍后再来。</text><button class="text-retry" :disabled="catalogLoading" @click="loadServiceAreas">刷新服务覆盖</button></view>
               <view v-else class="coverage-confirmed"><view class="coverage-dot"></view><text>该地址有回收服务覆盖</text><text class="coverage-count">{{ matchingAreas.length }} 个范围</text></view>
-              <text v-if="bookingPoint" class="estimate-note coverage-note">已预留 {{ bookingTolerance }} 米定位容差，请核对实际上门位置。</text>
             </view>
           </view>
 
@@ -100,7 +99,7 @@
                 <text class="estimate-note">{{ typePriceText(item.id) }}</text>
                 <text v-if="typePriceDescriptions(item.id)" class="estimate-note price-description">{{ typePriceDescriptions(item.id) }}</text>
               </view>
-              <text class="estimate-note">数量不清楚可留空，实际数量与金额以现场确认结果为准。</text>
+              <text class="estimate-note">数量不清楚可留空，上门时与回收员确认数量和金额。</text>
             </view>
 
             <view class="photo-section">
@@ -150,7 +149,7 @@
           <view class="booking-checkout">
             <view v-if="selectedWasteItems.length" class="estimate-card">
               <view class="estimate-info"><text class="estimate-label">回收员报价参考</text><text class="estimate-amount">{{ estimateText }}</text></view>
-              <text class="estimate-note">未填数量、面议或计价单位不同的物品需另行确认。接单后请核对报价，以现场确认结果为准。</text>
+              <text class="estimate-note">接单后请确认回收员报价，上门时确认实际数量和金额。</text>
             </view>
             <button :class="['submit-btn', { disabled: submitting || addressBusy || photoUploading }]" :disabled="submitting || addressBusy || photoUploading" @click="submitBooking"><text class="submit-text">{{ submitting ? '提交中…' : (draftId ? '确认并提交预约' : '立即预约') }}</text></button>
           </view>
@@ -170,7 +169,7 @@ import AppConfirmDialog from '@/components/AppConfirmDialog.vue';
 import ManifestIcon from '@/components/ManifestIcon.vue';
 import ShopRegionPicker from './components/ShopRegionPicker.vue';
 import RecyclingServiceMap from './components/RecyclingServiceMap.vue';
-import { coversServiceLocation, bookingToleranceMeters, normalizePoint, gcj02ToWgs84 } from './utils/recycling-geometry.mjs';
+import { coversServiceLocation, normalizePoint, gcj02ToWgs84 } from './utils/recycling-geometry.mjs';
 import ShopAddressPicker from '@/pages-nonTheme/components/shop/ShopAddressPicker.vue';
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js';
 import { playUiSound } from '@/utils/ui-sounds.js';
@@ -249,7 +248,6 @@ export default {
     addressRegionComplete() { return this.addressRegion.length === 3 && this.addressRegion.every(part => String(part || '').trim()); },
     bookingSelectionKey() { return JSON.stringify([this.serviceAreaId, this.address, this.bookingPoint, this.dateValues[this.selectedDate], this.photoCount, [...this.selectedTypes].map(Number).sort((a, b) => a - b)]); },
     bookingPoint() { const p = this.addressCoordinates; const point = p?.address === this.address && p.coordinateSystem === 'wgs84' ? normalizePoint(p) : null; return point ? { ...point, ...(Number.isFinite(p.accuracyMeters) && p.accuracyMeters >= 0 ? { accuracyMeters: Math.min(200, p.accuracyMeters) } : {}) } : null; },
-    bookingTolerance() { return bookingToleranceMeters(this.bookingPoint?.accuracyMeters); },
     matchingAreas() { return this.bookingPoint ? this.serviceAreas.filter(area => area.geometry && coversServiceLocation(area.geometry, this.bookingPoint)) : []; },
     allowedWasteTypes() { const ids = [...new Set(this.matchingAreas.flatMap(area => area.typeIds || []))]; return this.wasteTypes.filter(item => ids.map(Number).includes(Number(item.id))); },
     address: {
@@ -510,7 +508,7 @@ export default {
       if (this.photoUploading) { uni.showToast({ title: '请等待图片上传完成', icon: 'none' }); return false; }
       if (this.photoCount > 6) { uni.showToast({ title: '物品照片最多6张，请移除多余照片', icon: 'none' }); return false; }
       if (!this.selectedServiceArea) { uni.showToast({ title: this.bookingPoint ? '该上门位置暂无有效范围与排班覆盖' : '请通过地图选择上门位置', icon: 'none' }); return false; }
-      if (this.selectedServiceArea.bounds && (!this.addressCoordinates || this.addressCoordinates.address !== this.address)) { uni.showToast({ title: '该区域需地图核验地址，请重新定位或地图选址', icon: 'none' }); return false; }
+      if (this.selectedServiceArea.bounds && (!this.addressCoordinates || this.addressCoordinates.address !== this.address)) { uni.showToast({ title: '请在地图上选择上门位置', icon: 'none' }); return false; }
       if (this.selectedTypes.some(id => !this.allowedWasteTypes.some(type => Number(type.id) === Number(id)))) { uni.showToast({ title: '所选品类不在该区域服务范围，请重新选择', icon: 'none' }); return false; }
       if (this.dateValues.today !== formatBookingDate(new Date())) {
         this.initDates();
@@ -696,7 +694,6 @@ export default {
 .coverage-dot { width: 12rpx; height: 12rpx; flex-shrink: 0; border: 4rpx solid var(--booking-bg); border-radius: 50%; background: var(--booking-accent); box-shadow: 0 0 0 1rpx var(--booking-accent); }
 .coverage-count { margin-left: auto; color: var(--booking-muted); font-size: 21rpx; font-weight: 400; white-space: nowrap; }
 .estimate-note { display: block; color: var(--booking-muted); font-size: 22rpx; line-height: 1.65; overflow-wrap: anywhere; }
-.coverage-note { margin-top: 8rpx; font-size: 21rpx; }
 .empty-note { padding: 16rpx 0; }
 .waste-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20rpx; }
 .waste-card { display: flex; align-items: center; gap: 10rpx; min-height: 100rpx; padding: 12rpx 8rpx; border-bottom: 1rpx solid var(--booking-line); box-sizing: border-box; min-width: 0; transition: background .18s; }

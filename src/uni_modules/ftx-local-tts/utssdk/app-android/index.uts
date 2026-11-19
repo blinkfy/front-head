@@ -1,0 +1,14 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import LocalTtsBridge from 'ftx.speech.LocalTtsBridge'
+
+export function probeLocalTts(callback: (available: boolean) => void): void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) { callback(false); return }
+  LocalTtsBridge.probe(context!, callback)
+}
+
+export function speakLocalTts(text: string, id: string, callback: (finished: boolean) => void): void {
+  LocalTtsBridge.speak(text, id, callback)
+}
+
+export function stopLocalTts(id: string): void { LocalTtsBridge.stop(id) }

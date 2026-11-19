@@ -5,6 +5,9 @@ import { realtimeActivityCard } from './realtime-activity.mjs'
 import { webCallsAvailable, refreshWebCallAlert } from './web-call-support.js'
 import { baseUrl } from '@/api/settings.js'
 import { applyCommunityChatSettings, connectCommunityChatSettings } from './community-chat-settings.js'
+// #ifdef APP-PLUS
+import { invalidateAppHomeAiSettings } from './app-home-ai-settings.js'
+// #endif
 import { syncChatPush } from './chat-push.js'
 import { messageBus, triggerMessageNotification } from './message-event-bus.js'
 import { initChatNotificationNavigation } from './notification.js'
@@ -19,6 +22,9 @@ import { realtimePermissionPending } from './realtime-permissions.js'
 import { webLocationAvailable } from './live-location-tracker.js'
 import { miniLocationAvailable } from './mini-location.js'
 import { connectChatEventsSocket, androidBackgroundMask, androidVideoVisible, setAndroidRealtimeForeground, handleAndroidRealtimeReturn, syncAndroidMessagingPreference } from './android-realtime.js'
+// #ifdef APP-PLUS
+import { appChatConnectionRestored } from './app-offline-session.js'
+// #endif
 
 let activityMessages = false
 let delegations = 0
@@ -83,7 +89,13 @@ export function notifyChatEvent(event) {
 const transport = createChatEventsTransport({
     getToken: token, getBaseUrl: () => baseUrl, connectSocket: connectChatEventsSocket,
     onEvent(event) {
-        if (event.type === 'settings.changed') { applyCommunityChatSettings(event); return }
+        if (event.type === 'settings.changed') {
+            // #ifdef APP-PLUS
+            if (event.settingsUpdatedAt) invalidateAppHomeAiSettings(event.settingsUpdatedAt)
+            // #endif
+            applyCommunityChatSettings(event)
+            return
+        }
         // #ifdef MP-WEIXIN
         if (miniIncomingCalls.handle(event)) return
         // #endif
@@ -137,6 +149,10 @@ const transport = createChatEventsTransport({
         // #endif
         activityMessages = false; voiceCalls.connection(false); liveLocations.connection(false) },
     onConnected(event) {
+        // #ifdef APP-PLUS
+        if (event.settingsUpdatedAt) invalidateAppHomeAiSettings(event.settingsUpdatedAt)
+        appChatConnectionRestored()
+        // #endif
         connectCommunityChatSettings(event)
         // #ifdef MP-WEIXIN
         miniIncomingCalls.connection(event)

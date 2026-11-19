@@ -17,6 +17,7 @@ export function createAppVersionGuard({ runtime, baseUrl, version, platform, ope
   const rawReLaunch = runtime.reLaunch.bind(runtime)
   let currentVersion = version, policy = null, fetchedAt = 0, pending = null
   let blocked = null, modalActive = false, installed = false, openingGlobalPage = false
+  let backgroundCheck = null
   const listeners = new Set()
 
   function metadata() {
@@ -91,9 +92,13 @@ export function createAppVersionGuard({ runtime, baseUrl, version, platform, ope
       data: { scope, feature: featureId || '', minVersion: minimum, versionName: policy.versionName,
         platform, url: policy.downloads?.[platform] ?? policy.url ?? '' } }
   }
+  function hasFreshPolicy() {
+    return policy && Date.now() - fetchedAt < (policy.checkIntervalMs || 60000)
+  }
   async function refresh({ force = false } = {}) {
     if (pending) return pending
-    if (!force && policy && Date.now() - fetchedAt < (policy.checkIntervalMs || 60000)) return policy
+    if (!force && hasFreshPolicy()) return policy
+    const blockAtRequestStart = blocked
     pending = new Promise((resolve, reject) => rawRequest({
       url: base + '/api/version', method: 'GET', header: metadata(), timeout: 8000,
       success: response => {
@@ -104,7 +109,9 @@ export function createAppVersionGuard({ runtime, baseUrl, version, platform, ope
         }
         policy = next
         fetchedAt = Date.now()
-        blocked = upgradeFor() // A policy rollback releases the global gate.
+        const policyBlock = upgradeFor()
+        // A verified rollback can release the gate. A newer server rejection still wins.
+        if (policyBlock || blocked === blockAtRequestStart) blocked = policyBlock
         changed()
         resolve(policy)
       },
@@ -112,8 +119,7 @@ export function createAppVersionGuard({ runtime, baseUrl, version, platform, ope
     })).finally(() => { pending = null })
     return pending
   }
-  async function ensure({ page, feature, force = false, prompt = true } = {}) {
-    try { await refresh({ force }) } catch (_) { /* No policy is not evidence of incompatibility; the server still checks requests. */ }
+  function allowsPage({ page, feature, prompt = true } = {}) {
     if (page && pathname(page) === pathname(APP_UPGRADE_PAGE)) return true
     // A server rejection is authoritative even while the cached policy is stale.
     if (blocked) { handleUpgrade(blocked, { prompt }); return false }
@@ -123,14 +129,31 @@ export function createAppVersionGuard({ runtime, baseUrl, version, platform, ope
     if (upgrade) { handleUpgrade(upgrade, { prompt }); return false }
     return true
   }
-  async function checkCurrentPage({ force = false } = {}) {
+  function enforceCurrentPage() {
     const page = runtime.currentRoute?.() || ''
     if (!page || pathname(page) === pathname(APP_UPGRADE_PAGE)) return
-    if (!await ensure({ page, force }) && !blocked) {
+    if (!allowsPage({ page }) && !blocked) {
       // Deep links and native notifications can bypass uni navigation methods.
       if ((runtime.pageCount?.() || 0) > 1) runtime.navigateBack({ delta: 1 })
       else rawReLaunch({ url: runtime.homeUrl() })
     }
+  }
+  async function ensure({ page, feature, force = false, prompt = true, useCached = false } = {}) {
+    if (useCached && !force && (policy || blocked)) {
+      const allowed = allowsPage({ page, feature, prompt })
+      if (!backgroundCheck && (pending || !hasFreshPolicy())) {
+        backgroundCheck = refresh().then(enforceCurrentPage).catch(() => {}).finally(() => { backgroundCheck = null })
+      }
+      return allowed
+    }
+    try { await refresh({ force }) } catch (_) { /* The server still checks requests when the policy is unavailable. */ }
+    return allowsPage({ page, feature, prompt })
+  }
+  async function checkCurrentPage({ force = false } = {}) {
+    const page = runtime.currentRoute?.() || ''
+    if (!page || pathname(page) === pathname(APP_UPGRADE_PAGE)) return
+    try { await refresh({ force }) } catch (_) {}
+    enforceCurrentPage()
   }
   function install() {
     if (installed) return
@@ -163,7 +186,7 @@ export function createAppVersionGuard({ runtime, baseUrl, version, platform, ope
       }
     }
   }
-  return { install, metadata, socketUrl, handleUpgrade, refresh, ensure, checkCurrentPage, download, getState,
+  return { install, metadata, socketUrl, handleUpgrade, refresh, ensure, allowsPage, checkCurrentPage, download, getState,
     setVersion(value) { if (compareVersions(value, value) === 0) currentVersion = value },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) } }
 }

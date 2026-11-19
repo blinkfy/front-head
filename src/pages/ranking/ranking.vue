@@ -44,7 +44,7 @@
 
     <!-- 排行榜内容 -->
     <view class="ranking-content">
-      <view class="loading-section" v-if="loading">
+      <view class="loading-section" v-if="loading && !rankingData">
         <view class="loading-spinner"></view>
         <text class="loading-text">加载排行榜中...</text>
       </view>
@@ -214,7 +214,7 @@ const loadRanking = async () => {
   } catch (error) {
     console.error('加载排行榜失败:', error)
     uni.showToast({
-      title: '网络错误，请稍后重试',
+      title: error?.msg || '网络错误，请稍后重试',
       icon: 'none'
     })
     return false

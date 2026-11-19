@@ -25,6 +25,21 @@ export function dedupeTextList(list) {
   return out;
 }
 
+export function photoClassificationSpeech(category, items, sections, fallbackDisposal) {
+  if (!category) return ''
+  if (category === '未识别到') return '未识别到垃圾分类。'
+  const subject = items.length ? `识别到${items.join('、')}。` : ''
+  const disposal = sections.find(section => /投放|分类建议|处理建议/.test(section.title))?.content || fallbackDisposal;
+  return `${subject}这张照片的分类结果是${category}。${disposal || ''}`
+}
+
+export function recognitionSectionSpeech(section, sections) {
+  const text = `${section.title}。${section.content}`;
+  if (!/利用|变废为宝|步骤|改造示例/.test(section.title)) return text;
+  const warnings = sections.filter(item => /安全提醒|注意事项|风险/.test(item.title) && !section.content.includes(item.content));
+  return [text, ...warnings.map(item => `${item.title}。${item.content}`)].join('\n');
+}
+
 export function extractRecognizedItems(data) {
   const out = []
   const aiItems = Array.isArray(data && data.aiInsights && data.aiInsights.items)

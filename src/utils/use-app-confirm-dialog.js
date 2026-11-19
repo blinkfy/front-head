@@ -1,5 +1,5 @@
 import { ref, provide } from 'vue'
-import { onHide, onUnload, onBackPress } from '@dcloudio/uni-app'
+import { onHide, onUnload, onBackPress } from '@/utils/app-tab-lifecycle.js'
 import { showAppModal } from './app-confirm-dialog.js'
 
 // 页面和子组件共用同一个弹窗队列；未挂载宿主时回退原生弹窗。

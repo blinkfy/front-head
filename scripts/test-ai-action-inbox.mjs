@@ -75,6 +75,7 @@ function makeInbox({ fetchRows, cancel = async () => ({ code: 0 }), fetchCapabil
   const calls = []
   const context = {
     ref, onBeforeUnmount() {}, defineExpose(value) { exposed = value },
+    injectModalProvider: (_, fallback) => fallback,
     fetchAiCapabilities: fetchCapabilities,
     fetchAiActions: async (scope, cursor) => { calls.push({ scope, cursor }); return fetchRows(scope, cursor, calls.length) },
     cancelAiAction: cancel, isCapabilityNotFound: () => false,
@@ -99,6 +100,18 @@ assert.equal(panel.calls.length, 2)
 await panel.context.changeScope('recent')
 assert.equal(panel.calls.length, 3)
 assert.equal(initialCalls, 3)
+
+const offlineRefresh = makeInbox({ fetchRows: async (_, __, calls) => {
+  if (calls === 2) throw { networkUnavailable: true, msg: '当前离线' }
+  return { code: 0, data: { items: calls === 1 ? [action] : [], nextCursor: calls === 1 ? 'next' : '' } }
+} })
+await offlineRefresh.exposed.openInbox()
+await offlineRefresh.context.refreshInbox()
+assert.equal(offlineRefresh.context.state.items.value[0]?.id, action.id)
+assert.equal(offlineRefresh.context.state.nextCursor.value, 'next')
+assert.equal(offlineRefresh.context.state.error.value, '当前离线')
+await offlineRefresh.context.refreshInbox()
+assert.equal(offlineRefresh.context.state.items.value.length, 0, 'a verified empty list replaces the last visible snapshot')
 
 const pendingRows = deferred(), recentRows = deferred()
 const race = makeInbox({ fetchRows: scope => scope === 'pending' ? pendingRows.promise : recentRows.promise })

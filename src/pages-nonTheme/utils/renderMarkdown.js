@@ -68,6 +68,19 @@ function normalizeMarkdown(text) {
     .replace(/\n{3,}/g, '\n\n')        // 超过2个连续空行压缩为2个
 }
 
+export function markdownSpeechText(markdownText) {
+  if (!markdownText) return ''
+  return md.parse(normalizeMarkdown(markdownText), {})
+    .filter(token => token.type === 'inline')
+    .map(token => token.children.map(child => {
+      if (child.type === 'softbreak' || child.type === 'hardbreak') return '\n'
+      if (child.type === 'code_inline' && /^[\p{L}\p{N}\s_-]+$/u.test(child.content)) return child.content
+      return child.type === 'text' ? child.content : ''
+    }).join('').replace(/(?:https?:\/\/|www\.)[^\s，。！？；、）]+/gi, '').trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
 export function renderMarkdown(markdownText) {
   if (!markdownText || typeof markdownText !== 'string') return ''
   try {

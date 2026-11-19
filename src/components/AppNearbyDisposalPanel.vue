@@ -2,9 +2,10 @@
 
 <script setup>
 import { getCurrentInstance, onBeforeUnmount, onMounted, watch } from 'vue'
-import { onHide, onReady, onShow, onUnload } from '@dcloudio/uni-app'
+import { onHide, onReady, onShow, onUnload } from '@/utils/app-tab-lifecycle.js'
 import { config } from '@/api/config.js'
 import { pageSubNVue } from '@/utils/page-subnvue.mjs'
+import { useAppTabContext } from '@/utils/app-tab-context.js'
 import { resolveBinPointImage } from '@/utils/trash-bin-image-core.mjs'
 import { binPointPhotoKey, getBinPointPhoto } from '@/utils/bin-point-photo.js'
 import { createNativeDisposalController } from '@/utils/native-nearby-disposal.mjs'
@@ -13,6 +14,8 @@ const props = defineProps({ panelId: { type: String, required: true }, visible: 
 const emit = defineEmits(['select', 'navigate', 'heightchange', 'closingchange'])
 const topic = `nearby-disposal:${props.panelId}`
 const page = getCurrentInstance().root
+const tabContext = useAppTabContext()
+const foreground = () => tabContext ? tabContext.foreground.value : true
 const fallbackImages = new Map()
 const attemptedImages = new Set()
 const controller = createNativeDisposalController({
@@ -61,9 +64,10 @@ watch(() => [props.visible, props.points, props.dark], () => controller.update({
   visible: props.visible, dark: props.dark,
   points: mappedPoints()
 }), { immediate: true })
-onMounted(() => { attach(); controller.activate(true); uni.onWindowResize?.(controller.refresh) })
+onMounted(() => { attach(); controller.activate(foreground()); uni.onWindowResize?.(controller.refresh) })
 onReady(attach, page)
-onShow(() => { attach(); controller.activate(true) }, page)
+onShow(() => { attach(); controller.activate(foreground()) }, page)
+if (tabContext) watch(tabContext.foreground, value => { attach(); controller.activate(value) }, { flush: 'sync' })
 onHide(() => controller.activate(false), page)
 let disposed = false
 function dispose() {

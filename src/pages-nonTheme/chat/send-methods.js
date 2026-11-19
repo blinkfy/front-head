@@ -3,6 +3,7 @@ import { sentChatFeedback } from '@/utils/chat-feedback.js'
 
 export const messageSendMethods = {
     sendCreatedMessage(message, onProgress) {
+        if (this.chatOffline) return Promise.reject(new Error('当前离线，请联网后重试'))
         if (this.isGroupChat && this.groupSendBlockReason) return Promise.reject(new Error(this.groupSendBlockReason))
         const { clientMessageId, refId } = message
         const options = { ...(clientMessageId ? { clientMessageId } : {}), ...(refId ? { refId } : {}) }

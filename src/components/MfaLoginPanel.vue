@@ -52,7 +52,7 @@ function finish(result) {
   const resolve = resolvePending; resolvePending = null; resolve?.(result)
 }
 function publish() {
-  emit('change', pending.value ? { ...pending.value, method: externalMethod.value, error: error.value, busy: busy.value } : null)
+  emit('change', pending.value ? { ...pending.value, method: externalMethod.value, error: error.value, busy: busy.value, passwordFirst: reuse.passwordFirst === true, qrFirst: reuse.qrFirst === true } : null)
 }
 function selectExternal(method) {
   if (busy.value || !pending.value || !reuse[method] || pending.value[method === 'password' ? 'mfaPasswordAvailable' : 'mfaQrAvailable'] !== true) return false
@@ -125,8 +125,9 @@ function open(result, options = {}) {
   finish(null)
   pending.value = result; code.value = ''; error.value = ''; recovery.value = result.mfaHasTotp === false; canQuick.value = false
   page = getCurrentPages().slice(-1)[0]
-  reuse = { password: options.password === true, qr: options.qr === true }
-  publish()
+  reuse = { password: options.password === true, qr: options.qr === true, passwordFirst: options.passwordFirst === true, qrFirst: options.qrFirst === true }
+  const initialMethod = reuse.passwordFirst ? 'qr' : reuse.qrFirst ? 'password' : ''
+  if (!initialMethod || !selectExternal(initialMethod)) publish()
   const revision = generation
   // #ifdef APP-PLUS || H5 || MP-WEIXIN
   void quickLogin.capability().then(async support => {

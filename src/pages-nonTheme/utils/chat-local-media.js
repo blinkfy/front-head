@@ -1,7 +1,9 @@
+// Keep this module as .js so uni-app preprocesses its platform branches.
 const MiB = 1024 * 1024
 const buckets = {
   avatar: { entries: 160, total: 12 * MiB, item: MiB },
   preview: { entries: 180, total: 12 * MiB, item: MiB },
+  community: { entries: 120, total: 40 * MiB, item: 5 * MiB },
   original: { entries: 100, total: 80 * MiB, item: 20 * MiB },
   attachment: { entries: 50, total: 80 * MiB, item: 20 * MiB }
 }
@@ -12,6 +14,7 @@ const STORAGE_KEY = 'chat_local_media_v2'
 const LEGACY_MEDIA_KEY = 'chat_local_media_v1'
 const LEGACY_ORIGINAL_KEY = 'chat_original_image_cache_v1'
 const pending = new Map()
+const temporaryOriginals = new Map()
 let writes = Promise.resolve()
 let nativeIndex
 let lastNativeTouch = 0
@@ -319,6 +322,8 @@ function writeNativeIndex() {
   uni.setStorageSync(STORAGE_KEY, [...nativeEntries().values()])
 }
 
+const appDiskReserve = 256 * MiB
+
 function appFreeBytes() {
   // #ifdef APP-PLUS
   try {
@@ -331,6 +336,30 @@ function appFreeBytes() {
   // #endif
   return NaN
 }
+
+// #ifdef APP-PLUS
+async function evictDownloadableNativeMedia(bytes, requireEnough = false) {
+  const entries = [...nativeEntries().values()]
+    .filter(entry => /^\["[^"]+","(?:avatar|preview|community|original|attachment)","https?:\/\//i.test(entry.key))
+    .sort((a, b) => a.usedAt - b.usedAt)
+  if (requireEnough && entries.reduce((total, entry) => total + entry.size, 0) < bytes) return 0
+  let freed = 0
+  for (const entry of entries) {
+    if (freed >= bytes) break
+    if (await removeNativeEntry(entry)) freed += entry.size
+  }
+  if (freed) {
+    try { writeNativeIndex() } catch (_) {}
+  }
+  return freed
+}
+
+export function reclaimAppChatMediaSpace() {
+  const free = appFreeBytes()
+  const bytes = Number.isFinite(free) ? Math.max(8 * MiB, appDiskReserve - free) : 8 * MiB
+  return serialize(() => evictDownloadableNativeMedia(bytes))
+}
+// #endif
 
 async function nativeWrite(item, path) {
   const size = await nativeSize(path, false)
@@ -346,13 +375,20 @@ async function nativeWrite(item, path) {
     }
     const entry = { ...item, size, usedAt: Date.now() }
     const shared = largeMedia(item.kind)
-    const current = [...entries.values()]
+    let free = appFreeBytes()
     let budget = limits(item.kind)
+    if (size > budget.item && !(shared && Number.isFinite(free))) return path
+    // #ifdef APP-PLUS
+    if (Number.isFinite(free) && free < appDiskReserve + size) {
+      free += await evictDownloadableNativeMedia(appDiskReserve + size - free, true)
+      if (free < appDiskReserve + size) return path
+    }
+    // #endif
+    const current = [...entries.values()]
     if (shared) {
-      const free = appFreeBytes()
       if (Number.isFinite(free) && free >= 0) {
         const cached = current.reduce((sum, old) => sum + (largeMedia(old.kind) ? old.size : 0), 0)
-        budget = { ...budget, total: Math.max(0, cached + free - 256 * MiB), item: Infinity }
+        budget = { ...budget, total: Math.max(0, cached + free - appDiskReserve), item: Infinity }
       }
     }
     if (size > budget.item) return path
@@ -401,11 +437,129 @@ function mediaHandle(value) {
   return { url: value }
 }
 
+function nativeMediaHandle(path, persistent) {
+  return path ? { url: path, persistent, nativeMedia: true } : null
+}
+
 async function lookup(key) {
   // #ifdef H5
   return webRead(key)
   // #endif
   return nativeRead(key)
+}
+
+async function lookupOriginal(owner, url, scope) {
+  const item = descriptor(owner, 'original', url, scope)
+  if (!item) return null
+  const keys = new Set([item.key, descriptor(owner, 'original', url).key])
+  // Older App/mini-program versions index originals per conversation/message.
+  // Keep those files usable even if message metadata was refreshed from the server.
+  // #ifndef H5
+  const prefix = JSON.stringify(JSON.parse(item.key).slice(0, 3)).slice(0, -1)
+  for (const key of nativeEntries().keys()) {
+    if (key.startsWith(prefix + ',') || key === prefix + ']') keys.add(key)
+  }
+  // #endif
+  for (const key of keys) {
+    const value = await lookup(key).catch(() => null)
+    if (value) return value
+  }
+  return null
+}
+
+export async function readChatOriginalMedia(owner, url, scope) {
+  try {
+    const handle = mediaHandle(await lookupOriginal(owner, url, scope))
+    return handle ? { ...handle, persistent: true } : null
+  } catch (_) { return null }
+}
+
+function keepTemporaryOriginal(owner, url, value) {
+  const item = descriptor(owner, 'original', url)
+  if (!item || !value) return
+  temporaryOriginals.delete(item.key)
+  temporaryOriginals.set(item.key, value)
+  // Only retain a small set of already downloaded originals across page changes.
+  while (temporaryOriginals.size > 8) temporaryOriginals.delete(temporaryOriginals.keys().next().value)
+  // #ifdef H5
+  let bytes = [...temporaryOriginals.values()].reduce((sum, blob) => sum + blob.size, 0)
+  for (const [key, blob] of temporaryOriginals) {
+    if (bytes <= buckets.original.item) break
+    temporaryOriginals.delete(key)
+    bytes -= blob.size
+  }
+  // #endif
+}
+
+async function readTemporaryOriginal(owner, url) {
+  const item = descriptor(owner, 'original', url)
+  const value = item && temporaryOriginals.get(item.key)
+  if (!value) return null
+  // #ifndef H5
+  if (!(await nativeSize(value, false) > 0)) {
+    if (temporaryOriginals.get(item.key) === value) temporaryOriginals.delete(item.key)
+    return null
+  }
+  // #endif
+  return value
+}
+
+async function readOriginalForDisplay(owner, url, scope) {
+  const persistent = await readChatOriginalMedia(owner, url, scope)
+  if (persistent) return persistent
+  const temporary = mediaHandle(await readTemporaryOriginal(owner, url))
+  return temporary ? { ...temporary, persistent: false } : null
+}
+
+export async function forgetChatOriginalMedia(owner, url, displayedPath) {
+  const item = descriptor(owner, 'original', url)
+  if (!item) return
+  // #ifdef H5
+  temporaryOriginals.delete(item.key)
+  // #endif
+  // #ifndef H5
+  if (!displayedPath || temporaryOriginals.get(item.key) === displayedPath) temporaryOriginals.delete(item.key)
+  // #endif
+  const scopes = [[]]
+  // #ifndef H5
+  const prefix = item.key.slice(0, -1)
+  for (const key of nativeEntries().keys()) {
+    if (key.startsWith(prefix + ',')) {
+      try { scopes.push(JSON.parse(key).slice(3)) } catch (_) {}
+    }
+  }
+  // #endif
+  await Promise.all(scopes.map(scope => forgetChatMedia(owner, 'original', url, displayedPath, scope)))
+}
+
+export async function removeChatImagePreviews(owner, urls) {
+  await Promise.all([...new Set(urls || [])].filter(Boolean).map(async url => {
+    const item = descriptor(owner, 'preview', url)
+    if (!item) return
+    // An older thumbnail download must not recreate the file after cleanup.
+    await pending.get(item.key)
+    await forgetChatMedia(owner, 'preview', url)
+  }))
+}
+
+export function isChatImageOffline() {
+  // #ifdef H5
+  return Promise.resolve(globalThis.navigator?.onLine === false)
+  // #endif
+  if (typeof uni.getNetworkType !== 'function') return Promise.resolve(false)
+  return callFile(uni, 'getNetworkType', {}).then(result => result.networkType === 'none', () => false)
+}
+
+export async function readChatImageMedia(owner, previewUrl, originalUrl, scope, { download = false } = {}) {
+  let original = await readOriginalForDisplay(owner, originalUrl, scope)
+  if (original) return { ...original, original: true }
+  let preview = await readChatMedia(owner, 'preview', previewUrl)
+  if (!preview && download) preview = await fetchChatMedia(owner, 'preview', previewUrl)
+  // The user may finish loading the original while a thumbnail is in flight.
+  original = await readOriginalForDisplay(owner, originalUrl, scope)
+  if (!original) return preview
+  preview?.release?.()
+  return { ...original, original: true }
 }
 
 export async function readChatMedia(owner, kind, url, scope) {
@@ -449,14 +603,42 @@ export async function saveDownloadedChatMedia(owner, kind, url, path) {
   return path
 }
 
-export async function fetchChatMedia(owner, kind, url, expectedSize = 0, scope) {
+export async function saveDownloadedChatOriginal(owner, url, path, scope) {
+  // #ifndef H5
+  const item = descriptor(owner, 'original', url, scope)
+  if (item) {
+    const savedPath = await nativeWrite(item, path)
+    const persistent = savedPath !== path
+    if (!persistent) keepTemporaryOriginal(owner, url, path)
+    return { url: savedPath, persistent }
+  }
+  // #endif
+  return { url: path, persistent: false }
+}
+
+export async function fetchChatMedia(owner, kind, url, expectedSize = 0, scope, options = {}) {
   const item = descriptor(owner, kind, url, scope)
   if (!item) return null
   const size = Math.max(0, Number(expectedSize) || 0)
   if (!pending.has(item.key)) {
     const request = (async () => {
-      const cached = await lookup(item.key).catch(() => null)
-      if (cached) return cached
+      const cached = await (kind === 'original' ? lookupOriginal(owner, url, scope) : lookup(item.key)).catch(() => null)
+      if (cached) {
+        // #ifdef H5
+        return cached
+        // #endif
+        return nativeMediaHandle(cached, true)
+      }
+      if (kind === 'original') {
+        const temporary = await readTemporaryOriginal(owner, url)
+        if (temporary) {
+          // #ifdef H5
+          return temporary
+          // #endif
+          return nativeMediaHandle(temporary, false)
+        }
+      }
+      if ((kind === 'original' || kind === 'preview' || kind === 'community') && await isChatImageOffline()) return null
       // #ifdef H5
       if (largeMedia(kind) && navigator.storage?.estimate && navigator.locks?.request &&
           globalThis.FileSystemFileHandle?.prototype?.createWritable && globalThis.crypto?.randomUUID) {
@@ -465,16 +647,27 @@ export async function fetchChatMedia(owner, kind, url, expectedSize = 0, scope) 
       }
       if (size > limits(kind).item) return null
       const blob = await downloadBlob(url, kind)
-      if (blob) await webWrite({ ...item, blob, size: blob.size, usedAt: Date.now() }).catch(() => {})
+      if (blob) await webWrite({ ...item, blob, size: blob.size, usedAt: Date.now() }).catch(() => {
+        if (kind === 'original') keepTemporaryOriginal(owner, url, blob)
+      })
       return blob
       // #endif
       if (size > limits(kind).item && !Number.isFinite(appFreeBytes())) return null
       const download = await callFile(uni, 'downloadFile', { url, timeout: largeMedia(kind) ? 120000 : 12000 })
       if (download.statusCode !== 200 || !download.tempFilePath) return null
+      if (kind === 'original') {
+        const saved = await saveDownloadedChatOriginal(owner, url, download.tempFilePath, scope)
+        return nativeMediaHandle(saved.url, saved.persistent)
+      }
       const savedPath = await nativeWrite(item, download.tempFilePath)
-      return scope && savedPath === download.tempFilePath ? null : savedPath
+      return nativeMediaHandle(savedPath, savedPath !== download.tempFilePath)
     })().catch(() => null).finally(() => pending.delete(item.key))
     pending.set(item.key, request)
   }
-  return mediaHandle(await pending.get(item.key))
+  const result = await pending.get(item.key)
+  if (result?.nativeMedia) {
+    if (scope && !result.persistent && !options.allowTemporary) return null
+    return { url: result.url, persistent: result.persistent }
+  }
+  return mediaHandle(result)
 }

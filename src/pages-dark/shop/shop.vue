@@ -71,13 +71,13 @@
           <text class="product-count">({{ filteredProducts.length }}件商品)</text>
         </view>
 
-        <view v-if="isRecommendCategory && recommendLoading" class="recommend-loading-mask">
+        <view v-if="isRecommendCategory && recommendLoading && (!appShop || !recommendedNames.length)" class="recommend-loading-mask">
           <text class="recommend-loading-text">AI 正在生成推荐，请稍候...</text>
         </view>
         
-        <view v-if="productsLoading" class="shop-catalog-state">正在加载商品...</view>
+        <view v-if="productsLoading && !catalogReady" class="shop-catalog-state">正在加载商品...</view>
         <view v-else-if="productsError" class="shop-catalog-state">
-          <text>{{ productsError }}</text><button class="shop-catalog-retry" @click="loadProducts">重新加载</button>
+          <text>{{ productsError }}</text><button class="shop-catalog-retry" @click="loadProducts()">重新加载</button>
         </view>
         <view v-else-if="!filteredProducts.length" class="shop-catalog-state">暂无该分类商品</view>
         <view v-else class="products-grid">
@@ -192,7 +192,9 @@
 
 <script setup>
 import { ref, computed, onBeforeUnmount } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow } from '@/utils/app-tab-lifecycle.js'
+import { useAppTabContext } from '@/utils/app-tab-context.js'
+import { useAppShopData } from '@/utils/use-app-shop-data.js'
 import { userinfo } from '@/api/user'
 import { fetchShopProducts, fetchShopRecommendations } from '@/api/shop'
 import ManifestIcon from '@/components/ManifestIcon.vue'
@@ -208,8 +210,13 @@ import {
 
 const { tabPageClass } = useTabPageTransition('pages-dark/shop/shop')
 // 响应式数据
-const userPoints = ref(0) // 用户当前积分
-const loading = ref(false) // 加载状态
+const appShop = useAppTabContext() ? useAppShopData({
+  isDisposed: () => pageDisposed,
+  onDataChange: () => { recommendReady.value = false },
+  signedOutPoints: '未登录'
+}) : null
+const userPoints = appShop?.userPoints ?? ref(0)
+const loading = appShop?.loading ?? ref(false)
 const currentCategory = ref(0) // 当前选中的分类
 const showDetailModal = ref(false) // 显示商品详情弹窗
 const exchangeSubmitting = ref(false)
@@ -232,11 +239,17 @@ const categories = ref([
 ])
 
 // 服务端商品数据
-const products = ref([])
-const productsLoading = ref(false)
-const productsError = ref('')
+const products = appShop?.products ?? ref([])
+const catalogReady = appShop?.catalogReady ?? false
+const productsLoading = appShop?.productsLoading ?? ref(false)
+const productsError = appShop?.productsError ?? ref('')
 
-const loadProducts = async () => {
+const loadProducts = async (force = true) => {
+  if (appShop) {
+    await appShop.loadProducts(force)
+    if (force && isRecommendCategory.value) await ensureRecommendations()
+    return
+  }
   if (productsLoading.value || pageDisposed) return
   productsLoading.value = true
   productsError.value = ''
@@ -274,7 +287,7 @@ onShow(async () => {
   }
   
   // 获取用户真实积分数据
-  await Promise.all([fetchUserPoints(), loadProducts()])
+  await Promise.all(appShop ? [appShop.fetchPoints(false), loadProducts(false)] : [fetchUserPoints(), loadProducts()])
   if (pageDisposed) return
   if (currentCategory.value === 0) {
     await ensureRecommendations()
@@ -314,6 +327,9 @@ const fetchUserPoints = async (notifyError = true) => {
     }
   } catch (error) {
     if (pageDisposed) return false
+    // #ifdef APP-PLUS
+    if (error?.networkUnavailable) return false
+    // #endif
     console.error('请求用户积分出错:', error)
     // 网络错误时使用本地存储的积分
     const storedPoints = uni.getStorageSync('userPoints')
@@ -327,8 +343,9 @@ const fetchUserPoints = async (notifyError = true) => {
 
 // 刷新用户积分
 const refreshPoints = async () => {
-  const success = await fetchUserPoints(false)
+  const success = await (appShop ? appShop.fetchPoints(true) : fetchUserPoints(false))
   if (pageDisposed) return
+  if (appShop && success && isRecommendCategory.value) void ensureRecommendations()
   uni.showToast({
     title: success ? '积分刷新成功' : '积分刷新失败，当前显示缓存数据',
     icon: success ? 'success' : 'none',
@@ -361,6 +378,11 @@ async function ensureRecommendations(force = false) {
   if (pageDisposed) return
   if (recommendLoading.value) return
   if (recommendReady.value && !force) return
+  if (appShop && (appShop.refreshing() || !products.value.length)) return
+
+  const sourceProducts = products.value
+  const sourcePoints = userPoints.value
+  const inputsChanged = () => appShop && (products.value !== sourceProducts || userPoints.value !== sourcePoints)
 
   recommendLoading.value = true
   try {
@@ -370,23 +392,26 @@ async function ensureRecommendations(force = false) {
       candidateProducts: buildCandidateProducts(products.value)
     })
 
+    if (pageDisposed || inputsChanged()) return
     const normalized = normalizeRecommendationResult(
       apiResult,
       products.value,
       userPoints.value,
       SHOP_RECOMMEND_LIMIT
     )
-    if (pageDisposed) return
     recommendedNames.value = Array.isArray(normalized.names) ? normalized.names : []
     recommendSource.value = normalized.source || 'rule-dom'
     recommendReady.value = true
   } catch (_) {
-    if (pageDisposed) return
+    if (pageDisposed || inputsChanged()) return
     recommendedNames.value = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
     recommendSource.value = 'rule-dom'
     recommendReady.value = true
   } finally {
-    if (!pageDisposed) recommendLoading.value = false
+    if (!pageDisposed) {
+      recommendLoading.value = false
+      if (inputsChanged() && isRecommendCategory.value) void ensureRecommendations()
+    }
   }
 }
 

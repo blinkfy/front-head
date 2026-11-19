@@ -61,19 +61,19 @@
               class="post-image-row"
               :class="row.className"
             >
-              <image
+              <ChatCachedImage
                 v-for="item in row.items"
                 :key="item.index"
                 class="post-image"
                 :class="getImageCardClass(item.index)"
                 :style="getImageCardStyle(item.index, row.className)"
                 :src="item.src"
+                :owner="imageCacheOwner"
+                kind="community"
                 mode="aspectFill"
                 @load="onPostImageLoad(item.index, $event)"
                 @tap.stop="previewImage(post.images, item.index)"
-                :data-idx="item.index"
-                :data-src="item.src"
-              ></image>
+              />
             </view>
           </view>
 
@@ -160,7 +160,8 @@
     <view v-if="imagePreviewVisible" class="community-preview" role="dialog" aria-modal="true" aria-label="图片预览">
       <scroll-view class="community-preview-scroll" :scroll-x="previewImageSize.width > previewViewportWidth" :scroll-y="previewImageSize.height > previewViewportHeight" :scroll-left="previewScrollLeft" :scroll-top="previewScrollTop" :key="previewIndex">
         <view class="community-preview-canvas" :style="previewCanvasStyle" @click.self="closeImagePreview">
-          <image class="community-preview-image" :style="previewImageStyle" :src="previewImages[previewIndex]" mode="aspectFit" @load="onPreviewImageLoad" />
+          <ChatCachedImage class="community-preview-image" :style="previewImageStyle" :src="previewImages[previewIndex]"
+            :owner="imageCacheOwner" kind="community" mode="aspectFit" eager @load="onPreviewImageLoad" />
         </view>
       </scroll-view>
       <view class="community-preview-count">{{ previewIndex + 1 }} / {{ previewImages.length }}</view>
@@ -186,8 +187,9 @@ import { userinfo } from '@/api/user.js';
 import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
-import { getCachedCommunityImage, normalizeCommunityImages, setCachedCommunityImage, takeCommunityPostSnapshot } from '@/pages-nonTheme/utils/community-image.js';
+import { getCachedCommunityImage, getCommunityImageOwner, normalizeCommunityImages, setCachedCommunityImage } from '@/pages-nonTheme/utils/community-image.js';
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import ChatCachedImage from './components/ChatCachedImage.vue'
 import CommunityChatBridge from './components/CommunityChatBridge.vue'
 import CommunityPostBody from './components/CommunityPostBody.vue'
 import { getCommunityPostDetail, communitySocialEnabled } from './utils/community-social.js';
@@ -205,7 +207,7 @@ function requestJson(url, options = {}) {
   })
 }
 export default {
-  components: { AppConfirmDialog, ManifestIcon, CommunityChatBridge, CommunityPostBody },
+  components: { AppConfirmDialog, ManifestIcon, ChatCachedImage, CommunityChatBridge, CommunityPostBody },
   data() {
     return {
       postId: 0,
@@ -225,6 +227,7 @@ export default {
       loadingComments: false,
       commentsPage: 0, commentsHasMore: false, commentsError: '', postError: '', submittingComment: false, replyName: '',
       loadingImages: false,
+      imageCacheOwner: '',
       commentText: '',
       commentFocused: false,
       replyTo: null,
@@ -309,6 +312,7 @@ export default {
     }
   },
   onLoad(options) {
+    this.imageCacheOwner = getCommunityImageOwner();
     this.checkTheme();
     this.checkAdmin();
     this.checkAvailability();
@@ -426,6 +430,7 @@ export default {
         let images = this.post.images.length ? [...this.post.images] : await getCachedCommunityImage('post', this.postId);
         if (!images || !images.length) {
           const res = await getCommunityPostImages(this.postId);
+          if (account !== (uni.getStorageSync('token') || '')) return;
           const data = this.extractData(res) || {};
           images = normalizeCommunityImages(data.images || [], baseUrl);
           if (images.length) setCachedCommunityImage('post', this.postId, images);

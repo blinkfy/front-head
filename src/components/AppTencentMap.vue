@@ -12,7 +12,7 @@ import manifest from '../manifest.json'
 import { baseUrl } from '@/api/settings.js'
 import { getCurrentInstance } from 'vue'
 import { createAppMapRetention } from '../utils/app-map-retention.mjs'
-import { onHide, onShow, onUnload } from '@dcloudio/uni-app'
+import { onHide, onShow, onUnload } from '@/utils/app-tab-lifecycle.js'
 // #ifdef H5
 import { resolveH5MapAssets } from '../utils/h5-map-assets.mjs'
 // #endif
@@ -45,6 +45,9 @@ export default {
     packet() {
       const key = mapConfig.qqMapKey || mapConfig.qqMapKeyBackup || manifest['app-plus']?.distribute?.sdkConfigs?.maps?.tencent?.key
       return { hostId: this.hostId, active: this.mapActive, generation: this.frameGeneration, disposed: this.mapDisposed || this.mapExpired, key, assetBase: this.assetBase, frameUrl: this.frameUrl,
+        // #ifdef APP-PLUS
+        prioritizeFirstTiles: true,
+        // #endif
         latitude: this.latitude, longitude: this.longitude, scale: this.scale,
         satellite: this.enableSatellite, markers: this.markers, userLocation: this.userLocation, command: this.command }
     }
@@ -181,6 +184,7 @@ export default {
       cancelAnimationFrame(this.pendingFrame)
       if (packet.disposed) { this.disposeFrame(); return }
       if (packet.active === false) { this.wasInactive = true; return }
+      if (packet.prioritizeFirstTiles && !this.frame && document.getElementById(packet.hostId)) { this.renderFrame(); return }
       this.pendingFrame = requestAnimationFrame(() => this.renderFrame())
     },
     disposeFrame() {
@@ -243,7 +247,8 @@ export default {
         clearTimeout(this.frameTimer)
         this.sendEvent({ type: 'error', detail: { code: 'frame_load_failed', satellite: this.latestPacket.satellite } })
       }
-      frame.src = target.href.split('#')[0] + '#' + encodeURIComponent(this.token)
+      const sdkHint = packet.prioritizeFirstTiles && packet.key ? `?sdk=${encodeURIComponent(packet.key)}` : ''
+      frame.src = target.href.split('#')[0] + '#' + encodeURIComponent(this.token) + sdkHint
       host.appendChild(frame)
       this.sendEvent({ type: 'phase', detail: { phase: 'http_frame_loading', origin: target.origin, satellite: packet.satellite } })
       this.detachObserver = new MutationObserver(() => {

@@ -96,11 +96,12 @@ export function changePassword({ username, password, new_password }) {
   })
 } 
 
-export function userinfo(avatar="true") {
+export function userinfo(avatar="true", options = {}) {
   const token = uni.getStorageSync('token')
   return request({
     url: '/api/userinfo?avater='+avatar,
     method: 'GET',
+    ...options,
     header: {
       'Authorization': `Bearer ${token}`, // 服务器需要Bearer前缀
       'Content-Type': 'application/json'

@@ -67,6 +67,32 @@ function makeSdk() {
 }
 
 // Pure renderer behavior with SDK and clock doubles.
+check(rendererTests, 'APP opening starts the normal basemap before rebuilding marker overlays', () => {
+  const props = { latitude: 25, longitude: 121, scale: 14, satellite: false, markers: [] }
+  for (const tilesArrive of [true, false]) {
+    const clock = fakeClock(), { sdk, maps, layers } = makeSdk(), events = []
+    const renderer = createAppTencentMap({ sdk, container: {}, emit: event => events.push(event),
+      initialMarkerDelayMs: 350, setTimer: clock.setTimeout, clearTimer: clock.clearTimeout })
+    renderer.update({ ...props, markers: [{ id: 'initial', latitude: 25, longitude: 121 }] })
+    renderer.update({ ...props, markers: [{ id: 'latest', latitude: 26, longitude: 121 }] })
+    assert.equal(maps.length, 1)
+    assert.equal(layers.length, 0)
+    if (tilesArrive) {
+      maps[0].fire('tilesloaded')
+      assert.equal(events.at(-1).type, 'updated')
+      clock.tick(0)
+    } else {
+      clock.tick(349); assert.equal(layers.length, 0)
+      clock.tick(1)
+    }
+    assert.equal(layers.length, 1)
+    layers[0].fire('click', { geometry: { id: 'point-0' } })
+    assert.equal(events.at(-1).detail.markerId, 'latest')
+    renderer.destroy()
+    assert.equal(clock.pending, 0)
+  }
+})
+
 check(rendererTests, 'renderer uses the original container and leaves SDK scale at its default', () => {
   for (const satellite of [false, true]) {
     const { sdk, maps } = makeSdk()
@@ -441,13 +467,13 @@ if (compiledRenderjs && process.env.APP_MAP_SKIP_BROWSER !== '1') {
     assert.ok(key, 'Tencent map key found in app manifest')
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-tencent-file-parent-'))
     const parentFile = path.join(tempDir, 'parent.html')
-    fs.writeFileSync(parentFile, `<!doctype html><meta charset="utf-8"><style>html,body,#map-host{margin:0;width:100%;height:100%;overflow:hidden}</style><div id="map-host"></div><script>${compiledRenderjs}</script><script>window.events=[];window.testOwner={callMethod(name,event){if(name==='onMapEvent')window.events.push(event)}};window.mapContext={frame:null,token:null,frameOrigin:null,frameReady:false,stopped:false,owner:window.testOwner,sendEvent:window.__renderjsMapTest.default.methods.sendEvent,sendPacket:window.__renderjsMapTest.default.methods.sendPacket};window.startMap=packet=>window.__renderjsMapTest.default.methods.update.call(window.mapContext,packet,null,window.testOwner);</script>`)
+    fs.writeFileSync(parentFile, `<!doctype html><meta charset="utf-8"><style>html,body,#map-host{margin:0;width:100%;height:100%;overflow:hidden}</style><div id="map-host"></div><script>${compiledRenderjs}</script><script>window.events=[];window.testOwner={callMethod(name,event){if(name==='onMapEvent')window.events.push(event)}};window.mapContext={...window.__renderjsMapTest.default.methods,frame:null,token:null,frameOrigin:null,frameReady:false,stopped:false,owner:window.testOwner,sendEvent:window.__renderjsMapTest.default.methods.sendEvent,sendPacket:window.__renderjsMapTest.default.methods.sendPacket};window.startMap=packet=>window.__renderjsMapTest.default.methods.update.call(window.mapContext,packet,null,window.testOwner);</script>`)
     browser = await chromium.launch({ executablePath, headless: true, args: ['--no-sandbox'] })
     const page = await browser.newPage({ viewport: { width: 1100, height: 760 } })
     page.setDefaultTimeout(90000)
     await page.goto(pathToFileURL(parentFile).href)
     assert.equal(await page.evaluate(() => location.protocol), 'file:')
-    const packet = { hostId: 'map-host', frameUrl: 'http://localhost:3001/src/static/app-map/index.html', key,
+    const packet = { hostId: 'map-host', active: true, generation: 0, prioritizeFirstTiles: true, frameUrl: 'http://localhost:3001/static/app-map/index.html', key,
       assetBase: 'http://localhost:3001/', latitude: 25.033, longitude: 121.5654, scale: 12,
       satellite: false, markers: [], userLocation: {} }
     await page.evaluate(value => window.startMap(value), packet)
@@ -457,7 +483,7 @@ if (compiledRenderjs && process.env.APP_MAP_SKIP_BROWSER !== '1') {
       { ...window.mapContext.latestPacket, satellite: true }, null, window.testOwner))
     await page.waitForFunction(() => window.events.some(event => event.type === 'updated' && event.detail?.satellite === true), null, { timeout: 90000 })
     const beforeForgedToken = await page.evaluate(() => window.events.filter(event => event.type === 'forged-token-check').length)
-    const sdkFrame = page.frames().find(frame => frame.url().includes('/src/static/app-map/index.html'))
+    const sdkFrame = page.frames().find(frame => frame.url().includes('/static/app-map/index.html'))
     assert.ok(sdkFrame, 'HTTP SDK frame exists')
     await sdkFrame.evaluate(() => parent.postMessage({ channel: 'app-tencent-map', token: 'forged-token',
       event: { type: 'forged-token-check', detail: {} } }, '*'))
@@ -499,11 +525,11 @@ if (compiledRenderjs && process.env.APP_MAP_SKIP_BROWSER !== '1') {
     assert.equal(verified.center.latitude, 24.5)
     assert.equal(verified.center.longitude, 120.3)
     const hostSource = fs.readFileSync(new URL('../src/static/app-map/host.mjs', import.meta.url), 'utf8')
-    assert.match(hostSource, /send\('error',\s*\{\s*code,\s*stage,\s*satellite:\s*!!latestPacket\?\.satellite\s*\}\)/)
+    assert.match(hostSource, /send\('error',\s*\{\s*code,\s*stage,\s*message,\s*satellite:\s*!!latestPacket\?\.satellite\s*\}\)/)
     console.log(`Temporary satellite screenshot: ${screenshot}`)
     sfcTests.push({ name: 'file parent filters forged source/token and bridges real tilesloaded and center query', ok: true })
   } catch (error) {
-    sfcTests.push({ name: 'file parent filters forged source/token and bridges real tilesloaded and center query', ok: false, error: error.message })
+    sfcTests.push({ name: 'file parent filters forged source/token and bridges real tilesloaded and center query', ok: false, error: error.stack || error.message })
   } finally {
     await browser?.close()
   }

@@ -1,0 +1,9 @@
+export function probeLocalTts(callback: (available: boolean) => void): void {
+  LocalTtsBridge.probe(callback)
+}
+
+export function speakLocalTts(text: string, id: string, callback: (finished: boolean) => void): void {
+  LocalTtsBridge.speak(text, id, callback)
+}
+
+export function stopLocalTts(id: string): void { LocalTtsBridge.stop(id) }

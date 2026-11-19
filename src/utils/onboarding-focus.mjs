@@ -38,7 +38,11 @@ export function queryOnboardingRects({ pageScope, demoComponent, guideComponent 
   const groups = new Map()
   const results = selectors.map(() => null)
   selectors.forEach((selector, index) => {
-    const owner = selector.startsWith('.onboarding-demo-') ? 'demo' : selector.startsWith('.tour-card') ? 'guide' : 'page'
+    let owner = selector.startsWith('.onboarding-demo-') ? 'demo' : selector.startsWith('.tour-card') ? 'guide' : 'page'
+    // #ifdef APP-PLUS
+    if (['.onboarding-target-map', '.onboarding-target-shop'].includes(selector) &&
+        getCurrentPages().slice(-1)[0]?.route === 'pages/app-tabs/index') owner = 'shell'
+    // #endif
     if (!groups.has(owner)) groups.set(owner, [])
     groups.get(owner).push({ selector, index })
   })
@@ -54,6 +58,7 @@ export function queryOnboardingRects({ pageScope, demoComponent, guideComponent 
     }
     const requested = entries.map(entry => entry.selector)
     if (owner === 'page') measureScopedRects(pageScope, requested, finish)
+    else if (owner === 'shell') measureScopedRects(getCurrentPages().slice(-1)[0], requested, finish)
     else {
       const component = owner === 'demo' ? demoComponent : guideComponent
       try {

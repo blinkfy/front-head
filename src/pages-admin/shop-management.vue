@@ -165,6 +165,9 @@ import { getMiniProgramTopInset } from '@/utils/mp-top-inset.js'
 import { goBackFromAdminPage } from '@/utils/admin-page-nav.js'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { createAdminProduct, fetchAdminOrder, fetchAdminOrders, fetchAdminProducts, shipAdminOrder, updateAdminProduct } from './api/shop.js'
+// #ifdef APP-PLUS
+import { appShopCatalog } from '@/utils/app-shop-cache.mjs'
+// #endif
 
 const miniProgramTopInset = getMiniProgramTopInset()
 const screenStyle = miniProgramTopInset ? { paddingTop: `${miniProgramTopInset}px` } : {}
@@ -393,6 +396,9 @@ async function saveProduct() {
   try {
     if (editingId.value === null) await createAdminProduct(data)
     else await updateAdminProduct(editingId.value, { ...data, expectedVersion: editingVersion.value })
+    // #ifdef APP-PLUS
+    appShopCatalog.invalidate()
+    // #endif
     if (disposed) return
     scene.value = 'list'
     activeTab.value = 'products'

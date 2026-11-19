@@ -184,7 +184,7 @@
 import { mfaRequest } from '@/api/mfa'
 import { clearChatPush } from '@/utils/chat-push.js'
 import { communitySocialEnabled } from '@/pages-nonTheme/utils/community-social.js'
-import { communityChatSettings } from '@/utils/community-chat-settings.js'
+import { COMMUNITY_CHAT_CACHE_KEY, communityChatSettings } from '@/utils/community-chat-settings.js'
 import { ensureFeaturePermission, openFeaturePermissionSettings } from '@/utils/feature-permission.js'
 import { syncChatPush } from '@/utils/chat-push.js'
 import { androidIncomingCallPresentation, openAndroidIncomingCallSettings, androidUnlockedIncomingCallAllowed,
@@ -193,12 +193,23 @@ import { recentRecognition } from '@/utils/recent-recognition.js'
 import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { onHide, onShow } from '@dcloudio/uni-app'
+// #ifdef APP-PLUS
+import { appOfflineSession, clearAppOfflineSession } from '@/utils/app-offline-session.js'
+import { appChatStorage } from '@/pages-nonTheme/utils/app-chat-storage-native.js'
+// #endif
 import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
 import { canConfigureBackgroundMessages, readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '@/utils/background-message-preference.mjs'
 
-const communityChatEnabled = computed(() => communityChatSettings.enabled)
+const communityChatEnabled = computed(() => {
+    // #ifdef APP-PLUS
+    if (appOfflineSession.unavailable && !communityChatSettings.known) {
+        return uni.getStorageSync(COMMUNITY_CHAT_CACHE_KEY) === true
+    }
+    // #endif
+    return communityChatSettings.enabled
+})
 onShow(() => { void communitySocialEnabled() })
 
 const soundEnabled = ref(areUiSoundsEnabled())
@@ -458,16 +469,23 @@ function logout() {
     showConfirmModal.value = true
 }
 
-function handleConfirm() {
-    if (confirmAction.value === 'clearData') {
+async function handleConfirm() {
+    const action = confirmAction.value
+    showConfirmModal.value = false
+    if (action === 'clearData') {
         // 清除数据
         try {
+            // #ifdef APP-PLUS
+            await appChatStorage.clear()
+            // #endif
+            // #ifndef APP-PLUS
             const allKeys = uni.getStorageInfoSync().keys
             allKeys.forEach(key => {
                 if (key.startsWith('chat_messages_')||key.startsWith('chatlist_')) {
                     uni.removeStorageSync(key)
                 }
             })
+            // #endif
             uni.showToast({
                 title: '清除成功',
                 icon: 'success'
@@ -478,7 +496,7 @@ function handleConfirm() {
                 icon: 'none'
             })
         }
-    } else if (confirmAction.value === 'logout') {
+    } else if (action === 'logout') {
         // 退出登录
         try {
             const exitingToken = uni.getStorageSync('token')
@@ -496,11 +514,17 @@ function handleConfirm() {
             uni.removeStorageSync('connection')
             uni.removeStorageSync('device')
             uni.removeStorageSync('userpoints')
+            // #ifdef APP-PLUS
+            clearAppOfflineSession()
+            uni.reLaunch({ url: (isDarkTheme.value ? '/pages-dark/index/index' : '/pages/index/index') + '?manualLogin=1' })
+            // #endif
+            // #ifndef APP-PLUS
             if (isDarkTheme.value) {
                 uni.redirectTo({ url: '/pages-dark/index/index?manualLogin=1' })
             } else {
                 uni.redirectTo({ url: '/pages/index/index?manualLogin=1' })
             }
+            // #endif
         } catch (e) {
             uni.showToast({
                 title: '退出失败',
@@ -508,7 +532,6 @@ function handleConfirm() {
             })
         }
     }
-    showConfirmModal.value = false
 }
 
 onMounted(() => {

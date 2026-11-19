@@ -53,6 +53,25 @@
           </view>
           <view v-else class="playback-summary"><text>{{ timeLabel(row.durationMs) }}</text><text class="sub">{{ miniProgram ? '打开录音播放' : '点击播放' }}</text></view>
         </view>
+        <view v-if="!selecting && recordingPlayable(row)" class="transcript" @click.stop>
+          <button v-if="transcript.id !== row.id" class="text-button" @click="openTranscript(row)">转文字</button>
+          <template v-else>
+            <view class="transcript-heading">
+              <text>{{ transcript.busy ? transcript.progress : '通话转写' }}</text>
+              <button class="text-button" @click="closeTranscript">{{ transcript.busy ? '取消' : '收起' }}</button>
+            </view>
+            <text v-if="transcript.error" class="error">{{ transcript.error }}</text>
+            <text v-if="transcript.partial" class="notice">部分片段未转写，已显示完成的字幕。</text>
+            <text v-else-if="!transcript.busy && !transcript.error && !transcript.segments.length" class="notice">这段录音未识别到文字。</text>
+            <button v-if="transcript.error || transcript.partial" class="text-button" @click="openTranscript(row)">{{ transcript.partial ? '重新转写' : '重试' }}</button>
+            <button v-for="(segment, index) in transcript.segments" :key="index" class="transcript-line"
+              :class="{ 'transcript-current': playingId === row.id && activeTranscript.includes(index) }" @click="play(row, segment.startMs)">
+              <text class="transcript-time">{{ timeLabel(segment.startMs) }}–{{ timeLabel(segment.endMs) }}</text>
+              <text class="transcript-copy">{{ segment.speaker === 'self' ? '我方：' : segment.speaker === 'peer' ? '对方：' : '' }}{{ segment.text }}</text>
+              <text class="transcript-kind">{{ segment.source === 'local' ? '本地' : '云端' }} · {{ segment.timing === 'sentence' ? '句级' : '片段级' }}</text>
+            </button>
+          </template>
+        </view>
         <text v-if="selecting" class="sub selection-duration">{{ timeLabel(row.durationMs) }}</text>
       </view>
       <view v-if="selecting" class="selection-bar">
@@ -70,22 +89,30 @@
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { ThemeManager } from '@/utils/theme.js'
 import { recordingIdentity, readRecordingAuto, writeRecordingAuto, validRecordingCallId, matchesRecording, recordingPlayable } from '@/utils/call-recording-preference.mjs'
-import { canRecordCalls, listCallRecordings, recordingFileAction, deleteCallRecordings, openWebRecordingManager, syncNativeRecordingConfiguration, createRecordingPlayer } from '@/utils/call-recordings.js'
+import { canRecordCalls, listCallRecordings, recordingFileAction, deleteCallRecordings, openWebRecordingManager, syncNativeRecordingConfiguration, createRecordingPlayer, transcribeCallRecording } from '@/utils/call-recordings.js'
+import { activeTranscriptIndices, cloudTranscriptConsentMessage } from '@/utils/call-transcript.mjs'
+import { createAsrController } from '@/utils/local-asr-core.mjs'
+
+const emptyTranscript = () => ({ id: '', busy: false, error: '', progress: '', segments: [], partial: false })
 export default {
   components: { ManifestIcon },
   data: () => ({ admin: false, automatic: false, supported: false, miniProgram: false, loading: true, rows: [], error: '',
     darkTheme: ThemeManager.getTheme() === 'dark', playingId: '', showRename: false, renameValue: '', renameRow: null,
     callId: '', query: '', selecting: false, selectedIds: [], deleting: false,
     player: null, playbackReady: false, playbackPlaying: false, playbackPosition: 0, playbackDuration: 0, dragPosition: null,
-    owner: '', disposed: false, loadRevision: 0, changedListener: null, playbackRevision: 0 }),
+    owner: '', disposed: false, loadRevision: 0, changedListener: null, playbackRevision: 0, transcript: emptyTranscript() }),
   computed: {
-    platformNote() { return this.miniProgram ? '目录显示此微信内嵌网页保存的录音。播放、导出和文件操作会打开网页；切换设备不会同步。' : '录音仅保存在当前设备或浏览器，不上传服务器。清理网页数据或卸载应用可能删除录音，请及时导出。' },
+    platformNote() { return this.miniProgram ? '目录显示此微信内嵌网页保存的录音。播放、转写和文件操作会打开网页。' : '录音与转写保存在本机。只有确认使用云端转写时，才会上传待转写的片段。' },
     visibleRows() { return this.rows.filter(row => (!this.callId || row.callId === this.callId) && matchesRecording(row, this.query)) },
     selectableRows() { return this.visibleRows.filter(row => row.status !== 'recording') },
-    allSelected() { return this.selectableRows.length > 0 && this.selectableRows.every(row => this.selectedIds.includes(row.id)) }
+    allSelected() { return this.selectableRows.length > 0 && this.selectableRows.every(row => this.selectedIds.includes(row.id)) },
+    activeTranscript() { return activeTranscriptIndices(this.transcript.segments, this.playbackPosition) }
   },
   watch: {
-    visibleRows(rows) { if (this.playingId && !rows.some(row => row.id === this.playingId)) this.stopPlaying() }
+    visibleRows(rows) {
+      if (this.playingId && !rows.some(row => row.id === this.playingId)) this.stopPlaying()
+      if (this.transcript.id && !rows.some(row => row.id === this.transcript.id)) this.closeTranscript()
+    }
   },
   onLoad(options) {
     if (validRecordingCallId(options?.callId)) this.callId = options.callId
@@ -97,16 +124,17 @@ export default {
     void this.load()
   },
   onShow() { if (!this.loading) void this.load() },
-  onHide() { this.stopPlaying() },
+  onHide() { this.stopPlaying(); this.closeTranscript() },
   onBackPress() { if (this.selecting) { this.exitSelection(); return true } return this.deleting },
   onUnload() {
     this.disposed = true
     this.stopPlaying()
+    this.closeTranscript()
     if (this.changedListener) uni.$off('call-recordings:changed', this.changedListener)
   },
   methods: {
     recordingPlayable,
-    startSelection() { this.stopPlaying(); this.selectedIds = []; this.selecting = true },
+    startSelection() { this.stopPlaying(); this.closeTranscript(); this.selectedIds = []; this.selecting = true },
     exitSelection() { if (!this.deleting) { this.selecting = false; this.selectedIds = [] } },
     toggleSelection(row) {
       if (this.selecting && !this.deleting && row.status !== 'recording') this.selectRow(row.id, !this.selectedIds.includes(row.id))
@@ -128,7 +156,7 @@ export default {
       const revision = ++this.loadRevision
       const identity = recordingIdentity(), token = uni.getStorageSync('token')
       if (!identity.admin || identity.owner !== this.owner) {
-        this.rows = []; this.selectedIds = []; this.showRename = false; this.stopPlaying()
+        this.rows = []; this.selectedIds = []; this.showRename = false; this.stopPlaying(); this.closeTranscript()
       }
       this.owner = identity.admin ? identity.owner : ''
       this.admin = identity.admin; this.automatic = readRecordingAuto(); this.supported = canRecordCalls()
@@ -140,7 +168,7 @@ export default {
           this.rows = rows
           this.selectedIds = this.selectedIds.filter(id => rows.some(row => row.id === id && row.status !== 'recording'))
           if (this.playingId && !rows.some(row => row.id === this.playingId)) this.stopPlaying()
-        } else { this.rows = []; this.admin = false; this.stopPlaying() }
+        } else { this.rows = []; this.admin = false; this.stopPlaying(); this.closeTranscript() }
       } catch (error) { if (!this.disposed && revision === this.loadRevision) { this.error = error.message; this.rows = [] } }
       finally { if (revision === this.loadRevision) this.loading = false }
     },
@@ -155,16 +183,16 @@ export default {
       this.player = null
       this.playingId = ''; this.playbackReady = false; this.playbackPlaying = false; this.dragPosition = null
     },
-    play(row) {
+    play(row, startMs = null) {
       if (this.miniProgram) { void this.openMiniFile(row, 'play'); return }
-      if (this.playingId === row.id) {
+      if (this.playingId === row.id && startMs == null) {
         if (this.playbackPlaying) this.player?.pause()
         else this.player?.resume()
         return
       }
       this.stopPlaying(); this.error = ''
       const revision = this.playbackRevision
-      this.playingId = row.id; this.playbackPosition = 0; this.playbackDuration = row.durationMs
+      this.playingId = row.id; this.playbackPosition = startMs || 0; this.playbackDuration = row.durationMs
       try {
         this.player = createRecordingPlayer(row, state => {
           if (this.disposed || revision !== this.playbackRevision) return
@@ -174,13 +202,45 @@ export default {
         }, error => {
           if (this.disposed || revision !== this.playbackRevision) return
           this.error = error.message; this.stopPlaying()
-        })
+        }, startMs || 0)
       } catch (error) { this.error = error.message; this.stopPlaying() }
     },
     seekPlayback(event) {
       this.dragPosition = null
       this.playbackPosition = event.detail.value
       this.player?.seek(this.playbackPosition)
+    },
+    closeTranscript() {
+      this._transcriptJob?.abort()
+      this._transcriptJob = null
+      this.transcript = emptyTranscript()
+    },
+    async openTranscript(row) {
+      if (this.miniProgram) { await this.openMiniFile(row, 'transcribe'); return }
+      this.closeTranscript()
+      const job = createAsrController(), token = uni.getStorageSync('token') || ''
+      this._transcriptJob = job
+      this.transcript = { ...emptyTranscript(), id: row.id, busy: true, progress: '正在读取录音…' }
+      const isCurrent = () => {
+        const { owner, admin } = recordingIdentity()
+        return !this.disposed && this._transcriptJob === job && token === uni.getStorageSync('token') &&
+          admin && owner === row.owner && this.rows.some(item => item.id === row.id)
+      }
+      try {
+        const result = await transcribeCallRecording(row, { token, signal: job.signal, isCurrent,
+          onProgress: (index, total, segments) => {
+            if (isCurrent()) Object.assign(this.transcript, { progress: `正在转写 ${index + 1}/${total}`, segments: segments.slice() })
+          },
+          allowCloud: reason => new Promise(resolve => uni.showModal({ title: '使用云端转写？',
+            content: cloudTranscriptConsentMessage(reason),
+            confirmText: '继续', success: event => resolve(event.confirm), fail: () => resolve(false) })) })
+        if (isCurrent()) Object.assign(this.transcript, result)
+      } catch (error) {
+        if (isCurrent() && error.name !== 'AbortError') this.transcript.error = error.message || '转写失败，请重试'
+      } finally {
+        if (isCurrent()) this.transcript.busy = false
+        if (this._transcriptJob === job) this._transcriptJob = null
+      }
     },
     async exportFile(row) {
       this.error = ''
@@ -216,6 +276,7 @@ export default {
           if (!result.confirm || this.disposed) return
           this.error = ''
           if (rows.some(row => row.id === this.playingId)) this.stopPlaying()
+          if (rows.some(row => row.id === this.transcript.id)) this.closeTranscript()
           const failures = await deleteCallRecordings(rows)
           await this.load()
           if (failures.length) this.error = `${failures.length} 条录音删除失败 · ${failures[0]}`
@@ -333,6 +394,17 @@ export default {
 .playback-track { flex: 1; min-width: 0; }
 .playback-track slider { margin: 8rpx 0 12rpx; }
 .playback-summary { display: flex; align-items: center; justify-content: space-between; flex: 1; gap: 16rpx; font-size: 28rpx; font-variant-numeric: tabular-nums; }
+.transcript { margin-top: 18rpx; }
+.transcript-heading { display: flex; align-items: center; justify-content: space-between; font-size: 27rpx; font-weight: 600; }
+.transcript-line { display: flex; flex-direction: column; gap: 8rpx; align-items: flex-start; width: 100%; margin: 10rpx 0 0; padding: 16rpx 20rpx; background: transparent; color: inherit; text-align: left; line-height: 1.5; border: 1px solid #e0e8e2; border-radius: 14rpx; }
+.transcript-time { font-size: 23rpx; color: #23734f; font-variant-numeric: tabular-nums; }
+.transcript-copy { font-size: 27rpx; overflow-wrap: anywhere; }
+.transcript-kind { font-size: 22rpx; color: #63756a; }
+.transcript-current { background: #e6f1ea; border-color: #70ac8b; }
+.dark .transcript-line { border-color: #3b4e42; }
+.dark .transcript-current { background: #314c3d; border-color: #70ac8b; }
+.dark .transcript-time { color: #a8dfbf; }
+.dark .transcript-kind { color: #a7b7ac; }
 .playback-times {
   display: flex;
   justify-content: space-between;

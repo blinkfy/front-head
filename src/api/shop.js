@@ -1,4 +1,7 @@
 import request from '@/api/index.js'
+// #ifdef APP-PLUS
+import { appShopCatalog, appShopPoints } from '@/utils/app-shop-cache.mjs'
+// #endif
 
 export async function fetchShopRecommendations({
   limit = 6,
@@ -27,8 +30,18 @@ export async function fetchShopRecommendations({
 const shopRequest = (url, options = {}) => request({ url: `/api/shop${url}`, needAuth: true, silent: true, ...options })
 export const fetchShopProducts = () => shopRequest('/products')
 export const fetchShopProduct = id => shopRequest(`/products/${encodeURIComponent(id)}`)
-export const createShopOrder = data => shopRequest('/orders', { method: 'POST', data })
+async function submitShopOrderChange(url, data) {
+  const result = await shopRequest(url, { method: 'POST', data })
+  // #ifdef APP-PLUS
+  if (result?.code === 0) {
+    appShopCatalog.invalidate()
+    appShopPoints.invalidate()
+  }
+  // #endif
+  return result
+}
+export const createShopOrder = data => submitShopOrderChange('/orders', data)
 export const fetchShopOrders = (status = '', page = 1) => shopRequest('/orders', { params: { status, page, pageSize: 20 } })
 export const fetchShopOrder = id => shopRequest(`/orders/${encodeURIComponent(id)}`)
-export const cancelShopOrder = id => shopRequest(`/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+export const cancelShopOrder = id => submitShopOrderChange(`/orders/${encodeURIComponent(id)}/cancel`)
 export const receiveShopOrder = id => shopRequest(`/orders/${encodeURIComponent(id)}/receive`, { method: 'POST' })

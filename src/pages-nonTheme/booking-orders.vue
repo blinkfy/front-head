@@ -84,7 +84,7 @@
             <view v-if="order.pricingSnapshot?.collectorQuote" class="order-quote">
               <text class="quote-title">回收员报价明细</text>
               <view v-for="item in order.pricingSnapshot.collectorQuote.items || []" :key="item.typeId" class="info-row"><text class="info-label">{{ item.name }}</text><text class="info-value">{{ item.priceMode === 'negotiable' ? '面议' : `¥${money(item.unitPrice)}/${unitText(item.unit)}` }}{{ item.description ? ` · ${item.description}` : '' }}</text></view>
-              <text class="quote-note">{{ order.pricingSnapshot.status === 'pending' ? '接单报价已变化，请核对后确认；确认前回收员不能开始上门。' : '实际数量与结算金额以现场双方确认结果为准。' }}</text>
+              <text class="quote-note">{{ order.pricingSnapshot.status === 'pending' ? '接单报价已变化，请核对后确认；确认前回收员不能开始上门。' : '上门时请与回收员确认实际数量和结算金额。' }}</text>
             </view>
             <!-- 预估金额 -->
             <view class="order-amount">
@@ -168,6 +168,7 @@ export default {
       orders: [],
       detailOrderId: '',
       currentStatus: 'all',
+      loadedStatus: null,
       currentPage: 1,
       hasMore: false,
       cancelReason: '',
@@ -232,25 +233,31 @@ export default {
       uni.navigateTo({ url: '/pages-nonTheme/booking' });
     },
     async loadOrders() {
-      if (this.loading) return;
+      if (this.loading || this.loadingMore) return;
       this.loading = true; this.loadError = '';
-      this.currentPage = 1;
       try {
         const status = this.currentStatus === 'all' ? null : this.currentStatus;
         const res = this.detailOrderId ? await getBookingDetail(this.detailOrderId) : await getBookingList(status, 1, 20);
         const data = this.extractData(res) || {};
         this.orders = this.formatOrders(this.detailOrderId ? [data] : (data.orders || []));
+        this.loadedStatus = this.currentStatus;
+        this.currentPage = 1;
         this.hasMore = !this.detailOrderId && (data.page || 1) < (data.totalPages || 1);
       } catch (e) {
         this.loadError = e.message || '订单加载失败';
         console.error('获取订单失败:', e);
+        // #ifdef APP-PLUS
+        if (e?.networkUnavailable && this.loadedStatus === this.currentStatus) return;
+        // #endif
         this.orders = [];
+        this.currentPage = 1;
         this.hasMore = false;
+      } finally {
+        this.loading = false; this.loadedOnce = true;
       }
-      this.loading = false; this.loadedOnce = true;
     },
     async loadMore() {
-      if (this.loadingMore || !this.hasMore) return;
+      if (this.loading || this.loadingMore || !this.hasMore) return;
       this.loadingMore = true;
       this.currentPage++;
       try {
@@ -283,6 +290,7 @@ export default {
       }));
     },
     changeStatus(status) {
+      if (this.loading || this.loadingMore) return;
       this.currentStatus = status;
       this.loadOrders();
     },

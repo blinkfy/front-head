@@ -12,6 +12,7 @@ import { finishH5LoginLoading } from "./utils/h5-login-loading.mjs";
 // #endif
 // #ifdef APP-PLUS
 import { installAppVersionGuard } from "./utils/app-version-guard.js";
+import { installAppTabNavigation } from "./utils/app-tab-navigation.js";
 // #endif
 export function createApp() {
 	// #ifdef H5
@@ -24,6 +25,7 @@ export function createApp() {
 	installPageTransitions();
 	// #ifdef APP-PLUS
 	const versionGuard = installAppVersionGuard();
+	installAppTabNavigation();
 	// #endif
 	const app = createSSRApp(App);
 	app.mixin({ onShow() {

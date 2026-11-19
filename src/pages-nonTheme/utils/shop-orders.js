@@ -1,3 +1,4 @@
+import { getAppCurrentPages } from '@/utils/app-tab-context.js'
 export const shopStatusTabs = [
   { value: '', label: '全部' }, { value: 'pending', label: '待发货' },
   { value: 'shipped', label: '待收货' }, { value: 'completed', label: '已完成' }, { value: 'cancelled', label: '已取消' }
@@ -16,7 +17,7 @@ export function orderTime(value) {
 export const shopError = (error, fallback = '加载失败，请重试') => error?.msg || error?.message || fallback
 export const shopRoute = () => uni.getStorageSync('app_theme') === 'dark' ? '/pages-dark/shop/shop' : '/pages/shop/shop'
 export function returnToShop() {
-  const pages = getCurrentPages()
+  const pages = getAppCurrentPages()
   const index = pages.findIndex(page => ['pages/shop/shop', 'pages-dark/shop/shop'].includes(page.route))
   if (index >= 0 && index < pages.length - 1) uni.navigateBack({ delta: pages.length - 1 - index })
   else uni.reLaunch({ url: shopRoute() })

@@ -1,17 +1,22 @@
 import { recordingConfiguration, recordingIdentity, recordingRow, readRecordingCatalog, recordingPlayable } from './call-recording-preference.mjs'
+import { assertAsrCurrent } from './local-asr-core.mjs'
 // #ifdef H5
 import { listWebRecordings, readWebRecording, deleteWebRecording, renameWebRecording } from './web-recording-storage.mjs'
 import { webRecordingSupported } from './web-call-recording.mjs'
+import { transcribeWebCall } from './web-call-transcript.mjs'
 // #endif
 import { baseUrl } from '@/api/settings.js'
 import { requestWebCallTicket } from './web-call-entry.mjs'
 // #ifdef APP-PLUS
 import { configureCallRecording, callRecordingOperation } from '@/uni_modules/ftx-voice-call'
+import { localAsrAvailable, transcribeLocalAudio } from './local-asr.js'
+import { callTranscriptPath, runCallTranscript } from './call-transcript.mjs'
 // #endif
 
 
 const changed = () => uni.$emit('call-recordings:changed')
 let managerOpening = false
+const transcriptKey = row => `chat:call-transcript:${row.owner}:${row.id}`
 export function syncNativeRecordingConfiguration() {
   // #ifdef APP-PLUS
   try { configureCallRecording(JSON.stringify(recordingConfiguration())) } catch (_) {}
@@ -64,6 +69,7 @@ export async function recordingFileAction(action, row, name = '', notify = true)
   if (!admin || !recordingRow(row, owner)) throw new Error('录音不存在或不属于当前账号')
   // #ifdef APP-PLUS
   const result = await nativeOperation({ action, id: row.id, name, owner })
+  if (action === 'delete') { try { uni.removeStorageSync(transcriptKey(row)) } catch (_) {} }
   if (notify && (action === 'rename' || action === 'delete')) changed()
   return result
   // #endif
@@ -99,7 +105,7 @@ export async function deleteCallRecordings(rows) {
   return failures
 }
 
-export function createRecordingPlayer(row, onState, onError) {
+export function createRecordingPlayer(row, onState, onError, startMs = 0) {
   const { owner, admin } = recordingIdentity()
   if (!admin || !recordingRow(row, owner) || !recordingPlayable(row)) throw new Error('录音不可播放')
   let closed = false
@@ -133,7 +139,7 @@ export function createRecordingPlayer(row, onState, onError) {
     clearTimeout(timer)
     void request('stop').catch(() => {})
   }
-  void update('start')
+  void update('start', { positionMs: startMs })
   return { stop, pause: () => { playRequested = false; return update('pause') },
     resume: () => { playRequested = true; return update('resume') }, seek: positionMs => update('seek', { positionMs }) }
   // #endif
@@ -159,11 +165,67 @@ export function createRecordingPlayer(row, onState, onError) {
     if (!valid()) { file.revoke?.(); close(); return }
     releaseUrl = file.revoke
     audio.src = file.path
+    if (startMs > 0) audio.currentTime = startMs / 1000
     return resume()
   }).catch(fail)
   return { stop: close, pause: () => audio.pause(), resume, seek: positionMs => { audio.currentTime = positionMs / 1000 } }
   // #endif
   throw new Error('请在录音文件页播放')
+}
+
+// #ifdef APP-PLUS
+function uploadCallClip(clip, options) {
+  assertAsrCurrent(options)
+  return new Promise((resolve, reject) => {
+    const cancel = () => upload.abort()
+    const done = handler => value => { options.signal?.removeEventListener('abort', cancel); handler(value) }
+    const upload = uni.uploadFile({ url: `${baseUrl.replace(/\/$/, '')}${callTranscriptPath}`, filePath: clip.path,
+      name: 'audio', header: { Authorization: `Bearer ${options.token}` }, timeout: 100000,
+      success: done(response => {
+        let body
+        try { body = JSON.parse(response.data) } catch (_) {}
+        if (response.statusCode === 200 && body?.code === 0) resolve(body.data)
+        else reject(new Error(body?.msg || '云端转写暂不可用，请重试'))
+      }), fail: done(() => reject(new Error('云端转写请求失败，请重试'))) })
+    options.signal?.addEventListener('abort', cancel, { once: true })
+  })
+}
+// #endif
+
+export async function transcribeCallRecording(row, options) {
+  const { owner, admin } = recordingIdentity()
+  if (!admin || !recordingRow(row, owner) || !recordingPlayable(row)) throw new Error('录音不可转写')
+  assertAsrCurrent(options)
+  // #ifdef H5
+  return transcribeWebCall(row, { ...options, baseUrl })
+  // #endif
+  // #ifdef APP-PLUS
+  const saved = uni.getStorageSync(transcriptKey(row))
+  const cached = saved?.size === row.size && saved.createdAt === row.createdAt ? saved.result : null
+  if (Array.isArray(cached?.segments) && !cached.partial) return cached
+  const completedClips = cached?.completedClips || {}
+  const result = await runCallTranscript({ localAvailable: localAsrAvailable,
+    prepare: () => ({ durationMs: row.durationMs, splitTracks: row.splitTracks,
+      async energyFrames(startMs, endMs, speaker) {
+        return (await nativeOperation({ action: 'audio-energy', owner, id: row.id, startMs, endMs, speaker })).levels
+      }, async slice(startMs, endMs, speaker) {
+      const clip = await nativeOperation({ action: 'clip', owner, id: row.id, startMs, endMs, speaker }).catch(error => {
+        if (error.message === '操作无效') throw new Error('请更新包含通话转写模块的安装包')
+        throw error
+      })
+      if (!clip.path) return null
+      return { ...clip, release: () => nativeOperation({ action: 'release-clip', owner, id: row.id, clip: clip.clip }).catch(() => {}) }
+    } }), local: (clip, current) => transcribeLocalAudio([clip.path], { ...current, includeFailureReason: true }),
+    cloud: clip => uploadCallClip(clip, options),
+    allowCloud: options.allowCloud, onProgress: options.onProgress }, { ...options, completedClips })
+  assertAsrCurrent(options)
+  if (row.splitTracks || (!result.partial && result.segments.length)) {
+    const snapshot = result.partial ? { ...result, completedClips } : result
+    try { uni.setStorageSync(transcriptKey(row), { size: row.size, createdAt: row.createdAt, result: snapshot }) } catch (_) {}
+  }
+  return result
+  // #endif
+  throw new Error('请在录音文件页转写')
 }
 export function newRecordingBridge() {
   const { owner, admin, auto } = recordingConfiguration()
@@ -182,7 +244,7 @@ export async function openWebRecordingManager(id = '', callId = '', action = '')
     const ticket = await requestWebCallTicket(uni, baseUrl, token)
     if (token !== uni.getStorageSync('token')) return
     if (!ticket) throw new Error('暂时无法打开录音文件，请确认后端已更新并重试')
-    const query = Object.entries({ selfId: bridge.owner, ticket, recordingId: id, callId, action: ['play', 'rename', 'delete'].includes(action) ? action : '' }).map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')
+    const query = Object.entries({ selfId: bridge.owner, ticket, recordingId: id, callId, action: ['play', 'rename', 'delete', 'transcribe'].includes(action) ? action : '' }).map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')
     const url = appendRecordingBridge(`${String(baseUrl).replace(/\/+$/, '')}/web/call/index.html#?view=recordings&${query}`, bridge)
     await new Promise((resolve, reject) => uni.navigateTo({
       url: `/pages-nonTheme/webview?url=${encodeURIComponent(url)}`,

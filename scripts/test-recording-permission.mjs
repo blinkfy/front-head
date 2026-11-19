@@ -21,11 +21,12 @@ function preprocess(input, platform) {
 }
 
 function load(platform, permissions) {
-  const starts = [], toasts = []
+  const starts = [], toasts = [], audioEvents = []
   const recorderManager = { start: options => starts.push(options), stop() {} }
   const context = {
     uni: { getStorageSync: key => key === 'token' ? 'owner' : '', showToast: value => toasts.push(value) },
-    ensureFeaturePermission: (_kind, { isCurrent }) => permissions.shift()(isCurrent),
+    ensureFeaturePermission: (_kind, { isCurrent }) => { audioEvents.push('microphone'); return permissions.shift()(isCurrent) },
+    stopLocalSpeech: () => audioEvents.push('stop-speech'),
     chatApi: {}, baseUrl: '', console, Promise, Set, Map, Object, Array, String, Number, Error, JSON, setInterval, clearInterval
   }
   vm.createContext(context)
@@ -35,7 +36,7 @@ function load(platform, permissions) {
     recorderManager, recordHeld: false, recordAttempt: 0, recordPermissionPending: false, isRecording: false,
     isCancelVoice: false, isChatPageDestroyed: false, isChatPageActive: true
   }
-  return { page, methods: context.__methods, starts, toasts, setPermission(value) { permissions.push(value) } }
+  return { page, methods: context.__methods, starts, toasts, audioEvents, setPermission(value) { permissions.push(value) } }
 }
 
 function deferredPermission() {
@@ -50,6 +51,7 @@ for (const platform of ['APP-PLUS', 'MP-WEIXIN']) {
   const late = deferredPermission()
   const h = load(platform, [current => late.promise.then(granted => granted && current())])
   const pending = h.methods.startRecord.call(h.page, { touches: [{ clientY: 100 }] })
+  assert.deepEqual(h.audioEvents, ['stop-speech', 'microphone'], `${platform}: playback stops before the microphone request`)
   assert.equal(h.page.recordPermissionPending, true)
   h.methods.stopRecord.call(h.page)
   late.resolve(true)

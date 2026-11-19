@@ -107,7 +107,7 @@ function makeRobotHarness(source, { active = true, overlayActive = false } = {})
     emit: name => emitted.push(name)
   }
   const program = [
-    'let destroyed = false; let engine = null; let loadingTimer = null',
+    'let destroyed = false; let engine = null; let loadingTimer = null; let loadingVersion = 0; let renderingSuspended = false',
     ...declarations,
     ...functions,
     `this.state = { ready, failed, loadingStage, overlayFallback, displayReady }`,

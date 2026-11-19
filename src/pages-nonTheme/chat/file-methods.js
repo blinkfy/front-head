@@ -1,9 +1,9 @@
-import { saveDownloadedChatMedia } from '@/pages-nonTheme/utils/chat-local-media.mjs'
+import { saveDownloadedChatMedia } from '@/pages-nonTheme/utils/chat-local-media.js'
 
 export const videoPlaybackMethods = {
     async playVideo(url, msg) {
             // 如果已经标记失败，点击重试
-            if (this.mediaLoadErrors[msg.id]?.type === 'video') {
+            if (!this.chatOffline && this.mediaLoadErrors[msg.id]?.type === 'video') {
                 this.retryLoadMedia(msg, 'video')
                 return
             }
@@ -24,6 +24,7 @@ export const videoPlaybackMethods = {
                 play(validUrl)
                 return
             }
+            if (this.chatOffline) return this.showChatOfflineToast()
             
             // 如果当前 URL 是 blob 且有效,直接使用
             if (url.startsWith('blob:')) {
@@ -138,7 +139,7 @@ export const videoPlaybackMethods = {
 export const fileAccessMethods = {
     async openFile(msg, preferOnlinePreview = true) {
             // 如果已经标记失败，点击重试
-            if (preferOnlinePreview && this.mediaLoadErrors[msg.id]?.type === 'file') {
+            if (!this.chatOffline && preferOnlinePreview && this.mediaLoadErrors[msg.id]?.type === 'file') {
                 this.retryLoadMedia(msg, 'file')
                 return
             }
@@ -154,6 +155,7 @@ export const fileAccessMethods = {
                 this.doOpenFile(validUrl, fileName)
                 return
             }
+            if (this.chatOffline) return this.showChatOfflineToast()
 
             // Keep the server preview available for formats the client may not render.
             if (preferOnlinePreview && this.isFilePreviewable(msg)) {
@@ -319,6 +321,7 @@ export const fileAccessMethods = {
                 : ''
         },
     previewChatFile(msg) {
+            if (this.chatOffline) return this.openFile(msg, false)
             const previewUrl = this.getOnlineFilePreviewUrl(msg.content)
             if (previewUrl) this.openOnlineFilePreview(previewUrl, msg.fileName)
             else void this.openFile(msg)

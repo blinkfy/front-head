@@ -9,18 +9,25 @@ export function supportsLocalAudioTrack(environment = globalThis) {
     version && Number(version[1]) >= 139 && !/Android|Mobile|iPhone|iPad/i.test(environment.navigator?.userAgent || ''))
 }
 
-export async function webLocalAsrAvailable(environment = globalThis) {
-  if (!supportsLocalAudioTrack(environment)) return false
+export async function webLocalAsrStatus(environment = globalThis) {
+  if (!supportsLocalAudioTrack(environment)) return { available: false, reason: 'BROWSER_UNSUPPORTED' }
   let timer
   try {
     const status = await Promise.race([
       environment.SpeechRecognition.available({ langs: ['zh-CN'], processLocally: true }),
-      new Promise(resolve => { timer = setTimeout(() => resolve('unavailable'), 1200) })
+      new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), 1200) })
     ])
     // Do not silently install a language pack or switch to browser-vendor cloud ASR.
-    return status === 'available'
-  } catch (_) { return false }
+    if (status === 'available') return { available: true }
+    if (status === 'downloadable' || status === 'downloading') return { available: false, reason: 'LANGUAGE_PACK_REQUIRED' }
+    if (status === 'timeout') return { available: false, reason: 'AVAILABILITY_CHECK_FAILED' }
+    return { available: false, reason: 'LANGUAGE_UNAVAILABLE' }
+  } catch (_) { return { available: false, reason: 'AVAILABILITY_CHECK_FAILED' } }
   finally { clearTimeout(timer) }
+}
+
+export async function webLocalAsrAvailable(environment = globalThis) {
+  return (await webLocalAsrStatus(environment)).available
 }
 
 export function createWebLocalAsr({ track, environment = globalThis, onText = () => {}, onFailure = () => {},

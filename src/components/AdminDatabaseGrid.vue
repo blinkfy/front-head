@@ -34,8 +34,8 @@
                 @touchend.stop="endColumnResize" @touchcancel.stop="endColumnResize" @click.stop />
             </view>
           </view>
-          <view v-for="(item, index) in rows" :key="rowKey(item, index)" class="grid-row" :class="{ selected: selectionMode && isSelected(item) }" @click="onRowClick(item)">
-            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell" :style="columnWidthStyle(column.key)" :class="{ changed: hasDraft(item, column.key) }" @click.stop="onCellClick(item, column)">
+          <view v-for="(item, index) in rows" :key="rowKey(item, index)" class="grid-row" :class="{ selected: selectionMode && isSelected(item) }" @click="onRowClick(item, $event)">
+            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell" :style="columnWidthStyle(column.key)" :class="{ changed: hasDraft(item, column.key) }" @click.stop="onCellClick(item, column, $event)">
               <template v-if="isEditing(item, column.key)">
                 <switch v-if="editor.field.editor === 'switch'" :checked="editorBoolean" @change="editorBoolean = $event.detail.value; saveCellDraft()" color="#20b894" @click.stop />
                 <picker v-else-if="editor.field.editor === 'select' && editorOptions.length" class="grid-inline-picker" mode="selector" :range="editorOptions" range-key="label" :value="Math.max(0, editorOptionIndex)" @change="editorOptionIndex = Number($event.detail.value); saveCellDraft()" @click.stop>
@@ -59,7 +59,7 @@
       <view v-if="!sqlColumns || sqlRowActions" class="grid-fixed">
         <view class="grid-row grid-header grid-actions">{{ selectionMode ? '选择' : '操作' }}</view>
         <view v-for="(item, index) in rows" :key="rowKey(item, index)" class="grid-row grid-actions" :class="{ selected: selectionMode && isSelected(item) }">
-          <view v-if="selectionMode" class="grid-action" @click.stop="$emit('select', item)">{{ isSelected(item) ? '✓ 已选' : '选择' }}</view>
+          <view v-if="selectionMode" class="grid-action" @click.stop="$emit('select', item, $event)">{{ isSelected(item) ? '✓ 已选' : '选择' }}</view>
           <template v-else-if="editable">
             <view class="grid-action" @click.stop="$emit('edit', item)">编辑</view>
             <view class="grid-action delete" @click.stop="$emit('delete', item)">删除</view>
@@ -497,12 +497,12 @@ function displayValue(item, key) {
   if (typeof value === 'string' && (/^data:image\//i.test(value) || (value.length > 500 && /^(?:iVBORw0KGgo|\/9j\/|UklGR|R0lGOD)/.test(value)))) return '[图片数据]'
   return String(value)
 }
-function onRowClick(item) { if (props.selectionMode) emit('select', item) }
+function onRowClick(item, event) { if (props.selectionMode) emit('select', item, event) }
 async function previewImage(src) {
   try { await previewTrashBinImage(src) } catch { uni.showToast({ title: '图片预览失败', icon: 'none' }) }
 }
-function onCellClick(item, column) {
-  if (props.selectionMode) { emit('select', item); return }
+function onCellClick(item, column, event) {
+  if (props.selectionMode) { emit('select', item, event); return }
   const cell = `${props.draftKey(item)}:${column.key}`
   if (clickTimer && previousCell === cell) {
     clearTimeout(clickTimer); clickTimer = null; previousCell = ''

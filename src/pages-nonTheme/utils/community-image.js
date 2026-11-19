@@ -55,24 +55,36 @@ const CACHE_PREFIX = 'community_image_cache:';
 const CACHE_INDEX_KEY = 'community_image_cache:index';
 const DEFAULT_TTL = 7 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_ITEMS = 30;
-const MAX_H5_CACHE_BYTES = 40 * 1024 * 1024;
+const MAX_CACHE_BYTES = 40 * 1024 * 1024;
 const DATABASE_NAME = 'fentouxia-community-image-cache';
 const STORE_NAME = 'images';
 const DATABASE_VERSION = 1;
 
 let databasePromise = null;
 const writeQueues = new Map();
+let nativeQueue = Promise.resolve();
 
 function now() {
   return Date.now ? Date.now() : new Date().getTime();
 }
 
+export function getCommunityImageOwner() {
+  if (!uni.getStorageSync('token')) return '';
+  const user = uni.getStorageSync('userInfo');
+  const id = String(user?.id || user?.userId || '');
+  return /^\d+$/.test(id) ? id : '';
+}
+
 function getCacheKey(type, id) {
-  return `${CACHE_PREFIX}${type}:${id}`;
+  const owner = getCommunityImageOwner();
+  return owner ? `${CACHE_PREFIX}${owner}:${type}:${id}` : '';
 }
 
 function canUseIndexedDb() {
+  // #ifdef H5
   return typeof indexedDB !== 'undefined';
+  // #endif
+  return false;
 }
 
 function estimateBytes(value) {
@@ -157,7 +169,7 @@ async function pruneIndexedDbCache(database, keepKey = '') {
   for (const record of records) {
     const byteSize = Number(record.byteSize || 0);
     const shouldKeep = record.key === keepKey || (
-      keptCount < MAX_CACHE_ITEMS && usedBytes + byteSize <= MAX_H5_CACHE_BYTES
+      keptCount < MAX_CACHE_ITEMS && usedBytes + byteSize <= MAX_CACHE_BYTES
     );
     if (shouldKeep) {
       keptCount += 1;
@@ -183,30 +195,107 @@ function writeCacheIndex(index) {
   } catch (_) {}
 }
 
-function pruneStorageCache(keepKey = '') {
-  const index = readCacheIndex()
-    .filter(item => item && item.key)
-    .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
-  const kept = [];
-
-  index.forEach((item) => {
-    if (item.key === keepKey || kept.length < MAX_CACHE_ITEMS) {
-      kept.push(item);
-      return;
-    }
-    try {
-      uni.removeStorageSync(item.key);
-    } catch (_) {}
+function nativeImageFile(operation, file, value) {
+  // #ifdef MP-WEIXIN
+  const filePath = `${wx.env.USER_DATA_PATH}/${file}`;
+  const fs = wx.getFileSystemManager();
+  return new Promise((resolve, reject) => {
+    const options = { filePath, success: resolve, fail: reject };
+    if (operation === 'write') fs.writeFile({ ...options, data: value, encoding: 'utf8' });
+    else if (operation === 'read') fs.readFile({ ...options, encoding: 'utf8' });
+    else fs.unlink(options);
+  }).then(result => result?.data);
+  // #endif
+  // #ifdef APP-PLUS
+  const create = operation === 'write';
+  return new Promise((resolve, reject) => {
+    plus.io.resolveLocalFileSystemURL('_doc/', directory => {
+      directory.getFile(file, { create, exclusive: create }, entry => {
+        if (create) {
+          entry.createWriter(writer => {
+            writer.onwrite = resolve;
+            writer.onerror = reject;
+            writer.write(value);
+          }, reject);
+        } else if (operation === 'read') {
+          entry.file(cached => {
+            const reader = new plus.io.FileReader();
+            reader.onloadend = event => resolve(event?.target?.result || reader.result);
+            reader.onerror = reject;
+            reader.readAsText(cached, 'UTF-8');
+          }, reject);
+        } else entry.remove(resolve, reject);
+      }, reject);
+    }, reject);
   });
+  // #endif
+  return Promise.reject(new Error('社区图片文件缓存不可用'));
+}
 
+function queueNativeStorage(task) {
+  const result = nativeQueue.then(task);
+  nativeQueue = result.catch(() => {});
+  return result;
+}
+
+async function pruneStorageCache(keep) {
+  const index = readCacheIndex()
+    .filter(item => item?.key && item.key !== keep.key)
+    .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+  const kept = [keep];
+  let bytes = keep.byteSize;
+  for (const item of index) {
+    const size = Number(item.byteSize) || 0;
+    if (kept.length < MAX_CACHE_ITEMS && bytes + size <= MAX_CACHE_BYTES) {
+      kept.push(item);
+      bytes += size;
+    } else {
+      uni.removeStorageSync(item.key);
+      if (item.file) await nativeImageFile('delete', item.file).catch(() => {});
+    }
+  }
   writeCacheIndex(kept);
 }
 
-function touchStorageKey(key) {
-  const index = readCacheIndex().filter(item => item && item.key && item.key !== key);
-  index.unshift({ key, updatedAt: now() });
-  writeCacheIndex(index);
-  pruneStorageCache(key);
+async function readStorageCache(key, ttl) {
+  const record = uni.getStorageSync(key);
+  if (!record?.updatedAt) return null;
+  try {
+    if (now() - Number(record.updatedAt) <= ttl) {
+      const value = record.file ? JSON.parse(await nativeImageFile('read', record.file)) : record.value;
+      if (value) {
+        const updatedAt = now();
+        await pruneStorageCache({ key, updatedAt, byteSize: record.byteSize || 0, file: record.file || '' });
+        uni.setStorageSync(key, { ...record, updatedAt });
+        return value;
+      }
+    }
+  } catch (_) {}
+  uni.removeStorageSync(key);
+  if (record.file) await nativeImageFile('delete', record.file).catch(() => {});
+  writeCacheIndex(readCacheIndex().filter(item => item?.key !== key));
+  return null;
+}
+
+async function writeStorageCache(key, value, byteSize) {
+  const previous = uni.getStorageSync(key);
+  const record = { updatedAt: now(), byteSize };
+  try {
+    if (hasInlineImage(value)) {
+      record.file = `ftx_community_${now()}_${Math.random().toString(36).slice(2)}.json`;
+      await nativeImageFile('write', record.file, JSON.stringify(value));
+    } else record.value = value;
+    await pruneStorageCache({ key, updatedAt: record.updatedAt, byteSize, file: record.file || '' });
+    uni.setStorageSync(key, record);
+  } catch (error) {
+    if (record.file) await nativeImageFile('delete', record.file).catch(() => {});
+    if (previous?.updatedAt) {
+      await pruneStorageCache({ key, updatedAt: previous.updatedAt, byteSize: previous.byteSize || 0, file: previous.file || '' });
+    } else writeCacheIndex(readCacheIndex().filter(item => item?.key !== key));
+    throw error;
+  }
+  if (previous?.file) await nativeImageFile('delete', previous.file).catch(() => {});
+  return true;
 }
 
 async function getIndexedDbCache(key, ttl) {
@@ -253,34 +342,10 @@ function queueIndexedDbCache(key, value) {
 export async function getCachedCommunityImage(type, id, ttl = DEFAULT_TTL) {
   if (!type || !id) return null;
   const key = getCacheKey(type, id);
-
-  if (canUseIndexedDb()) {
-    try {
-      const cached = await getIndexedDbCache(key, ttl);
-      if (cached) return cached;
-
-      // 迁移旧版 H5 键值缓存，避免旧 Base64 继续占用 localStorage 配额。
-      const legacy = uni.getStorageSync(key);
-      if (legacy && legacy.updatedAt && now() - Number(legacy.updatedAt) <= ttl) {
-        await queueIndexedDbCache(key, legacy.value);
-        uni.removeStorageSync(key);
-        return legacy.value || null;
-      }
-    } catch (_) {
-      return null;
-    }
-    return null;
-  }
-
+  if (!key) return null;
   try {
-    const cached = uni.getStorageSync(key);
-    if (!cached || typeof cached !== 'object') return null;
-    if (!cached.updatedAt || now() - Number(cached.updatedAt) > ttl || hasInlineImage(cached.value)) {
-      uni.removeStorageSync(key);
-      return null;
-    }
-    touchStorageKey(key);
-    return cached.value || null;
+    const cached = await (canUseIndexedDb() ? getIndexedDbCache(key, ttl) : queueNativeStorage(() => readStorageCache(key, ttl)));
+    return key === getCacheKey(type, id) ? cached : null;
   } catch (_) {
     return null;
   }
@@ -289,32 +354,11 @@ export async function getCachedCommunityImage(type, id, ttl = DEFAULT_TTL) {
 export async function setCachedCommunityImage(type, id, value) {
   if (!type || !id || !value) return false;
   const key = getCacheKey(type, id);
-
-  if (canUseIndexedDb()) {
-    try {
-      const saved = await queueIndexedDbCache(key, value);
-      if (saved) uni.removeStorageSync(key);
-      return saved;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  // 小程序/App 的键值存储容量有限，不再持久化 Base64；远程 URL 仍可缓存以减少图片列表接口请求。
-  if (hasInlineImage(value)) return false;
-  const payload = { value, updatedAt: now() };
+  const byteSize = estimateBytes(value);
+  if (!key || !byteSize || byteSize > MAX_CACHE_BYTES) return false;
   try {
-    uni.setStorageSync(key, payload);
-    touchStorageKey(key);
-    return true;
+    return await (canUseIndexedDb() ? queueIndexedDbCache(key, value) : queueNativeStorage(() => writeStorageCache(key, value, byteSize)));
   } catch (_) {
-    pruneStorageCache(key);
-    try {
-      uni.setStorageSync(key, payload);
-      touchStorageKey(key);
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return false;
   }
 }

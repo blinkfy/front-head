@@ -4,7 +4,8 @@ import { createWebCallRecording } from '../src/utils/web-call-recording.mjs'
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
 async function scenario(failure) {
-  let encoder, row, removed = false, stoppedTracks = 0, time = 1000, appends = 0
+  let row, removed = false, stoppedTracks = 0, time = 1000, appends = 0
+  const encoders = []
   const reports = [], chunks = []
   const node = () => ({ connect() {}, disconnect() {} })
   const stream = { getAudioTracks: () => [{}], getTracks: () => [{ stop() { stoppedTracks++ } }] }
@@ -18,7 +19,7 @@ async function scenario(failure) {
   }
   class MediaRecorder {
     static isTypeSupported() { return true }
-    constructor() { encoder = this }
+    constructor() { encoders.push(this) }
     mimeType = 'audio/webm'
     state = 'inactive'
     start() { this.state = 'recording' }
@@ -30,9 +31,9 @@ async function scenario(failure) {
   }
   const storage = {
     async create(value) { row = value },
-    async append(id, index, blob) {
+    async append(id, index, blob, owner, speaker) {
       if (failure === 'storage' && ++appends === 2) throw new Error('Full')
-      chunks.push({ index, blob })
+      chunks.push({ index, blob, speaker })
     },
     async finish(id, patch) { assert.equal(id, row.id); Object.assign(row, patch) },
     async remove() { removed = true },
@@ -43,11 +44,10 @@ async function scenario(failure) {
     now: () => time, changed: event => reports.push(event) })
   recording.control({ connected: true })
   await recording.start()
-  const sample = () => { time += 1000; encoder.ondataavailable({ data: new Blob(['audio-frame']) }) }
+  const sample = () => { time += 1000; encoders.forEach(encoder => encoder.ondataavailable({ data: new Blob(['audio-frame']) })) }
   sample()
   await tick()
-  if (failure === 'storage') { sample(); sample() }
-  if (failure === 'encoder') encoder.onerror()
+  if (failure === 'encoder') encoders[0].onerror()
   await tick()
   await recording.close()
   assert.equal(row.status, failure ? 'interrupted' : 'saved')
@@ -55,7 +55,9 @@ async function scenario(failure) {
   assert.equal(row.durationMs, 1000)
   assert.equal(row.callId, 'call-recovery-test')
   assert.equal(removed, false)
-  assert.equal(stoppedTracks, 1)
+  assert.equal(stoppedTracks, 3)
+  assert.equal(row.splitTracks, !failure)
+  if (!failure) assert.deepEqual(chunks.map(chunk => chunk.speaker), [undefined, 'self', 'peer'])
   assert.ok(reports.some(event => event.saved))
   if (failure === 'storage') assert.equal(chunks.length, 1, 'retain the contiguous prefix before a failed write')
 }

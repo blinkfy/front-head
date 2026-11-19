@@ -44,7 +44,7 @@ import ShopRegionPicker from '@/pages-nonTheme/components/ShopRegionPicker.vue'
 import { recyclingOverview, recyclingAdmin, recyclingRequest, bookingStatusText, collectorStatusText, mutationData } from '@/pages-nonTheme/api/recycling.js'
 export default {
   components: { RecyclingShell, ShopRegionPicker, RecyclingServiceMap },
-  data: () => ({ isDark: false, loading: false, busy: false, ready: false, error: '', page: 1, tab: 'applications', tabs: [{ key: 'applications', label: '申请审核' }, { key: 'collectors', label: '回收员' }, { key: 'orders', label: '预约调度' }, { key: 'areas', label: '服务覆盖' }], overview: { areas: [], profiles: [], applications: [], orders: [], availability: [] }, catalog: { types: [] }, reasons: {}, collectorSelections: {}, areaSelections: {}, candidates: {}, rangePreviews: {}, legacyRegions: {}, writes: {} }),
+  data: () => ({ isDark: false, loading: false, busy: false, ready: false, error: '', page: 1, loadedPage: null, tab: 'applications', tabs: [{ key: 'applications', label: '申请审核' }, { key: 'collectors', label: '回收员' }, { key: 'orders', label: '预约调度' }, { key: 'areas', label: '服务覆盖' }], overview: { areas: [], profiles: [], applications: [], orders: [], availability: [] }, catalog: { types: [] }, reasons: {}, collectorSelections: {}, areaSelections: {}, candidates: {}, rangePreviews: {}, legacyRegions: {}, writes: {} }),
   computed: { hasNextPage() { return this.tab === 'orders' ? this.page * 100 < (this.overview.total || 0) : (this.tab === 'applications' ? this.overview.applications : this.overview.profiles).length >= 100 } },
   onShow() { this.isDark = uni.getStorageSync('app_theme') === 'dark'; this.load() },
   methods: {
@@ -54,7 +54,25 @@ export default {
     async mapLegacyArea(area) { const region = this.legacyRegions[area.id]; if (!Array.isArray(region) || region.length !== 3 || region.some(part => !String(part || '').trim())) { this.error = '请先核对旧服务范围对应的完整省市区'; return } if (await this.write(`areas/${area.id}`, { region, version: area.version }, 'PUT')) delete this.legacyRegions[area.id] },
     applicationAreas(item) { return this.overview.areas.filter(area => (item.areaIds || []).includes(area.id)) },
     names(values = [], rows = []) { return (values || []).map(id => rows.find(row => Number(row.id) === Number(id))?.name).filter(Boolean).join('、') },
-    async load() { if (this.loading) return; this.loading = true; this.error = ''; try { const overview = await recyclingOverview({ page: this.page }); this.overview = overview; this.catalog = { types: overview.types || [], timeSlots: overview.timeSlots || [] }; this.candidates = {}; this.ready = true } catch (e) { this.error = e.message || '无权限或运营数据加载失败'; this.ready = false } finally { this.loading = false } },
+    async load() {
+      if (this.loading) return
+      this.loading = true
+      this.error = ''
+      try {
+        const overview = await recyclingOverview({ page: this.page })
+        this.overview = overview
+        this.catalog = { types: overview.types || [], timeSlots: overview.timeSlots || [] }
+        this.candidates = {}
+        this.loadedPage = this.page
+        this.ready = true
+      } catch (e) {
+        this.error = e.message || '无权限或运营数据加载失败'
+        // #ifdef APP-PLUS
+        if (e?.networkUnavailable && this.loadedPage === this.page) return
+        // #endif
+        this.ready = false
+      } finally { this.loading = false }
+    },
     changeTab(tab) { if (this.loading || this.busy) return; this.tab = tab; if (this.page !== 1) { this.page = 1; this.load() } },
     changePage(direction) { if (this.loading || this.busy) return; this.page += direction; this.load(); uni.pageScrollTo({ scrollTop: 0 }) },
     async write(path, payload, method = 'POST') { if (this.busy) return; this.busy = true; try { await recyclingAdmin(path, payload, method); this.error = ''; await this.load(); uni.showToast({ title: '操作成功', icon: 'success' }); return true } catch (e) { this.error = e.message || '操作失败，请刷新'; return false } finally { this.busy = false } },

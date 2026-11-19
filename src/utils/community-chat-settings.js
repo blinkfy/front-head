@@ -4,6 +4,7 @@ import request from '@/api/index.js'
 // Only public entry visibility lives here. This never terminates an admitted
 // call/share, rejects an invitation, or changes device capabilities.
 export const communityChatSettings = reactive({ enabled: false, known: false })
+export const COMMUNITY_CHAT_CACHE_KEY = 'community_chat_enabled'
 let pending = null, until = 0, revision = 0, updatedAt = 0
 
 export function applyCommunityChatSettings(settings) {
@@ -12,6 +13,11 @@ export function applyCommunityChatSettings(settings) {
   if (updatedAt && (!timestamp || timestamp < updatedAt)) return
   updatedAt = Math.max(updatedAt, timestamp)
   revision++
+  // #ifdef APP-PLUS
+  if (!communityChatSettings.known || communityChatSettings.enabled !== settings.communityChatEnabled) {
+    try { uni.setStorageSync(COMMUNITY_CHAT_CACHE_KEY, settings.communityChatEnabled) } catch (_) {}
+  }
+  // #endif
   communityChatSettings.enabled = settings.communityChatEnabled
   communityChatSettings.known = true
   until = Date.now() + 5000

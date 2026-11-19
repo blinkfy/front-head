@@ -70,7 +70,12 @@ async function openInbox() {
   }
 }
 async function refreshInbox() {
+  // #ifdef APP-PLUS
+  if (supported.value) return loadItems(false, true)
+  // #endif
+  // #ifndef APP-PLUS
   if (supported.value) return loadItems(false)
+  // #endif
   closeInbox()
   return openInbox()
 }
@@ -79,13 +84,13 @@ async function changeScope(value) {
   scope.value = value
   await loadItems(false)
 }
-async function loadItems(append = false) {
+async function loadItems(append = false, keepVisible = false) {
   if (!opened.value || !supported.value) return
   const version = ++requestVersion
   const cursor = append ? nextCursor.value : ''
   loading.value = true
   error.value = ''
-  if (!append) { items.value = []; nextCursor.value = '' }
+  if (!append && !keepVisible) { items.value = []; nextCursor.value = '' }
   try {
     const response = await fetchAiActions(scope.value, cursor)
     if (!opened.value || version !== requestVersion) return
@@ -95,7 +100,12 @@ async function loadItems(append = false) {
     const ids = new Set(previous.map(item => item.id))
     items.value = [...previous, ...received.filter(item => !ids.has(item.id))]
     nextCursor.value = typeof response.data.nextCursor === 'string' && response.data.nextCursor.length <= 220 ? response.data.nextCursor : ''
-  } catch (value) { if (opened.value && version === requestVersion) error.value = message(value) }
+  } catch (value) {
+    if (opened.value && version === requestVersion) {
+      if (keepVisible && !value?.networkUnavailable) { items.value = []; nextCursor.value = '' }
+      error.value = message(value)
+    }
+  }
   finally { if (version === requestVersion) loading.value = false }
 }
 function openItem(item) {

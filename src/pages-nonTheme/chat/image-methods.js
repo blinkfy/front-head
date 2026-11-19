@@ -1,7 +1,9 @@
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { baseUrl } from '@/api/settings.js'
+import { isChatImageOffline, readChatOriginalMedia, removeChatImagePreviews } from '@/pages-nonTheme/utils/chat-local-media.js'
 // #ifndef H5
-import { cacheChatOriginalImage, removeCachedChatOriginalImage } from '@/pages-nonTheme/utils/chat-media-cache.js'
+import { saveDownloadedChatOriginal } from '@/pages-nonTheme/utils/chat-local-media.js'
+import { loadChatOriginalImage, removeCachedChatOriginalImage } from '@/pages-nonTheme/utils/chat-media-cache.js'
 // #endif
 
 export const imageSourceMethods = {
@@ -105,7 +107,7 @@ export const imageSourceMethods = {
 export const imagePreviewMethods = {
     previewImage(msg) {
             // 构建所有图片消息列表（过滤出图片消息）
-            this.previewImageList = this.messages.filter(m => m.type === 'image')
+            this.previewImageList = this.messages.filter(m => m.type === 'image' && !m.isWithdraw && m.content)
             
             // 找到当前点击的图片在列表中的索引
             const index = this.previewImageList.findIndex(m => m.id === msg.id)
@@ -116,7 +118,7 @@ export const imagePreviewMethods = {
             
             // 如果是小于1M的图片，自动加载并缓存原图以直接显示高清
             if (!this.isLargeImage(msg) && !this.loadedOriginalImages[msg.id] && msg.content) {
-                this.loadOriginalImage(msg)
+                this.loadOriginalImage(msg, { automatic: true })
             }
         },
 // 关闭图片预览
@@ -127,8 +129,8 @@ export const imagePreviewMethods = {
         },
 // 切换到下一张图片
     nextPreviewImage() {
-            if (this.previewImageList.length > 0) {
-                this.previewCurrentIndex = (this.previewCurrentIndex + 1) % this.previewImageList.length
+            if (this.previewCurrentIndex < this.previewImageList.length - 1) {
+                this.previewCurrentIndex += 1
                 
                 // 获取新的当前图片
                 const currentMsg = this.currentPreviewMessage
@@ -138,15 +140,15 @@ export const imagePreviewMethods = {
                         this.$forceUpdate()
                     } else if (!this.isLargeImage(currentMsg) && currentMsg.content) {
                         // 如果是小图且未加载，自动加载原图
-                        this.loadOriginalImage(currentMsg)
+                        this.loadOriginalImage(currentMsg, { automatic: true })
                     }
                 }
             }
         },
 // 切换到上一张图片
     prevPreviewImage() {
-            if (this.previewImageList.length > 0) {
-                this.previewCurrentIndex = (this.previewCurrentIndex - 1 + this.previewImageList.length) % this.previewImageList.length
+            if (this.previewCurrentIndex > 0) {
+                this.previewCurrentIndex -= 1
                 
                 // 获取新的当前图片
                 const currentMsg = this.currentPreviewMessage
@@ -156,7 +158,7 @@ export const imagePreviewMethods = {
                         this.$forceUpdate()
                     } else if (!this.isLargeImage(currentMsg) && currentMsg.content) {
                         // 如果是小图且未加载，自动加载原图
-                        this.loadOriginalImage(currentMsg)
+                        this.loadOriginalImage(currentMsg, { automatic: true })
                     }
                 }
             }
@@ -171,7 +173,7 @@ export const imagePreviewMethods = {
 }
 
 export const imageLoadingMethods = {
-    loadOriginalImage(msg) {
+    loadOriginalImage(msg, { automatic = false } = {}) {
             if (!msg || !msg.content) return
             const currentMessage = this.getCurrentImageMessage(msg.id, msg.content)
             if (!currentMessage) return
@@ -185,47 +187,61 @@ export const imageLoadingMethods = {
             this.$set(this.originalImageLoadingIds, msg.id, true)
 
             // #ifdef H5
-            void this.loadWebOriginalImage(msg)
+            void this.loadWebOriginalImage(msg, automatic)
             return
             // #endif
 
             // #ifndef H5
             // 小程序 / APP 用同一次 downloadFile 结果直接保存为持久文件，避免先 getImageInfo
-            // 再 downloadFile 造成原图双下载；保存失败时才退回原有在线预加载。
-            this.loadAndPersistOriginalImage(msg)
+            // 再 downloadFile 造成原图双下载；无法持久保存时仍复用下载得到的临时文件。
+            void this.loadAndPersistOriginalImage(msg, automatic)
             // #endif
         },
 // #ifdef H5
-    async loadWebOriginalImage(msg) {
+    async loadWebOriginalImage(msg, automatic) {
         const url = await this.getChatMediaSource('original', msg.content, { download: true, size: msg.fileSize })
         const current = this.getCurrentImageMessage(msg.id, msg.content)
         if (!current || this.isChatPageDestroyed) { this.finishOriginalImageLoading(msg.id); return }
-        if (!url) { this.preloadOriginalImageFromNetwork(current); return }
+        if (!url) { await this.preloadOriginalImageFromNetwork(current, automatic); return }
         current.originalLoaded = true
         this.setLoadedOriginalImage(current.id, url)
         this.saveMessagesToStorage()
         this.finishOriginalImageLoading(current.id)
     },
 // #endif
-    preloadOriginalImageFromNetwork(msg) {
+    async preloadOriginalImageFromNetwork(msg, automatic) {
             const sourceUrl = msg?.content
             if (!sourceUrl) {
                 this.finishOriginalImageLoading(msg?.id)
                 return
             }
+            const owner = this.getCurrentUserId(), conversationId = this.chatId
+            const isCurrent = () => !this.isChatPageDestroyed && String(owner) === String(this.getCurrentUserId()) && conversationId === this.chatId
+            const offline = this.chatOffline || await isChatImageOffline()
+            if (!isCurrent() || !this.getCurrentImageMessage(msg.id, sourceUrl) || offline) {
+                this.finishOriginalImageLoading(msg.id)
+                if (offline && !automatic && !this.isChatPageDestroyed) {
+                    uni.showToast({ title: '当前离线，原图未缓存', icon: 'none' })
+                }
+                return
+            }
             uni.getImageInfo({
                 src: sourceUrl,
-                success: (image) => {
-                    // 等待期间同一消息的图片已被服务器替换时，不把旧请求结果回写回来。
+                success: async (image) => {
+                    let original = { url: sourceUrl, persistent: false }
+                    // Native getImageInfo also downloads a local file. Reuse those bytes instead of storing a remote URL as a cached original.
+                    // #ifndef H5
+                    if (image?.path && !/^https?:\/\//i.test(image.path) && image.path !== sourceUrl && isCurrent()) {
+                        original = await saveDownloadedChatOriginal(owner, sourceUrl, image.path, [conversationId, msg.id]).catch(() => ({ url: image.path, persistent: false }))
+                    }
+                    // #endif
                     const currentMessage = this.getCurrentImageMessage(msg.id, sourceUrl)
-                    if (!currentMessage) {
+                    if (!currentMessage || !isCurrent()) {
                         this.finishOriginalImageLoading(msg.id)
                         return
                     }
-                    // 先立即使用在线原图，持久化下载失败也不影响预览。
-                    currentMessage.originalLoaded = true
-                    this.setLoadedOriginalImage(currentMessage.id, currentMessage.content)
-                    // 使退出并重新进入聊天后，仍按原图策略渲染。
+                    currentMessage.originalLoaded = original.persistent
+                    this.setLoadedOriginalImage(currentMessage.id, original.url)
                     this.saveMessagesToStorage()
                     
                     this.finishOriginalImageLoading(msg.id)
@@ -234,7 +250,7 @@ export const imageLoadingMethods = {
                 },
                 fail: (err) => {
                     this.finishOriginalImageLoading(msg.id)
-                    if (!this.getCurrentImageMessage(msg.id, sourceUrl)) return
+                    if (automatic || !this.getCurrentImageMessage(msg.id, sourceUrl)) return
                     console.error('原图加载失败:', err)
                     
                     uni.showToast({
@@ -246,25 +262,30 @@ export const imageLoadingMethods = {
         },
 // #ifndef H5
 // 小程序 / APP 在用户实际查看原图后才下载并保存，不会预取整段聊天中的所有图片。
-    async loadAndPersistOriginalImage(msg) {
+    async loadAndPersistOriginalImage(msg, automatic) {
             const sourceUrl = msg?.content
             if (!sourceUrl) return
+            const owner = this.getCurrentUserId(), conversationId = this.chatId
             try {
-                const localPath = await cacheChatOriginalImage({
+                const cached = await loadChatOriginalImage({
                     userId: this.getCurrentUserId() || 'unknown',
                     conversationId: this.chatId,
                     messageId: msg.id,
                     sourceUrl,
                     expectedSize: msg.fileSize || 0
                 })
+                if (this.isChatPageDestroyed || String(owner) !== String(this.getCurrentUserId()) || conversationId !== this.chatId) {
+                    this.finishOriginalImageLoading(msg.id)
+                    return
+                }
                 // 下载期间消息可能已被服务器更新，不能把旧图覆盖到新消息上。
                 const currentMessage = this.getCurrentImageMessage(msg.id, sourceUrl)
-                if (localPath && currentMessage) {
-                    currentMessage.originalLoaded = true
-                    this.setLoadedOriginalImage(currentMessage.id, localPath)
+                if (cached?.url && currentMessage) {
+                    currentMessage.originalLoaded = cached.persistent !== false
+                    this.setLoadedOriginalImage(currentMessage.id, cached.url)
                     this.saveMessagesToStorage()
                     this.finishOriginalImageLoading(currentMessage.id)
-                    console.log('原图已保存到本地缓存:', currentMessage.id)
+                    console.log('原图已加载:', currentMessage.id)
                     return
                 }
                 if (!currentMessage) {
@@ -275,9 +296,13 @@ export const imageLoadingMethods = {
                 // 工具内部通常会吞掉下载/保存失败；这里额外兜底，确保图片预览不会被异常打断。
                 console.warn('保存聊天原图到本地失败，改用在线原图。', error)
             }
-            // 文件下载或保存失败时仍保留原有预览逻辑，不影响用户查看图片。
+            if (this.isChatPageDestroyed || String(owner) !== String(this.getCurrentUserId()) || conversationId !== this.chatId) {
+                this.finishOriginalImageLoading(msg.id)
+                return
+            }
+            // 没有可用下载结果时才回退在线预览。
             const currentMessage = this.getCurrentImageMessage(msg.id, sourceUrl)
-            if (currentMessage) this.preloadOriginalImageFromNetwork(currentMessage)
+            if (currentMessage) await this.preloadOriginalImageFromNetwork(currentMessage, automatic)
             else this.finishOriginalImageLoading(msg.id)
         },
 // #endif
@@ -289,7 +314,7 @@ export const imageLoadingMethods = {
 
 export const imageErrorMethods = {
     async onImageError(msg, event) {
-            if (!msg) return
+            if (!msg || this.isChatPageDestroyed) return
             const eventMessageId = event?.currentTarget?.dataset?.messageId
             if (eventMessageId !== undefined && eventMessageId !== null &&
                 String(eventMessageId) !== String(msg.id)) {
@@ -319,25 +344,28 @@ export const imageErrorMethods = {
             // 无论线上原图还是 saveFile 本地原图，只要当前原图渲染失败都回到缩略图。
             if (displayedOriginal) {
                 const isPersistentLocalOriginal = displayedOriginal !== msg.content
-                this.clearLoadedOriginalImage(msg.id)
-                msg.originalLoaded = false
-                this.finishOriginalImageLoading(msg.id)
-                this.saveMessagesToStorage()
                 // #ifdef H5
-                if (isPersistentLocalOriginal) void this.invalidateChatMediaSource('original', msg.content, displayedOriginal)
+                if (isPersistentLocalOriginal) await this.invalidateChatMediaSource('original', msg.content, displayedOriginal)
                 // #endif
                 // #ifndef H5
                 if (isPersistentLocalOriginal) {
-                    removeCachedChatOriginalImage({
+                    await removeCachedChatOriginalImage({
                         userId: this.getCurrentUserId() || 'unknown',
                         conversationId: this.chatId,
                         messageId: msg.id,
-                        sourceUrl: msg.content
+                        sourceUrl: msg.content,
+                        displayedPath: displayedOriginal
                     }).catch((error) => {
                         console.warn('清理失效聊天原图缓存失败，后续会由 LRU 再次尝试。', error)
                     })
                 }
                 // #endif
+                if (this.loadedOriginalImageTokens[msg.id] !== expectedToken || this.isChatPageDestroyed) return
+                this.clearLoadedOriginalImage(msg.id)
+                delete this.thumbnailFallbackIds[msg.id]
+                msg.originalLoaded = false
+                this.finishOriginalImageLoading(msg.id)
+                this.saveMessagesToStorage()
                 // 让列表和预览重新使用缩略图，不保留“图片加载失败”的遮罩。
                 delete this.mediaLoadErrors[msg.id]
                 return
@@ -412,6 +440,19 @@ export const imageRetryMethods = {
             if (eventMessageId !== undefined && eventMessageId !== null &&
                 String(eventMessageId) !== String(msg.id)) {
                 return
+            }
+            const originalToken = this.loadedOriginalImageTokens[msg.id]
+            if (msg.originalLoaded && this.loadedOriginalImages[msg.id] && originalToken &&
+                String(event?.currentTarget?.dataset?.originalToken) === String(originalToken)) {
+                const owner = this.getCurrentUserId()
+                const previews = [msg.thumbnail, this.getThumbnail(msg.content)].filter(url => url && url !== msg.content)
+                // Only remove previews after the full image renders and its persistent cache exists.
+                // A temporary file / failed IndexedDB write must keep the usable preview.
+                void readChatOriginalMedia(owner, msg.content, [this.chatId, msg.id]).then(handle => {
+                    if (!handle) return
+                    handle.release?.()
+                    return removeChatImagePreviews(owner, previews)
+                }).catch(() => {})
             }
             const expectedRetryNonce = this.imageRetryNonces[msg.id]
             const loadedRetryNonce = event?.currentTarget?.dataset?.retryNonce

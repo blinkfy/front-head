@@ -202,6 +202,15 @@
               <ChatDisposalPoints v-if="msg.role === 'assistant'" :value="msg.disposalPoints" :busy-id="openingDisposalId" @open="openDisposalPoint" />
               <ChatBusinessCards v-if="msg.role === 'assistant'" :value="msg.businessCards" :session-id="activeSessionId" :message-id="msg.id" :chat-busy="isStreaming || imagePreparing" :page-epoch="businessPageEpoch" @checklist="buildSelectedChecklist" />
             </view>
+            <view v-if="msg.role === 'assistant' && (msg.content || localSpeechAvailable)" class="reply-actions" aria-label="回复操作">
+              <button v-if="msg.content" class="reply-action-button" aria-label="复制回复" title="复制回复" @tap.stop="copyAssistantReply(msg)">
+                <view class="reply-copy-icon" aria-hidden="true"></view>
+              </button>
+              <LocalSpeechButton v-if="localSpeechAvailable" :text="replySpeechTexts[idx]" label="播报回复" icon-only />
+              <button v-if="msg.content" class="reply-action-button" aria-label="分享回复" title="分享回复" @tap.stop="shareAssistantReply(msg)">
+                <view class="reply-share-icon" aria-hidden="true"><view class="reply-share-arrow"></view></view>
+              </button>
+            </view>
           </view>
         </view>
         <view v-if="isStreaming" class="message-row from-assistant">
@@ -344,6 +353,10 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { onHide, onUnload, onShow } from '@dcloudio/uni-app'
 import { baseUrl } from '@/api/settings'
 import MarkdownBody from '@/pages-nonTheme/components/MarkdownBody.vue'
+import LocalSpeechButton from '@/components/LocalSpeechButton.vue'
+import { localSpeechAvailable, refreshLocalSpeech, stopLocalSpeech } from '@/utils/local-tts.js'
+import { markdownSpeechText } from '@/pages-nonTheme/utils/renderMarkdown.js'
+import { checklistText } from '@/pages-nonTheme/utils/ai-chat-checklist.mjs'
 import ChatSearchSources from '@/pages-nonTheme/components/ChatSearchSources.vue'
 import ChatDisposalPoints from '@/pages-nonTheme/components/ChatDisposalPoints.vue'
 import ChatBusinessCards from '@/pages-nonTheme/components/ChatBusinessCards.vue'
@@ -487,6 +500,58 @@ const expandedSeedSummaries = ref({})
 const recognitionSeedSummaries = computed(() =>
   messageList.value.map((message, index) => parseRecognitionSeedSummary(message, index))
 )
+function replyChecklistText(message) {
+  return normalizeChatBusinessCards(message.businessCards)
+    .filter(card => card.type === 'checklist').map(card => checklistText(card.checklist)).join('\n\n')
+}
+function assistantReplyText(message) {
+  return (replyChecklistText(message) || message.content || '').trim()
+}
+function copyAssistantReply(message) {
+  const data = assistantReplyText(message)
+  if (!data) return
+  uni.setClipboardData({ data, fail: () => uni.showToast({ title: '复制失败，请重试', icon: 'none' }) })
+}
+async function shareAssistantReply(message) {
+  const text = assistantReplyText(message)
+  if (!text) return
+  const copyForShare = () => uni.setClipboardData({ data: text, showToast: false,
+    success: () => uni.showToast({ title: '已复制回复，可粘贴分享', icon: 'none' }),
+    fail: () => uni.showToast({ title: '无法复制回复，请重试', icon: 'none' }) })
+  // #ifdef H5
+  const browser = globalThis.navigator
+  if (typeof browser?.share === 'function') {
+    try {
+      if (!browser.canShare || browser.canShare({ text })) { await browser.share({ text }); return }
+    } catch (error) {
+      if (error?.name === 'AbortError' || error?.name === 'InvalidStateError') return
+    }
+  }
+  // #endif
+  // #ifdef APP-PLUS
+  if (typeof uni.shareWithSystem === 'function') {
+    try {
+      uni.shareWithSystem({ type: 'text', summary: text, fail: error => {
+        if (!/cancel|取消/i.test(error?.errMsg || error?.message || '')) copyForShare()
+      } })
+      return
+    } catch (_) {}
+  }
+  // #endif
+  return copyForShare()
+}
+const replySpeechTexts = computed(() => messageList.value.map((message, index) => {
+  if (message.role !== 'assistant') return ''
+  const summary = recognitionSeedSummaries.value[index]
+  if (summary) {
+    const expanded = isSeedSummaryExpanded(index)
+    const items = expanded ? summary.items : summary.items.slice(0, 3)
+    return [summary.labels.map(label => label.name).join('、'), items.join('、'),
+      expanded && summary.disposal, expanded && summary.upcycling].filter(Boolean).join('。')
+  }
+  return markdownSpeechText(replyChecklistText(message) || businessMessageMarkdown(message))
+}))
+watch(activeSessionId, () => stopLocalSpeech(), { flush: 'sync' })
 
 function toggleSeedSummary(index) {
   expandedSeedSummaries.value = {
@@ -2097,9 +2162,12 @@ onMounted(async () => {
   })
 })
 
-onHide(() => { businessPageEpoch.value++; closeHistoryDrawer() })
-onUnload(() => { pageDisposed = true; closeHistoryDrawer() })
-onShow(() => { if (runOwner && runOwner !== String(getStorage('token') || '')) ensureRunLedger() })
+onHide(() => { stopLocalSpeech(); businessPageEpoch.value++; closeHistoryDrawer() })
+onUnload(() => { stopLocalSpeech(); pageDisposed = true; closeHistoryDrawer() })
+onShow(() => {
+  refreshLocalSpeech()
+  if (runOwner && runOwner !== String(getStorage('token') || '')) ensureRunLedger()
+})
 
 onBeforeUnmount(() => {
   pageDisposed = true
@@ -2777,6 +2845,35 @@ page, view, text, scroll-view, swiper, button, form, input, textarea, label, nav
 .shell .message-content {
   flex: 1;
   min-width: 0;
+}
+
+.shell .reply-actions { display: flex; align-items: center; gap: 2px; margin-top: 3px; }
+.shell .reply-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: transparent;
+}
+.shell .reply-action-button::after { border: 0; }
+.shell .reply-action-button:active { color: var(--accent); background: rgba(110, 125, 155, .12); }
+.shell .reply-copy-icon { position: relative; width: 18px; height: 18px; }
+.shell .reply-copy-icon::before, .shell .reply-copy-icon::after { content: ''; position: absolute; box-sizing: border-box; width: 11px; height: 12px; border: 1.5px solid currentColor; border-radius: 3px; }
+.shell .reply-copy-icon::before { top: 1px; left: 1px; border-right-color: transparent; border-bottom-color: transparent; }
+.shell .reply-copy-icon::after { bottom: 1px; right: 1px; }
+.shell .reply-share-icon { position: relative; width: 18px; height: 18px; }
+.shell .reply-share-icon::before { content: ''; position: absolute; inset: 8px 2px 2px; border: 1.5px solid currentColor; border-top: 0; border-radius: 0 0 3px 3px; }
+.shell .reply-share-icon::after { content: ''; position: absolute; top: 3px; left: 8.25px; width: 1.5px; height: 9px; border-radius: 1px; background: currentColor; }
+.shell .reply-share-arrow { position: absolute; top: 3px; left: 6px; width: 6px; height: 6px; box-sizing: border-box; border-top: 1.5px solid currentColor; border-left: 1.5px solid currentColor; transform: rotate(45deg); }
+@media (hover: hover) {
+  .shell .reply-action-button:hover { background: rgba(110, 125, 155, .12); }
 }
 
 .shell .message-row.from-user .message-content {

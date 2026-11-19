@@ -1,6 +1,7 @@
 export const messageSyncMethods = {
     async fetchConversationUpdates(pollingVersion) {
-        const valid = () => this.canPollMessages() && pollingVersion === this.messagePollingVersion
+        const historyVersion = this.messageHistoryVersion
+        const valid = () => this.canPollMessages() && pollingVersion === this.messagePollingVersion && historyVersion === this.messageHistoryVersion
         const ids = this.messages.map(message => String(message.id)).filter(id => /^\d+$/.test(id))
         const now = Date.now()
         const fullReconcile = this.lastSyncedMessageId == null || this.lastHistoryReconcileAt === 0
@@ -11,6 +12,7 @@ export const messageSyncMethods = {
         let afterId = this.lastSyncedMessageId == null && Number.isFinite(earliest)
             ? Math.max(0, earliest - 1) : this.lastSyncedMessageId
         const messages = []
+        const removed = new Set()
         let cursor = afterId
         let coveredCache = this.lastSyncedMessageId == null && Number.isFinite(earliest)
         while (valid()) {
@@ -37,8 +39,7 @@ export const messageSyncMethods = {
             // read them twice. Normal minute checks only refresh the recent page.
             if (coveredCache) {
                 const visible = new Set(messages.map(message => String(message.id)))
-                this.messages = this.messages.filter(message => !/^\d+$/.test(String(message.id)) || visible.has(String(message.id)))
-                this.saveMessagesToStorage()
+                for (const id of ids) if (!visible.has(id)) removed.add(id)
             }
             const refreshIds = coveredCache ? [] : fullReconcile ? ids : ids.slice(-100)
             for (let offset = 0; offset < refreshIds.length && valid(); offset += 100) {
@@ -47,14 +48,16 @@ export const messageSyncMethods = {
                 const rows = Array.isArray(response.data) ? response.data : response.data?.list || []
                 messages.push(...rows)
                 if (Array.isArray(response.missingIds)) {
-                    const missing = new Set(response.missingIds.map(String))
-                    this.messages = this.messages.filter(message => !missing.has(String(message.id)))
-                    if (missing.size) this.saveMessagesToStorage()
+                    for (const id of response.missingIds) removed.add(String(id))
                 }
             }
             this.lastHistoryReconcileAt = now
         }
+        if (removed.size) {
+            this.messages = this.messages.filter(message => !removed.has(String(message.id)))
+            this.saveMessagesToStorage()
+        }
         this.lastSyncedMessageId = cursor
-        return messages
+        return removed.size ? messages.filter(message => !removed.has(String(message.id))) : messages
     }
 }

@@ -24,6 +24,7 @@ export default {
   },
   beforeUnmount() { uni.$off('smart-sort-robot:visibility', this.appVisibilityListener) },
   methods: {
+    handleSuspended() { this.$emit('suspended') },
     handleRecovering() { if (this.active && this.appVisible) this.$emit('recovering') },
     handleReady() { this.$emit('ready') },
     handleFallback(message) { this.$emit('fallback', new Error(message || 'APP 3D unavailable')) },
@@ -89,7 +90,7 @@ function clearWatchdog(record) {
 }
 function markRecovering(record) {
   record.ready = false
-  record.owner.callMethod('handleRecovering')
+  record.owner.callMethod(record.packet.active && !document.hidden ? 'handleRecovering' : 'handleSuspended')
 }
 function setLifecycleListeners(enabled) {
   if (listening === enabled) return
@@ -148,8 +149,8 @@ function resume(record) {
   if (record.disposed) return
   clearWatchdog(record)
   if (!record.packet.active || document.hidden) { record.engine?.setActive(false); return }
-  if (!record.engine) { if (!record.starting) scheduleStart(record); return }
   markRecovering(record)
+  if (!record.engine) { if (!record.starting) scheduleStart(record); return }
   record.engine.setState(record.packet.state)
   record.engine.setActive(true)
   armWatchdog(record)
@@ -157,7 +158,7 @@ function resume(record) {
 function onVisibilityChange(event) {
   const hidden = document.hidden || event?.type === 'pause'
   for (const record of instances.values()) {
-    if (hidden) { clearWatchdog(record); record.engine?.setActive(false) }
+    if (hidden) { clearWatchdog(record); record.engine?.setActive(false); record.owner.callMethod('handleSuspended') }
     else { record.retries = 0; resume(record) }
   }
 }
@@ -166,6 +167,7 @@ async function start(record) {
   if (record.disposed || record.starting || record.engine || !record.packet.active || document.hidden) return
   const version = ++record.generation
   record.starting = true
+  markRecovering(record)
   try {
     const host = document.getElementById(record.packet.hostId)
     if (!host?.isConnected) throw new Error('Robot render host unavailable')
@@ -209,12 +211,13 @@ export default {
         record = { packet, owner, disposed: false, engine: null, generation: 0, retries: 0, starting: false, ready: false }
         instances.set(packet.hostId, record)
         setLifecycleListeners(true)
+        if (!packet.active || document.hidden) record.owner.callMethod('handleSuspended')
         scheduleStart(record)
       } else {
         const resumed = packet.active && (!record.packet.active || packet.resumeVersion !== record.packet.resumeVersion)
         record.packet = packet
         if (resumed) { record.retries = 0; resume(record) }
-        else if (!packet.active) { clearWatchdog(record); record.engine?.setActive(false) }
+        else if (!packet.active) { clearWatchdog(record); record.engine?.setActive(false); record.owner.callMethod('handleSuspended') }
         else if (!record.engine) { if (!record.starting) scheduleStart(record) }
         else record.engine.setState(packet.state)
       }

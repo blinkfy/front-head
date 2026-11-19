@@ -25,9 +25,9 @@ globalThis.document = { createElement: () => new Element() }
 const source = fs.readFileSync(new URL('../src/embedded-call/recording-player.js', import.meta.url), 'utf8')
 const { createRecordingPlayer } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 const emit = (element, name) => element.dispatchEvent(new Event(name))
-const h = (durationMs = 4000) => {
+const h = (durationMs = 4000, startMs = 0) => {
   const audio = new Audio(), host = new Element(), errors = []
-  const player = createRecordingPlayer(audio, host, { durationMs, onError: message => errors.push(message) })
+  const player = createRecordingPlayer(audio, host, { durationMs, startMs, onError: message => errors.push(message) })
   const root = host.nodes[0], seek = root.querySelector('.recording-seek'), toggle = root.querySelector('.recording-toggle')
   return { audio, root, seek, toggle, player, errors }
 }
@@ -66,6 +66,13 @@ const h = (durationMs = 4000) => {
   assert.equal(seek.disabled, false)
   await player.play(); audio.currentTime = 2; emit(audio, 'timeupdate')
   assert.equal(seek.value, '250', 'old rows with missing duration use finite media metadata')
+  player.dispose()
+}
+{
+  const { audio, seek, player } = h(4000, 2000)
+  assert.equal(audio.currentTime, 2, 'a transcript click starts playback at its timestamp')
+  await player.play()
+  assert.equal(seek.value, '500')
   player.dispose()
 }
 delete globalThis.document

@@ -44,7 +44,7 @@ function loadComponent(filename, mocks, page = false) {
   return module.exports.default
 }
 
-async function createPage({ getUsersList, getMessagesList, savedColumns } = {}) {
+async function createPage({ getUsersList, getMessagesList, savedColumns, batchDatabaseRecords } = {}) {
   const requests = [], direct = [], storage = new Map()
   if (savedColumns) storage.set('admin-database-columns:User', savedColumns)
   globalThis.uni = {
@@ -54,7 +54,9 @@ async function createPage({ getUsersList, getMessagesList, savedColumns } = {}) 
   const Grid = loadComponent('src/components/AdminDatabaseGrid.vue', {})
   Grid.render = () => null
   const Page = loadComponent('src/pages-admin/database.vue', {
+    '@/utils/app-confirm-dialog.js': { showAppModal: (_page, options) => options.success({ confirm: true }) },
     '@/api/database': {
+      batchDatabaseRecords,
       getUsersList: async params => { requests.push(params); return getUsersList ? getUsersList(params) : response() },
       getMessagesList: async params => { requests.push(params); return getMessagesList ? getMessagesList(params) : response() }
     }
@@ -85,6 +87,57 @@ async function createPage({ getUsersList, getMessagesList, savedColumns } = {}) 
 }
 
 const tests = {
+  async 'Shift selects the displayed range without assuming consecutive IDs'() {
+    const page = await createPage()
+    try {
+      page.state.tableData = [{ id: 91 }, { id: 7 }, { id: 42 }, { id: 3 }, { id: 80 }]
+      await settle()
+      page.state.enterSelectionMode()
+      page.state.toggleRecordSelection(page.state.tableData[1], {})
+      // uni-app H5 normalizes the component event and removes shiftKey.
+      page.state.trackSelectionClick({ shiftKey: true })
+      page.state.toggleRecordSelection(page.state.tableData[3], { type: 'click', detail: {} })
+      assert.deepEqual([...page.state.selectedRecordKeys], ['7', '42', '3'])
+      page.state.toggleRecordSelection(page.state.tableData[1], { type: 'click', detail: {} })
+      assert.deepEqual([...page.state.selectedRecordKeys], [], 'fully selected range is deselected using the last click')
+      page.state.toggleRecordSelection(page.state.tableData[3], { type: 'click', detail: {} })
+      assert.deepEqual([...page.state.selectedRecordKeys], ['7', '42', '3'], 'unselected range is selected again')
+      page.state.toggleRecordSelection(page.state.tableData[0], { shiftKey: true })
+      assert.deepEqual([...page.state.selectedRecordKeys], ['7', '42', '3', '91'])
+      page.state.trackSelectionClick({ shiftKey: false })
+      page.state.toggleRecordSelection(page.state.tableData[1], {})
+      page.state.trackSelectionClick({ shiftKey: true })
+      page.state.toggleRecordSelection(page.state.tableData[3], { type: 'click', detail: {} })
+      assert.deepEqual([...page.state.selectedRecordKeys], ['91'], 'toggled-off anchor does not prevent deselection')
+      page.state.trackSelectionClick({ shiftKey: false })
+      page.state.tableData = [{ id: 42 }, { id: 7 }, { id: 3 }]
+      await settle()
+      page.state.toggleRecordSelection(page.state.tableData[0], { shiftKey: true })
+      assert.deepEqual([...page.state.selectedRecordKeys], ['91', '42'], 'refresh clears the anchor')
+    } finally { await page.close() }
+  },
+  async 'Bulk edit and delete submit selected rows in one request'() {
+    const calls = []
+    const page = await createPage({ batchDatabaseRecords: async (...args) => { calls.push(args); return { code: 0, data: { succeeded: args[2].length, failed: 0 } } } })
+    try {
+      page.state.tableData = [{ id: 1, username: '甲' }, { id: 2, username: '乙' }]
+      page.state.enterSelectionMode()
+      page.state.toggleSelectCurrentPage()
+      page.state.selectedBulkField = { key: 'nickname', label: '昵称', type: 'STRING', editor: 'input' }
+      page.state.bulkEditValue = '新昵称'
+      page.state.confirmBulkEdit()
+      await settle()
+      assert.equal(calls.length, 1)
+      assert.deepEqual(calls[0], ['User', 'update', [1, 2], { nickname: '新昵称' }])
+      page.state.tableData = [{ id: 1 }, { id: 2 }]
+      page.state.enterSelectionMode()
+      page.state.toggleSelectCurrentPage()
+      page.state.handleBulkDelete()
+      await settle()
+      assert.equal(calls.length, 2)
+      assert.deepEqual(calls[1], ['User', 'delete', [1, 2], {}])
+    } finally { await page.close() }
+  },
   async 'SQL without LIMIT resets pagination and keeps filters when moving to the next page'() {
     const page = await createPage({ getUsersList: params => {
       const offset = (params.page - 1) * params.pageSize

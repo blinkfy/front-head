@@ -332,8 +332,15 @@
 </template>
 
 <script setup>
+import { getAppCurrentPages, useAppTabContext } from '@/utils/app-tab-context.js'
+
 import { ref, computed, onMounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow } from '@/utils/app-tab-lifecycle.js'
+// #ifdef APP-PLUS
+import { watch } from 'vue'
+import { appOfflineSession, getAppCachedProfile } from '@/utils/app-offline-session.js'
+let usedOfflineProfile = false
+// #endif
 import { userinfo } from '@/api/user'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
@@ -425,6 +432,18 @@ const fetchUserInfo = async () => {
       uni.removeStorageSync('isAdmin')
       return false
     }
+    // #ifdef APP-PLUS
+    if (appOfflineSession.unavailable) {
+      const cached = getAppCachedProfile()
+      userInfo.value = cached || {}
+      username.value = cached?.username || '用户'
+      points.value = cached?.points || 0
+      isAdmin.value = false
+      usedOfflineProfile = true
+      return false
+    }
+    usedOfflineProfile = false
+    // #endif
     const response = await userinfo()
     if (response.code === 0) {
       userInfo.value = response.data
@@ -450,8 +469,17 @@ const fetchUserInfo = async () => {
 }
  
 // 系统或手势返回会复用旧页面，每次显示时校验主题。
+// #ifdef APP-PLUS
+function refreshProfileAfterReconnect() {
+  if (usedOfflineProfile && !appOfflineSession.unavailable && uni.getStorageSync('token') &&
+      getAppCurrentPages().slice(-1)[0]?.route === 'pages/profile/profile') void fetchUserInfo()
+}
+watch(() => appOfflineSession.unavailable, refreshProfileAfterReconnect)
+onShow(refreshProfileAfterReconnect)
+// #endif
+const appTab = useAppTabContext()
 onShow(() => {
-  if (uni.getStorageSync('app_theme') !== 'dark') return
+  if (appTab || uni.getStorageSync('app_theme') !== 'dark') return
   uni.reLaunch({ url: '/pages-dark/profile/profile' })
 })
 
@@ -570,6 +598,13 @@ onMounted(async () => {
 })
 
 const handleRefresh = async () => {
+  // #ifdef APP-PLUS
+  if (appOfflineSession.unavailable) {
+    usedOfflineProfile = true
+    uni.showToast({ title: '当前离线，联网后可刷新', icon: 'none' })
+    return
+  }
+  // #endif
   if (await fetchUserInfo()) uni.showToast({ title: '刷新成功', icon: 'success' })
 }
 

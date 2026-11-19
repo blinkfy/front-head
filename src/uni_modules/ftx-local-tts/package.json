@@ -1,0 +1,11 @@
+{
+  "id": "ftx-local-tts",
+  "displayName": "分投侠本地语音播报",
+  "version": "0.1.0",
+  "description": "Speech playback with an installed Chinese system voice",
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": { "client": { "App": { "app-android": "y", "app-ios": "y" } } }
+  }
+}

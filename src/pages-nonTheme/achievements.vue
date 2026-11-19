@@ -295,6 +295,7 @@ async function fetchAchievements() {
 
 async function refreshAchievements() {
   if (loading.value) return
+  const previousUpdatedAt = updatedAtText.value
   loading.value = true
   updatedAtText.value = '加载中...'
   stateMessage.value = ''
@@ -327,6 +328,7 @@ async function refreshAchievements() {
       popupUnlocks.value = []
       updatedAtText.value = '--'
     } else {
+      updatedAtText.value = previousUpdatedAt
       uni.showToast({ title: stateMessage.value, icon: 'none' })
     }
   } finally {

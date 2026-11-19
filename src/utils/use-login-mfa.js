@@ -20,12 +20,12 @@ export function useLoginMfa({ panel, username, password, loading }) {
     }
     loading.value = next ? next.busy === true : Boolean(result?.token)
   }
-  function open(result) {
+  function open(result, { passwordFirst = false, qrFirst = false } = {}) {
     let qr = false
     // #ifdef H5 || APP-PLUS
     qr = true
     // #endif
-    return panel.value.open(result, { password: true, qr })
+    return panel.value.open(result, { password: true, qr, passwordFirst: qr && passwordFirst, qrFirst: qr && qrFirst && !passwordFirst })
   }
   async function submitPassword() {
     if (!state.value || state.value.method !== 'password' || loading.value) return

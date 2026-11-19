@@ -1,6 +1,6 @@
 <template>
   <view class="robot-slot" :class="[variant, { 'overlay-fallback': overlayFallback }]" :data-robot-status="failed ? 'fallback' : overlayFallback ? 'overlay' : ready ? 'ready' : loadingStage" :data-robot-error="fallbackReason" aria-hidden="true">
-    <ManifestIcon id="smart_sort" class="robot-fallback" :class="{ hidden: displayReady, 'overlay-animated': overlayFallback && active && !reducedMotion }" :scale="2" />
+    <ManifestIcon v-if="!displayReady" id="smart_sort" class="robot-fallback" :class="{ 'overlay-animated': overlayFallback && active && !reducedMotion }" :scale="2" />
     <!-- #ifdef H5 -->
     <view ref="host" class="robot-stage" :class="{ visible: displayReady }"></view>
     <!-- #endif -->
@@ -55,25 +55,37 @@ const failed = ref(false)
 const loadingStage = ref('loading')
 const fallbackReason = ref('')
 let loadingTimer
-function clearLoadingTimer() { clearTimeout(loadingTimer); loadingTimer = null }
+let loadingVersion = 0
+let renderingSuspended = false
+// #ifdef APP-PLUS
+// Wait for the rendering layer to acknowledge a visible start before timing it.
+renderingSuspended = true
+// #endif
+function clearLoadingTimer() { loadingVersion++; clearTimeout(loadingTimer); loadingTimer = null }
 function watchLoading() {
   clearLoadingTimer()
-  if (props.active && !overlayFallback.value && !ready.value && !failed.value) {
-    loadingTimer = setTimeout(() => useFallback(new Error(`Robot rendering timed out (${loadingStage.value})`)), 15000)
+  if (!destroyed && !renderingSuspended && props.active && !overlayFallback.value && !ready.value && !failed.value) {
+    const version = loadingVersion
+    loadingTimer = setTimeout(() => {
+      if (version !== loadingVersion || destroyed || renderingSuspended || !props.active || ready.value || failed.value) return
+      useFallback(new Error(`Robot rendering timed out (${loadingStage.value})`))
+    }, 15000)
   }
 }
 function handleSuspended() {
+  renderingSuspended = true
   clearLoadingTimer()
   ready.value = false
 }
 function handleRecovering() {
   if (destroyed || failed.value) return
+  renderingSuspended = false
   ready.value = false
   loadingStage.value = 'recovering'
   watchLoading()
 }
 function handleReady() {
-  if (destroyed || failed.value || overlayFallback.value) return
+  if (destroyed || failed.value || overlayFallback.value || renderingSuspended) return
   // #ifdef MP-WEIXIN
   if (!props.active) return
   // #endif
@@ -168,6 +180,9 @@ watch(() => props.state, value => {
 })
 watch(() => props.active, value => {
   engine?.setActive(value)
+  // #ifdef APP-PLUS
+  if (!value) handleSuspended()
+  // #endif
   // #ifdef MP-WEIXIN
   // XR-frame 随节点移除释放渲染上下文；隐藏页不保留运行中的场景。
   if (!value) ready.value = false
@@ -195,17 +210,14 @@ onBeforeUnmount(() => {
   width: 170rpx;
   height: 170rpx;
   margin-bottom: 24rpx;
-  font-size: 88rpx;
+  font-size: 70rpx;
 }
 .robot-fallback {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  opacity: 1;
-  transition: opacity 220ms ease;
 }
-.robot-fallback.hidden { opacity: 0; }
 /* #ifdef MP-WEIXIN */
 .robot-slot.overlay-fallback { overflow: hidden; }
 .overlay-fallback .robot-fallback { max-width: 90%; max-height: 90%; }

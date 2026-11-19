@@ -177,10 +177,14 @@ const mapPaths = [path.join(src, 'pages', 'map', 'map.vue'), path.join(src, 'pag
 
 function compileSfc(filename, type) {
   const vueCompiler = require('@vue/compiler-sfc')
+  const { initPreContext, preJs, preHtml } = require('@dcloudio/uni-cli-shared/dist/preprocess/index.js')
+  initPreContext('app')
   const { descriptor, errors } = vueCompiler.parse(fs.readFileSync(filename, 'utf8'), { filename })
   if (errors.length) throw errors[0]
 
   if (descriptor.script || descriptor.scriptSetup) {
+    const script = descriptor.scriptSetup || descriptor.script
+    script.content = preJs(script.content, filename)
     vueCompiler.compileScript(descriptor, { id: `nearby-${path.basename(filename)}` })
   }
   if (descriptor.template) {
@@ -188,7 +192,7 @@ function compileSfc(filename, type) {
     const result = vueCompiler.compileTemplate({
       filename,
       id: `nearby-${path.basename(filename)}`,
-      source: descriptor.template.content,
+      source: preHtml(descriptor.template.content, filename),
       compiler: require('@vue/compiler-dom'),
       compilerOptions: { ...uniOptions(type).compilerOptions, hoistStatic: false, mode: 'module' }
     })
@@ -279,7 +283,7 @@ check('App pages preprocessing registers existing light and dark nvue wrappers',
       }
     }
   }
-  assert.deepEqual(new Set(registrations.map(item => item.id)), new Set(expected.keys()))
+  assert.deepEqual([...new Set(registrations.filter(item => expected.has(item.id)).map(item => item.id))].sort(), [...expected.keys()].sort())
   const previousInputDir = process.env.UNI_INPUT_DIR
   process.env.UNI_INPUT_DIR = src
   let appConfig

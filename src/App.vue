@@ -24,6 +24,7 @@ import { warmSmartSortRobot } from '@/utils/robot-preload.js'
 import { recentRecognition } from '@/utils/recent-recognition.js'
 import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
 import { onAppPageReady } from '@/utils/app-page-ready.mjs'
+import { setLocalSpeechForeground } from '@/utils/local-tts.js'
 // #ifdef H5
 import { initWebCallRingtone } from '@/utils/web-call-ringtone.js'
 import { preloadTabPage, preloadSiblingTabPages } from '@/utils/tab-page-transition.js'
@@ -32,6 +33,9 @@ import { initUiSounds, setUiSoundsActive } from '@/utils/ui-sounds.js'
 import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/device-qr-entry.mjs'
 // #ifdef APP-PLUS
 import { checkAppUpdate } from '@/utils/app-update.js'
+import { requireAppSessionLogin } from '@/api/index.js'
+import { userinfo } from '@/api/user.js'
+import { installAppOfflineSession, refreshAppOfflineNetwork } from '@/utils/app-offline-session.js'
 import { appVersionGuard } from '@/utils/app-version-guard.js'
 import { initBusinessNotificationNavigation, resumeBusinessNotification } from '@/utils/business-notification.js'
 import { getHuaweiPushToken, deleteHuaweiPushToken } from '@/uni_modules/ftx-huawei-push'
@@ -78,6 +82,7 @@ export default {
     // #ifdef APP-PLUS
     appConsole.setIdentity(uni.getStorageSync('token') || '')
     appConsole.install(console)
+    installAppOfflineSession(() => userinfo('false', { silent: true, timeout: 4000, sessionProbe: true }), requireAppSessionLogin)
     // #endif
     console.log('App Launch')
     initUiSounds()
@@ -147,7 +152,7 @@ export default {
           const targetUrl = appendPageQuery('/' + targetPath, launchQuery)
           console.log('onLaunch: Redirecting to', '/' + targetPath)
           setTimeout(() => {
-            uni.reLaunch({ url: targetUrl })
+            if (getCurrentPages().slice(-1)[0]?.route === currentRoute) uni.reLaunch({ url: targetUrl })
           }, 100)
         }
       }
@@ -158,6 +163,7 @@ export default {
     // #endif
   },
   onShow: function (options) {
+    setLocalSpeechForeground(true)
     setChatEventsActive(true)
     if (recentRecognition.foreground()) clearRecognitionTask()
     // #ifdef MP-WEIXIN
@@ -166,6 +172,7 @@ export default {
     // #endif
     setUiSoundsActive(true)
     // #ifdef APP-PLUS
+    void refreshAppOfflineNetwork()
     void appVersionGuard().checkCurrentPage({ force: true })
     syncChatPush(uni.getStorageSync('token') || '', true)
     initBusinessNotificationNavigation()
@@ -191,6 +198,7 @@ export default {
     // #endif
   },
   onHide: function () {
+    setLocalSpeechForeground(false)
     foregroundNotifications.clear()
     setChatEventsActive(false)
     recentRecognition.background()
@@ -293,7 +301,7 @@ uni-page-body {
 }
 /* #endif */
 
-/* #ifndef MP-WEIXIN */
+/* #ifdef H5 */
 .tab-page-enter-left > view {
   animation: bottom-tab-page-enter-left 180ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
   will-change: transform, opacity;
@@ -312,6 +320,40 @@ uni-page-body {
   opacity: 1 !important;
   transform: none !important;
   will-change: auto;
+}
+/* #endif */
+
+/* #ifdef APP-PLUS */
+.tabbar > .tabbar-item:not(.active):active,
+.tech-tabbar > .tab-item:not(.active):active {
+  opacity: 0.72;
+}
+
+.tab-page-enter-left,
+html[data-app-map-tab-entry='left'] .app-tab-map-root {
+  --app-tab-entry-offset: 64rpx;
+}
+
+.tab-page-enter-right,
+html[data-app-map-tab-entry='right'] .app-tab-map-root {
+  --app-tab-entry-offset: -64rpx;
+}
+
+html[data-app-tab-entry-playing] {
+  --app-tab-entry-animation: app-bottom-tab-enter;
+  --app-tab-entry-transform: none;
+}
+
+.tab-page-enter-left :is(.tab-page-motion, .map-stage),
+.tab-page-enter-right :is(.tab-page-motion, .map-stage),
+html[data-app-map-tab-entry] .app-tab-map-root :is(.tab-page-motion, .map-stage) {
+  transform: var(--app-tab-entry-transform, translateX(var(--app-tab-entry-offset)));
+  animation: var(--app-tab-entry-animation, none) 180ms cubic-bezier(0.35, 0, 0.2, 1) backwards;
+}
+
+@keyframes app-bottom-tab-enter {
+  from { transform: translateX(var(--app-tab-entry-offset)); }
+  to { transform: translateX(0); }
 }
 /* #endif */
 

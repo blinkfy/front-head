@@ -38,6 +38,8 @@
         <!-- 我的社区卡片 -->
         <view class="my-community-card" v-if="myCommunity">
           <view class="community-cover" :style="getCoverStyle()">
+            <ChatCachedImage v-if="communityCoverSrc" class="community-cover-image" :src="communityCoverSrc"
+              :owner="imageCacheOwner" kind="community" mode="aspectFill" eager />
             <view class="cover-overlay"></view>
           </view>
           <view class="community-info">
@@ -144,7 +146,8 @@
             </view>
 
             <view class="post-images" v-if="post.imageCount > 0">
-              <image v-for="(img, idx) in post.images.slice(0, 3)" :key="idx" class="post-image" :src="img" mode="aspectFill" @tap.stop="previewImage(post.images, idx)" :data-idx="idx" :data-src="img"></image>
+              <ChatCachedImage v-for="(img, idx) in post.images.slice(0, 3)" :key="idx" class="post-image"
+                :src="img" :owner="imageCacheOwner" kind="community" mode="aspectFill" @tap.stop="previewImage(post.images, idx)" />
               <view class="image-placeholder" v-if="!post.images || post.images.length === 0">
                 <text>{{ post.imageCount }}图</text>
               </view>
@@ -186,7 +189,8 @@
     <view v-if="previewVisible" class="community-preview" role="dialog" aria-modal="true" aria-label="图片预览">
       <scroll-view class="community-preview-scroll" :scroll-x="previewImageSize.width > previewViewportWidth" :scroll-y="previewImageSize.height > previewViewportHeight" :scroll-left="previewScrollLeft" :scroll-top="previewScrollTop" :key="previewIndex">
         <view class="community-preview-canvas" :style="previewCanvasStyle" @click.self="closePreview">
-          <image class="community-preview-image" :style="previewImageStyle" :src="previewUrls[previewIndex]" mode="aspectFit" @load="onPreviewImageLoad" />
+          <ChatCachedImage class="community-preview-image" :style="previewImageStyle" :src="previewUrls[previewIndex]"
+            :owner="imageCacheOwner" kind="community" mode="aspectFit" eager @load="onPreviewImageLoad" />
         </view>
       </scroll-view>
       <view class="community-preview-count">{{ previewIndex + 1 }} / {{ previewUrls.length }}</view>
@@ -236,15 +240,16 @@ import { baseUrl } from '@/api/settings.js';
 import { getAvatarUrl as resolveAvatarUrl } from '@/utils/avatar-handler.js';
 import { getManifestIconPath } from '@/utils/manifest-icons.js';
 import { buildH5SpaPath } from '@/utils/h5-route.js';
-import { getCachedCommunityImage, normalizeCommunityImages, normalizeCommunityImageUrl, setCachedCommunityImage, setCommunityPostSnapshot } from '@/pages-nonTheme/utils/community-image.js';
+import { getCachedCommunityImage, getCommunityImageOwner, normalizeCommunityImages, normalizeCommunityImageUrl, setCachedCommunityImage, setCommunityPostSnapshot } from '@/pages-nonTheme/utils/community-image.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
+import ChatCachedImage from './components/ChatCachedImage.vue';
 import CommunityChatBridge from './components/CommunityChatBridge.vue';
 import { communitySocialEnabled } from './utils/community-social.js';
 import { communityPostSummary } from './utils/community-markdown.mjs';
 import { getDisplayName } from '@/utils/display-name.js';
 
 export default {
-  components: { AppConfirmDialog, ManifestIcon, CommunityChatBridge },
+  components: { AppConfirmDialog, ManifestIcon, ChatCachedImage, CommunityChatBridge },
   data() {
     return {
       loading: false,
@@ -253,6 +258,7 @@ export default {
       allCommunities: [],
       communityRanking: [],
       posts: [],
+      imageCacheOwner: '',
       currentTag: '',
       currentPage: 1,
       hasMore: false,
@@ -274,6 +280,9 @@ export default {
     };
   },
   computed: {
+    communityCoverSrc() {
+      return normalizeCommunityImageUrl(this.myCommunity?.coverImage, baseUrl);
+    },
     previewImageSize() {
       const viewportWidth = this.previewViewportWidth || 1;
       const viewportHeight = this.previewViewportHeight || 1;
@@ -298,6 +307,7 @@ export default {
     }
   },
   onLoad() {
+    this.imageCacheOwner = getCommunityImageOwner();
     this._previewTrimCache = new Map();
     this._previewTrimPending = new Map();
     this._previewTrimQueue = Promise.resolve();
@@ -804,7 +814,11 @@ export default {
     },
     async loadMyCommunityCover() {
       if (!this.myCommunity || !this.myCommunity.id || !this.myCommunity.hasCoverImage) return;
-      const cachedCover = await getCachedCommunityImage('cover', this.myCommunity.id);
+      const communityId = this.myCommunity.id;
+      const token = uni.getStorageSync('token');
+      const isCurrent = () => this.myCommunity?.id === communityId && token === uni.getStorageSync('token');
+      const cachedCover = await getCachedCommunityImage('cover', communityId);
+      if (!isCurrent()) return;
       if (cachedCover) {
         this.myCommunity = {
           ...this.myCommunity,
@@ -813,10 +827,11 @@ export default {
         return;
       }
       try {
-        const res = await getCommunityCover(this.myCommunity.id);
+        const res = await getCommunityCover(communityId);
+        if (!isCurrent()) return;
         const data = this.extractData(res) || {};
         const coverImage = data.coverImage || '';
-        if (coverImage) setCachedCommunityImage('cover', this.myCommunity.id, coverImage);
+        if (coverImage) setCachedCommunityImage('cover', communityId, coverImage);
         this.myCommunity = {
           ...this.myCommunity,
           coverImage
@@ -826,9 +841,11 @@ export default {
       }
     },
     async loadVisiblePostImages(posts) {
+      const token = uni.getStorageSync('token');
       const targets = (posts || []).filter(post => post.imageCount > 0 && (!post.images || post.images.length === 0));
       targets.forEach(async (post) => {
         const cachedImages = await getCachedCommunityImage('post', post.id);
+        if (token !== uni.getStorageSync('token')) return;
         if (cachedImages && cachedImages.length) {
           const index = this.posts.findIndex(item => item.id === post.id);
           if (index >= 0) {
@@ -842,6 +859,7 @@ export default {
         }
         try {
           const res = await getCommunityPostImages(post.id);
+          if (token !== uni.getStorageSync('token')) return;
           const data = this.extractData(res) || {};
           const images = normalizeCommunityImages(data.images || [], baseUrl);
           if (images.length) setCachedCommunityImage('post', post.id, images);
@@ -891,12 +909,6 @@ export default {
       return `${baseUrl}/${avatar}`;
     },
     getCoverStyle() {
-      const coverImage = this.myCommunity ? this.myCommunity.coverImage : '';
-      const resolved = normalizeCommunityImageUrl(coverImage, baseUrl);
-      if (resolved) {
-        return { backgroundImage: `url(${resolved})`, backgroundSize: 'cover', backgroundPosition: 'center' };
-      }
-      // 无图片时使用纯色兜底
       const colors = ['#4CAF50', '#8BC34A', '#009688', '#00BCD4', '#4DB6AC'];
       const idx = Math.abs(this.myCommunity ? this.myCommunity.id : 0) % colors.length;
       return { background: colors[idx] };
@@ -1048,6 +1060,7 @@ export default {
   border: 1rpx solid rgba(255, 255, 255, 0.1);
 }
 .community-cover { height: 160rpx; position: relative; }
+.community-cover-image { position: absolute; inset: 0; width: 100%; height: 100%; }
 .cover-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.25); }
 .community-info { padding: 28rpx; }
 .community-name {

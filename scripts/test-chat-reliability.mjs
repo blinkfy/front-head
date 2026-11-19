@@ -891,12 +891,66 @@ async function testChatListRealtimeGates() {
   assert.equal(page.chatListDirty, true, 'failed fallback refresh remains dirty for a later retry')
 }
 
+async function testHistoryPrependKeepsScroll() {
+  const measurement = getVueMethod('measureHistoryScroll', {
+    uni: { createSelectorQuery() {
+      let selector = ''
+      return {
+        in() { return this },
+        select(value) { selector = value; return this },
+        selectAll() { selector = ''; return this },
+        fields() { return this },
+        boundingClientRect() { return this },
+        exec(callback) {
+          const top = 60
+          const bottom = 660
+          const items = page.messages.map((message, index) => ({
+            id: `msg-${message.id}`,
+            top: top + 30 + index * 80 - page.actualScrollTop,
+            bottom: top + 110 + index * 80 - page.actualScrollTop
+          }))
+          callback([{ top, bottom, scrollTop: page.actualScrollTop }, selector
+            ? items.find(item => `#${item.id}` === selector) : items])
+        }
+      }
+    } }
+  })
+  const load = getVueMethod('loadMoreMessages')
+  const restore = getVueMethod('restoreHistoryScroll')
+  const page = {
+    currentPage: 1, pageSize: 2, hasMoreMessages: true, isGroupChat: true,
+    messages: [{ id: 3, timestamp: 3 }, { id: 4, timestamp: 4 }],
+    actualScrollTop: 0, scrollTop: 0, scrollToMessage: 'msg-4',
+    get timelineMessages() { return this.messages },
+    getGroupMessageBoundaryId: () => 3, formatServerMessage: message => message,
+    $nextTick: async () => {}, saveMessagesToStorage() {}, measureHistoryScroll: measurement,
+    restoreHistoryScroll: restore,
+    async getConversationHistory(params) {
+      assert.equal(params.beforeId, 3)
+      // The reader moves while the request is in flight.
+      this.actualScrollTop = 120
+      return { data: [{ id: 1, timestamp: 1 }, { id: 2, timestamp: 2 }] }
+    }
+  }
+  await load.call(page)
+  assert.equal(page.messages.map(message => message.id).join(','), '1,2,3,4')
+  assert.equal(page.scrollTop, 280, 'two prepended rows are added to the reader’s position at response time')
+  assert.equal(page.scrollToMessage, '', 'a previous scroll-to-message command cannot override the restored offset')
+  assert.equal(page.isLoadingMore, false)
+
+  page.actualScrollTop = 280
+  page.scrollTop = 0
+  await restore.call(page, { id: 'msg-4', offset: 70 })
+  assert.equal(page.scrollTop, 0, 'automatic scroll anchoring is not applied twice')
+}
+
 async function main() {
   const cases = [
     ['SFC compile', testSfcCompiles],
     ['additional SFC compile', testAdditionalSfcCompiles],
     ['selection limit', testSelectionLimit],
     ['history polling', testHistoryPolling],
+    ['history prepend scroll', testHistoryPrependKeepsScroll],
     ['history cache cursor', testHistoryCacheCursor],
     ['history cache snapshot compatibility', testHistoryCacheSnapshotCompatibility],
     ['message identity merge', testMergeIdentity],
@@ -920,7 +974,7 @@ async function main() {
   const loadOnly = process.argv.includes('--load-only')
   const transportOnly = process.argv.includes('--transport-only')
   const selected = loadOnly
-    ? cases.filter(([name]) => ['SFC compile', 'additional SFC compile', 'history polling', 'history cache cursor', 'history cache snapshot compatibility', 'transport account isolation', 'realtime polling gates', 'chat-list realtime gates'].includes(name))
+    ? cases.filter(([name]) => ['SFC compile', 'additional SFC compile', 'history polling', 'history prepend scroll', 'history cache cursor', 'history cache snapshot compatibility', 'transport account isolation', 'realtime polling gates', 'chat-list realtime gates'].includes(name))
     : transportOnly
     ? cases.filter(([name]) => ['transport account isolation', 'chat-events reconnect notification'].includes(name))
     : process.argv.includes('--group-extras-only')

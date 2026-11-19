@@ -1,12 +1,15 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getConnectedDevices } from '../api/device.js'
 import { clearMockDeviceConnection, getPreferredMockDeviceConnection, normalizeDeviceMode } from './device-qr.js'
+import { useAppTabContext } from './app-tab-context.js'
+import { onShow, onHide } from './app-tab-lifecycle.js'
 
 /**
  * 设备连接状态管理组合式函数
  * @returns {Object} 包含连接状态和相关方法的对象
  */
 export function useDeviceConnection() {
+  const tabContext = useAppTabContext()
   const hasConnection = ref(false)
   const connectedDevice = ref(null)
   const checkTimer = ref(null)
@@ -120,11 +123,16 @@ export function useDeviceConnection() {
 
   // 组件挂载时启动检查
   onMounted(() => {
+    if (tabContext) return
     const connectionTime = uni.getStorageSync('connection')
     if (connectionTime) {
       startConnectionCheck()
     }
   })
+  if (tabContext) {
+    onShow(() => { if (uni.getStorageSync('connection')) startConnectionCheck() })
+    onHide(stopConnectionCheck)
+  }
 
   // 组件卸载时清理资源
   onUnmounted(() => {
