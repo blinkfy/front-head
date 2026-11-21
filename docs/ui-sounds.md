@@ -4,10 +4,10 @@
 
 ## 原创素材
 
-六个短音效由 `scripts/generate-ui-sounds.py` 程序合成，未使用第三方音频采样。制作源脚本可通过 Python、NumPy 和 FFmpeg 重新导出 WAV 母版及 MP3。运行示例：
+六个短音效由 `scripts/tools/generate-ui-sounds.py` 程序合成，未使用第三方音频采样。制作源脚本可通过 Python、NumPy 和 FFmpeg 重新导出 WAV 母版及 MP3。运行示例：
 
 ```sh
-python scripts/generate-ui-sounds.py --output-dir <输出目录>
+python scripts/tools/generate-ui-sounds.py --output-dir <输出目录>
 ```
 
 APP 使用 `src/static/app/sounds/*.mp3`；网页和小程序使用后端 `public/audio/ui-sounds/*.mp3`，通过统一 public 静态服务的 `/audio/ui-sounds/` 路径加载。部署时需同步这六个后端文件，资源失败会安静忽略，不影响业务。两端 MP3 字节应保持一致；合辑和 WAV 母版不进入应用包。
@@ -27,6 +27,6 @@ APP 使用 `src/static/app/sounds/*.mp3`；网页和小程序使用后端 `publi
 
 ## 验证
 
-`node scripts/test-ui-sounds.mjs` 验证默认偏好、页面归属、后台与媒体互斥、节流去重、优先级、异步过期及失败降级。实际扬声器听感和原生平台静音行为仍需对应设备验收。
+`node scripts/verify/test-ui-sounds.mjs` 验证默认偏好、页面归属、后台与媒体互斥、节流去重、优先级、异步过期及失败降级。实际扬声器听感和原生平台静音行为仍需对应设备验收。
 
 APP 播放直接调用 `play()`，不以 `onCanplay` 作为启动前提，也不在开播前执行 `seek(0)`；小程序保留就绪后播放。APP 的 `obeyMuteSwitch` 在当前 UniApp 实现中为只读，仅通过 `sessionCategory = ambient` 管理静音行为。回归测试包含只读属性及没有预先发出 `onCanplay` 的 APP 播放器模拟。

@@ -17,7 +17,7 @@ Android APP 使用 `src/uni_modules/ftx-qbar` 的 UTS + Java/Kotlin 原生插件
 
 ```powershell
 $env:JAVA_HOME = 'D:/Java_SE' # 按实际 JDK 根目录修改
-python scripts/prepare-qbar-integration.py
+python scripts/tools/roundcode/prepare-qbar-integration.py
 ```
 
 此命令校验固定提交的资源 SHA-256，生成：
@@ -36,8 +36,8 @@ python scripts/prepare-qbar-integration.py
 本地只重建依赖可运行（不生成 APK、不改后端资源）：
 
 ```powershell
-python scripts/prepare-qbar-integration.py --android-only
-python -m unittest discover -s scripts -p test_qbar_android_aar.py -v
+python scripts/tools/roundcode/prepare-qbar-integration.py --android-only
+python -m unittest discover -s scripts/verify -p test_qbar_android_aar.py -v
 ```
 
 可用 `--android-jar` 或 `ANDROID_JAR` 指定已有 Android SDK；没有 SDK 时仅缓存校验过的官方编译用 `android.jar`，不安装整套 SDK。准备脚本会校验 AAR 内的全部关键类、原生库和清单，拒绝旧的 native-only AAR。
@@ -87,7 +87,7 @@ APP 不接管已由其他 APP 账号或微信身份占用的会话。APP 切换�
 
 ## 验证范围
 
-源码包含：`scripts/test-app-qr-scanner.mjs`、后端 `scripts/verify/verify-app-roundcode.js`、原有设备码/接力回归脚本；测试不使用生产数据库或真实登录凭证。
+源码包含：`scripts/verify/test-app-qr-scanner.mjs`、后端 `scripts/verify/verify-app-roundcode.js`、原有设备码/接力回归脚本；测试不使用生产数据库或真实登录凭证。
 
 已验证真实样本的 native 解码；旋转 90°/180°/270°、轻微模糊、缩小至 70%、角点约 5% 透视、亮度乘 0.70 / 1.15 均读出与原图相同的 48 字节内容。普通二维码控制串逐字节核对正确，空白图没有误报。
 
@@ -101,7 +101,7 @@ APP 不接管已由其他 APP 账号或微信身份占用的会话。APP 切换�
 - 原生引擎始终先识别原图。实时预览最大 1920×1080（以设备实际支持为准），默认 1 倍，支持双指在硬件允许范围内放大至 3 倍；仍为 280 ms 节流、单线程单帧处理；失败后每 700 ms 批量最多两个几何候选，单批开始新候选的时间预算 220 ms，长边不超过 960。成功候选优先用于下一帧确认。
 - 相册原有三次多尺度尝试均失败后，最多十二次几何重试，启动新候选的总预算 1500 ms。预算在候选之间检查，无法中断一次正在执行的 native 调用。
 - 两次相机结果必须在三秒内一致；超时、不同结果、多个码都会重置或重新计数。几何尝试不会绕过后端完整字节匹配和业务凭据有效性校验。
-- `scripts/test_qbar_geometry.py` 编译真实纯 Java helper 检查镜头评分、等比预览和重采样边界；`--native` 选项使用本地样本与真实 native 引擎进行变形回归，输出内容哈希、不输出载荷。
+- `scripts/verify/test_qbar_geometry.py` 编译真实纯 Java helper 检查镜头评分、等比预览和重采样边界；`--native` 选项使用本地样本与真实 native 引擎进行变形回归，输出内容哈希、不输出载荷。
 - 重新准备依赖 AAR 后，需重新生成并安装自定义基座才能使用这些 Java 修改；仅热更新不生效。没有生成 APP/APK。
 
 相机视角/对焦元数据依赖设备厂商，镜头选择是兼容性优先的启发式。极端压缩、遮挡、模糊造成的信息丢失无法靠重采样恢复，仍需真机验证实际镜头和识别速度。

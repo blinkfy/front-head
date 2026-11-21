@@ -198,7 +198,7 @@
 					}
 				},
 				{
-					"path": "ai-chat",
+					"path": "assistant",
 					"style": {
 						"navigationStyle": "custom"
 					}
@@ -307,7 +307,7 @@
 				{ "path": "recycling", "style": { "navigationStyle": "custom", "navigationBarTitleText": "回收运营" } },
 				{ "path": "shop-management", "style": { "navigationStyle": "custom", "navigationBarTitleText": "商城管理" } },
 				{
-					"path": "admin-ai-settings",
+					"path": "service-setting",
 					"style": { "navigationStyle": "custom", "navigationBarTitleText": "服务设置" }
 				},
 				{

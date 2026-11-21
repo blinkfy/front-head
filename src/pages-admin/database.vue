@@ -19,7 +19,7 @@
         </view>
 
         <!-- 可滚动内容区域 -->
-        <scroll-view class="database-scroll-container" scroll-y enable-back-to-top :scroll-with-animation="true"
+        <scroll-view class="database-scroll-container" scroll-y enable-back-to-top :scroll-with-animation="true" :scroll-into-view="relationScrollTarget"
             :show-scrollbar="false">
             <view class="database-container">
 
@@ -38,18 +38,19 @@
                 </view>
 
                 <!-- 数据表选择卡片 -->
-                <view class="tables-card">
+                <view id="database-relations" class="tables-card">
                     <view class="tables-header">
                         <view class="tables-header-left">
                             <text class="tables-title">表选择</text>
                             <text class="tables-subtitle">{{ currentTable ? getCurrentTableLabel() : '请选择表' }}</text>
                         </view>
-                        <view class="sql-header-toggle" @click="sqlExpanded = !sqlExpanded">{{ sqlExpanded ? '收起 SQL' : 'SQL 查询' }}</view>
+                        <view class="table-view-switch"><view class="table-view-tab" :class="{ active: !showRelations }" @click="showRelations = false; tablesCollapsed = false">列表</view><view class="table-view-tab" :class="{ active: showRelations && relationMode === 'structure' }" @click="showRelations = true; relationMode = 'structure'; tablesCollapsed = false">表结构 E-R 图</view><view class="table-view-tab" :class="{ active: showRelations && relationMode === 'explore' }" @click="showRelations = true; relationMode = 'explore'; tablesCollapsed = false">关系探索</view></view>
+                        <view class="sql-header-toggle sql-toggle-secondary" @click="sqlExpanded = !sqlExpanded">{{ sqlExpanded ? '收起 SQL' : 'SQL 查询' }}</view>
                         <view class="tables-toggle" @click="toggleTablesCollapsed">
                             <ManifestIcon class="tables-toggle-icon" id="chevron_down" :scale="1" :style="{ transform: tablesCollapsed ? 'rotate(0deg)' : 'rotate(180deg)' }" />
                         </view>
                     </view>
-                    <view v-show="!tablesCollapsed" class="tables-grid">
+                    <view v-if="!tablesCollapsed && !showRelations" class="tables-grid">
                         <view class="table-item" v-for="table in tables" :key="table.name"
                             :class="{ active: currentTable === table.name }"
                             @click="selectTable(table)">
@@ -60,6 +61,8 @@
                             </view>
                         </view>
                     </view>
+                    <AdminDatabaseRelations v-if="!tablesCollapsed && showRelations" v-model:mode="relationMode" :tables="tables" :current="currentTable" :light="!isDark"
+                        :user-id="relationUserId" @select="selectRelationTable" @choose-user="chooseGraphUser" @exit-user="exitUserGraph" @user-records="openUserRecords" />
                 </view>
 
                 <AdminReadonlySql ref="sqlPanel" v-show="sqlExpanded" :light="!isDark" :list-sql="editorListSql" :list-sql-revision="listSqlRevision" :sync-sql="syncSqlToTable" @result="showSqlResult" @query-start="beginDirectSql" @query-end="directSqlPending = false" />
@@ -297,9 +300,14 @@
                         :query-fields="sqlQueryFields" :column-query="sqlColumnQuery" @query-change="applySqlColumnQuery"
                         @stage="stageGridEdit" @submit="submitGridEdits" @discard="discardGridEdits" @edit="editSqlRecord" @delete="handleDelete" @select="toggleRecordSelection" />
                 </view>
-                <view class="data-card" v-else-if="currentTable">
+                <view id="database-records" class="data-card" v-else-if="currentTable">
+                    <view v-if="showingUserDrill" class="column-filter-notice" @click="openUserGraph({ id: relationUserId })">
+                        用户 #{{ relationUserId }} 的关联记录 · 返回图谱 ↑
+                    </view>
                     <view class="data-header">
                         <text class="data-title">{{ getCurrentTableLabel() }}</text>
+                        <text v-if="getTableMeta(currentTable)?.description" class="table-description">{{ getTableMeta(currentTable).description }}</text>
+                        <view v-if="currentTable === 'AiSetting'" class="action-text-btn settings-link" @click="openAiSettings">前往 AI 服务设置</view>
                         <view class="data-actions" v-if="canEditCurrentTable()">
                             <template v-if="selectionMode">
                                 <text class="selection-count">已选{{ selectedRecordKeys.length }}条</text>
@@ -323,12 +331,6 @@
                         </view>
                     </view>
 
-                    <view v-if="getTableMeta(currentTable)?.description" class="table-description">
-                        <text>{{ getTableMeta(currentTable).description }}</text>
-                        <view v-if="currentTable === 'AiSetting'" class="action-text-btn settings-link"
-                            @click="openAiSettings">前往 AI 服务设置</view>
-                    </view>
-
                     <view class="data-view-switch">
                         <text class="data-view-label">展示方式</text>
                         <view class="data-view-option" :class="{ active: databaseView === 'card' }" @click="setDatabaseView('card')">卡片</view>
@@ -343,7 +345,7 @@
                         :edit-fields="getInlineEditFields()" :drafts="currentGridDrafts" :draft-key="getSelectionKey" :submitting="gridSubmitting"
                         :column-query="currentColumnQuery" @query-change="applyColumnQuery"
                         @stage="stageGridEdit" @submit="submitGridEdits" @discard="discardGridEdits"
-                        @edit="handleEdit" @delete="handleDelete" @select="toggleRecordSelection" @detail="recordDetail = $event" @columns-change="onVisibleColumnsChange" />
+                        @edit="handleEdit" @delete="handleDelete" @select="toggleRecordSelection" @detail="recordDetail = $event" @user-graph="openUserGraph" @columns-change="onVisibleColumnsChange" />
                     <!-- 数据列表 -->
                     <view v-else class="data-list">
                         <view v-if="tableData.length > 0" class="data-item"
@@ -358,6 +360,7 @@
                             </view>
 
                             <view class="data-content">
+                                <view class="data-content-inner">
                                 <!-- Users 表 -->
                                 <template v-if="currentTable === 'User'">
                                     <view class="data-row">
@@ -539,10 +542,15 @@
                                             :nodes="highlightText(String(field.value ?? '-'))"></rich-text>
                                     </view>
                                 </template>
+                                </view>
                             </view>
 
                             <!-- 操作按钮 -->
-                            <view class="data-item-actions" v-if="canEditCurrentTable() || !isSpecialTable(currentTable)">
+                            <view class="data-item-actions" v-if="canEditCurrentTable() || !isSpecialTable(currentTable)"
+                                :class="{ vertical: actionsVertical[index] }">
+                                <view v-if="currentTable === 'User'" class="item-action-btn graph" @click.stop="openUserGraph(item)">
+                                    <ManifestIcon id="relationship_link_table" :scale="1.5" />
+                                </view>
                                 <view v-if="!canEditCurrentTable() && !isSpecialTable(currentTable)" class="item-action-btn detail"
                                     @click.stop="recordDetail = item"><text>查看</text></view>
                                 <view v-if="canEditCurrentTable()" class="item-action-btn edit" @click.stop="handleEdit(item)">
@@ -1061,8 +1069,10 @@ import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { appOfflineSession } from '@/utils/app-offline-session.js'
 // #endif
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { shortFieldLabels } from '@/utils/field-labels'
 import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
 import AdminDatabaseGrid from '@/components/AdminDatabaseGrid.vue'
+import AdminDatabaseRelations from '@/components/AdminDatabaseRelations.vue'
 import AdminReadonlySql from '@/components/AdminReadonlySql.vue'
 import { parseTableSql, stripMirroredUpperFilters, projectListSql, updateTableSqlQuery } from './admin-sql-sync.mjs'
 import { withUserCostTotal } from './user-cost-summary.mjs'
@@ -1082,6 +1092,9 @@ import {
 
 const isDark = ref(false)
 const sqlExpanded = ref(false)
+const showRelations = ref(false)
+const relationMode = ref('structure')
+const relationUserId = ref(null), relationScrollTarget = ref(''), userDrill = ref(null)
 const listSql = ref('')
 const visibleSqlColumns = ref(null)
 const availableSqlColumns = ref(null)
@@ -1413,6 +1426,8 @@ function initializeDatabaseView() {
 }
 const columnQueries = ref({})
 const currentColumnQuery = computed(() => columnQueries.value[currentTable.value] || { filters: [], sortField: '', direction: '' })
+const showingUserDrill = computed(() => userDrill.value?.name === currentTable.value && relationUserId.value != null &&
+    userDrill.value?.signature === JSON.stringify([currentColumnQuery.value.columnsJoin, currentColumnQuery.value.filters]))
 function applyColumnQuery(query) {
     columnQueries.value = { ...columnQueries.value, [currentTable.value]: query }
     syncUpperFiltersFromColumns()
@@ -1717,6 +1732,8 @@ const legacyTableCatalog = [
     { name: 'UserIdentity', label: '用户实名认证记录表', icon: 'user_identity_table' },
     { name: 'User', label: '用户表', icon: 'user_table' },
     { name: 'UserCost', label: '用户累计成本表', icon: 'user_cost_table' },
+    { name: 'BinReportPhoto', label: '垃圾桶报错照片表', icon: 'bin_report_photo_table' },
+    { name: 'RagSearchStat', label: '知识检索统计表', icon: 'rag_search_stat_table' },
     { name: 'Device', label: '设备表', icon: 'device_table' },
     { name: 'Bin', label: '垃圾桶表', icon: '' },
     { name: 'FriendRequest', label: '好友申请表', icon: 'friend_request_table' },
@@ -1784,6 +1801,30 @@ const legacyTableCatalog = [
     { name: 'RecyclingDelivery', label: '回收通知投递表', icon: 'recycling_delivery_table' },
     { name: 'RecyclingDeviceDelivery', label: '回收设备投递回执表', icon: 'recycling_device_delivery_table' }
 ]
+
+// 只调整表选择区的展示顺序；新表保持后端返回顺序，仍可自动显示。
+const tableSelectionOrder = [
+    // 用户与账号安全
+    'User', 'UserCost', 'UserIdentity', 'UserLoginLocation', 'UserMfa', 'MfaChallenge',
+    'BiometricCredential', 'BiometricChallenge', 'PlatformLoginCredential', 'PlatformLoginChallenge', 'UserNotification',
+    // 识别与 AI
+    'History', 'AiSessionMeta', 'AiChatMessage', 'AiChatAction', 'AiSetting', 'RagSearchStat',
+    // 私聊与群聊
+    'Chat', 'Message', 'FriendRequest', 'ChatPushDevice', 'ChatGroup', 'ChatGroupMember', 'GroupMessage', 'GroupMessageDeletion',
+    // 社区
+    'RegionNode', 'Community', 'UserCommunity', 'CommunityDailyStat', 'Post', 'Comment', 'PostLike', 'CommunityNotification',
+    // 设备与运营
+    'Device', 'Bin', 'UserDevice', 'BinReport', 'BinReportPhoto', 'DeviceDepositEvent',
+    'ServicePoint', 'OperationTask', 'MaintenanceTask', 'SortingCenterEvent', 'AlgorithmTelemetrySample', 'AlgorithmPrediction',
+    // 预约与回收
+    'WasteType', 'BookingOrder', 'BookingOrderEvent', 'BookingChatBinding', 'BookingSlot', 'RecyclingLock',
+    'RecyclingServiceArea', 'CollectorProfile', 'CollectorApplication', 'CollectorScheduleDay', 'CollectorWeeklySchedule',
+    'RecyclingPhoto', 'RecyclingRequest', 'RecyclingDelivery', 'RecyclingDeviceDelivery',
+    // 商城、挑战和抽奖
+    'ShopProduct', 'PurchaseRecord', 'ShopRecommendation', 'AchievementUnlock', 'ChallengeQuestion', 'ChallengeRecord',
+    'Prize', 'LotteryConfig', 'LotteryRecord'
+]
+const tableSelectionRank = new Map(tableSelectionOrder.map((name, index) => [name, index]))
 const tables = ref([])
 
 // 当前表数据
@@ -1869,6 +1910,14 @@ function getTableMeta(tableName) {
     return tables.value.find(t => t.name === tableName) || null
 }
 
+function selectRelationTable(name) {
+    const table = getTableMeta(name)
+    if (table) {
+        selectTable(table)
+        scrollToRelationSection('database-records')
+    }
+}
+
 function canEditCurrentTable() {
     return legacyTableCatalog.find(table => table.name === currentTable.value)?.editable !== false
         && getTableMeta(currentTable.value)?.editable !== false
@@ -1902,6 +1951,18 @@ function formatGenericFieldLabel(key) {
         .replace(/^./, ch => ch.toUpperCase())
 }
 
+// 字段标签展示：截取第一个标点符号前的内容，仍过长时再截断
+function trimSchemaLabel(label) {
+    const text = String(label ?? '').trim()
+    if (!text) return text
+    const chars = Array.from(text.split(/[，。；：、,;:（(【[\/]/)[0].trim() || text)
+    return chars.length > 12 ? chars.slice(0, 12).join('') + '…' : chars.join('')
+}
+
+function normalizeSchemaLabels(schema) {
+    return Array.isArray(schema) ? schema.map(field => (field?.label ? { ...field, label: trimSchemaLabel(field.label) } : field)) : schema
+}
+
 function mergeTablesFromStats(statsTables = []) {
     const mergedTables = (Array.isArray(statsTables) ? statsTables : [])
         .map(rawTable => {
@@ -1922,6 +1983,7 @@ function mergeTablesFromStats(statsTables = []) {
             }
         })
         .filter(table => table.name)
+        .sort((a, b) => (tableSelectionRank.get(a.name) ?? tableSelectionOrder.length) - (tableSelectionRank.get(b.name) ?? tableSelectionOrder.length))
 
     tables.value = mergedTables
     if (!mergedTables.some(table => table.name === currentTable.value)) {
@@ -1944,7 +2006,7 @@ async function hydrateMissingTableCounts(statsTables = []) {
             if (response && response.code === 0) {
                 table.count = Number(response.data?.total || 0)
                 if (Array.isArray(response.data?.schema) && response.data.schema.length) {
-                    tableSchemas.value[table.name] = response.data.schema
+                    tableSchemas.value[table.name] = normalizeSchemaLabels(response.data.schema)
                 }
             }
         } catch (error) {
@@ -2017,7 +2079,7 @@ function buildGenericFieldMeta(field = {}) {
 
 function getGenericEditFields(tableName = currentTable.value) {
     return getGenericSchema(tableName)
-        .filter(field => !['createdAt', 'updatedAt', 'deletedAt'].includes(field.key))
+        .filter(field => !field.readOnly && !['createdAt', 'updatedAt', 'deletedAt'].includes(field.key))
         .filter(field => !(editMode.value === 'add' && (field.autoIncrement || field.generated)))
         .map(field => buildGenericFieldMeta(field))
 }
@@ -2138,7 +2200,7 @@ function getGenericPreviewFields(item = {}) {
     const selected = entries.filter(([key], index) => index < 4 || genericUserIdFields.value.includes(key))
     return selected.map(([key, value]) => ({
         key,
-        label: getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key),
+        label: shortFieldLabels[key] || getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key),
         value: genericUserIdFields.value.includes(key) && value !== null && value !== undefined && value !== ''
             ? `${genericUserNames.value[String(value)] || '未知'} (用户ID: ${value})`
             : (typeof value === 'object' && value !== null ? JSON.stringify(value) : value)
@@ -2151,7 +2213,7 @@ function getRecordDetailFields(item = {}) {
         .filter(([key]) => !(currentTable.value === 'ChatPushDevice' && key === 'token'))
         .map(([key, value]) => ({
             key,
-            label: timeLabels[key] || getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key),
+            label: timeLabels[key] || shortFieldLabels[key] || getGenericSchema().find(field => field.key === key)?.label || formatGenericFieldLabel(key),
             images: getFieldImages(currentTable.value, key, value, item.type),
             value: genericUserIdFields.value.includes(key) && value !== null && value !== undefined && value !== ''
                 ? `${genericUserNames.value[String(value)] || '未知'} (用户ID: ${value})`
@@ -2168,15 +2230,57 @@ function editDetailRecord() {
 }
 
 function openAiSettings() {
-    uni.navigateTo({ url: '/pages-admin/admin-ai-settings' })
+    uni.navigateTo({ url: '/pages-admin/service-setting' })
 }
 
-function selectTable(table) {
+async function scrollToRelationSection(id) {
+    relationScrollTarget.value = ''
+    await nextTick()
+    relationScrollTarget.value = id
+}
+function openUserGraph(row) {
+    if (!row?.id) return
+    relationUserId.value = row.id
+    relationMode.value = 'explore'
+    showRelations.value = true
+    tablesCollapsed.value = false
+    scrollToRelationSection('database-relations')
+}
+function chooseGraphUser() {
+    relationUserId.value = null
+    showRelations.value = false
+    tablesCollapsed.value = true
+    selectTable('User')
+    scrollToRelationSection('database-records')
+}
+function exitUserGraph() {
+    relationUserId.value = null
+    if (userDrill.value) selectTable(currentTable.value)
+}
+function openUserRecords({ name, userId, fields }) {
+    if (!getTableMeta(name) || String(userId) !== String(relationUserId.value) || !fields?.length) return
+    const filters = [...new Set(fields)].map(field => ({ field, operator: 'equals', value: String(userId) }))
+    selectTable(name, { filters, columnsJoin: filters.length > 1 ? 'or' : 'and', sortField: '', direction: '' })
+    scrollToRelationSection('database-records')
+}
+function selectTable(table, userQuery = null) {
+    if (userDrill.value) {
+        const { name, saved } = userDrill.value
+        if (saved) columnQueries.value[name] = saved
+        else delete columnQueries.value[name]
+        userDrill.value = null
+    }
     visibleSqlColumns.value = null
     availableSqlColumns.value = null
     sqlSelectAll.value = false
     recordDetail.value = null
     const tableName = typeof table === 'string' ? table : table.name
+    if (userQuery) {
+        userDrill.value = { name: tableName, saved: columnQueries.value[tableName],
+            signature: JSON.stringify([userQuery.columnsJoin, userQuery.filters]) }
+        columnQueries.value[tableName] = userQuery
+        tableData.value = []
+    }
     currentTable.value = tableName
     currentPage.value = 1  // 重置到第一页
     selectionMode.value = false
@@ -2532,7 +2636,7 @@ async function loadTableData({ keepRowsOnNetworkFailure = false } = {}) {
                 totalCount.value = response.data.total || 0
                 totalPages.value = Math.ceil(totalCount.value / pageSize.value)
                 if (Array.isArray(response.data.schema) && response.data.schema.length) {
-                    tableSchemas.value[currentTable.value] = response.data.schema
+                    tableSchemas.value[currentTable.value] = normalizeSchemaLabels(response.data.schema)
                 }
                 const table = tables.value.find(t => t.name === currentTable.value)
                 if (table) {
@@ -2714,6 +2818,45 @@ onUnmounted(() => window.removeEventListener('click', trackSelectionClick, true)
 // #endif
 // A range is meaningful only for the current set and order of displayed rows.
 watch(() => [tableData.value, sqlResult.value, currentTable.value], () => { selectionAnchor = null })
+
+// 卡片操作按钮：竖排不增加卡片高度时优先竖排，放不下才横排
+const actionsVertical = ref([])
+let actionLayoutTimer = 0
+function actionButtonCount() {
+    if (!(canEditCurrentTable() || !isSpecialTable(currentTable.value))) return 0
+    return (currentTable.value === 'User' ? 1 : 0)
+        + (!canEditCurrentTable() && !isSpecialTable(currentTable.value) ? 1 : 0)
+        + (canEditCurrentTable() ? 2 : 0)
+}
+function updateActionLayout() {
+    actionLayoutTimer = 0
+    const rows = tableData.value || []
+    const count = actionButtonCount()
+    if (databaseView.value !== 'card' || !rows.length || !count) { actionsVertical.value = []; return }
+    const width = Number((typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync())?.windowWidth) || 375
+    const rpx = width / 750
+    const needed = (count * 44 + (count - 1) * 6) * rpx
+    // 注意：不能测 .data-id-column —— 它被 stretch 拉到整行高，会把"竖排撑高"的行高
+    // 反馈成"竖排放得下"，导致误判后一直竖排；只测不会被拉伸的 .id-badge / .data-content-inner
+    uni.createSelectorQuery()
+        .selectAll('.data-content-inner').boundingClientRect()
+        .selectAll('.id-badge').boundingClientRect()
+        .exec(([contents, badges]) => {
+            if (!Array.isArray(contents) || contents.length !== rows.length) return
+            // 卡片内容区高度 = max(内容、ID列(徽章+内边距)、min-height 去掉 padding)
+            actionsVertical.value = rows.map((_, index) =>
+                Math.max(contents[index]?.height || 0, (badges?.[index]?.height || 0) + 16 * rpx, 58 * rpx) >= needed - 1)
+        })
+}
+function scheduleActionLayout() {
+    if (actionLayoutTimer) clearTimeout(actionLayoutTimer)
+    actionLayoutTimer = setTimeout(() => { nextTick(updateActionLayout) }, 60)
+}
+watch(() => [tableData.value, currentTable.value, databaseView.value], scheduleActionLayout)
+// #ifdef H5
+onMounted(() => window.addEventListener('resize', scheduleActionLayout))
+onUnmounted(() => window.removeEventListener('resize', scheduleActionLayout))
+// #endif
 function toggleRecordSelection(item, event) {
     const key = getSelectionKey(item)
     const rows = sqlResult.value ? sqlGridRows.value : tableData.value
@@ -3445,7 +3588,7 @@ async function loadStats() {
         if (response && response.code === 0) {
             const stats = response.data
             if (stats.schemas && typeof stats.schemas === 'object') {
-                tableSchemas.value = { ...stats.schemas }
+                tableSchemas.value = Object.fromEntries(Object.entries(stats.schemas || {}).map(([name, schema]) => [name, normalizeSchemaLabels(schema)]))
             }
             mergeTablesFromStats(stats.tables || [])
             await hydrateMissingTableCounts(stats.tables || [])
@@ -3501,6 +3644,13 @@ onUnmounted(() => {
 .sql-result-info { display: block; margin: 8rpx 0 16rpx; color: #9cc1cd; font-size: 22rpx; }
 .database-light .sql-result-info { color: #617a72; }
 .sql-header-toggle { margin-left: auto; margin-right: 12rpx; padding: 8rpx 16rpx; border: 1px solid #1f6077; border-radius: 10rpx; color: #6ed9eb; font-size: 22rpx; white-space: nowrap; }
+.sql-toggle-secondary { margin-left: 0; }
+.table-view-switch { display: flex; margin-left: auto; margin-right: 12rpx; padding: 4rpx; border: 1px solid rgba(64,224,255,.2); border-radius: 10rpx; background: rgba(0,0,0,.12); }
+.table-view-tab { padding: 7rpx 15rpx; border-radius: 7rpx; color: #a7cad3; font-size: 22rpx; white-space: nowrap; }
+.table-view-tab.active { color: #07303b; background: #68dce7; }
+.database-light .table-view-switch { background: #f0f8f3; border-color: #d5e8dc; }
+.database-light .table-view-tab { color: #628172; }
+.database-light .table-view-tab.active { color: #fff; background: #159774; }
 .database-light .sql-header-toggle { color: #087d60; background: #eaf7f0; border-color: #cce9da; }
 /* 页面根容器 */
 .database-page {
@@ -3774,11 +3924,15 @@ onUnmounted(() => {
     min-height: 44rpx;
 }
 
+/* #ifdef H5 */
+.safe-area-top { min-height: 0; }
+/* #endif */
+
 .status-content {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 40rpx;
+    padding: 12rpx 28rpx;
     position: relative;
 }
 
@@ -3811,7 +3965,10 @@ onUnmounted(() => {
     font-size: 32rpx;
     font-weight: 700;
     letter-spacing: 2rpx;
-    flex: 1;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
     text-align: center;
 }
 
@@ -4149,16 +4306,21 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 16rpx;
+    min-width: 0;
     margin-bottom: 24rpx;
 }
 
 .data-title {
+    flex: none;
     color: #40e0ff;
     font-size: 32rpx;
     font-weight: 600;
 }
 
 .data-actions {
+    flex: 0 1 auto;
+    min-width: 0;
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -4167,16 +4329,18 @@ onUnmounted(() => {
 }
 
 .table-description {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: rgba(255, 255, 255, 0.72);
-    font-size: 24rpx;
-    line-height: 1.6;
-    margin-bottom: 24rpx;
-    overflow-wrap: anywhere;
+    font-size: 22rpx;
+    line-height: 1.5;
 }
 
 .settings-link {
-    display: inline-block;
-    margin-top: 12rpx;
+    flex: none;
 }
 
 .item-action-btn.detail {
@@ -4318,6 +4482,11 @@ onUnmounted(() => {
     flex: 1;
     display: flex;
     flex-direction: column;
+}
+
+.data-content-inner {
+    display: flex;
+    flex-direction: column;
     gap: 6rpx;
 }
 
@@ -4380,9 +4549,16 @@ rich-text {
 
 .data-item-actions {
     display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8rpx;
+    justify-content: center;
+}
+
+/* 竖排不增加卡片高度时优先竖排（由 updateActionLayout 逐卡测量后加 vertical） */
+.data-item-actions.vertical {
     flex-direction: column;
     gap: 6rpx;
-    justify-content: center;
 }
 
 .item-action-btn {
@@ -4415,6 +4591,16 @@ rich-text {
 .item-action-btn.delete:active {
     transform: scale(0.9);
     background: rgba(239, 68, 68, 0.2);
+}
+
+.item-action-btn.graph {
+    background: rgba(64, 224, 255, 0.1);
+    border: 1px solid rgba(64, 224, 255, 0.3);
+}
+
+.item-action-btn.graph:active {
+    transform: scale(0.9);
+    background: rgba(64, 224, 255, 0.2);
 }
 
 .no-data {
@@ -5030,6 +5216,7 @@ rich-text {
 .database-light .data-view-option.active { color: #fff; background: #0d9a70; border-color: #0d9a70; }
 .database-light .action-text-btn.danger, .database-light .item-action-btn.delete, .database-light .filter-reset-btn { color: #c24c50; background: #fff1f0; border-color: #f2d2cf; }
 .database-light .item-action-btn.edit { background: #e4f5ec; border-color: #bee7d1; }
+.database-light .item-action-btn.graph { background: #e4f5ec; border-color: #bee7d1; }
 .database-light .page-jump-input, .database-light .form-input, .database-light .form-textarea, .database-light .picker-view, .database-light .bulk-edit-switch { color: #243d36; background: #f5faf7; border-color: #d3e7dc; }
 .database-light .form-input:focus, .database-light .form-textarea:focus { background: #fff; border-color: #49bb8d; }
 .database-light .modal-overlay { background: rgba(20, 45, 37, .42); }

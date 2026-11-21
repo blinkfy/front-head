@@ -1,6 +1,6 @@
 import { mapConfig } from '../api/map-config.js'
-import { loadRecyclingLeaflet } from '../pages-nonTheme/utils/recycling-map-loader.mjs'
-import { gcj02ToWgs84, wgs84ToGcj02 } from '../pages-nonTheme/utils/recycling-geometry.mjs'
+import { loadLeaflet } from './map/leaflet-loader.mjs'
+import { gcj02ToWgs84, wgs84ToGcj02 } from './map/coordinates.mjs'
 
 let sdkTask
 const mapRequests = new WeakMap()
@@ -152,7 +152,7 @@ export async function createPreferredWebMap(container, options = {}) {
     return { library, map, provider:'tencent' }
   } catch (_) { map?.remove() }
   ensureCurrent()
-  const library = await loadRecyclingLeaflet()
+  const library = await loadLeaflet()
   ensureCurrent()
   map = library.map(element, options); request.map = map
   try {

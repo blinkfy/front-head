@@ -332,7 +332,9 @@ import { resolveMapViewCard } from '@/utils/map-view-card.mjs'
 import request from '@/api/index.js'
 import { getLastMapLocation, saveLastMapLocation } from '@/utils/map-last-location.mjs'
 import { useMapBasemap } from '@/utils/use-map-basemap'
-import { useMapAdminBins, binMapLabel } from '@/utils/map-admin-bins'
+import { useMapAdminBins, binMapLabel, binReportCount } from '@/utils/map-admin-bins'
+import { createMapPointList } from '@/utils/map/point-list.mjs'
+import { useMapPointReport } from '@/utils/map/point-report.mjs'
 import { scanAndConnectDevice } from '@/utils/device-qr'
 import { canShowDeviceScanEntry } from '@/utils/h5-scan-entry.mjs'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
@@ -374,12 +376,14 @@ const userLocation = ref({ latitude: null, longitude: null, addr: '' })
 const userMarker = ref(null)
 // 新增垃圾桶弹窗显示状态
 const showAddModal = ref(false)
-const showReportModal = ref(false)
-const reportTarget = ref(null)
-const reportReason = ref('')
-const reportSubmitting = ref(false)
-const reportPhotos = ref([])
-const reportPhotoProcessing = ref(false)
+const { showReportModal, reportTarget, reportReason, reportSubmitting, reportPhotos, reportPhotoProcessing,
+  reportErrorMarker, resetReport, closeReportModal, submitReport } = useMapPointReport({
+  sendReport: reportDeviceError,
+  onSubmitted() {
+    if (isMapAdmin.value) loadTrashBinList()
+    selectedMarker.value = null
+  },
+})
 const floatingActionsOffset = ref({ x: 0, y: 0 })
 const floatingActionsDragStart = ref(null)
 const isDraggingFloatingActions = ref(false)
@@ -437,10 +441,10 @@ const markers = computed(() => {
     callout: {
       content: binMapLabel(p),
       color: '#ffffff',
-      bgColor: p.adminRecord && !p.review ? '#6b7280' : p.errorReport?.length ? '#c26912' : '#10b981',
+      bgColor: p.adminRecord && !p.review ? '#6b7280' : binReportCount(p) ? '#c26912' : '#10b981',
       padding: 6,
       borderRadius: 6,
-      display: p.adminRecord && p.errorReport?.length ? 'ALWAYS' : 'BYCLICK'
+      display: p.adminRecord && binReportCount(p) ? 'ALWAYS' : 'BYCLICK'
     }
   }));
 
@@ -453,7 +457,6 @@ let h5SdkScript = null, h5LogoStyle = null, h5Disposed = false, tmapSelectionMar
 function disposeH5Map() {
   if (!isH5 || h5Disposed) return
   h5Disposed = true
-  clearTimeout(viewportReloadTimer)
   if (h5SdkScript) { h5SdkScript.onload = h5SdkScript.onerror = null; h5SdkScript.remove() }
   try { tmapInstance?.destroy() } finally {
     h5LogoStyle?.remove()
@@ -466,116 +469,6 @@ onUnload(disposeH5Map)
 let tmapMarkers = [] // 存放 H5 创建的辅助 marker（如查看位置标记）
 let tmapBinLayer = null // 垃圾桶点位单一 MultiMarker 图层（避免每点一个图层）
 
-// 按视野防抖加载：中心移动超过 500m 或缩放变化时重新拉取点位
-let viewportReloadTimer = null
-let lastLoadCenter = null
-let lastLoadScale = null
-let lastLoadBbox = null // 上次加载覆盖的视野矩形，平移时用于增量查询新露出区域
-const VIEWPORT_RELOAD_MIN_MOVE = 500
-
-function distanceMeters(a, b) {
-  const toRad = d => d * Math.PI / 180
-  const dLat = toRad(a.latitude - b.latitude)
-  const dLng = toRad(a.longitude - b.longitude)
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLng / 2) ** 2
-  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
-}
-
-function scheduleViewportReload(centerPoint, scale) {
-  if (selectMode.value || viewMode.value) return
-  const latitude = Number(centerPoint && centerPoint.latitude)
-  const longitude = Number(centerPoint && centerPoint.longitude)
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return
-  const moved = !lastLoadCenter || distanceMeters(lastLoadCenter, { latitude, longitude }) > VIEWPORT_RELOAD_MIN_MOVE
-  const zoomChanged = scale != null && (lastLoadScale == null || Math.abs(Number(scale) - Number(lastLoadScale)) > 0.5)
-  if (!moved && !zoomChanged) return
-  if (viewportReloadTimer) clearTimeout(viewportReloadTimer)
-  viewportReloadTimer = setTimeout(() => {
-    viewportReloadTimer = null
-    loadTrashBinList({ latitude, longitude }, scale)
-  }, 300)
-}
-
-const MAX_LOAD_ROUNDS = 6 // 全量加载最多轮数（每轮 LOAD_PAGE_SIZE 条）
-const INCR_LOAD_ROUNDS = 2 // 增量矩形加载最多轮数
-const LOAD_PAGE_SIZE = 50
-const MAX_CACHED_POINTS = 1000
-const BBOX_SPAN_LIMIT = 0.45 // 单次查询矩形跨度上限（度），比后端 0.5 上限留余量
-
-// 当前视野矩形（经纬度）：H5 用地图 bounds，小程序按中心 + scale 估算半屏
-function viewportBbox(latitude, longitude) {
-  try {
-    if (isH5 && tmapInstance && typeof tmapInstance.getBounds === 'function') {
-      const bounds = tmapInstance.getBounds()
-      const ne = bounds && typeof bounds.getNorthEast === 'function' ? bounds.getNorthEast() : null
-      const sw = bounds && typeof bounds.getSouthWest === 'function' ? bounds.getSouthWest() : null
-      if (ne && sw) {
-        const toPlain = (p) => ({
-          latitude: Number(typeof p.getLat === 'function' ? p.getLat() : p.lat),
-          longitude: Number(typeof p.getLng === 'function' ? p.getLng() : p.lng)
-        })
-        const a = toPlain(ne)
-        const b = toPlain(sw)
-        const box = {
-          minLat: Math.min(a.latitude, b.latitude), maxLat: Math.max(a.latitude, b.latitude),
-          minLng: Math.min(a.longitude, b.longitude), maxLng: Math.max(a.longitude, b.longitude)
-        }
-        if (Number.isFinite(box.minLat) && Number.isFinite(box.maxLat) && Number.isFinite(box.minLng) && Number.isFinite(box.maxLng) && box.maxLat > box.minLat && box.maxLng > box.minLng) {
-          return clampBboxSpan(box)
-        }
-      }
-    }
-  } catch (e) { /* 忽略，走 scale 估算 */ }
-  const scale = Number(mapScale.value) || 12
-  const windowWidth = uni.getSystemInfoSync().windowWidth || 375
-  const windowHeight = uni.getSystemInfoSync().windowHeight || 667
-  const metersPerPixel = 156543.03 * Math.cos((latitude * Math.PI) / 180) / Math.pow(2, scale)
-  const latDelta = (metersPerPixel * windowHeight / 2) / 111320
-  const lngDelta = (metersPerPixel * windowWidth / 2) / (111320 * Math.max(0.01, Math.cos((latitude * Math.PI) / 180)))
-  return clampBboxSpan({
-    minLat: latitude - latDelta, maxLat: latitude + latDelta,
-    minLng: longitude - lngDelta, maxLng: longitude + lngDelta
-  })
-}
-
-// 单次查询矩形跨度截断：超大视野只覆盖中心区域，限制单次查询代价
-function clampBboxSpan(box) {
-  const latHalf = Math.min(box.maxLat - box.minLat, BBOX_SPAN_LIMIT) / 2
-  const lngHalf = Math.min(box.maxLng - box.minLng, BBOX_SPAN_LIMIT) / 2
-  const latCenter = (box.minLat + box.maxLat) / 2
-  const lngCenter = (box.minLng + box.maxLng) / 2
-  return {
-    minLat: latCenter - latHalf, maxLat: latCenter + latHalf,
-    minLng: lngCenter - lngHalf, maxLng: lngCenter + lngHalf
-  }
-}
-
-// 新旧视野重叠率（交集 / 新视野面积）：比例够高时可只增量加载新露出的区域
-function bboxOverlapRatio(a, b) {
-  const iLat = Math.min(a.maxLat, b.maxLat) - Math.max(a.minLat, b.minLat)
-  const iLng = Math.min(a.maxLng, b.maxLng) - Math.max(a.minLng, b.minLng)
-  if (iLat <= 0 || iLng <= 0) return 0
-  return (iLat * iLng) / ((a.maxLat - a.minLat) * (a.maxLng - a.minLng))
-}
-
-// 新视野减去已加载视野后露出的 L 形区域，拆成最多 2 个矩形；
-// 拆不出（新视野已被完全覆盖或形状太复杂）时返回空数组，调用方退回整屏查询
-function uncoveredRects(viewport, loaded) {
-  const iLatMin = Math.max(viewport.minLat, loaded.minLat)
-  const iLatMax = Math.min(viewport.maxLat, loaded.maxLat)
-  const iLngMin = Math.max(viewport.minLng, loaded.minLng)
-  const iLngMax = Math.min(viewport.maxLng, loaded.maxLng)
-  if (iLatMax <= iLatMin || iLngMax <= iLngMin) return []
-  const rects = []
-  // 左右条带：贯穿新视野整个纬度范围
-  if (viewport.minLng < iLngMin) rects.push({ minLat: viewport.minLat, maxLat: viewport.maxLat, minLng: viewport.minLng, maxLng: iLngMin })
-  if (viewport.maxLng > iLngMax) rects.push({ minLat: viewport.minLat, maxLat: viewport.maxLat, minLng: iLngMax, maxLng: viewport.maxLng })
-  // 上下条带：限制在重叠经度范围内，与左右条带不重叠
-  if (viewport.minLat < iLatMin) rects.push({ minLat: viewport.minLat, maxLat: iLatMin, minLng: iLngMin, maxLng: iLngMax })
-  if (viewport.maxLat > iLatMax) rects.push({ minLat: iLatMax, maxLat: viewport.maxLat, minLng: iLngMin, maxLng: iLngMax })
-  return rects.length >= 1 && rects.length <= 2 ? rects : []
-}
-
 // 处理页面参数
 const pageOptions = {}
 let mapPageDisposed = false
@@ -586,9 +479,28 @@ function mapViewOwner() {
 }
 function mapViewScope() { return `${mapViewEpoch}|${mapViewOwner()}` }
 onHide(() => { mapViewEpoch++ })
-onUnload(() => { mapPageDisposed = true })
-onBeforeUnmount(() => { mapPageDisposed = true })
+function disposeMapPage() {
+  mapPageDisposed = true
+  cancelViewportReload()
+}
+onUnload(disposeMapPage)
+onBeforeUnmount(disposeMapPage)
 const mapScale = ref(14)
+const { cancelViewportReload, scheduleViewportReload, loadTrashBinList, refreshAdminMarker: refreshSelectedPoint } = createMapPointList({
+  points: trashPoints,
+  userLocation,
+  mapScale,
+  getWebMap: () => isH5 ? tmapInstance : null,
+  isNavigationMode: () => selectMode.value || viewMode.value,
+  loadMapBins,
+  resolveImage: resolveTrashBinImage,
+  onUpdate() {
+    if (isH5 && tmapInstance) initH5Markers()
+  },
+  onError() {
+    uni.showToast({ title: '加载垃圾桶信息失败', icon: 'none', duration: 2000 })
+  }
+})
 const { satellite, basemapLoading, setBasemap, bindH5Map, getSatelliteReference, onNativeMapUpdated, onNativeMapError, onNativeMapRegionChange } = useMapBasemap({ isH5, options: pageOptions, appWebMap: true, suspended: () => showAddModal.value })
 
 // 小程序 setup 阶段可能还没有路由参数，以 onLoad 收到的参数为准。
@@ -1058,7 +970,7 @@ async function initializeViewedPoint() {
   if (viewOwner !== null && owner !== viewOwner) {
     viewInvalidated = true
     viewPoint.value = null; viewLocationInfo.value = null; selectedMarker.value = null
-    showReportModal.value = false; reportTarget.value = null; reportReason.value = ''; reportPhotos.value = []
+    resetReport()
     uni.showToast({ title: '登录状态已变化，请重新打开点位', icon: 'none' })
     return
   }
@@ -1327,11 +1239,8 @@ function onMarkerTap(e) {
   };
 }
 
-async function refreshAdminMarker(id) {
-  await loadTrashBinList()
-  const point = trashPoints.value.find(p => String(p.id) === String(id))
-  if (point) onH5MarkerClicked(0, point)
-  else closeInfo()
+function refreshAdminMarker(id) {
+  return refreshSelectedPoint(id, point => onH5MarkerClicked(0, point), closeInfo)
 }
 
 function closeInfo() {
@@ -1410,52 +1319,6 @@ async function openHistoryImage(m) {
   }
 }
 
-function reportErrorMarker(m, reason = '') {
-  if (!m) return
-  reportTarget.value = m
-  reportReason.value = typeof reason === 'string' ? reason.trim().slice(0, 200) : ''
-  reportPhotos.value = []
-  reportPhotoProcessing.value = false
-  showReportModal.value = true
-}
-
-function closeReportModal() {
-  if (reportSubmitting.value) return
-  showReportModal.value = false
-  reportTarget.value = null
-  reportReason.value = ''
-  reportPhotos.value = []
-  reportPhotoProcessing.value = false
-}
-
-function submitReport() {
-  const reason = reportReason.value.trim()
-  if (!reason || reportSubmitting.value || reportPhotoProcessing.value || !reportTarget.value) return
-  callReport(reportTarget.value, reason)
-}
-
-async function callReport(m, reason = '') {
-  if (reportPhotoProcessing.value) return
-  reportSubmitting.value = true
-  try {
-    const deviceId = m.deviceId || m.id || `${m.latitude},${m.longitude}`
-    const result = await reportDeviceError(deviceId, reason, reportPhotos.value)
-    uni.showToast({ title: result?.msg || '反馈已收到，感谢反馈', icon: 'none' })
-    if (isMapAdmin.value) loadTrashBinList()
-    selectedMarker.value = null
-    showReportModal.value = false
-    reportTarget.value = null
-    reportReason.value = ''
-    reportPhotos.value = []
-    reportPhotoProcessing.value = false
-  } catch (err) {
-    const msg = (err && err.msg) ? err.msg : (err && err.message) ? err.message : '上报失败'
-    uni.showToast({ title: msg, icon: 'none' })
-  } finally {
-    reportSubmitting.value = false
-  }
-}
-
 function startFloatingActionsDrag(event) {
   const touch = event.touches?.[0]
   if (!touch) return
@@ -1531,101 +1394,6 @@ function onAddSuccess() {
   uni.showToast({ title: '已提交，审核通过后展示并奖励积分', icon: 'none', duration: 2500 })
 }
 
-async function loadTrashBinList(centerOverride, scaleOverride) {
-  try {
-    const override = centerOverride && Number.isFinite(Number(centerOverride.latitude)) && Number.isFinite(Number(centerOverride.longitude))
-      ? centerOverride : null;
-    let latitude, longitude;
-    if (override) {
-      latitude = override.latitude;
-      longitude = override.longitude;
-    } else if (userLocation.value.latitude && userLocation.value.longitude) {
-      latitude = userLocation.value.latitude;
-      longitude = userLocation.value.longitude;
-    } else {
-      latitude = 36.0671;
-      longitude = 120.3826;
-    }
-
-    // 记录本次加载的视野，供拖动/缩放时判断是否需要重新加载
-    lastLoadCenter = { latitude: Number(latitude), longitude: Number(longitude) };
-    const scale = Number(
-      scaleOverride != null
-        ? scaleOverride
-        : (isH5 && tmapInstance && typeof tmapInstance.getZoom === 'function' ? tmapInstance.getZoom() : mapScale.value)
-    ) || null;
-    const viewport = viewportBbox(latitude, longitude);
-    // 平移（缩放不变、新旧视野重叠 ≥50%）只增量加载新露出的区域（≤2 个矩形），重叠区不重查；缩放变化或重叠不足则全量
-    const incremental = Boolean(lastLoadBbox) && scale != null && lastLoadScale != null
-      && Math.abs(scale - lastLoadScale) <= 0.5
-      && bboxOverlapRatio(viewport, lastLoadBbox) >= 0.5;
-    const newRects = incremental ? uncoveredRects(viewport, lastLoadBbox) : [];
-    const queries = newRects.length
-      ? newRects.map((rect) => ({ rect, rounds: INCR_LOAD_ROUNDS }))
-      : [{ rect: viewport, rounds: MAX_LOAD_ROUNDS }];
-    const fetched = [];
-    for (const { rect, rounds } of queries) {
-      // 每轮一页分批拉取；页未拉满说明密度低，该矩形即停
-      for (let round = 1; round <= rounds; round++) {
-        const result = await loadMapBins({
-          minLat: rect.minLat,
-          maxLat: rect.maxLat,
-          minLng: rect.minLng,
-          maxLng: rect.maxLng,
-          page: round,
-          pageSize: LOAD_PAGE_SIZE
-        });
-        if (!result || result.code !== 0 || !Array.isArray(result.data)) {
-          console.warn('获取垃圾桶列表响应格式异常:', result);
-          break;
-        }
-        fetched.push(...result.data);
-        if (result.data.length < LOAD_PAGE_SIZE) break; // 密度低：范围内已取完
-      }
-    }
-    lastLoadBbox = viewport;
-    if (scale != null) lastLoadScale = scale;
-
-    {
-      // 按 id 合并已有点位：地图上已加载的点位不再消失，新数据覆盖同 id 旧数据
-      const merged = new Map(trashPoints.value.map(p => [String(p.id), p]));
-      fetched.forEach(item => {
-        const imageUrl = item.hasImage === true && !(item.image || item.imagePath)
-          ? ''
-          : resolveTrashBinImage(item.image || item.imagePath, item.mapType || 'waste_basket');
-
-        merged.set(String(item.id), {
-          ...item,
-          id: item.id,
-          name: item.name,
-          description: item.description,
-          latitude: typeof item.latitude === 'number' ? item.latitude : parseFloat(item.latitude),
-          longitude: typeof item.longitude === 'number' ? item.longitude : parseFloat(item.longitude),
-          image: imageUrl,
-          createdAt: item.createdAt,
-          type: item.type
-        });
-      });
-      let mergedList = Array.from(merged.values());
-      if (mergedList.length > MAX_CACHED_POINTS) {
-        // 内存上限：超出时淘汰离当前视野中心最远的点位，优先保留视野内的
-        mergedList.sort((a, b) => distanceMeters(a, { latitude, longitude }) - distanceMeters(b, { latitude, longitude }));
-        mergedList = mergedList.slice(0, MAX_CACHED_POINTS);
-      }
-      trashPoints.value = mergedList;
-
-      console.log(`成功加载 ${trashPoints.value.length} 个垃圾桶标记`)
-
-      // 如果是H5，重建单一标记图层
-      if (isH5 && tmapInstance) {
-        initH5Markers()
-      }
-    }
-  } catch (error) {
-    uni.showToast({ title: '加载垃圾桶信息失败', icon: 'none', duration: 2000 })
-  }
-}
-
 function initH5Markers() {
   if (!isH5 || !tmapInstance || !window.TMap) return
   if (selectMode.value) return
@@ -1688,7 +1456,7 @@ function renderH5BinMarkers() {
   const geometries = []
   trashPoints.value.forEach((p) => {
     const pending = isMapAdmin.value && p.adminRecord && !p.review
-    const reported = isMapAdmin.value && p.adminRecord && p.errorReport?.length > 0
+    const reported = isMapAdmin.value && p.adminRecord && binReportCount(p) > 0
     const styleKey = `${p.type === 'smart' ? 'smart' : 'normal'}-${pending ? 'pending' : 'ok'}-${reported ? 'reported' : 'plain'}`
     if (!styles[styleKey]) {
       styles[styleKey] = new window.TMap.MarkerStyle({

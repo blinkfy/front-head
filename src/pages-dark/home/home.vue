@@ -1271,13 +1271,13 @@ function goAiChatFromResult() {
   // #ifdef H5
   try { localStorage.removeItem('ai_chat_seed_consumed_at') } catch (e) {}
   // #endif
-  uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
+  uni.navigateTo({ url: '/pages-nonTheme/assistant' })
 }
 
 function goAiAssistant() {
   if (!aiServiceEnabled.value) return
   preserveResultOnReturn = true
-  uni.navigateTo({ url: '/pages-nonTheme/ai-chat' })
+  uni.navigateTo({ url: '/pages-nonTheme/assistant' })
 }
 
 function previewUpcyclingImage() {

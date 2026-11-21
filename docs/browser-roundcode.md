@@ -41,23 +41,23 @@ APP 准备进度独立于登录会话的 waiting/scanned/authorized 状态。图
 
 - Unicorn.js：`@alexaltea/unicorn-js@2.1.4` 的 AArch64 构建，GPL-2.0，保留 `UNICORN-LICENSE.txt`。上游源码 https://github.com/AlexAltea/unicorn.js ，该版本构建使用 Unicorn 引擎提交 `8028ec436f2d9376525352dd38ed9ed6b9f6be10`。
 - Pyodide：`pyodide@0.27.7`，MPL-2.0，保留 `PYODIDE-LICENSE.txt`；源码 https://github.com/pyodide/pyodide/tree/0.27.7 。CPython 标准库随该发行版。
-- QBar/JNI、Android 仿真及系统库复用已有 `scripts/roundcode_assets/runtime.zip`，未新增服务端解码进程。
-- `scripts/build-browser-roundcode.mjs` 是开发用重建脚本：输入放在 `experiments/wechat-roundcode/artifacts/browser/{unicorn,pyodide/package,wabt/package}`，分别使用上述固定版本和 `wabt@1.0.39`。`unicorn` 目录包含 npm 包的 `unicorn_aarch64.js` 和 `LICENSE`。
+- QBar/JNI、Android 仿真及系统库复用已有 `scripts/tools/roundcode/roundcode_assets/runtime.zip`，未新增服务端解码进程。
+- `scripts/tools/roundcode/build-browser-roundcode.mjs` 是开发用重建脚本：输入放在 `experiments/wechat-roundcode/artifacts/browser/{unicorn,pyodide/package,wabt/package}`，分别使用上述固定版本和 `wabt@1.0.39`。`unicorn` 目录包含 npm 包的 `unicorn_aarch64.js` 和 `LICENSE`。
 - 构建脚本校验上游 JS SHA256，抽出 WASM，使用 WABT 修复固定构建的三个 TCI 缺失加载指令：`ld8s_i32`、`ld16u_i32`、`ld16s_i32`。复用已有 `ld8u_i32` 的寄存器/指令指针流程，仅替换对应有符号/无符号加载。转换步骤完整保留在脚本中，上游布局变化会拒绝构建。
-- `scripts/build-browser-roundcode.py` 复用现有 Python/JNI 适配器，增加浏览器 Unicorn 桥和复用初始化句柄的生成器。需要已有本地解码依赖缓存中的 Unicorn 2.1.4 常量文件。
+- `scripts/tools/roundcode/build-browser-roundcode.py` 复用现有 Python/JNI 适配器，增加浏览器 Unicorn 桥和复用初始化句柄的生成器。需要已有本地解码依赖缓存中的 Unicorn 2.1.4 常量文件。
 - 重建后 `manifest.json` 保存版本和每个文件的 SHA256；Worker 加载关键二进制/适配资源时校验哈希，资源版本不一致则回退。
 
 ## 定向验证
 
 ```text
-node scripts/test-h5-roundcode-local.mjs
-node scripts/test-h5-roundcode-cache.mjs
-node scripts/test-h5-qr-scanner.mjs
-node scripts/test-h5-qr-analysis.mjs
-node scripts/test-h5-roundcode.mjs
-node scripts/test-h5-generated-roundcode.mjs
-node scripts/test-roundcode-preparation-progress.mjs
-node scripts/test-roundcode-client.mjs
+node scripts/verify/test-h5-roundcode-local.mjs
+node scripts/verify/test-h5-roundcode-cache.mjs
+node scripts/verify/test-h5-qr-scanner.mjs
+node scripts/verify/test-h5-qr-analysis.mjs
+node scripts/verify/test-h5-roundcode.mjs
+node scripts/verify/test-h5-generated-roundcode.mjs
+node scripts/verify/test-roundcode-preparation-progress.mjs
+node scripts/verify/test-roundcode-client.mjs
 npm run build:h5
 npm run build:mp-weixin
 git diff --check

@@ -56,7 +56,7 @@
       <view v-if="canScrollLeft" class="grid-edge grid-edge-left"><text>‹</text></view>
       <view v-if="canScrollRight" class="grid-edge grid-edge-right"><text>›</text></view>
       </view>
-      <view v-if="!sqlColumns || sqlRowActions" class="grid-fixed">
+      <view v-if="!sqlColumns || sqlRowActions" class="grid-fixed" :class="{ 'grid-user-actions': table === 'User' && !sqlColumns && !selectionMode }">
         <view class="grid-row grid-header grid-actions">{{ selectionMode ? '选择' : '操作' }}</view>
         <view v-for="(item, index) in rows" :key="rowKey(item, index)" class="grid-row grid-actions" :class="{ selected: selectionMode && isSelected(item) }">
           <view v-if="selectionMode" class="grid-action" @click.stop="$emit('select', item, $event)">{{ isSelected(item) ? '✓ 已选' : '选择' }}</view>
@@ -65,6 +65,7 @@
             <view class="grid-action delete" @click.stop="$emit('delete', item)">删除</view>
           </template>
           <view v-else class="grid-action" @click.stop="$emit('detail', item)">查看</view>
+          <view v-if="table === 'User' && !sqlColumns && !selectionMode" class="grid-action" @click.stop="$emit('user-graph', item)">数据图谱</view>
         </view>
       </view>
     </view>
@@ -72,6 +73,21 @@
     <view v-if="columnMenu" class="grid-detail-overlay" @click="columnMenu = null">
       <view class="grid-detail grid-column-menu" @click.stop>
         <view class="grid-detail-header"><text>{{ columnMenu.label }}</text><text class="grid-detail-close" @click="columnMenu = null">关闭</text></view>
+        <view class="column-details">
+          <view class="column-detail-row"><text class="column-detail-key">{{ !columnHasSource ? '结果列名' : columnDetails?.database ? '数据库列名' : '模型列名' }}</text><text class="column-detail-value column-detail-name">{{ columnDetails?.columnName || columnModel?.columnName || columnMenu.key }}</text></view>
+          <view v-if="columnDetails?.model?.comment || columnModel?.comment || columnDetails?.database?.comment" class="column-detail-row"><text class="column-detail-key">说明</text><text class="column-detail-value">{{ columnDetails?.model?.comment || columnModel?.comment || columnDetails?.database?.comment }}</text></view>
+          <text v-if="columnMetadataLoading" class="column-detail-muted">正在读取数据库定义…</text>
+          <text v-else-if="columnMetadataError" class="column-detail-muted">{{ columnMetadataError }}</text>
+          <template v-if="columnDetails">
+            <view v-for="row in columnDetailRows" :key="row.label" class="column-detail-row"><text class="column-detail-key">{{ row.label }}</text><text class="column-detail-value">{{ row.value }}</text></view>
+            <view v-if="columnDetails.indexes?.length" class="column-indexes">
+              <text class="column-index-heading">索引</text>
+              <view v-for="idx in columnDetails.indexes" :key="idx.name" class="column-index-item"><text class="column-index-name">{{ idx.unique ? '唯一 · ' : '' }}{{ idx.name }}</text><text class="column-index-fields">{{ idx.fields.join(' · ') }}</text></view>
+            </view>
+          </template>
+          <text v-if="!columnMetadataLoading && !columnDetails && !columnMetadataError" class="column-detail-muted">此列没有可对应的数据库字段。</text>
+        </view>
+        <template v-if="columnMenu.type">
         <text class="column-menu-label">排序</text>
         <view class="column-menu-actions">
           <view class="column-menu-choice" :class="{ selected: columnQuery.sortField === columnMenu.key && columnQuery.direction === 'ASC' }" @click="applyColumnSort('ASC')">升序 ↑</view>
@@ -113,6 +129,7 @@
           <view class="column-menu-choice primary" @click="applyColumnFilter">添加条件</view>
         </view>
         <text class="column-menu-tip">同一列按所选关系组合；各列{{ columnQuery.columnsJoin === 'or' ? '任意满足' : '全部满足' }}，另需满足上方搜索条件。</text>
+        </template>
       </view>
     </view>
     <view v-if="detail" class="grid-detail-overlay" @click="detail = null">
@@ -132,7 +149,8 @@
 <script setup>
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
-import { getAdminHistoryImage } from '@/api/database'
+import { shortFieldLabels as labels } from '@/utils/field-labels'
+import { getAdminHistoryImage, getAdminTableColumns } from '@/api/database'
 
 const props = defineProps({
   table: String, rows: { type: Array, default: () => [] }, schema: { type: Array, default: () => [] },
@@ -143,7 +161,7 @@ const props = defineProps({
   light: Boolean, sqlColumns: { type: Array, default: null }, sqlRowActions: Boolean,
   queryFields: { type: Array, default: null }
 })
-const emit = defineEmits(['edit', 'delete', 'select', 'detail', 'stage', 'submit', 'discard', 'query-change', 'columns-change'])
+const emit = defineEmits(['edit', 'delete', 'select', 'detail', 'user-graph', 'stage', 'submit', 'discard', 'query-change', 'columns-change'])
 const selectedColumns = ref([]), showColumns = ref(false), detail = ref(null)
 function toggleColumns() { showColumns.value = !showColumns.value }
 function setColumns(keys) {
@@ -214,11 +232,69 @@ function setColumnFilterTime(event) {
   columnFilterValue.value = `${date} ${event.detail.value}${suffix?.[1] || ':00'}${suffix?.[2] || ''}`
 }
 
+const columnMetadata = ref(null), columnMetadataLoading = ref(false), columnMetadataError = ref('')
+const columnMetadataCache = new Map()
+let columnMetadataRequest = 0
+const columnHasSource = computed(() => !props.sqlColumns || !!props.queryFields?.some(field => field.key === columnMenu.value?.key))
+const columnModel = computed(() => columnHasSource.value ? (props.schema || []).find(field => field.key === columnMenu.value?.key) : null)
+const columnDetails = computed(() => columnHasSource.value ? columnMetadata.value?.find(field => field.key === columnMenu.value?.key) : null)
+function formatColumnDefault(value) { return value === null ? 'NULL' : typeof value === 'object' ? JSON.stringify(value) : String(value) }
+function formatColumnReference(reference) {
+  if (typeof reference === 'string') return reference
+  const table = reference?.model || reference?.table || reference?.tableName || reference?.referencedTableName
+  const name = typeof table === 'object' ? table.tableName || table.table : table
+  const key = reference?.key || reference?.referencedColumnName
+  return name ? `${name}${key ? `.${key}` : ''}` : JSON.stringify(reference)
+}
+function columnConstraints(value) {
+  return [value.primaryKey ? '主键' : '', value.allowNull === false ? '非空' : value.allowNull === true ? '允许空值' : '', value.autoIncrement ? '自增' : ''].filter(Boolean).join('、') || '无已知约束'
+}
+const columnDetailRows = computed(() => {
+  const field = columnDetails.value
+  if (!field) return []
+  const rows = []
+  const db = field.database, model = field.model || {}
+  const add = (label, value) => rows.push({ label, value })
+  const type = db?.type || (db ? '未知' : '未在数据库中找到')
+  add('数据库类型', type)
+  const normalizedType = value => String(value || '').toUpperCase().replace(/^INTEGER\b/, 'INT')
+  if (model.type && normalizedType(model.type) !== normalizedType(db?.type)) add('模型类型', model.type)
+  if (db) add('约束', columnConstraints(db))
+  if (model.allowNull !== undefined && (!db || columnConstraints(model) !== columnConstraints(db))) add('模型约束', columnConstraints(model))
+  if (db && db.defaultValue !== undefined) add('默认值', formatColumnDefault(db.defaultValue))
+  if (model.defaultValue !== undefined && model.defaultValue !== null && (!db || formatColumnDefault(model.defaultValue) !== formatColumnDefault(db.defaultValue))) add('模型默认值', formatColumnDefault(model.defaultValue))
+  if (model.values?.length) add('可选值', model.values.join('、'))
+  const databaseRef = db?.references && formatColumnReference(db.references)
+  const modelRef = model.references && formatColumnReference(model.references)
+  if (databaseRef) add('关联', databaseRef)
+  if (modelRef && modelRef !== databaseRef) add(databaseRef ? '模型关联' : '关联（模型）', modelRef)
+  if (model.validate && Object.keys(model.validate).length) add('模型校验', formatColumnDefault(model.validate))
+  return rows
+})
+async function loadColumnMetadata() {
+  const table = props.table
+  const version = ++columnMetadataRequest
+  const cached = columnMetadataCache.get(table)
+  columnMetadata.value = cached && Date.now() - cached.time < 60000 ? cached.columns : null
+  columnMetadataError.value = ''
+  columnMetadataLoading.value = false
+  if (columnMetadata.value) return
+  columnMetadataLoading.value = true
+  try {
+    const response = await getAdminTableColumns(table)
+    if (response?.code !== 0 || !Array.isArray(response.data?.columns)) throw new Error(response?.msg || '读取失败')
+    columnMetadataCache.set(table, { columns: response.data.columns, time: Date.now() })
+    if (version === columnMetadataRequest && props.table === table) columnMetadata.value = response.data.columns
+  } catch (error) {
+    if (version === columnMetadataRequest) columnMetadataError.value = `数据库定义读取失败：${error?.message || '请重试'}`
+  } finally { if (version === columnMetadataRequest) columnMetadataLoading.value = false }
+}
 function openColumnMenu(column) {
   const type = columnType(column.key)
-  if (!type || props.selectionMode) return
+  if (props.selectionMode) return
   if (editor.value && !saveCellDraft()) return
   columnMenu.value = { ...column, type }
+  void loadColumnMetadata()
   columnFilterJoin.value = (props.columnQuery.filters || []).find(filter => filter.field === column.key)?.join === 'or' ? 'or' : 'and'
   columnOperatorIndex.value = 0
   columnFilterValue.value = ''
@@ -414,7 +490,6 @@ function saveCellDraft() {
 }
 
 const storageKey = () => `admin-database-columns:${props.table}${props.sqlColumns ? ':sql' : ''}`
-const labels = { id: 'ID', userId: '用户', username: '用户名', userName: '用户名', otherName: '对方', senderName: '发送者', receiverName: '接收者', deviceName: '设备', imagePath: '图片', imageUrl: '识别图片', content: '内容', createdAt: '创建时间', updatedAt: '更新时间', connectedAt: '连接时间', sendTime: '发送时间', hasImage: '识别图片', confidence: '置信度', category: '分类', source: '来源', status: '状态', name: '名称', type: '类型', points: '积分', description: '说明', describe: '描述', isRead: '已读', isWithdraw: '已撤回' }
 const hidden = new Set(['password', 'token', 'deviceToken', 'device_token', 'encryptedData', 'documentHash', 'webSessionId', 'webCodeHash', 'webTokenHash', 'imageUrlLength'])
 function fieldLabel(key) {
   const fromSchema = props.schema.find(field => field.key === key)?.label
@@ -571,6 +646,7 @@ async function showCell(item, column) {
 .grid-image-count { color: #9eeaff; font-size: 18rpx; }
 .grid-fixed { flex: 0 0 156rpx; border-left: 2rpx solid rgba(112,226,241,.6); box-shadow: -7rpx 0 16rpx rgba(0,0,0,.35); z-index: 1; }
 .grid-fixed .grid-row { background: #103c4c; }
+.grid-fixed.grid-user-actions { flex-basis: 252rpx; }
 .grid-fixed .grid-header { background: #1a5363; }
 .grid-fixed .grid-row.selected { background: #1c6270; }
 .grid-actions { justify-content: center; gap: 12rpx; padding: 0 8rpx; font-size: 21rpx; }
@@ -590,6 +666,17 @@ async function showCell(item, column) {
 .grid-editor-hint { color: #a4c1cd; font-size: 20rpx; margin-top: 14rpx; }
 .grid-editor-actions { display: flex; justify-content: flex-end; gap: 14rpx; margin-top: 20rpx; }
 .grid-column-menu { max-width: 640rpx; overflow-y: auto; }
+.column-details { color: #e4f5f8; padding: 18rpx; border-radius: 10rpx; background: rgba(127, 169, 157, .12); }
+.column-detail-row { display: flex; align-items: baseline; gap: 16rpx; padding: 4rpx 0; font-size: 22rpx; line-height: 1.5; }
+.column-detail-key { flex: 0 0 140rpx; color: #9cbbc3; }
+.column-detail-value { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.column-detail-name, .column-index-name { font-family: monospace; }
+.column-indexes { margin-top: 12rpx; padding-top: 12rpx; border-top: 1px solid rgba(127, 169, 157, .25); }
+.column-index-heading { display: block; color: #9cbbc3; font-size: 21rpx; margin-bottom: 6rpx; }
+.column-index-item { display: flex; flex-direction: column; gap: 2rpx; padding: 5rpx 0; font-size: 21rpx; line-height: 1.4; overflow-wrap: anywhere; }
+.column-index-fields { color: #a8c8ce; }
+.column-detail-muted { display: block; font-size: 22rpx; line-height: 1.6; overflow-wrap: anywhere; }
+.column-detail-muted { opacity: .7; }
  .column-filter-list { display: flex; flex-wrap: wrap; gap: 10rpx; margin-bottom: 12rpx; }
 .column-filter-chip { display: flex; align-items: center; gap: 10rpx; color: #bcecf2; background: rgba(64,224,255,.12); border: 1px solid rgba(64,224,255,.22); border-radius: 9rpx; padding: 8rpx 12rpx; font-size: 21rpx; word-break: break-all; }
 .column-filter-remove { color: #fff; font-size: 28rpx; line-height: 1; padding: 2rpx 4rpx; }
@@ -652,6 +739,8 @@ async function showCell(item, column) {
 .db-grid.grid-light .grid-editor-hint { color: #71877a; }
 .db-grid.grid-light .column-filter-chip { color: #365e49; background: #eef7f0; border-color: #cfe3d5; }
 .db-grid.grid-light .column-filter-remove { color: #52695d; }
+.db-grid.grid-light .column-details { color: #294438; }
+.db-grid.grid-light .column-detail-key, .db-grid.grid-light .column-index-heading, .db-grid.grid-light .column-index-fields { color: #6a8276; }
 .db-grid.grid-light .column-menu-label { color: #567064; }
 .db-grid.grid-light .column-menu-choice { color: #365e49; background: #f7fbf8; border-color: #cfe1d5; }
 .db-grid.grid-light .column-menu-choice.selected,

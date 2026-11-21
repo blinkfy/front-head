@@ -1,0 +1,299 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import vm from 'node:vm'
+import { createRequire } from 'node:module'
+import { createBiometricLoginManager, biometricErrorMessage } from '../../src/utils/biometric-login-core.mjs'
+
+function fixture({ accepted = true, supported = true, enrolled = true } = {}) {
+  const storage = new Map([['token', 'session'], ['savedUser', { username: 'test', password: 'test-only' }]])
+  const calls = [], confirmations = []
+  const credentialOwners = new Map(), loginChallenges = new Map()
+  let enrollmentUserId = 1, credentialSequence = 0, loginAccountOverride = null
+  let failure = null
+  const runtime = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value),
+    removeStorageSync: key => storage.delete(key), confirm: async options => { confirmations.push(options); return accepted } }
+  const native = async options => {
+    calls.push(options)
+    if (options.operation === 'capability') return { supported, enrolled, label: '面容登录' }
+    if (options.operation === 'sign' && failure) throw failure
+    return options.operation === 'create' ? { publicKey: 'public-test-key' } : { signature: 'test-signature' }
+  }
+  const requests = []
+  const api = async (path, body, token, method) => {
+    requests.push({ path, body, token, method })
+    if (path === '/biometric/enrollment/options') return { data: { credentialId: credentialSequence++ ? `credential-${credentialSequence}` : 'credential-id', challengeId: `enroll-${credentialSequence}`, payload: 'test-payload' } }
+    if (path === '/biometric/enrollment/finish') {
+      const credentialId = requests.findLast(call => call.path === '/biometric/enrollment/options')?.body?.credentialId ||
+        (credentialSequence > 1 ? `credential-${credentialSequence}` : 'credential-id')
+      credentialOwners.set(credentialId, enrollmentUserId)
+      return { data: { userId: enrollmentUserId, username: `user-${enrollmentUserId}` } }
+    }
+    if (path === '/biometric/login/options') {
+      const challengeId = `login-${body.credentialId}`
+      loginChallenges.set(challengeId, credentialOwners.get(body.credentialId) || 1)
+      return { data: { challengeId, payload: 'test-payload' } }
+    }
+    if (path === '/biometric/login/finish') return { token: 'new-session', accountId: loginAccountOverride ?? loginChallenges.get(body.challengeId) ?? 1 }
+    return {}
+  }
+  return { storage, calls, confirmations, requests, runtime, native, api, setEnrollmentUserId: id => { enrollmentUserId = id },
+    setLoginAccountOverride: id => { loginAccountOverride = id },
+    fail: value => { failure = value }, manager: createBiometricLoginManager({ runtime, native, api, scope: 'https://one.test' }) }
+}
+const user = { id: 1, username: 'test' }
+const setupTicketLogin = fixture()
+setupTicketLogin.storage.set('biometric_login_v1:https%3A%2F%2Fone.test', { enabled: true, prompted: true, credentialId: 'existing-key', userId: 1 })
+await setupTicketLogin.manager.login(() => true, undefined, { mfaSetupTicket: 'setup-ticket-native' })
+assert.equal(setupTicketLogin.requests.find(call => call.path === '/biometric/login/finish').body.mfaSetupTicket, 'setup-ticket-native',
+  'native biometric manager forwards the MFA setup ticket to login finish')
+await setupTicketLogin.manager.login(() => true, undefined, { mfaTicket: 'mfa-ticket-native' })
+assert.equal(setupTicketLogin.requests.findLast(call => call.path === '/biometric/login/finish').body.mfaTicket, 'mfa-ticket-native',
+  'native biometric manager forwards the MFA ticket to login finish')
+const nativeAccounts = fixture()
+await nativeAccounts.manager.setEnabled(true, 'session', { id: 1, username: 'alice' })
+const nativeAliceKey = nativeAccounts.manager.state(1).credentialId
+nativeAccounts.setEnrollmentUserId(2)
+await nativeAccounts.manager.setEnabled(true, 'session', { id: 2, username: 'bob' })
+const nativeBobKey = nativeAccounts.manager.state(2).credentialId
+assert.notEqual(nativeAliceKey, nativeBobKey, 'native manager stores distinct account credentials')
+assert.equal(nativeAccounts.manager.selectAccount(2), true)
+const nativeMfa = await nativeAccounts.manager.login(() => true, undefined, { userId: 1 })
+assert.equal(nativeMfa.accountId, 1, 'native MFA authentication remains locked to its requested account')
+assert.equal(nativeAccounts.manager.state().userId, 2, 'native targeted login leaves the selected account unchanged')
+nativeAccounts.setLoginAccountOverride(99)
+await assert.rejects(nativeAccounts.manager.login(() => true, undefined, { userId: 1 }), error => error.error === 'ACCOUNT_MISMATCH')
+assert.equal(nativeAccounts.manager.state(1).credentialId, nativeAliceKey, 'foreign login result does not commit or clear A binding')
+assert.equal(nativeAccounts.manager.state(2).credentialId, nativeBobKey, 'foreign login result leaves B untouched')
+nativeAccounts.setLoginAccountOverride(null)
+nativeAccounts.fail({ error: 'KEY_INVALID' })
+await assert.rejects(nativeAccounts.manager.login(() => true, undefined, { userId: 1 }))
+assert.equal(nativeAccounts.manager.state(1).credentialId, '')
+assert.equal(nativeAccounts.manager.state(2).credentialId, nativeBobKey, 'native invalid A key does not clear B')
+nativeAccounts.fail(null)
+nativeAccounts.setEnrollmentUserId(99)
+await assert.rejects(nativeAccounts.manager.setEnabled(true, 'session', { id: 1, username: 'alice' }), error => error.error === 'ACCOUNT_MISMATCH')
+assert.equal(nativeAccounts.manager.state(1).credentialId, '', 'foreign enrollment result is not committed')
+assert.equal(nativeAccounts.manager.state(2).credentialId, nativeBobKey, 'foreign enrollment result does not delete B')
+assert.ok(nativeAccounts.calls.some(call => call.operation === 'delete' && call.keyId === 'credential-3'), 'foreign enrollment key is discarded')
+const enabled = fixture()
+assert.equal(enabled.manager.state().enabled, true)
+await enabled.manager.afterLogin('session', user)
+assert.equal(enabled.confirmations.length, 1)
+enabled.storage.set('savedUser', { username: 'test', password: 'test-only' })
+await enabled.manager.afterLogin('session', user)
+assert.equal(enabled.storage.has('savedUser'), false, 'later password login also clears remembered plaintext password')
+assert.equal(enabled.manager.state().prompted, true)
+assert.equal(enabled.storage.has('savedUser'), false)
+assert.ok(enabled.manager.state().credentialId)
+await enabled.manager.afterLogin('session', user)
+assert.equal(enabled.confirmations.length, 1)
+assert.equal((await enabled.manager.login()).token, 'new-session')
+enabled.fail({ error: 'CANCELLED' })
+await assert.rejects(enabled.manager.login(), error => error.error === 'CANCELLED')
+assert.ok(enabled.manager.state().credentialId, 'user cancellation does not destroy authorization')
+enabled.fail({ error: 'KEY_INVALID' })
+await assert.rejects(enabled.manager.login())
+assert.equal(enabled.manager.state().credentialId, '')
+assert.equal(biometricErrorMessage({ error: 'CANCELLED' }), '')
+
+const declined = fixture({ accepted: false })
+await declined.manager.afterLogin('session', user)
+await declined.manager.afterLogin('session', user)
+assert.equal(declined.confirmations.length, 1)
+assert.equal(declined.manager.state().enabled, false)
+assert.equal(declined.calls.some(call => call.operation === 'sign'), false)
+await declined.manager.setEnabled(true, 'session', user)
+assert.ok(declined.manager.state().credentialId)
+await declined.manager.setEnabled(false, 'session', user)
+assert.equal(declined.manager.state().enabled, false)
+assert.equal(declined.manager.state().credentialId, '')
+assert.equal(declined.requests.at(-1).method, 'DELETE')
+for (const config of [{ supported: false }, { enrolled: false }]) {
+  const unavailable = fixture(config)
+  await unavailable.manager.afterLogin('session', user)
+  assert.equal(unavailable.confirmations.length, 0)
+  assert.equal(unavailable.manager.state().prompted, false)
+}
+const stale = fixture()
+await stale.manager.afterLogin('stale-session', user)
+assert.equal(stale.confirmations.length, 0)
+const interrupted = fixture()
+let active = true
+const interruptedNative = async options => {
+  const result = await interrupted.native(options)
+  if (options.operation === 'sign') active = false
+  return result
+}
+const interruptedManager = createBiometricLoginManager({ runtime: interrupted.runtime, native: interruptedNative, api: interrupted.api, scope: 'https://two.test' })
+await assert.rejects(interruptedManager.setEnabled(true, 'session', user, () => active))
+assert.equal(interruptedManager.state().credentialId, undefined)
+assert.ok(interrupted.calls.some(call => call.operation === 'delete'), 'incomplete enrollment removes its orphan private key')
+assert.equal(createBiometricLoginManager({ runtime: enabled.runtime, native: enabled.native, api: enabled.api, scope: 'https://another.test' }).state().credentialId, undefined)
+
+// Exercise the actual login-page controller with a tiny lifecycle adapter.
+const composable = readFileSync(new URL('../../src/utils/use-biometric-login.js', import.meta.url), 'utf8')
+  .replace(/^import .*\r?\n/gm, '').replace('export function ', 'function ')
+async function pageFixture({ state, token = '', autoLogin = true, probe, loginResult, loginError, probeWait, onLoginWait, platform = 'app', capabilityWait, systemAuthentication = false, pages = [{}], support = { supported: true, enrolled: true, label: '指纹登录' } } = {}) {
+  let attempts = 0, navigations = 0, cancel = 0, suspend = 0, resume = 0, disposed, hidden, shown
+  const context = { ref: value => ({ value }), nextTick: async () => {}, quickLoginPlatform: platform, getCurrentPages: () => pages, onBeforeUnmount: fn => { disposed = fn },
+    onHide: fn => { hidden = fn }, onShow: fn => { shown = fn },
+    biometricErrorMessage, biometricApi: async () => { await probeWait; if (probe instanceof Error || probe?.code) throw probe; return probe },
+    biometricLogin: { state: () => state, capability: async () => { await capabilityWait; return support },
+      suspendSystemAuthentication: () => { suspend++; return systemAuthentication }, resumeSystemAuthentication: () => { resume++ },
+      cancel: () => { cancel++ }, login: async () => { attempts++; await loginResult?.wait; if (loginError) throw loginError; return loginResult?.value || loginResult }, afterLogin: async () => {} },
+    uni: { getStorageSync: key => key === 'token' ? token : autoLogin, removeStorageSync: () => { token = '' }, showToast() {} } }
+  vm.runInNewContext(composable + '\nglobalThis.use = useBiometricLogin', context)
+  const loading = { value: false }
+  const controller = context.use({ loading, onLogin: async () => { navigations++; await onLoginWait } })
+  return { controller, loading, counts: () => ({ attempts, navigations, cancel, suspend, resume }), dispose: () => disposed(), hide: () => hidden(), show: () => shown(),
+    replacePage: page => { pages = [page] }, replaceToken: value => { token = value } }
+}
+const bound = { enabled: true, credentialId: 'key' }
+const resumed = await pageFixture({ state: bound, token: 'session', probe: { data: { id: 1 } } })
+assert.equal(await resumed.controller.prefer(), true)
+assert.deepEqual(resumed.counts(), { attempts: 0, navigations: 1, cancel: 0, suspend: 0, resume: 0 })
+const unauthenticated = await pageFixture({ state: bound, loginResult: { token: 'new' } })
+await unauthenticated.controller.prefer(); await unauthenticated.controller.prefer()
+assert.equal(unauthenticated.counts().attempts, 1)
+const cancelled = await pageFixture({ state: bound, loginError: { error: 'CANCELLED' } })
+assert.equal(await cancelled.controller.prefer(), true)
+assert.equal(cancelled.loading.value, false)
+assert.equal(cancelled.counts().navigations, 0)
+cancelled.dispose()
+assert.equal(cancelled.counts().cancel, 1)
+assert.equal(cancelled.counts().suspend, 0)
+assert.equal(cancelled.counts().resume, 0)
+const expired = await pageFixture({ state: bound, token: 'old', probe: { code: 401 }, loginResult: { token: 'new' } })
+await expired.controller.prefer()
+assert.equal(expired.counts().attempts, 1)
+const offline = await pageFixture({ state: bound, token: 'old', probe: new Error('offline') })
+assert.equal(await offline.controller.prefer(), true)
+assert.equal(offline.counts().attempts, 0)
+const disabled = await pageFixture({ state: { enabled: false } })
+assert.equal(await disabled.controller.prefer(), false)
+const pending = await pageFixture({ state: { enabled: true, prompted: true, userId: 1 }, token: 'session', probe: { data: { id: 1 } } })
+await pending.controller.prefer()
+assert.equal(pending.counts().navigations, 1, 'pending authorization still reuses a valid remembered session')
+const pendingExpired = await pageFixture({ state: { enabled: true, prompted: true, userId: 1 } })
+assert.equal(await pendingExpired.controller.prefer(), true, 'pending authorization stays on manual login without saved-password bypass')
+assert.equal(pendingExpired.counts().attempts, 0)
+const webPending = await pageFixture({ state: { enabled: true, prompted: true }, platform: 'web' })
+assert.equal(await webPending.controller.prefer(), false, 'web authorization pending without a credential keeps the existing auto-login path')
+assert.equal(webPending.counts().attempts, 0)
+const anonymousPending = await pageFixture({ state: { enabled: true, prompted: true } })
+assert.equal(await anonymousPending.controller.prefer(), false, 'ownerless legacy preferences cannot select an account or block ordinary login')
+assert.equal(anonymousPending.counts().attempts, 0)
+const selectedWebPending = await pageFixture({ state: { enabled: true, prompted: true, userId: 1 }, platform: 'web' })
+assert.equal(await selectedWebPending.controller.prefer(), true, 'a selected web account also stays on manual login instead of falling through to another account')
+assert.equal(selectedWebPending.counts().attempts, 0)
+let releaseStaleProbe
+const staleSessionProbe = await pageFixture({ state: { ...bound, userId: 1 }, token: 'session-a', probe: { code: 401 },
+  probeWait: new Promise(resolve => { releaseStaleProbe = resolve }), loginResult: { token: 'stale-a' } })
+const staleProbeRequest = staleSessionProbe.controller.prefer()
+staleSessionProbe.replaceToken('session-b'); releaseStaleProbe()
+await staleProbeRequest
+assert.equal(staleSessionProbe.counts().attempts, 0, 'an old session 401 cannot start quick login after another account signs in')
+assert.equal(staleSessionProbe.counts().navigations, 0)
+assert.equal(staleSessionProbe.loading.value, false)
+let releaseStaleLogin
+const staleSessionLogin = await pageFixture({ state: { ...bound, userId: 1 }, token: 'session-a',
+  loginResult: { wait: new Promise(resolve => { releaseStaleLogin = resolve }), value: { token: 'stale-a', accountId: 1 } } })
+const staleLoginRequest = staleSessionLogin.controller.login()
+await new Promise(resolve => setImmediate(resolve))
+staleSessionLogin.replaceToken('session-b'); releaseStaleLogin()
+await staleLoginRequest
+assert.equal(staleSessionLogin.counts().navigations, 0, 'an old quick-login result cannot replace a newer account session')
+assert.equal(staleSessionLogin.loading.value, false)
+let releaseProbe
+const hidden = await pageFixture({ state: bound, token: 'session', probe: { data: { id: 1 } },
+  probeWait: new Promise(resolve => { releaseProbe = resolve }) })
+const hiddenRequest = hidden.controller.prefer()
+hidden.hide(); hidden.show(); releaseProbe()
+await hiddenRequest
+assert.equal(hidden.counts().navigations, 0, 'a hidden page cannot complete a stale login even after it becomes visible again')
+assert.equal(hidden.counts().cancel, 1, 'ordinary page hide still deactivates and cancels login work')
+assert.equal(hidden.counts().suspend, 1)
+assert.equal(hidden.counts().resume, 1)
+let releaseSystemLogin
+const systemHidden = await pageFixture({ state: bound, systemAuthentication: true,
+  loginResult: { wait: new Promise(resolve => { releaseSystemLogin = resolve }), value: { token: 'native-token' } } })
+const systemLoginRequest = systemHidden.controller.login()
+await new Promise(resolve => setImmediate(resolve))
+systemHidden.hide(); systemHidden.show()
+assert.equal(systemHidden.counts().cancel, 0, 'a system-auth hide suspends instead of cancelling the login')
+assert.equal(systemHidden.counts().suspend, 1)
+assert.equal(systemHidden.counts().resume, 1)
+releaseSystemLogin(); await systemLoginRequest
+assert.equal(systemHidden.counts().navigations, 1, 'the system-auth login may finish after foreground resume')
+let releaseUnloadLogin
+const systemUnload = await pageFixture({ state: bound, systemAuthentication: true,
+  loginResult: { wait: new Promise(resolve => { releaseUnloadLogin = resolve }), value: { token: 'late-token' } } })
+const systemUnloadRequest = systemUnload.controller.login()
+await new Promise(resolve => setImmediate(resolve))
+systemUnload.dispose()
+assert.equal(systemUnload.counts().cancel, 1, 'unmount still forcibly cancels an active system prompt')
+releaseUnloadLogin(); await systemUnloadRequest
+assert.equal(systemUnload.counts().navigations, 0)
+const oldPage = {}, newPage = {}
+const replacedPage = await pageFixture({ state: bound, systemAuthentication: true, pages: [oldPage],
+  loginResult: { wait: new Promise(resolve => { releaseUnloadLogin = resolve }), value: { token: 'old-page-token' } } })
+replacedPage.show() // Capture the owning page before the login prompt starts.
+const replacedPageLogin = replacedPage.controller.login()
+await new Promise(resolve => setImmediate(resolve))
+replacedPage.replacePage(newPage)
+replacedPage.hide()
+assert.equal(replacedPage.counts().cancel, 1, 'an onHide caused by navigation to a different page cancels the old login')
+releaseUnloadLogin(); await replacedPageLogin
+assert.equal(replacedPage.counts().navigations, 0, 'a stale old-page result cannot navigate after page ownership changes')
+let releaseCapability
+const staleCapability = await pageFixture({ state: bound, platform: 'web', support: { supported: false, enrolled: false },
+  capabilityWait: new Promise(resolve => { releaseCapability = resolve }) })
+const staleCapabilityRequest = staleCapability.controller.prefer()
+await new Promise(resolve => setImmediate(resolve))
+staleCapability.hide(); staleCapability.show(); releaseCapability()
+assert.equal(await staleCapabilityRequest, true, 'an old capability check must not resume fallback login after leaving the page')
+assert.equal(staleCapability.counts().attempts, 0)
+const unsupportedWeb = await pageFixture({ state: bound, platform: 'web', support: { supported: false, enrolled: false } })
+assert.equal(await unsupportedWeb.controller.prefer(), false, 'a current unsupported browser still keeps its original login flow')
+let releaseHandoff
+const handingOff = await pageFixture({ state: bound, token: 'session', probe: { data: { id: 1 } },
+  onLoginWait: new Promise(resolve => { releaseHandoff = resolve }) })
+const handoffRequest = handingOff.controller.prefer()
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(handingOff.counts().navigations, 1)
+handingOff.hide()
+assert.equal(handingOff.loading.value, true, 'page-hide during successful navigation must keep the login page covered')
+releaseHandoff(); await handoffRequest
+
+// Real uni conditional preprocessing + SFC compilation verifies platform adapters and shared composable.
+const require = createRequire(import.meta.url)
+const { initPreContext } = require('@dcloudio/uni-cli-shared/dist/preprocess/context.js')
+const { preJs, preHtml } = require('@dcloudio/uni-cli-shared/dist/preprocess/index.js')
+const { parse, compileScript, compileTemplate } = require('@vue/compiler-sfc')
+for (const platform of ['app', 'h5', 'mp-weixin']) {
+  initPreContext(platform)
+  const bridge = preJs(readFileSync(new URL('../../src/utils/biometric-login.js', import.meta.url), 'utf8'))
+  assert.equal(bridge.includes("from '@/uni_modules/ftx-biometric-login'"), platform === 'app')
+  const quickLogin = preJs(readFileSync(new URL('../../src/utils/quick-login.js', import.meta.url), 'utf8'))
+  assert.equal(quickLogin.includes("import { biometricLogin } from './biometric-login.js'"), platform === 'app')
+  assert.equal(quickLogin.includes("from './passkey-client-core.mjs'"), platform === 'h5')
+  assert.equal(quickLogin.includes("from './soter-client-core.mjs'"), platform === 'mp-weixin')
+  assert.equal(quickLogin.includes('mfaSetupTicket: ticket'), true, `${platform} setup login forwards its ticket`)
+  for (const file of ['src/pages/index/index.vue', 'src/pages-dark/index/index.vue', 'src/pages/change-password/change-password.vue',
+    'src/pages-dark/change-password/change-password.vue', 'src/pages-nonTheme/account-security.vue', 'src/components/H5LoginShell.vue',
+    'src/components/WechatLoginEntry.vue', 'src/components/QuickLoginAccountPicker.vue', 'src/components/MfaSecurity.vue', 'src/components/MfaLoginPanel.vue']) {
+    const source = readFileSync(new URL('../../' + file, import.meta.url), 'utf8')
+    const { descriptor, errors } = parse(preJs(preHtml(source)), { filename: file })
+    assert.deepEqual(errors, [], `${platform} ${file} parse`)
+    const script = compileScript(descriptor, { id: 'biometric-check' })
+    const template = compileTemplate({ source: descriptor.template.content, filename: file, id: 'biometric-check', compilerOptions: { bindingMetadata: script.bindings } })
+    assert.deepEqual(template.errors, [], `${platform} ${file} template`)
+    if (['src/pages/index/index.vue', 'src/pages-dark/index/index.vue'].includes(file)) {
+      assert.ok(script.content.includes('use-biometric-login.js'), `${platform} ${file} uses the shared login controller`)
+    }
+    if (file === 'src/components/MfaLoginPanel.vue') {
+      assert.equal(script.content.includes("from '@/utils/quick-login.js'"), platform !== 'other', `${platform} MFA panel platform imports`)
+    }
+  }
+}
+console.log('Biometric/MFA frontend: setup ticket handoff, one-time offer, settings, fallback, stale/failed enrollment, server isolation, session resume, lifecycle suspend/cancel, auto-priority, cancellation, 3-platform SFC compilation passed.')

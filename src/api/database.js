@@ -601,3 +601,11 @@ export function updateAdminIdentityEvidence(id, data) {
 export function batchDatabaseRecords(tableName, action, keys, data = {}) {
   return request({ url: `/api/admin/tables/${encodeURIComponent(tableName)}/batch`, method: 'POST', data: { action, keys, data }, needAuth: true })
 }
+
+export function getAdminTableColumns(tableName) {
+  return request({ url: `/api/admin/tables/${encodeURIComponent(tableName)}/columns`, method: 'GET', needAuth: true })
+}
+
+export function getAdminDatabaseRelations(userId) {
+  return request({ url: '/api/admin/database/relations', method: 'GET', needAuth: true, params: userId == null ? {} : { userId } })
+}

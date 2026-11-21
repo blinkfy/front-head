@@ -54,7 +54,7 @@ import AppTencentMap from '@/components/AppTencentMap.vue'
 // #endif
 import { liveLocations, liveLocationState } from '@/utils/live-location.js'
 import { LOCATION_END_LABELS, locationDistance } from '@/utils/live-location-core.mjs'
-import { wgs84ToGcj02 } from '@/utils/live-location-coordinates.mjs'
+import { wgs84ToGcj02 } from '@/utils/map/coordinates.mjs'
 import { ThemeManager } from '@/utils/theme.js'
 import { androidRealtimeAvailable, androidBackgroundMask } from '@/utils/android-realtime.js'
 import { liveLocationTracker, webLocationAvailable } from '@/utils/live-location-tracker.js'

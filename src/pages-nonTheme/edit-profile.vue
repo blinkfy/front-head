@@ -283,7 +283,7 @@ import { nicknameError } from '@/utils/wechat-profile.mjs'
 import { getCurrentAddress, resolveLocationAddress } from '@/utils/location-address.js'
 import { getUserLocationOnce } from '@/utils/location.js'
 // #ifndef H5
-import { wgs84ToGcj02 } from '@/utils/live-location-coordinates.mjs'
+import { wgs84ToGcj02 } from '@/utils/map/coordinates.mjs'
 // #endif
 import { chooseMiniLocation, isLocationCancelled } from '@/utils/mini-location.js'
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js'

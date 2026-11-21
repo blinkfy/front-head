@@ -63,3 +63,13 @@
 2. 安装依赖：`npm install`
 3. 运行本地开发服务器 (H5平台)：`npm run dev:h5` 
 4. 若需微信小程序端运行，则执行：`npm run dev:mp-weixin` ，并在微信开发者工具中导入对应编译后目录 (`dist/dev/mp-weixin`)。
+
+### 前端脚本
+
+| 目录 | 用途 |
+| --- | --- |
+| `scripts/build/` | Vite 插件、独立通话页面构建和微信小程序编译后处理。通过 `package.json` 的构建命令执行。 |
+| `scripts/verify/` | 源码、组件、资源和跨端回归。日常入口是 `npm run check:mojibake`、`npm run check:miniapp-styles` 和 `npm run test:resilience`。也可在前端目录运行 `node scripts/verify/test-map-point-list.mjs` 等单项验证。 |
+| `scripts/tools/` | 按需运行的资源生成和原生集成工具。圆码的工具、依赖与重建输入集中在 `scripts/tools/roundcode/`。 |
+
+部分专项校验需要编译产物、原生工具链或历史对比样本。运行前查看脚本开头和对应业务文档。

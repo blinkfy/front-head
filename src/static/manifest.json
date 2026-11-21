@@ -1650,5 +1650,21 @@
     "recommended_size": 64,
     "file": "icons/recycling_photo_table_64.webp.png",
     "mp_file": "icons/recycling_photo_table_64.webp.png"
+  },
+  {
+    "id": "bin_report_photo_table",
+    "zh_name": "垃圾桶报错照片表",
+    "category": "admin",
+    "recommended_size": 48,
+    "file": "icons/bin_report_photo_table_64.webp.png",
+    "mp_file": "icons/bin_report_photo_table_64.webp.png"
+  },
+  {
+    "id": "rag_search_stat_table",
+    "zh_name": "知识检索统计表",
+    "category": "admin",
+    "recommended_size": 64,
+    "file": "icons/rag_search_stat_table_64.webp.png",
+    "mp_file": "icons/rag_search_stat_table_64.webp.png"
   }
 ]

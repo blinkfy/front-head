@@ -13,9 +13,15 @@ export function binReports(bin) {
   return []
 }
 
+export function binReportCount(bin) {
+  const count = bin?.reportCount
+  if (count !== undefined && count !== null && count !== '' && Number.isFinite(Number(count)) && Number(count) >= 0) return Number(count)
+  return binReports(bin).length
+}
+
 export function binMapLabel(bin) {
   const name = bin.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶'
-  return `${name}${bin.adminRecord && bin.review !== true ? ' · 未通过审核' : ''}${binReports(bin).length ? ' · 有报错' : ''}`
+  return `${name}${bin.adminRecord && bin.review !== true ? ' · 未通过审核' : ''}${binReportCount(bin) ? ' · 有报错' : ''}`
 }
 
 // 权限来自服务端；普通用户仍走原来的附近桶接口。
@@ -57,7 +63,7 @@ export function useMapAdminBins() {
       code: 0,
       data: result.data.list.filter(item => item.latitude != null && item.longitude != null && Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)) && Math.abs(Number(item.latitude)) <= 90 && Math.abs(Number(item.longitude)) <= 180).map(item => ({
         ...toMapDisplayPoint(item), adminRecord: true, description: item.describe, image: item.imagePath,
-        review: item.review === true || item.review === 1, errorReport: binReports(item)
+        review: item.review === true || item.review === 1, reportCount: binReportCount(item)
       })),
       pagination: { total: Number(result.data.total) || 0 }
     }

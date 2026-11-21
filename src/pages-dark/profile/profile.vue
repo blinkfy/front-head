@@ -856,7 +856,7 @@ function go2048() {
 function goAdminAISettings() {
   verifyAdminPermission().then(hasPermission => {
     if (hasPermission) {
-      uni.navigateTo({ url: '/pages-admin/admin-ai-settings' })
+      uni.navigateTo({ url: '/pages-admin/service-setting' })
     }
   })
 }

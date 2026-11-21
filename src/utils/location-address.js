@@ -1,6 +1,6 @@
 import { getUserLocationOnce } from '@/utils/location'
 import { reverseGeocoder } from '@/api/map'
-import { wgs84ToGcj02 } from '@/pages-nonTheme/utils/recycling-geometry.mjs'
+import { wgs84ToGcj02 } from '@/utils/map/coordinates.mjs'
 
 export async function resolveLocationAddress(latitude, longitude, accuracy) {
   try {

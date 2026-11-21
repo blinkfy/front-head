@@ -71,7 +71,8 @@ import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref
 // #ifndef H5
 import { searchPlaces } from '@/api/map'
 // #endif
-import { distanceMeters, gcj02ToWgs84, geometryBounds, geometryError, normalizeGeometry, normalizePoint, wgs84ToGcj02 } from '../utils/recycling-geometry.mjs'
+import { distanceMeters, geometryBounds, geometryError, normalizeGeometry, normalizePoint } from '../utils/recycling-geometry.mjs'
+import { gcj02ToWgs84, wgs84ToGcj02 } from '@/utils/map/coordinates.mjs'
 // #ifdef H5
 import { createPreferredWebMap } from '@/utils/preferred-web-map.js'
 import { searchMapPlaces } from '@/utils/map-place-search.js'

@@ -1,8 +1,3 @@
-import { wgs84ToGcj02 as convertWgs84ToGcj02 } from '../../utils/live-location-coordinates.mjs'
-
-export function wgs84ToGcj02(point, longitude) {
-  return typeof point === 'object' ? convertWgs84ToGcj02(point.latitude, point.longitude) : convertWgs84ToGcj02(point, longitude)
-}
 export const EARTH_RADIUS_METERS = 6371008.8
 const EPSILON = 1e-10
 const finite = value => typeof value === 'number' && Number.isFinite(value)
@@ -99,17 +94,4 @@ export function geometryBounds(value) {
   const latDelta = delta * 180 / Math.PI
   const lngDelta = Math.asin(Math.min(1, Math.sin(delta) / Math.cos(geometry.center.latitude * Math.PI / 180))) * 180 / Math.PI
   return { south: geometry.center.latitude - latDelta, north: geometry.center.latitude + latDelta, west: geometry.center.longitude - lngDelta, east: geometry.center.longitude + lngDelta }
-}
-// Iteratively invert the existing local WGS84 -> GCJ02 transform (no network/key).
-export function gcj02ToWgs84(latitude, longitude) {
-  if (latitude && typeof latitude === 'object') { longitude = latitude.longitude; latitude = latitude.latitude }
-  let result = { latitude, longitude }
-  if (!normalizePoint(result)) return null
-  for (let i = 0; i < 6; i++) {
-    const shifted = wgs84ToGcj02(result.latitude, result.longitude)
-    const latError = shifted.latitude - latitude, lngError = shifted.longitude - longitude
-    result = { latitude: result.latitude - latError, longitude: result.longitude - lngError }
-    if (Math.abs(latError) + Math.abs(lngError) < 1e-9) break
-  }
-  return normalizePoint(result)
 }

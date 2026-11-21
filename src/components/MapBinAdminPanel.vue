@@ -10,10 +10,10 @@
         <text>{{ bin.review ? '已通过审核' : '待审核' }}</text>
       </view>
     </view>
-    <view class="report-summary mpwx-view" :class="{ 'has-reports': visibleReports.length }">
-      <ManifestIcon :id="visibleReports.length ? 'dark_alert' : 'confirm'" class="summary-icon" />
-      <text>{{ visibleReports.length ? `收到 ${visibleReports.length} 条点位反馈` : '暂无用户反馈' }}</text>
-      <view v-if="visibleReports.length" class="summary-action mpwx-view" @click="showReports = !showReports">
+    <view class="report-summary mpwx-view" :class="{ 'has-reports': reportCount }">
+      <ManifestIcon :id="reportCount ? 'dark_alert' : 'confirm'" class="summary-icon" />
+      <text>{{ reportCount ? `收到 ${reportCount} 条点位反馈` : '暂无用户反馈' }}</text>
+      <view v-if="reportCount || showReports" class="summary-action mpwx-view" @click="toggleReports">
         {{ showReports ? '收起' : '查看' }}
       </view>
     </view>
@@ -42,12 +42,18 @@
           <view v-if="visibleReports.length" class="clear-reports mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="!busy && !imageProcessing && (confirmClearReports = true)">清空记录</view>
         </view>
         <view v-if="confirmClearReports" class="clear-confirm mpwx-view">
-          <text class="clear-confirm-copy">将清空此点位的 {{ visibleReports.length }} 条反馈，点位资料不会删除。</text>
+          <text class="clear-confirm-copy">将清空此点位的 {{ reportCount }} 条反馈，点位资料不会删除。</text>
           <view class="clear-confirm-actions mpwx-view">
             <view class="keep-reports mpwx-view" @click="confirmClearReports = false">保留记录</view>
             <view class="confirm-clear mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="!busy && !imageProcessing && removeReports()">{{ busy ? '清理中…' : '确认清空' }}</view>
           </view>
         </view>
+        <view v-if="reportsLoading" class="reports-state mpwx-view">正在加载反馈…</view>
+        <view v-else-if="reportsError" class="reports-state reports-error mpwx-view">
+          <text>{{ reportsError }}</text>
+          <view class="summary-action mpwx-view" @click="loadReports">重试</view>
+        </view>
+        <view v-else-if="reportsLoaded && !visibleReports.length" class="reports-state mpwx-view">暂无反馈记录</view>
         <view v-for="(report, index) in visibleReports" :key="index" class="report mpwx-view">
           <text class="report-reason">{{ report.reason || '未填写原因' }}</text>
           <text class="muted">{{ report.createdAt || '' }} · {{ report.userId || '匿名用户' }}</text>
@@ -104,8 +110,8 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { approveBin, rejectBin, updateBin, deleteBin, clearBinErrorReports } from '@/api/database'
-import { binReports } from '@/utils/map-admin-bins'
+import { approveBin, rejectBin, updateBin, deleteBin, getBinErrorReports, clearBinErrorReports } from '@/api/database'
+import { binReportCount, binReports } from '@/utils/map-admin-bins'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
 import { config } from '@/api/config.js'
@@ -114,7 +120,12 @@ import { binPointPhotoKey, getBinPointPhoto } from '@/utils/bin-point-photo.js'
 import { previewTrashBinImage, resolveTrashBinImage } from '@/utils/trash-bin-image'
 const props = defineProps({ bin: { type: Object, required: true }, dark: Boolean })
 const emit = defineEmits(['updated'])
-const reports = computed(() => binReports(props.bin))
+const reports = ref([])
+const reportsLoaded = ref(false)
+const loadedReportCount = ref(null)
+const reportsLoading = ref(false)
+const reportsError = ref('')
+let reportsRequestId = 0
 const imageChanged = ref(false)
 const fallbackImage = ref('')
 const imageFailed = ref(false)
@@ -132,6 +143,12 @@ watch(() => props.bin, () => {
   const bin = props.bin
   editing.value = false
   showReports.value = false
+  reportsRequestId += 1
+  reports.value = []
+  reportsLoaded.value = false
+  loadedReportCount.value = null
+  reportsLoading.value = false
+  reportsError.value = ''
   confirmClearReports.value = false
   clearedReportsForId.value = null
   imageChanged.value = false
@@ -140,7 +157,33 @@ watch(() => props.bin, () => {
   photoRequestKey.value = ''
   draft.value = { name: bin.name || '', describe: bin.description || '', type: bin.type || 'normal', status: bin.status || 'offline', latitude: String(bin.sourceLatitude ?? bin.latitude ?? ''), longitude: String(bin.sourceLongitude ?? bin.longitude ?? ''), imagePath: bin.hasImage === false ? '' : bin.imagePath || bin.image || '', callback_url: bin.callback_url || '' }
 }, { immediate: true })
+const reportCount = computed(() => String(props.bin.id) === String(clearedReportsForId.value) ? 0 : loadedReportCount.value ?? binReportCount(props.bin))
 const visibleReports = computed(() => String(props.bin.id) === String(clearedReportsForId.value) ? [] : reports.value)
+async function loadReports() {
+  if (reportsLoading.value) return
+  const id = props.bin.id
+  const requestId = ++reportsRequestId
+  reportsLoading.value = true
+  reportsError.value = ''
+  try {
+    const result = await getBinErrorReports(id)
+    if (requestId !== reportsRequestId || String(props.bin.id) !== String(id)) return
+    if (result?.code !== 0) throw new Error(result?.msg || '反馈加载失败')
+    const data = result.data
+    const list = Array.isArray(data) ? data : Array.isArray(data?.list) ? data.list : Array.isArray(data?.errorReport) ? data.errorReport : []
+    reports.value = list
+    reportsLoaded.value = true
+    loadedReportCount.value = list.length
+  } catch (error) {
+    if (requestId === reportsRequestId && String(props.bin.id) === String(id)) reportsError.value = error.message || '反馈加载失败'
+  } finally {
+    if (requestId === reportsRequestId && String(props.bin.id) === String(id)) reportsLoading.value = false
+  }
+}
+function toggleReports() {
+  showReports.value = !showReports.value
+  if (showReports.value && !reportsLoaded.value) loadReports()
+}
 async function loadPointPhoto() {
   const key = binPointPhotoKey(props.bin)
   if (!props.bin.hasImage || !key || photoRequestKey.value === key) return ''
@@ -219,6 +262,9 @@ function removeReports() {
   const id = props.bin.id
   submit(id, () => clearBinErrorReports(id), () => {
     clearedReportsForId.value = id
+    loadedReportCount.value = 0
+    reports.value = []
+    reportsLoaded.value = true
     confirmClearReports.value = false
   })
 }
@@ -271,6 +317,8 @@ function save() {
 .disabled { opacity: .48; }
 .details { max-height: 540rpx; height: 540rpx; margin-top: 18rpx; padding: 18rpx; box-sizing: border-box; border: 1rpx solid #e5ebef; border-radius: 16rpx; background: #ffffff; }
 .reports-heading { margin-bottom: 12rpx; }
+.reports-state { display: flex; align-items: center; gap: 12rpx; padding: 18rpx 0; color: #8795a3; font-size: 21rpx; }
+.reports-error { color: #bd4d4d; }
 .reports-heading > .mpwx-view:first-child, .form-heading { display: flex; flex-direction: column; gap: 4rpx; }
 .group-title { color: #27384a; font-size: 23rpx; font-weight: 700; }
 .clear-reports { padding: 10rpx 16rpx; color: #bd4d4d; background: #fff0ef; border-radius: 12rpx; font-size: 20rpx; }

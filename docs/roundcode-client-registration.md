@@ -47,7 +47,7 @@
 首次使用若缺少 Unicorn 2.1.4、Capstone 5.0.6、Pillow，会把所需 wheel 安装到当前 Python 专属的用户缓存，不改全局/设备项目依赖环境。首次安装需要网络和该 Python 的 pip；后续离线复用。安装失败不会影响原微信码和普通码。为避免首次等待，也可提前运行：
 
 ```text
-python scripts/roundcode_decoder.py --prepare
+python scripts/tools/roundcode/roundcode_decoder.py --prepare
 ```
 
 模拟器目录使用 `python roundcode_decoder.py --prepare`。受控离线环境可先安装 `requirements-roundcode.txt` 中依赖，并设置 `FTX_ROUNDCODE_AUTO_INSTALL=0` 禁止自动安装。缓存可通过 `FTX_ROUNDCODE_CACHE` 指定。保留整个 `roundcode_assets` 目录，不能只复制设备主脚本。
@@ -61,12 +61,12 @@ python scripts/roundcode_decoder.py --prepare
 若希望 Python 主机也代领其他端任务，可额外运行：
 
 ```text
-python scripts/roundcode_worker.py --server https://your-backend.example
+python scripts/tools/roundcode/roundcode_worker.py --server https://your-backend.example
 ```
 
 仅这项共享 worker 功能需要在后端与受控主机配置相同的 `ROUND_CODE_WORKER_KEY`（至少 32 字符）。密钥不要写进前端、Git、命令参数或日志。不运行 worker 时，设备只处理自己生成的码，不轮询共享队列。
 
-资源来源和逐文件 SHA-256 保存在 runtime.zip 的 manifest.json；包整体校验值在 runtime.sha256。开发者可用 `scripts/build-roundcode-runtime.py` 从固定输入重建资源，ARM64 解码库位于 `scripts/roundcode_inputs/libwechatQrMod.so`，脚本会校验其 SHA-256。只会在设备端使用，Node 服务无需安装这些 Python 依赖。
+资源来源和逐文件 SHA-256 保存在 runtime.zip 的 manifest.json；包整体校验值在 runtime.sha256。开发者可用 `scripts/tools/roundcode/build-roundcode-runtime.py` 从固定输入重建资源，ARM64 解码库位于 `scripts/tools/roundcode/roundcode_inputs/libwechatQrMod.so`，脚本会校验其 SHA-256。只会在设备端使用，Node 服务无需安装这些 Python 依赖。
 
 ## 验证边界
 

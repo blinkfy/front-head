@@ -35,13 +35,13 @@ const renderedHtml = computed(() => renderMarkdown(props.markdown || ''))
       </template>
 
       <template v-else-if="block.type === 'code'">
-        <text class="chat-markdown-code-block" selectable>{{ block.text }}</text>
+        <text class="chat-markdown-code-block" selectable user-select>{{ block.text }}</text>
       </template>
 
       <template v-else-if="block.type === 'list'">
         <view v-for="(item, itemIndex) in block.items" :key="itemIndex" class="chat-markdown-list-row">
           <text class="chat-markdown-list-marker">{{ block.ordered ? `${itemIndex + 1}.` : '•' }}</text>
-          <text class="chat-markdown-inline">
+          <text class="chat-markdown-inline" selectable user-select>
             <text
               v-for="(token, tokenIndex) in item"
               :key="tokenIndex"
@@ -56,13 +56,13 @@ const renderedHtml = computed(() => renderMarkdown(props.markdown || ''))
           <view class="chat-markdown-table">
             <!-- 表头 -->
             <view v-if="block.header" class="chat-markdown-table-row header-row">
-              <text v-for="(cell, cellIndex) in block.header" :key="cellIndex" class="chat-markdown-table-cell header-cell">
+              <text v-for="(cell, cellIndex) in block.header" :key="cellIndex" class="chat-markdown-table-cell header-cell" selectable user-select>
                 <text v-for="(token, tokenIndex) in cell" :key="tokenIndex" :class="[`chat-markdown-inline-${token.type}`]">{{ token.text }}</text>
               </text>
             </view>
             <!-- 表体 -->
             <view v-for="(row, rowIndex) in block.rows" :key="rowIndex" class="chat-markdown-table-row">
-              <text v-for="(cell, cellIndex) in row" :key="cellIndex" class="chat-markdown-table-cell">
+              <text v-for="(cell, cellIndex) in row" :key="cellIndex" class="chat-markdown-table-cell" selectable user-select>
                 <text v-for="(token, tokenIndex) in cell" :key="tokenIndex" :class="[`chat-markdown-inline-${token.type}`]">{{ token.text }}</text>
               </text>
             </view>
@@ -71,7 +71,7 @@ const renderedHtml = computed(() => renderMarkdown(props.markdown || ''))
       </template>
 
       <template v-else>
-        <text class="chat-markdown-inline">
+        <text class="chat-markdown-inline" selectable user-select>
           <text
             v-for="(token, tokenIndex) in block.tokens"
             :key="tokenIndex"

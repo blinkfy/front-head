@@ -1,5 +1,5 @@
 import { searchPlaces } from '../api/map.js'
-import { wgs84ToGcj02, gcj02ToWgs84 } from '../pages-nonTheme/utils/recycling-geometry.mjs'
+import { wgs84ToGcj02, gcj02ToWgs84 } from './map/coordinates.mjs'
 
 // Browser editors use WGS84 even when their basemap is Tencent.
 export async function searchMapPlaces(keyword, { latitude = 35.86, longitude = 104.19, limit = 5 } = {}) {

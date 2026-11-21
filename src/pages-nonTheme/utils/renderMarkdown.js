@@ -16,6 +16,53 @@ md.use(mdTable, {
   autolabel: false
 })
 
+// Keep raw HTML and remote images out of the clipboard's rich-text payload.
+const clipboardMarkdown = new MarkdownIt({ html: false, linkify: true }).use(mdTable)
+clipboardMarkdown.renderer.rules.image = (tokens, index) => clipboardMarkdown.utils.escapeHtml(tokens[index].content)
+
+export function markdownClipboardContent(markdown) {
+  const source = String(markdown || '').trim()
+  const tokens = clipboardMarkdown.parse(source, {})
+  const lists = []
+  let text = ''
+  for (const token of tokens) {
+    switch (token.type) {
+      case 'inline':
+        text += token.children.map(child => {
+          if (child.type === 'softbreak' || child.type === 'hardbreak') return '\n'
+          return ['text', 'code_inline', 'image'].includes(child.type) ? child.content : ''
+        }).join('')
+        break
+      case 'fence':
+      case 'code_block':
+        text += token.content + '\n'
+        break
+      case 'bullet_list_open': lists.push(null); break
+      case 'ordered_list_open': lists.push(Number(token.attrGet('start') || 1)); break
+      case 'bullet_list_close':
+      case 'ordered_list_close': lists.pop(); break
+      case 'list_item_open': {
+        const index = lists.length - 1
+        const marker = lists[index] == null ? '•' : `${lists[index]++}.`
+        if (text && !text.endsWith('\n')) text += '\n'
+        text += '  '.repeat(Math.max(0, index)) + marker + ' '
+        break
+      }
+      case 'td_close':
+      case 'th_close': text += '\t'; break
+      case 'tr_close': text = text.trimEnd() + '\n'; break
+      case 'heading_close':
+      case 'paragraph_close':
+        if (!token.hidden) text += '\n\n'
+        break
+      case 'list_item_close':
+        if (!text.endsWith('\n')) text += '\n'
+        break
+    }
+  }
+  return { text: text.trim(), html: clipboardMarkdown.renderer.render(tokens, clipboardMarkdown.options, {}) }
+}
+
 // Use a class so mini-program styles never need the unsupported `hr` tag selector.
 md.renderer.rules.hr = () => '<hr class="md-divider">\n'
 md.renderer.rules.paragraph_open = (tokens, index, options, environment, renderer) => {

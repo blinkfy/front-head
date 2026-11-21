@@ -1,5 +1,5 @@
 import { ensureFeaturePermission } from './feature-permission.js'
-import { wgs84ToGcj02 } from './live-location-coordinates.mjs'
+import { wgs84ToGcj02 } from './map/coordinates.mjs'
 
 // 共享定位工具：返回 Promise<{latitude, longitude}>，在 H5 环境回退到 navigator.geolocation
 export async function getUserLocationOnce(coordType = null, { interactive = false, isCurrent = () => true, includeAccuracy = false, highAccuracy = false } = {}) {
