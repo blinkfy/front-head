@@ -49,6 +49,7 @@ export const messageActionsMethods = {
             try {
                 if (message.status === 'sent') await this.deleteMessageIds([String(message.id)])
                 this.messages = this.messages.filter(item => String(item.id) !== String(message.id))
+                for (const item of this.messages) if (String(item.refId) === String(message.id)) item.refUnavailable = true
                 this.saveMessagesToStorage()
             } catch (_) { uni.showToast({ title: '删除失败，请重试', icon: 'none' }) }
         } else if (action === 'recall') {
@@ -78,6 +79,7 @@ export const messageActionsMethods = {
             const ids = this.selectedMessageIds.slice()
             await this.deleteMessageIds(ids)
             this.messages = this.messages.filter(message => !ids.includes(String(message.id)))
+            for (const message of this.messages) if (ids.includes(String(message.refId))) message.refUnavailable = true
             this.saveMessagesToStorage()
             this.cancelMessageSelection()
         } catch (_) { uni.showToast({ title: '删除失败，请重试', icon: 'none' }) }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
+import { installLoginDeviceMetadata } from '../../src/utils/login-device-metadata.mjs'
 
 const file = new URL('../../src/pages-nonTheme/account-security.vue', import.meta.url)
 const source = await readFile(file, 'utf8')
@@ -31,8 +32,8 @@ function conditionalSource(input, target) {
   return lines.join('\n')
 }
 
-function extractFunction(input, name) {
-  const start = input.indexOf(`async function ${name}(`)
+function extractFunction(input, name, prefix = 'async ') {
+  const start = input.indexOf(`${prefix}function ${name}(`)
   assert.notEqual(start, -1, `${name} exists`)
   const brace = input.indexOf('{', start)
   let depth = 0
@@ -88,11 +89,12 @@ function instance(token, getPreviousLogin) {
   const oldLoad = page.run()
   token.value = 'account-C'
   const newLoad = page.run()
-  newRequest.resolve({ code: 0, data: { loggedInAt: '2026-11-06T06:00:00Z', location: 'Current account', method: 'wechat' } })
+  newRequest.resolve({ code: 0, data: { loggedInAt: '2026-11-06T06:00:00Z', location: 'Current account', method: 'wechat', deviceLabel: '华为 · 微信小程序' } })
   await newLoad
   oldRequest.resolve({ code: 0, data: { loggedInAt: '2026-11-06T05:00:00Z', location: 'Previous account', method: 'password' } })
   await oldLoad
   assert.equal(page.recentLogin.value.location, 'Current account', 'late prior account response cannot overwrite current account')
+  assert.equal(page.recentLogin.value.deviceLabel, '华为 · 微信小程序')
   console.log('PASS delayed response cannot overwrite newer account')
 }
 {
@@ -115,5 +117,57 @@ function instance(token, getPreviousLogin) {
   await page.run()
   assert.equal(page.recentLogin.value, null, 'first login has no previous record to display')
   assert.match(source, />上一次登录</)
-  console.log('PASS first login hides previous-login card')
+  console.log('PASS first login has no previous-login summary')
+}
+
+{
+  let calls = 0
+  const oldRequest = deferred(), newRequest = deferred()
+  const context = {
+    uni: { getStorageSync: () => 'account-A' },
+    getLoginHistory: () => (++calls === 1 ? oldRequest.promise : newRequest.promise),
+    loginHistory: { value: [] }, loginHistoryOpen: { value: false },
+    loginHistoryLoading: { value: false }, loginHistoryError: { value: false }
+  }
+  const functions = [extractFunction(testSource, 'loadLoginHistory'),
+    extractFunction(testSource, 'closeLoginHistory', ''), extractFunction(testSource, 'toggleLoginHistory', '')].join('\n')
+  vm.runInNewContext(`let loginHistoryRequest = 0; ${functions}; globalThis.toggle = toggleLoginHistory`, context)
+  assert.equal(calls, 0)
+  context.toggle()
+  assert.equal(context.loginHistoryOpen.value, true)
+  assert.equal(context.loginHistoryLoading.value, true)
+  context.toggle()
+  assert.equal(context.loginHistoryOpen.value, false)
+  context.toggle()
+  newRequest.resolve({ code: 0, data: [{ loginId: 'new' }] })
+  await new Promise(resolve => setImmediate(resolve))
+  oldRequest.resolve({ code: 0, data: [{ loginId: 'old' }] })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(context.loginHistory.value[0].loginId, 'new')
+  assert.equal(context.loginHistoryLoading.value, false)
+  console.log('PASS history loads on demand and discards a closed request')
+}
+
+{
+  const base = 'https://example.test'
+  const headerName = 'X-FTX-Login-Device'
+  let invoke
+  installLoginDeviceMetadata({
+    addInterceptor: (name, interceptor) => {
+      assert.equal(name, 'request')
+      invoke = interceptor.invoke
+    },
+    getDeviceInfo: () => ({ osName: 'Android', brand: '小米', model: 'Xiaomi 14', deviceId: 'must-not-send' })
+  }, base, 'app')
+  const options = (path, data, root = base) => ({ url: `${root}/api/${path}`, method: 'POST', header: { Authorization: 'session' }, data })
+  for (const request of [options('login'), options('biometric/login/finish'), options('registration/sessions/session-id/consume'), options('mfa/wechat/status', { consume: true })]) {
+    invoke(request)
+    assert.deepEqual(JSON.parse(decodeURIComponent(request.header[headerName])), { client: 'app', os: 'Android', brand: '小米', model: 'Xiaomi 14' })
+    assert.equal(request.header.Authorization, 'session')
+  }
+  for (const request of [options('login', null, 'https://other.test'), options('mfa/wechat/status'), options('registration/sessions/session-id/app-authorize'), options('userinfo')]) {
+    invoke(request)
+    assert.equal(request.header[headerName], undefined)
+  }
+  console.log('PASS device metadata is limited to login requests on this server')
 }

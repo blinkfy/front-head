@@ -62,7 +62,8 @@
                         </view>
                     </view>
                     <AdminDatabaseRelations v-if="!tablesCollapsed && showRelations" v-model:mode="relationMode" :tables="tables" :current="currentTable" :light="!isDark"
-                        :user-id="relationUserId" @select="selectRelationTable" @choose-user="chooseGraphUser" @exit-user="exitUserGraph" @user-records="openUserRecords" />
+                        :user-id="relationUserId" :initial-message-field="initialMessageField" @message-field-consumed="initialMessageField = ''"
+                        @select="selectRelationTable" @switch-table="selectTable" @field-focus="focusGraphField" @choose-user="chooseGraphUser" @exit-user="exitUserGraph" @user-records="openUserRecords" @account-insights="openAccountInsights" />
                 </view>
 
                 <AdminReadonlySql ref="sqlPanel" v-show="sqlExpanded" :light="!isDark" :list-sql="editorListSql" :list-sql-revision="listSqlRevision" :sync-sql="syncSqlToTable" @result="showSqlResult" @query-start="beginDirectSql" @query-end="directSqlPending = false" />
@@ -301,13 +302,17 @@
                         @stage="stageGridEdit" @submit="submitGridEdits" @discard="discardGridEdits" @edit="editSqlRecord" @delete="handleDelete" @select="toggleRecordSelection" />
                 </view>
                 <view id="database-records" class="data-card" v-else-if="currentTable">
-                    <view v-if="showingUserDrill" class="column-filter-notice" @click="openUserGraph({ id: relationUserId })">
+                    <view v-if="insight?.hidden && userDrill" class="column-filter-notice" @click="insight.hidden = false">
+                        返回{{ insight.kind === 'booking' ? '预约关联记录' : '账号分析' }} ›
+                    </view>
+                    <view v-else-if="showingUserDrill" class="column-filter-notice" @click="openUserGraph({ id: relationUserId })">
                         用户 #{{ relationUserId }} 的关联记录 · 返回图谱 ↑
                     </view>
                     <view class="data-header">
                         <text class="data-title">{{ getCurrentTableLabel() }}</text>
                         <text v-if="getTableMeta(currentTable)?.description" class="table-description">{{ getTableMeta(currentTable).description }}</text>
                         <view v-if="currentTable === 'AiSetting'" class="action-text-btn settings-link" @click="openAiSettings">前往 AI 服务设置</view>
+                        <view v-if="currentTable === 'UserCost'" class="action-text-btn settings-link" @click="showCostSummary = true">成本汇总</view>
                         <view class="data-actions" v-if="canEditCurrentTable()">
                             <template v-if="selectionMode">
                                 <text class="selection-count">已选{{ selectedRecordKeys.length }}条</text>
@@ -339,13 +344,13 @@
                         <view v-if="databaseView === 'table'" class="data-view-option data-column-option" @click="databaseGrid?.toggleColumns()">选择列</view>
                     </view>
                     <AdminDatabaseGrid v-if="databaseView === 'table'" ref="databaseGrid" :light="!isDark" :table="currentTable" :rows="tableData"
-                        :schema="getGenericSchema(currentTable)" :selection-mode="selectionMode"
+                        :schema="getGenericSchema(currentTable)" :focus-column="graphColumn" :selection-mode="selectionMode"
                         :editable="canEditCurrentTable()" :is-selected="isRecordSelected" :row-key="getTableRowKey"
                         :image-fields="getFieldImages" :user-names="genericUserNames" :user-id-fields="genericUserIdFields"
                         :edit-fields="getInlineEditFields()" :drafts="currentGridDrafts" :draft-key="getSelectionKey" :submitting="gridSubmitting"
                         :column-query="currentColumnQuery" @query-change="applyColumnQuery"
                         @stage="stageGridEdit" @submit="submitGridEdits" @discard="discardGridEdits"
-                        @edit="handleEdit" @delete="handleDelete" @select="toggleRecordSelection" @detail="recordDetail = $event" @user-graph="openUserGraph" @columns-change="onVisibleColumnsChange" />
+                        @edit="handleEdit" @delete="handleDelete" @select="toggleRecordSelection" @detail="recordDetail = $event" @user-graph="openUserGraph" @booking="openBookingInsights" @columns-change="onVisibleColumnsChange" />
                     <!-- 数据列表 -->
                     <view v-else class="data-list">
                         <view v-if="tableData.length > 0" class="data-item"
@@ -551,6 +556,7 @@
                                 <view v-if="currentTable === 'User'" class="item-action-btn graph" @click.stop="openUserGraph(item)">
                                     <ManifestIcon id="relationship_link_table" :scale="1.5" />
                                 </view>
+                                <view v-if="currentTable === 'BookingOrder'" class="item-action-btn graph" @click.stop="openBookingInsights(item)"><text>关联</text></view>
                                 <view v-if="!canEditCurrentTable() && !isSpecialTable(currentTable)" class="item-action-btn detail"
                                     @click.stop="recordDetail = item"><text>查看</text></view>
                                 <view v-if="canEditCurrentTable()" class="item-action-btn edit" @click.stop="handleEdit(item)">
@@ -613,6 +619,10 @@
 
             </view>
         </scroll-view>
+
+        <AdminRecordInsights v-if="insight" v-show="!insight.hidden" :key="insight.kind + ':' + insight.id"
+            :kind="insight.kind" :id="insight.id" :tables="tables" :user-data="insight.userData" :dark="isDark"
+            @close="insight = null" @evidence="openInsightEvidence" @user-records="openInsightRole" />
 
         <!-- 完整记录详情：直接使用本页已加载的数据，不额外请求后端。 -->
         <view v-if="recordDetail" class="modal-overlay" @click="recordDetail = null">
@@ -1052,6 +1062,7 @@
                 </view>
             </view>
         </view>
+        <AdminUserCostSummary v-if="showCostSummary" :dark="isDark" @close="showCostSummary = false" />
     </view>
     <view v-else>
         <div style="color:blue;font-size:36px;font-weight: bold;">404</div>
@@ -1073,6 +1084,8 @@ import { shortFieldLabels } from '@/utils/field-labels'
 import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
 import AdminDatabaseGrid from '@/components/AdminDatabaseGrid.vue'
 import AdminDatabaseRelations from '@/components/AdminDatabaseRelations.vue'
+import AdminRecordInsights from '@/components/AdminRecordInsights.vue'
+import AdminUserCostSummary from '@/components/AdminUserCostSummary.vue'
 import AdminReadonlySql from '@/components/AdminReadonlySql.vue'
 import { parseTableSql, stripMirroredUpperFilters, projectListSql, updateTableSqlQuery } from './admin-sql-sync.mjs'
 import { withUserCostTotal } from './user-cost-summary.mjs'
@@ -1091,9 +1104,12 @@ import {
 } from '@/api/database'
 
 const isDark = ref(false)
+const showCostSummary = ref(false)
 const sqlExpanded = ref(false)
 const showRelations = ref(false)
 const relationMode = ref('structure')
+const insight = ref(null)
+const userPickerOrigin = ref(null), initialMessageField = ref('')
 const relationUserId = ref(null), relationScrollTarget = ref(''), userDrill = ref(null)
 const listSql = ref('')
 const visibleSqlColumns = ref(null)
@@ -1388,6 +1404,15 @@ function onHistoryDeletedChange(event) {
 const databaseGrid = ref(null)
 const databaseView = ref('card')
 const upperFiltersExpanded = ref(false)
+const graphColumn = ref('')
+watch(currentTable, () => { graphColumn.value = '' })
+function focusGraphField(field) {
+    graphColumn.value = field?.table === currentTable.value ? field.column : ''
+    if (graphColumn.value && !sqlResult.value && databaseView.value === 'card') {
+        databaseView.value = 'table'
+        upperFiltersExpanded.value = false
+    }
+}
 function setDatabaseView(view) {
     if (view === 'card' && sqlResult.value && !syncSqlToTable(sqlResult.value.sql, { cardsOnly: true })) {
         uni.showToast({ title: '此查询无法转换为卡片记录筛选，请使用表格查看', icon: 'none' })
@@ -1731,7 +1756,7 @@ const totalPages = ref(0)
 const legacyTableCatalog = [
     { name: 'UserIdentity', label: '用户实名认证记录表', icon: 'user_identity_table' },
     { name: 'User', label: '用户表', icon: 'user_table' },
-    { name: 'UserCost', label: '用户累计成本表', icon: 'user_cost_table' },
+    { name: 'UserCost', label: '用户日成本表', icon: 'user_cost_table' },
     { name: 'BinReportPhoto', label: '垃圾桶报错照片表', icon: 'bin_report_photo_table' },
     { name: 'RagSearchStat', label: '知识检索统计表', icon: 'rag_search_stat_table' },
     { name: 'Device', label: '设备表', icon: 'device_table' },
@@ -1781,7 +1806,7 @@ const legacyTableCatalog = [
     { name: 'AlgorithmTelemetrySample', label: '算法遥测样本表', icon: 'algorithm_telemetry_sample_table' },
     { name: 'AlgorithmPrediction', label: '算法预测表', icon: 'algorithm_prediction_table' },
     { name: 'ShopProduct', label: '商城商品表', icon: 'shop_product_table' },
-    { name: 'UserLoginLocation', label: '用户登录位置表', icon: 'user_login_location_table' },
+    { name: 'UserLoginEvent', label: '用户登录记录表', icon: 'user_login_location_table' },
     { name: 'UserMfa', label: '用户多因素认证配置表', icon: 'shield_captcha' },
     { name: 'MfaChallenge', label: '多因素认证挑战表', icon: 'challenge_checklist' },
     { name: 'BiometricCredential', label: '生物识别凭据表', icon: 'biometric_credential_table' },
@@ -1789,7 +1814,9 @@ const legacyTableCatalog = [
     { name: 'PlatformLoginCredential', label: '平台登录凭据表', icon: 'platform_login_credential_table' },
     { name: 'PlatformLoginChallenge', label: '平台登录挑战表', icon: 'platform_login_challenge_table' },
     { name: 'CollectorProfile', label: '回收员资料表', icon: 'collector_profile_table' },
+    { name: 'CollectorProfileArea', label: '回收员资料范围表', icon: 'pin' },
     { name: 'CollectorApplication', label: '回收员申请表', icon: 'collector_application_table' },
+    { name: 'CollectorApplicationArea', label: '回收员申请范围表', icon: 'nearby_map' },
     { name: 'CollectorScheduleDay', label: '回收员单日排班表', icon: 'collector_availability_table' },
     { name: 'CollectorWeeklySchedule', label: '回收员每周排班表', icon: 'collector_weekly_schedule_table' },
     { name: 'RecyclingPhoto', label: '回收照片表', icon: 'recycling_photo_table' },
@@ -1805,7 +1832,7 @@ const legacyTableCatalog = [
 // 只调整表选择区的展示顺序；新表保持后端返回顺序，仍可自动显示。
 const tableSelectionOrder = [
     // 用户与账号安全
-    'User', 'UserCost', 'UserIdentity', 'UserLoginLocation', 'UserMfa', 'MfaChallenge',
+    'User', 'UserCost', 'UserIdentity', 'UserLoginEvent', 'UserMfa', 'MfaChallenge',
     'BiometricCredential', 'BiometricChallenge', 'PlatformLoginCredential', 'PlatformLoginChallenge', 'UserNotification',
     // 识别与 AI
     'History', 'AiSessionMeta', 'AiChatMessage', 'AiChatAction', 'AiSetting', 'RagSearchStat',
@@ -1818,7 +1845,7 @@ const tableSelectionOrder = [
     'ServicePoint', 'OperationTask', 'MaintenanceTask', 'SortingCenterEvent', 'AlgorithmTelemetrySample', 'AlgorithmPrediction',
     // 预约与回收
     'WasteType', 'BookingOrder', 'BookingOrderEvent', 'BookingChatBinding', 'BookingSlot', 'RecyclingLock',
-    'RecyclingServiceArea', 'CollectorProfile', 'CollectorApplication', 'CollectorScheduleDay', 'CollectorWeeklySchedule',
+    'RecyclingServiceArea', 'CollectorProfile', 'CollectorProfileArea', 'CollectorApplication', 'CollectorApplicationArea', 'CollectorScheduleDay', 'CollectorWeeklySchedule',
     'RecyclingPhoto', 'RecyclingRequest', 'RecyclingDelivery', 'RecyclingDeviceDelivery',
     // 商城、挑战和抽奖
     'ShopProduct', 'PurchaseRecord', 'ShopRecommendation', 'AchievementUnlock', 'ChallengeQuestion', 'ChallengeRecord',
@@ -2017,7 +2044,7 @@ async function hydrateMissingTableCounts(statsTables = []) {
 
 function getGenericSchema(tableName = currentTable.value) {
     const schema = tableSchemas.value?.[tableName]
-    if (tableName === 'UserCost' && Array.isArray(schema)) return [...schema,
+    if (tableName === 'UserCost' && Array.isArray(schema)) return [...schema.filter(field => !/^migrated(?:Qwen|Deepseek|Image|Speech|Identity)Cost$/.test(field.key)),
         { key: 'totalCost', label: '总成本（元）', type: 'DECIMAL', generated: true, readOnly: true }]
     return Array.isArray(schema) ? schema : []
 }
@@ -2238,15 +2265,38 @@ async function scrollToRelationSection(id) {
     await nextTick()
     relationScrollTarget.value = id
 }
+function openBookingInsights(row) {
+    if (row?.id != null) insight.value = { kind: 'booking', id: row.id, hidden: false }
+}
+function openAccountInsights(userData) {
+    insight.value = { kind: 'account', id: userData.user.id, userData, hidden: false }
+}
+function openInsightEvidence({ name, values, range, timeField }) {
+    if (!insight.value || !getTableMeta(name)) return
+    const filters = Object.entries(values).map(([field, value]) => ({ field, operator: 'equals', value: String(value) }))
+    if (!filters.length) return
+    if (range && timeField) {
+        filters.push({ field: timeField, operator: 'gte', value: range.from }, { field: timeField, operator: 'lt', value: range.to })
+    }
+    selectTable(name, { filters, columnsJoin: 'and', sortField: '', direction: '' })
+    insight.value.hidden = true
+    scrollToRelationSection('database-records')
+}
+function openInsightRole({ name, userId, fields }) {
+    openInsightEvidence({ name, values: { [fields[0]]: userId } })
+}
 function openUserGraph(row) {
     if (!row?.id) return
     relationUserId.value = row.id
-    relationMode.value = 'explore'
+    relationMode.value = userPickerOrigin.value?.mode || (showingUserDrill.value ? relationMode.value : 'explore')
+    initialMessageField.value = userPickerOrigin.value?.field || ''
+    userPickerOrigin.value = null
     showRelations.value = true
     tablesCollapsed.value = false
     scrollToRelationSection('database-relations')
 }
-function chooseGraphUser() {
+function chooseGraphUser(field) {
+    userPickerOrigin.value = { mode: relationMode.value, field: field || '' }
     relationUserId.value = null
     showRelations.value = false
     tablesCollapsed.value = true
@@ -2264,6 +2314,7 @@ function openUserRecords({ name, userId, fields }) {
     scrollToRelationSection('database-records')
 }
 function selectTable(table, userQuery = null) {
+    if (!userQuery && insight.value?.hidden) insight.value = null
     if (userDrill.value) {
         const { name, saved } = userDrill.value
         if (saved) columnQueries.value[name] = saved
@@ -3143,7 +3194,7 @@ async function handleDelete(item) {
     if (!canEditCurrentTable()) return
     showAppModal(page, {
         title: '确认删除',
-        content: `确定要删除这条记录吗？`,
+        content: currentTable.value === 'BookingOrder' ? '订单及关联的照片、事件、聊天绑定、通知和投递记录将被删除，聊天消息保留。已发送的推送无法撤回，进行中的预约会中断。确定删除吗？' : currentTable.value === 'User' ? '删除账号将同时删除其收发的私聊消息（包括对方的记录）和群内发言。担任群主的群优先转给管理员，其次转给普通成员；没有其他成员的群将被删除。确定继续吗？' : currentTable.value === 'ShopProduct' ? '商品将被删除，关联订单会保留并转至不可购买的占位商品。确定继续吗？' : '确定要删除这条记录吗？',
         confirmText: '删除',
         cancelText: '取消',
         confirmColor: '#ef4444',
@@ -3184,7 +3235,7 @@ function handleBulkDelete() {
     if (!records.length) return
     showAppModal(page, {
         title: '确认批量删除',
-        content: `确定删除当前页选中的 ${records.length} 条记录吗？此操作无法撤销。`,
+        content: currentTable.value === 'BookingOrder' ? `确定删除选中的 ${records.length} 条预约吗？关联照片、事件、聊天绑定、通知和投递记录也会删除，聊天消息保留；已发送的推送无法撤回。` : currentTable.value === 'User' ? `确定删除选中的 ${records.length} 个账号吗？其收发的私聊消息（包括对方的记录）和群内发言也将删除。群主的群优先转给管理员，其次转给普通成员；没有其他成员的群将被删除。` : currentTable.value === 'ShopProduct' ? `确定删除选中的 ${records.length} 件商品吗？关联订单会保留并转至不可购买的占位商品。` : `确定删除当前页选中的 ${records.length} 条记录吗？此操作无法撤销。`,
         confirmText: '批量删除',
         cancelText: '取消',
         confirmColor: '#ef4444',
@@ -3932,13 +3983,15 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12rpx 28rpx;
+    box-sizing: border-box;
+    min-height: 64px;
+    padding: 0 16px;
     position: relative;
 }
 
 .back-btn {
-    width: 80rpx;
-    height: 80rpx;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3962,9 +4015,9 @@ onUnmounted(() => {
 
 .title-text {
     color: #40e0ff;
-    font-size: 32rpx;
+    font-size: 20px;
     font-weight: 700;
-    letter-spacing: 2rpx;
+    letter-spacing: 0;
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
@@ -3973,8 +4026,8 @@ onUnmounted(() => {
 }
 
 .refresh-btn {
-    width: 60rpx;
-    height: 60rpx;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3984,6 +4037,14 @@ onUnmounted(() => {
     font-size: 24rpx;
     cursor: pointer;
     transition: all 0.3s ease;
+}
+
+.status-bar .back-btn :deep(.manifest-icon-back) { width: 40px !important; height: 40px !important; }
+.status-bar .back-btn :deep(.manifest-icon-back-image) { width: 27px; height: 27px; }
+.status-bar .refresh-btn :deep(.manifest-icon) { width: 24px !important; height: 24px !important; }
+
+@media (max-width: 600px) {
+    .title-text { font-size: 18px; }
 }
 
 .refresh-btn:active {

@@ -23,7 +23,7 @@
     <AppTencentMap :covered="showAddModal" ref="appMapRef" class="map-canvas" :latitude="center.latitude" :longitude="center.longitude" :scale="mapScale" :enable-satellite="satellite" :markers="markers" :user-location="userLocation" @updated="onNativeMapUpdated" @error="onNativeMapError" @markertap="onMarkerTap" @regionchange="onRegionChange" />
     <!-- #endif -->
     <!-- #ifndef APP-PLUS -->
-    <map v-else-if="!showAddModal"
+    <map v-if="!isH5 && !showAddModal"
       id="select-map"
       class="map-canvas"
       :latitude="center.latitude"
@@ -196,7 +196,9 @@
       <view class="info-actions">
         <button class="info-btn" @click="goNavigate(selectedMarker)">导航到这里</button>
         <button v-if="!selectedMarker.sharedLocation" class="info-btn" @click="openHistoryImage(selectedMarker)">查看图片</button>
-        <button v-if="!selectedMarker.sharedLocation" class="info-btn danger" @click="reportErrorMarker(selectedMarker)">报错</button>
+      </view>
+      <view v-if="!selectedMarker.sharedLocation" class="info-feedback">
+        <button class="info-feedback-link" @click="reportErrorMarker(selectedMarker)">信息有误？点我报错</button>
       </view>
       <MapBinAdminPanel v-if="isMapAdmin && !viewMode" :bin="selectedMarker" dark @updated="refreshAdminMarker" />
     </view>
@@ -2164,17 +2166,35 @@ function goProfile() {
     inset 0 2rpx 4rpx rgba(0, 0, 0, 0.1);
 }
 
-.info-btn.danger { 
-  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
-  box-shadow: 
-    0 4rpx 16rpx rgba(255, 107, 107, 0.3),
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.2);
+.info-feedback {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8rpx;
 }
 
-.info-btn.danger:active {
-  box-shadow: 
-    0 2rpx 8rpx rgba(255, 107, 107, 0.4),
-    inset 0 2rpx 4rpx rgba(0, 0, 0, 0.1);
+.info-feedback-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56rpx;
+  margin: 0;
+  padding: 8rpx 0 8rpx 20rpx;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #94a3b8;
+  font-size: 24rpx;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.info-feedback-link::after {
+  border: none;
+}
+
+.info-feedback-link:active {
+  opacity: 0.65;
 }
 
 /* 底部导航 */

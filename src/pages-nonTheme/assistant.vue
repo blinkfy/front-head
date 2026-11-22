@@ -383,6 +383,10 @@ import request from '@/api/index.js'
 import { createChatEnvironment } from '@/pages-nonTheme/utils/ai-chat-environment.mjs'
 import { fetchAiCapabilities, fetchChatRuns, findChatRun, cancelChatRun, newActionRequestId } from '@/api/ai-actions.js'
 import { createRunLedger, runStorageKey, applyRunSnapshot } from './utils/ai-chat-runs.mjs'
+// #ifdef APP-PLUS
+import { getChatUserList } from '@/pages-nonTheme/api/chat.js'
+import { needsRecentShareTargets } from '@/utils/app-direct-share.js'
+// #endif
 
 let chatCoordinateSystem = 'gcj02'
 // #ifdef H5
@@ -586,11 +590,19 @@ function deleteAssistantReply(message) {
   })
 }
 async function shareAssistantReply(message) {
-  const text = assistantReplyText(message)
+  const { text } = markdownClipboardContent(assistantReplyText(message))
   if (!text) return
-  const copyForShare = () => uni.setClipboardData({ data: text, showToast: false,
-    success: () => uni.showToast({ title: '已复制回复，可粘贴分享', icon: 'none' }),
-    fail: () => uni.showToast({ title: '无法复制回复，请重试', icon: 'none' }) })
+  const token = getStorage('token')
+  let pickerOpened = false
+  const shareInApp = () => {
+    if (pickerOpened || pageDisposed || !token || getStorage('token') !== token) return
+    pickerOpened = true
+    uni.navigateTo({
+      url: '/pages-nonTheme/chat-contacts?shareReply=1',
+      success: ({ eventChannel }) => eventChannel?.emit('assistantReplyToShare', text),
+      fail: () => uni.showToast({ title: '无法打开联系人，请重试', icon: 'none' })
+    })
+  }
   // #ifdef H5
   const browser = globalThis.navigator
   if (typeof browser?.share === 'function') {
@@ -602,16 +614,32 @@ async function shareAssistantReply(message) {
   }
   // #endif
   // #ifdef APP-PLUS
-  if (typeof uni.shareWithSystem === 'function') {
-    try {
+  try {
+    if (typeof plus !== 'undefined' && plus.os.name === 'Android') {
+      if (token && needsRecentShareTargets()) {
+        try {
+          await getChatUserList({ page: 1, pageSize: 20 }, { silent: true, timeout: 1500 })
+        } catch (_) {}
+        if (pageDisposed || getStorage('token') !== token) return
+      }
+      // The system chooser works even when the installed base has no Share module.
+      const Intent = plus.android.importClass('android.content.Intent')
+      const intent = new Intent(Intent.ACTION_SEND)
+      intent.setType('text/plain')
+      intent.putExtra(Intent.EXTRA_TEXT, text)
+      const activity = plus.android.runtimeMainActivity()
+      plus.android.invoke(activity, 'startActivity', Intent.createChooser(intent, null))
+      return
+    }
+    if (typeof plus !== 'undefined' && plus.os.name === 'iOS' && typeof uni.shareWithSystem === 'function') {
       uni.shareWithSystem({ type: 'text', summary: text, fail: error => {
-        if (!/cancel|取消/i.test(error?.errMsg || error?.message || '')) copyForShare()
+        if (!/cancel|取消/i.test(error?.errMsg || error?.message || '')) shareInApp()
       } })
       return
-    } catch (_) {}
-  }
+    }
+  } catch (_) {}
   // #endif
-  return copyForShare()
+  shareInApp()
 }
 const replySpeechTexts = computed(() => messageList.value.map((message, index) => {
   if (message.role !== 'assistant') return ''

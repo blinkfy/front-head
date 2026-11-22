@@ -55,6 +55,10 @@ export function getPreviousLogin() {
   return request({ url: '/api/user/previous-login', needAuth: true, silent: true })
 }
 
+export function getLoginHistory() {
+  return request({ url: '/api/user/login-history', needAuth: true, silent: true })
+}
+
 export function getRecentLogin() {
   return request({ url: '/api/user/recent-login', needAuth: true, silent: true })
 }

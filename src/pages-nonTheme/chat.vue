@@ -79,7 +79,9 @@
                 <!-- 消息内容 -->
                 <view v-else :id="`message-${msg.id}`" class="message-content" :class="{ 'message-highlighted': highlightMessageId === msg.id }">
                     <!-- 对方头像 -->
-                    <ChatCachedAvatar v-if="!msg.isSelf" class="avatar" :src="getMessageAvatar(msg)" :avatar-name="getMessageSenderName(msg)" :owner="avatarCacheOwner" />
+                    <view v-if="!msg.isSelf" class="message-avatar" :class="{ 'contact-avatar-trigger': !msg.isAi && !selectingMessages }" @click.stop="openMessageContact(msg)">
+                        <ChatCachedAvatar :src="getMessageAvatar(msg)" :avatar-name="getMessageSenderName(msg)" :owner="avatarCacheOwner" />
+                    </view>
 
                     <!-- 消息气泡 -->
                     <view class="bubble-wrapper">
@@ -259,7 +261,8 @@
                 </view>
 
                 <!-- 文本输入框 -->
-                <view v-if="!isVoiceMode" class="input-wrapper" :style="{ height: inputWrapperHeight + 'rpx' }">
+                <view v-if="!isVoiceMode" class="input-wrapper" :style="{ height: inputWrapperHeight + 'rpx' }"
+                    @touchstart="onInputTouchStart">
                     <textarea class="text-input" v-model="inputText" :placeholder="inputPlaceholder" :maxlength="2000"
                         :style="{ height: inputTextareaHeight + 'rpx' }" :auto-height="false" :show-confirm-bar="false" :cursor-spacing="20"
                         @linechange="onInputLineChange" @focus="onInputFocus" @blur="onInputBlur"
@@ -274,7 +277,7 @@
                 </view>
 
                 <!-- 表情按钮 -->
-                <view class="input-btn" @click="toggleEmoji">
+                <view class="input-btn" :class="{ 'input-btn-panel-open': showEmojiPanel }" @click="toggleEmoji">
                     <text class="btn-icon">😊</text>
                 </view>
 
@@ -282,79 +285,89 @@
                 <view v-if="inputText.trim()" class="send-btn" @click="sendTextMessage">
                     <text class="send-text">发送</text>
                 </view>
-                <view v-else class="input-btn" @click="toggleMorePanel">
+                <view v-else class="input-btn" :class="{ 'input-btn-panel-open': showMorePanel }" @click="toggleMorePanel">
                     <ManifestIcon class="btn-icon" id="attachment" :scale="1.1" />
                 </view>
             </view>
 
-            <!-- 表情面板 -->
-            <view v-if="showEmojiPanel && !groupSendBlockReason" class="emoji-panel">
-                <scroll-view scroll-y class="emoji-scroll">
-                    <view class="emoji-grid">
-                        <view v-for="(emoji, index) in emojiList" :key="index" class="emoji-item"
-                            @click="insertEmoji(emoji)">
-                            <text>{{ emoji }}</text>
+            <view class="composer-panel-slot"
+                :class="{ 'composer-panel-tracks-viewport': composerViewportHeight > 0, 'composer-panel-expanded': showEmojiPanel || showMorePanel || composerPanelHandoff }"
+                :style="composerViewportHeight ? { '--chat-composer-viewport': composerViewportHeight + 'px' } : null">
+                <view class="composer-panel-size">
+                    <!-- 表情面板 -->
+                    <view v-if="showEmojiPanel || composerPanelsMounted" class="emoji-panel composer-panel-layer"
+                        :class="{ 'composer-panel-closing': !showEmojiPanel && composerPanelHandoff !== 'emoji', 'composer-panel-inactive': !showEmojiPanel }"
+                        :aria-hidden="!showEmojiPanel">
+                        <scroll-view scroll-y class="emoji-scroll">
+                            <view class="emoji-grid">
+                                <view v-for="(emoji, index) in emojiList" :key="index" class="emoji-item"
+                                    @click="insertEmoji(emoji)">
+                                    <text>{{ emoji }}</text>
+                                </view>
+                            </view>
+                        </scroll-view>
+                        <!-- 退格按钮 - 悬浮在右侧 -->
+                        <view class="emoji-delete-btn" @click="deleteLastChar">
+                            <ManifestIcon class="delete-icon" id="delete" :scale="1" />
                         </view>
                     </view>
-                </scroll-view>
-                <!-- 退格按钮 - 悬浮在右侧 -->
-                <view class="emoji-delete-btn" @click="deleteLastChar">
-                    <ManifestIcon class="delete-icon" id="delete" :scale="1" />
-                </view>
-            </view>
 
-            <!-- 更多功能面板 -->
-            <view v-if="showMorePanel && !groupSendBlockReason" class="more-panel">
-                <view class="more-grid">
-                    <view v-if="callMenuOptions.length" class="more-item" @click="chooseCallMode">
-                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
-                        <text class="more-text">通话</text>
-                    </view>
-                    <!-- #ifndef APP-PLUS || H5 || MP-WEIXIN -->
-                    <view v-if="communityChatSettings.enabled && !isGroupChat" class="more-item" @click="showCallSupport">
-                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
-                        <text class="more-text">通话说明</text>
-                    </view>
-                    <!-- #endif -->
-                    <view class="more-item" @click="chooseImage">
-                        <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="image_gallery" :scale="1.9" />
+                    <!-- 更多功能面板 -->
+                    <view v-if="showMorePanel || composerPanelsMounted" class="more-panel composer-panel-layer"
+                        :class="{ 'composer-panel-closing': !showMorePanel && composerPanelHandoff !== 'more', 'composer-panel-inactive': !showMorePanel }"
+                        :aria-hidden="!showMorePanel">
+                        <view class="more-grid">
+                            <view v-if="callMenuOptions.length" class="more-item" @click="chooseCallMode">
+                                <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
+                                <text class="more-text">通话</text>
+                            </view>
+                            <!-- #ifndef APP-PLUS || H5 || MP-WEIXIN -->
+                            <view v-if="communityChatSettings.enabled && !isGroupChat" class="more-item" @click="showCallSupport">
+                                <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="chat_voice_call" :scale="1.5" /></view>
+                                <text class="more-text">通话说明</text>
+                            </view>
+                            <!-- #endif -->
+                            <view class="more-item" @click="chooseImage">
+                                <view class="more-icon-wrapper">
+                                    <ManifestIcon class="more-icon" id="image_gallery" :scale="1.9" />
+                                </view>
+                                <text class="more-text">图片</text>
+                            </view>
+                            <view v-if="!embeddedCallMode" class="more-item" @click="shootPhoto">
+                                <view class="more-icon-wrapper">
+                                    <ManifestIcon class="more-icon" id="camera_scan" :scale="1.8" />
+                                </view>
+                                <text class="more-text">拍照</text>
+                            </view>
+                            <view class="more-item" @click="chooseVideo">
+                                <view class="more-icon-wrapper">
+                                    <ManifestIcon class="more-icon" id="video" :scale="2" />
+                                </view>
+                                <text class="more-text">视频</text>
+                            </view>
+                            <view v-if="!embeddedCallMode" class="more-item" @click="recordVideo">
+                                <view class="more-icon-wrapper">
+                                    <ManifestIcon class="more-icon" id="video" :scale="2" />
+                                </view>
+                                <text class="more-text">录像</text>
+                            </view>
+                            <view class="more-item" @click="chooseFile">
+                                <view class="more-icon-wrapper">
+                                    <ManifestIcon class="more-icon" id="file_document" :scale="1.9" />
+                                </view>
+                                <text class="more-text">文件</text>
+                            </view>
+                            <view class="more-item" @click="sendLocation">
+                                <view class="more-icon-wrapper">
+                                    <ManifestIcon class="more-icon" id="map_location" :scale="1.8" />
+                                </view>
+                                <text class="more-text">位置</text>
+                            </view>
+                            <view v-if="!isGroupChat && liveLocationState.supported && (communityChatSettings.enabled || hasLiveLocationEntry)" class="more-item" @click="openLiveLocation">
+                                <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="nearby_map" :scale="1.9" /></view>
+                                <text class="more-text">实时位置</text>
+                            </view>
                         </view>
-                        <text class="more-text">图片</text>
-                    </view>
-                    <view v-if="!embeddedCallMode" class="more-item" @click="shootPhoto">
-                        <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="camera_scan" :scale="1.8" />
-                        </view>
-                        <text class="more-text">拍照</text>
-                    </view>
-                    <view class="more-item" @click="chooseVideo">
-                        <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="video" :scale="2" />
-                        </view>
-                        <text class="more-text">视频</text>
-                    </view>
-                    <view v-if="!embeddedCallMode" class="more-item" @click="recordVideo">
-                        <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="video" :scale="2" />
-                        </view>
-                        <text class="more-text">录像</text>
-                    </view>
-                    <view class="more-item" @click="chooseFile">
-                        <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="file_document" :scale="1.9" />
-                        </view>
-                        <text class="more-text">文件</text>
-                    </view>
-                    <view class="more-item" @click="sendLocation">
-                        <view class="more-icon-wrapper">
-                            <ManifestIcon class="more-icon" id="map_location" :scale="1.8" />
-                        </view>
-                        <text class="more-text">位置</text>
-                    </view>
-                    <view v-if="!isGroupChat && liveLocationState.supported && (communityChatSettings.enabled || hasLiveLocationEntry)" class="more-item" @click="openLiveLocation">
-                        <view class="more-icon-wrapper"><ManifestIcon class="more-icon" id="nearby_map" :scale="1.9" /></view>
-                        <text class="more-text">实时位置</text>
                     </view>
                 </view>
             </view>
@@ -378,20 +391,30 @@
         </view>
 
         <!-- 设置面板 -->
-        <view v-if="showSettingsModal" class="settings-modal" @click="closeSettingsModal">
-            <view class="settings-content" @click.stop>
+        <view v-if="!choosingRelationship && (showSettingsModal || contactProfile)" class="settings-modal" @click="closeSettingsModal">
+            <view class="settings-content" :class="{ 'contact-profile-content': contactProfile }" @click.stop>
                 <!-- 头部 -->
                 <view class="settings-header">
-                    <text class="settings-title">聊天设置</text>
+                    <text class="settings-title">{{ contactProfile ? '联系人资料' : '聊天设置' }}</text>
                     <view class="close-btn" @click="closeSettingsModal">
                         <ManifestIcon id="close" size="36rpx" />
                     </view>
                 </view>
 
                 <!-- 用户信息 -->
-                <view class="user-info-section">
+                <view v-if="contactProfile" class="user-info-section">
+                    <view class="group-avatar-editor">
+                        <ChatCachedAvatar size="120rpx" radius="16rpx" :src="contactProfile.avatar" :avatar-name="contactProfile.name" :owner="avatarCacheOwner" />
+                    </view>
+                    <view class="user-details">
+                        <text class="user-name-large">{{ contactProfile.name }}</text>
+                        <text v-if="contactProfile.username && contactProfile.username !== contactProfile.name" class="user-id-text">账号 {{ contactProfile.username }}</text>
+                        <text class="user-id-text">ID {{ contactProfile.id }}</text>
+                    </view>
+                </view>
+                <view v-else class="user-info-section">
                     <view class="group-avatar-editor" :class="{ editable: canManageGroup }" @click="editGroupAvatar">
-                        <ChatCachedAvatar class="user-avatar-large" :src="otherAvatarUrl" :avatar-name="chatTitle" :owner="avatarCacheOwner" />
+                        <ChatCachedAvatar size="120rpx" radius="16rpx" :src="otherAvatarUrl" :avatar-name="chatTitle" :owner="avatarCacheOwner" />
                         <view v-if="canManageGroup" class="group-avatar-edit-mask"><text>编辑</text></view>
                     </view>
                     <view class="user-details" :class="{ editable: canManageGroup }" @click="editGroupName">
@@ -401,7 +424,24 @@
                     </view>
                 </view>
 
-                <view v-if="isGroupChat" class="group-members-section">
+                <view v-if="contactProfile && (contactProfile.bio || contactProfile.community)" class="contact-profile-details">
+                    <view v-if="contactProfile.bio" class="contact-profile-detail">
+                        <text class="contact-profile-label">个人简介</text>
+                        <text class="contact-profile-value">{{ contactProfile.bio }}</text>
+                    </view>
+                    <view v-if="contactProfile.community" class="contact-profile-detail">
+                        <text class="contact-profile-label">社区</text>
+                        <text class="contact-profile-value">{{ contactProfile.community }}</text>
+                    </view>
+                </view>
+                <view v-if="contactProfileCallOptions.length" class="contact-profile-call-actions">
+                    <button v-for="option in contactProfileCallOptions" :key="option.mode" class="contact-profile-call" @click="callContactProfile(option.mode)">
+                        <ManifestIcon :id="option.mode === 'video' ? 'chat_video_call' : 'chat_voice_call'" size="36rpx" />
+                        <text>{{ option.label }}</text>
+                    </button>
+                </view>
+
+                <view v-if="!contactProfile && isGroupChat" class="group-members-section">
                     <view class="group-members-heading">
                         <text class="group-members-title">群成员</text>
                         <text class="group-members-count">{{ groupInfo?.Members?.length || 0 }} 人</text>
@@ -410,7 +450,9 @@
                     <view v-if="isGroupOwner" class="group-members-loading"><ManifestIcon id="chat_group_transfer" size="28rpx" /> 点击“管理”可设置管理员或转让群主</view>
                     <view v-if="groupInfo?.Members?.length" class="group-members-grid">
                         <view v-for="member in filteredGroupMembers" :key="member.userId" class="group-member">
-                            <ChatCachedAvatar class="group-member-avatar" :src="getGroupMemberAvatar(member)" :avatar-name="getGroupMemberName(member)" :owner="avatarCacheOwner" />
+                            <view class="group-member-avatar" :class="{ 'contact-avatar-trigger': String(member.userId) !== String(avatarCacheOwner) }" @click.stop="openGroupMemberContact(member)">
+                                <ChatCachedAvatar size="76rpx" radius="16rpx" :src="getGroupMemberAvatar(member)" :avatar-name="getGroupMemberName(member)" :owner="avatarCacheOwner" />
+                            </view>
                             <text class="group-member-name">{{ getGroupMemberName(member) }}</text>
                             <text v-if="getGroupMemberRole(member)" class="group-member-role">{{ getGroupMemberRole(member) }}</text>
                             <text v-if="member.mute" class="group-member-role">已禁言</text>
@@ -423,119 +465,140 @@
                 </view>
 
                 <!-- 设置项列表 -->
-                <view class="settings-list" :class="{ 'settings-list-group': isGroupChat }">
-                    <view v-if="isGroupChat" class="settings-section-title settings-section-first">个人设置</view>
-                    <view class="setting-item" @click="showHistorySearch = true"><view class="setting-left"><ManifestIcon class="setting-icon" id="chat_history_search" :scale="1.1" /><text class="setting-label">查找聊天记录</text></view><ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" /></view>
-                    <template v-if="isGroupChat">
+                <view class="settings-list">
+                    <view v-if="!contactProfile && isGroupChat" class="settings-section-title settings-section-first">个人设置</view>
+                    <view v-if="!contactProfile" class="setting-item" @click="showHistorySearch = true">
+                        <view class="setting-left">
+                            <ManifestIcon id="chat_history_search" size="42rpx" />
+                            <text class="setting-label">查找聊天记录</text>
+                        </view>
+                        <view class="setting-chevron" aria-hidden="true" />
+                    </view>
+                    <template v-if="!contactProfile && isGroupChat">
                         <view class="setting-item" @click="editGroupAlias">
-                            <view class="setting-left"><ManifestIcon class="setting-icon" id="chat_group_alias" :scale="1.1" /><text class="setting-label">我在本群的昵称</text></view>
-                            <text class="setting-value">{{ groupInfo?.currentMember?.alias || '未设置' }}</text>
-                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
+                            <view class="setting-left">
+                                <ManifestIcon id="chat_group_alias" size="42rpx" />
+                                <text class="setting-label">我在本群的昵称</text>
+                            </view>
+                            <view class="setting-right">
+                                <text class="setting-value">{{ groupInfo?.currentMember?.alias || '未设置' }}</text>
+                                <view class="setting-chevron" aria-hidden="true" />
+                            </view>
                         </view>
                         <view class="setting-item">
                             <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="pin" :scale="1.1" />
+                                <ManifestIcon id="pin" size="42rpx" />
                                 <text class="setting-label">置顶聊天</text>
                             </view>
-                            <switch :checked="contactSettings.top" @change="toggleTop" color="#07c160" />
+                            <switch class="setting-switch" :checked="contactSettings.top" @change="toggleTop" color="#07c160" />
                         </view>
                         <view class="setting-item">
-                            <view class="setting-left"><ManifestIcon class="setting-icon" id="notification_off" :scale="1.1" /><text class="setting-label">消息免打扰</text></view>
-                            <switch :checked="contactSettings.mute" @change="toggleMute" color="#07c160" />
+                            <view class="setting-left">
+                                <ManifestIcon id="notification_off" size="42rpx" />
+                                <text class="setting-label">消息免打扰</text>
+                            </view>
+                            <switch class="setting-switch" :checked="contactSettings.mute" @change="toggleMute" color="#07c160" />
                         </view>
                         <view class="settings-section-title">群信息与管理</view>
                         <view class="setting-item" @click="showGroupAnnouncement">
                             <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="announcement" :scale="1.1" />
+                                <ManifestIcon id="announcement" size="42rpx" />
                                 <text class="setting-label">群公告</text>
                             </view>
-                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
+                            <view class="setting-chevron" aria-hidden="true" />
                         </view>
                         <view v-if="canManageGroup" class="setting-item" @click="inviteGroupMembers">
                             <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="chat_member_invite" :scale="1.1" />
+                                <ManifestIcon id="chat_member_invite" size="42rpx" />
                                 <text class="setting-label">邀请成员</text>
                             </view>
-                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
+                            <view class="setting-chevron" aria-hidden="true" />
                         </view>
                         <view v-if="canManageGroup" class="setting-item">
-                            <view class="setting-left"><ManifestIcon class="setting-icon" id="chat_group_mute" :scale="1.1" /><text class="setting-label">全员禁言</text></view>
-                            <switch :checked="!!groupInfo?.muteAll" :disabled="groupSettingsBusy" @change="toggleGroupMuteAll" color="#07c160" />
+                            <view class="setting-left">
+                                <ManifestIcon id="chat_group_mute" size="42rpx" />
+                                <text class="setting-label">全员禁言</text>
+                            </view>
+                            <switch class="setting-switch" :checked="!!groupInfo?.muteAll" :disabled="groupSettingsBusy" @change="toggleGroupMuteAll" color="#07c160" />
                         </view>
                         <view class="settings-section-title">危险操作</view>
-                        <view class="setting-item" @click="confirmClearChat"><view class="setting-left"><ManifestIcon class="setting-icon" id="delete" :scale="1.1" /><text class="setting-label">清空我的聊天记录</text></view><ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" /></view>
+                        <view class="setting-item danger" @click="confirmClearChat">
+                            <view class="setting-left">
+                                <ManifestIcon id="delete" size="42rpx" />
+                                <text class="setting-label">清空我的聊天记录</text>
+                            </view>
+                            <view class="setting-chevron" aria-hidden="true" />
+                        </view>
                         <view class="setting-item danger" @click="confirmLeaveGroup">
                             <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="leave_group" :scale="1.1" />
-                                <text class="setting-label danger-text">退出群聊</text>
+                                <ManifestIcon id="leave_group" size="42rpx" />
+                                <text class="setting-label">退出群聊</text>
                             </view>
-                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
+                            <view class="setting-chevron" aria-hidden="true" />
                         </view>
                         <view v-if="isGroupOwner" class="setting-item danger" @click="confirmDissolveGroup">
-                            <view class="setting-left"><ManifestIcon class="setting-icon" id="chat_group_dissolve" :scale="1.1" /><text class="setting-label danger-text">解散群聊</text></view>
-                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
+                            <view class="setting-left">
+                                <ManifestIcon id="chat_group_dissolve" size="42rpx" />
+                                <text class="setting-label">解散群聊</text>
+                            </view>
+                            <view class="setting-chevron" aria-hidden="true" />
                         </view>
                     </template>
-                    <template v-else>
-                    <!-- 备注名 -->
-                    <view class="setting-item" @click="startEditNote">
-                        <view class="setting-left">
-                            <ManifestIcon class="setting-icon" id="post_edit" />
-                            <text class="setting-label">备注名</text>
+                    <template v-else-if="!contactProfile || contactProfile.settings?.isContact">
+                        <view class="setting-item" :class="{ 'setting-section-start': !contactProfile }" @click="startEditNote">
+                            <view class="setting-left">
+                                <ManifestIcon id="post_edit" size="42rpx" />
+                                <text class="setting-label">备注名</text>
+                            </view>
+                            <view class="setting-right">
+                                <text class="setting-value">{{ visibleContactSettings.note || '未设置' }}</text>
+                                <view v-if="canEditVisibleContact" class="setting-chevron" aria-hidden="true" />
+                            </view>
                         </view>
-                        <view class="setting-right">
-                            <text class="setting-value">{{ contactSettings.note || '未设置' }}</text>
-                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
+                        <view class="setting-item" @click="selectRelationship">
+                            <view class="setting-left">
+                                <ManifestIcon id="contacts" size="42rpx" />
+                                <text class="setting-label">关系</text>
+                            </view>
+                            <view class="setting-right">
+                                <text class="setting-value">{{ getRelationshipLabel(visibleContactSettings.relationship) }}</text>
+                                <view v-if="canEditVisibleContact" class="setting-chevron" aria-hidden="true" />
+                            </view>
                         </view>
-                    </view>
-
-                    <!-- 关系 -->
-                    <view class="setting-item" @click="selectRelationship">
-                        <view class="setting-left">
-                            <text class="setting-label">关系</text>
-                        </view>
-                        <view class="setting-right">
-                            <text class="setting-value">{{ getRelationshipLabel(contactSettings.relationship) }}</text>
-                            <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
-                        </view>
-                    </view>
-
-                    <!-- 免打扰 -->
-                    <view class="setting-item">
-                        <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="notification_off" :scale="1.1" />
-                            <text class="setting-label">消息免打扰</text>
-                        </view>
-                        <switch :checked="contactSettings.mute" @change="toggleMute" color="#07c160" />
-                    </view>
-
-                    <!-- 置顶 -->
-                    <view class="setting-item">
-                        <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="pin" :scale="1.1" />
-                            <text class="setting-label">置顶聊天</text>
-                        </view>
-                        <switch :checked="contactSettings.top" @change="toggleTop" color="#07c160" />
-                    </view>
-
-                    <!-- 清空聊天记录 -->
-                    <view class="setting-item" @click="confirmClearChat">
-                        <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="delete" :scale="1.1" />
-                            <text class="setting-label">清空聊天记录</text>
-                        </view>
-                        <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
-                    </view>
-
-                    <!-- 删除联系人 -->
-                    <view class="setting-item danger" @click="confirmDeleteContact">
-                        <view class="setting-left">
-                                <ManifestIcon class="setting-icon" id="chat_member_remove" :scale="1.1" />
-                            <text class="setting-label danger-text">删除联系人</text>
-                        </view>
-                        <ManifestIcon class="arrow-icon" id="chevron_right" :scale="1" />
-                    </view>
+                        <template v-if="!contactProfile">
+                            <view class="setting-item setting-section-start">
+                                <view class="setting-left">
+                                    <ManifestIcon id="notification_off" size="42rpx" />
+                                    <text class="setting-label">消息免打扰</text>
+                                </view>
+                                <switch class="setting-switch" :checked="contactSettings.mute" @change="toggleMute" color="#07c160" />
+                            </view>
+                            <view class="setting-item">
+                                <view class="setting-left">
+                                    <ManifestIcon id="pin" size="42rpx" />
+                                    <text class="setting-label">置顶聊天</text>
+                                </view>
+                                <switch class="setting-switch" :checked="contactSettings.top" @change="toggleTop" color="#07c160" />
+                            </view>
+                            <view class="setting-item setting-section-start danger" @click="confirmClearChat">
+                                <view class="setting-left">
+                                    <ManifestIcon id="delete" size="42rpx" />
+                                    <text class="setting-label">清空聊天记录</text>
+                                </view>
+                                <view class="setting-chevron" aria-hidden="true" />
+                            </view>
+                            <view class="setting-item danger" @click="confirmDeleteContact">
+                                <view class="setting-left">
+                                    <ManifestIcon id="chat_member_remove" size="42rpx" />
+                                    <text class="setting-label">删除联系人</text>
+                                </view>
+                                <view class="setting-chevron" aria-hidden="true" />
+                            </view>
+                        </template>
                     </template>
+                    <view v-if="contactProfile?.status === 'loading'" class="contact-profile-status">正在读取资料…</view>
+                    <view v-else-if="contactProfile?.status === 'error'" class="setting-item contact-avatar-trigger" @click="loadContactProfile">读取资料失败，点击重试</view>
+                    <view v-else-if="contactProfile && chatOffline" class="contact-profile-status">当前离线</view>
                 </view>
             </view>
         </view>
@@ -574,10 +637,10 @@
         <view v-if="editingNote" class="edit-note-modal" @click="cancelEditNote">
             <view class="edit-note-content" @click.stop>
                 <text class="edit-note-title">设置备注名</text>
-                <input class="edit-note-input" v-model="tempNote" placeholder="请输入备注名" maxlength="20" />
+                <input class="edit-note-input" v-model="tempNote" placeholder="留空可清除备注" maxlength="20" :disabled="savingContactNote" @confirm="saveNote" />
                 <view class="edit-note-buttons">
-                    <button class="cancel-btn" @click="cancelEditNote">取消</button>
-                    <button class="confirm-btn" @click="saveNote">确定</button>
+                    <button class="cancel-btn" :disabled="savingContactNote" @click="cancelEditNote">取消</button>
+                    <button class="confirm-btn" :disabled="savingContactNote" @click="saveNote">{{ savingContactNote ? '保存中…' : '保存' }}</button>
                 </view>
             </view>
         </view>
@@ -749,6 +812,15 @@ export default {
             isVoiceMode: false,
             showEmojiPanel: false,
             showMorePanel: false,
+            composerPanelsMounted: false,
+            composerPanelHandoff: '',
+            composerViewportHeight: 0,
+            // #ifdef APP-PLUS
+            composerKeyboardListener: null,
+            composerKeyboardHeight: 0,
+            composerHandoffTimer: null,
+            composerInputTouchHandled: false,
+            // #endif
 
             // 语音录制
             isRecording: false,
@@ -852,7 +924,11 @@ export default {
             
             // 设置面板
             showSettingsModal: false,
+            contactProfile: null,
+            contactSettingsRevision: 0,
+            choosingRelationship: false,
             editingNote: false,
+            savingContactNote: false,
             tempNote: '',
             contactSettings: {
                 note: '', // 备注名
@@ -882,6 +958,7 @@ export default {
                 this.loadUserInfo()
                 if (this.isGroupChat) this.loadGroupDetail()
                 else if (this.otherUserId) this.loadContactSettings()
+                if (this.contactProfile) this.loadContactProfile()
                 this.markCurrentChatRead()
                 if (this.messageCacheReady) this.startMessagePolling()
             }
@@ -892,6 +969,15 @@ export default {
         refMessageId() { this.queueChatDraftSave() }
     },
     computed: {
+        visibleContactSettings() {
+            return this.contactProfile?.settings || this.contactSettings
+        },
+        canEditVisibleContact() {
+            if (this.chatOffline || this.isChatPageDestroyed) return false
+            return this.contactProfile
+                ? this.contactProfile.status === 'ready' && this.contactProfile.settings?.isContact === true
+                : !this.isGroupChat && !!(this.otherUserId || this.chatId)
+        },
         historyLoading() {
             return Boolean(this.appSessionToken && !this.messageCacheReady)
         },
@@ -909,8 +995,8 @@ export default {
             return !!this.liveLocationState.offers[String(this.otherUserId)] ||
                 (['joining', 'sharing'].includes(this.liveLocationState.phase) && String(this.liveLocationState.peer?.id) === String(this.otherUserId))
         },
-        callMenuOptions() {
-            if (!this.communityChatSettings.enabled || this.isGroupChat || this.embeddedCallMode) return []
+        availableCallModes() {
+            if (!this.communityChatSettings.enabled || this.chatOffline || this.embeddedCallMode) return []
             const options = []
             // #ifdef MP-WEIXIN
             options.push({ mode: 'audio', label: '网页语音通话' }, { mode: 'video', label: '网页视频通话' })
@@ -920,6 +1006,15 @@ export default {
             if (this.voiceCallState.videoSupported) options.push({ mode: 'video', label: '视频通话' })
             // #endif
             return options
+        },
+        callMenuOptions() {
+            return this.isGroupChat ? [] : this.availableCallModes
+        },
+        contactProfileCallOptions() {
+            const profile = this.contactProfile
+            if (profile?.status !== 'ready' || !profile.settings?.isContact) return []
+            if (profile.canCall === false || (profile.canCall == null && this.isGroupChat)) return []
+            return this.availableCallModes
         },
 
         // 输入区最多显示四行，超过后让 textarea 自身滚动，避免撑开底栏。
@@ -1137,6 +1232,7 @@ export default {
     onShow() {
         // #ifdef APP-PLUS
         if (!this.appSessionToken || this.appSessionToken !== uni.getStorageSync('token')) return
+        this.trackComposerKeyboard()
         // #endif
         if (!this.chatOffline) void readCommunityChatEnabled()
         this.syncChatFeedbackMedia()
@@ -1184,15 +1280,27 @@ export default {
     },
     
     // #ifdef APP-PLUS
+    onResize() {
+        this.settleComposerHandoff()
+    },
+
     onBackPress(event) {
       if (this.showImagePreview) { this.closeImagePreview(); return true }
       if (event.from === 'backbutton' && this.$refs.appConfirmDialog?.current) {
         this.$refs.appConfirmDialog.settle(false)
         return true
       }
+      if (event.from === 'backbutton' && this.contactProfile) {
+        if (this.editingNote) this.cancelEditNote()
+        else this.closeSettingsModal()
+        return true
+      }
     },
     // #endif
     onHide() {
+        // #ifdef APP-PLUS
+        this.stopTrackingComposerKeyboard()
+        // #endif
         this.voicePlaybackRevision++
         this.cancelVoiceTranscriptions()
         if (!this.currentPlayingMsg) this.playingVoiceId = null
@@ -1213,6 +1321,9 @@ export default {
     },
 
     onUnload() {
+        // #ifdef APP-PLUS
+        this.stopTrackingComposerKeyboard()
+        // #endif
         this.callRecordingRevision++
         this.cancelVoiceTranscriptions()
         if (this.callRecordingListener) uni.$off('call-recordings:changed', this.callRecordingListener)
@@ -1305,11 +1416,11 @@ export default {
                 }
             })
         },
-        async openWebCall(mode) {
+        async openWebCall(mode, peer) {
             if (this.embeddedCallMode) { this.goBack(); return }
             if (this.webCallOpening) return
-            const target = { peerId: this.otherUserId, selfId: this.getCurrentUserId(), mode,
-                name: this.contactSettings.note || this.otherUsername || this.chatTitle }
+            const target = { peerId: peer?.id || this.otherUserId || this.chatId, selfId: this.getCurrentUserId(), mode,
+                name: peer?.name || this.contactSettings.note || this.otherUsername || this.chatTitle }
             let url = embeddedWebCallUrl(baseUrl, target)
             const showFallback = () => uni.showToast({ title: '网页通话暂不可用，请使用分投侠 App', icon: 'none', duration: 3500 })
             if (!url) { showFallback(); return }
@@ -1335,9 +1446,9 @@ export default {
                 success: result => { if (result.confirm) uni.navigateTo({ url: '/pages-nonTheme/about' }) }
             })
         },
-        startVoiceCall(mode = 'audio') {
+        startVoiceCall(mode = 'audio', peer) {
             try {
-                voiceCalls.start({ id: this.otherUserId, name: this.contactSettings.note || this.otherUsername || this.chatTitle, avatar: this.otherAvatar }, mode)
+                voiceCalls.start(peer || { id: this.otherUserId || this.chatId, name: this.contactSettings.note || this.otherUsername || this.chatTitle, avatar: this.otherAvatar }, mode)
                 this.showMorePanel = false
             } catch (error) { uni.showToast({ title: error.message || '暂时无法发起通话', icon: 'none' }) }
         },
@@ -1841,6 +1952,7 @@ export default {
                 senderName: serverMsg.isAi ? 'AI 环保助手' : getDisplayName(serverMsg.Sender || serverMsg.sender, ''),
                 senderUsername: serverMsg.Sender?.username || serverMsg.sender?.username || '',
                 senderNickname: serverMsg.Sender?.nickname || serverMsg.sender?.nickname || '',
+                senderBio: serverMsg.Sender?.bio || serverMsg.sender?.bio || '',
                 senderAvatar: serverMsg.isAi ? '' : (serverMsg.Sender?.avatar || serverMsg.sender?.avatar || ''),
                 timestamp: new Date(serverMsg.sendTime || serverMsg.createTime || serverMsg.timestamp).getTime() || Date.now(),
                 status: 'sent',
@@ -1853,7 +1965,8 @@ export default {
                     ? this.buildReviewUrl(parsedContent?.path || content)
                     : (serverMsg.thumbnail || (parsedContent?.thumbnail ? `${baseUrl}/files/download/${parsedContent.thumbnail}` : null)),
                 isWithdraw: serverMsg.isWithdraw || false,  // 是否已撤回
-                refId: serverMsg.refId || null  // 引用消息ID
+                refId: serverMsg.refId || null,  // 引用消息ID
+                refUnavailable: serverMsg.refUnavailable === true
             }
             
             // 如果是位置消息,将content中的属性提升到顶层,保持与本地创建消息的结构一致
@@ -2644,84 +2757,178 @@ export default {
         },
 
         closeSettingsModal() {
+            if (this.savingContactNote) return
+            if (this.contactProfile) {
+                this.contactProfile = null
+                this.cancelEditNote()
+                return
+            }
             this.showSettingsModal = false
+        },
+
+        openMessageContact(message) {
+            if (this.selectingMessages || message?.isSelf || message?.isAi) return
+            const id = this.isGroupChat ? message?.senderId : this.otherUserId || this.chatId
+            const member = this.isGroupChat && this.groupInfo?.Members?.find(item => String(item.userId) === String(id))
+            const user = member?.User || { nickname: message?.senderNickname, username: message?.senderUsername, bio: message?.senderBio }
+            return this.openContactProfile(id, user, this.getMessageAvatar(message), this.getMessageSenderName(message))
+        },
+
+        openGroupMemberContact(member) {
+            return this.openContactProfile(member?.userId, member?.User, this.getGroupMemberAvatar(member), this.getGroupMemberName(member))
+        },
+
+        openContactProfile(id, user, avatar, fallbackName) {
+            const peerId = String(id ?? '')
+            const token = uni.getStorageSync('token')
+            if (!token || (this.appSessionToken && this.appSessionToken !== token) || this.isChatPageDestroyed) return
+            if (!/^[1-9]\d*$/.test(peerId) || peerId === String(this.getCurrentUserId())) return
+            this.contactProfile = {
+                id: peerId,
+                name: getDisplayName(user, fallbackName),
+                username: user?.username || '',
+                avatar,
+                bio: typeof user?.bio === 'string' ? user.bio.trim() : '',
+                community: '',
+                canCall: null,
+                token,
+                status: this.chatOffline ? 'offline' : 'loading',
+                settings: !this.isGroupChat && this.contactSettings.isContact ? { ...this.contactSettings } : null
+            }
+            if (!this.chatOffline) return this.loadContactProfile()
+        },
+
+        async loadContactProfile() {
+            const profile = this.contactProfile
+            if (!profile || this.chatOffline || this.isChatPageDestroyed || profile.token !== uni.getStorageSync('token')) return
+            const isCurrent = () => profile === this.contactProfile && !this.isChatPageDestroyed && profile.token === uni.getStorageSync('token')
+            profile.status = 'loading'
+            try {
+                const result = await chatApi.getContactSettings({ userId: profile.id, includeProfile: '1' })
+                if (!isCurrent()) return
+                if (result?.code !== 0 || typeof result.data?.isContact !== 'boolean') throw new Error('联系人设置不可用')
+                const { profile: person, ...settings } = result.data
+                profile.settings = settings
+                if (person && String(person.id) === profile.id) {
+                    profile.name = getDisplayName(person, profile.name)
+                    profile.username = person.username || ''
+                    if (typeof person.avatar === 'string') profile.avatar = this.hasUsableAvatar(person.avatar) ? getAvatarUrl(person.avatar, baseUrl) : ''
+                    if (typeof person.bio === 'string') profile.bio = person.bio.trim()
+                    profile.community = typeof person.community === 'string' ? person.community.trim() : ''
+                    profile.canCall = person.canCall === true
+                } else if (person === null) {
+                    profile.canCall = false
+                }
+                profile.status = 'ready'
+            } catch (_) {
+                if (isCurrent()) profile.status = 'error'
+            }
+        },
+
+        callContactProfile(mode) {
+            const profile = this.contactProfile
+            if (!profile || !this.isChatPageActive || this.isChatPageDestroyed || this.webCallOpening ||
+                profile.token !== uni.getStorageSync('token') || !this.contactProfileCallOptions.some(option => option.mode === mode)) return
+            const peer = { id: profile.id, name: profile.settings?.note || profile.name, avatar: profile.avatar }
+            this.closeSettingsModal()
+            this.showSettingsModal = false
+            // #ifdef MP-WEIXIN
+            void this.openWebCall(mode, peer)
+            // #endif
+            // #ifdef APP-PLUS || H5
+            this.startVoiceCall(mode, peer)
+            // #endif
         },
 
         // 开始编辑备注
         startEditNote() {
-            this.tempNote = this.contactSettings.note || ''
+            if (!this.canEditVisibleContact) return
+            this.tempNote = this.visibleContactSettings.note || ''
             this.editingNote = true
             // 编辑备注时不关闭设置面板,因为编辑框的 z-index 更高
         },
 
         cancelEditNote() {
+            if (this.savingContactNote) return
             this.editingNote = false
             this.tempNote = ''
         },
 
         async saveNote() {
-            if (!this.tempNote.trim()) {
-                uni.showToast({ title: '备注名不能为空', icon: 'none' })
-                return
-            }
-
+            if (!this.editingNote || this.savingContactNote || !this.canEditVisibleContact) return
+            const note = this.tempNote.trim()
+            this.savingContactNote = true
             try {
-                // 调用 API 保存备注
-                await chatApi.updateContactNote({
-                    userId: this.otherUserId,
-                    note: this.tempNote
-                })
-
-                this.contactSettings.note = this.tempNote
-                this.chatTitle = this.tempNote // 更新聊天标题
-                this.editingNote = false
-                uni.showToast({ title: '备注已更新', icon: 'success' })
-            } catch (e) {
-                console.error('保存备注失败:', e)
-                uni.showToast({ title: '保存失败', icon: 'none' })
+                if (await this.saveVisibleContactSetting('note', note)) {
+                    this.editingNote = false
+                    this.tempNote = ''
+                    uni.showToast({ title: note ? '备注已更新' : '已清除备注', icon: 'success' })
+                }
+            } finally {
+                this.savingContactNote = false
             }
         },
 
-        // 选择关系
-        selectRelationship() {
-            // 临时关闭设置面板,避免遮挡 ActionSheet
-            this.showSettingsModal = false
-            
-            const relationshipKeys = Object.keys(chatRelationshipLabels)
-            const relationshipLabels = Object.values(chatRelationshipLabels)
-            
-            // 延迟一下再显示 ActionSheet,确保设置面板已关闭
-            setTimeout(() => {
-                uni.showActionSheet({
-                    itemList: relationshipLabels,
-                    success: async (res) => {
-                        const selectedKey = relationshipKeys[res.tapIndex]
-                        const selectedLabel = relationshipLabels[res.tapIndex]
-
-                        try {
-                            await chatApi.updateContactRelationship({
-                                userId: this.otherUserId,
-                                relationship: selectedKey
-                            })
-
-                            this.contactSettings.relationship = selectedKey
-                            uni.showToast({ title: `已设置为${selectedLabel}`, icon: 'success' })
-                        } catch (e) {
-                            console.error('更新关系失败:', e)
-                            uni.showToast({ title: '更新失败', icon: 'none' })
-                        }
-                        
-                        // 操作完成后重新打开设置面板
-                        setTimeout(() => {
-                            this.showSettingsModal = true
-                        }, 300)
-                    },
-                    fail: () => {
-                        // 用户取消,重新打开设置面板
-                        this.showSettingsModal = true
-                    }
+        async saveVisibleContactSetting(field, value) {
+            const profile = this.contactProfile
+            const directPeer = this.isGroupChat ? '' : String(this.otherUserId || this.chatId)
+            const peer = profile?.id || directPeer
+            const token = uni.getStorageSync('token')
+            if (!peer || !token || (this.appSessionToken && this.appSessionToken !== token) ||
+                (profile && profile.token !== token) || !this.canEditVisibleContact) return false
+            const isCurrent = () => !this.isChatPageDestroyed && profile === this.contactProfile && token === uni.getStorageSync('token')
+            try {
+                const update = field === 'note' ? chatApi.updateContactNote : chatApi.updateContactRelationship
+                const result = await update({ userId: peer, [field]: value })
+                if (!isCurrent()) return false
+                if (result?.code !== 0) throw new Error(result?.msg || '更新失败')
+                if (profile) profile.settings[field] = value
+                if (peer === directPeer) {
+                    this.contactSettingsRevision++
+                    this.contactSettings[field] = value
+                    if (field === 'note') this.chatTitle = value || profile?.name || this.otherUsername || '聊天'
+                }
+                if (field === 'note') this.mutateChatListCache(snapshot => {
+                    const row = snapshot.userList.find(item => String(item.otherId) === peer)
+                    if (!row || row.note === value) return false
+                    row.note = value
+                    return true
                 })
-            }, 100)
+                return true
+            } catch (e) {
+                if (isCurrent()) uni.showToast({ title: '保存失败，请重试', icon: 'none' })
+                return false
+            }
+        },
+
+        selectRelationship() {
+            if (!this.canEditVisibleContact || this.choosingRelationship) return
+            const profile = this.contactProfile
+            const token = uni.getStorageSync('token')
+            const relationships = [['', '未设置'], ...Object.entries(chatRelationshipLabels)]
+            this.choosingRelationship = true
+            this.$nextTick(() => {
+                if (this.isChatPageDestroyed || profile !== this.contactProfile || token !== uni.getStorageSync('token')) {
+                    this.choosingRelationship = false
+                    return
+                }
+                uni.showActionSheet({
+                    itemList: relationships.map(([, label]) => label),
+                    success: async ({ tapIndex }) => {
+                        try {
+                            const selected = relationships[tapIndex]
+                            if (!selected || profile !== this.contactProfile || token !== uni.getStorageSync('token')) return
+                            const [key, label] = selected
+                            if (await this.saveVisibleContactSetting('relationship', key)) {
+                                uni.showToast({ title: key ? `已设置为${label}` : '已清除关系标签', icon: 'success' })
+                            }
+                        } finally {
+                            this.choosingRelationship = false
+                        }
+                    },
+                    fail: () => { this.choosingRelationship = false }
+                })
+            })
         },
 
         // 切换免打扰
@@ -2818,13 +3025,16 @@ export default {
         // 加载联系人设置
         async loadContactSettings() {
             if (this.isGroupChat) return
+            const revision = ++this.contactSettingsRevision
+            const token = uni.getStorageSync('token')
             try {
                 const res = await chatApi.getContactSettings({
-                    userId: this.otherUserId
+                    userId: this.otherUserId || this.chatId
                 })
 
-                if (res.data) {
+                if (!this.isChatPageDestroyed && revision === this.contactSettingsRevision && token === uni.getStorageSync('token') && res.data) {
                     this.contactSettings = {
+                        isContact: res.data.isContact === true,
                         note: res.data.note || '',
                         relationship: res.data.relationship || '',
                         mute: res.data.mute || false,
@@ -3018,30 +3228,122 @@ export default {
 
         toggleVoiceMode() {
             if (this.chatOffline) return this.showChatOfflineToast()
+            // #ifdef APP-PLUS
+            this.finishComposerHandoff()
+            // #endif
             this.isVoiceMode = !this.isVoiceMode
             this.showEmojiPanel = false
             this.showMorePanel = false
         },
 
         toggleEmoji() {
-            this.showEmojiPanel = !this.showEmojiPanel
-            this.showMorePanel = false
+            this.toggleComposerPanel('emoji')
         },
 
         toggleMorePanel() {
             if (this.chatOffline) return this.showChatOfflineToast()
-            this.showMorePanel = !this.showMorePanel
-            this.showEmojiPanel = false
+            this.toggleComposerPanel('more')
         },
 
-        onInputFocus() {
+        toggleComposerPanel(panel) {
+            const open = !(panel === 'emoji' ? this.showEmojiPanel : this.showMorePanel)
+            // #ifdef APP-PLUS
+            const hideKeyboard = open && !this.showEmojiPanel && !this.showMorePanel
+            this.finishComposerHandoff()
+            if (open) this.composerPanelsMounted = true
+            // #endif
+            this.showEmojiPanel = open && panel === 'emoji'
+            this.showMorePanel = open && panel === 'more'
+            // #ifdef APP-PLUS
+            if (hideKeyboard) uni.hideKeyboard()
+            // #endif
+        },
+
+        onInputTouchStart() {
+            // #ifdef APP-PLUS
+            if (this.showEmojiPanel || this.showMorePanel) {
+                this.composerInputTouchHandled = true
+                this.beginComposerHandoff()
+            }
+            // #endif
+        },
+
+        onInputFocus(event) {
+            // #ifdef APP-PLUS
+            if (this.composerInputTouchHandled) {
+                this.composerInputTouchHandled = false
+                if (!this.composerKeyboardHeight && !event?.detail?.height) this.finishComposerHandoff()
+                return
+            }
+            this.beginComposerHandoff()
+            // #endif
             this.showEmojiPanel = false
             this.showMorePanel = false
         },
 
         onInputBlur() {
-            // 延迟隐藏，避免点击表情或更多按钮时立即隐藏
+            // #ifdef APP-PLUS
+            this.composerInputTouchHandled = false
+            this.finishComposerHandoff()
+            // #endif
         },
+
+        // #ifdef APP-PLUS
+        beginComposerHandoff() {
+            if (!this.showEmojiPanel && !this.showMorePanel) return
+            // 触摸后停止面板交互，保留画面由缩小的可见区域逐步裁切。
+            if (this.composerViewportHeight) this.composerPanelHandoff = this.showEmojiPanel ? 'emoji' : 'more'
+            this.showEmojiPanel = false
+            this.showMorePanel = false
+            if (!this.composerPanelHandoff) return
+            // 兜底处理外接键盘或系统没有上报尺寸的情况。
+            this.composerHandoffTimer = setTimeout(() => this.finishComposerHandoff(), 420)
+            this.settleComposerHandoff()
+        },
+
+        trackComposerKeyboard() {
+            if (this.composerKeyboardListener) return
+            this.composerKeyboardListener = ({ height }) => {
+                this.composerKeyboardHeight = height
+                this.settleComposerHandoff()
+            }
+            const listener = this.composerKeyboardListener
+            uni.onKeyboardHeightChange(listener)
+            this.$nextTick(() => {
+                uni.createSelectorQuery().in(this).select('.chat-container').boundingClientRect(rect => {
+                    if (this.composerKeyboardListener === listener && !this.composerKeyboardHeight && rect?.height > 0) {
+                        this.composerViewportHeight = rect.height
+                    }
+                }).exec()
+            })
+        },
+
+        stopTrackingComposerKeyboard() {
+            if (this.composerKeyboardListener) uni.offKeyboardHeightChange(this.composerKeyboardListener)
+            this.composerKeyboardListener = null
+            this.composerKeyboardHeight = 0
+            this.composerInputTouchHandled = false
+            this.finishComposerHandoff()
+        },
+
+        settleComposerHandoff() {
+            if (!this.composerPanelHandoff || !this.composerKeyboardHeight) return
+            const timer = this.composerHandoffTimer
+            uni.createSelectorQuery().in(this).select('.chat-container').boundingClientRect(rect => {
+                if (this.composerHandoffTimer !== timer || !rect?.height) return
+                const resizedHeight = this.composerViewportHeight - rect.height
+                if (this.composerKeyboardHeight > 0 && resizedHeight >= this.composerKeyboardHeight - 2) {
+                    this.finishComposerHandoff()
+                }
+            }).exec()
+        },
+
+        finishComposerHandoff() {
+            clearTimeout(this.composerHandoffTimer)
+            this.composerHandoffTimer = null
+            this.composerPanelHandoff = ''
+        },
+        // #endif
 
         // ==================== 拖拽和粘贴处理 ====================
         ...attachmentIngressMethods,
@@ -3118,8 +3420,12 @@ export default {
         ...mediaFormattingMethods,
 
         // ==================== 消息引用相关 ====================
+        isRefMessageUnavailable(refId) {
+            return this.messages.some(message => String(message.refId) === String(refId) && message.refUnavailable === true)
+        },
         // 获取被引用消息的预览文本
         getRefMessagePreview(refId) {
+            if (this.isRefMessageUnavailable(refId)) return '该消息已删除'
             const refMsg = this.messages.find(m => String(m.id) === String(refId))
             if (!refMsg) return '[点击加载原消息]'
             if (refMsg.isWithdraw) return '[消息已撤回]'
@@ -3147,6 +3453,7 @@ export default {
 
         // 获取被引用消息的发送者名称
         getRefMessageSenderName(refId) {
+            if (this.isRefMessageUnavailable(refId)) return '引用'
             const refMsg = this.messages.find(m => String(m.id) === String(refId))
             if (!refMsg) return '用户'
             if (refMsg.isSelf) return '你'
@@ -3155,6 +3462,7 @@ export default {
 
         // 获取被引用消息的类型，用于样式判断
         getRefMessageType(refId) {
+            if (this.isRefMessageUnavailable(refId)) return 'unknown'
             const refMsg = this.messages.find(m => String(m.id) === String(refId))
             if (!refMsg) return 'unknown'
             return refMsg.isSelf ? 'self' : 'other'
@@ -3169,15 +3477,27 @@ export default {
         // 跳转到被引用的消息
         async jumpToRefMessage(refId) {
             if (this.loadingReference) return
+            if (this.isRefMessageUnavailable(refId)) {
+                uni.showToast({ title: '该消息已删除', icon: 'none' })
+                return
+            }
             this.loadingReference = true
+            const historyVersion = this.messageHistoryVersion
             try {
                 let target = this.messages.find(message => String(message.id) === String(refId))
                 if (!target) {
                     uni.showLoading({ title: '定位消息中' })
                     const result = await this.getConversationHistory({ messageId: refId, pageSize: 1 })
+                    if (!this.isChatPageActive || historyVersion !== this.messageHistoryVersion) return
+                    if (result.code != null && result.code !== 0) throw new Error(result.msg || '加载原消息失败')
                     const rows = Array.isArray(result.data) ? result.data : result.data?.list || []
                     const raw = rows.find(message => String(message.id) === String(refId))
-                    if (!raw) { uni.showToast({ title: '原消息已删除或不可访问', icon: 'none' }); return }
+                    if (!raw) {
+                        for (const message of this.messages) if (String(message.refId) === String(refId)) message.refUnavailable = true
+                        this.saveMessagesToStorage()
+                        uni.showToast({ title: '该消息已删除', icon: 'none' })
+                        return
+                    }
                     const boundary = this.getGroupMessageBoundaryId('earliest')
                     const loaded = [raw]
                     let cursor = Number(refId)
@@ -3191,7 +3511,7 @@ export default {
                         if (!response.incremental || maximum <= cursor) break
                         cursor = maximum
                     }
-                    if (!this.isChatPageActive) return
+                    if (!this.isChatPageActive || historyVersion !== this.messageHistoryVersion) return
                     this.mergeMessages(loaded.map(message => this.formatServerMessage(message)))
                     target = this.messages.find(message => String(message.id) === String(refId))
                 }
@@ -3518,7 +3838,6 @@ page {
     min-height: 0;
     overflow-y: auto;
     background: var(--bg-primary);
-    transition: all 0.3s ease;
     width: 100%;
     box-sizing: border-box;
 }
@@ -3634,12 +3953,8 @@ page {
     justify-content: flex-end; // 改用 justify-content 让内容靠右
 }
 
-.avatar {
-    width: 80rpx;
-    height: 80rpx;
-    border-radius: 12rpx;
-    flex-shrink: 0;
-}
+.message-avatar { flex-shrink: 0; }
+.contact-avatar-trigger { cursor: pointer; }
 
 .bubble-wrapper {
     max-width: 60%; // 从 65% 减小到 60%,给头像留更多空间
@@ -4170,7 +4485,7 @@ page {
     padding-bottom: max(env(safe-area-inset-bottom), 0px);
     width: 100%;
     box-sizing: border-box;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
     flex-shrink: 0;
 
     &:not(.dark-theme) {
@@ -4309,6 +4624,11 @@ page {
     }
 }
 
+.input-btn-panel-open {
+    background: var(--border-color);
+    border-radius: 20rpx;
+}
+
 .input-wrapper {
     flex: 1;
     min-width: 0;
@@ -4322,7 +4642,7 @@ page {
     display: flex;
     align-items: stretch;
     border: 1px solid var(--border-color);
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     box-shadow: var(--card-shadow);
 }
 
@@ -4402,7 +4722,6 @@ page {
     height: 500rpx;
     background: var(--bg-secondary);
     border-top: 1rpx solid var(--border-color);
-    transition: all 0.3s ease;
     position: relative;
 }
 
@@ -4465,8 +4784,73 @@ page {
     padding: 40rpx 30rpx;
     background: var(--bg-secondary);
     border-top: 1rpx solid var(--border-color);
-    transition: all 0.3s ease;
 }
+
+/* #ifdef APP-PLUS */
+.composer-panel-slot {
+    --chat-panel-height: 500rpx;
+    max-height: var(--chat-panel-height);
+    overflow: hidden;
+}
+
+.composer-panel-tracks-viewport {
+    // App 的 adjustResize 已让出键盘空间，面板只占尚未让出的部分。
+    max-height: clamp(0px, calc(var(--chat-panel-height) + 100vh - var(--chat-composer-viewport)), var(--chat-panel-height));
+    max-height: clamp(0px, calc(var(--chat-panel-height) + 100dvh - var(--chat-composer-viewport)), var(--chat-panel-height));
+}
+
+.composer-panel-size {
+    position: relative;
+    height: 0;
+    transition: height 150ms cubic-bezier(.2, 0, .25, 1);
+}
+
+.composer-panel-expanded .composer-panel-size {
+    height: var(--chat-panel-height);
+}
+
+.composer-panel-slot .composer-panel-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: var(--chat-panel-height);
+    box-sizing: border-box;
+    background: transparent;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 140ms ease, visibility 0s;
+}
+
+.composer-panel-slot .emoji-scroll {
+    box-sizing: border-box;
+}
+
+.composer-panel-slot .more-panel {
+    overflow-y: auto;
+}
+
+.composer-panel-layer.composer-panel-closing {
+    opacity: 0;
+    visibility: hidden;
+    transition-delay: 0s, 140ms;
+}
+
+.composer-panel-layer.composer-panel-inactive {
+    pointer-events: none;
+}
+
+.composer-panel-layer:not(.composer-panel-inactive) {
+    z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .composer-panel-size,
+    .composer-panel-slot .composer-panel-layer {
+        transition: none;
+    }
+}
+/* #endif */
 
 .more-grid {
     display: grid;
@@ -4761,12 +5145,6 @@ page {
         cursor: pointer;
     }
 
-    .user-avatar-large {
-        width: 120rpx;
-        height: 120rpx;
-        border-radius: 16rpx;
-    }
-
     .group-avatar-edit-mask {
         position: absolute;
         top: 0;
@@ -4855,9 +5233,6 @@ page {
 }
 
 .group-member-avatar {
-    width: 76rpx;
-    height: 76rpx;
-    border-radius: 16rpx;
     background: #edf3f2;
 }
 
@@ -4900,7 +5275,7 @@ page {
 }
 
 .settings-list {
-    padding: 20rpx 0;
+    padding-bottom: max(16rpx, env(safe-area-inset-bottom));
 }
 
 .settings-section-title {
@@ -4914,62 +5289,127 @@ page {
 }
 
 .settings-section-first {
-    border-top: 1rpx solid #e5ebe7;
-}
-
-.settings-list-group > .setting-item {
-    border-bottom-color: #e5ebe7;
+    border-top: 0;
 }
 
 .setting-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 30rpx 40rpx;
+    gap: 20rpx;
+    min-height: 106rpx;
+    padding: 16rpx 40rpx;
+    box-sizing: border-box;
     background: #fff;
-    border-bottom: 1rpx solid #f5f5f5;
+    border-bottom: 1rpx solid #eef1ef;
 
     &:active {
         background: #f8f8f8;
     }
 
-    &.danger {
-        .danger-text {
-            color: #ff4444;
-        }
+    &:last-child {
+        border-bottom: 0;
     }
 
     .setting-left {
         display: flex;
         align-items: center;
         flex: 1;
-
-        .setting-icon {
-            font-size: 40rpx;
-            margin-right: 20rpx;
-        }
+        min-width: 0;
+        gap: 18rpx;
 
         .setting-label {
             font-size: 32rpx;
+            line-height: 1.4;
             color: #333;
         }
+    }
+
+    &.danger .setting-left .setting-label {
+        color: #bf4242;
     }
 
     .setting-right {
         display: flex;
         align-items: center;
+        justify-content: flex-end;
+        min-width: 0;
+        max-width: 48%;
         gap: 12rpx;
 
         .setting-value {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
             font-size: 28rpx;
-            color: #999;
-        }
-
-        .arrow-icon {
-            font-size: 40rpx;
-            color: #ccc;
+            color: #69736d;
         }
     }
+}
+
+.setting-section-start {
+    min-height: 114rpx;
+    border-top: 8rpx solid #f3f5f4;
+}
+
+.setting-chevron {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 24rpx;
+    height: 32rpx;
+    color: #829088;
+
+    &::after {
+        content: '';
+        width: 12rpx;
+        height: 12rpx;
+        border-top: 3rpx solid currentColor;
+        border-right: 3rpx solid currentColor;
+        transform: rotate(45deg);
+    }
+}
+
+.setting-switch {
+    flex-shrink: 0;
+    margin: 0;
+    transform: scale(.9);
+    transform-origin: right center;
+}
+
+.contact-profile-content {
+    background: var(--bg-secondary);
+
+    .settings-header, .user-info-section, .setting-item { border-color: var(--border-color); }
+    .settings-header .settings-title, .user-details .user-name-large, .setting-item .setting-left .setting-label { color: var(--text-primary); }
+    .user-details .user-id-text, .setting-item .setting-right .setting-value, .contact-profile-status { color: var(--text-secondary); }
+    .setting-item { background: var(--bg-secondary); }
+    .setting-item:active { background: var(--hover-bg); }
+    .user-details { min-width: 0; overflow-wrap: anywhere; }
+}
+
+.contact-profile-status { padding: 12rpx 40rpx; font-size: 26rpx; }
+.contact-profile-details { border-bottom: 1rpx solid var(--border-color); }
+.contact-profile-detail { display: flex; align-items: baseline; gap: 24rpx; padding: 20rpx 40rpx; }
+.contact-profile-label { flex-shrink: 0; width: 120rpx; font-size: 26rpx; color: var(--text-secondary); }
+.contact-profile-value { min-width: 0; color: var(--text-primary); font-size: 28rpx; white-space: pre-wrap; overflow-wrap: anywhere; }
+.contact-profile-call-actions { display: flex; gap: 16rpx; padding: 24rpx 40rpx 0; }
+.contact-profile-call {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    gap: 10rpx;
+    margin: 0;
+    padding: 14rpx 10rpx;
+    border-radius: 14rpx;
+    background: var(--hover-bg);
+    color: var(--accent-color);
+    font-size: 26rpx;
+    line-height: 1.4;
+
+    &::after { border: none; }
 }
 
 // 编辑备注弹窗

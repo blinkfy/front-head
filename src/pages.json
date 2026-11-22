@@ -182,7 +182,10 @@
 				{
 					"path": "chat",
 					"style": {
-						"navigationStyle": "custom"
+						"navigationStyle": "custom",
+						"app-plus": {
+							"softinputMode": "adjustResize"
+						}
 					}
 				},
 				{

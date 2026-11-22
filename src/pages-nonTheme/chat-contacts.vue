@@ -6,11 +6,11 @@
     <view class="contacts-header" :style="{ paddingTop: `${statusBarHeight}px` }">
       <view class="header-row">
         <view class="icon-button" @click="goBack"><ManifestIcon id="back" :scale="1.1" /></view>
-        <text class="header-title">联系人</text>
+        <text class="header-title">{{ shareReply ? '分享给' : '联系人' }}</text>
       <view class="icon-button" @click="refreshAll"><ManifestIcon class="refresh-contact-icon" id="refresh" :scale="1.1" /></view>
       </view>
-      <view class="contact-tabs">
-        <view v-for="tab in tabs" :key="tab.key" class="contact-tab"
+      <view v-if="!directShare" class="contact-tabs">
+        <view v-for="tab in visibleTabs" :key="tab.key" class="contact-tab"
           :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">
           <ManifestIcon :id="tab.icon" size="30rpx" /><text>{{ tab.label }}</text>
           <view v-if="tab.key === 'requests' && pendingRequestCount" class="request-dot">{{ pendingRequestCount }}</view>
@@ -20,6 +20,19 @@
 
     <scroll-view class="contacts-scroll" scroll-y>
       <view v-if="loading" class="loading-state"><text>正在加载...</text></view>
+
+      <template v-else-if="directShare">
+        <view v-if="shareTarget" class="contact-list">
+          <view class="contact-row" @click="sendDirectShare">
+            <view class="contact-copy">
+              <text class="contact-name">{{ shareTarget.label }}</text>
+              <text class="contact-subtitle">确认发送分享内容</text>
+            </view>
+            <ManifestIcon class="contact-chevron" id="chevron_right" :scale="1" />
+          </view>
+        </view>
+        <view v-else class="compact-empty">{{ directShareError || '正在读取分享内容…' }}</view>
+      </template>
 
       <template v-else-if="activeTab === 'friends'">
         <view v-if="friends.length" class="contact-list">
@@ -95,7 +108,7 @@
       </template>
 
       <template v-else>
-        <view class="create-group-card">
+        <view v-if="!shareReply" class="create-group-card">
           <view class="card-title"><ManifestIcon id="chat_group_create" size="36rpx" /> 创建群聊</view>
           <input v-model="groupName" class="group-name-input" placeholder="填写群名称" maxlength="60" />
           <text class="select-tip">选择联系人加入群聊</text>
@@ -135,6 +148,7 @@ import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getDisplayName } from '@/utils/display-name.js'
+import { directShareConversation } from '@/utils/app-direct-share.js'
 
 export default {
   components: { AppConfirmDialog, ManifestIcon },
@@ -142,6 +156,10 @@ export default {
     return {
       statusBarHeight: 20,
       activeTab: 'friends',
+      shareReply: false,
+      directShare: false,
+      directShareError: '',
+      shareTarget: null,
       tabs: [
         { key: 'friends', label: '联系人', icon: 'contacts' },
         { key: 'requests', label: '新朋友', icon: 'chat_friend_request' },
@@ -171,6 +189,9 @@ export default {
     }
   },
   computed: {
+    visibleTabs() {
+      return this.shareReply ? this.tabs.filter(tab => ['friends', 'groups'].includes(tab.key)) : this.tabs
+    },
     pendingRequestCount() {
       return this.incomingRequests.filter((item) => item.status === 'pending').length
     },
@@ -178,11 +199,22 @@ export default {
       return this.friends
     }
   },
-  onLoad() {
+  onLoad(options = {}) {
     const systemInfo = uni.getSystemInfoSync()
     this.statusBarHeight = systemInfo.statusBarHeight || 20
+    this.shareReply = options.shareReply === '1'
+    this.directShare = this.shareReply && options.directShare === '1'
+    if (this.shareReply) {
+      this._shareToken = uni.getStorageSync('token')
+      this._shareAttempts = new Map()
+      this.getOpenerEventChannel?.()?.once('assistantReplyToShare', share => {
+        if (this.directShare) void this.loadDirectShare(share)
+        else if (typeof share === 'string') this._shareText = share.trim()
+      })
+    }
   },
   onShow() {
+    if (this.directShare) return
     this.ensureCommunityChatAvailable().then((enabled) => {
       if (enabled) this.refreshAll()
     })
@@ -196,7 +228,7 @@ export default {
   },
   // #endif
   onHide() { this.$refs.appConfirmDialog?.cancelAll(); this.searchVersion++; this.searching = false },
-  onUnload() { this.$refs.appConfirmDialog?.cancelAll(); this.searchVersion++; this.searching = false },
+  onUnload() { this._shareToken = null; this.$refs.appConfirmDialog?.cancelAll(); this.searchVersion++; this.searching = false },
   methods: {
     getDisplayName,
     async ensureCommunityChatAvailable() {
@@ -229,12 +261,16 @@ export default {
       return true
     },
     async refreshAll() {
+      if (this.directShare) {
+        if (this._directSharePayload) await this.loadDirectShare(this._directSharePayload)
+        return
+      }
       this.loading = true
       try {
         const [friendsResult, incomingResult, outgoingResult, groupsResult] = await Promise.all([
           chatApi.getFriends(),
-          chatApi.getFriendRequests('incoming'),
-          chatApi.getFriendRequests('outgoing'),
+          this.shareReply ? {} : chatApi.getFriendRequests('incoming'),
+          this.shareReply ? {} : chatApi.getFriendRequests('outgoing'),
           chatApi.getGroups()
         ])
         this.friends = friendsResult.data?.list || []
@@ -344,14 +380,83 @@ export default {
       }
     },
     openDirectChat(friend) {
+      if (this.shareReply) {
+        this.confirmReplyShare(friend.note || getDisplayName(friend), 'friend:' + friend.id,
+          (content, clientMessageId) => chatApi.sendTextMessage({ chatId: friend.id, targetUserId: friend.id, content, clientMessageId }))
+        return
+      }
       uni.navigateTo({
         url: `/pages-nonTheme/chat?chatId=${friend.id}&userId=${friend.id}&title=${encodeURIComponent(friend.note || getDisplayName(friend))}&avatar=${encodeURIComponent(friend.avatar || '')}`
       })
     },
+    async loadDirectShare(share) {
+      if (this.loading || !share || typeof share.text !== 'string' || !share.text.trim()) return
+      this._directSharePayload = share
+      this.shareTarget = null
+      this.directShareError = ''
+      this.loading = true
+      const token = this._shareToken
+      try {
+        if (!token || !await this.ensureCommunityChatAvailable() || token !== uni.getStorageSync('token')) return
+        const res = await chatApi.getChatUserList({ page: 1, pageSize: 50 }, { silent: true })
+        if (this._shareToken !== token || token !== uni.getStorageSync('token')) return
+        const rows = Array.isArray(res?.data?.list) ? res.data.list : []
+        const target = rows.map(directShareConversation).find(item => item?.kind === share.kind && item.id === share.id)
+        if (!target) throw new Error('会话不可用')
+        this._shareText = share.text
+        this.shareTarget = target
+      } catch (_) {
+        this.directShareError = '此会话暂不可用，请返回后重试'
+      } finally {
+        this.loading = false
+      }
+    },
+    sendDirectShare() {
+      const { kind, id, label } = this.shareTarget
+      this.confirmReplyShare(label, kind + ':' + id, (content, clientMessageId) => kind === 'group'
+        ? chatApi.sendGroupTextMessage(id, content, null, clientMessageId)
+        : chatApi.sendTextMessage({ chatId: id, targetUserId: id, content, clientMessageId }))
+    },
     openGroupChat(group) {
+      if (this.shareReply) {
+        this.confirmReplyShare(group.name, 'group:' + group.id,
+          (content, clientMessageId) => chatApi.sendGroupTextMessage(group.id, content, null, clientMessageId))
+        return
+      }
       uni.navigateTo({
         url: `/pages-nonTheme/chat?conversationType=group&groupId=${encodeURIComponent(group.id)}&chatId=group:${encodeURIComponent(group.id)}&title=${encodeURIComponent(group.name)}&avatar=${encodeURIComponent(group.avatar || '')}`
       })
+    },
+    async confirmReplyShare(name, recipient, send) {
+      if (this._sharingReply || !this.communityChatEnabled) return
+      const currentAccount = () => this._shareToken && uni.getStorageSync('token') === this._shareToken
+      if (!currentAccount() || !this._shareText) {
+        uni.showToast({ title: '待分享内容已失效，请返回重试', icon: 'none' })
+        return
+      }
+      const content = this._shareText
+      this._sharingReply = true
+      try {
+        const preview = content.length > 120 ? content.slice(0, 120) + '…' : content
+        const confirmed = await new Promise(resolve => showAppModal(this, {
+          title: `分享给${name}`, content: preview, confirmText: '发送',
+          success: result => resolve(result.confirm), fail: () => resolve(false)
+        }))
+        if (!confirmed || !currentAccount() || !this.communityChatEnabled) return
+        if (!this._shareAttempts.has(recipient)) {
+          this._shareAttempts.set(recipient, Date.now() + '_' + Math.random().toString(36).slice(2, 14))
+        }
+        await send(content, this._shareAttempts.get(recipient))
+        if (currentAccount()) {
+          this._shareText = ''
+          uni.showToast({ title: '已分享', icon: 'success' })
+          uni.navigateBack()
+        }
+      } catch (_) {
+        if (currentAccount()) uni.showToast({ title: '发送失败，请重试', icon: 'none' })
+      } finally {
+        this._sharingReply = false
+      }
     },
     requestStatusLabel(status) {
       return ({ pending: '等待验证', accepted: '已通过', rejected: '已拒绝', cancelled: '已取消' })[status] || '已处理'

@@ -1,7 +1,7 @@
 <template>
   <view class="incoming-page">
     <text class="call-kind">{{ state.mode === 'video' ? '视频通话邀请' : '语音通话邀请' }}</text>
-    <ChatCachedAvatar class="avatar" :src="peerAvatar" :avatar-name="state.peer?.name || '聊'" :owner="avatarOwner" />
+    <ChatCachedAvatar class="avatar" size="104px" radius="30px" :src="peerAvatar" :avatar-name="state.peer?.name || '聊'" :owner="avatarOwner" />
     <text class="peer-name">{{ state.peer?.name || '联系人' }}</text>
     <text class="status">{{ state.opening ? '正在接听…' : '邀请你通话' }}</text>
     <text v-if="state.error" class="error">{{ state.error }}</text>

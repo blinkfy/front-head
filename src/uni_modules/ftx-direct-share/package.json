@@ -1,0 +1,10 @@
+{
+  "id": "ftx-direct-share",
+  "displayName": "分投侠系统分享推荐",
+  "version": "0.1.0",
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": { "client": { "App": { "app-android": "y", "app-ios": "y" } } }
+  }
+}

@@ -24,6 +24,7 @@
         <button v-if="!structure && !recordMode" class="er-button er-trace-toggle" :class="{ active: tracing }" :disabled="loading || !!error || tables.length < 2"
           :aria-pressed="tracing" @click="toggleTrace"><view class="er-route-symbol" aria-hidden="true" />{{ tracing ? '退出追踪' : '路径追踪' }}</button>
         <button class="er-button" @click="$emit('choose-user')">{{ recordMode ? '换用户' : '选择用户看数据' }}</button>
+        <button v-if="recordMode && userData && !loading && !error" class="er-button" @click="$emit('account-insights', userData)">账号分析</button>
         <button v-if="recordMode" class="er-button" @click="$emit('exit-user')">退出用户视图</button>
         <button class="er-button" :disabled="loading" @click="load">刷新</button>
       </view>
@@ -35,13 +36,14 @@
     <template v-else>
       <DatabaseEntityDiagram v-if="structure" v-model:booking="entityBooking" :tables="tables" :current="current" :relations="relations" :business="businessFields" :user-data="userData"
         :trace-steps="tracePath || []" :selected-step="pathKeys.has(pinnedLine) ? pinnedLine : ''"
-        @select-step="pinnedLine = $event" @return-to-trace="diagramMode = 'explore'" @user-records="emit('user-records', $event)" />
+        :initial-message-field="initialMessageField" @message-field-consumed="emit('message-field-consumed')"
+        @field-focus="emit('field-focus', $event)" @switch-table="switchGraphTable" @select-step="pinnedLine = $event" @return-to-trace="diagramMode = 'explore'" @choose-user="emit('choose-user', $event)" @user-records="emit('user-records', $event)" />
       <view v-show="!structure" class="er-body">
         <view class="er-graph">
           <view class="er-scope" :class="{ tracing }"><view class="er-scope-dot" /><text v-if="recordMode">{{ userCaption }} · 直接关联记录</text><text v-else-if="tracing">{{ traceEnd ? tableLabel(traceStart) + ' · ' + tableLabel(traceEnd) : '点击目标表，追踪外键路径' }}</text><text v-else-if="scene">{{ scene.label }} · 业务链路</text><text v-else>{{ showAll ? '全部数据表' : tableLabel(anchor) + ' · 直接关联' }}</text></view>
           <view ref="stage" class="er-stage" :class="{ dragging: moving }"
             @touchstart="touchStart($event)" @touchmove.stop.prevent="touchMove" @touchend="touchEnd" @touchcancel="cancelGesture">
-            <view class="er-scene" :style="sceneStyle">
+            <view v-if="(!appGraphOptimized || graphMeasured) && !layoutPending" class="er-scene" :style="sceneStyle">
               <!-- #ifdef H5 -->
               <svg class="er-links-svg" width="1" height="1" aria-hidden="true">
                 <g v-for="line in lines" :key="line.key" :style="{ color: line.color, opacity: line.opacity }">
@@ -58,10 +60,10 @@
               <!-- #endif -->
               <view v-for="line in lines" :key="'arrow' + line.key" class="er-arrow" :style="line.arrowStyle" />
               <view v-for="tag in labels.lineLabels" :key="'label' + tag.key" class="er-edge-label"
-                :class="{ lit: tag.key === activeKey, dim: activeKey && tag.key !== activeKey }"
+                :class="{ lit: tag.key === activeKey, dim: activeKey && tag.key !== activeKey, 'empty-records': emptyRecordEdges.has(tag.key) }"
                 :style="{ left: tag.x + 'px', top: tag.y + 'px', width: tag.width + 'px' }"
                 @mouseenter="hoverLine = tag.key" @mouseleave="hoverLine = ''" @click.stop="pickLine(tag.key)">{{ tag.text }}</view>
-              <view v-for="n in graphNodes" :key="n.name" class="er-node" :data-table="n.name" :class="{ selected: n.name === selected, muted: !n.related, waypoint: n.stop, destination: n.stop === '终', faded: tracing && traceEnd && !n.related }"
+              <view v-for="n in graphNodes" :key="n.name" class="er-node" :data-table="n.name" :class="{ selected: n.name === selected, muted: !n.related, waypoint: n.stop, destination: n.stop === '终', faded: tracing && traceEnd && !n.related, 'empty-records': recordMode && n.name !== 'User' && recordCounts.get(n.name)?.total === 0 }"
                 :style="{ left: n.x + 'px', top: n.y + 'px', '--node-color': n.color }"
                 @mouseenter="hovered = n.name" @mouseleave="hovered = ''"
                 @touchstart.stop="touchStart($event, n.name)"
@@ -79,6 +81,7 @@
               </view>
             </view>
           </view>
+          <view v-if="layoutPending || (appGraphOptimized && !graphMeasured)" class="er-layout-wait">正在布局关系图…</view>
           <view v-if="activePair" class="er-edge-card">
             <view class="er-edge-title"><text>{{ tableLabel(activePair.source) }} → {{ tableLabel(activePair.target) }}</text>
               <button v-if="pinnedLine" class="er-dismiss" aria-label="关闭关系详情" @click="clearLine">×</button></view>
@@ -89,8 +92,12 @@
               <text v-for="(field, index) in activePair.fields" :key="index">{{ field.sourceColumn }} → {{ field.targetColumn }}</text>
             </scroll-view>
           </view>
+          <view v-if="legendOpen" class="er-legend">
+            <view v-for="index in legend" :key="index" class="er-legend-item"><view class="er-color-dot" :style="{ backgroundColor: palette(index) }" />{{ domains[index].label }}</view>
+            <text class="er-convention">{{ scene ? '实线：外键 · 虚线：业务关联' : '外键表 → 被引用表' }}</text>
+          </view>
           <view class="er-graph-footer">
-            <text class="er-hint">拖动节点 · 双击查看数据 · 滚轮或双指缩放 · 点连线查看外键</text>
+            <button class="er-legend-toggle" :aria-pressed="legendOpen" @click="legendOpen = !legendOpen">{{ legendOpen ? '收起图例' : '图例' }}</button>
             <view class="er-tools">
               <button class="er-tool" aria-label="缩小" :disabled="zoom <= MIN_ZOOM" @click="zoomButton(1 / 1.25)">−</button>
               <button class="er-percent er-actual" aria-label="恢复原始比例" @click="resetZoom">{{ Math.round(zoom * 100) }}%</button>
@@ -179,10 +186,6 @@
           </scroll-view></view>
         </view>
       </view>
-      <view v-show="!structure" class="er-legend">
-        <view v-for="index in legend" :key="index" class="er-legend-item"><view class="er-color-dot" :style="{ backgroundColor: palette(index) }" />{{ domains[index].label }}</view>
-        <text class="er-convention">{{ scene ? '实线：外键 · 虚线：业务关联' : '外键表 → 被引用表' }}</text>
-      </view>
     </template>
   </view>
 </template>
@@ -192,16 +195,18 @@ import { computed, getCurrentInstance, nextTick, onMounted, onUnmounted, ref, sh
 import { getAdminDatabaseRelations } from '@/api/database'
 import DatabaseEntityDiagram from './DatabaseEntityDiagram.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { businessViews, domainIndex, domains, dragSprings, graphBounds, graphLabels, graphPadding, groupRelations, layoutTables, relationStrokes, shortestRelationPath } from './database-relation-layout'
+import { createRelationFrameBudget } from './database-relation-frame-budget'
+import { businessViews, domainIndex, domains, dragSprings, graphBounds, graphLabels, graphPadding, groupRelations, layoutTables, refineRelationNeighborhoodsInSteps, relationStrokes, shortestRelationPath, tableDoubleTap } from './database-relation-layout'
 
-const props = defineProps({ tables: { type: Array, default: () => [] }, current: { type: String, default: '' }, userId: { type: [Number, String], default: null }, light: Boolean, mode: { type: String, default: 'structure' } })
-const emit = defineEmits(['select', 'choose-user', 'exit-user', 'user-records', 'update:mode'])
+const props = defineProps({ tables: { type: Array, default: () => [] }, current: { type: String, default: '' }, userId: { type: [Number, String], default: null }, light: Boolean, mode: { type: String, default: 'structure' }, initialMessageField: String })
+const emit = defineEmits(['select', 'switch-table', 'choose-user', 'exit-user', 'user-records', 'update:mode', 'message-field-consumed', 'account-insights', 'field-focus'])
 const diagramMode = computed({ get: () => props.mode, set: value => emit('update:mode', value) })
 const entityBooking = ref(false)
 const canShowStructure = computed(() => props.tables.length > 0)
 const structure = computed(() => canShowStructure.value && diagramMode.value === 'structure')
 const instance = getCurrentInstance(), stage = ref(null)
 const anchor = ref(props.current), selected = ref(props.current), hovered = ref(''), showAll = ref(false)
+const legendOpen = ref(false)
 const loading = ref(true), error = ref(''), relations = ref([])
 const businessFields = ref([]), sceneRoot = ref('')
 const recordMode = computed(() => props.userId != null)
@@ -224,6 +229,7 @@ function drillRecords(name, fields) {
 }
 const layoutNames = ['力导向布局', '环形布局'], layout = ref('force')
 const width = ref(600), height = ref(410), positions = shallowRef([])
+const graphMeasured = ref(false), layoutPending = ref(false)
 const MIN_ZOOM = .2, MAX_ZOOM = 5
 const zoom = ref(1), pan = ref({ x: 0, y: 0 }), moving = ref(false)
 const tableMap = computed(() => new Map(props.tables.map(t => [t.name, t])))
@@ -272,6 +278,18 @@ const edges = computed(() => {
   if (recordMode.value) return recordPairs.value
   if (scene.value) return sceneEdges.value
   return showAll.value ? pairs.value : pairs.value.filter(r => directTableNames.value.has(r.source) && directTableNames.value.has(r.target))
+})
+// A role can have no records even when another role in the same table does.
+// Unknown counts are kept visible rather than mistaken for zero.
+const emptyRecordEdges = computed(() => {
+  const result = new Set()
+  if (!recordMode.value) return result
+  for (const edge of edges.value) {
+    const table = recordCounts.value.get(edge.source)
+    const roles = edge.fields.map(field => table?.roles.find(role => role.column === field.sourceColumn))
+    if (table?.total === 0 || (roles.length && roles.every(role => role && role.count === 0))) result.add(edge.key)
+  }
+  return result
 })
 const visibleTables = computed(() => {
   if (recordMode.value) { const names = new Set(recordTables.value.map(t => t.name)); return props.tables.filter(t => t.name === 'User' || names.has(t.name)) }
@@ -333,12 +351,23 @@ let curvedLinks = false
 // #ifdef H5
 curvedLinks = true
 // #endif
-let dragBends = null, dragLabels = null, stableBends = null, dragOrigin = null
+let appGraphOptimized = false
+// #ifdef APP-PLUS
+appGraphOptimized = true
+// #endif
+let desktopBudget = false
+try {
+  const info = uni.getSystemInfoSync()
+  desktopBudget = !appGraphOptimized && !/android|ios|iphone|ipad/i.test(String(info.platform || info.system || '')) && (info.windowWidth || 0) > 740
+} catch (_) { /* start conservatively when device information is unavailable */ }
+const frameBudget = createRelationFrameBudget(desktopBudget)
+let dragBends = null, dragLabels = null, dragArrows = null, gestureLabels = null, stableBends = null, dragOrigin = null
 const settling = ref(false)
 const bendRevision = ref(0)
-const strokes = computed(() => { bendRevision.value; return relationStrokes(graphNodes.value, edges.value, curvedLinks, moving.value || settling.value ? dragBends : stableBends) })
+const strokes = computed(() => { bendRevision.value; return relationStrokes(graphNodes.value, edges.value, curvedLinks, moving.value || settling.value ? dragBends : stableBends, null, (moving.value || settling.value) ? dragArrows : null) })
 const labels = computed(() => {
   if ((moving.value || settling.value) && dragLabels) return { nodeLabels: dragLabels, lineLabels: [] }
+  if (moving.value && gestureLabels) return gestureLabels
   const scale = symbolScale.value
   const left = -(width.value / 2 + pan.value.x) / scale
   const top = -(height.value / 2 + pan.value.y) / scale
@@ -364,13 +393,15 @@ const labels = computed(() => {
 const lines = computed(() => strokes.value.map(line => {
   const lit = activeKey.value ? line.key === activeKey.value : incident(line, emphasized.value)
   const strong = line.key === activeKey.value || pathKeys.value.has(line.key)
-  const opacity = strong ? 1 : tracing.value && traceEnd.value ? .14 : lit ? .85 : .32
+  const empty = emptyRecordEdges.value.has(line.key)
+  const inspectingEmpty = empty && (hovered.value === line.source || selected.value === line.source)
+  const opacity = strong ? 1 : empty && !inspectingEmpty ? .1 : tracing.value && traceEnd.value ? .14 : lit ? .85 : .32
   const color = strong ? 'var(--accent)' : colorOf(line.source === anchor.value ? line.target : line.source)
   const style = { left: line.x + 'px', top: line.y + 'px', width: line.length + 'px', color, opacity }
   if (line.loop) style.height = line.length + 'px'
   else style.transform = 'rotate(' + line.angle + 'rad)'
   return { key: line.key, business: line.business, path: line.path, color, strong, neighborFlow: !!hovered.value && incident(line, hovered.value), opacity, loop: line.loop, style, arrowStyle: {
-    left: line.arrowX + 'px', top: line.arrowY + 'px', color, opacity: strong || lit && !tracing.value ? 1 : opacity,
+    left: line.arrowX + 'px', top: line.arrowY + 'px', color, opacity: strong || lit && !tracing.value && (!empty || inspectingEmpty) ? 1 : opacity,
     transform: 'translate(-50%, -50%) rotate(' + line.arrowAngle + 'rad)' } }
 }))
 function openBusiness(event) {
@@ -440,13 +471,14 @@ function stopSprings() {
   invalidateRouteWork()
   settling.value = false
 }
-function tickSprings() {
+function tickSprings(timestamp) {
+  frameBudget.observe(Number.isFinite(timestamp) ? timestamp : Date.now(), 30)
   springFrame = null
   if (!dragBends) return
-  const speed = spring ? spring() : 0
-  if (spring) triggerRef(positions)
+  const speed = spring ? spring(frameBudget.repulsionPeriod) : 0
+  triggerRef(positions)
   const now = Date.now()
-  if (curvedLinks && now - lastRouteTime >= 140) {
+  if (curvedLinks && now - lastRouteTime >= frameBudget.routeInterval) {
     const changed = new Set(positions.value.filter(node => {
       const old = routedPositions?.get(node.name)
       return !old || Math.hypot(node.x - old.x, node.y - old.y) > 3
@@ -474,30 +506,63 @@ function tickSprings() {
     const current = dragBends.get(key) ?? target, next = current + (target - current) * .18
     dragBends.set(key, next); remaining = Math.max(remaining, Math.abs(target - next))
   }
-  bendRevision.value++
+  if (curvedLinks) bendRevision.value++
   if (moving.value || speed > .035 || remaining > .15 || routeBusy || routeQueued || curvedLinks && !lastRouteTime) {
     if (++ticks < 300 || moving.value) springFrame = nextFrame(tickSprings)
-    else { spring = null; stableBends = new Map(dragBends); settling.value = false; dragBends = null; dragLabels = null; dragOrigin = null }
+    else { spring = null; stableBends = new Map(dragBends); settling.value = false; dragBends = null; dragLabels = null; dragArrows = null; dragOrigin = null }
   } else {
-    spring = null; stableBends = new Map(dragBends); settling.value = false; dragBends = null; dragLabels = null; dragOrigin = null
+    spring = null; stableBends = new Map(dragBends); settling.value = false; dragBends = null; dragLabels = null; dragArrows = null; dragOrigin = null
   }
 }
 
+let layoutFrame = null, layoutVersion = 0
+function cancelLayout() {
+  layoutVersion++
+  if (layoutFrame !== null) dropFrame(layoutFrame)
+  layoutFrame = null; layoutPending.value = false
+}
+function finishLayoutInFrames(placed, fitAfter) {
+  cancelLayout()
+  positions.value = placed
+  if (layout.value !== 'force' || !placed.length) { if (fitAfter) fitView(); return }
+  const working = placed.map(node => ({ ...node }))
+  const steps = refineRelationNeighborhoodsInSteps(working, edges.value, showAll.value ? '' : anchor.value, showAll.value)
+  const version = layoutVersion
+  layoutPending.value = true
+  frameBudget.resetClock()
+  const now = () => typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()
+  const run = timestamp => {
+    layoutFrame = null
+    if (disposed || version !== layoutVersion) return
+    frameBudget.observe(Number.isFinite(timestamp) ? timestamp : Date.now())
+    const started = now()
+    let done = false, count = 0
+    do { done = steps.next().done; count++ }
+    while (!done && count < frameBudget.windows && now() - started < frameBudget.milliseconds)
+    if (!done) { layoutFrame = nextFrame(run); return }
+    positions.value = working
+    if (fitAfter) fitView()
+    layoutPending.value = false
+    frameBudget.resetClock()
+  }
+  layoutFrame = nextFrame(run)
+}
 function arrange() {
   viewEdited = false
-  cancelGesture(); stopSprings(); stopZoom(); clearLine()
+  cancelLayout(); cancelGesture(); stopSprings(); stopZoom(); clearLine()
   stableBends = null; dragOrigin = null; dragBends = null; dragLabels = null; bendRevision.value++
-  positions.value = layoutTables(visibleTables.value, edges.value, showAll.value ? '' : anchor.value, layout.value, width.value, height.value)
+  const placed = layoutTables(visibleTables.value, edges.value, showAll.value ? '' : anchor.value, layout.value, width.value, height.value, curvedLinks, showAll.value, { deferRefinement: true, iterations: frameBudget.iterations })
   pan.value = { x: 0, y: 0 }; zoom.value = 1; hovered.value = ''
-  if (showAll.value) fitView()
+  finishLayoutInFrames(placed, showAll.value)
 }
 function rearrangeAtCurrentZoom() {
-  cancelGesture(); stopSprings(); stopZoom(); clearLine()
+  cancelLayout(); cancelGesture(); stopSprings(); stopZoom(); clearLine()
   stableBends = null; dragOrigin = null; dragBends = null; dragLabels = null; bendRevision.value++
   const scale = zoom.value
-  positions.value = layoutTables(visibleTables.value, edges.value, showAll.value ? '' : anchor.value,
-    layout.value, width.value / scale, height.value / scale)
+  const placed = layoutTables(visibleTables.value, edges.value, showAll.value ? '' : anchor.value,
+    layout.value, width.value / scale, height.value / scale, curvedLinks, showAll.value, { deferRefinement: true, iterations: frameBudget.iterations })
   pan.value = { x: 0, y: 0 }; hovered.value = ''; viewEdited = true
+  finishLayoutInFrames(placed, false)
 }
 function fitView() {
   stopZoom()
@@ -617,14 +682,16 @@ function move(point) {
   if (!gesture || gesture.pinch) return
   const x = point.clientX, y = point.clientY
   if (!moving.value && Math.hypot(x - gesture.x, y - gesture.y) < 4) return
+  if (!moving.value && !gesture.name) gestureLabels = labels.value
   if (!moving.value && gesture.name) {
     const currentBends = new Map(strokes.value.map(line => [line.key, line.bend || 0]))
+    const currentArrows = new Map(strokes.value.filter(line => line.arrowT != null).map(line => [line.key, line.arrowT]))
     const currentLabels = new Map(labels.value.nodeLabels)
     stopSprings(); clearLine()
-    dragBends = currentBends; dragLabels = currentLabels
+    dragBends = currentBends; dragLabels = currentLabels; dragArrows = currentArrows
     bendTargets = new Map(dragBends); routedPositions = null; lastRouteTime = 0
     dragOrigin = new Map(positions.value.map(node => [node.name, { x: node.x, y: node.y }]))
-    if (layout.value === 'force') spring = dragSprings(positions.value, edges.value, gesture.name)
+    if (layout.value === 'force') { frameBudget.resetClock(); spring = dragSprings(positions.value, edges.value, gesture.name) }
     settling.value = true
   }
   moving.value = true; viewEdited = true
@@ -633,7 +700,6 @@ function move(point) {
     const node = positions.value.find(n => n.name === gesture.name)
     if (node) {
       node.x += dx / zoom.value; node.y += dy / zoom.value
-      triggerRef(positions)
       ticks = 0
       if (springFrame === null) springFrame = nextFrame(tickSprings)
     }
@@ -641,11 +707,11 @@ function move(point) {
   gesture.lastX = x; gesture.lastY = y
 }
 function cancelGesture() {
-  if (moving.value) ignoreClickUntil = Date.now() + 260
-  gesture = null; moving.value = false
+  if (moving.value) { doubleTap(); ignoreClickUntil = Date.now() + 260 }
+  gesture = null; moving.value = false; gestureLabels = null
   if (dragBends) {
     if (springFrame === null) springFrame = nextFrame(tickSprings)
-  } else { settling.value = false; dragBends = null; dragLabels = null }
+  } else { settling.value = false; dragBends = null; dragLabels = null; dragArrows = null }
   // #ifdef H5
   window.removeEventListener('mousemove', move)
   window.removeEventListener('mouseup', cancelGesture)
@@ -661,19 +727,21 @@ function mouseStart(event) {
   window.addEventListener('blur', cancelGesture)
   // #endif
 }
-let lastNodeClick = { name: '', time: 0 }
-function nodeClick(name) {
-  if (Date.now() < ignoreClickUntil) return
-  const now = Date.now()
-  if (lastNodeClick.name === name && now - lastNodeClick.time < 350) {
-    lastNodeClick = { name: '', time: 0 }
-    if (recordMode.value) {
-      if (name === 'User') drillRecords(name, ['id'])
-      else if (recordCounts.value.get(name)?.total != null) drillRecords(name)
-    } else emit('select', name)
+const doubleTap = tableDoubleTap()
+function switchGraphTable(name) {
+  if (recordMode.value) {
+    if (name === 'User') drillRecords(name, ['id'])
+    else if (recordCounts.value.has(name)) drillRecords(name)
     return
   }
-  lastNodeClick = { name, time: now }
+  entityBooking.value = false
+  inspect(name)
+  setScope(false)
+  emit('switch-table', name)
+}
+function nodeClick(name) {
+  if (Date.now() < ignoreClickUntil) return
+  if (doubleTap(name)) { switchGraphTable(name); return }
   if (tracing.value) { traceEnd.value = name; focusTrace() }
   else inspect(name)
 }
@@ -685,7 +753,7 @@ function touchPair(touches) {
 function touchStart(event, name) {
   stopZoom()
   if (event.touches.length === 1) begin(event.touches[0], name)
-  else { gesture = { pinch: touchPair(event.touches) }; moving.value = true }
+  else { if (!moving.value) gestureLabels = labels.value; gesture = { pinch: touchPair(event.touches) }; moving.value = true }
 }
 function touchMove(event) {
   if (event.touches.length < 2) { if (event.touches[0]) move(event.touches[0]); return }
@@ -701,7 +769,7 @@ function touchEnd(event) {
   if (event.touches.length === 1) { begin(event.touches[0], null); moving.value = true }
   else cancelGesture()
 }
-let disposed = false
+let disposed = false, measureGeneration = 0
 let mouseSurface = null
 function bindSurface(element) {
   // #ifdef H5
@@ -716,12 +784,22 @@ function bindSurface(element) {
 function setSize(rect) {
   if (disposed || !rect?.width || !rect.height) return
   stageRect = rect; width.value = Math.round(rect.width); height.value = Math.round(rect.height)
+  if (appGraphOptimized && !graphMeasured.value) {
+    const generation = measureGeneration
+    // Let the size watcher finish the first layout before displaying the scene.
+    nextTick(() => {
+      if (!disposed && generation === measureGeneration && !loading.value && !structure.value && !error.value) graphMeasured.value = true
+    })
+  }
 }
 function measure() {
   if (!disposed) uni.createSelectorQuery().in(instance.proxy).select('.er-stage').boundingClientRect(setSize).exec()
 }
 watch(() => !structure.value && !loading.value && !error.value && visibleTables.value.length > 0, async ready => {
+  const generation = ++measureGeneration
+  if (!ready && appGraphOptimized) graphMeasured.value = false
   await nextTick()
+  if (generation !== measureGeneration) return
   observer?.disconnect()
   bindSurface(ready && !disposed ? stageElement() : null)
   if (!ready || disposed) return
@@ -738,7 +816,8 @@ const topology = computed(() => JSON.stringify([layout.value, scene.value?.root,
 watch(topology, arrange, { immediate: true })
 watch([width, height], () => { if (!viewEdited) arrange() })
 watch(() => props.mode, mode => {
-  if (mode === 'structure') { cancelGesture(); stopSprings(); stopZoom(); hovered.value = ''; hoverLine.value = '' }
+  doubleTap()
+  if (mode === 'structure') { cancelLayout(); cancelGesture(); stopSprings(); stopZoom(); hovered.value = ''; hoverLine.value = '' }
 })
 watch(() => props.current, name => { if (name && !recordMode.value) { if (tracing.value) exitTrace(); anchor.value = name; inspect(name) } })
 watch(tableMap, map => {
@@ -751,6 +830,8 @@ let loadVersion = 0
 watch(() => props.userId, () => { load() })
 async function load() {
   const version = ++loadVersion
+  if (appGraphOptimized) graphMeasured.value = false
+  cancelLayout()
   loading.value = true; error.value = ''
   try {
     const response = await getAdminDatabaseRelations(props.userId)
@@ -772,18 +853,18 @@ async function load() {
   finally { if (!disposed && version === loadVersion) loading.value = false }
 }
 onMounted(() => { load(); uni.onWindowResize?.(measure) })
-onUnmounted(() => { disposed = true; cancelGesture(); stopSprings(); stopZoom(); routeWorker?.terminate(); routeWorker = null; if (routeTimer) clearTimeout(routeTimer); observer?.disconnect(); bindSurface(null); uni.offWindowResize?.(measure) })
+onUnmounted(() => { disposed = true; cancelLayout(); cancelGesture(); stopSprings(); stopZoom(); routeWorker?.terminate(); routeWorker = null; if (routeTimer) clearTimeout(routeTimer); observer?.disconnect(); bindSurface(null); uni.offWindowResize?.(measure) })
 </script>
 <style scoped>
 .er-workspace {
-  --panel: #102c37; --surface: #173640; --canvas: #102a34; --grid: rgba(151,197,196,.14);
+  --panel: #102c37; --floating-panel: rgba(16,44,55,.82); --surface: #173640; --canvas: #102a34; --grid: rgba(151,197,196,.14);
   --ink: #e8f2f1; --text: #b9d1d1; --soft: #90adae; --line: #304c55;
   --accent: #80dcc8; --tint: #21483f; --cta: #91e1ca; --cta-ink: #123b32;
   margin: 5px 10px; color: var(--text); background: var(--panel); overflow: hidden;
   border: 1px solid var(--line); border-radius: 14px; font-family: inherit; font-size: 12px;
 }
 .er-workspace.light {
-  --panel: #fff; --surface: #f3f7f5; --canvas: #f7faf8; --grid: rgba(92,126,111,.17);
+  --panel: #fff; --floating-panel: rgba(255,255,255,.82); --surface: #f3f7f5; --canvas: #f7faf8; --grid: rgba(92,126,111,.17);
   --ink: #193b34; --text: #3d5c53; --soft: #617b71; --line: #dce7e1;
   --accent: #15745f; --tint: #e6f4ee; --cta: #176952; --cta-ink: #fff;
 }
@@ -813,7 +894,7 @@ onUnmounted(() => { disposed = true; cancelGesture(); stopSprings(); stopZoom();
 .er-button { border: 1px solid var(--line); min-height: 34px; border-radius: 7px; }
 .er-layout { gap: 12px; }.er-layout text { color: var(--soft); }
 .er-button:hover,.er-fit:hover,.er-tool:hover { color: var(--accent); background: var(--tint); }
-.er-body { display: flex; align-items: stretch; height: clamp(440px, 68vh, 780px); border-top: 1px solid var(--line); overflow: hidden; }
+.er-body { display: flex; align-items: stretch; height: clamp(480px, 72vh, 840px); border-top: 1px solid var(--line); overflow: hidden; }
 .er-graph {
   flex: 1; min-width: 0; min-height: 0; position: relative; display: flex; flex-direction: column;
   background-color: var(--canvas); background-image: radial-gradient(var(--grid) .8px, transparent .9px); background-size: 19px 19px;
@@ -822,6 +903,7 @@ onUnmounted(() => { disposed = true; cancelGesture(); stopSprings(); stopZoom();
 .er-scope text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .er-scope-dot,.er-color-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; }
 .er-scope-dot { background: var(--accent); }
+.er-layout-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--soft); pointer-events: none; }
 .er-stage { width: 100%; flex: 1; min-height: 0; position: relative; overflow: hidden; touch-action: none; user-select: none; cursor: grab; }
 .er-stage.dragging,.er-stage.dragging .er-node { cursor: grabbing; }
 .er-node { position: absolute; width: 0; height: 0; z-index: 2; cursor: pointer; outline: 0; }
@@ -833,6 +915,8 @@ onUnmounted(() => { disposed = true; cancelGesture(); stopSprings(); stopZoom();
 }
 .er-dot::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
 .er-node-icon { pointer-events: none; }
+.er-node.empty-records { opacity: .28; filter: grayscale(.85); }
+.er-node.empty-records.selected,.er-node.empty-records:hover,.er-node.empty-records:focus-visible { opacity: .85; }
 .er-node-badge { position: absolute; z-index: 1; right: -7px; top: -7px; min-width: 15px; height: 15px; padding: 0 3px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--panel); background: var(--node-color); color: #fff; text-align: center; font-size: 9px; line-height: 13px; }
 .er-node.selected .er-dot,.er-node:hover .er-dot,.er-node:focus-visible .er-dot { outline: 1px solid var(--node-color); outline-offset: 4px; }
 .er-table-mark { width: 14px; height: 12px; border: 1.5px solid var(--panel); box-sizing: border-box; border-radius: 2px; position: relative; }
@@ -857,13 +941,15 @@ onUnmounted(() => { disposed = true; cancelGesture(); stopSprings(); stopZoom();
 .er-line.loop::before { display: none; }.er-line.loop.lit { border-width: 3px; }
 .er-arrow { position: absolute; z-index: 1; width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 9px solid currentColor; pointer-events: none; }
 .er-edge-label { position: absolute; box-sizing: border-box; height: 19px; padding: 0 4px; text-align: center; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--text); font: 10px/17px ui-monospace,Consolas,monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.er-edge-label.lit { color: var(--accent); border-color: var(--accent); }.er-edge-label.dim { opacity: .5; }
-.er-edge-card { position: absolute; z-index: 5; left: 12px; bottom: 54px; max-width: calc(100% - 48px); padding: 8px 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 7px; background: var(--panel); box-shadow: 0 3px 14px #102c3814; }
+.er-edge-label.lit { color: var(--accent); border-color: var(--accent); }.er-edge-label.dim { opacity: .5; }.er-edge-label.empty-records { opacity: .22; }.er-edge-label.empty-records.lit,.er-edge-label.empty-records:hover { opacity: 1; }
+.er-edge-card { position: absolute; z-index: 5; left: 12px; bottom: 92px; max-width: calc(100% - 48px); padding: 8px 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 7px; background: var(--panel); box-shadow: 0 3px 14px #102c3814; }
 .er-edge-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 650; color: var(--ink); }
 .er-dismiss { margin: 0; padding: 0 4px; line-height: 18px; color: var(--soft); background: transparent; font-size: 15px; }
 .er-dismiss::after { border: none; }.er-edge-fields { margin-top: 2px; }.er-edge-fields text { display: block; font: 11px/20px ui-monospace,Consolas,monospace; color: var(--accent); }
 
 .er-graph-footer { position: absolute; z-index: 4; left: 14px; right: 14px; bottom: 12px; justify-content: space-between; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.er-legend-toggle { margin: 0; padding: 0 9px; min-height: 28px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--soft); font: inherit; font-size: 11px; line-height: 26px; pointer-events: auto; }
+.er-legend-toggle::after { border: 0; }
 .er-hint { color: var(--soft); font-size: 11px; padding: 4px 7px; border-radius: 6px; background: var(--panel); }
 .er-tools { gap: 1px; margin-left: auto; padding: 3px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); box-shadow: 0 2px 6px #102c380a; }
 .er-tools { pointer-events: auto; }
@@ -892,8 +978,9 @@ onUnmounted(() => { disposed = true; cancelGesture(); stopSprings(); stopZoom();
 .er-direction { margin-left: auto; color: var(--soft); font-size: 10px; font-weight: 400; white-space: nowrap; }
 .er-field { color: var(--soft); font-size: 10px; padding-left: 13px; margin-top: 4px; line-height: 1.4; }
 .er-empty { padding: 10px 15px; color: var(--soft); font-size: 12px; }
-.er-legend { flex-wrap: wrap; gap: 7px 15px; padding: 9px 16px; color: var(--soft); border-top: 1px solid var(--line); font-size: 11px; }
+.er-legend { position: absolute; z-index: 4; left: 14px; bottom: 52px; max-width: calc(100% - 28px); box-sizing: border-box; flex-wrap: wrap; gap: 5px 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--soft); font-size: 11px; pointer-events: none; }
 .er-legend-item { gap: 5px; }.er-convention { margin-left: auto; }
+.er-scope,.er-legend,.er-legend-toggle,.er-tools,.er-edge-card { background: var(--floating-panel); }
 .er-trace-toggle { gap: 8px; }.er-trace-toggle.active,.er-scope.tracing { background: var(--tint); color: var(--accent); }
 .er-route-symbol { position: relative; width: 13px; height: 2px; background: currentColor; transform: rotate(-25deg); }
 .er-route-symbol::before,.er-route-symbol::after { content: ''; position: absolute; top: -2px; width: 4px; height: 4px; border: 1px solid currentColor; border-radius: 50%; background: var(--panel); }
@@ -925,12 +1012,12 @@ onUnmounted(() => { disposed = true; cancelGesture(); stopSprings(); stopZoom();
 .er-message { min-height: 200px; display: flex; align-items: center; justify-content: center; gap: 10px; border-top: 1px solid var(--line); color: var(--soft); }
 @media (max-width: 740px) {
   .er-header { padding: 7px 10px; }.er-body { height: auto; flex-direction: column; }
-  .er-graph { flex: none; height: clamp(380px, 65vh, 520px); }
+  .er-graph { flex: none; height: clamp(420px, 70vh, 580px); }
   .er-inspector { width: 100%; height: auto; border-left: none; border-top: 1px solid var(--line); }
   .er-panel-heading { padding: 10px 12px 5px; }.er-identity { padding: 0 12px 10px; }
   .er-table-title { font-size: 15px; }.er-identity .er-pk,.er-actions { margin-top: 7px; }
   .er-list-heading { padding: 8px 12px 2px; }.er-details-clip { height: 130px; flex: none; }
-  .er-legend { gap: 7px 10px; padding: 8px 12px; }
+  .er-legend { gap: 4px 8px; padding: 5px 7px; }
 }
 @media (max-width: 480px) {
   .er-workspace { margin: 4px; }.er-heading { gap: 7px; }.er-title { font-size: 15px; }

@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <activity android:name="io.dcloud.PandoraEntry">
+      <meta-data android:name="android.app.shortcuts" android:resource="@xml/ftx_share_targets" />
+    </activity>
+    <activity android:name="ftx.share.DirectShareActivity" android:exported="true"
+      android:excludeFromRecents="true" android:theme="@android:style/Theme.NoDisplay">
+      <intent-filter>
+        <action android:name="android.intent.action.SEND" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:mimeType="text/plain" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

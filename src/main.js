@@ -7,6 +7,10 @@ import { rewriteLegacyDeviceScanLocation } from "./utils/device-qr-entry.mjs";
 import { applyStoredTheme } from "./utils/theme.js";
 import { installPageTransitions } from "./utils/page-transitions.js";
 import { markAppPageReady } from "./utils/app-page-ready.mjs";
+// #ifdef APP-PLUS || MP-WEIXIN
+import { baseUrl } from "./api/settings.js";
+import { installLoginDeviceMetadata } from "./utils/login-device-metadata.mjs";
+// #endif
 // #ifdef H5
 import { finishH5LoginLoading } from "./utils/h5-login-loading.mjs";
 // #endif
@@ -24,8 +28,12 @@ export function createApp() {
 	// #endif
 	installPageTransitions();
 	// #ifdef APP-PLUS
+	installLoginDeviceMetadata(uni, baseUrl, 'app');
 	const versionGuard = installAppVersionGuard();
 	installAppTabNavigation();
+	// #endif
+	// #ifdef MP-WEIXIN
+	installLoginDeviceMetadata(uni, baseUrl, 'mini');
 	// #endif
 	const app = createSSRApp(App);
 	app.mixin({ onShow() {

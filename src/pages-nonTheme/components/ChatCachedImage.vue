@@ -1,6 +1,6 @@
 <template>
   <image :key="sourceKey" class="chat-cached-image" :src="displaySrc" :mode="mode"
-    :style="!displaySrc && mode === 'widthFix' ? { height: '120rpx' } : null"
+    :style="kind === 'avatar' ? { display: 'block', width: '100%', height: '100%' } : !displaySrc && mode === 'widthFix' ? { height: '120rpx' } : null"
     v-show="kind !== 'avatar' || displaySrc"
     :data-message-id="messageId" :data-original-token="originalToken" :data-retry-nonce="retryNonce" :data-source-key="sourceKey"
     @load="onImageLoad" @error="onImageError" @tap="onTap" />

@@ -38,6 +38,7 @@ import { userinfo } from '@/api/user.js'
 import { installAppOfflineSession, refreshAppOfflineNetwork } from '@/utils/app-offline-session.js'
 import { appVersionGuard } from '@/utils/app-version-guard.js'
 import { initBusinessNotificationNavigation, resumeBusinessNotification } from '@/utils/business-notification.js'
+import { resumeDirectShare } from '@/utils/app-direct-share.js'
 import { getHuaweiPushToken, deleteHuaweiPushToken } from '@/uni_modules/ftx-huawei-push'
 import { installChatPush, syncChatPush } from '@/utils/chat-push.js'
 import { appConsole } from '@/utils/app-console.mjs'
@@ -177,6 +178,7 @@ export default {
     syncChatPush(uni.getStorageSync('token') || '', true)
     initBusinessNotificationNavigation()
     void resumeBusinessNotification()
+    resumeDirectShare()
     uni.$emit('smart-sort-robot:visibility', true)
     setAppMapPreloadActive(true)
     // #endif

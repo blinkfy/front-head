@@ -1,3 +1,5 @@
+import { publishRecentShareTargets, syncDirectShareAccount } from './app-direct-share.js'
+
 // #ifdef APP-PLUS
 import { updateChatBadge } from '@/uni_modules/ftx-voice-call'
 // #endif
@@ -21,14 +23,21 @@ export function syncChatBadgeAccount() {
   const current = owner()
   if (configuredOwner === current) return
   configuredOwner = current
+  syncDirectShareAccount(current)
   update({ owner: current })
 }
-export function clearChatBadge() { configuredOwner = ''; update({ owner: '', operation: 'clear' }) }
+export function clearChatBadge() {
+  configuredOwner = ''
+  syncDirectShareAccount('')
+  update({ owner: '', operation: 'clear' })
+}
 
 // No requests/timers: reuse an unfiltered chat list response already being loaded.
 export function beginChatBadgeSnapshot() { return { owner: owner(), token: uni.getStorageSync('token'), startedAt: Date.now() } }
 export function finishChatBadgeSnapshot(start, result, params) {
-  if (params?.keyword || result?.code !== 0 || !result.data?.badgeUnreadCounts ||
+  if (params?.keyword || result?.code !== 0 ||
       !start.owner || start.owner !== owner() || start.token !== uni.getStorageSync('token')) return
+  if (Number(params?.page || 1) === 1) publishRecentShareTargets(start.owner, result.data?.list)
+  if (!result.data?.badgeUnreadCounts) return
   update({ owner: start.owner, operation: 'snapshot', counts: result.data.badgeUnreadCounts, startedAt: start.startedAt })
 }

@@ -54,6 +54,9 @@ export const messageSyncMethods = {
             this.lastHistoryReconcileAt = now
         }
         if (removed.size) {
+            for (const message of [...this.messages, ...messages]) {
+                if (removed.has(String(message.refId))) message.refUnavailable = true
+            }
             this.messages = this.messages.filter(message => !removed.has(String(message.id)))
             this.saveMessagesToStorage()
         }

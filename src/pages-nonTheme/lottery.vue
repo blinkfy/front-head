@@ -52,7 +52,8 @@
           <view class="points-info">
             <text class="points-label">我的积分</text>
             <text class="points-value">{{ userPoints }}</text>
-            <text class="points-helper" v-if="freeCount <= 0 && userPoints < getDrawCost()">还差 {{ getDrawCost() - userPoints }} 积分可再抽一次</text>
+            <text class="points-helper" v-if="config.available === false">{{ config.unavailableReason || '抽奖活动暂不可用' }}</text>
+            <text class="points-helper" v-else-if="freeCount <= 0 && userPoints < getDrawCost()">还差 {{ getDrawCost() - userPoints }} 积分可再抽一次</text>
             <text class="points-helper ready" v-else>{{ freeCount > 0 ? '今日免费机会可用' : '当前积分可继续抽奖' }}</text>
           </view>
         </view>
@@ -106,7 +107,10 @@
 
         <!-- 抽奖状态 -->
         <view class="draw-status">
-          <view class="status-pill free-usage" v-if="freeCount > 0">
+          <view class="status-pill points-usage" v-if="config.available === false">
+            <text class="cost-text">{{ config.unavailableReason || '抽奖活动暂不可用' }}</text>
+          </view>
+          <view class="status-pill free-usage" v-else-if="freeCount > 0">
             <ManifestIcon id="free_ticket" class="free-icon" />
             <text class="free-text">今日免费次数: {{ freeCount }}/{{ totalFree }}</text>
           </view>
@@ -674,7 +678,7 @@ export default {
           console.error('加载中奖记录失败:', recordsTask.error);
         }
 
-        this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
+        this.canDraw = this.config.available !== false && !this.loadError && this.config.prizes.length > 0 && (this.freeCount > 0 || this.userPoints >= this.getDrawCost());
       } catch (e) {
         console.error('加载失败:', e);
         this.loadError = '抽奖数据加载失败，请重新加载';
@@ -689,7 +693,7 @@ export default {
     async startDraw() {
       if (this.isSpinning) return;
       if (!this.canDraw) {
-        uni.showToast({ title: '积分不足或次数已用完', icon: 'none' });
+        uni.showToast({ title: this.config.available === false ? (this.config.unavailableReason || '抽奖活动暂不可用') : (this.loadError || '积分不足或次数已用完'), icon: 'none' });
         return;
       }
       this.isSpinning = true;
@@ -731,7 +735,7 @@ export default {
       if (prizes.length === 0) {
         this.isSpinning = false;
         this.settleDrawPoints();
-        this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
+        this.canDraw = this.config.available !== false && !this.loadError && this.config.prizes.length > 0 && (this.freeCount > 0 || this.userPoints >= this.getDrawCost());
         playResultSound();
         return;
       }
@@ -769,7 +773,7 @@ export default {
         } else {
           this.isSpinning = false;
           this.settleDrawPoints();
-          this.canDraw = this.freeCount > 0 || this.userPoints >= this.getDrawCost();
+          this.canDraw = this.config.available !== false && !this.loadError && this.config.prizes.length > 0 && (this.freeCount > 0 || this.userPoints >= this.getDrawCost());
           playResultSound();
           setTimeout(() => {
             this.showPrizeModal = true;

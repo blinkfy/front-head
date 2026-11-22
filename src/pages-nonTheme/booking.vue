@@ -250,7 +250,11 @@ export default {
     bookingSelectionKey() { return JSON.stringify([this.serviceAreaId, this.address, this.bookingPoint, this.dateValues[this.selectedDate], this.photoCount, [...this.selectedTypes].map(Number).sort((a, b) => a - b)]); },
     bookingPoint() { const p = this.addressCoordinates; const point = p?.address === this.address && p.coordinateSystem === 'wgs84' ? normalizePoint(p) : null; return point ? { ...point, ...(Number.isFinite(p.accuracyMeters) && p.accuracyMeters >= 0 ? { accuracyMeters: Math.min(200, p.accuracyMeters) } : {}) } : null; },
     matchingAreas() { return this.bookingPoint ? this.serviceAreas.filter(area => area.geometry && coversServiceLocation(area.geometry, this.bookingPoint)) : []; },
-    allowedWasteTypes() { const ids = [...new Set(this.matchingAreas.flatMap(area => area.typeIds || []))]; return this.wasteTypes.filter(item => ids.map(Number).includes(Number(item.id))); },
+    priceGuides() { return this.matchingAreas.flatMap(area => area.priceGuides || []); },
+    allowedWasteTypes() {
+      const ids = new Set(this.matchingAreas.flatMap(area => area.typeIds || []).map(Number));
+      return this.wasteTypes.filter(item => ids.has(Number(item.id)));
+    },
     address: {
       get() {
         return composeShopAddress(this.addressRegion, this.addressDetail);
@@ -289,7 +293,7 @@ export default {
     unitText: bookingUnitText,
     unitIndex(typeId) { return Math.max(0, this.quantityUnits.findIndex(unit => unit.value === (this.itemUnits[typeId] || 'kg'))); },
     changeQuantityUnit(typeId, event) { this.itemUnits[typeId] = this.quantityUnits[Number(event.detail.value)]?.value || 'kg'; },
-    typePriceGuides(typeId) { return this.matchingAreas.flatMap(area => area.priceGuides || []).filter(guide => Number(guide.typeId) === Number(typeId)); },
+    typePriceGuides(typeId) { return this.priceGuides.filter(guide => Number(guide.typeId) === Number(typeId)); },
     typePriceDescriptions(typeId) { return [...new Set(this.typePriceGuides(typeId).flatMap(guide => guide.descriptions || []).filter(Boolean))].join('；'); },
     typePriceText(typeId) {
       const guides = this.typePriceGuides(typeId);

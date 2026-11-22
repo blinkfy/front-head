@@ -2,7 +2,7 @@
   <view class="call-page" :class="{ dark: darkTheme, 'video-mode': videoActive, 'video-waiting': outgoingVideoVisible, 'video-controls-hidden': videoActive && videoControlsHidden, 'screen-sharing': screenShareLabel }">
     <text class="page-title">{{ (['connecting', 'connected'].includes(state.phase) ? videoActive : isVideo) ? '视频通话' : '语音通话' }}</text>
     <view class="peer">
-      <ChatCachedAvatar v-if="!videoActive" class="avatar" :src="peerAvatar" :avatar-name="displayPeer?.name || '聊'" :owner="avatarOwner" />
+      <ChatCachedAvatar v-if="!videoActive" class="avatar" size="88px" radius="28px" :src="peerAvatar" :avatar-name="displayPeer?.name || '聊'" :owner="avatarOwner" />
       <text class="peer-name">{{ displayPeer?.name || '语音通话' }}</text>
       <text class="status" aria-live="polite">{{ statusText }}</text>
       <text v-if="outgoingVideoVisible" class="preview-badge">本机预览</text>
@@ -235,7 +235,7 @@ export default {
 .call-page { min-height: 100vh; box-sizing: border-box; padding: calc(var(--status-bar-height, 28px) + 24px) 24px calc(env(safe-area-inset-bottom, 0px) + 40px); background: #f3f6f4; color: #243730; display: flex; flex-direction: column; align-items: center; }
 .page-title { font-size: 15px; color: #73837b; }
 .peer { padding-top: 12vh; display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%; }
-.avatar { width: 88px; height: 88px; border-radius: 28px; background: #deebe3; color: #32684e; display: flex; align-items: center; justify-content: center; font-size: 36px; }
+.avatar { background: #deebe3; color: #32684e; font-size: 36px; }
 .peer-name { margin-top: 24px; font-size: 24px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status { margin-top: 14px; font-size: 16px; line-height: 1.6; max-width: 340px; font-variant-numeric: tabular-nums; }
 .route-hint { margin-top: 14px; font-size: 12px; color: #788980; line-height: 1.6; }

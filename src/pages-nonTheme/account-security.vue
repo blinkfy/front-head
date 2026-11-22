@@ -96,12 +96,33 @@
         <!-- #endif -->
       </view>
 
-      <view v-if="recentLogin" class="settings-section">
-        <text class="section-title">上一次登录</text>
-        <view class="setting-item">
+      <view class="settings-section">
+        <view class="section-title login-section-header">
+          <text v-if="recentLogin">上一次登录</text>
+          <text v-else-if="loginHistoryOpen">登录记录</text>
+          <button class="login-history-link" :aria-expanded="loginHistoryOpen" @click="toggleLoginHistory">{{ loginHistoryOpen ? '收起' : '查看登录记录' }}</button>
+        </view>
+        <view v-if="recentLogin" class="setting-item">
           <view class="item-info">
             <text class="item-title">{{ recentLogin.location || '地区暂未获取' }}<text v-if="recentLogin.location" class="region-hint"> · IP 估算</text></text>
-            <text class="item-desc">{{ recentLoginTime }} · {{ recentLoginMethod }}</text>
+            <text class="item-desc">{{ formatLoginTime(recentLogin.loggedInAt) }} · {{ loginMethodLabel(recentLogin.method) }}</text>
+            <text v-if="recentLogin.deviceLabel" class="item-desc">登录设备 · {{ recentLogin.deviceLabel }}</text>
+          </view>
+        </view>
+        <view v-if="loginHistoryOpen" class="login-history">
+          <view v-if="loginHistoryLoading || loginHistoryError || !loginHistory.length" class="setting-item">
+            <text class="item-info login-history-status">{{ loginHistoryLoading ? '正在加载…' : loginHistoryError ? '暂未获取到登录记录' : '暂无登录记录' }}</text>
+            <button v-if="loginHistoryError" class="retry-btn" @click="loadLoginHistory">重试</button>
+          </view>
+          <view v-for="(login, index) in loginHistory" :key="login.loginId" class="setting-item">
+            <view class="item-info">
+              <view class="item-heading">
+                <text class="item-title">{{ formatLoginTime(login.loggedInAt) }}</text>
+                <text v-if="index === 0" class="region-hint">最近一次</text>
+              </view>
+              <text class="item-desc">{{ loginMethodLabel(login.method) }}{{ login.deviceLabel ? ' · ' + login.deviceLabel : '' }}</text>
+              <text class="item-desc">{{ login.location ? login.location + ' · IP 估算' : '地区暂未获取' }}</text>
+            </view>
           </view>
         </view>
       </view>
@@ -120,7 +141,7 @@ import { onShow, onHide } from '@dcloudio/uni-app'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import MfaSecurity from '@/components/MfaSecurity.vue'
 const mfaSecurity = ref(null)
-import { getUserProfile, getWechatLoginSettings, getPreviousLogin } from '@/api/user'
+import { getUserProfile, getWechatLoginSettings, getPreviousLogin, getLoginHistory } from '@/api/user'
 import { ThemeManager } from '@/utils/theme.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
@@ -147,13 +168,58 @@ function readCachedProfile() {
 }
 
 const recentLogin = ref(null)
-const recentLoginTime = computed(() => {
-  const date = new Date(recentLogin.value?.loggedInAt)
+const loginHistory = ref([])
+const loginHistoryOpen = ref(false)
+const loginHistoryLoading = ref(false)
+const loginHistoryError = ref(false)
+let loginHistoryRequest = 0
+
+function formatLoginTime(loggedInAt) {
+  const date = new Date(loggedInAt)
   if (!Number.isFinite(date.getTime())) return ''
   const pad = value => String(value).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-})
-const recentLoginMethod = computed(() => ({ password: '密码登录', 'wechat-password': '微信密码登录', wechat: '微信登录', biometric: '指纹或面容登录', passkey: '通行密钥登录', soter: '微信指纹或面容登录', qr: '扫码登录', mfa: '双因素验证登录' }[recentLogin.value?.method] || '账号登录'))
+}
+
+function loginMethodLabel(method) {
+  return { password: '密码登录', 'wechat-password': '微信密码登录', wechat: '微信登录', biometric: '指纹或面容登录', passkey: '通行密钥登录', soter: '微信指纹或面容登录', qr: '扫码登录', mfa: '双因素验证登录' }[method] || '账号登录'
+}
+
+async function loadLoginHistory() {
+  const token = uni.getStorageSync('token')
+  if (!token) return
+  const request = ++loginHistoryRequest
+  const isCurrent = () => request === loginHistoryRequest && token === uni.getStorageSync('token')
+  loginHistoryError.value = false
+  loginHistoryLoading.value = true
+  try {
+    const result = await getLoginHistory()
+    if (!isCurrent()) return
+    if (result.code === 0 && Array.isArray(result.data)) loginHistory.value = result.data
+    else loginHistoryError.value = true
+  } catch (_) {
+    if (isCurrent()) loginHistoryError.value = true
+  } finally {
+    if (isCurrent()) loginHistoryLoading.value = false
+  }
+}
+
+function closeLoginHistory() {
+  loginHistoryRequest++
+  loginHistoryOpen.value = false
+  loginHistory.value = []
+  loginHistoryLoading.value = false
+  loginHistoryError.value = false
+}
+
+function toggleLoginHistory() {
+  if (loginHistoryOpen.value) closeLoginHistory()
+  else {
+    loginHistoryOpen.value = true
+    void loadLoginHistory()
+  }
+}
+
 async function loadRecentLogin() {
   const token = uni.getStorageSync('token')
   recentLogin.value = null
@@ -336,6 +402,8 @@ function goBack() {
   else uni.redirectTo({ url: '/pages-nonTheme/settings' })
 }
 
+onHide(closeLoginHistory)
+
 onShow(() => {
   isDarkTheme.value = ThemeManager.getTheme() === 'dark'
   profile.value = readCachedProfile()
@@ -394,6 +462,11 @@ onShow(() => {
 .account-name { display: block; font-size: 34rpx; font-weight: 700; margin: 8rpx 0; overflow-wrap: anywhere; word-break: break-all; }
 .account-hint { display: block; color: var(--muted); font-size: 22rpx; line-height: 1.6; }
 .section-title { display: block; padding: 22rpx 24rpx 18rpx; color: var(--accent); font-size: 26rpx; font-weight: 600; border-bottom: 1rpx solid var(--line); }
+.login-section-header { display: flex; align-items: center; justify-content: space-between; padding-top: 8rpx; padding-bottom: 8rpx; }
+.login-history-link { margin: 0 0 0 auto; padding: 0; color: var(--accent); background: transparent; border-radius: 0; font-size: 24rpx; line-height: 64rpx; }
+.login-history-link::after { border: 0; }
+.login-history { background: var(--tint); }
+.login-history-status { color: var(--muted); font-size: 24rpx; }
 .setting-item { display: flex; align-items: center; padding: 28rpx 24rpx; border-bottom: 1rpx solid var(--line); }
 .setting-item:last-child { border-bottom: 0; }
 .actionable:active { background: var(--tint); }

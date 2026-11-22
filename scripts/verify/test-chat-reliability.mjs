@@ -517,13 +517,14 @@ async function testHistoryCacheSnapshotCompatibility() {
     const cacheSource = fs.readFileSync(path.join(root, 'src/utils/chat-history-cache.js'), 'utf8')
     const cacheUrl = `data:text/javascript;base64,${Buffer.from(cacheSource).toString('base64')}`
     const cache = await import(cacheUrl)
-    const messages = [{ id: 201, type: 'text', content: 'cached row', timestamp: 1 }]
+    const messages = [{ id: 201, type: 'text', content: 'cached row', timestamp: 1, refId: 8, refUnavailable: true }]
     await cache.saveChatHistoryCache('conversation-1', messages, 222)
     const legacyValue = await cache.loadChatHistoryCache('conversation-1')
     assert.ok(Array.isArray(legacyValue), 'legacy load call still returns the message array')
     const snapshot = await cache.loadChatHistoryCache('conversation-1', true)
     assert.equal(snapshot.lastSyncedMessageId, 222, 'sync cursor is returned with the snapshot when opted in')
     assert.equal(snapshot.messages[0].content, 'cached row')
+    assert.equal(snapshot.messages[0].refUnavailable, true, 'unavailable reference state survives cache recovery')
     assert.equal(records.get('conversation-1').lastSyncedMessageId, 222, 'messages and sync cursor share one persisted record')
   } finally {
     if (previousIndexedDb === undefined) delete globalThis.indexedDB
@@ -613,6 +614,7 @@ async function testReferenceNavigation() {
   const jump = getVueMethod('jumpToRefMessage', { uni: { showLoading() {}, hideLoading() {}, showToast() {} }, setTimeout: () => 1, console })
   const sender = getVueMethod('getRefMessageSenderName')
   const context = makeMethodContext({ messages: [], isGroupChat: true, isChatPageActive: true,
+    isRefMessageUnavailable: getVueMethod('isRefMessageUnavailable'),
     getConversationHistory: async () => ({ data: [{ id: 19, senderName: '群成员甲', senderId: 3, type: 'text', content: 'old', timestamp: 1 }] }),
     getGroupMessageBoundaryId: () => null,
     mergeMessages(messages) { this.messages.push(...messages) },
@@ -624,6 +626,72 @@ async function testReferenceNavigation() {
   assert.equal(context.scrollToMessage, 'msg-19', 'reference jump targets the rendered message anchor')
   context.messages = [{ id: 19, senderName: '群成员甲', senderId: 3, isSelf: false }]
   assert.equal(sender.call(context, 19), '群成员甲', 'group quote displays the quoted member name')
+}
+
+async function testDeletedReferences() {
+  const toasts = []
+  const globals = { uni: { showLoading() {}, hideLoading() {}, showToast: value => toasts.push(value) },
+    setTimeout: () => 1, console: { error() {} } }
+  const preview = getVueMethod('getRefMessagePreview')
+  const sender = getVueMethod('getRefMessageSenderName')
+  const type = getVueMethod('getRefMessageType')
+  const jump = getVueMethod('jumpToRefMessage', globals)
+  const context = makeMethodContext({
+    messages: [{ id: 1, type: 'text', content: 'secret cached text', senderName: 'secret sender' },
+      { id: 2, refId: 1, refUnavailable: true }],
+    isRefMessageUnavailable: getVueMethod('isRefMessageUnavailable'),
+    getConversationHistory() { throw new Error('unavailable references must not be requested') }
+  })
+  assert.equal(preview.call(context, 1), '该消息已删除', 'server visibility overrides cached source content')
+  assert.equal(sender.call(context, 1), '引用', 'hidden sender identity is not shown')
+  assert.equal(type.call(context, 1), 'unknown')
+  await jump.call(context, 1)
+  assert.equal(toasts.at(-1).title, '该消息已删除')
+  context.messages = [{ id: 2, refId: 1 }]
+  assert.equal(preview.call(context, 1), '[点击加载原消息]', 'unloaded references are not assumed deleted')
+  context.getConversationHistory = async () => { throw new Error('offline') }
+  await jump.call(context, 1)
+  assert.equal(context.messages[0].refUnavailable, undefined, 'network errors do not create deletion markers')
+  context.getConversationHistory = async () => ({ code: 1, data: [] })
+  await jump.call(context, 1)
+  assert.equal(context.messages[0].refUnavailable, undefined, 'failed responses do not create deletion markers')
+  context.getConversationHistory = async () => ({ code: 0, data: [] })
+  await jump.call(context, 1)
+  assert.equal(preview.call(context, 1), '该消息已删除', 'authorized missing result marks a legacy reference unavailable')
+  context.messages = [{ id: 2, refId: 1 }]
+  context.getConversationHistory = async () => { context.messageHistoryVersion = 1; return { code: 0, data: [] } }
+  await jump.call(context, 1)
+  assert.equal(context.messages[0].refUnavailable, undefined, 'stale responses cannot alter a reset history')
+
+  const actions = getMixinObject('src/pages-nonTheme/chat/message-actions-methods.js', 'messageActionsMethods', {
+    ...globals, showAppModal: (_, options) => options.success({ confirm: true })
+  })
+  for (const isGroupChat of [false, true]) {
+    for (const batch of [false, true]) {
+      const page = makeMethodContext({ isGroupChat, messages: [{ id: 1, status: 'sent' }, { id: 2, refId: 1 }],
+        messageMenu: { message: { id: 1, status: 'sent' } }, selectedMessageIds: ['1'],
+        deleteMessageIds: async () => {}, cancelMessageSelection() {} })
+      if (batch) await actions.deleteSelectedMessages.call(page)
+      else await actions.executeMessageAction.call(page, 'delete')
+      assert.equal(page.messages.length, 1)
+      assert.equal(page.messages[0].refUnavailable, true, `${isGroupChat ? 'group' : 'direct'} ${batch ? 'batch' : 'single'} deletion marks references`)
+    }
+  }
+  const failed = makeMethodContext({ messages: [{ id: 1 }, { id: 2, refId: 1 }], selectedMessageIds: ['1'],
+    deleteMessageIds: async () => { throw new Error('offline') } })
+  await actions.deleteSelectedMessages.call(failed)
+  assert.equal(failed.messages.length, 2)
+  assert.equal(failed.messages[1].refUnavailable, undefined, 'failed delete preserves reference availability')
+
+  const fetch = getMixinMethod('src/pages-nonTheme/chat/sync-methods.js', 'messageSyncMethods', 'fetchConversationUpdates')
+  const sync = makeMethodContext({ messages: [{ id: 1 }, { id: 2, refId: 1 }], lastSyncedMessageId: 2, lastHistoryReconcileAt: 0,
+    getConversationHistory: async params => params.messageIds
+      ? { data: [{ id: 2, refId: 1 }], missingIds: ['1'] }
+      : { incremental: true, hasMore: false, data: [] } })
+  const incoming = await fetch.call(sync, 4)
+  assert.equal(sync.messages.length, 1)
+  assert.equal(sync.messages[0].refUnavailable, true, 'reconciliation updates cached references')
+  assert.equal(incoming[0].refUnavailable, true, 'incoming rows cannot restore a removed reference')
 }
 
 async function testNotifications() {
@@ -944,10 +1012,115 @@ async function testHistoryPrependKeepsScroll() {
   assert.equal(page.scrollTop, 0, 'automatic scroll anchoring is not applied twice')
 }
 
+async function testContactAvatarProfile() {
+  const requests = [], edits = [], menus = [], calls = []
+  let token = 'account-1'
+  const globals = {
+    uni: { getStorageSync: () => token, showToast() {}, showActionSheet: menu => menus.push(menu) },
+    getDisplayName: (user, fallback) => user?.nickname || user?.username || fallback,
+    getAvatarUrl: (value, base) => `${base}/${value}`, baseUrl: 'https://example.test',
+    chatRelationshipLabels: { friend: '好友', customer_s: '客服' },
+    chatApi: {
+      getContactSettings({ userId, includeProfile }) {
+        return new Promise(resolve => requests.push({ userId, includeProfile, resolve }))
+      },
+      async updateContactNote(args) { edits.push(args); return { code: 0 } },
+      async updateContactRelationship(args) { edits.push(args); return { code: 0 } }
+    }
+  }
+  const cache = { userList: [{ otherId: '2', note: '旧备注' }, { otherId: '3' }] }
+  const page = makeMethodContext({
+    chatId: '2', otherUserId: '2', otherUsername: '私聊昵称', chatTitle: '旧备注',
+    contactSettings: { isContact: true, note: '旧备注', relationship: 'friend' },
+    contactSettingsRevision: 0, contactProfile: null,
+    availableCallModes: [{ mode: 'audio' }, { mode: 'video' }],
+    startVoiceCall: (...args) => calls.push(args), openWebCall: (...args) => calls.push(args),
+    getCurrentUserId: () => '1', getMessageAvatar: () => '', getMessageSenderName: () => '成员', hasUsableAvatar: Boolean,
+    mutateChatListCache: update => update(cache), $nextTick: callback => callback()
+  })
+  for (const name of ['openMessageContact', 'openContactProfile', 'loadContactProfile', 'startEditNote', 'saveNote',
+    'saveVisibleContactSetting', 'selectRelationship', 'closeSettingsModal', 'cancelEditNote', 'callContactProfile']) page[name] = getVueMethod(name, globals)
+  for (const name of ['visibleContactSettings', 'canEditVisibleContact', 'contactProfileCallOptions']) {
+    Object.defineProperty(page, name, { get: getVueComputed(name) })
+  }
+  page.openMessageContact({ isAi: true })
+  page.openMessageContact({ isSelf: true })
+  assert.equal(requests.length, 0)
+
+  const direct = page.openMessageContact({ senderId: 2, senderNickname: '私聊昵称', senderUsername: 'private' })
+  assert.equal(page.contactProfile.name, '私聊昵称')
+  assert.equal(requests[0].userId, '2')
+  assert.equal(requests[0].includeProfile, '1')
+  requests[0].resolve({ code: 0, data: { isContact: true, note: '旧备注', relationship: 'friend', profile: {
+    id: 2, nickname: '最新昵称', username: 'private', bio: ' 简介 ', community: '某社区', avatar: 'avatar.webp', canCall: false
+  } } })
+  await direct
+  assert.equal(page.contactProfile.name, '最新昵称')
+  assert.equal(page.contactProfile.bio, '简介')
+  assert.equal(page.contactProfile.community, '某社区')
+  assert.equal(page.contactProfile.avatar, 'https://example.test/avatar.webp')
+  assert.equal(page.contactProfileCallOptions.length, 0, 'unavailable contacts have no call entry')
+  page.startEditNote()
+  page.tempNote = '   '
+  await page.saveNote()
+  assert.equal(edits[0].userId, '2')
+  assert.equal(edits[0].note, '')
+  assert.equal(page.chatTitle, '最新昵称')
+  assert.equal(cache.userList[0].note, '')
+  page.closeSettingsModal()
+
+  page.isGroupChat = true
+  page.chatTitle = '群名称'
+  const member = page.openMessageContact({ senderId: 3, senderNickname: '朋友' })
+  const stranger = page.openMessageContact({ senderId: 4, senderNickname: '新成员' })
+  requests[2].resolve({ code: 0, data: { isContact: false } })
+  await stranger
+  requests[1].resolve({ code: 0, data: { isContact: true, note: '群里的联系人', relationship: 'friend' } })
+  await member
+  assert.equal(page.contactProfile.id, '4')
+  assert.equal(page.canEditVisibleContact, false)
+  page.selectRelationship()
+  assert.equal(menus.length, 0)
+
+  const existing = page.openMessageContact({ senderId: 3, senderNickname: '朋友' })
+  requests[3].resolve({ code: 0, data: { isContact: true, relationship: 'friend' } })
+  await existing
+  assert.equal(page.contactProfileCallOptions.length, 0, 'legacy servers have no eligibility for calls from a group')
+  page.selectRelationship()
+  menus[0].fail()
+  assert.equal(page.choosingRelationship, false)
+  assert.equal(page.contactProfile.id, '3')
+  page.selectRelationship()
+  await menus[1].success({ tapIndex: 2 })
+  assert.equal(edits[1].userId, '3')
+  assert.equal(edits[1].relationship, 'customer_s')
+  assert.equal(page.contactProfile.settings.relationship, 'customer_s')
+  assert.equal(page.contactSettings.relationship, 'friend')
+  assert.equal(page.chatTitle, '群名称')
+  page.selectRelationship()
+  token = 'account-2'
+  await menus[2].success({ tapIndex: 0 })
+  assert.equal(edits.length, 2, 'account switch invalidates open picker actions')
+
+  const callable = page.openMessageContact({ senderId: 5, senderNickname: '群成员' })
+  requests[4].resolve({ code: 0, data: { isContact: true, profile: { id: 5, canCall: true } } })
+  await callable
+  assert.equal(page.contactProfileCallOptions.length, 2)
+  page.callContactProfile('video')
+  assert.ok(calls.length > 0)
+  for (const [mode, peer] of calls) {
+    assert.equal(mode, 'video')
+    assert.equal(peer.id, '5', 'group profile uses the selected user rather than the conversation')
+    assert.equal(peer.name, '群成员')
+  }
+  assert.equal(page.contactProfile, null)
+}
+
 async function main() {
   const cases = [
     ['SFC compile', testSfcCompiles],
     ['additional SFC compile', testAdditionalSfcCompiles],
+    ['contact avatar profile', testContactAvatarProfile],
     ['selection limit', testSelectionLimit],
     ['history polling', testHistoryPolling],
     ['history prepend scroll', testHistoryPrependKeepsScroll],
@@ -956,6 +1129,7 @@ async function main() {
     ['message identity merge', testMergeIdentity],
     ['send IDs and refs', testSendIdsAndRefs],
     ['reference navigation', testReferenceNavigation],
+    ['deleted references', testDeletedReferences],
     ['notifications', testNotifications],
     ['transport account isolation', testTransportAccountIsolation],
     ['chat-events reconnect notification', testChatEventsReconnectNotification],
@@ -973,8 +1147,10 @@ async function main() {
   const finalOnly = process.argv.includes('--final-only')
   const loadOnly = process.argv.includes('--load-only')
   const transportOnly = process.argv.includes('--transport-only')
-  const selected = loadOnly
-    ? cases.filter(([name]) => ['SFC compile', 'additional SFC compile', 'history polling', 'history prepend scroll', 'history cache cursor', 'history cache snapshot compatibility', 'transport account isolation', 'realtime polling gates', 'chat-list realtime gates'].includes(name))
+  const selected = process.argv.includes('--references-only')
+    ? cases.filter(([name]) => ['SFC compile', 'history polling', 'history cache snapshot compatibility', 'reference navigation', 'deleted references'].includes(name))
+    : loadOnly
+    ? cases.filter(([name]) => ['SFC compile', 'additional SFC compile', 'contact avatar profile', 'history polling', 'history prepend scroll', 'history cache cursor', 'history cache snapshot compatibility', 'transport account isolation', 'realtime polling gates', 'chat-list realtime gates'].includes(name))
     : transportOnly
     ? cases.filter(([name]) => ['transport account isolation', 'chat-events reconnect notification'].includes(name))
     : process.argv.includes('--group-extras-only')

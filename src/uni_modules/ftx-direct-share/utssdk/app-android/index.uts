@@ -1,0 +1,9 @@
+import { UTSAndroid } from 'io.dcloud.uts'
+import DirectShare from 'ftx.share.DirectShare'
+
+export function syncShareTargets(owner: string, targets: string): void {
+  const context = UTSAndroid.getAppContext()
+  if (context != null) DirectShare.sync(context!, owner, targets)
+}
+
+export function takeSharedText(): string { return DirectShare.take() }

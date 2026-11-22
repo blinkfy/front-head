@@ -65,6 +65,7 @@ function toCachedMessage(message = {}) {
     thumbnail,
     isWithdraw: Boolean(message.isWithdraw),
     refId: message.refId || null,
+    refUnavailable: message.refUnavailable === true,
     locationName: message.locationName,
     locationAddress: message.locationAddress,
     latitude: message.latitude,

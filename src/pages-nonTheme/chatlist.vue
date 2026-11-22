@@ -53,7 +53,7 @@
 				v-for="(user, index) in filteredUserList" :key="getConversationKey(user)" @click="openChat(user)" @longpress="showConversationActions(user)" @contextmenu.prevent="showConversationActions(user)"
 				:style="{ animationDelay: index * 0.05 + 's' }">
 				<view class="avatar-wrap">
-					<ChatCachedAvatar class="avatar" :src="getUserAvatar(user)" :avatar-name="user.note || getDisplayName(user)" :owner="avatarCacheOwner" />
+					<ChatCachedAvatar class="avatar" size="52px" radius="12px" :src="getUserAvatar(user)" :avatar-name="user.note || getDisplayName(user)" :owner="avatarCacheOwner" />
 					<view class="unread-badge" v-if="user.unreadCount > 0">
 						{{ user.unreadCount > 99 ? '99+' : user.unreadCount }}
 					</view>
@@ -1708,9 +1708,6 @@ computed: {
 		flex-shrink: 0;
 
 		.avatar {
-			width: 52px;
-			height: 52px;
-			border-radius: 12px;
 			transition: all 0.3s ease;
 			box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 		}

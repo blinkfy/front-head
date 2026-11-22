@@ -24,7 +24,7 @@
       <AppTencentMap :covered="showAddModal" ref="appMapRef" class="map-canvas" :latitude="center.latitude" :longitude="center.longitude" :scale="mapScale" :enable-satellite="satellite" :markers="markers" :user-location="userLocation" @updated="onNativeMapUpdated" @error="onNativeMapError" @markertap="onMarkerTap" @tap="onMapTap" @regionchange="onRegionChange" />
       <!-- #endif -->
       <!-- #ifndef APP-PLUS -->
-      <map v-else-if="!showAddModal"
+      <map v-if="!isH5 && !showAddModal"
         id="select-map"
         class="map-canvas"
         :latitude="center.latitude"
@@ -175,10 +175,9 @@
           <ManifestIcon class="btn-icon" id="camera_scan" />
           <text>查看</text>
         </button>
-        <button v-if="!selectedMarker.sharedLocation" class="info-btn danger" @click="reportErrorMarker(selectedMarker)">
-          <ManifestIcon class="btn-icon" id="dark_alert" />
-          <text>报错</text>
-        </button>
+      </view>
+      <view v-if="!selectedMarker.sharedLocation" class="info-feedback">
+        <button class="info-feedback-link" @click="reportErrorMarker(selectedMarker)">信息有误？点我报错</button>
       </view>
       <MapBinAdminPanel v-if="isMapAdmin && !viewMode" :bin="selectedMarker" @updated="refreshAdminMarker" />
     </view>
@@ -2142,9 +2141,35 @@ function goProfile() {
   color: #4b5563;
 }
 
-.info-btn.danger {
-  background: #fef2f2;
-  color: #ef4444;
+.info-feedback {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8rpx;
+}
+
+.info-feedback-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56rpx;
+  margin: 0;
+  padding: 8rpx 0 8rpx 20rpx;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #6b7280;
+  font-size: 24rpx;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.info-feedback-link::after {
+  border: none;
+}
+
+.info-feedback-link:active {
+  opacity: 0.65;
 }
 
 .btn-icon {

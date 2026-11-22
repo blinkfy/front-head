@@ -273,6 +273,7 @@ export function getChatUserList(params, requestOptions = {}) {
     url: `/api/chat/chatlist${queryStr ? '?' + queryStr : ''}`,
     method: 'GET',
     silent: !!requestOptions.silent,
+    timeout: requestOptions.timeout,
     needAuth: true
   }).then(result => {
     finishChatBadgeSnapshot(badgeSnapshot, result, params)

@@ -5,6 +5,10 @@
 
   import request from './index'
 
+  export function getUserCostSummary(params = {}) {
+    return request({ url: '/api/admin/database/user-cost-summary', method: 'GET', data: params, needAuth: true })
+  }
+
   export function queryReadonlySql(sql) {
     return request({ url: '/api/admin/database/query', method: 'POST', data: { sql }, needAuth: true })
   }
@@ -608,4 +612,8 @@ export function getAdminTableColumns(tableName) {
 
 export function getAdminDatabaseRelations(userId) {
   return request({ url: '/api/admin/database/relations', method: 'GET', needAuth: true, params: userId == null ? {} : { userId } })
+}
+
+export function getRecordInsights(kind, id, data = {}) {
+  return request({ url: '/api/admin/database/insights/' + kind + '/' + encodeURIComponent(id), method: 'GET', needAuth: true, data })
 }

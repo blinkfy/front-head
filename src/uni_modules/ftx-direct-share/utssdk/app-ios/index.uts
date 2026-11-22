@@ -1,0 +1,2 @@
+export function syncShareTargets(owner: string, targets: string): void {}
+export function takeSharedText(): string { return '' }

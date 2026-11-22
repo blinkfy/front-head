@@ -3,7 +3,7 @@
     "appid" : "__UNI__0B093BC",
     "description" : "",
     "versionName" : "1.4.15",
-    "versionCode" : 145,
+    "versionCode" : 147,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,

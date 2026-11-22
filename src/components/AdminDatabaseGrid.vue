@@ -20,10 +20,12 @@
     </view>
     <view class="grid-layout">
       <view class="grid-scroll-wrap">
-      <scroll-view class="grid-scroller" :scroll-x="!resizeState || resizeState.mouse" :show-scrollbar="true" @scroll="onGridScroll">
+      <scroll-view class="grid-scroller" :scroll-x="!resizeState || resizeState.mouse" :show-scrollbar="true" :scroll-left="graphScrollLeft" @scroll="onGridScroll">
         <view class="grid-content">
           <view class="grid-row grid-header">
-            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell grid-heading" :style="columnWidthStyle(column.key)" :class="{ 'grid-heading-filtered': columnFilterCount(column.key) }" @click.stop="openColumnMenu(column)">
+            <view v-for="column in visibleColumns" :key="column.key"
+              class="grid-cell grid-heading" :style="columnWidthStyle(column.key)"
+              :class="{ 'grid-heading-filtered': columnFilterCount(column.key), 'grid-graph-focus': column.key === graphColumnKey }" @click.stop="openColumnMenu(column)">
               <text class="grid-heading-label">{{ column.label }}</text>
               <text v-if="columnFilterCount(column.key)" class="grid-filter-badge">筛{{ columnFilterCount(column.key) }}</text>
               <text v-if="columnType(column.key)" class="grid-heading-control" :class="{ active: columnIsActive(column.key) }">{{ columnSortIndicator(column.key) }}⌄</text>
@@ -35,7 +37,8 @@
             </view>
           </view>
           <view v-for="(item, index) in rows" :key="rowKey(item, index)" class="grid-row" :class="{ selected: selectionMode && isSelected(item) }" @click="onRowClick(item, $event)">
-            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell" :style="columnWidthStyle(column.key)" :class="{ changed: hasDraft(item, column.key) }" @click.stop="onCellClick(item, column, $event)">
+            <view v-for="column in visibleColumns" :key="column.key" class="grid-cell" :style="columnWidthStyle(column.key)"
+              :class="{ changed: hasDraft(item, column.key), 'grid-graph-focus': column.key === graphColumnKey }" @click.stop="onCellClick(item, column, $event)">
               <template v-if="isEditing(item, column.key)">
                 <switch v-if="editor.field.editor === 'switch'" :checked="editorBoolean" @change="editorBoolean = $event.detail.value; saveCellDraft()" color="#20b894" @click.stop />
                 <picker v-else-if="editor.field.editor === 'select' && editorOptions.length" class="grid-inline-picker" mode="selector" :range="editorOptions" range-key="label" :value="Math.max(0, editorOptionIndex)" @change="editorOptionIndex = Number($event.detail.value); saveCellDraft()" @click.stop>
@@ -56,7 +59,7 @@
       <view v-if="canScrollLeft" class="grid-edge grid-edge-left"><text>‹</text></view>
       <view v-if="canScrollRight" class="grid-edge grid-edge-right"><text>›</text></view>
       </view>
-      <view v-if="!sqlColumns || sqlRowActions" class="grid-fixed" :class="{ 'grid-user-actions': table === 'User' && !sqlColumns && !selectionMode }">
+      <view v-if="!sqlColumns || sqlRowActions" class="grid-fixed" :class="{ 'grid-user-actions': (table === 'User' || table === 'BookingOrder') && !sqlColumns && !selectionMode }">
         <view class="grid-row grid-header grid-actions">{{ selectionMode ? '选择' : '操作' }}</view>
         <view v-for="(item, index) in rows" :key="rowKey(item, index)" class="grid-row grid-actions" :class="{ selected: selectionMode && isSelected(item) }">
           <view v-if="selectionMode" class="grid-action" @click.stop="$emit('select', item, $event)">{{ isSelected(item) ? '✓ 已选' : '选择' }}</view>
@@ -66,6 +69,7 @@
           </template>
           <view v-else class="grid-action" @click.stop="$emit('detail', item)">查看</view>
           <view v-if="table === 'User' && !sqlColumns && !selectionMode" class="grid-action" @click.stop="$emit('user-graph', item)">数据图谱</view>
+          <view v-if="table === 'BookingOrder' && !sqlColumns && !selectionMode" class="grid-action" @click.stop="$emit('booking', item)">看关联记录</view>
         </view>
       </view>
     </view>
@@ -159,9 +163,9 @@ const props = defineProps({
   editFields: { type: Array, default: () => [] }, drafts: { type: Object, default: () => ({}) }, draftKey: Function, submitting: Boolean,
   columnQuery: { type: Object, default: () => ({ filters: [], sortField: '', direction: '' }) },
   light: Boolean, sqlColumns: { type: Array, default: null }, sqlRowActions: Boolean,
-  queryFields: { type: Array, default: null }
+  queryFields: { type: Array, default: null }, focusColumn: String
 })
-const emit = defineEmits(['edit', 'delete', 'select', 'detail', 'user-graph', 'stage', 'submit', 'discard', 'query-change', 'columns-change'])
+const emit = defineEmits(['edit', 'delete', 'select', 'detail', 'user-graph', 'booking', 'stage', 'submit', 'discard', 'query-change', 'columns-change'])
 const selectedColumns = ref([]), showColumns = ref(false), detail = ref(null)
 function toggleColumns() { showColumns.value = !showColumns.value }
 function setColumns(keys) {
@@ -535,8 +539,44 @@ onBeforeUnmount(() => { endColumnResize(); if (clickTimer) clearTimeout(clickTim
 watch(() => props.rows, () => { if (editor.value) saveCellDraft() }, { flush: 'sync' })
 watch(() => props.table, () => { columnMenu.value = null; if (clickTimer) clearTimeout(clickTimer); clickTimer = null; previousCell = ''; if (editor.value) saveCellDraft(); editor.value = null })
 watch(() => [props.table, availableColumns.value.map(column => column.key).join('|')], () => { showColumns.value = false; detail.value = null; restoreColumns() }, { immediate: true })
-const visibleColumns = computed(() => selectedColumns.value.map(key => availableColumns.value.find(column => column.key === key)).filter(Boolean))
-watch(() => visibleColumns.value.map(column => column.key), columns => {
+const graphColumn = computed(() => {
+  if (!props.focusColumn) return null
+  const field = props.schema.find(field => field.columnName === props.focusColumn)
+  const key = field?.key ?? props.focusColumn
+  return availableColumns.value.find(column => column.key === key) || null
+})
+const graphColumnKey = computed(() => graphColumn.value?.key)
+const graphScrollLeft = ref()
+watch(graphColumnKey, async (key, _, onCleanup) => {
+  if (!key || typeof uni.createSelectorQuery !== 'function') return
+  let current = true
+  onCleanup(() => { current = false })
+  await nextTick()
+  if (!current) return
+  uni.createSelectorQuery().in(instance.proxy)
+    .select('.grid-scroller').fields({ rect: true, size: true, scrollOffset: true })
+    .select('.grid-heading.grid-graph-focus').boundingClientRect().exec(async result => {
+      const [viewport, heading] = result || []
+      if (!current || !viewport?.width || !heading || !Number.isFinite(viewport.scrollLeft)) return
+      const left = heading.left - viewport.left
+      const right = heading.right - viewport.right
+      // Both bounds enclose the scroll offsets that show the most of the column.
+      const minShift = Math.min(left, right)
+      const maxShift = Math.max(left, right)
+      const shift = minShift > 0 ? minShift : Math.min(0, maxShift)
+      if (!shift) return
+      const target = Math.max(0, viewport.scrollLeft + shift)
+      if (target === graphScrollLeft.value) {
+        graphScrollLeft.value = viewport.scrollLeft
+        await nextTick()
+      }
+      if (current) graphScrollLeft.value = target
+    })
+}, { immediate: true, flush: 'post' })
+const configuredColumns = computed(() => selectedColumns.value.map(key => availableColumns.value.find(column => column.key === key)).filter(Boolean))
+const visibleColumns = computed(() => graphColumn.value && !selectedColumns.value.includes(graphColumnKey.value)
+  ? [...configuredColumns.value, graphColumn.value] : configuredColumns.value)
+watch(() => configuredColumns.value.map(column => column.key), columns => {
   if (!props.sqlColumns && columns.length) emit('columns-change', { table: props.table, columns, availableColumns: availableColumns.value.map(column => column.key) })
 }, { immediate: true, flush: 'post' })
 watch(() => [props.table, props.rows.length, visibleColumns.value.map(column => column.key).join('|')], measureGridScroll, { flush: 'post' })
@@ -629,6 +669,8 @@ async function showCell(item, column) {
 .grid-header { background: #10445b; color: #9eeeff; font-weight: 600; }
 .grid-cell { width: 220rpx; min-width: 220rpx; height: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 8rpx; padding: 0 16rpx; border-right: 1px solid rgba(64,224,255,.12); font-size: 22rpx; color: #eafaff; overflow: hidden; }
 .grid-cell.changed { background: rgba(240, 193, 77, .16); box-shadow: inset 0 -3rpx #f0c14d; }
+.grid-cell.grid-graph-focus { background:#13555a; border-right-color:#54cbb2; border-left:1px solid #54cbb2; }
+.grid-heading.grid-graph-focus { background:#176c68; }
 .grid-heading { position: relative; justify-content: space-between; padding-right: 24rpx; cursor: pointer; }
 .grid-resize-handle { position: absolute; z-index: 2; right: 0; top: 0; bottom: 0; width: 20rpx; min-width: 12px; cursor: col-resize; touch-action: none; }
 .grid-resize-handle::after { content: ''; position: absolute; top: 25%; bottom: 25%; right: 4rpx; width: 3rpx; border-radius: 3rpx; background: rgba(158, 238, 255, .45); }
@@ -711,6 +753,8 @@ async function showCell(item, column) {
 .db-grid.grid-light .grid-cell { color: #294438; border-right-color: #e5eee8; }
 .db-grid.grid-light .grid-cell.changed { background: #eff8e9; box-shadow: inset 0 -3rpx #92c66d; }
 .db-grid.grid-light .grid-header .grid-heading-filtered { color: #185f43; background: #d5eee0; box-shadow: inset 0 -5rpx #219765; }
+.db-grid.grid-light .grid-cell.grid-graph-focus { background:#e0f4ec; border-right-color:#4fa88b; border-left-color:#4fa88b; }
+.db-grid.grid-light .grid-header .grid-heading.grid-graph-focus { background:#bee8db; }
 .db-grid.grid-light .grid-filter-badge { color: #fff; background: #23865b; }
 .db-grid.grid-light .grid-resize-handle::after { background: #96beaa; }
 .db-grid.grid-light .grid-resize-handle:hover::after, .db-grid.grid-light .grid-resize-handle.resizing::after { background: #16865d; }
