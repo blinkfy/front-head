@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { activeTranscriptIndex, activeTranscriptIndices, findTranscriptPause, runCallTranscript } from '../../src/utils/call-transcript.mjs'
+import { activeTranscriptIndex, activeTranscriptIndices, findTranscriptPause, runCallTranscript } from '../../src/utils/realtime/call-transcript.mjs'
 
 const calls = []
 const prepare = async () => ({ durationMs: 44000, slice(startMs, endMs) {

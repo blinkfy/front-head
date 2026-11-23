@@ -1,4 +1,4 @@
-import { loadChatHistoryCache, saveChatHistoryCache } from '@/utils/chat-history-cache.js'
+import { loadChatHistoryCache, saveChatHistoryCache } from '@/utils/realtime/chat-history-cache.js'
 import { fetchChatMedia, forgetChatMedia, forgetChatOriginalMedia, readChatMedia } from '@/pages-nonTheme/utils/chat-local-media.js'
 // #ifdef APP-PLUS
 import { appChatStorage } from '@/pages-nonTheme/utils/app-chat-storage-native.js'

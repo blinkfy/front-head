@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { toMapDisplayPoint } from '../../src/utils/map-display-point.mjs'
+import { toMapDisplayPoint } from '../../src/utils/map/map-display-point.mjs'
 
 const original = { id: 2, latitude: '31.230000000000001', longitude: '121.470000000000000',
   coordinateSystem: 'wgs84', mapType: 'recycling', mapLatitude: 31.228, mapLongitude: 121.474 }

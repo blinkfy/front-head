@@ -1,14 +1,14 @@
 import { showDialog, dialogOpen } from './dialog.js'
 import { callAction } from './icons.js'
 import { createRecordingPlayer } from './recording-player.js'
-import { callAvatarUrl, createVoiceCallController, VOICE_END_LABELS, shouldReturnFromCall } from '../utils/voice-call-core.mjs'
-import { voiceCallMedia } from '../utils/voice-call-media.js'
-import { createChatEventsTransport } from '../utils/chat-events-transport.mjs'
-import { stripWebCallTicket, webCallTarget, miniCallChatPath } from '../utils/web-call-entry.mjs'
-import { listWebRecordings, readWebRecording, renameWebRecording, deleteWebRecording } from '../utils/web-recording-storage.mjs'
-import { matchesRecording, validRecordingCallId, recordingPlayable } from '../utils/call-recording-preference.mjs'
-import { activeTranscriptIndices, cloudTranscriptConsentMessage, transcriptSpeakerLabel } from '../utils/call-transcript.mjs'
-import { transcribeWebCall } from '../utils/web-call-transcript.mjs'
+import { callAvatarUrl, createVoiceCallController, VOICE_END_LABELS, shouldReturnFromCall } from '../utils/realtime/voice-call-core.mjs'
+import { voiceCallMedia } from '../utils/realtime/voice-call-media.js'
+import { createChatEventsTransport } from '../utils/realtime/chat-events-transport.mjs'
+import { stripWebCallTicket, webCallTarget, miniCallChatPath } from '../utils/realtime/web-call-entry.mjs'
+import { listWebRecordings, readWebRecording, renameWebRecording, deleteWebRecording } from '../utils/realtime/web-recording-storage.mjs'
+import { matchesRecording, validRecordingCallId, recordingPlayable } from '../utils/realtime/call-recording-preference.mjs'
+import { activeTranscriptIndices, cloudTranscriptConsentMessage, transcriptSpeakerLabel } from '../utils/realtime/call-transcript.mjs'
+import { transcribeWebCall } from '../utils/realtime/web-call-transcript.mjs'
 
 const content = document.querySelector('#content')
 const base = location.origin

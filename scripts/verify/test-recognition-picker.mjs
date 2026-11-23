@@ -364,9 +364,9 @@ await scenario('recognition camera and both home pages compile for H5, APP-PLUS,
 
 await scenario('photo picker entry SFCs compile for H5, APP-PLUS, and MP-WEIXIN', async () => {
   const files = [
-    'src/components/AddTrashBinModal.vue',
-    'src/components/TrashBinImageEditor.vue',
-    'src/components/WechatProfileForm.vue',
+    'src/components/map/AddTrashBinModal.vue',
+    'src/components/map/TrashBinImageEditor.vue',
+    'src/components/account/WechatProfileForm.vue',
     'src/pages-nonTheme/community-publish.vue',
     'src/pages-nonTheme/voice-scan.vue',
     'src/pages-nonTheme/chat.vue',

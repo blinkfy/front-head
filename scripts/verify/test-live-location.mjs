@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
-import { createLiveLocationController, validLocationPoint } from '../../src/utils/live-location-core.mjs'
+import { createLiveLocationController, validLocationPoint } from '../../src/utils/realtime/live-location-core.mjs'
 import { wgs84ToGcj02 } from '../../src/utils/map/coordinates.mjs'
 import mapCoordinates from '../../../back-end/utils/mapCoordinates.js'
-import { createChatEventsTransport } from '../../src/utils/chat-events-transport.mjs'
+import { createChatEventsTransport } from '../../src/utils/realtime/chat-events-transport.mjs'
 
 const failures = []
 async function check(name, run) {
@@ -422,7 +422,7 @@ await check('duplicate peer joined status does not clear first-fix timeout; no p
 })
 
 function preprocessTracker(platform) {
-  const source = fs.readFileSync(new URL('../../src/utils/live-location-tracker.js', import.meta.url), 'utf8')
+  const source = fs.readFileSync(new URL('../../src/utils/realtime/live-location-tracker.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '')
   const conditions = [], output = []
   let active = true

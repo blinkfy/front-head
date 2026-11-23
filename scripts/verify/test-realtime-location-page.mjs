@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { realtimeRouteName } from '../../src/utils/realtime-route.mjs'
+import { realtimeRouteName } from '../../src/utils/realtime/realtime-route.mjs'
 
 const require = createRequire(import.meta.url)
 const { preprocess } = require('@dcloudio/uni-cli-shared/lib/preprocess')
@@ -57,7 +57,7 @@ assert.equal(back, 1)
 context.page.onUnload.call(minimized)
 assert.equal(ended, 1, 'intentional minimization preserves the current share')
 
-for (const filename of ['../../src/pages-nonTheme/live-location.vue', '../../src/components/RealtimeActivityEntry.vue', '../../src/pages-nonTheme/chat.vue',
+for (const filename of ['../../src/pages-nonTheme/live-location.vue', '../../src/pages-nonTheme/components/RealtimeActivityEntry.vue', '../../src/pages-nonTheme/chat.vue',
   '../../src/pages-nonTheme/settings.vue', '../../src/pages-nonTheme/voice-scan.vue', '../../src/pages-nonTheme/recognition-camera.vue',
   '../../src/pages/map/map.vue', '../../src/pages-dark/map/map.vue', '../../src/pages-nonTheme/components/shop/ShopAddressPicker.vue']) {
   const path = new URL(filename, import.meta.url)

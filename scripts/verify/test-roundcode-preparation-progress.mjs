@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createRoundCodePreparationProgress, roundCodePreparationText } from '../../src/utils/roundcode-preparation-progress.mjs'
+import { createRoundCodePreparationProgress, roundCodePreparationText } from '../../src/utils/scan/roundcode-preparation-progress.mjs'
 
 let time = 0, sequence = 0, latest
 const timers = new Map()

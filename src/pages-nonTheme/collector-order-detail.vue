@@ -41,8 +41,8 @@
 </template>
 <script>
 import { bookingUnitText, bookingQuantityText, bookingPhotoUrl } from './api/booking.js'
-import RecyclingShell from './components/RecyclingShell.vue'
-import { collectorOrder, collectorAction, bookingStatusText, openBookingChat, openPlatformSupport, mutationData } from './api/recycling.js'
+import RecyclingShell from '@/components/recycling/RecyclingShell.vue'
+import { collectorOrder, collectorAction, bookingStatusText, openBookingChat, openPlatformSupport, mutationData } from '@/api/recycling.js'
 export default {
   components: { RecyclingShell },
   data: () => ({ id: '', isDark: false, order: null, loading: false, busy: false, error: '', actualItems: [], actualPrice: '', writes: {}, showStartAgreement: false, startReason: '' }),

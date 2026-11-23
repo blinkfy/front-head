@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import vm from 'node:vm'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { BACKGROUND_MESSAGES_KEY, canConfigureBackgroundMessages, readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '../../src/utils/background-message-preference.mjs'
+import { BACKGROUND_MESSAGES_KEY, canConfigureBackgroundMessages, readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '../../src/utils/realtime/background-message-preference.mjs'
 
 const values = new Map(), events = []
 globalThis.uni = { getStorageSync: key => values.get(key), setStorageSync: (key, value) => values.set(key, value), $emit: (...args) => events.push(args) }

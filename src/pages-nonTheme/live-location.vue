@@ -50,18 +50,18 @@
 <script>
 import ManifestIcon from '@/components/ManifestIcon.vue'
 // #ifdef APP-PLUS || H5
-import AppTencentMap from '@/components/AppTencentMap.vue'
+import AppTencentMap from '@/components/map/AppTencentMap.vue'
 // #endif
-import { liveLocations, liveLocationState } from '@/utils/live-location.js'
-import { LOCATION_END_LABELS, locationDistance } from '@/utils/live-location-core.mjs'
+import { liveLocations, liveLocationState } from '@/utils/realtime/live-location.js'
+import { LOCATION_END_LABELS, locationDistance } from '@/utils/realtime/live-location-core.mjs'
 import { wgs84ToGcj02 } from '@/utils/map/coordinates.mjs'
 import { ThemeManager } from '@/utils/theme.js'
-import { androidRealtimeAvailable, androidBackgroundMask } from '@/utils/android-realtime.js'
-import { liveLocationTracker, webLocationAvailable } from '@/utils/live-location-tracker.js'
+import { androidRealtimeAvailable, androidBackgroundMask } from '@/utils/realtime/android-realtime.js'
+import { liveLocationTracker, webLocationAvailable } from '@/utils/realtime/live-location-tracker.js'
 import { realtimePermissionPending } from '@/utils/realtime-permissions.js'
 import { openFeaturePermissionSettings } from '@/utils/feature-permission.js'
 import { miniLocationAvailable } from '@/utils/mini-location.js'
-import { realtimeRouteName } from '@/utils/realtime-route.mjs'
+import { realtimeRouteName } from '@/utils/realtime/realtime-route.mjs'
 
 export default {
   components: { ManifestIcon,

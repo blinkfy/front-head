@@ -39,9 +39,16 @@ const source = fs.readFileSync(new URL('../../src/api/index.js', import.meta.url
 const context = vm.createContext({
   uni: runtime, baseUrl: 'http://test.local', appendQueryParams, isDatabaseHealthEndpoint,
   markDatabaseOffline, updateDatabaseStatusFromAvailability,
+  appOfflineSession: { unavailable: false },
+  appVersionGuard: () => ({ handleUpgrade: () => false }),
+  isMfaTransition: () => false,
+  clearChatBadge() {},
   setTimeout: () => 1, URL, URLSearchParams
 })
-vm.runInContext(source.slice(source.indexOf('let loginRedirectTimer')).replace('export default request', 'globalThis.request = request'), context)
+const requestSource = source.slice(source.indexOf('let loginRedirectTimer'))
+  .replace(/export default request\s*$/, 'globalThis.request = request')
+  .replace(/^export\s+/gm, '')
+vm.runInContext(requestSource, context)
 await assert.rejects(context.request({ url: '/api/device/1/session', silent: true }))
 assert.equal(toasts.length, 0)
 await assert.rejects(context.request({ url: '/api/ordinary-request' }))

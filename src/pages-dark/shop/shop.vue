@@ -191,86 +191,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onBeforeUnmount } from 'vue'
 import { onShow } from '@/utils/app-tab-lifecycle.js'
-import { useAppTabContext } from '@/utils/app-tab-context.js'
-import { useAppShopData } from '@/utils/use-app-shop-data.js'
-import { userinfo } from '@/api/user'
-import { fetchShopProducts, fetchShopRecommendations } from '@/api/shop'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
-import {
-  SHOP_RECOMMEND_LIMIT,
-  buildCandidateProducts,
-  filterProductsByRecommendation,
-  getFallbackRecommendedNames,
-  normalizeRecommendationResult,
-  orderProductsByRecommendation
-} from '@/utils/shop-recommendation'
+import { useShopPage } from '@/utils/use-shop-page.js'
+import { useShopProductDetail } from '@/utils/use-shop-product-detail.js'
 
 const { tabPageClass } = useTabPageTransition('pages-dark/shop/shop')
-// 响应式数据
-const appShop = useAppTabContext() ? useAppShopData({
-  isDisposed: () => pageDisposed,
-  onDataChange: () => { recommendReady.value = false },
-  signedOutPoints: '未登录'
-}) : null
-const userPoints = appShop?.userPoints ?? ref(0)
-const loading = appShop?.loading ?? ref(false)
-const currentCategory = ref(0) // 当前选中的分类
-const showDetailModal = ref(false) // 显示商品详情弹窗
-const exchangeSubmitting = ref(false)
-const selectedProduct = ref({}) // 选中的商品
-const recommendLoading = ref(false)
-const recommendReady = ref(false)
-const recommendSource = ref('rule-dom')
-const recommendedNames = ref([])
-let pageDisposed = false
+const {
+  appShop, userPoints, loading, currentCategory, recommendLoading, recommendedNames, categories,
+  catalogReady, productsLoading, productsError, isRecommendCategory, selectedCategory, displayCategoryTitle,
+  filteredProducts, refreshShop, loadProducts, refreshPoints, switchCategory
+} = useShopPage({ signedOutPoints: '未登录', refreshSuccessText: '积分刷新成功' })
+const {
+  showDetailModal, selectedProduct, canExchange, exchangeLabel,
+  showProductDetail, closeProductDetail, goToOrders, exchangeProduct
+} = useShopProductDetail()
 
-// 商品分类
-const categories = ref([
-  { name: '猜您喜欢', icon: 'ai_recommend', type: 'recommend' },
-  { name: '全部', icon: 'category_all', type: 'all' },
-  { name: '环保用品', icon: 'eco_products', type: 'category', categoryId: 1 },
-  { name: '数码配件', icon: 'digital_accessories', type: 'category', categoryId: 2 },
-  { name: '生活用品', icon: 'home_living', type: 'category', categoryId: 3 },
-  { name: '学习用品', icon: 'learning_supplies', type: 'category', categoryId: 4 },
-  { name: '美食券', icon: 'food_coupon', type: 'category', categoryId: 5 }
-])
-
-// 服务端商品数据
-const products = appShop?.products ?? ref([])
-const catalogReady = appShop?.catalogReady ?? false
-const productsLoading = appShop?.productsLoading ?? ref(false)
-const productsError = appShop?.productsError ?? ref('')
-
-const loadProducts = async (force = true) => {
-  if (appShop) {
-    await appShop.loadProducts(force)
-    if (force && isRecommendCategory.value) await ensureRecommendations()
-    return
-  }
-  if (productsLoading.value || pageDisposed) return
-  productsLoading.value = true
-  productsError.value = ''
-  try {
-    const response = await fetchShopProducts()
-    const list = Array.isArray(response.data) ? response.data : response.data?.products
-    if (!Array.isArray(list)) throw new Error('商品数据异常，请重试')
-    if (pageDisposed) return
-    products.value = list.filter(product => product.status === 'active')
-    recommendReady.value = false
-    if (isRecommendCategory.value) await ensureRecommendations()
-  } catch (error) {
-    if (!pageDisposed) productsError.value = error?.msg || error?.message || '商品加载失败，请重试'
-  } finally {
-    if (!pageDisposed) productsLoading.value = false
-  }
-}
-
-// 检测平台类型
 onShow(async () => {
-  pageDisposed = false
   // 获取系统状态栏高度
   let statusBarHeight = 0
   try {
@@ -280,169 +218,14 @@ onShow(async () => {
     const systemInfo = uni.getSystemInfoSync()
     statusBarHeight = systemInfo.statusBarHeight || 0
   }
-  
+
   // 设置CSS变量
   if (typeof document !== 'undefined' && document.documentElement) {
     document.documentElement.style.setProperty('--status-bar-height', statusBarHeight + 'px')
   }
-  
-  // 获取用户真实积分数据
-  await Promise.all(appShop ? [appShop.fetchPoints(false), loadProducts(false)] : [fetchUserPoints(), loadProducts()])
-  if (pageDisposed) return
-  if (currentCategory.value === 0) {
-    await ensureRecommendations()
-  }
-  if (pageDisposed) return
+  await refreshShop()
 })
 
-onBeforeUnmount(() => {
-  pageDisposed = true
-})
-
-// 获取用户积分信息
-const fetchUserPoints = async (notifyError = true) => {
-  if (pageDisposed) return false
-  try {
-    loading.value = true
-    const token = uni.getStorageSync('token')
-    if (!token) {
-      if (pageDisposed) return false
-      userPoints.value = '未登录'
-      return false
-    }
-    
-    const response = await userinfo("false")
-    if (pageDisposed) return false
-    if (response.code === 0) {
-      userPoints.value = response.data.points || 0
-      console.log('获取用户积分成功:', userPoints.value)
-      return true
-    } else {
-      console.error('获取用户积分失败:', response.msg)
-      // 使用本地存储的积分作为备用
-      const storedPoints = uni.getStorageSync('userPoints')
-      userPoints.value = storedPoints || 0
-      if (notifyError) uni.showToast({ title: response.msg || '积分获取失败，当前显示缓存数据', icon: 'none' })
-      return false
-    }
-  } catch (error) {
-    if (pageDisposed) return false
-    // #ifdef APP-PLUS
-    if (error?.networkUnavailable) return false
-    // #endif
-    console.error('请求用户积分出错:', error)
-    // 网络错误时使用本地存储的积分
-    const storedPoints = uni.getStorageSync('userPoints')
-    userPoints.value = storedPoints || 0
-    if (notifyError) uni.showToast({ title: '积分获取失败，当前显示缓存数据', icon: 'none', duration: 2000 })
-    return false
-  } finally {
-    if (!pageDisposed) loading.value = false
-  }
-}
-
-// 刷新用户积分
-const refreshPoints = async () => {
-  const success = await (appShop ? appShop.fetchPoints(true) : fetchUserPoints(false))
-  if (pageDisposed) return
-  if (appShop && success && isRecommendCategory.value) void ensureRecommendations()
-  uni.showToast({
-    title: success ? '积分刷新成功' : '积分刷新失败，当前显示缓存数据',
-    icon: success ? 'success' : 'none',
-    duration: 1500
-  })
-}
-
-// 计算属性：过滤商品
-const isRecommendCategory = computed(() => {
-  const current = categories.value[currentCategory.value]
-  return !!(current && current.type === 'recommend')
-})
-
-const selectedCategory = computed(() => {
-  return categories.value[currentCategory.value] || categories.value[0] || { icon: 'category_all', name: '全部', type: 'all' }
-})
-
-const displayCategoryTitle = computed(() => {
-  return isRecommendCategory.value ? 'AI推荐 ' : selectedCategory.value.name
-})
-
-function getProductsByRecommendedNames(names) {
-  const sourceNames = Array.isArray(names) ? names : []
-  const matched = filterProductsByRecommendation(products.value, sourceNames)
-  const ordered = orderProductsByRecommendation(matched, sourceNames)
-  return ordered.slice(0, SHOP_RECOMMEND_LIMIT)
-}
-
-async function ensureRecommendations(force = false) {
-  if (pageDisposed) return
-  if (recommendLoading.value) return
-  if (recommendReady.value && !force) return
-  if (appShop && (appShop.refreshing() || !products.value.length)) return
-
-  const sourceProducts = products.value
-  const sourcePoints = userPoints.value
-  const inputsChanged = () => appShop && (products.value !== sourceProducts || userPoints.value !== sourcePoints)
-
-  recommendLoading.value = true
-  try {
-    const apiResult = await fetchShopRecommendations({
-      limit: SHOP_RECOMMEND_LIMIT,
-      currentPoints: Number(userPoints.value || 0),
-      candidateProducts: buildCandidateProducts(products.value)
-    })
-
-    if (pageDisposed || inputsChanged()) return
-    const normalized = normalizeRecommendationResult(
-      apiResult,
-      products.value,
-      userPoints.value,
-      SHOP_RECOMMEND_LIMIT
-    )
-    recommendedNames.value = Array.isArray(normalized.names) ? normalized.names : []
-    recommendSource.value = normalized.source || 'rule-dom'
-    recommendReady.value = true
-  } catch (_) {
-    if (pageDisposed || inputsChanged()) return
-    recommendedNames.value = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
-    recommendSource.value = 'rule-dom'
-    recommendReady.value = true
-  } finally {
-    if (!pageDisposed) {
-      recommendLoading.value = false
-      if (inputsChanged() && isRecommendCategory.value) void ensureRecommendations()
-    }
-  }
-}
-
-const recommendProducts = computed(() => {
-  const fromApi = getProductsByRecommendedNames(recommendedNames.value)
-  if (fromApi.length) return fromApi
-
-  const fallbackNames = getFallbackRecommendedNames(products.value, userPoints.value, SHOP_RECOMMEND_LIMIT)
-  const fromFallback = getProductsByRecommendedNames(fallbackNames)
-  if (fromFallback.length) return fromFallback
-
-  return products.value.slice(0, SHOP_RECOMMEND_LIMIT)
-})
-
-const filteredProducts = computed(() => {
-  const current = selectedCategory.value
-  if (current.type === 'recommend') return recommendProducts.value
-  if (current.type === 'all') return products.value
-  return products.value.filter(product => (String(product.category) === String(current.categoryId) || product.category === current.name))
-})
-
-// 计算属性：是否可以兑换
-const canExchange = computed(() => !exchangeSubmitting.value && selectedProduct.value.type === 'physical' && selectedProduct.value.status === 'active' && Number(selectedProduct.value.stock) > 0)
-const exchangeLabel = computed(() => {
-  if (selectedProduct.value.type !== 'physical') return '暂不支持兑换'
-  if (selectedProduct.value.status !== 'active') return '商品已下架'
-  if (Number(selectedProduct.value.stock) <= 0) return '库存不足'
-  return '立即兑换'
-})
-
-// 生成粒子动画样式
 const getParticleStyle = (index) => {
   const positions = [
     { left: '10%', animationDelay: '0s' },
@@ -453,39 +236,6 @@ const getParticleStyle = (index) => {
     { left: '60%', animationDelay: '2.5s' }
   ]
   return positions[index - 1] || positions[0]
-}
-
-// 切换商品分类
-const switchCategory = async (index) => {
-  currentCategory.value = index
-  if (categories.value[index] && categories.value[index].type === 'recommend') {
-    await ensureRecommendations()
-  }
-}
-
-// 显示商品详情
-const showProductDetail = (product) => {
-  selectedProduct.value = product
-  showDetailModal.value = true
-}
-
-// 关闭商品详情
-const closeProductDetail = () => {
-  showDetailModal.value = false
-  selectedProduct.value = {}
-}
-
-function goToOrders() { uni.navigateTo({ url: '/pages-nonTheme/shop-orders' }) }
-
-// 兑换商品
-const exchangeProduct = () => {
-  if (!canExchange.value) return
-  exchangeSubmitting.value = true
-  uni.navigateTo({
-    url: `/pages-nonTheme/shop-confirm?productId=${encodeURIComponent(selectedProduct.value.id)}`,
-    success: () => { showDetailModal.value = false },
-    complete: () => { exchangeSubmitting.value = false }
-  })
 }
 
 const goHome = () => {

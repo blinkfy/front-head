@@ -148,7 +148,7 @@ import { baseUrl } from '@/api/settings'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getDisplayName } from '@/utils/display-name.js'
-import { directShareConversation } from '@/utils/app-direct-share.js'
+import { directShareConversation } from '@/utils/realtime/app-direct-share.js'
 
 export default {
   components: { AppConfirmDialog, ManifestIcon },

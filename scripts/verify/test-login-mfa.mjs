@@ -3,9 +3,9 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { ref } = require('vue')
-const component = await readFile(new URL('../../src/components/MfaLoginPanel.vue', import.meta.url), 'utf8')
+const component = await readFile(new URL('../../src/components/account/MfaLoginPanel.vue', import.meta.url), 'utf8')
 const script = component.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
-const shell = await readFile(new URL('../../src/components/H5LoginShell.vue', import.meta.url), 'utf8')
+const shell = await readFile(new URL('../../src/components/account/H5LoginShell.vue', import.meta.url), 'utf8')
 const shellScript = shell.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
 assert.match(shell, /mfa\?\.passwordFirst \? '账号登录' : mfa \? '验证并登录'/,
   'desktop account action is labeled as returning to login during password-first QR MFA')
@@ -19,7 +19,7 @@ for (const [theme, page] of [['light', lightPage], ['dark', darkPage]]) {
   assert.match(page, /openMfa\(result,\s*\{\s*qrFirst:\s*true\s*\}\)/,
     `${theme} QR login opens MFA in password-first mode`)
 }
-const composable = (await readFile(new URL('../../src/utils/use-login-mfa.js', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace('export function', 'function')
+const composable = (await readFile(new URL('../../src/utils/account/use-login-mfa.js', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace('export function', 'function')
 const useLoginMfa = new Function('ref', composable + '\nreturn useLoginMfa')(ref)
 function fixture({ quickAvailable = false, quickSupported = false, quickEnrolled = false } = {}) {
   const username = ref('previous-account'), password = ref('previous-password'), loading = ref(true), panel = ref(null)

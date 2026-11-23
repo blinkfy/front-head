@@ -56,18 +56,18 @@
               <!-- #endif -->
               <!-- #ifndef H5 -->
               <view v-for="line in lines" :key="line.key" class="er-line" :class="{ loop: line.loop, business: line.business, lit: line.key === activeKey }"
-                :style="line.style" @mouseenter="hoverLine = line.key" @mouseleave="hoverLine = ''" @click.stop="pickLine(line.key)" />
+                :style="line.style" @mouseenter="hoverLine = line.key" @mouseleave="hoverLine = ''" @click.stop="graphLineClick(line.key)" />
               <!-- #endif -->
               <view v-for="line in lines" :key="'arrow' + line.key" class="er-arrow" :style="line.arrowStyle" />
               <view v-for="tag in labels.lineLabels" :key="'label' + tag.key" class="er-edge-label"
                 :class="{ lit: tag.key === activeKey, dim: activeKey && tag.key !== activeKey, 'empty-records': emptyRecordEdges.has(tag.key) }"
                 :style="{ left: tag.x + 'px', top: tag.y + 'px', width: tag.width + 'px' }"
-                @mouseenter="hoverLine = tag.key" @mouseleave="hoverLine = ''" @click.stop="pickLine(tag.key)">{{ tag.text }}</view>
+                @mouseenter="hoverLine = tag.key" @mouseleave="hoverLine = ''" @click.stop="graphLineClick(tag.key)">{{ tag.text }}</view>
               <view v-for="n in graphNodes" :key="n.name" class="er-node" :data-table="n.name" :class="{ selected: n.name === selected, muted: !n.related, waypoint: n.stop, destination: n.stop === '终', faded: tracing && traceEnd && !n.related, 'empty-records': recordMode && n.name !== 'User' && recordCounts.get(n.name)?.total === 0 }"
                 :style="{ left: n.x + 'px', top: n.y + 'px', '--node-color': n.color }"
                 @mouseenter="hovered = n.name" @mouseleave="hovered = ''"
                 @touchstart.stop="touchStart($event, n.name)"
-                @click.stop="nodeClick(n.name)" @keydown.enter.prevent="nodeClick(n.name)" :aria-label="n.label" role="button" tabindex="0">
+                @click.stop="nodeNativeClick(n.name)" @keydown.enter.prevent="nodeClick(n.name)" :aria-label="n.label" role="button" tabindex="0">
                 <view class="er-dot" :style="{ width: n.radius * 2 + 'px', height: n.radius * 2 + 'px' }">
                   <ManifestIcon v-if="tableMap.get(n.name)?.icon" class="er-node-icon" :id="tableMap.get(n.name).icon" :size="Math.max(14, n.radius * 2 - 8) + 'px'" />
                   <view v-else class="er-table-mark" />
@@ -197,6 +197,9 @@ import DatabaseEntityDiagram from './DatabaseEntityDiagram.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { createRelationFrameBudget } from './database-relation-frame-budget'
 import { businessViews, domainIndex, domains, dragSprings, graphBounds, graphLabels, graphPadding, groupRelations, layoutTables, refineRelationNeighborhoodsInSteps, relationStrokes, shortestRelationPath, tableDoubleTap } from './database-relation-layout'
+// #ifdef MP-WEIXIN
+import { relationNodeAtPoint } from './database-relation-hit-test.mjs'
+// #endif
 
 const props = defineProps({ tables: { type: Array, default: () => [] }, current: { type: String, default: '' }, userId: { type: [Number, String], default: null }, light: Boolean, mode: { type: String, default: 'structure' }, initialMessageField: String })
 const emit = defineEmits(['select', 'switch-table', 'choose-user', 'exit-user', 'user-records', 'update:mode', 'message-field-consumed', 'account-insights', 'field-focus'])
@@ -691,7 +694,10 @@ function move(point) {
     dragBends = currentBends; dragLabels = currentLabels; dragArrows = currentArrows
     bendTargets = new Map(dragBends); routedPositions = null; lastRouteTime = 0
     dragOrigin = new Map(positions.value.map(node => [node.name, { x: node.x, y: node.y }]))
-    if (layout.value === 'force') { frameBudget.resetClock(); spring = dragSprings(positions.value, edges.value, gesture.name) }
+    if (layout.value === 'force') {
+      frameBudget.resetClock()
+      spring = dragSprings(positions.value, edges.value, gesture.name, { deferRepulsionFrames: desktopBudget ? 0 : 2 })
+    }
     settling.value = true
   }
   moving.value = true; viewEdited = true
@@ -701,7 +707,13 @@ function move(point) {
     if (node) {
       node.x += dx / zoom.value; node.y += dy / zoom.value
       ticks = 0
-      if (springFrame === null) springFrame = nextFrame(tickSprings)
+      if (springFrame === null) {
+        // Paint the dragged node before starting the force simulation.
+        triggerRef(positions)
+        springFrame = nextFrame(() => {
+          springFrame = dragBends ? nextFrame(tickSprings) : null
+        })
+      }
     }
   } else pan.value = { x: pan.value.x + dx, y: pan.value.y + dy }
   gesture.lastX = x; gesture.lastY = y
@@ -745,6 +757,20 @@ function nodeClick(name) {
   if (tracing.value) { traceEnd.value = name; focusTrace() }
   else inspect(name)
 }
+function nodeNativeClick(name) {
+  // #ifndef MP-WEIXIN
+  nodeClick(name)
+  // #endif
+}
+let ignoreGraphLineClickUntil = 0
+function graphLineClick(key) {
+  if (Date.now() >= ignoreGraphLineClickUntil) pickLine(key)
+}
+// #ifdef MP-WEIXIN
+function nodeAtTouch(point) {
+  return relationNodeAtPoint(graphNodes.value, point, rectNow(), width.value, height.value, pan.value, symbolScale.value)
+}
+// #endif
 function touchPair(touches) {
   const [a, b] = [touches[0], touches[1]], rect = rectNow()
   return { x: (a.clientX + b.clientX) / 2 - rect.left, y: (a.clientY + b.clientY) / 2 - rect.top,
@@ -752,6 +778,9 @@ function touchPair(touches) {
 }
 function touchStart(event, name) {
   stopZoom()
+  // #ifdef MP-WEIXIN
+  if (!name && event.touches.length === 1) name = nodeAtTouch(event.touches[0])
+  // #endif
   if (event.touches.length === 1) begin(event.touches[0], name)
   else { if (!moving.value) gestureLabels = labels.value; gesture = { pinch: touchPair(event.touches) }; moving.value = true }
 }
@@ -767,7 +796,18 @@ function touchMove(event) {
 }
 function touchEnd(event) {
   if (event.touches.length === 1) { begin(event.touches[0], null); moving.value = true }
-  else cancelGesture()
+  else {
+    // #ifdef MP-WEIXIN
+    const tappedNode = !moving.value && !gesture?.pinch ? gesture?.name : ''
+    // #endif
+    cancelGesture()
+    // #ifdef MP-WEIXIN
+    if (tappedNode) {
+      ignoreGraphLineClickUntil = Date.now() + 350
+      nodeClick(tappedNode)
+    }
+    // #endif
+  }
 }
 let disposed = false, measureGeneration = 0
 let mouseSurface = null

@@ -1,8 +1,8 @@
 import { mapConfig } from './map-config'
 import request from './index'
 import { baseUrl } from './settings'
-import { compressTrashBinImage } from '@/utils/trash-bin-image'
-import { toMapDisplayPoint } from '@/utils/map-display-point.mjs'
+import { compressTrashBinImage } from '@/utils/map/trash-bin-image'
+import { toMapDisplayPoint } from '@/utils/map/map-display-point.mjs'
 
   // 地点搜索API（兼容H5跨域问题）
   export function searchPlaces(keyword, latitude, longitude, radius = 5000) {

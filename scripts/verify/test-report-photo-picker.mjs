@@ -4,8 +4,8 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import test from 'node:test'
-import { TRASH_BIN_IMAGE_LIMIT } from '../../src/utils/trash-bin-image-core.mjs'
-import { createReportPhotoSelection } from '../../src/utils/report-photo-selection.mjs'
+import { TRASH_BIN_IMAGE_LIMIT } from '../../src/utils/map/trash-bin-image-core.mjs'
+import { createReportPhotoSelection } from '../../src/utils/map/report-photo-selection.mjs'
 
 const require = createRequire(import.meta.url)
 const { parse, compileScript, compileTemplate } = require('@vue/compiler-sfc')
@@ -14,7 +14,7 @@ const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const read = path => readFile(resolve(root, path), 'utf8')
 
 test('report photo pages and picker preprocess as H5, APP-PLUS, and MP-WEIXIN SFCs', async () => {
-  const files = ['src/components/ReportPhotoPicker.vue', 'src/pages/map/map.vue', 'src/pages-dark/map/map.vue']
+  const files = ['src/components/map/ReportPhotoPicker.vue', 'src/pages/map/map.vue', 'src/pages-dark/map/map.vue']
   const platforms = [
     { name: 'H5', context: { H5: true } },
     { name: 'APP-PLUS', context: { APP: true, APP_PLUS: true } },
@@ -42,9 +42,9 @@ test('report photo pages and picker preprocess as H5, APP-PLUS, and MP-WEIXIN SF
 test('report photo limits, upload wiring, processing guard, and trusted admin paths stay focused', async () => {
   assert.equal(TRASH_BIN_IMAGE_LIMIT, 500 * 1024)
   const [picker, light, dark, api, admin, selection, pointReport] = await Promise.all([
-    read('src/components/ReportPhotoPicker.vue'), read('src/pages/map/map.vue'),
-    read('src/pages-dark/map/map.vue'), read('src/api/map.js'), read('src/components/MapBinAdminPanel.vue'),
-    read('src/utils/report-photo-selection.mjs'), read('src/utils/map/point-report.mjs')
+    read('src/components/map/ReportPhotoPicker.vue'), read('src/pages/map/map.vue'),
+    read('src/pages-dark/map/map.vue'), read('src/api/map.js'), read('src/components/map/MapBinAdminPanel.vue'),
+    read('src/utils/map/report-photo-selection.mjs'), read('src/utils/map/point-report.mjs')
   ])
   assert.match(picker, /createReportPhotoSelection/)
   assert.match(selection, /compressImage\(path\)/)

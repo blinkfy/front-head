@@ -5,12 +5,12 @@ import vm from 'node:vm'
 import { parse, compileScript, compileStyle, compileTemplate } from '@vue/compiler-sfc'
 import { parse as parseJavaScript } from '@babel/parser'
 import mpCompiler from '@dcloudio/uni-mp-compiler'
-import { normalizePoint, bookingToleranceMeters, coversServiceLocation } from '../../src/pages-nonTheme/utils/recycling-geometry.mjs'
+import { normalizePoint, bookingToleranceMeters, coversServiceLocation } from '../../src/utils/recycling-geometry.mjs'
 import { gcj02ToWgs84, wgs84ToGcj02 } from '../../src/utils/map/coordinates.mjs'
 
 const require = createRequire(import.meta.url)
 const backendGeometry = require('../../../back-end/services/recycling/recyclingGeometry.js')
-const geometryPath = new URL('../../src/pages-nonTheme/utils/recycling-geometry.mjs', import.meta.url)
+const geometryPath = new URL('../../src/utils/recycling-geometry.mjs', import.meta.url)
 const bookingPath = new URL('../../src/pages-nonTheme/booking.vue', import.meta.url)
 const pickerPath = new URL('../../src/pages-nonTheme/components/shop/ShopAddressPicker.vue', import.meta.url)
 const locationAddressPath = new URL('../../src/utils/location-address.js', import.meta.url)

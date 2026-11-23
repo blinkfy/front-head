@@ -1,2 +1,2 @@
 // Shared notifications are available before any subpackage has loaded.
-export { getUserNotifications, readUserNotifications, getUserNotification, userNotificationUrl } from '@/utils/user-notifications.js'
+export { getUserNotifications, readUserNotifications, getUserNotification, userNotificationUrl } from '@/utils/realtime/user-notifications.js'

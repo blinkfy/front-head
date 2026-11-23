@@ -74,8 +74,8 @@
                 maxlength="20"
                 class="form-input"
                 :type="usernameInputType"
-                @confirm="handleEnterKey"
-                @keyup.enter="handleEnterKey"
+                @confirm="onRegister"
+                @keyup.enter="onRegister"
                 @keyup="handleKeyup"
               />
             </view>
@@ -100,7 +100,7 @@
                 placeholder="请输入密码（至少6位）"
                 maxlength="20"
                 class="form-input"
-                @confirm="handleEnterKey"
+                @confirm="onRegister"
               />
               <input
                 v-else
@@ -113,7 +113,7 @@
                 placeholder="请输入密码（至少6位）"
                 maxlength="20"
                 class="form-input"
-                @confirm="handleEnterKey"
+                @confirm="onRegister"
               />
               <!-- #endif -->
               <!-- #ifndef MP-WEIXIN -->
@@ -126,8 +126,8 @@
                 placeholder="请输入密码（至少6位）"
                 maxlength="20"
                 class="form-input"
-                @confirm="handleEnterKey"
-                @keyup.enter="handleEnterKey"
+                @confirm="onRegister"
+                @keyup.enter="onRegister"
                 @keyup="handleKeyup"
               />
               <!-- #endif -->
@@ -157,7 +157,7 @@
                 placeholder="请再次输入密码"
                 maxlength="20"
                 class="form-input"
-                @confirm="handleEnterKey"
+                @confirm="onRegister"
               />
               <input
                 v-else
@@ -170,7 +170,7 @@
                 placeholder="请再次输入密码"
                 maxlength="20"
                 class="form-input"
-                @confirm="handleEnterKey"
+                @confirm="onRegister"
               />
               <!-- #endif -->
               <!-- #ifndef MP-WEIXIN -->
@@ -183,8 +183,8 @@
                 placeholder="请再次输入密码"
                 maxlength="20"
                 class="form-input"
-                @confirm="handleEnterKey"
-                @keyup.enter="handleEnterKey"
+                @confirm="onRegister"
+                @keyup.enter="onRegister"
                 @keyup="handleKeyup"
               />
               <!-- #endif -->
@@ -201,7 +201,7 @@
               <image class="label-icon" src="/static/icons/shield_captcha_32.webp.png" mode="aspectFit" />
               <text class="label-text">验证码</text>
             </view>
-            <captcha-box v-model="captchaInput" ref="captchaRef" @confirm="handleEnterKey" />
+            <captcha-box v-model="captchaInput" ref="captchaRef" @confirm="onRegister" />
             <text class="captcha-hint" v-if="captchaHint">{{ captchaHint }}</text>
           </view>
 
@@ -210,7 +210,7 @@
           <!-- #endif -->
           
           <!-- 注册按钮 -->
-          <button type="submit" id="registerBtn" class="register-btn" :disabled="isLoading" @click="handleRegisterClick">
+          <button type="submit" id="registerBtn" class="register-btn" :disabled="isLoading" @click="onRegister">
             <view class="light-track"></view>
             <view class="btn-content" v-if="!isLoading">
               <ManifestIcon class="btn-icon" id="submit_action" :scale="1.2" />
@@ -248,170 +248,50 @@
 </template>
 
 <script setup>
-import { loginNavigationRuntime } from '@/utils/login-navigation-runtime.js'
+import { loginNavigationRuntime } from '@/utils/account/login-navigation-runtime.js'
 // #ifdef MP-WEIXIN
-import { rememberWechatLogin } from '@/utils/wechat-login.mjs'
-import { markWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
 import { onLoad } from '@dcloudio/uni-app'
-import { captureRegistrationEntry, miniRegistrationRelay } from '@/utils/registration-relay.js'
+import { captureRegistrationEntry, miniRegistrationRelay } from '@/utils/account/registration-relay.js'
 // #endif
-import { ref, onMounted, nextTick, watch } from 'vue'
-import { register } from '@/api/user'
+import { ref, onMounted } from 'vue'
+import { useRegistrationForm } from '@/utils/account/use-registration-form.js'
 // #ifdef H5 || APP-PLUS
 import { onShow } from '@dcloudio/uni-app'
-import H5WechatRegistrationGuide from '@/components/H5WechatRegistrationGuide.vue'
-import { useH5RegistrationPolicy } from '@/utils/use-h5-registration-policy'
+import H5WechatRegistrationGuide from '@/components/account/H5WechatRegistrationGuide.vue'
 // #endif
-import CaptchaBox from '@/components/CaptchaBox.vue'
+import CaptchaBox from '@/components/account/CaptchaBox.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { returnToLogin } from '@/utils/login-navigation.mjs'
-import { evaluatePassword } from '@/utils/password-strength.mjs'
+import { returnToLogin } from '@/utils/account/login-navigation.mjs'
 // #ifdef APP-PLUS || MP-WEIXIN
-import RegistrationPrivacyAgreement from '@/components/RegistrationPrivacyAgreement.vue'
+import RegistrationPrivacyAgreement from '@/components/account/RegistrationPrivacyAgreement.vue'
 // #endif
+
+const loginUrl = '/pages/index/index'
 
 // #ifdef MP-WEIXIN
 onLoad(options => {
   captureRegistrationEntry(options)
   // Existing sessions still need a fresh WeChat login before authorizing the webpage.
   if (miniRegistrationRelay.getPending() && uni.getStorageSync('token')) {
-    uni.redirectTo({ url: '/pages/index/index?webRegistration=1' })
+    uni.redirectTo({ url: loginUrl + '?webRegistration=1' })
   }
 })
 // #endif
 
-// 表单字段
-const username = ref('')
 let usernameInputType = 'text'
 // #ifdef MP-WEIXIN
 usernameInputType = typeof uni.canIUse === 'function' && uni.canIUse('input.type.nickname') ? 'nickname' : 'text'
 // #endif
-const password = ref('')
-const confirmPwd = ref('')
-const fieldErrors = ref({})
-const focusedField = ref('')
-function showFieldError(field, message) {
-  fieldErrors.value = { [field]: message }
-  focusedField.value = ''
-  nextTick(() => { focusedField.value = field })
-}
-watch([username, password, confirmPwd], (values, previous) => {
-  const errors = { ...fieldErrors.value }
-  ;['username', 'password', 'confirmPwd'].forEach((field, index) => {
-    if (values[index] !== previous[index]) delete errors[field]
-  })
-  fieldErrors.value = errors
-})
+const {
+  username, password, confirmPwd, fieldErrors, focusedField, isLoading, privacyAccepted,
+  captchaInput, captchaHint, captchaRef, webRegistrationAllowed, webRegistrationLoading,
+  webRegistrationError, refreshH5RegistrationPolicy, onRegister
+} = useRegistrationForm(loginUrl)
 const showPwd = ref(false)
 const showConfirmPwd = ref(false)
-const isLoading = ref(false)
 // #ifdef APP-PLUS || MP-WEIXIN
-const privacyAccepted = ref(false)
 const showPrivacyDetails = ref(false)
 // #endif
-
-// 验证码相关
-const captchaInput = ref('')
-const captchaHint = ref('')
-const captchaRef = ref(null)
-
-const webRegistrationAllowed = ref(true)
-const webRegistrationLoading = ref(false)
-const webRegistrationError = ref('')
-let refreshH5RegistrationPolicy = null
-// #ifdef H5 || APP-PLUS
-refreshH5RegistrationPolicy = useH5RegistrationPolicy({
-  allowed: webRegistrationAllowed,
-  loading: webRegistrationLoading,
-  error: webRegistrationError
-})
-// #endif
-
-// 点击处理函数
-function handleRegisterClick() {
-  onRegister()
-}
-
-// 注册提交
-function onRegister() {
-  if (isLoading.value) return
-  // #ifdef H5 || APP-PLUS
-  if (!webRegistrationAllowed.value || webRegistrationLoading.value) return
-  // #endif
-  fieldErrors.value = {}
-  captchaHint.value = ''
-  if (!username.value){ 
-    showFieldError('username', '请输入用户名')
-    uni.showToast({ title: '请输入用户名', icon: 'none' })
-    return
-  } 
-  if (!password.value){
-    showFieldError('password', '请输入密码')
-    uni.showToast({ title: '请输入密码', icon: 'none' })
-    return
-  }
-  if (!confirmPwd.value){
-    showFieldError('confirmPwd', '请确认密码')
-    uni.showToast({ title: '请确认密码', icon: 'none' })
-    return
-  }
-  if (password.value !== confirmPwd.value){
-    showFieldError('confirmPwd', '两次密码不一致')
-    uni.showToast({ title: '两次密码不一致', icon: 'none' })
-    return
-  } 
-  const pwdCheck = evaluatePassword(password.value, { username: username.value })
-  if (!pwdCheck.valid) {
-    showFieldError('password', pwdCheck.hint || '密码过于简单')
-    uni.showToast({ title: pwdCheck.message, icon: 'none' })
-    return
-  }
-
-  // #ifdef APP-PLUS || MP-WEIXIN
-  if (!privacyAccepted.value) {
-    uni.showToast({ title: '请先阅读并同意用户协议与隐私保护指引', icon: 'none' })
-    return
-  }
-  // #endif
-
-  // 验证码校验
-  if (!captchaRef.value || typeof captchaRef.value.validate !== 'function' || !captchaRef.value.validate()) {
-    captchaHint.value = '验证码错误，请重新输入'
-    captchaRef.value && typeof captchaRef.value.refresh === 'function' && captchaRef.value.refresh()
-    uni.showToast({ title: '验证码错误', icon: 'none' })
-    return
-  }
-
-  console.log('开始注册请求')
-  isLoading.value = true
-  
-  register({ username: username.value, password: password.value }).then(res => {
-    uni.showToast({ title: '注册成功', icon: 'success' })
-    let wechatRegistration = false
-    // #ifdef MP-WEIXIN
-    wechatRegistration = true
-    markWechatProfileCompletion(uni, username.value)
-    rememberWechatLogin(uni)
-    // #endif
-    if (!wechatRegistration) {
-      uni.setStorageSync('autoLogin', true)
-      uni.setStorageSync('savedUser', {
-        username: username.value,
-        password: password.value
-      })
-    }
-    setTimeout(() => {
-      isLoading.value = false
-      const loginUrl = '/pages/index/index' + (wechatRegistration ? `?username=${encodeURIComponent(username.value)}` : '')
-      uni.redirectTo({ url: loginUrl })
-    }, 1200)
-  }).catch(err => {
-    uni.showToast({ title: '注册失败: ' + (err.msg || err.message || '请重试'), icon: 'none' })
-    console.error('注册失败:', err)
-    isLoading.value = false
-    captchaRef.value && typeof captchaRef.value.refresh === 'function' && captchaRef.value.refresh()
-  })
-}
 
 function goBack() {
   // #ifdef MP-WEIXIN
@@ -421,7 +301,7 @@ function goBack() {
 }
 
 function goLogin() {
-  returnToLogin({ runtime: loginNavigationRuntime, url: '/pages/index/index' })
+  returnToLogin({ runtime: loginNavigationRuntime, url: loginUrl })
 }
 
 // 切换密码显示/隐藏
@@ -432,11 +312,6 @@ function togglePassword() {
 // 切换确认密码显示/隐藏
 function toggleConfirmPassword() {
   showConfirmPwd.value = !showConfirmPwd.value
-}
-
-// 回车键处理函数
-function handleEnterKey() {
-  onRegister()
 }
 
 // 键盘事件处理

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import vm from 'node:vm'
-import { createAppMapServerPool } from '../../src/utils/app-map-server-pool.mjs'
-import { createAppMapPreloader } from '../../src/utils/app-map-preload-core.mjs'
-import { APP_MAP_IDLE_MS, createAppMapRetention, createAppMapTabCache } from '../../src/utils/app-map-retention.mjs'
+import { createAppMapServerPool } from '../../src/utils/map/app-map-server-pool.mjs'
+import { createAppMapPreloader } from '../../src/utils/map/app-map-preload-core.mjs'
+import { APP_MAP_IDLE_MS, createAppMapRetention, createAppMapTabCache } from '../../src/utils/map/app-map-retention.mjs'
 
 const require = createRequire(import.meta.url)
 const { parse: parseSfc } = require('@vue/compiler-sfc')
@@ -273,7 +273,7 @@ await testAsync('home eligibility is checked again after the network probe', asy
 })
 
 test('home warmup follows first render, picker, recognition and visibility', () => {
-  const source = fs.readFileSync(new URL('../../src/utils/use-app-map-preload-page.js', import.meta.url), 'utf8')
+  const source = fs.readFileSync(new URL('../../src/utils/map/use-app-map-preload-page.js', import.meta.url), 'utf8')
   const hooks = {}, updates = []
   const page = { route: 'pages/home/home' }
   const processing = { value: false }, onboarding = { value: false }
@@ -351,7 +351,7 @@ test('App.vue script parses and wires ready, show, hide, and dispose lifecycle',
   assert.match(descriptor.script.content, /onHide\s*:\s*function\s*\([^)]*\)\s*\{[\s\S]*?setAppMapPreloadActive\(false\)/)
   assert.match(descriptor.script.content, /beforeUnmount\s*\(\)\s*\{[\s\S]*?disposeAppMapPreload\(\)/)
 
-  const wrapper = fs.readFileSync(new URL('../../src/utils/app-map-preload-app.js', import.meta.url), 'utf8')
+  const wrapper = fs.readFileSync(new URL('../../src/utils/map/app-map-preload-app.js', import.meta.url), 'utf8')
   parseJs(wrapper, { sourceType: 'module' })
   assert.match(wrapper, /onAppPageReady\(\(\)\s*=>\s*\{\s*ready\s*=\s*true;\s*schedule\(\)/)
   assert.match(wrapper, /setAppMapPreloadActive\(value\)[\s\S]*?if \(active\) schedule\(\); else preloader\.cancel\(\)/)
@@ -429,7 +429,7 @@ test('preload document executes the official SDK in the map iframe without creat
   assert.match(scripts[0][1], /event\.data\.channel\s*===\s*'app-map-sdk-preload'/)
   assert.doesNotMatch(scripts[0][1], /createElement\(['"]script['"]\)|new\s+TMap\.Map|tilesloaded|(?:tile|satellite).{0,20}\.(?:png|jpe?g|webp)/i)
 
-  const wrapper = fs.readFileSync(new URL('../../src/utils/app-map-preload-app.js', import.meta.url), 'utf8')
+  const wrapper = fs.readFileSync(new URL('../../src/utils/map/app-map-preload-app.js', import.meta.url), 'utf8')
   assert.match(wrapper, /cachemode:\s*'default'/, 'preload WebView uses the platform default cache mode')
   assert.match(wrapper, /const base = startLocalMapServer\(\)/)
   assert.match(wrapper, /frameUrl:\s*base \+ 'index\.html'/)

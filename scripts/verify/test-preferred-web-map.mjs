@@ -25,7 +25,7 @@ function onlyH5(source) {
   return output.join('\n')
 }
 
-const preferredSource = await readFile(new URL('../../src/utils/preferred-web-map.js', import.meta.url), 'utf8')
+const preferredSource = await readFile(new URL('../../src/utils/map/preferred-web-map.js', import.meta.url), 'utf8')
 const preferred = loadModule(preferredSource, { mapConfig: { qqMapKey: 'primary', qqMapKeyBackup: 'backup' }, loadLeaflet: async () => ({}), wgs84ToGcj02, gcj02ToWgs84, document: { addEventListener() {}, removeEventListener() {}, getElementById: id => ({ id }) }, window: {} }, 'preferred-web-map.js')
 
 class LatLng { constructor(lat, lng) { this.lat = lat; this.lng = lng } getLat() { return this.lat } getLng() { return this.lng } }
@@ -80,7 +80,7 @@ assert.ok(Math.abs(marker.getLatLng().lat - 25.034) < 2e-5 && Math.abs(marker.ge
 map.remove(); map.remove(); group.remove(); marker.remove(); circle.remove(); polygon.remove()
 assert.equal(map.native.destroyed, true, 'map removal destroys the native map')
 
-const placeSource = await readFile(new URL('../../src/utils/map-place-search.js', import.meta.url), 'utf8')
+const placeSource = await readFile(new URL('../../src/utils/map/map-place-search.js', import.meta.url), 'utf8')
 const places = loadModule(placeSource, { searchPlaces: async (_q, lat, lng) => ({ code: 0, data: [{ title: '地点', address: '台北市', location: { lat, lng } }] }), wgs84ToGcj02, gcj02ToWgs84, uni: { request() {} } }, 'map-place-search.js')
 const found = await places.searchMapPlaces('地点', { latitude: 25.033, longitude: 121.5654 })
 assert.ok(Math.abs(found[0].latitude - 25.033) < 2e-5, 'Tencent search result is converted back to WGS84')

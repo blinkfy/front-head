@@ -494,16 +494,11 @@
 </template>
 
 <script setup>
-import { getAppCurrentPages, useAppTabContext } from '@/utils/app-tab-context.js'
+import { useAppTabContext } from '@/utils/app-tab-context.js'
 
 import { onMounted, ref, computed } from 'vue'
 import { onShow } from '@/utils/app-tab-lifecycle.js'
-// #ifdef APP-PLUS
-import { watch } from 'vue'
-import { appOfflineSession, getAppCachedProfile } from '@/utils/app-offline-session.js'
-let usedOfflineProfile = false
-// #endif
-import { userinfo } from '@/api/user'
+import { useProfileAccount } from '@/utils/account/use-profile-account.js'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
 import { jumpToAdminPage } from '@/utils/admin-page-nav'
@@ -512,14 +507,11 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 
-const { tabPageClass } = useTabPageTransition('pages-dark/profile/profile')
-const username = ref('')
-const userInfo = ref({})
-const loading = ref(false)
+const profileRoute = 'pages-dark/profile/profile'
+const { tabPageClass } = useTabPageTransition(profileRoute)
 const showInfoModal = ref(false) // 控制积分信息弹窗显示
 const showCarbonModal = ref(false) // 控制减碳信息弹窗显示
 const showContributionModal = ref(false) // 控制回收贡献说明弹窗显示
-const isAdmin = ref(false)
 
 // 科学的减碳量计算逻辑
 const calculateCarbonReduction = (points) => {
@@ -616,123 +608,21 @@ const connectionDuration = computed(() => {
   return minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`
 })
 
-// 获取用户信息包括积分
-const fetchUserInfo = async () => {
-  try {
-    loading.value = true
-    const token = uni.getStorageSync('token')
-    if (!token) {
-      username.value = '游客'
-      // 无 token 时清除所有权限相关标记
-      isAdmin.value = false
-      uni.removeStorageSync('isAdmin')
-      return false
-    }
-    // #ifdef APP-PLUS
-    if (appOfflineSession.unavailable) {
-      const cached = getAppCachedProfile()
-      userInfo.value = cached || {}
-      username.value = cached?.username || '用户'
-      points.value = cached?.points || 0
-      isAdmin.value = false
-      usedOfflineProfile = true
-      return false
-    }
-    usedOfflineProfile = false
-    // #endif
-    const response = await userinfo()
-    if (response.code === 0) {
-      userInfo.value = response.data
-      points.value = response.data.points || 0
-      // 同时更新 username，避免本地存储不是最新值
-      if (response.data.username) {
-        username.value = response.data.username
-      }
-      // 后端会返回 isAdmin 字段，保存到本地以便全局读取
-      // 严格安全检查：只有后端明确返回 isAdmin=true，才赋予管理员权限
-      const isAdminFromServer = !!(response.data && response.data.isAdmin === true)
-      isAdmin.value = isAdminFromServer
-      try {
-        if (isAdminFromServer) {
-          uni.setStorageSync('isAdmin', true)
-        } else {
-          // 若后端返回 isAdmin=false 或缺失，立即清除本地标记
-          uni.removeStorageSync('isAdmin')
-        }
-        return true
-      } catch (e) {
-        // ignore storage errors
-        return false
-      }
-    } else {
-      console.error('获取用户信息失败:', response.msg)
-      uni.showToast({
-        title: response.data.msg || '获取用户信息失败',
-        icon: 'none'
-      })
-      return false
-    }
-  } catch (error) {
-    console.error('请求用户信息出错:', error)
-    uni.showToast({
-      title: error.msg || '网络错误，请稍后重试',
-      icon: 'none'
-    })
-    return false
-  } finally {
-    loading.value = false
-  }
-}
+const { username, userInfo, loading, isAdmin, loadInitialProfile, handleRefresh, verifyAdminPermission } =
+  useProfileAccount(points, profileRoute, {
+  networkError: '网络错误，请稍后重试',
+  permissionExpired: '权限已过期或被撤销',
+  permissionError: '权限验证失败，请重新登录'
+})
 
 // 系统或手势返回会复用旧页面，每次显示时校验主题。
-// #ifdef APP-PLUS
-function refreshProfileAfterReconnect() {
-  if (usedOfflineProfile && !appOfflineSession.unavailable && uni.getStorageSync('token') &&
-      getAppCurrentPages().slice(-1)[0]?.route === 'pages-dark/profile/profile') void fetchUserInfo()
-}
-watch(() => appOfflineSession.unavailable, refreshProfileAfterReconnect)
-onShow(refreshProfileAfterReconnect)
-// #endif
 const appTab = useAppTabContext()
 onShow(() => {
   if (appTab || uni.getStorageSync('app_theme') === 'dark') return
   uni.reLaunch({ url: '/pages/profile/profile' })
 })
 
-onMounted(async () => {
-  const savedUser = uni.getStorageSync('savedUser')?.username
-  if (!(savedUser && uni.getStorageSync('autoLogin'))) {
-    
-  } else {
-    username.value = savedUser
-  }
-  
-  // 获取完整的用户信息（包括积分和权限）
-  await fetchUserInfo()
-  
-  // 安全防护：验证本地存储的 isAdmin 是否仍有服务端权限
-  // 若本地有 isAdmin 但服务端返回无权限，立即清除本地标记
-  if (uni.getStorageSync('isAdmin') && !isAdmin.value) {
-    uni.removeStorageSync('isAdmin')
-  }
-})
-
-// 手动刷新用户信息
-const handleRefresh = async () => {
-  // #ifdef APP-PLUS
-  if (appOfflineSession.unavailable) {
-    usedOfflineProfile = true
-    uni.showToast({ title: '当前离线，联网后可刷新', icon: 'none' })
-    return
-  }
-  // #endif
-  if (await fetchUserInfo()) {
-    uni.showToast({
-      title: '刷新成功',
-      icon: 'success'
-    })
-  }
-}
+onMounted(loadInitialProfile)
 
 // 显示积分信息弹窗
 const showPointsInfo = () => {
@@ -775,33 +665,6 @@ function goRanking() {uni.navigateTo({ url: '/pages-dark/ranking/ranking' })}
 function goSettings() { uni.navigateTo({ url: '/pages-nonTheme/settings' }) }
 function goGuide() {uni.navigateTo({ url: '/pages-dark/guide/guide' })}
 function goAchievements() { uni.navigateTo({ url: '/pages-nonTheme/achievements' })}
-
-// 权限验证函数：在导航前验证用户是否真正拥有管理员权限
-async function verifyAdminPermission() {
-  // 1. 本地快速检查
-  const localAdminFlag = uni.getStorageSync('isAdmin')
-  if (!localAdminFlag) {
-    uni.showToast({ title: '无权限访问', icon: 'none' })
-    return false
-  }
-  // 2. 向后端验证权限
-  try {
-    const response = await userinfo()
-    if (response && response.data && response.data.isAdmin){
-      return true
-    } else {
-      // 权限验证失败，清除本地伪造的 isAdmin 标记
-      uni.removeStorageSync('isAdmin')
-      isAdmin.value = false
-      uni.showToast({ title: '权限已过期或被撤销', icon: 'none' })
-      return false
-    }
-  } catch (err) {
-    console.error('权限验证失败:', err)
-    uni.showToast({ title: '权限验证失败，请重新登录', icon: 'none' })
-    return false
-  }
-}
 
 function goFileManagement() {
   verifyAdminPermission().then(hasPermission => {

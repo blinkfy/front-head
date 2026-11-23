@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 
-const sourcePath = fileURLToPath(new URL('../../src/utils/web-call-support.js', import.meta.url))
+const sourcePath = fileURLToPath(new URL('../../src/utils/realtime/web-call-support.js', import.meta.url))
 const source = fs.readFileSync(sourcePath, 'utf8')
 
 function setup({ permission = 'default', permissionError = null, notificationError = null } = {}) {

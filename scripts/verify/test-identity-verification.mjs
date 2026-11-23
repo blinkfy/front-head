@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { parse, compileScript, compileTemplate, compileStyle } from '@vue/compiler-sfc'
-import { identityAgeError } from '../../src/utils/identity-age.mjs'
-import { normalizeIdentityName, identityNameError } from '../../src/utils/identity-name.mjs'
-import { createIdentityActionSequence } from '../../src/utils/identity-action-sequence.mjs'
+import { identityAgeError } from '../../src/pages-nonTheme/utils/identity/identity-age.mjs'
+import { normalizeIdentityName, identityNameError } from '../../src/pages-nonTheme/utils/identity/identity-name.mjs'
+import { createIdentityActionSequence } from '../../src/pages-nonTheme/utils/identity/identity-action-sequence.mjs'
 
 const root = new URL('../../', import.meta.url)
 function conditional(source, target) {
@@ -31,7 +31,7 @@ for (const target of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
     assert.deepEqual(compileTemplate({ source: descriptor.template.content, filename, id: `${target}-identity` }).errors, [])
     for (const style of descriptor.styles) assert.deepEqual(compileStyle({ source: style.content, filename, id: 'identity' }).errors, [])
   }
-  const capture = conditional(readFileSync(new URL('src/utils/identity-capture.js', root), 'utf8'), target)
+  const capture = conditional(readFileSync(new URL('src/pages-nonTheme/utils/identity/identity-capture.js', root), 'utf8'), target)
   if (target !== 'H5') {
     assert.equal(capture.includes('identity-camera-h5'), false, 'native bundles do not import client model runtime')
     assert.doesNotMatch(capture, /chooseImage|sourceType|album|FaceLandmarker|vision_bundle/, 'native path has no gallery bypass or H5 model runtime')
@@ -41,8 +41,8 @@ for (const target of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
 }
 
 const identityPage = conditional(readFileSync(new URL('src/pages-nonTheme/identity-verification.vue', root), 'utf8'), 'H5')
-const cameraSource = readFileSync(new URL('src/utils/identity-camera-h5.js', root), 'utf8')
-const framingChecks = readFileSync(new URL('src/utils/identity-camera-checks.mjs', root), 'utf8')
+const cameraSource = readFileSync(new URL('src/pages-nonTheme/utils/identity/identity-camera-h5.js', root), 'utf8')
+const framingChecks = readFileSync(new URL('src/pages-nonTheme/utils/identity/identity-camera-checks.mjs', root), 'utf8')
 assert.doesNotMatch(identityPage, /<switch\b|actionAssist/, 'action detection cannot be switched off')
 assert.match(identityPage, /请按提示完成人脸认证/)
 assert.doesNotMatch(identityPage, /本机处理|关键点|模型/, 'implementation details are absent from the capture disclosure')
@@ -95,7 +95,7 @@ function identityApiHarness() {
   const context = vm.createContext({ baseUrl: 'https://identity.test',
     sessionStorage: { getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) },
     uni: { getStorageSync: () => 'browser-token', request: options => calls.push(options) } })
-  const apiSource = conditional(readFileSync(new URL('src/api/identity.js', root), 'utf8'), 'H5')
+  const apiSource = conditional(readFileSync(new URL('src/pages-nonTheme/api/identity.js', root), 'utf8'), 'H5')
     .replace(/^import .*$/gm, '').replace(/^export /gm, '')
   vm.runInContext(`${apiSource}\nglobalThis.api = { exchangeIdentityWebSession, clearIdentityWebSession, identityWebContext }`, context)
   return { api: context.api, calls, saved }
@@ -339,7 +339,7 @@ for (const target of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
   class ImageStub {
     set src(value) { queueMicrotask(() => { this.naturalWidth = valid ? 400 : 0; this.naturalHeight = 400; this.onload?.() }) }
   }
-  const capture = conditional(readFileSync(new URL('src/utils/identity-capture.js', root), 'utf8'), target)
+  const capture = conditional(readFileSync(new URL('src/pages-nonTheme/utils/identity/identity-capture.js', root), 'utf8'), target)
     .replace(/^import .*$/gm, '').replace(/^export /gm, '')
   const context = vm.createContext({ Image: ImageStub, URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => revoked++ },
     setTimeout, clearTimeout, uni: { getImageInfo: options => options.success({ width: valid ? 400 : 0, height: 400 }) } })
@@ -355,7 +355,7 @@ assert.match(failureMarkup, /您还有/); assert.match(failureMarkup, /retryBloc
 assert.doesNotMatch(failureMarkup, /failureHint|captureFailure|resultCode/, 'failure UI never exposes diagnostic reasons')
 assert.doesNotMatch(identityPage, /@click="submit"|<image\b|previewLoaded/, 'no image preview confirmation or second submit step')
 for (const file of ['src/pages-nonTheme/identity-verification.vue', 'src/pages-nonTheme/identity-camera.vue',
-  'src/utils/identity-camera-h5.js', 'src/utils/identity-native-flow.mjs',
+  'src/pages-nonTheme/utils/identity/identity-camera-h5.js', 'src/pages-nonTheme/utils/identity/identity-native-flow.mjs',
   'src/uni_modules/ftx-identity-capture/utssdk/app-android/IdentityCaptureUi.kt',
   'src/uni_modules/ftx-identity-capture/utssdk/app-ios/IdentityCaptureBridge.swift']) {
   assert.doesNotMatch(readFileSync(new URL(file, root), 'utf8'), /拍摄/, `${file} uses verification wording`)

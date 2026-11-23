@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
+import { runInNewContext } from 'node:vm'
+import { nextTick, ref, watch } from 'vue'
+import { evaluatePassword } from '../../src/utils/account/password-strength.mjs'
+import { markWechatProfileCompletion } from '../../src/utils/account/wechat-profile.mjs'
 import {
   clearWechatLoginSession,
   createWechatLoginFlow,
@@ -11,7 +15,7 @@ import {
   WECHAT_BIND_INTENT_KEY,
   WECHAT_LAST_LOGIN_KEY,
   WECHAT_SHARED_SESSION_KEY
-} from '../../src/utils/wechat-login.mjs'
+} from '../../src/utils/account/wechat-login.mjs'
 
 const passed = []
 
@@ -418,13 +422,13 @@ async function testSettingsFlow() {
 
   await scenario('settings logout clears shared resume credentials', () => {
     const logout = extractNamedFunction(logoutSource, 'handleConfirm')
-    assert.ok(/confirmAction\.value === 'logout'[\s\S]*setStorageSync\('autoLogin', false\)[\s\S]*#ifdef MP-WEIXIN[\s\S]*removeStorageSync\('wechat_shared_session'\)[\s\S]*removeStorageSync\('wechat_last_login'\)[\s\S]*#endif/.test(logout))
+    assert.ok(/(?:confirmAction\.value|action) === 'logout'[\s\S]*setStorageSync\('autoLogin', false\)[\s\S]*#ifdef MP-WEIXIN[\s\S]*removeStorageSync\('wechat_shared_session'\)[\s\S]*removeStorageSync\('wechat_last_login'\)[\s\S]*#endif/.test(logout))
   })
 }
 
 async function testThemeSourceGuards() {
-  const entryComponent = await readFile(new URL('../../src/components/WechatLoginEntry.vue', import.meta.url), 'utf8')
-  const h5LoginShell = await readFile(new URL('../../src/components/H5LoginShell.vue', import.meta.url), 'utf8')
+  const entryComponent = await readFile(new URL('../../src/components/account/WechatLoginEntry.vue', import.meta.url), 'utf8')
+  const h5LoginShell = await readFile(new URL('../../src/components/account/H5LoginShell.vue', import.meta.url), 'utf8')
   assert.ok(!/@cancel=|\$emit\(['"]cancel/.test(entryComponent), 'WeChat entry should expose no cancel action')
 
   for (const theme of ['pages', 'pages-dark']) {
@@ -463,14 +467,123 @@ async function testThemeSourceGuards() {
       assert.ok(/if \(wechatSession\) \{[\s\S]*setStorageSync\('autoLogin', rememberMe\.value\)/.test(page))
     })
 
-    await scenario(`${theme} registration remembers WeChat without saved password`, () => {
+    await scenario(`${theme} registration uses the shared form with its theme's login route`, () => {
       assert.ok(!page.includes('cancelWechatBinding'))
-      const registerCallback = registration.match(/register\(\{ username: username\.value, password: password\.value \}\)\.then\(res => \{([\s\S]*?)\n  \}\)\.catch/)
-      assert.ok(registerCallback)
-      assert.ok(/#ifdef MP-WEIXIN[\s\S]*wechatRegistration = true\s*markWechatProfileCompletion\(uni, username\.value\)\s*rememberWechatLogin\(uni\)[\s\S]*#endif/.test(registerCallback[1]))
-      assert.ok(/if \(!wechatRegistration\) \{[\s\S]*setStorageSync\('savedUser'[\s\S]*password: password\.value/s.test(registerCallback[1]))
-      assert.ok(/wechatRegistration \? `\?username=\$\{encodeURIComponent\(username\.value\)\}` : ''/.test(registerCallback[1]))
+      assert.ok(registration.includes(`const loginUrl = '/${theme}/index/index'`))
+      assert.ok(registration.includes('useRegistrationForm(loginUrl)'))
+      assert.ok(registration.includes("loginUrl + '?webRegistration=1'"))
+      assert.ok(registration.includes('miniRegistrationRelay.cancel()'))
     })
+  }
+}
+
+async function testRegistrationForm() {
+  const require = createRequire(import.meta.url)
+  const { initPreContext, preJs } = require('@dcloudio/uni-cli-shared')
+  const readUtility = name => readFile(new URL(`../../src/utils/account/${name}`, import.meta.url), 'utf8')
+  const [formSource, policySource] = await Promise.all([
+    readUtility('use-registration-form.js'), readUtility('use-h5-registration-policy.js')
+  ])
+  const plain = source => preJs(source).replace(/^import .*$/gm, '').replace(/^export /gm, '')
+  for (const platform of ['h5', 'app', 'mp-weixin']) {
+    for (const theme of ['pages', 'pages-dark']) {
+      await scenario(`${theme} ${platform} validates registration and routes after success`, async () => {
+        initPreContext(platform)
+        const mini = platform === 'mp-weixin'
+        const loginUrl = `/${theme}/index/index`
+        const uni = fakeRuntime()
+        const requests = [], toasts = [], redirects = [], timers = []
+        let allowWebRegistration = false
+        let captchaValid = false
+        let captchaRefreshes = 0
+        uni.showToast = ({ title }) => toasts.push(title)
+        uni.redirectTo = ({ url }) => redirects.push(url)
+        const setup = runInNewContext(`${plain(policySource)}\n${plain(formSource)}\nuseRegistrationForm`, {
+          nextTick, ref, watch, uni, evaluatePassword, rememberWechatLogin, markWechatProfileCompletion,
+          request: async () => ({ code: 0, data: { allowWebRegistration } }),
+          register: data => new Promise((resolve, reject) => requests.push({ data, resolve, reject })),
+          setTimeout: (callback, delay) => timers.push({ callback, delay }),
+          console: { error() {} }
+        })
+        const form = setup(loginUrl)
+        if (!mini) {
+          await form.onRegister()
+          assert.deepEqual(toasts, [], 'wait until the platform policy is available')
+          assert.equal(await form.refreshH5RegistrationPolicy(), false)
+          await form.onRegister()
+          assert.deepEqual(toasts, [], 'registration remains gated by policy')
+          allowWebRegistration = true
+          await form.refreshH5RegistrationPolicy()
+        }
+        await form.onRegister()
+        await nextTick()
+        assert.deepEqual({ ...form.fieldErrors.value }, { username: '请输入用户名' })
+        assert.equal(form.focusedField.value, 'username')
+        form.username.value = '测试+用户'
+        await nextTick()
+        assert.deepEqual({ ...form.fieldErrors.value }, {})
+        form.password.value = '123456'
+        form.confirmPwd.value = 'different'
+        await nextTick()
+        await form.onRegister()
+        assert.equal(form.fieldErrors.value.confirmPwd, '两次密码不一致')
+        form.confirmPwd.value = form.password.value
+        await nextTick()
+        await form.onRegister()
+        assert.ok(form.fieldErrors.value.password, 'weak passwords stay blocked')
+        form.password.value = form.confirmPwd.value = 'P9%mV#42kS'
+        form.captchaRef.value = {
+          validate: () => captchaValid,
+          refresh: () => { captchaRefreshes++ }
+        }
+        if (platform !== 'h5') {
+          await form.onRegister()
+          assert.match(toasts.at(-1), /同意.*隐私保护/)
+          assert.equal(captchaRefreshes, 0)
+          form.privacyAccepted.value = true
+        }
+        await form.onRegister()
+        assert.equal(form.captchaHint.value, '验证码错误，请重新输入')
+        assert.equal(captchaRefreshes, 1)
+        assert.equal(requests.length, 0)
+
+        captchaValid = true
+        const failed = form.onRegister()
+        await form.onRegister()
+        assert.equal(requests.length, 1, 'block duplicate submits while requesting')
+        requests.shift().reject({ msg: '用户名已存在' })
+        await failed
+        assert.match(toasts.at(-1), /用户名已存在/)
+        assert.equal(form.isLoading.value, false)
+        assert.equal(captchaRefreshes, 2)
+        assert.equal(uni.storage.size, 0)
+
+        uni.storage.set('savedUser', { username: 'previous-user' })
+        const success = form.onRegister()
+        const pending = requests.shift()
+        assert.deepEqual({ ...pending.data }, { username: '测试+用户', password: 'P9%mV#42kS' })
+        form.username.value = 'edited-after-submit'
+        pending.resolve({})
+        await success
+        assert.equal(toasts.at(-1), '注册成功')
+        assert.equal(form.isLoading.value, true)
+        assert.deepEqual(redirects, [])
+        assert.equal(timers[0].delay, 1200)
+        timers[0].callback()
+        assert.equal(form.isLoading.value, false)
+        if (mini) {
+          assert.equal(uni.storage.get(WECHAT_AUTO_LOGIN_KEY), true)
+          assert.equal(uni.storage.get('wechatProfileCompletionPending').username, '测试+用户')
+          assert.equal(uni.storage.has('savedUser'), false)
+          assert.deepEqual(redirects, [`${loginUrl}?username=${encodeURIComponent('测试+用户')}`])
+        } else {
+          assert.equal(uni.storage.get('autoLogin'), true)
+          assert.deepEqual({ ...uni.storage.get('savedUser') }, { username: '测试+用户', password: 'P9%mV#42kS' })
+          assert.equal(uni.storage.has('wechatProfileCompletionPending'), false)
+          assert.deepEqual(redirects, [loginUrl])
+        }
+      })
+    }
   }
 }
 
@@ -506,5 +619,6 @@ await testPasswordLoginFlow()
 await testApiBranches()
 await testSettingsFlow()
 await testThemeSourceGuards()
+await testRegistrationForm()
 await testLoginSfcPlatforms()
 console.log(`wechat-login checks passed (${passed.length} scenarios)`)

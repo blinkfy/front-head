@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
-import { createWechatPasswordLoginFlow } from '../../src/utils/wechat-login.mjs'
+import { createWechatPasswordLoginFlow } from '../../src/utils/account/wechat-login.mjs'
 
 const passed = []
 const failures = []
@@ -210,7 +210,7 @@ async function testErrorsDoNotPersistCredentialsOrSessions() {
 }
 
 async function testPageIntegrationAndComponent() {
-  const componentUrl = new URL('../../src/components/AccountMergeChoice.vue', import.meta.url)
+  const componentUrl = new URL('../../src/components/account/AccountMergeChoice.vue', import.meta.url)
   const componentSource = (await readFile(componentUrl, 'utf8')).replace(/\r\n/g, '\n')
   assert.match(componentSource, /当前微信账号/)
   assert.match(componentSource, /已验证的历史账号/)
@@ -228,7 +228,8 @@ async function testPageIntegrationAndComponent() {
     assert.match(page, /onUnload\(\(\) => \{ wechatPageActive = false; finishProfileCompletion\(\); finishMergeChoice\(null\) \}\)/)
     assert.match(page, /async function completeLogin\([\s\S]*?rememberWechatLogin\(uni, res, rememberMe\.value\)/)
     assert.match(page, /await completeLogin\(res, isauto\)/, 'a successful merge result should reuse the normal login completion path')
-    assert.match(page, /uni\.reLaunch\(\{ url: pendingUrl \|\| '\/pages(?:-dark)?\/home\/home' \}\)/)
+    assert.match(page, /runtime: loginNavigationRuntime, url: pendingUrl \|\| '\/pages(?:-dark)?\/home\/home'/,
+      'a successful merge reuses the shared signed-in navigation flow')
   }
 
   const require = createRequire(import.meta.url)
@@ -240,7 +241,7 @@ async function testPageIntegrationAndComponent() {
     MP_LARK: false, MP_TOUTIAO: false, MP_KUAISHOU: false, MP_JD: false, MP_XHS: false
   }
   const files = [
-    ['src/components/AccountMergeChoice.vue', componentSource],
+    ['src/components/account/AccountMergeChoice.vue', componentSource],
     ...await Promise.all(['pages', 'pages-dark'].map(async theme => {
       const filename = `src/${theme}/index/index.vue`
       return [filename, await readFile(new URL(`../../${filename}`, import.meta.url), 'utf8')]
@@ -249,9 +250,14 @@ async function testPageIntegrationAndComponent() {
   for (const [filename, source] of files) {
     const { descriptor, errors } = parse(source, { filename })
     assert.equal(errors.length, 0, `${filename}: SFC parse should succeed`)
-    compileScript(descriptor, { id: `account-merge-${filename}` })
     for (const target of ['mp-weixin', 'h5']) {
       const context = { ...defaults, ...(target === 'mp-weixin' ? { MP: true, MP_WEIXIN: true } : { H5: true, WEB: true }) }
+      const script = descriptor.scriptSetup || descriptor.script
+      if (script) {
+        const processed = preprocess(script.content, context, 'js')
+        const targetDescriptor = { ...descriptor, [descriptor.scriptSetup ? 'scriptSetup' : 'script']: { ...script, content: processed } }
+        compileScript(targetDescriptor, { id: `account-merge-${filename}-${target}` })
+      }
       const template = preprocess(descriptor.template.content, context, 'html')
       const result = compileTemplate({ source: template, filename, id: `account-merge-${filename}-${target}` })
       assert.equal(result.errors.length, 0, `${filename} on ${target}: ${result.errors.map(String).join('\n')}`)

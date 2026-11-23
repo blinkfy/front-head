@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
-import { createVoiceCallController } from '../../src/utils/voice-call-core.mjs'
+import { createVoiceCallController } from '../../src/utils/realtime/voice-call-core.mjs'
 
 function setup({ ticket = '', permissionError = null, android = true, web = false, permissionPromise = null } = {}) {
   const calls = { permission: [], open: 0, sent: [], consumed: [], stoppedAlerts: [], feedbackAlerts: 0,
@@ -39,6 +39,7 @@ function setup({ ticket = '', permissionError = null, android = true, web = fals
     createVoiceCallController,
     recordingConfiguration: () => null,
     document: { querySelectorAll: () => [] },
+    media,
     voiceCallMedia: media,
     setUiSoundBlocked: (...args) => calls.uiSound.push(args),
     setChatFeedbackBlocked: (...args) => calls.feedback.push(args),
@@ -46,7 +47,7 @@ function setup({ ticket = '', permissionError = null, android = true, web = fals
     getCurrentPages: () => [{ route: 'pages-nonTheme/voice-call' }],
     uni: { getStorageSync: key => key === 'token' ? token : self, navigateTo: value => calls.navigated.push(value) },
   }
-  let source = fs.readFileSync(new URL('../../src/utils/voice-call.js', import.meta.url), 'utf8')
+  let source = fs.readFileSync(new URL('../../src/utils/realtime/voice-call.js', import.meta.url), 'utf8')
     .replace(/^import .* from .*$/gm, '')
     .replace(/\bexport const\b/g, 'const')
   source += '\nglobalThis.testVoiceCalls = { voiceCalls, voiceCallState, installVoiceCallSender };'

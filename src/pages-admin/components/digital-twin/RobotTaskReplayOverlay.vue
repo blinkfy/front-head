@@ -95,7 +95,7 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import SortingWorkflowPlayer from '@/components/SortingWorkflowPlayer.vue'
+import SortingWorkflowPlayer from '../SortingWorkflowPlayer.vue'
 import SmartBinWorkflowPlayer from '@/pages-admin/components/digital-twin/SmartBinWorkflowPlayer.vue'
 import { resolveRobotTaskCamera } from '@/config/robot-task-shot-config.js'
 import { robotTaskSceneDetailVisuals } from '@/config/robot-task-scene-registry.js'

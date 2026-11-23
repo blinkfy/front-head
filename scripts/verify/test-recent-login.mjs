@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { installLoginDeviceMetadata } from '../../src/utils/login-device-metadata.mjs'
+import { installLoginDeviceMetadata } from '../../src/utils/account/login-device-metadata.mjs'
 
 const file = new URL('../../src/pages-nonTheme/account-security.vue', import.meta.url)
 const source = await readFile(file, 'utf8')

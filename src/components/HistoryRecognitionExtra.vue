@@ -17,7 +17,7 @@
 </template>
 
 <script setup>
-import { previewTrashBinImage as previewStoredImage } from '@/utils/trash-bin-image'
+import { previewTrashBinImage as previewStoredImage } from '@/utils/map/trash-bin-image'
 
 const props = defineProps({
   extra: { type: Object, required: true },

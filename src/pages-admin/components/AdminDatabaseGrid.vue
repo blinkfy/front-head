@@ -152,8 +152,8 @@
 
 <script setup>
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
-import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
-import { shortFieldLabels as labels } from '@/utils/field-labels'
+import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/map/trash-bin-image'
+import { shortFieldLabels as labels } from '@/pages-admin/utils/field-labels'
 import { getAdminHistoryImage, getAdminTableColumns } from '@/api/database'
 
 const props = defineProps({

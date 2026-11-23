@@ -670,7 +670,7 @@ export function layoutTables(tables, pairs, anchor, layout, width, height, curve
 
 // Keep the resting shape of each link as well as its length. The light lateral
 // spring makes neighbors respond even when a node is pulled across a link.
-export function dragSprings(nodes, pairs, pinned) {
+export function dragSprings(nodes, pairs, pinned, options = {}) {
   const byName = new Map()
   const bodies = nodes.map(node => {
     const body = { node, x0: node.x, y0: node.y, vx: 0, vy: 0, fx: 0, fy: 0, degree: 0 }
@@ -686,6 +686,7 @@ export function dragSprings(nodes, pairs, pinned) {
     links.push({ a, b, dx: b.x0 - a.x0, dy: b.y0 - a.y0, length: Math.hypot(b.x0 - a.x0, b.y0 - a.y0) })
   }
   let repulsionTick = 0, cachedRepulsion = null
+  let deferredRepulsionFrames = Math.max(0, Number(options.deferRepulsionFrames) || 0)
   return function advance(repulsionPeriod = 1) {
     for (const b of bodies) {
       b.fx = (b.x0 - b.node.x) * .012
@@ -716,7 +717,10 @@ export function dragSprings(nodes, pairs, pinned) {
     }
     // Refresh expensive node-to-link avoidance less often under sustained load;
     // reuse its forces between refreshes so movement remains continuous.
-    if (!cachedRepulsion || repulsionTick++ % Math.max(1, repulsionPeriod) === 0) {
+    if (deferredRepulsionFrames > 0) {
+      // Let the dragged node respond before the more expensive link avoidance.
+      deferredRepulsionFrames--
+    } else if (!cachedRepulsion || repulsionTick++ % Math.max(1, repulsionPeriod) === 0) {
       const before = bodies.map(b => ({ x: b.fx, y: b.fy }))
     for (const { a, b } of links) {
       const dx = b.node.x - a.node.x, dy = b.node.y - a.node.y, length2 = dx * dx + dy * dy

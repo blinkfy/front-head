@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { resumeRememberedQrLogin } from '../../src/utils/remembered-qr-login.mjs'
+import { resumeRememberedQrLogin } from '../../src/utils/account/remembered-qr-login.mjs'
 
 function harness(overrides = {}) {
   const storage = { rememberedQrLogin: true, autoLogin: true, token: 'existing-token' }

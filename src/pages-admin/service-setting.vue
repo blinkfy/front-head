@@ -309,7 +309,7 @@ import AdminConsolePanel from './components/AdminConsolePanel.vue'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { userinfo } from '@/api/user'
 import { baseUrl } from '@/api/settings'
-import { applyCommunityChatSettings } from '@/utils/community-chat-settings.js'
+import { applyCommunityChatSettings } from '@/utils/realtime/community-chat-settings.js'
 // #ifdef APP-PLUS
 import { invalidateAppHomeAiSettings } from '@/utils/app-home-ai-settings.js'
 // #endif

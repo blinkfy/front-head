@@ -4,7 +4,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { realtimeActivityCard, realtimeActivitySummary } from '../../src/utils/realtime-activity.mjs'
+import { realtimeActivityCard, realtimeActivitySummary } from '../../src/utils/realtime/realtime-activity.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const require = createRequire(import.meta.url)

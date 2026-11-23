@@ -1,5 +1,5 @@
 import { baseUrl } from './settings'
-import { beginMfaTransition } from '@/utils/mfa-session-transition.mjs'
+import { beginMfaTransition } from '@/utils/account/mfa-session-transition.mjs'
 
 // Login challenges must not invoke the shared authenticated-session redirect.
 export function mfaRequest(path, data = {}, token = '', method = 'POST') {

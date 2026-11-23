@@ -99,7 +99,7 @@
           </template>
         </template>
         <template v-else-if="data">
-          <text v-if="tab === 'activity'" class="note">按已接入的事件来源统计。登录来源最多保留最近两次成功登录。</text>
+          <text v-if="tab === 'activity'" class="note">按已接入的事件来源统计。每个账号最多保留最近 10 次成功登录记录。</text>
           <text v-if="range && tab === 'peers'" class="note">当前时段统计带有时间的往来记录。会话设置可在「全部时间」查看。</text>
           <text v-if="data.items.length" class="note">{{ tab === 'peers' ? peer ? '查看与账号 #' + peer + ' 的往来' : peerView === 'graph' ? graphCaption : '按来源记录数排序，展开账号查看方向和明细。' : '按发生时间从近到远排列，点击事件查看原始记录。' }}</text>
           <text v-if="!data.items.length" class="note">{{ tab === 'peers' ? '在已接入的双账号来源中未发现往来记录。' : '该账号暂无已收录的行为记录。' }}</text>

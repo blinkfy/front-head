@@ -332,16 +332,11 @@
 </template>
 
 <script setup>
-import { getAppCurrentPages, useAppTabContext } from '@/utils/app-tab-context.js'
+import { useAppTabContext } from '@/utils/app-tab-context.js'
 
 import { ref, computed, onMounted } from 'vue'
 import { onShow } from '@/utils/app-tab-lifecycle.js'
-// #ifdef APP-PLUS
-import { watch } from 'vue'
-import { appOfflineSession, getAppCachedProfile } from '@/utils/app-offline-session.js'
-let usedOfflineProfile = false
-// #endif
-import { userinfo } from '@/api/user'
+import { useProfileAccount } from '@/utils/account/use-profile-account.js'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
 import { baseUrl } from '../../api/settings'
 import { jumpToAdminPage } from '@/utils/admin-page-nav'
@@ -350,14 +345,11 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
 
-const { tabPageClass } = useTabPageTransition('pages/profile/profile')
-const username = ref('')
-const userInfo = ref({})
-const loading = ref(false)
+const profileRoute = 'pages/profile/profile'
+const { tabPageClass } = useTabPageTransition(profileRoute)
 const showInfoModal = ref(false)
 const showCarbonModal = ref(false)
 const showContributionModal = ref(false)
-const isAdmin = ref(false)
 
 const calculateCarbonReduction = (points) => {
   if (!points || points <= 0) return '0g'
@@ -422,61 +414,10 @@ const connectionDuration = computed(() => {
   return minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`
 })
 
-const fetchUserInfo = async () => {
-  try {
-    loading.value = true
-    const token = uni.getStorageSync('token')
-    if (!token) {
-      username.value = '游客'
-      isAdmin.value = false
-      uni.removeStorageSync('isAdmin')
-      return false
-    }
-    // #ifdef APP-PLUS
-    if (appOfflineSession.unavailable) {
-      const cached = getAppCachedProfile()
-      userInfo.value = cached || {}
-      username.value = cached?.username || '用户'
-      points.value = cached?.points || 0
-      isAdmin.value = false
-      usedOfflineProfile = true
-      return false
-    }
-    usedOfflineProfile = false
-    // #endif
-    const response = await userinfo()
-    if (response.code === 0) {
-      userInfo.value = response.data
-      points.value = response.data.points || 0
-      if (response.data.username) username.value = response.data.username
-      const isAdminFromServer = !!(response.data && response.data.isAdmin === true)
-      isAdmin.value = isAdminFromServer
-      try {
-        if (isAdminFromServer) uni.setStorageSync('isAdmin', true)
-        else uni.removeStorageSync('isAdmin')
-        return true
-      } catch (e) { return false }
-    } else {
-      uni.showToast({ title: response.data.msg || '获取用户信息失败', icon: 'none' })
-      return false
-    }
-  } catch (error) {
-    uni.showToast({ title: error?.msg || '网络错误', icon: 'none' })
-    return false
-  } finally {
-    loading.value = false
-  }
-}
- 
+const { username, userInfo, loading, isAdmin, loadInitialProfile, handleRefresh, verifyAdminPermission } =
+  useProfileAccount(points, profileRoute)
+
 // 系统或手势返回会复用旧页面，每次显示时校验主题。
-// #ifdef APP-PLUS
-function refreshProfileAfterReconnect() {
-  if (usedOfflineProfile && !appOfflineSession.unavailable && uni.getStorageSync('token') &&
-      getAppCurrentPages().slice(-1)[0]?.route === 'pages/profile/profile') void fetchUserInfo()
-}
-watch(() => appOfflineSession.unavailable, refreshProfileAfterReconnect)
-onShow(refreshProfileAfterReconnect)
-// #endif
 const appTab = useAppTabContext()
 onShow(() => {
   if (appTab || uni.getStorageSync('app_theme') !== 'dark') return
@@ -484,11 +425,8 @@ onShow(() => {
 })
 
 onMounted(async () => {
-  const savedUser = uni.getStorageSync('savedUser')?.username
-  if (savedUser && uni.getStorageSync('autoLogin')) username.value = savedUser
-  await fetchUserInfo()
-  if (uni.getStorageSync('isAdmin') && !isAdmin.value) uni.removeStorageSync('isAdmin')
-  
+  await loadInitialProfile()
+
   // 添加统计项鼠标追踪效果
   if (typeof document !== 'undefined') {
     const statItems = document.querySelectorAll('.stat-item')
@@ -597,17 +535,6 @@ onMounted(async () => {
   }
 })
 
-const handleRefresh = async () => {
-  // #ifdef APP-PLUS
-  if (appOfflineSession.unavailable) {
-    usedOfflineProfile = true
-    uni.showToast({ title: '当前离线，联网后可刷新', icon: 'none' })
-    return
-  }
-  // #endif
-  if (await fetchUserInfo()) uni.showToast({ title: '刷新成功', icon: 'success' })
-}
-
 const showPointsInfo = () => { showInfoModal.value = true }
 const closePointsInfo = () => { showInfoModal.value = false }
 const showCarbonInfo = () => { showCarbonModal.value = true }
@@ -623,27 +550,6 @@ function goRanking() { uni.navigateTo({ url: '/pages/ranking/ranking' }) }
 function goSettings() { uni.navigateTo({ url: '/pages-nonTheme/settings' }) }
 function goGuide() { uni.navigateTo({ url: '/pages/guide/guide' }) }
 function goAchievements() { uni.navigateTo({ url: '/pages-nonTheme/achievements' })}
-
-async function verifyAdminPermission() {
-  const localAdminFlag = uni.getStorageSync('isAdmin')
-  if (!localAdminFlag) {
-    uni.showToast({ title: '无权限访问', icon: 'none' })
-    return false
-  }
-  try {
-    const response = await userinfo()
-    if (response && response.data && response.data.isAdmin) return true
-    else {
-      uni.removeStorageSync('isAdmin')
-      isAdmin.value = false
-      uni.showToast({ title: '权限已过期', icon: 'none' })
-      return false
-    }
-  } catch (err) {
-    uni.showToast({ title: '权限验证失败', icon: 'none' })
-    return false
-  }
-}
 
 function goFileManagement() {
   verifyAdminPermission().then(hasPermission => {

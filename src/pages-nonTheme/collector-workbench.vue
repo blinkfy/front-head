@@ -133,10 +133,10 @@
   </RecyclingShell>
 </template>
 <script>
-import RecyclingShell from './components/RecyclingShell.vue'
-import RecyclingServiceMap from './components/RecyclingServiceMap.vue'
+import RecyclingShell from '@/components/recycling/RecyclingShell.vue'
+import RecyclingServiceMap from '@/components/recycling/RecyclingServiceMap.vue'
 import RecyclingTimeline from './components/RecyclingTimeline.vue'
-import { collectorMe, collectorSettings, collectorAvailability, collectorWeeklyAvailability, collectorOrders, collectorTimeline, openBookingChat, bookingStatusText, collectorStatusText } from './api/recycling.js'
+import { collectorMe, collectorSettings, collectorAvailability, collectorWeeklyAvailability, collectorOrders, collectorTimeline, openBookingChat, bookingStatusText, collectorStatusText } from '@/api/recycling.js'
 import { formatBookingDate } from './utils/booking-date.mjs'
 const pad2 = value => String(value).padStart(2, '0')
 const clock = minutes => `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`

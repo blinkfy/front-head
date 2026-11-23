@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { normalizeChatDisposalPoints, disposalMapUrl, createDisposalActions } from '../../src/pages-nonTheme/utils/ai-chat-disposal.mjs'
-import { resolveMapViewCard } from '../../src/utils/map-view-card.mjs'
+import { resolveMapViewCard } from '../../src/utils/map/map-view-card.mjs'
 import { useMapPointReport } from '../../src/utils/map/point-report.mjs'
 
 const require = createRequire(import.meta.url)

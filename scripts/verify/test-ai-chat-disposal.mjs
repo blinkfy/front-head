@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { normalizeChatDisposalPoints, disposalMapUrl, disposalRouteUrl, createDisposalActions } from '../../src/pages-nonTheme/utils/ai-chat-disposal.mjs'
-import { getViewLocationMarkers } from '../../src/utils/map-view-location.mjs'
+import { getViewLocationMarkers } from '../../src/utils/map/map-view-location.mjs'
 
 const require = createRequire(import.meta.url)
 const { parse, compileScript, compileTemplate, compileStyle } = require('@vue/compiler-sfc')

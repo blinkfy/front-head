@@ -26,7 +26,7 @@
 
 <script setup>
 import AdminScreenSwitcher from './AdminScreenSwitcher.vue'
-import ManifestIcon from './ManifestIcon.vue'
+import ManifestIcon from '@/components/ManifestIcon.vue'
 
 const props = defineProps({
   hideBusiness: { type: Boolean, default: false },

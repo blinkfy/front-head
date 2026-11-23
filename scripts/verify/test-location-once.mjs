@@ -8,7 +8,7 @@ import { locationErrorMessage } from '../../src/utils/location-error.mjs'
 const locationSource = await readFile(new URL('../../src/utils/location.js', import.meta.url), 'utf8')
 const addressSource = await readFile(new URL('../../src/utils/location-address.js', import.meta.url), 'utf8')
 const pickerSource = await readFile(new URL('../../src/pages-nonTheme/components/shop/ShopAddressPicker.vue', import.meta.url), 'utf8')
-const mapCacheSource = await readFile(new URL('../../src/utils/map-last-location.mjs', import.meta.url), 'utf8')
+const mapCacheSource = await readFile(new URL('../../src/utils/map/map-last-location.mjs', import.meta.url), 'utf8')
 const mapPageSources = await Promise.all([
   readFile(new URL('../../src/pages/map/map.vue', import.meta.url), 'utf8'),
   readFile(new URL('../../src/pages-dark/map/map.vue', import.meta.url), 'utf8')

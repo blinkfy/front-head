@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
-import { imageMimeFromBase64 } from '../../src/utils/trash-bin-image-core.mjs'
+import { imageMimeFromBase64 } from '../../src/utils/map/trash-bin-image-core.mjs'
 import { encodeUploadCanvas, uploadImageDimensions, uploadImageExtension, compressUploadImageBlob } from '../../src/utils/upload-image.js'
 
 assert.deepEqual(uploadImageDimensions(2400, 1200, 800), { width: 800, height: 400 })

@@ -16,42 +16,42 @@
 
 <script>
 import { ThemeManager } from '@/utils/theme.js'
-import { initGlobalMessageBus } from '@/utils/message-event-bus.js'
-import { setChatEventsActive } from '@/utils/chat-events.js'
-import { foregroundNotifications } from '@/utils/foreground-notification.mjs'
+import { initGlobalMessageBus } from '@/utils/realtime/message-event-bus.js'
+import { setChatEventsActive } from '@/utils/realtime/chat-events.js'
+import { foregroundNotifications } from '@/utils/realtime/foreground-notification.mjs'
 import { warmManifestIcons } from '@/utils/icon-preload.js'
-import { warmSmartSortRobot } from '@/utils/robot-preload.js'
-import { recentRecognition } from '@/utils/recent-recognition.js'
-import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
+import { warmSmartSortRobot } from '@/utils/recognition/robot-preload.js'
+import { recentRecognition } from '@/utils/recognition/recent-recognition.js'
+import { clearRecognitionTask } from '@/utils/recognition/recognition-task.mjs'
 import { onAppPageReady } from '@/utils/app-page-ready.mjs'
 import { setLocalSpeechForeground } from '@/utils/local-tts.js'
 // #ifdef H5
-import { initWebCallRingtone } from '@/utils/web-call-ringtone.js'
+import { initWebCallRingtone } from '@/utils/realtime/web-call-ringtone.js'
 import { preloadTabPage, preloadSiblingTabPages } from '@/utils/tab-page-transition.js'
 // #endif
 import { initUiSounds, setUiSoundsActive } from '@/utils/ui-sounds.js'
-import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/device-qr-entry.mjs'
+import { DEVICE_SCAN_PAGE, appendPageQuery, isLegacyDeviceScanPath, resolveLegacyDeviceScanUrl } from '@/utils/scan/device-qr-entry.mjs'
 // #ifdef APP-PLUS
 import { checkAppUpdate } from '@/utils/app-update.js'
 import { requireAppSessionLogin } from '@/api/index.js'
 import { userinfo } from '@/api/user.js'
 import { installAppOfflineSession, refreshAppOfflineNetwork } from '@/utils/app-offline-session.js'
 import { appVersionGuard } from '@/utils/app-version-guard.js'
-import { initBusinessNotificationNavigation, resumeBusinessNotification } from '@/utils/business-notification.js'
-import { resumeDirectShare } from '@/utils/app-direct-share.js'
+import { initBusinessNotificationNavigation, resumeBusinessNotification } from '@/utils/realtime/business-notification.js'
+import { resumeDirectShare } from '@/utils/realtime/app-direct-share.js'
 import { getHuaweiPushToken, deleteHuaweiPushToken } from '@/uni_modules/ftx-huawei-push'
-import { installChatPush, syncChatPush } from '@/utils/chat-push.js'
+import { installChatPush, syncChatPush } from '@/utils/realtime/chat-push.js'
 import { appConsole } from '@/utils/app-console.mjs'
 import { encodeUploadWebp } from '@/uni_modules/ftx-upload-webp'
 import { installAppWebpEncoder } from '@/utils/app-upload-webp-core.mjs'
-import { setAppMapPreloadActive, disposeAppMapPreload } from '@/utils/app-map-preload-app.js'
-import { disposeLocalMapServerPool } from '@/utils/app-map-local-server-app.js'
+import { setAppMapPreloadActive, disposeAppMapPreload } from '@/utils/map/app-map-preload-app.js'
+import { disposeLocalMapServerPool } from '@/utils/map/app-map-local-server-app.js'
 // #endif
 // #ifdef APP-PLUS || H5
-import { setRoundCodeClientActive } from '@/utils/roundcode-client.js'
+import { setRoundCodeClientActive } from '@/utils/scan/roundcode-client.js'
 // #endif
 // #ifdef MP-WEIXIN
-import { captureRegistrationEntry, offerRegistrationRetry } from '@/utils/registration-relay.js'
+import { captureRegistrationEntry, offerRegistrationRetry } from '@/utils/account/registration-relay.js'
 // #endif
 
 // 页面映射表

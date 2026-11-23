@@ -1,11 +1,11 @@
-import { isPhoneBrowser } from '@/utils/h5-scan-entry.mjs'
+import { isPhoneBrowser } from '@/utils/scan/h5-scan-entry.mjs'
 import { ref, unref, onMounted, onUnmounted } from 'vue'
 import { onLoad, onShow, onHide } from '@dcloudio/uni-app'
 import { getDeviceAPI } from '@/utils/device-api-loader.js'
 import { playUiSound, primeUiSounds } from '@/utils/ui-sounds.js'
-import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection, getDeviceQrScanContent, scanDeviceQrCode } from '@/utils/device-qr.js'
+import { normalizeDeviceMode, resolveDeviceScanTarget, saveMockDeviceConnection, getDeviceQrScanContent, scanDeviceQrCode } from '@/utils/scan/device-qr.js'
 import { resolveWechatQrScene } from '@/api/device.js'
-import { DEVICE_SCAN_PAGE, appendPageQuery, clearPendingDeviceQrScene, isValidDeviceQrScene, normalizeDeviceQrScene, savePendingDeviceQrScene } from '@/utils/device-qr-entry.mjs'
+import { DEVICE_SCAN_PAGE, appendPageQuery, clearPendingDeviceQrScene, isValidDeviceQrScene, normalizeDeviceQrScene, savePendingDeviceQrScene } from '@/utils/scan/device-qr-entry.mjs'
 
 // APP端参数设置函数（供其他页面调用）
 export function setScanParams(deviceId, deviceName, token) {

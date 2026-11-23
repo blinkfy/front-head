@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { saveWechatQrToAlbum, downloadWechatQr, getWechatQrMenuPosition } from '../../src/utils/wechat-qr-save.mjs'
+import { saveWechatQrToAlbum, downloadWechatQr, getWechatQrMenuPosition } from '../../src/utils/account/wechat-qr-save.mjs'
 
 test('menu follows touch client coordinates with a small offset', () => {
   assert.deepEqual(getWechatQrMenuPosition({ touches: [{ clientX: 120, clientY: 80 }] }, {

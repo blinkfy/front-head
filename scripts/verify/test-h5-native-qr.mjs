@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createNativeQrReader } from '../../src/utils/h5-native-qr.mjs'
+import { createNativeQrReader } from '../../src/utils/scan/h5-native-qr.mjs'
 
 const qr = value => ({ format: 'qr_code', rawValue: value })
 const formats = async () => ['qr_code', 'code_128']

@@ -8,7 +8,7 @@ import {
   isSmallerRecognitionImage,
   shouldCompressRecognitionImage,
   shouldUseCompressedRecognitionImage
-} from '../../src/utils/recognition-image.mjs'
+} from '../../src/utils/recognition/recognition-image.mjs'
 
 const mib = 1024 * 1024
 assert.equal(shouldCompressRecognitionImage(mib), false)

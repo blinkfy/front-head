@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { remindUnboundWechat } from '../../src/utils/wechat-binding-reminder.mjs'
+import { remindUnboundWechat } from '../../src/utils/account/wechat-binding-reminder.mjs'
 
 const settings = bound => ({ code: 0, data: { bound } })
 

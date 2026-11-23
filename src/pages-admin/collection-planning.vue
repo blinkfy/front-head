@@ -191,8 +191,8 @@ import { baseUrl } from '@/api/settings'
 import { mapConfig } from '@/api/map-config'
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
-import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
-import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
+import AdminScreenHeader from '@/pages-admin/components/AdminScreenHeader.vue'
+import CompactMetricCard from '@/pages-admin/components/CompactMetricCard.vue'
 import { getMiniProgramTopInset } from '@/utils/mp-top-inset.js'
 
 const miniProgramTopInset = getMiniProgramTopInset()

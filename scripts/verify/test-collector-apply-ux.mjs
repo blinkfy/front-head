@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { normalizeGeometry } from '../../src/pages-nonTheme/utils/recycling-geometry.mjs'
-const apiSource = await readFile(new URL('../../src/pages-nonTheme/api/recycling.js', import.meta.url), 'utf8')
+import { normalizeGeometry } from '../../src/utils/recycling-geometry.mjs'
+const apiSource = await readFile(new URL('../../src/api/recycling.js', import.meta.url), 'utf8')
 const collectorStatusText = new Function('return ' + apiSource.match(/export const collectorStatusText = (.*)/)[1])()
 
 const source = await readFile(new URL('../../src/pages-nonTheme/collector-apply.vue', import.meta.url), 'utf8')

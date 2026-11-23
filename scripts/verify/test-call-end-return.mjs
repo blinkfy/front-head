@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
-import { shouldReturnFromCall } from '../../src/utils/voice-call-core.mjs'
+import { shouldReturnFromCall } from '../../src/utils/realtime/voice-call-core.mjs'
 
 const source = fs.readFileSync(new URL('../../src/embedded-call/main.js', import.meta.url), 'utf8')
 const implementation = source.slice(source.indexOf('async function returnCompletedCall()'), source.indexOf('async function leaveCall()'))

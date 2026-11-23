@@ -20,7 +20,12 @@
                 <ManifestIcon class="back-icon" id="back" :scale="1.1" />
             </view>
             <view class="header-center">
+                <!-- #ifdef MP-WEIXIN -->
+                <text class="chat-title">{{ chatTitle }}{{ isGroupChat && chatTitle !== '官方客服' ? ' · 群聊' : '' }}</text>
+                <!-- #endif -->
+                <!-- #ifndef MP-WEIXIN -->
                 <text class="chat-title">{{ chatTitle }}{{ isGroupChat ? ' · 群聊' : '' }}</text>
+                <!-- #endif -->
             </view>
             <view class="header-right" @click="showMoreOptions">
                 <ManifestIcon v-if="!chatOffline" class="more-icon" id="more" :scale="1.1" />
@@ -663,7 +668,7 @@ import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { chooseAppImage } from '@/utils/image-picker.js'
 import BookingChatContext from './components/BookingChatContext.vue'
-import { bookingChatContext } from './api/recycling.js'
+import { bookingChatContext } from '@/api/recycling.js'
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
 import { audioInitializationMethods, voiceRecordingMethods, voicePlaybackMethods, voiceTranscriptionMethods } from '@/pages-nonTheme/chat/audio-methods.js'
 import { mediaSendMethods, mediaPickerMethods, attachmentIngressMethods } from '@/pages-nonTheme/chat/attachment-methods.js'
@@ -679,27 +684,27 @@ import ChatSelectionDialog from '@/pages-nonTheme/components/ChatSelectionDialog
 import { groupManagementMethods } from '@/pages-nonTheme/chat/group-management-methods.js'
 import { messageSyncMethods } from '@/pages-nonTheme/chat/sync-methods.js'
 import { messageSendMethods } from '@/pages-nonTheme/chat/send-methods.js'
-import { messageBus } from '@/utils/message-event-bus.js'
-import { setActiveChatConversation, isChatEventsConnected } from '@/utils/chat-events.js'
+import { messageBus } from '@/utils/realtime/message-event-bus.js'
+import { setActiveChatConversation, isChatEventsConnected } from '@/utils/realtime/chat-events.js'
 import { getUserProfile } from '@/api/user.js'
 import { baseUrl } from '@/api/settings.js'
-import { communityChatSettings, readCommunityChatEnabled } from '@/utils/community-chat-settings.js'
+import { communityChatSettings, readCommunityChatEnabled } from '@/utils/realtime/community-chat-settings.js'
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
-import { readChatEntryAvatar } from '@/utils/chat-entry-avatar.mjs'
+import { readChatEntryAvatar } from '@/utils/realtime/chat-entry-avatar.mjs'
 import ChatCachedImage from '@/pages-nonTheme/components/ChatCachedImage.vue'
 import ChatFileName from '@/pages-nonTheme/components/ChatFileName.vue'
 import ChatCachedAvatar from '@/pages-nonTheme/components/ChatCachedAvatar.vue'
 import ChatImagePreview from '@/pages-nonTheme/components/ChatImagePreview.vue'
 import { prepareAvatarUpload } from '@/utils/upload-image.js'
-import { triggerMessageNotification } from '@/utils/message-event-bus.js'
-import { setChatFeedbackBlocked } from '@/utils/chat-feedback.js'
-import { embeddedWebCallUrl, requestWebCallTicket, miniCallChatReturnMode } from '@/utils/web-call-entry.mjs'
-import { realtimeRouteName } from '@/utils/realtime-route.mjs'
-import { appendRecordingBridge, listCallRecordings } from '@/utils/call-recordings.js'
-import { recordingIdentity, validRecordingCallId, recordingPlayable } from '@/utils/call-recording-preference.mjs'
-import RealtimeActivityEntry from '@/components/RealtimeActivityEntry.vue'
-import { voiceCalls, voiceCallState, openVoiceCallPage } from '@/utils/voice-call.js'
-import { liveLocationState } from '@/utils/live-location.js'
+import { triggerMessageNotification } from '@/utils/realtime/message-event-bus.js'
+import { setChatFeedbackBlocked } from '@/utils/realtime/chat-feedback.js'
+import { embeddedWebCallUrl, requestWebCallTicket, miniCallChatReturnMode } from '@/utils/realtime/web-call-entry.mjs'
+import { realtimeRouteName } from '@/utils/realtime/realtime-route.mjs'
+import { appendRecordingBridge, listCallRecordings } from '@/utils/realtime/call-recordings.js'
+import { recordingIdentity, validRecordingCallId, recordingPlayable } from '@/utils/realtime/call-recording-preference.mjs'
+import RealtimeActivityEntry from '@/pages-nonTheme/components/RealtimeActivityEntry.vue'
+import { voiceCalls, voiceCallState, openVoiceCallPage } from '@/utils/realtime/voice-call.js'
+import { liveLocationState } from '@/utils/realtime/live-location.js'
 import { chooseMiniLocation, isLocationCancelled } from '@/utils/mini-location.js'
 import { locationErrorMessage } from '@/utils/location-error.mjs'
 import ChatMarkdown from '@/pages-nonTheme/components/ChatMarkdown.vue'
@@ -708,11 +713,15 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { communityPostCard, communityPostLink } from './utils/community-social.js'
 import CommunityPostMessage from './components/CommunityPostMessage.vue'
 import RealtimeActivityMessage from './components/RealtimeActivityMessage.vue'
-import { realtimeActivityCard, realtimeActivitySummary } from '@/utils/realtime-activity.mjs'
+import { realtimeActivityCard, realtimeActivitySummary } from '@/utils/realtime/realtime-activity.mjs'
 import { getDisplayName } from '@/utils/display-name.js'
 
 // 本地存储 key 前缀
 const CHAT_STORAGE_PREFIX = 'chat_messages_'
+let defaultChatTitle = '聊天'
+// #ifdef MP-WEIXIN
+defaultChatTitle = '官方客服'
+// #endif
 
 // 关系标签映射
 const chatRelationshipLabels = {
@@ -766,7 +775,7 @@ export default {
             aiStreamingMessageId: '',
             mentionAbortController: null,
             mentionSocket: null,
-            chatTitle: '聊天',
+            chatTitle: defaultChatTitle,
             userAvatar: '',
             otherAvatar: '', // 对方头像
             otherUsername: '', // 对方原始用户名
@@ -1191,8 +1200,16 @@ export default {
 
         if (options.title) {
             const decodedTitle = this.embeddedCallMode ? realtimeRouteName(options.title) : decodeURIComponent(options.title)
+            // #ifdef MP-WEIXIN
+            if (decodedTitle && decodedTitle.trim() && !['null', 'undefined'].includes(decodedTitle.trim())) {
+                this.chatTitle = decodedTitle
+                this.otherUsername = decodedTitle
+            }
+            // #endif
+            // #ifndef MP-WEIXIN
             this.chatTitle = decodedTitle
             this.otherUsername = decodedTitle
+            // #endif
         }
 
         if (options.avatar) {
@@ -2886,7 +2903,7 @@ export default {
                 if (peer === directPeer) {
                     this.contactSettingsRevision++
                     this.contactSettings[field] = value
-                    if (field === 'note') this.chatTitle = value || profile?.name || this.otherUsername || '聊天'
+                    if (field === 'note') this.chatTitle = value || profile?.name || this.otherUsername || defaultChatTitle
                 }
                 if (field === 'note') this.mutateChatListCache(snapshot => {
                     const row = snapshot.userList.find(item => String(item.otherId) === peer)

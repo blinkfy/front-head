@@ -139,7 +139,7 @@
 import { computed, ref } from 'vue'
 import { onShow, onHide } from '@dcloudio/uni-app'
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import MfaSecurity from '@/components/MfaSecurity.vue'
+import MfaSecurity from '@/components/account/MfaSecurity.vue'
 const mfaSecurity = ref(null)
 import { getUserProfile, getWechatLoginSettings, getPreviousLogin, getLoginHistory } from '@/api/user'
 import { ThemeManager } from '@/utils/theme.js'
@@ -148,8 +148,8 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { baseUrl } from '@/api/settings.js'
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
 import { onBeforeUnmount } from 'vue'
-import { quickLogin as biometricLogin, quickLoginPlatform } from '@/utils/quick-login.js'
-import { biometricErrorMessage } from '@/utils/biometric-login-core.mjs'
+import { quickLogin as biometricLogin, quickLoginPlatform } from '@/utils/account/quick-login.js'
+import { biometricErrorMessage } from '@/utils/account/biometric-login-core.mjs'
 // #endif
 // #ifdef MP-WEIXIN
 import { updateWechatLoginSettings } from '@/api/user'

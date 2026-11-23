@@ -114,6 +114,7 @@ function trialHarness(path, { pageVisible = true } = {}) {
     onboardingDemoStage: { value: 'idle' }, onboardingTargetRect: { value: null },
     recognitionTaskUnsubscribe: null,
     recentResultUnsubscribe: null,
+    homeMapPreload: { startChoosing: () => true, finishChoosing() {} },
     ref: value => ({ value }), nextTick: callback => callback(), setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
     uni: { setStorageSync: (key, value) => storage.set(key, value), showToast() {} },
     chooseRecognitionImage: options => pickerCalls.push(options), acceptRecognitionImage() {},

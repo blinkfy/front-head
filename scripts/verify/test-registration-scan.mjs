@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
-import * as deviceQrEntry from '../../src/utils/device-qr-entry.mjs'
-import { handleRegistrationQrScan, resolveRegistrationQrScanTarget } from '../../src/utils/registration-relay.mjs'
+import * as deviceQrEntry from '../../src/utils/scan/device-qr-entry.mjs'
+import { handleRegistrationQrScan, resolveRegistrationQrScanTarget } from '../../src/utils/account/registration-relay.mjs'
 
 const scene = 'r_' + 'a'.repeat(24)
 const deviceScene = '0123456789abcdef0123456789abcdef'
@@ -77,7 +77,7 @@ test('invalid and repeated scenes are consumed with a non-device toast', () => {
 })
 
 test('shared mini-program scanner routes registration once and keeps device navigation/storage behavior', async () => {
-  const sourceUrl = new URL('../../src/utils/device-qr.js', import.meta.url)
+  const sourceUrl = new URL('../../src/utils/scan/device-qr.js', import.meta.url)
   const source = await readFile(sourceUrl, 'utf8')
   const darkHome = await readFile(new URL('../../src/pages-dark/home/home.vue', import.meta.url), 'utf8')
   assert.match(darkHome, /if \(handleRegistrationQrScan\(res, \{[\s\S]*?\}\)\) return[\s\S]*?connectDevice\(getDeviceQrScanContent\(res\)\)/,
@@ -101,6 +101,7 @@ test('shared mini-program scanner routes registration once and keeps device navi
   const context = vm.createContext({
     ...deviceQrEntry,
     handleRegistrationQrScan,
+    appVersionGuard: () => ({ ensure: async () => true }),
     uni: runtime,
     Date,
     encodeURIComponent,
@@ -112,6 +113,7 @@ test('shared mini-program scanner routes registration once and keeps device navi
 
   scanResult = { path: `/pages/register/register?scene=${scene}`, result: 'opaque' }
   context.__scanAndConnectDevice()
+  await new Promise(resolve => setImmediate(resolve))
   assert.equal(calls.scans.length, 1)
   assert.deepEqual(calls.navigate, [{ url: `/pages/register/register?scene=${scene}` }])
   assert.deepEqual(calls.storage, [])
@@ -119,6 +121,7 @@ test('shared mini-program scanner routes registration once and keeps device navi
   calls.navigate.length = 0
   scanResult = { path: `/pages-nonTheme/scan?scene=${deviceScene}`, result: 'device_id=bin-7&token=legacy' }
   context.__scanAndConnectDevice()
+  await new Promise(resolve => setImmediate(resolve))
   assert.equal(calls.navigate.length, 1)
   assert.equal(calls.navigate[0].url, `/pages-nonTheme/scan?scene=${deviceScene}`)
   assert.deepEqual(calls.storage, [])

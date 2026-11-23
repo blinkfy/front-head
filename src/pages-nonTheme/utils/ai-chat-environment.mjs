@@ -1,5 +1,5 @@
-import { nearbyDisposalPoints, validDisposalLocation } from '../../utils/nearby-disposal.mjs'
-import { toMapDisplayPoint } from '../../utils/map-display-point.mjs'
+import { nearbyDisposalPoints, validDisposalLocation } from '../../utils/map/nearby-disposal.mjs'
+import { toMapDisplayPoint } from '../../utils/map/map-display-point.mjs'
 
 const MAX_AGE = 5 * 60 * 1000
 const shortText = (value, size = 120) => typeof value === 'string' ? value.trim().slice(0, size) : ''

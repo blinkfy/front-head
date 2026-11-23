@@ -4,11 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { ROBOT_MP_PACKAGE_NAME } from '../../src/components/smart-sort-robot-mp.mjs'
-import { refineIdleMotion } from '../../src/components/smart-sort-robot-idle.mjs'
-import { refineRecognitionMotion } from '../../src/components/smart-sort-robot-performance.mjs'
-import { ROBOT_SEQUENCES, ROBOT_LOOP_CLIPS } from '../../src/utils/recognition-robot-state.mjs'
-import { refineSuccessMotion, refineFailMotion } from '../../src/components/smart-sort-robot-engine.mjs'
+import { ROBOT_MP_PACKAGE_NAME } from '../../src/components/recognition/smart-sort-robot-mp.mjs'
+import { refineIdleMotion } from '../../src/components/recognition/smart-sort-robot-idle.mjs'
+import { refineRecognitionMotion } from '../../src/components/recognition/smart-sort-robot-performance.mjs'
+import { ROBOT_SEQUENCES, ROBOT_LOOP_CLIPS } from '../../src/utils/recognition/recognition-robot-state.mjs'
+import { refineSuccessMotion, refineFailMotion } from '../../src/components/recognition/smart-sort-robot-engine.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const modelPath = path.join(root, 'src/static/web/robot_3d/smart_sort_robot_v34_animated.glb')
@@ -118,7 +118,7 @@ export function smartSortRobotAssetsPlugin() {
     async configResolved() {
       platform = process.env.UNI_PLATFORM
       if (platform === 'app' || platform === 'app-plus') {
-        const runtime = await build({ entryPoints: [path.join(root, 'src/components/smart-sort-robot-engine.mjs')], bundle: true, write: false, minify: true, format: 'iife', globalName: 'SmartSortRobotRuntime', platform: 'browser', target: 'es2020' })
+        const runtime = await build({ entryPoints: [path.join(root, 'src/components/recognition/smart-sort-robot-engine.mjs')], bundle: true, write: false, minify: true, format: 'iife', globalName: 'SmartSortRobotRuntime', platform: 'browser', target: 'es2020' })
         assets = [
           { fileName: 'static/app/robot_3d/smart-sort-robot-runtime.js', source: runtime.outputFiles[0].contents },
           { fileName: 'static/app/robot_3d/smart_sort_robot_v34_animated.glb', source: await fs.readFile(modelPath) }
@@ -130,7 +130,7 @@ export function smartSortRobotAssetsPlugin() {
           { fileName: `${xrRoot}/package-ready.js`, source: 'module.exports = { ready: true }' }
         ]
         for (const extension of ['js', 'json', 'wxml', 'wxss']) {
-          assets.push({ fileName: `${xrComponentRoot}/index.${extension}`, source: await fs.readFile(path.join(root, `src/components/smart-sort-xr-native/index.${extension}`)) })
+          assets.push({ fileName: `${xrComponentRoot}/index.${extension}`, source: await fs.readFile(path.join(root, `src/components/recognition/smart-sort-xr-native/index.${extension}`)) })
         }
         assets.push({ fileName: `${xrComponentRoot}/model-meta.js`, source: `module.exports = ${JSON.stringify({ center: baked.center, src: `/${xrRoot}/smart_sort_robot_v34_animated.glb`, sequences: ROBOT_SEQUENCES, loops: ROBOT_LOOP_CLIPS })}` })
       }
@@ -141,7 +141,7 @@ export function smartSortRobotAssetsPlugin() {
     async writeBundle(options) {
       if (platform !== 'mp-weixin') return
       // XR 组件同步注册在主包，引擎不依赖跨分包异步组件上下文；GLB 在分包加载成功后读取。
-      const file = path.resolve(options.dir || process.env.UNI_OUTPUT_DIR, 'components/SmartSortRobot3D.json')
+      const file = path.resolve(options.dir || process.env.UNI_OUTPUT_DIR, 'components/recognition/SmartSortRobot3D.json')
       const config = JSON.parse(await fs.readFile(file, 'utf8'))
       config.usingComponents = { ...config.usingComponents, 'smart-sort-xr': `/${xrComponentRoot}/index` }
       if (config.componentPlaceholder) {

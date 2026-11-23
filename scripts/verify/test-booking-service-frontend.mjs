@@ -29,6 +29,7 @@ assert.equal(api.bookingQuantityText({ quantity: 3, quantityUnit: 'bag' }), '3�
 assert.equal(api.bookingQuantityText({ quantity: null }), '数量待现场确认')
 assert.equal(api.bookingPhotoUrl('/api/recycling/photos/id?signature=x'), 'https://example.test/api/recycling/photos/id?signature=x')
 context.matchingAreas = [{ priceGuides: [{ typeId: 1, unit: 'piece', minPrice: 10, maxPrice: 20 }, { typeId: 1, unit: 'kg', minPrice: 1, maxPrice: 2 }] }]
+context.priceGuides = context.matchingAreas.flatMap(area => area.priceGuides || [])
 context.selectedWasteItems = [{ id: 1 }]
 context.itemWeights[1] = 2
 context.calculateEstimate()
@@ -39,7 +40,7 @@ context.itemWeights[1] = ''
 context.calculateEstimate()
 assert.equal(context.estimateAmount, 0)
 assert.equal(context.estimateUnknown, true)
-assert.equal(booking.computed.estimateText.call({ estimateAmount: 0, estimateMax: 0, estimateUnknown: false }), '¥0.00–0.00')
+assert.equal(booking.computed.estimateText.call({ estimateAmount: 0, estimateMax: 0, estimateUnknown: false }), '¥0.00')
 let uploadRequest
 const uploadApi = evaluate(read('api/booking.js'), {
   baseUrl: 'https://example.test', request() {},

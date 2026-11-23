@@ -248,14 +248,14 @@ import request from '@/api/index.js'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
 import { redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
-import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
-import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
+import AdminScreenHeader from '@/pages-admin/components/AdminScreenHeader.vue'
+import CompactMetricCard from '@/pages-admin/components/CompactMetricCard.vue'
 import { getMiniProgramTopInset } from '@/utils/mp-top-inset.js'
 
 const miniProgramTopInset = getMiniProgramTopInset()
 const screenStyle = miniProgramTopInset ? { paddingTop: `${miniProgramTopInset}px` } : {}
 // #ifdef MP-WEIXIN
-import { createCanvas2DChartContext } from '@/utils/canvas-chart-context.mjs'
+import { createCanvas2DChartContext } from '@/pages-admin/utils/canvas-chart-context.mjs'
 const chartScope = getCurrentInstance()?.proxy
 // #endif
 

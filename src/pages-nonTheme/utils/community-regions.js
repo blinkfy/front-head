@@ -1,4 +1,4 @@
-import regions from './shop-regions.js'
+import regions from '@/utils/shop-regions.js'
 import { splitShopAddress } from './shop-address.js'
 
 // Administrative names fill the three picker levels; community codes remain server-owned.

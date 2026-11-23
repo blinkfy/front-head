@@ -1,6 +1,6 @@
 import request from '@/api/index.js'
 
-import { readCommunityChatEnabled } from '@/utils/community-chat-settings.js'
+import { readCommunityChatEnabled } from '@/utils/realtime/community-chat-settings.js'
 export function communitySocialEnabled(force = false) { return readCommunityChatEnabled(force) }
 export const getCommunityPostDetail = postId => request({ url: `/api/community/post/${encodeURIComponent(postId)}/detail`, method: 'GET', needAuth: true })
 export const shareCommunityPost = (postId, data) => request({ url: `/api/community/post/${encodeURIComponent(postId)}/share`, method: 'POST', data, needAuth: true })

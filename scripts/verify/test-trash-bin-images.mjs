@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { encodeBinImageWithinLimit, imageDataBytes, imageMimeFromBase64, normalizeImageData, resolveBinPointImage, resolveStoredBinImage, TRASH_BIN_IMAGE_LIMIT } from '../../src/utils/trash-bin-image-core.mjs'
+import { encodeBinImageWithinLimit, imageDataBytes, imageMimeFromBase64, normalizeImageData, resolveBinPointImage, resolveStoredBinImage, TRASH_BIN_IMAGE_LIMIT } from '../../src/utils/map/trash-bin-image-core.mjs'
 import { prepareAppMapImage } from '../../src/utils/map-image-preview.mjs'
 import { transformWithEsbuild } from 'vite'
 
@@ -18,7 +18,7 @@ function jpegData(bytes) {
 }
 
 async function testCore() {
-  const imageHelper = fs.readFileSync(path.join(root, 'src/utils/trash-bin-image.js'), 'utf8')
+  const imageHelper = fs.readFileSync(path.join(root, 'src/utils/map/trash-bin-image.js'), 'utf8')
   assert.doesNotMatch(imageHelper, /\buni\s*\[[^\]]+\]/, 'uni APIs must not be selected through dynamic property access')
   assert.match(imageHelper, /uniCall\(options\s*=>\s*uni\.previewImage\(options\)/, 'image preview uses a static uni API reference')
   assert.match(imageHelper, /uniCall\(options\s*=>\s*uni\.getImageInfo\(options\)/, 'image metadata lookup uses a static uni API reference')
@@ -53,19 +53,19 @@ async function testCore() {
     assert.match(source, /createMapPointList\(/, 'map page must use the shared point loader')
     assert.match(source, /resolveImage:\s*resolveTrashBinImage/, 'map page must wire the trash bin image resolver into the shared loader')
   }
-  const adminPanel = fs.readFileSync(path.join(root, 'src/components/MapBinAdminPanel.vue'), 'utf8')
+  const adminPanel = fs.readFileSync(path.join(root, 'src/components/map/MapBinAdminPanel.vue'), 'utf8')
   assert.match(adminPanel, /resolveBinPointImage\(props\.bin,\s*config\.baseUrl\)/, 'admin panel must display the bin image through its raw URL')
   assert.match(adminPanel, /await getBinPointPhoto\(props\.bin\)/, 'admin preview must fetch the JSON image instead of previewing the raw URL')
   assert.match(adminPanel, /@click\.stop="previewBinImage"/, 'admin image preview clicks must not bubble to the map popup')
   assert.match(adminPanel, /image\s*&&\s*editing\.value\s*&&\s*!imageChanged\.value\s*&&\s*binPointPhotoKey\(props\.bin\)\s*===\s*key/, 'late image loads must not overwrite a changed image or a closed editor')
   assert.match(adminPanel, /if\s*\(!imageChanged\.value\)\s*delete payload\.imagePath/, 'admin panel must omit imagePath unless the user changed the image')
-  const nearbyPanel = fs.readFileSync(path.join(root, 'src/components/NearbyDisposalPanel.vue'), 'utf8')
+  const nearbyPanel = fs.readFileSync(path.join(root, 'src/components/map/NearbyDisposalPanel.vue'), 'utf8')
   assert.match(nearbyPanel, /getBinPointPhotoSource\(point,\s*\{\s*coverImage:\s*props\.native\s*\}\)/, 'nearby images must fetch JSON only after an image error')
-  const nativePanel = fs.readFileSync(path.join(root, 'src/components/NearbyDisposalNativeContent.vue'), 'utf8')
+  const nativePanel = fs.readFileSync(path.join(root, 'src/components/map/NearbyDisposalNativeContent.vue'), 'utf8')
   assert.match(nativePanel, /send\('imageerror',\s*point\.id\)/, 'native image errors must reach the bridge for lazy fallback')
-  const appBridge = fs.readFileSync(path.join(root, 'src/components/AppNearbyDisposalPanel.vue'), 'utf8')
+  const appBridge = fs.readFileSync(path.join(root, 'src/components/map/AppNearbyDisposalPanel.vue'), 'utf8')
   assert.match(appBridge, /pageSubNVue\(page,\s*props\.panelId\)/, 'native-window attachment must use the page-scoped lookup')
-  const photoHelper = fs.readFileSync(path.join(root, 'src/utils/bin-point-photo.js'), 'utf8')
+  const photoHelper = fs.readFileSync(path.join(root, 'src/utils/map/bin-point-photo.js'), 'utf8')
   assert.match(photoHelper, /console\.warn\('\[bin-point-photo\]',\s*JSON\.stringify\(/, 'photo fallback logs must remain visible in App console output')
 
   let attempts = 0
@@ -94,7 +94,7 @@ function scriptSetupHarness(file, replacements, args, returned, stubs) {
 
 async function testSfcImageFlows() {
   const emitted = []
-  const editor = scriptSetupHarness('src/components/TrashBinImageEditor.vue', [
+  const editor = scriptSetupHarness('src/components/map/TrashBinImageEditor.vue', [
     [/const props = defineProps\([\s\S]*?\)\nconst emit = defineEmits\([\s\S]*?\)/,
       'const props = inputProps\nconst emit = inputEmit']
   ], ['inputProps', 'inputEmit', 'ref', 'computed', 'watch', 'onBeforeUnmount', 'resolveTrashBinImage', 'chooseAppImage', 'compressTrashBinImage', 'previewTrashBinImage'], 'imageSrc, removeImage', [
@@ -107,7 +107,7 @@ async function testSfcImageFlows() {
 
   let submitted
   let previewed
-  const admin = scriptSetupHarness('src/components/MapBinAdminPanel.vue', [
+  const admin = scriptSetupHarness('src/components/map/MapBinAdminPanel.vue', [
     [/const props = defineProps\([\s\S]*?\)\nconst emit = defineEmits\([\s\S]*?\)/,
       'const props = inputProps\nconst emit = inputEmit']
   ], ['inputProps', 'inputEmit', 'ref', 'computed', 'watch', 'binReports', 'config', 'resolveBinPointImage', 'binPointPhotoKey', 'getBinPointPhoto', 'previewTrashBinImage', 'approveBin', 'rejectBin', 'updateBin', 'deleteBin', 'clearBinErrorReports', 'uni'], 'save, previewBinImage', [
@@ -123,7 +123,7 @@ async function testSfcImageFlows() {
 }
 
 async function loadBinPointPhotoModule(platform, fetchImage, uni = {}) {
-  const source = fs.readFileSync(path.join(root, 'src/utils/bin-point-photo.js'), 'utf8')
+  const source = fs.readFileSync(path.join(root, 'src/utils/map/bin-point-photo.js'), 'utf8')
   let code = preprocess(source, { MP: platform === 'MP' }, 'js')
     .replace(/^import \{ getTrashBinImage \} from ['"]@\/api\/map['"];?\s*$/m, '')
     .replace(/^import \{ config \} from ['"]@\/api\/config\.js['"];?\s*$/m, '')
@@ -183,12 +183,12 @@ async function testBinPointPhoto() {
 }
 
 async function loadPlatformModule(platform, stubs) {
-  const source = fs.readFileSync(path.join(root, 'src/utils/trash-bin-image.js'), 'utf8')
+  const source = fs.readFileSync(path.join(root, 'src/utils/map/trash-bin-image.js'), 'utf8')
   const context = { APP_PLUS: platform === 'APP_PLUS', MP: platform === 'MP', H5: false }
   let code = preprocess(source, context, 'js')
   code = code
     .replace(/^import\s+\{\s*config\s*\}\s+from\s+['"]@\/api\/config\.js['"];?\s*$/m, '')
-    .replace(/^import\s+\{\s*prepareAppMapImage\s*\}\s+from\s+['"]\.\/map-image-preview\.mjs['"];?\s*$/m, '')
+    .replace(/^import\s+\{\s*prepareAppMapImage\s*\}\s+from\s+['"]\.\.\/map-image-preview\.mjs['"];?\s*$/m, '')
     .replace(/^import\s+\{\s*encodeBinImageWithinLimit, imageDataBytes, imageMimeFromBase64, normalizeImageData, resolveStoredBinImage, TRASH_BIN_IMAGE_LIMIT\s*\}\s+from\s+['"]\.\/trash-bin-image-core\.mjs['"];?\s*$/m, '')
     .replace(/\bexport\s+const\s+resolveTrashBinImage\b/, 'const resolveTrashBinImage')
     .replace(/\bexport\s+async\s+function\s+compressTrashBinImage\b/, 'async function compressTrashBinImage')
@@ -379,7 +379,7 @@ async function testAppAlbumAndReadFailures() {
 }
 
 async function testAddModalPreview() {
-  const source = fs.readFileSync(path.join(root, 'src/components/AddTrashBinModal.vue'), 'utf8')
+  const source = fs.readFileSync(path.join(root, 'src/components/map/AddTrashBinModal.vue'), 'utf8')
   const chooseImage = source.match(/function chooseImage\(\) \{[\s\S]*?(?=\nfunction removeImage\()/)?.[0]
   assert.ok(chooseImage, 'AddTrashBinModal chooseImage found')
   const image = jpegData(128)

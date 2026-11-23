@@ -11,7 +11,7 @@ const appMotionSource = fs.readFileSync(new URL('../../src/utils/app-tab-motion.
 const appHandoffSource = fs.readFileSync(new URL('../../src/utils/app-tab-handoff.js', import.meta.url), 'utf8').replace(/^export /gm, '')
 const { parse, compileScript, compileTemplate } = require('@vue/compiler-sfc')
 
-for (const path of ['../../src/pages/home/home.vue', '../../src/pages-dark/home/home.vue', '../../src/components/AppMapControls.vue', '../../src/components/AppNearbyDisposalPanel.vue']) {
+for (const path of ['../../src/pages/home/home.vue', '../../src/pages-dark/home/home.vue', '../../src/components/map/AppMapControls.vue', '../../src/components/map/AppNearbyDisposalPanel.vue']) {
   const content = fs.readFileSync(new URL(path, import.meta.url), 'utf8')
   for (const platform of ['h5', 'app', 'mp-weixin']) {
     initPreContext(platform)

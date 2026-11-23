@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { captureSatelliteReference } from '../../src/utils/bin-satellite-reference.mjs'
+import { captureSatelliteReference } from '../../src/utils/map/bin-satellite-reference.mjs'
 
 // Plain container/canvas doubles: no browser, SDK, or virtual DOM.
 function captureFixture(point = { x: 440, y: 280 }) {

@@ -157,7 +157,7 @@
 <script>
 import { getBookingList, getBookingDetail, cancelBooking, confirmBookingQuote, bookingUnitText, bookingQuantityText, bookingPhotoUrl } from '@/pages-nonTheme/api/booking.js';
 import ManifestIcon from '@/components/ManifestIcon.vue';
-import { openBookingChat, openPlatformSupport, mutationData } from './api/recycling.js';
+import { openBookingChat, openPlatformSupport, mutationData } from '@/api/recycling.js';
 
 export default {
   components: { ManifestIcon },

@@ -1,4 +1,4 @@
 <template><NearbyDisposalNativeContent panel-id="nearby-disposal-dark" /></template>
 <script setup>
-import NearbyDisposalNativeContent from '@/components/NearbyDisposalNativeContent.vue'
+import NearbyDisposalNativeContent from '@/components/map/NearbyDisposalNativeContent.vue'
 </script>

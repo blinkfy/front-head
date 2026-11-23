@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 import { formatBookingDate } from '../../src/pages-nonTheme/utils/booking-date.mjs'
-import { normalizePoint } from '../../src/pages-nonTheme/utils/recycling-geometry.mjs'
+import { normalizePoint } from '../../src/utils/recycling-geometry.mjs'
 import { gcj02ToWgs84 } from '../../src/utils/map/coordinates.mjs'
 
 const root = new URL('../../', import.meta.url)

@@ -7,13 +7,13 @@ import {
   appendPageQuery,
   isLegacyDeviceScanPath,
   resolveLegacyDeviceScanUrl
-} from '../../src/utils/device-qr-entry.mjs'
+} from '../../src/utils/scan/device-qr-entry.mjs'
 
 const pagesFile = new URL('../../src/pages.json', import.meta.url)
 const scanFile = new URL('../../src/pages-nonTheme/scan.vue', import.meta.url)
 const appFile = new URL('../../src/App.vue', import.meta.url)
 const themeFile = new URL('../../src/utils/theme.js', import.meta.url)
-const pages = JSON.parse(await readFile(pagesFile, 'utf8'))
+const pages = JSON.parse((await readFile(pagesFile, 'utf8')).replace(/^\s*\/\/\s*#(?:ifdef|ifndef|endif).*$/gm, ''))
 const scanSource = await readFile(scanFile, 'utf8')
 
 const registeredRoutes = [
@@ -62,6 +62,25 @@ function createAppHarness() {
   const context = vm.createContext({
     ThemeManager: { getTheme: () => state.theme },
     initGlobalMessageBus() {},
+    initUiSounds() {},
+    initWebCallRingtone() {},
+    warmManifestIcons() {},
+    warmSmartSortRobot() {},
+    onAppPageReady() {},
+    preloadTabPage: async () => {},
+    preloadSiblingTabPages() {},
+    installAppWebpEncoder() {},
+    encodeUploadWebp() {},
+    installChatPush() {},
+    getHuaweiPushToken() {},
+    deleteHuaweiPushToken() {},
+    initBusinessNotificationNavigation() {},
+    installAppOfflineSession() {},
+    refreshAppOfflineNetwork() {},
+    appVersionGuard: () => ({ ensure: async () => false }),
+    requireAppSessionLogin() {},
+    userinfo: async () => ({ data: {} }),
+    appConsole: { setIdentity() {}, install() {} },
     warmManifestIcons() {},
     captureRegistrationEntry() {},
     offerRegistrationRetry() {},
@@ -74,7 +93,10 @@ function createAppHarness() {
       state.timers.push({ callback, delay })
       return state.timers.length
     },
-    uni: { reLaunch: options => state.relaunches.push({ url: String(options?.url || '') }) },
+    uni: {
+      getStorageSync: () => '',
+      reLaunch: options => state.relaunches.push({ url: String(options?.url || '') })
+    },
     console: { log() {}, warn() {}, error() {} }
   })
   const executable = appDescriptor.script.content
@@ -135,6 +157,7 @@ const themeContext = vm.createContext({
     redirectTo: options => themeRoutes.push(['redirectTo', options])
   },
   getCurrentPages: () => [{ route: 'pages-nonTheme/scan', options: { scene } }],
+  getAppCurrentPages: () => [{ route: 'pages-nonTheme/scan', options: { scene } }],
   console: { log() {}, warn() {}, error() {} }
 })
 const executableTheme = themeSource

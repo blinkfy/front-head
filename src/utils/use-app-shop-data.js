@@ -102,6 +102,6 @@ export function useAppShopData({ isDisposed, onDataChange, signedOutPoints = 0 }
     }
   }
 
-  return { products, userPoints, catalogReady, productsLoading, productsError, loading, loadProducts, fetchPoints,
+  return { products, userPoints, catalogReady, productsLoading, productsError, loading, loadProducts, fetchPoints, syncOwner,
     refreshing: () => !!(catalogRequest || pointsRequest) }
 }

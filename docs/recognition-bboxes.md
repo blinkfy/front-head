@@ -1,6 +1,6 @@
 # 首页识别框
 
-亮、暗首页共用 `src/utils/use-recognition-bboxes.js`，H5、App Vue 页面和小程序采用同一套坐标映射。
+亮、暗首页共用 `src/utils/recognition/use-recognition-bboxes.js`，H5、App Vue 页面和小程序采用同一套坐标映射。
 
 - `<image @load>` 提供图片原始宽高；`uni.createSelectorQuery().in(page)` 测量图片组件和外层容器。
 - `aspectFit` 的居中留白计入映射，所有定位使用测量得到的 CSS px，不额外乘设备像素比。

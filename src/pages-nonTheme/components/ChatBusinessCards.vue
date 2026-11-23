@@ -52,7 +52,7 @@ import { baseUrl } from '@/api/settings'
 import { getMyCommunity } from '../api/community.js'
 import ChatDisposalChecklist from './ChatDisposalChecklist.vue'
 import HistoryRecognitionExtra from '@/components/HistoryRecognitionExtra.vue'
-import { normalizeHistoryRecognitionDetail } from '@/utils/history-recognition-detail.mjs'
+import { normalizeHistoryRecognitionDetail } from '@/utils/recognition/history-recognition-detail.mjs'
 import { normalizeChatBusinessCards, businessActionRequestId } from '../utils/ai-chat-business.mjs'
 import { createBookingDraft, bookingSupported, createRedemptionDraft, fetchAiCapabilities, isCapabilityNotFound, newActionRequestId, redemptionSupported, createCommunityPostDraft, communityPostSupported, rerecognizeHistory } from '@/api/ai-actions.js'
 

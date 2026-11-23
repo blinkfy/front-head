@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createRoundCodeTransport, readGeneratedCodeTask, isGeneratedCodeUrl } from '../../src/utils/roundcode-client-core.mjs'
-import { createRoundCodeWorker } from '../../src/utils/roundcode-worker-core.mjs'
-import { createScanDebugAccess } from '../../src/utils/scan-debug.mjs'
+import { createRoundCodeTransport, readGeneratedCodeTask, isGeneratedCodeUrl } from '../../src/utils/scan/roundcode-client-core.mjs'
+import { createRoundCodeWorker } from '../../src/utils/scan/roundcode-worker-core.mjs'
+import { createScanDebugAccess } from '../../src/utils/scan/scan-debug.mjs'
 
 const base = 'https://example.test', url = base + '/api/registration/wechat-qrcode'
 const task = { id: 'rq_' + 'a'.repeat(24), ticket: 'b'.repeat(64), expiresAt: Date.now() + 120000 }
@@ -38,7 +38,7 @@ response = { statusCode: 200, data: new ArrayBuffer(512 * 1024 + 1) }
 await assert.rejects(transport.image(url), /INVALID_QR_IMAGE/)
 
 // Actual APP adapter with mocked native bridge: foreground, late result and scanner priority.
-const source = (await readFile(new URL('../../src/utils/roundcode-client.js', import.meta.url), 'utf8'))
+const source = (await readFile(new URL('../../src/utils/scan/roundcode-client.js', import.meta.url), 'utf8'))
   .replace(/\/\/ #ifdef H5\r?\n[\s\S]*?\/\/ #endif\r?\n/g, '')
   .replace(/^import .*\r?\n/gm, '').replace(/export (async )?function /g, '$1function ')
   + '\nglobalThis.client = { setRoundCodeClientActive, registerGeneratedCodeImage, prioritizeRoundCodeScanner };'

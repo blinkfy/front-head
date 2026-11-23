@@ -12,7 +12,7 @@
 
 <script>
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { bookingStatusText } from '../api/recycling.js'
+import { bookingStatusText } from '@/api/recycling.js'
 
 export default {
   components: { ManifestIcon },

@@ -22,6 +22,9 @@ const currentPagePath = path.join(appRoot, 'src/pages-admin/collection-dashboard
 const baselinePagePath = path.join(baselineRoot, relativePage)
 const currentModuleDir = path.join(appRoot, 'src/pages-admin/collection-dashboard')
 const manifestPath = path.join(baselineRoot, 'dashboard-extraction.json')
+if (!fs.existsSync(manifestPath)) {
+  throw new Error(`Required refactor baseline manifest is missing: ${manifestPath}. Set REFACTOR_BASELINE_ROOT to the large-modules baseline directory to run this comparison.`)
+}
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 const checks = []
 

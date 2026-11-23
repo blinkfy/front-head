@@ -140,7 +140,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { onHide, onLoad, onShow } from '@dcloudio/uni-app'
-import SortingWorkflowPlayer from '@/components/SortingWorkflowPlayer.vue'
+import SortingWorkflowPlayer from '@/pages-nonTheme/components/SortingWorkflowPlayer.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { baseUrl } from '@/api/settings.js'
 import { digitalTwinAssetUrl } from '@/utils/digital-twin-assets.js'

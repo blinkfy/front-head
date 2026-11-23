@@ -5,10 +5,11 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createAppTencentMap, getTencentBasemapOptions, createSatelliteDetailController } from '../../src/utils/app-tencent-map.mjs'
+import { createAppTencentMap, getTencentBasemapOptions, createSatelliteDetailController } from '../../src/utils/map/app-tencent-map.mjs'
 
 const require = createRequire(import.meta.url)
 const { parse: parseSfc, compileTemplate, compileStyle } = require('@vue/compiler-sfc')
+const { preprocess } = require('@dcloudio/uni-cli-shared/lib/preprocess')
 const babel = require('@babel/parser')
 const rendererTests = []
 const hookTests = []
@@ -243,8 +244,8 @@ check(rendererTests, 'renderer repeatedly switches fresh basemaps without moving
 }
 
 // Use the production state machine with deterministic timers.
-import { createMapBasemapController, isBinLocationPicker } from '../../src/utils/map-basemap-core.mjs'
-import { captureSatelliteReference } from '../../src/utils/bin-satellite-reference.mjs'
+import { createMapBasemapController, isBinLocationPicker } from '../../src/utils/map/map-basemap-core.mjs'
+import { captureSatelliteReference } from '../../src/utils/map/bin-satellite-reference.mjs'
 
 
 
@@ -258,8 +259,11 @@ function newHookHarness({ platform = 'app-plus', isH5 = false, options = { mode:
     ref: value => ({ value }), watch: (_source, fn) => { watchCallback = fn }
   }
   const uni = { showToast: value => toasts.push(value), createMapContext: () => null, canIUse: () => canIUse }
-  let code = fs.readFileSync(new URL('../../src/utils/use-map-basemap.js', import.meta.url), 'utf8')
-  code = code.replace(/^import .*?\n/gm, '').replace('export function useMapBasemap', 'function useMapBasemap')
+  const source = fs.readFileSync(new URL('../../src/utils/map/use-map-basemap.js', import.meta.url), 'utf8')
+  const mp = platform === 'mp-weixin'
+  const app = ['app', 'app-plus'].includes(platform)
+  let code = preprocess(source, { H5: isH5, MP: mp, MP_WEIXIN: mp, APP_PLUS: app }, { type: 'js' })
+  code = code.replace(/^import .*?\r?\n/gm, '').replace('export function useMapBasemap', 'function useMapBasemap')
   const run = new Function('getCurrentInstance','nextTick','onBeforeUnmount','onMounted','ref','watch','onReady','onUnload','onShow','onHide','createMapBasemapController','isBinLocationPicker','captureSatelliteReference','getTencentBasemapOptions','createSatelliteDetailController','appManifest','uni','process','plus','console','setTimeout','clearTimeout', `${code}\nreturn useMapBasemap`)
   const use = run(vue.getCurrentInstance, vue.nextTick, vue.onBeforeUnmount, vue.onMounted, vue.ref, vue.watch,
     fn => { ready = fn }, fn => { unload = fn }, fn => { show = fn }, fn => { hide = fn }, args => createMapBasemapController({ ...args, setTimer: clock.setTimeout, clearTimer: clock.clearTimeout }), isBinLocationPicker, captureSatelliteReference, getTencentBasemapOptions, createSatelliteDetailController,
@@ -420,7 +424,7 @@ check(hookTests, 'non-App mounted/native updated flow remains operational', () =
 })
 
 check(sfcTests, 'AppTencentMap template/styles compile; options and renderjs scripts parse separately', () => {
-  const filename = new URL('../../src/components/AppTencentMap.vue', import.meta.url)
+  const filename = new URL('../../src/components/map/AppTencentMap.vue', import.meta.url)
   const source = fs.readFileSync(filename, 'utf8')
   const renderMatch = source.match(/<script\s+module="mapView"\s+lang="renderjs">[\s\S]*?<\/script>/)
   const optionsMatch = source.match(/<script>\s*([\s\S]*?)\s*<\/script>/)
@@ -442,7 +446,7 @@ check(sfcTests, 'AppTencentMap template/styles compile; options and renderjs scr
 let compiledRenderjs = ''
 try {
   const { transformWithEsbuild } = require('@dcloudio/uni-cli-shared')
-  const filename = fileURLToPath(new URL('../../src/components/AppTencentMap.vue', import.meta.url))
+  const filename = fileURLToPath(new URL('../../src/components/map/AppTencentMap.vue', import.meta.url))
   const source = fs.readFileSync(filename, 'utf8')
   const code = source.match(/<script\s+module="mapView"\s+lang="renderjs">([\s\S]*?)<\/script>/)[1]
   const result = await transformWithEsbuild(code, filename, {

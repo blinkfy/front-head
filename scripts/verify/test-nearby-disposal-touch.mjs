@@ -6,7 +6,7 @@ import { compile as compileMpTemplate } from '@dcloudio/uni-mp-compiler'
 
 const root = process.cwd()
 const pageFiles = ['src/pages/map/map.vue', 'src/pages-dark/map/map.vue']
-const componentFile = 'src/components/NearbyDisposalPanel.vue'
+const componentFile = 'src/components/map/NearbyDisposalPanel.vue'
 const targets = [...pageFiles, componentFile]
 
 function preprocess(source, platform) {

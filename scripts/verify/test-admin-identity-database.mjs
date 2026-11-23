@@ -35,7 +35,8 @@ assert.match(source, /v-if="canEditCurrentTable\(\)" class="modal-btn confirm"/)
 // Identity record details retain the existing user-name display.
 const detailContext = vm.createContext({ currentTable: { value: 'UserIdentity' },
   genericUserIdFields: { value: ['userId'] }, genericUserNames: { value: { 12: '测试用户' } },
-  getGenericSchema: () => [{ key: 'userId', label: '用户 ID' }], getFieldImages: () => [] })
+  getGenericSchema: () => [{ key: 'userId', label: '用户 ID' }], getFieldImages: () => [],
+  shortFieldLabels: {}, formatGenericFieldLabel: key => key })
 vm.runInContext(extract('getRecordDetailFields'), detailContext)
 assert.equal(vm.runInContext('getRecordDetailFields({ userId: 12 })[0].value', detailContext), '测试用户 (用户ID: 12)')
 console.log('Identity admin SFC parsing, editable UI and user detail references passed.')

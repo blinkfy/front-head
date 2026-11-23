@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createVoiceCallController } from '../../src/utils/voice-call-core.mjs'
+import { createVoiceCallController } from '../../src/utils/realtime/voice-call-core.mjs'
 
 const TOKEN = 'b'.repeat(48)
 const TRANSFER = 'c'.repeat(36)

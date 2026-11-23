@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createRoundCodeWorker } from '../../src/utils/roundcode-worker-core.mjs'
+import { createRoundCodeWorker } from '../../src/utils/scan/roundcode-worker-core.mjs'
 const rawBase64 = Buffer.from('opaque-native-result').toString('base64')
 function harness(overrides = {}) {
   let time = 1000, active = true, identity = 'account-1'

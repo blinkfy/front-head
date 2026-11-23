@@ -12,14 +12,15 @@ const uni = {
   request(options) { sent.push(options); options.success({ statusCode: 200, data: { code: 0, data: { ok: true } } }) }
 }
 const requestSource = readFileSync(new URL('../../src/api/index.js', import.meta.url), 'utf8')
-  .replace(/^import[\s\S]*?from ['"][^'"]+['"];?\s*/gm, '')
+  .replace(/^import\b[\s\S]*?from\s+['"][^'"]+['"];?\s*/gm, '')
   .replace('export default request', 'this.request = request')
-const requestContext = { uni, baseUrl: 'https://test.invalid', appendQueryParams, isDatabaseHealthEndpoint: () => false, updateDatabaseStatusFromAvailability() {}, markDatabaseOffline() {}, clearChatBadge() {}, appVersionGuard: () => ({ handleUpgrade: () => false }) }
+  .replace(/^export\s+/gm, '')
+const requestContext = { uni, baseUrl: 'https://test.invalid', appendQueryParams, isDatabaseHealthEndpoint: () => false, updateDatabaseStatusFromAvailability() {}, markDatabaseOffline() {}, clearChatBadge() {}, appOfflineSession: { unavailable: false }, appVersionGuard: () => ({ handleUpgrade: () => false }) }
 runInNewContext(requestSource, requestContext, { filename: 'api/index.js' })
 
-const recyclingSource = readFileSync(new URL('../../src/pages-nonTheme/api/recycling.js', import.meta.url), 'utf8')
-  .replace("import request from '@/api/index.js'", '')
-  .replace(/^export /gm, '')
+const recyclingSource = readFileSync(new URL('../../src/api/recycling.js', import.meta.url), 'utf8')
+  .replace(/^import\b[^\r\n]*\r?\n/gm, '')
+  .replace(/^export\s+/gm, '')
 const recyclingContext = { request: requestContext.request, uni, getCurrentPages: () => [] }
 const recyclingNames = [...recyclingSource.matchAll(/^(?:async )?function (\w+)\(|^const (\w+)\s*=/gm)].map(match => match[1] || match[2])
 runInNewContext(`${recyclingSource}\nthis.recycling = { ${recyclingNames.join(', ')} }`, recyclingContext, { filename: 'api/recycling.js' })

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { navigateAfterLogin, claimLoginSplash, returnToLogin } from '../../src/utils/login-navigation.mjs'
-import { loginNavigationRuntime } from '../../src/utils/login-navigation-runtime.js'
-import { WEB_CALL_RETURN_KEY, pendingWebCallPath } from '../../src/utils/web-call-entry.mjs'
+import { navigateAfterLogin, claimLoginSplash, returnToLogin } from '../../src/utils/account/login-navigation.mjs'
+import { loginNavigationRuntime } from '../../src/utils/account/login-navigation-runtime.js'
+import { WEB_CALL_RETURN_KEY, pendingWebCallPath } from '../../src/utils/realtime/web-call-entry.mjs'
 import vm from 'node:vm'
 
 const root = new URL('../../', import.meta.url)
@@ -22,11 +22,12 @@ function conditionalSource(source, target) {
   const stack = [true]
   const output = []
   for (const line of source.split(/\r?\n/)) {
-    const open = line.match(/^\s*\/\/\s*#ifdef\s+(.+)\s*$/)
+    const open = line.match(/^\s*\/\/\s*#(ifdef|ifndef)\s+(.+)\s*$/)
     const close = /^\s*\/\/\s*#endif\s*$/.test(line)
     if (open) {
-      const conditions = open[1].split(/\s+\|\|\s+/)
-      stack.push(stack.at(-1) && conditions.includes(target))
+      const conditions = open[2].split(/\s*\|\|\s*/)
+      const matches = conditions.includes(target)
+      stack.push(stack.at(-1) && (open[1] === 'ifdef' ? matches : !matches))
     } else if (close) stack.pop()
     else if (stack.at(-1)) output.push(line)
   }
@@ -112,7 +113,7 @@ async function testHelper() {
 }
 
 async function testH5WebCallReturn() {
-  const source = await readFile(new URL('../../src/utils/login-navigation.mjs', import.meta.url), 'utf8')
+  const source = await readFile(new URL('../../src/utils/account/login-navigation.mjs', import.meta.url), 'utf8')
   const h5Source = conditionalSource(source, 'H5')
     .replace(/^import .*\r?\n/gm, '')
     .replace(/^export function /gm, 'function ')
@@ -237,6 +238,7 @@ function loginContext({ page, target = 'APP-PLUS', profile = false, shared = fal
     buildDeviceQrScanUrl: (_, dark) => `/device?dark=${dark}`,
     ThemeManager: { getTheme: () => page.dark ? 'dark' : 'light' },
     navigateAfterLogin: async ({ url, setLoading }) => { events.push('navigate'); assert.equal(url, pendingScene ? `/device?dark=${page.dark}` : page.home); assert.equal(storage.get('token'), 'valid-token'); assert.ok(storage.has('userInfo')); assert.ok(storage.has('autoLogin')); setLoading(true); return url },
+    navigateSignedInHome: async () => context.navigateAfterLogin({ url: pendingScene ? `/device?dark=${page.dark}` : page.home, setLoading: value => { loading.value = value } }),
     remindIfUnbound: async () => true,
     console,
     setTimeout: () => { throw new Error('fixed delay must not be used') }
@@ -279,8 +281,10 @@ await scenario('explicit logout stays on manual login in every platform and them
       const context = {
         confirmAction: { value: 'logout' }, isDarkTheme: { value: page.dark }, showConfirmModal: { value: true },
         clearRecognitionTask() {}, recentRecognition: { clear() {} }, clearChatPush() {},
-        uni: { removeStorageSync: key => storage.delete(key), setStorageSync: (key, value) => storage.set(key, value),
-          redirectTo: options => navigation.push(options.url), showToast: options => assert.fail(options.title) }
+        mfaRequest: async () => ({}), clearAppOfflineSession() {},
+        uni: { getStorageSync: key => storage.get(key), removeStorageSync: key => storage.delete(key), setStorageSync: (key, value) => storage.set(key, value),
+          redirectTo: options => navigation.push(options.url), reLaunch: options => navigation.push(options.url),
+          showToast: options => assert.fail(options.title) }
       }
       const logout = vm.runInNewContext(`(${extractFunction(conditionalSource(settingsScript, target), 'handleConfirm')})`, context)
       await logout()
@@ -296,6 +300,10 @@ await scenario('explicit logout stays on manual login in every platform and them
         let attempts = 0
         const run = vm.runInNewContext(`(${startup})`, {
           getCurrentPages: () => [{ options: manual ? { manualLogin: '1' } : {} }],
+          isLoading: { value: false }, navigateSignedInHome() {}, registrationRuntime: {},
+          userinfo: async () => ({}), onQrLogin() {},
+          resumeRememberedAppSession: async () => false,
+          resumeRememberedQrLogin: async () => false,
           preferBiometricLogin: async () => { attempts++; return true }
         })
         await run()
@@ -332,7 +340,7 @@ await scenario('completeLogin stores credentials before navigation and preserves
     assert.equal(state.storage.get('token'), 'valid-token')
     assert.equal(state.loading.value, true)
     assert.notEqual(navIndex, -1)
-    assert.match(state.fn.toString(), /navigateAfterLogin/)
+    assert.match(state.fn.toString(), /navigateSignedInHome/)
     assert.doesNotMatch(state.fn.toString(), /setTimeout/)
   }
 })
@@ -343,7 +351,7 @@ await scenario('MP shared mode bypasses profile completion; regular profile wait
     assert.match(body, /res\.wechatLoginMode !== 'shared' && consumeWechatProfileCompletion/)
     const profileAt = body.indexOf('await new Promise(resolve => { resolveProfileCompletion = resolve })')
     const restoreAt = body.indexOf('if (wechatPageActive) isLoading.value = true', profileAt)
-    const navAt = body.indexOf('await navigateAfterLogin')
+    const navAt = body.indexOf('await navigateSignedInHome')
     assert.ok(profileAt >= 0 && restoreAt > profileAt && navAt > restoreAt)
     assert.match(body.slice(restoreAt, navAt), /if \(!wechatPageActive\) return/)
   }

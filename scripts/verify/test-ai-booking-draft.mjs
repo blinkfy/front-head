@@ -170,6 +170,7 @@ assert.equal(createCalls, 1, 'replacement draft creation requires the explicit r
 let removedTypePatch = 0
 const oldTypeState = makeState({ draftId: 'booking-old-type', draft: { id: 'booking-old-type', version: 1, status: 'pending', snapshot: { details: [{ typeId: 99, name: '旧式家具' }] }, payload: { items: [{ typeId: 99, weight: 2 }] } },
   selectedTypes: [99], itemWeights: { 99: 2 }, wasteTypes: [{ id: 7, name: '纸箱', price: 10 }], allowedWasteTypes: [], matchingAreas: [],
+  priceGuides: [],
   fetchAiAction: async id => ({ data: { id, type: 'booking', status: 'pending', version: 1, expiresAt: '2999-01-01T00:00:00Z', payload: { items: [{ typeId: 99, weight: 2 }] } } }),
   updateAiAction: async (_id, body) => { removedTypePatch++; return { data: { version: 2, payload: body.payload } } },
   confirmAiAction: async () => ({ data: { booking: { id: 88 } } }),
@@ -199,7 +200,7 @@ bookingUi = createPlainContext.bookingComponent
 await bookingUi.methods.submitBooking.call(plainState)
 assert.equal(createPlain, 1, 'the ordinary no-draft flow still calls createBooking')
 
-const estimateState = makeState({ selectedTypes: [7], itemWeights: { 7: 3 }, itemUnits: { 7: 'kg' }, matchingAreas: [{ priceGuides: [{ typeId: 7, unit: 'kg', minPrice: 12, maxPrice: 12 }] }] })
+const estimateState = makeState({ selectedTypes: [7], itemWeights: { 7: 3 }, itemUnits: { 7: 'kg' }, matchingAreas: [{ priceGuides: [{ typeId: 7, unit: 'kg', minPrice: 12, maxPrice: 12 }] }], priceGuides: [{ typeId: 7, unit: 'kg', minPrice: 12, maxPrice: 12 }] })
 estimateState.selectedWasteItems = [{ id: 7, price: 12 }]
 component.methods.calculateEstimate.call(estimateState)
 assert.equal(estimateState.estimateAmount, 36)

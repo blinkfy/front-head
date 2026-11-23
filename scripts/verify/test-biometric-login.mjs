@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
-import { createBiometricLoginManager, biometricErrorMessage } from '../../src/utils/biometric-login-core.mjs'
+import { createBiometricLoginManager, biometricErrorMessage } from '../../src/utils/account/biometric-login-core.mjs'
 
 function fixture({ accepted = true, supported = true, enrolled = true } = {}) {
   const storage = new Map([['token', 'session'], ['savedUser', { username: 'test', password: 'test-only' }]])
@@ -131,7 +131,7 @@ assert.ok(interrupted.calls.some(call => call.operation === 'delete'), 'incomple
 assert.equal(createBiometricLoginManager({ runtime: enabled.runtime, native: enabled.native, api: enabled.api, scope: 'https://another.test' }).state().credentialId, undefined)
 
 // Exercise the actual login-page controller with a tiny lifecycle adapter.
-const composable = readFileSync(new URL('../../src/utils/use-biometric-login.js', import.meta.url), 'utf8')
+const composable = readFileSync(new URL('../../src/utils/account/use-biometric-login.js', import.meta.url), 'utf8')
   .replace(/^import .*\r?\n/gm, '').replace('export function ', 'function ')
 async function pageFixture({ state, token = '', autoLogin = true, probe, loginResult, loginError, probeWait, onLoginWait, platform = 'app', capabilityWait, systemAuthentication = false, pages = [{}], support = { supported: true, enrolled: true, label: '指纹登录' } } = {}) {
   let attempts = 0, navigations = 0, cancel = 0, suspend = 0, resume = 0, disposed, hidden, shown
@@ -270,18 +270,27 @@ const require = createRequire(import.meta.url)
 const { initPreContext } = require('@dcloudio/uni-cli-shared/dist/preprocess/context.js')
 const { preJs, preHtml } = require('@dcloudio/uni-cli-shared/dist/preprocess/index.js')
 const { parse, compileScript, compileTemplate } = require('@vue/compiler-sfc')
+for (const platform of ['app', 'h5', 'mp-weixin', 'mp-alipay']) {
+  initPreContext(platform)
+  const changePassword = preJs(readFileSync(new URL('../../src/utils/account/use-change-password.js', import.meta.url), 'utf8'))
+  const supported = platform !== 'mp-alipay'
+  assert.equal(changePassword.includes("from './quick-login.js'"), supported, `${platform} password-change imports quick login`)
+  assert.equal(changePassword.includes('quickLogin.forgetBinding()'), supported, `${platform} password-change clears quick login`)
+  assert.equal(changePassword.includes("removeStorageSync('savedUser')"), true, `${platform} password-change clears saved credentials`)
+}
+
 for (const platform of ['app', 'h5', 'mp-weixin']) {
   initPreContext(platform)
-  const bridge = preJs(readFileSync(new URL('../../src/utils/biometric-login.js', import.meta.url), 'utf8'))
+  const bridge = preJs(readFileSync(new URL('../../src/utils/account/biometric-login.js', import.meta.url), 'utf8'))
   assert.equal(bridge.includes("from '@/uni_modules/ftx-biometric-login'"), platform === 'app')
-  const quickLogin = preJs(readFileSync(new URL('../../src/utils/quick-login.js', import.meta.url), 'utf8'))
+  const quickLogin = preJs(readFileSync(new URL('../../src/utils/account/quick-login.js', import.meta.url), 'utf8'))
   assert.equal(quickLogin.includes("import { biometricLogin } from './biometric-login.js'"), platform === 'app')
   assert.equal(quickLogin.includes("from './passkey-client-core.mjs'"), platform === 'h5')
   assert.equal(quickLogin.includes("from './soter-client-core.mjs'"), platform === 'mp-weixin')
   assert.equal(quickLogin.includes('mfaSetupTicket: ticket'), true, `${platform} setup login forwards its ticket`)
   for (const file of ['src/pages/index/index.vue', 'src/pages-dark/index/index.vue', 'src/pages/change-password/change-password.vue',
-    'src/pages-dark/change-password/change-password.vue', 'src/pages-nonTheme/account-security.vue', 'src/components/H5LoginShell.vue',
-    'src/components/WechatLoginEntry.vue', 'src/components/QuickLoginAccountPicker.vue', 'src/components/MfaSecurity.vue', 'src/components/MfaLoginPanel.vue']) {
+    'src/pages-dark/change-password/change-password.vue', 'src/pages-nonTheme/account-security.vue', 'src/components/account/H5LoginShell.vue',
+    'src/components/account/WechatLoginEntry.vue', 'src/components/account/QuickLoginAccountPicker.vue', 'src/components/account/MfaSecurity.vue', 'src/components/account/MfaLoginPanel.vue']) {
     const source = readFileSync(new URL('../../' + file, import.meta.url), 'utf8')
     const { descriptor, errors } = parse(preJs(preHtml(source)), { filename: file })
     assert.deepEqual(errors, [], `${platform} ${file} parse`)
@@ -291,8 +300,8 @@ for (const platform of ['app', 'h5', 'mp-weixin']) {
     if (['src/pages/index/index.vue', 'src/pages-dark/index/index.vue'].includes(file)) {
       assert.ok(script.content.includes('use-biometric-login.js'), `${platform} ${file} uses the shared login controller`)
     }
-    if (file === 'src/components/MfaLoginPanel.vue') {
-      assert.equal(script.content.includes("from '@/utils/quick-login.js'"), platform !== 'other', `${platform} MFA panel platform imports`)
+    if (file === 'src/components/account/MfaLoginPanel.vue') {
+      assert.equal(script.content.includes("from '@/utils/account/quick-login.js'"), platform !== 'other', `${platform} MFA panel platform imports`)
     }
   }
 }

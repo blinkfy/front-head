@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
-import { WEB_CALL_RETURN_KEY, webCallTarget, stripWebCallTicket } from '../../src/utils/web-call-entry.mjs'
+import { WEB_CALL_RETURN_KEY, webCallTarget, stripWebCallTicket } from '../../src/utils/realtime/web-call-entry.mjs'
 
 const source = await readFile(new URL('../../src/pages-nonTheme/web-call.vue', import.meta.url), 'utf8')
 const script = /<script>([\s\S]*?)<\/script>/.exec(source)?.[1]

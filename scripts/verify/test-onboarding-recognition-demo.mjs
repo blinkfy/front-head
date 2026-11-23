@@ -156,7 +156,7 @@ function verifyOnboardingViewportAndScrollMath() {
 }
 
 function verifyDemoPhotoPanelTemplate() {
-  const filename = new URL('../../src/components/OnboardingRecognitionDemo.vue', import.meta.url)
+  const filename = new URL('../../src/components/recognition/OnboardingRecognitionDemo.vue', import.meta.url)
   const source = readFileSync(filename, 'utf8')
   const { descriptor, errors } = parseSfc(source, { filename: filename.pathname })
   assert.equal(errors.length, 0, 'demo component SFC parses before inspecting its photo panel')
@@ -185,7 +185,7 @@ function verifyDemoPhotoPanelTemplate() {
 }
 
 function verifyDemoTrailingSpaceGuards() {
-  const relativePath = '../../src/components/OnboardingRecognitionDemo.vue'
+  const relativePath = '../../src/components/recognition/OnboardingRecognitionDemo.vue'
   const { script, ast } = readScript(relativePath)
   const watchStage = (() => {
     let found = null

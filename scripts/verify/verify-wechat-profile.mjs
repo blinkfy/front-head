@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { consumeWechatProfileCompletion, markWechatProfileCompletion, nicknameError } from '../../src/utils/wechat-profile.mjs'
+import { consumeWechatProfileCompletion, markWechatProfileCompletion, nicknameError } from '../../src/utils/account/wechat-profile.mjs'
 
 const require = createRequire(import.meta.url)
 const { parse, compileTemplate } = require('@vue/compiler-sfc')
@@ -33,6 +33,7 @@ async function readSource(relativePath) {
 async function loadAvatarTools() {
   const avatarPath = fileURLToPath(new URL('../../src/utils/avatar-handler.js', import.meta.url))
   let source = await fs.readFile(avatarPath, 'utf8')
+  source = source.replace(/^import\b[\s\S]*?from\s+['"][^'"]+['"];?\s*/gm, '')
   source = source.replace(/\bexport\s+(?=(?:async\s+)?function\b)/g, '')
   source += '\nglobalThis.__avatarTools = { compressImageToBase64, getAvatarType, getAvatarUrl, validateAvatarSize };\n'
 
@@ -62,7 +63,7 @@ async function loadAvatarTools() {
 }
 
 async function loadPrepareAvatarFunction() {
-  const source = await readSource('../../src/components/WechatProfileForm.vue')
+  const source = await readSource('../../src/components/account/WechatProfileForm.vue')
   const match = source.match(/async function prepareAvatar\(path\) \{([\s\S]*?)\n\}\nfunction chooseAvatar\(/)
   assert.ok(match, 'expected a standalone prepareAvatar function in the form component')
 
@@ -101,9 +102,10 @@ async function run() {
     markWechatProfileCompletion(runtime, 'account-a')
     assert.equal(consumeWechatProfileCompletion(runtime, { username: 'account-a' }), false)
 
-    for (const createdAt of [Number.NaN, Number.POSITIVE_INFINITY, Date.now() + 1]) {
+    const now = Date.now()
+    for (const createdAt of [Number.NaN, Number.POSITIVE_INFINITY, now + 1]) {
       runtime.setStorageSync('wechatProfileCompletionPending', { username: 'account-a', createdAt })
-      assert.equal(consumeWechatProfileCompletion(runtime, { id: 1, username: 'account-a' }), false)
+      assert.equal(consumeWechatProfileCompletion(runtime, { id: 1, username: 'account-a' }, now), false)
       assert.equal(runtime.getStorageSync('wechatProfileCompletionPending'), undefined)
     }
   })
@@ -164,18 +166,18 @@ async function run() {
       assert.ok(completeStart >= 0 && loginStart > completeStart)
       assert.match(source, /res\.wechatLoginMode !== 'shared' && consumeWechatProfileCompletion\(uni, registeredUser\)/)
       assert.ok(completeLogin.indexOf('loggedInUser = userInfoRes.data') < completeLogin.indexOf('const registeredUser = loggedInUser'))
-      assert.match(completeLogin, /const userInfoRes = await userinfo\("false"\)/)
+      assert.match(completeLogin, /const userInfoRes = res\.userInfo \? \{ data: res\.userInfo \} : await userinfo\("false"\)/)
       assert.match(source, /await new Promise\(resolve => \{ resolveProfileCompletion = resolve \}\)/)
       assert.match(source, /onUnload\(\(\) => \{[^}]*finishProfileCompletion\(\)/)
       assert.match(source, /const registeredUser = loggedInUser/)
-      assert.match(source, /if \(isLoading\.value \|\| profileCompletionVisible\.value\) return/)
+      assert.match(source, /if \(isLoading\.value \|\| mfaState\.value \|\| profileCompletionVisible\.value\) return/)
     }
   })
 
   await check('registration stores the username-bound completion intent only after registration succeeds', async () => {
-    const source = await readSource('../../src/pages/register/register.vue')
-    assert.match(source, /markWechatProfileCompletion\(uni,\s*username\.value\)/)
-    assert.match(source, /import \{ markWechatProfileCompletion \} from '@\/utils\/wechat-profile\.mjs'/)
+    const source = await readSource('../../src/utils/account/use-registration-form.js')
+    assert.match(source, /await register\(submitted\)[\s\S]*?markWechatProfileCompletion\(uni, submitted\.username\)/)
+    assert.match(source, /import \{ markWechatProfileCompletion \} from '\.\/wechat-profile\.mjs'/)
   })
 
   await check('H5 edit-profile sends nickname while the personal page displays nickname with username fallback', async () => {

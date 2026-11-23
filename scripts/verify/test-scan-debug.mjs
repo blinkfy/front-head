@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createScanDebugAccess, roundCodeDebugText } from '../../src/utils/scan-debug.mjs'
-import { createWebRoundCodeResolver } from '../../src/utils/h5-roundcode-core.mjs'
+import { createScanDebugAccess, roundCodeDebugText } from '../../src/utils/scan/scan-debug.mjs'
+import { createWebRoundCodeResolver } from '../../src/utils/scan/h5-roundcode-core.mjs'
 
 for (const [profile, flag, expected] of [[{isAdmin:true},false,true],[{isAdmin:false},true,false],[{},true,true],[{},'false',false],[null,false,false],['invalid',true,false]]) {
   const store={token:'session',userInfo:profile,isAdmin:flag}
@@ -17,11 +17,12 @@ assert.equal(roundCodeDebugText({kind:'registration',sessionId:id}),'/pages/regi
 assert.throws(()=>roundCodeDebugText({kind:'foreign'}))
 
 let token='session', active=true, imageCalls=0, scanned=0, authorized=0, confirmed=0
-const source=(await readFile(new URL('../../src/utils/h5-roundcode.js',import.meta.url),'utf8'))
-  .replace(/^import .*\n/gm,'').replace(/export /g,'')+'\nglobalThis.preview=previewWebRoundCode;'
+const source=(await readFile(new URL('../../src/utils/scan/h5-roundcode.js',import.meta.url),'utf8'))
+  .replace(/^import\b[\s\S]*?from\s+['"][^'"]+['"];?\s*/gm,'').replace(/export /g,'')+'\nglobalThis.preview=previewWebRoundCode;'
 const context=vm.createContext({
-  uni:{getStorageSync:key=>key==='token'?token:{},showToast(){}},baseUrl:'test',roundCodeDebugText,createWebRoundCodeResolver,
-  resolveWechatQrImage:async()=>{imageCalls++;return{data:{kind:'registration',sessionId:id}}},prepareWechatQrImage:async()=>{},
+  uni:{getStorageSync:key=>key==='token'?token:{},showToast(){}},baseUrl:'test',resolveWechatQrRaw:async()=>({}),roundCodeDebugText,createWebRoundCodeResolver,
+  resolveWechatQrRaw:async()=>{imageCalls++;return{data:{kind:'registration',sessionId:id}}},
+  prepareWechatQrImage:async()=>{},
   createRegistrationApi:()=>({scanApp:async()=>{scanned++},authorizeApp:async()=>{authorized++},cancelApp:async()=>{}}),
   createRegistrationDialogs:()=>({confirm:async()=>{confirmed++;return true}})
 })

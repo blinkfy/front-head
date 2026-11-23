@@ -24,7 +24,7 @@
 <script>
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getDisplayName } from '@/utils/display-name.js'
-import { messageBus } from '@/utils/message-event-bus.js'
+import { messageBus } from '@/utils/realtime/message-event-bus.js'
 import { communitySocialEnabled, getCommunityNotifications, readCommunityNotifications } from './utils/community-social.js'
 export default {
   components: { ManifestIcon },

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createIncomingRingtone } from '../../src/utils/incoming-ringtone-core.mjs'
+import { createIncomingRingtone } from '../../src/utils/realtime/incoming-ringtone-core.mjs'
 
 function setup({ duration = 35000, active = true, owner = 'account-1' } = {}) {
   let time = 1000

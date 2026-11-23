@@ -55,7 +55,7 @@ await fs.copyFile(path.join(root, 'scripts/tools/roundcode/browser-roundcode/PYO
 execFileSync('python', [path.join(root, 'scripts/tools/roundcode/build-browser-roundcode.py'), path.join(out, 'runtime.zip')])
 await fs.copyFile(path.join(root, 'scripts/tools/roundcode/browser-roundcode/bootstrap.py'), path.join(out, 'bootstrap.py'))
 await fs.copyFile(path.join(root, 'scripts/tools/roundcode/browser-roundcode/worker.js'), path.join(out, 'worker.js'))
-const cacheSource = await fs.readFile(path.join(root, 'src/utils/h5-roundcode-cache.mjs'), 'utf8')
+const cacheSource = await fs.readFile(path.join(root, 'src/utils/scan/h5-roundcode-cache.mjs'), 'utf8')
 await fs.writeFile(path.join(out, 'asset-cache.js'), cacheSource.replace('export function ', 'function ') + '\nself.createRoundCodeAssetCache = createRoundCodeAssetCache\n')
 const files = {}
 for (const name of await fs.readdir(out)) {

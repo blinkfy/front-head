@@ -61,16 +61,16 @@
 </template>
 
 <script>
-import { webCallRingtoneState, primeWebCallRingtone } from '@/utils/web-call-ringtone.js'
-import { webCallsAvailable, webCallNotificationsAvailable, requestWebCallNotifications, refreshWebCallAlert } from '@/utils/web-call-support.js'
-import VoiceCallIcon from '@/components/VoiceCallIcon.vue'
+import { webCallRingtoneState, primeWebCallRingtone } from '@/utils/realtime/web-call-ringtone.js'
+import { webCallsAvailable, webCallNotificationsAvailable, requestWebCallNotifications, refreshWebCallAlert } from '@/utils/realtime/web-call-support.js'
+import VoiceCallIcon from '@/pages-nonTheme/components/VoiceCallIcon.vue'
 import ChatCachedAvatar from './components/ChatCachedAvatar.vue'
-import { voiceCalls, voiceCallState, voiceCallMedia, canRouteVoiceAudio, mountCallVideo, unmountCallVideo } from '@/utils/voice-call.js'
-import { callAvatarUrl, VOICE_END_LABELS, shouldReturnFromCall } from '@/utils/voice-call-core.mjs'
-import { recordingIdentity } from '@/utils/call-recording-preference.mjs'
+import { voiceCalls, voiceCallState, voiceCallMedia, canRouteVoiceAudio, mountCallVideo, unmountCallVideo } from '@/utils/realtime/voice-call.js'
+import { callAvatarUrl, VOICE_END_LABELS, shouldReturnFromCall } from '@/utils/realtime/voice-call-core.mjs'
+import { recordingIdentity } from '@/utils/realtime/call-recording-preference.mjs'
 import { baseUrl } from '@/api/settings.js'
 import { ThemeManager } from '@/utils/theme.js'
-import { androidRealtimeAvailable, androidBackgroundMask } from '@/utils/android-realtime.js'
+import { androidRealtimeAvailable, androidBackgroundMask } from '@/utils/realtime/android-realtime.js'
 
 export default {
   components: { VoiceCallIcon, ChatCachedAvatar },

@@ -110,7 +110,7 @@ async function testCommunitySettingIsIndependentOfLlm() {
     calls.push(options)
     return { code: 0, data: { aiEnabled: false, communityChatEnabled } }
   }
-  const settingsSource = fs.readFileSync(path.join(root, 'src/utils/community-chat-settings.js'), 'utf8')
+  const settingsSource = fs.readFileSync(path.join(root, 'src/utils/realtime/community-chat-settings.js'), 'utf8')
     .replace(/^import .*$/gm, '').replace(/\bexport /g, '')
   const settingsContext = { request, Date, reactive: value => value }
   vm.createContext(settingsContext)
@@ -131,7 +131,7 @@ async function testCommunitySettingIsIndependentOfLlm() {
 }
 
 function testSettingsFallbackAndRegistration() {
-  const settings = fs.readFileSync(path.join(root, 'src/utils/community-chat-settings.js'), 'utf8')
+  const settings = fs.readFileSync(path.join(root, 'src/utils/realtime/community-chat-settings.js'), 'utf8')
   assert.match(settings, /communityChatEnabled !== false/, 'missing legacy setting defaults enabled')
   const admin = fs.readFileSync(path.join(root, 'src/pages-admin/service-setting.vue'), 'utf8')
   assert.match(admin, /communityChatEnabled: true/, 'admin form default is enabled')

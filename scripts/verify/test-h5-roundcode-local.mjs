@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createLocalRoundCodeDecoder } from '../../src/utils/h5-roundcode-local.mjs'
+import { createLocalRoundCodeDecoder } from '../../src/utils/scan/h5-roundcode-local.mjs'
 
 const validPayload = 'AQIDBAUGBwgJCgsM'
 

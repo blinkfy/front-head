@@ -1,5 +1,5 @@
 import * as chatApi from '@/pages-nonTheme/api/chat.js'
-import { sentChatFeedback } from '@/utils/chat-feedback.js'
+import { sentChatFeedback } from '@/utils/realtime/chat-feedback.js'
 
 export const messageSendMethods = {
     sendCreatedMessage(message, onProgress) {

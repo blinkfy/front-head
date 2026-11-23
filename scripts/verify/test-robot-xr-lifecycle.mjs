@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 
-const filename = 'src/components/smart-sort-xr-native/index.js'
+const filename = 'src/components/recognition/smart-sort-xr-native/index.js'
 const source = readFileSync(filename, 'utf8')
 let definition
 const model = {

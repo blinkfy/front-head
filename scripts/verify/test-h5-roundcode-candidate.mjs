@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { detectRoundCodeCandidate } from '../../src/utils/h5-roundcode-candidate.mjs'
+import { detectRoundCodeCandidate } from '../../src/utils/scan/h5-roundcode-candidate.mjs'
 
 const python = process.env.QBAR_PYTHON || 'C:/Users/29513/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
 const sample = fileURLToPath(new URL('../../../smartBin/device-simulator/qr.jpg', import.meta.url))

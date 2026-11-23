@@ -5,8 +5,8 @@ import { createRequire } from 'node:module'
 const { preprocess } = createRequire(import.meta.url)('@dcloudio/uni-cli-shared/lib/preprocess')
 import { parse as parseJson } from 'jsonc-parser'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { createForegroundNotifications, notificationAvatarUrl } from '../../src/utils/foreground-notification.mjs'
-import { rememberChatEntryAvatar, readChatEntryAvatar } from '../../src/utils/chat-entry-avatar.mjs'
+import { createForegroundNotifications, notificationAvatarUrl } from '../../src/utils/realtime/foreground-notification.mjs'
+import { rememberChatEntryAvatar, readChatEntryAvatar } from '../../src/utils/realtime/chat-entry-avatar.mjs'
 import { notificationPagePaths, injectForegroundNotification } from '../build/foreground-notification-plugin.mjs'
 
 let owner = 'account-a', clock = 1000, sequence = 0, tapped = 0
@@ -48,7 +48,7 @@ assert.equal(notificationAvatarUrl('/static/avatars/a.webp', 'https://api.test/'
 assert.equal(notificationAvatarUrl('chat/groups/avatars/a.webp', 'https://api.test'), 'https://api.test/files/download/chat/groups/avatars/a.webp')
 assert.equal(notificationAvatarUrl('https://cdn.test/a.webp'), 'https://cdn.test/a.webp')
 
-const source = fs.readFileSync(new URL('../../src/utils/notification.js', import.meta.url), 'utf8')
+const source = fs.readFileSync(new URL('../../src/utils/realtime/notification.js', import.meta.url), 'utf8')
 const feedback = [], navigation = []
 const context = { foregroundNotifications: notices, notificationAvatarUrl, rememberChatEntryAvatar, baseUrl: 'https://api.test',
   receiveChatFeedback: async options => feedback.push(options),

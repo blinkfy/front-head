@@ -1,6 +1,6 @@
 import request from './index.js'
 import { config } from './config.js'
-import { resolveUpcyclingImage } from '../utils/image-download.mjs'
+import { resolveUpcyclingImage } from '../utils/recognition/image-download.mjs'
 
 /**
  * 获取单条历史记录的图片（点开详情时按需加载）

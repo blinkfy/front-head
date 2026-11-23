@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { candidateFrame, imageClarity, PhotoGate, photoSettings, reprojectCandidate, ScanAutoZoom, selectSharpFrame, sharpFrameMatches, videoConstraints } from '../../src/utils/h5-scan-quality.mjs'
+import { candidateFrame, imageClarity, PhotoGate, photoSettings, reprojectCandidate, ScanAutoZoom, selectSharpFrame, sharpFrameMatches, videoConstraints } from '../../src/utils/scan/h5-scan-quality.mjs'
 
 function blurBox(source, width, height) {
   const blurred = new Uint8ClampedArray(source.length)

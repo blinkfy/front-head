@@ -5,10 +5,13 @@ import { appendQueryParams, isDatabaseHealthEndpoint } from '../../src/api/reque
 
 let captured
 const source = (await readFile(new URL('../../src/api/index.js', import.meta.url), 'utf8'))
-  .replace(/^import [\s\S]*? from '[^']+'\r?\n/gm, '')
+  .replace(/^import\b[\s\S]*?from\s+['"][^'"]+['"];?\s*/gm, '')
   .replace(/export default request\s*$/, 'globalThis.request = request')
+  .replace(/^export\s+/gm, '')
 const context = vm.createContext({
   baseUrl: 'https://api.example.test', appendQueryParams, isDatabaseHealthEndpoint,
+  appOfflineSession: { unavailable: false },
+  appVersionGuard: () => ({ handleUpgrade: () => false }),
   uni: {
     getStorageSync: () => '',
     request: options => { captured = options; options.success({ statusCode: 200, data: { code: 0 } }) }

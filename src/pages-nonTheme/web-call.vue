@@ -10,8 +10,8 @@
   </view>
 </template>
 <script>
-import { voiceCalls, voiceCallState } from '@/utils/voice-call.js'
-import { WEB_CALL_RETURN_KEY, webCallTarget, redeemWebCallTicket, stripWebCallTicket } from '@/utils/web-call-entry.mjs'
+import { voiceCalls, voiceCallState } from '@/utils/realtime/voice-call.js'
+import { WEB_CALL_RETURN_KEY, webCallTarget, redeemWebCallTicket, stripWebCallTicket } from '@/utils/realtime/web-call-entry.mjs'
 import { baseUrl } from '@/api/settings.js'
 export default {
   data: () => ({ target: null, hasLogin: false, accountMatches: false, loggingIn: false, entryClosed: false, state: voiceCallState }),

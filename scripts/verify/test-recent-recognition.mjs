@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { parse as parseJavaScript } from '@babel/parser'
 import { parse as parseSfc } from '@vue/compiler-sfc'
-import { createRecentRecognitionStore, RECENT_RECOGNITION_IDLE_MS } from '../../src/utils/recent-recognition-core.mjs'
+import { createRecentRecognitionStore, RECENT_RECOGNITION_IDLE_MS } from '../../src/utils/recognition/recent-recognition-core.mjs'
 
 const successful = name => ({ labels: [{ name }], result_img_base64: `image-${name}` })
 
@@ -99,7 +99,7 @@ function verifyPlatformImports(script, path) {
   for (const target of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
     const ast = parseJavaScript(conditionalScript(script, target), { sourceType: 'module' })
     assert.ok(ast.program.body.some(node => node.type === 'ImportDeclaration' &&
-      node.source.value === '@/utils/recent-recognition.js' &&
+      node.source.value === '@/utils/recognition/recent-recognition.js' &&
       node.specifiers.some(specifier => specifier.type === 'ImportSpecifier' &&
         specifier.imported.name === 'recentRecognition' && specifier.local.name === 'recentRecognition')),
     `${path} ${target}: recentRecognition remains imported after conditional preprocessing`)
@@ -146,7 +146,7 @@ function verifyHome(path) {
   c.restoreRecentPresentation()
   assert.equal(c.resultCollapsed.value, true, `${path}: a newly mounted home starts collapsed`)
   assert.equal(c.resultImage.value, result.result_img_base64)
-  assert.deepEqual(applied[0], [h.store.get().result, false, true], `${path}: restoration requests cached rendering`)
+  assert.deepEqual(applied[0], [h.store.get().result, false, true, 'saved'], `${path}: restoration requests cached rendering`)
   c.expandRecentResult()
   assert.equal(c.resultCollapsed.value, false, `${path}: explicit expansion shows the cached result`)
   assert.equal(c.classificationUi.value, 'complete')

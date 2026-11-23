@@ -3,8 +3,8 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8')
-const photoSource = await read('../../src/utils/identity-photo-upload.js')
-const identityApiSource = await read('../../src/api/identity.js')
+const photoSource = await read('../../src/pages-nonTheme/utils/identity/identity-photo-upload.js')
+const identityApiSource = await read('../../src/pages-nonTheme/api/identity.js')
 
 function loadPhotoModule({ uni = {}, compressNativeUploadImage = async () => null, discardUploadImage = () => {} } = {}) {
   const source = photoSource
@@ -118,7 +118,7 @@ for (const scenario of ['no-savings', 'compression-error']) {
 }
 
 {
-  const source = await read('../../src/utils/identity-camera-h5.js')
+  const source = await read('../../src/pages-nonTheme/utils/identity/identity-camera-h5.js')
   const start = source.indexOf('    async function capture(points) {')
   assert.notEqual(start, -1, 'capture function exists')
   const bodyStart = source.indexOf('{', start)

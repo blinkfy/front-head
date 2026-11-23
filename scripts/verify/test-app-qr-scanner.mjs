@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createAppQrScanner } from '../../src/utils/app-qr-scanner-core.mjs'
+import { createAppQrScanner } from '../../src/utils/scan/app-qr-scanner-core.mjs'
 
 const code = { scanType: 'WX_CODE', rawBase64: Buffer.from('opaque-native-payload').toString('base64') }
 const id = 'r_' + 'a'.repeat(24)

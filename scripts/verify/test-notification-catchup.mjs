@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createNotificationCatchup } from '../../src/utils/notification-catchup.mjs'
+import { createNotificationCatchup } from '../../src/utils/realtime/notification-catchup.mjs'
 
 let account = 'account-a', clock = 0, requests = 0
 let result = { userId: '1', direct: '5', group: '8', system: '3' }, failure = false, response

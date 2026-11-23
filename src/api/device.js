@@ -1,5 +1,5 @@
 import request from './index.js'
-import { resolveRoundCodeWithRetry } from '@/utils/roundcode-resolve-retry.mjs'
+import { resolveRoundCodeWithRetry } from '@/utils/scan/roundcode-resolve-retry.mjs'
 
 /**
  * 设备连接通知

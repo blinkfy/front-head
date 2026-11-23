@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { preserveBinDescription, normalizeBinPreReview, normalizeBinReviewPreview } from '../../src/utils/bin-pre-review.mjs'
+import { preserveBinDescription, normalizeBinPreReview, normalizeBinReviewPreview } from '../../src/utils/map/bin-pre-review.mjs'
 
 const require = createRequire(import.meta.url)
 const backend = require('../../../back-end/services/device/trashBinDescription.js')
@@ -38,7 +38,7 @@ for (const normalize of [normalizeBinPreReview, normalizeBinReviewPreview]) {
 assert.equal(normalizeBinPreReview({ supported: true, enabled: true, passed: false, suggestions }).reason, '')
 assert.equal(normalizeBinPreReview({ supported: true, enabled: true, passed: false, reason: '照片不是垃圾桶', suggestions }).reason, '照片不是垃圾桶')
 
-const source = readFileSync(new URL('../../src/components/AddTrashBinModal.vue', import.meta.url), 'utf8')
+const source = readFileSync(new URL('../../src/components/map/AddTrashBinModal.vue', import.meta.url), 'utf8')
 assert.ok(source.includes("reviewResult.reason || '请核对照片与填写信息后重试。'"))
 assert.ok(source.includes('v-if="!reviewPreview.passed && reviewPreview.reason"'))
 const { descriptor, errors } = parse(source)

@@ -5,11 +5,11 @@ const selectorParser = require('postcss-selector-parser')
 
 const ROOT = path.resolve(__dirname, '../..')
 const FILES = [
-  'src/components/AccountMergeChoice.vue',
-  'src/components/WechatProfileForm.vue',
-  'src/components/WasteCategoryModal.vue',
-  'src/components/MapBinAdminPanel.vue',
-  'src/components/dashboard/CompactMetricCard.vue',
+  'src/components/account/AccountMergeChoice.vue',
+  'src/components/account/WechatProfileForm.vue',
+  'src/components/recognition/WasteCategoryModal.vue',
+  'src/components/map/MapBinAdminPanel.vue',
+  'src/pages-admin/components/CompactMetricCard.vue',
   'src/pages-admin/components/digital-twin/ScenarioAnalyticsPanel.vue',
   'src/pages-admin/components/digital-twin/RobotTaskReplayOverlay.vue',
   'src/pages-admin/components/digital-twin/ReplayTimeline.vue',

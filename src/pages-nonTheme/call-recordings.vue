@@ -88,9 +88,9 @@
 <script>
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { ThemeManager } from '@/utils/theme.js'
-import { recordingIdentity, readRecordingAuto, writeRecordingAuto, validRecordingCallId, matchesRecording, recordingPlayable } from '@/utils/call-recording-preference.mjs'
-import { canRecordCalls, listCallRecordings, recordingFileAction, deleteCallRecordings, openWebRecordingManager, syncNativeRecordingConfiguration, createRecordingPlayer, transcribeCallRecording } from '@/utils/call-recordings.js'
-import { activeTranscriptIndices, cloudTranscriptConsentMessage } from '@/utils/call-transcript.mjs'
+import { recordingIdentity, readRecordingAuto, writeRecordingAuto, validRecordingCallId, matchesRecording, recordingPlayable } from '@/utils/realtime/call-recording-preference.mjs'
+import { canRecordCalls, listCallRecordings, recordingFileAction, deleteCallRecordings, openWebRecordingManager, syncNativeRecordingConfiguration, createRecordingPlayer, transcribeCallRecording } from '@/utils/realtime/call-recordings.js'
+import { activeTranscriptIndices, cloudTranscriptConsentMessage } from '@/utils/realtime/call-transcript.mjs'
 import { createAsrController } from '@/utils/local-asr-core.mjs'
 
 const emptyTranscript = () => ({ id: '', busy: false, error: '', progress: '', segments: [], partial: false })

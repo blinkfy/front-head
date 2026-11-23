@@ -8,7 +8,7 @@
 </template>
 <script>
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { messageBus } from '@/utils/message-event-bus.js'
+import { messageBus } from '@/utils/realtime/message-event-bus.js'
 import { getUserNotifications } from '../utils/user-notifications.js'
 export default {
   components: { ManifestIcon },

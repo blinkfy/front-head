@@ -80,7 +80,7 @@ const { transformWithEsbuild } = projectRequire('@dcloudio/uni-cli-shared')
 ;(async () => {
   const baseUrl = process.env.MAP_TEST_BASE_URL
   const screenshot = path.join(process.env.MAP_TEST_TMP, 'satellite.png')
-  const sourcePath = path.join(root, 'src/components/AppTencentMap.vue')
+  const sourcePath = path.join(root, 'src/components/map/AppTencentMap.vue')
   const source = fs.readFileSync(sourcePath, 'utf8')
   const renderjs = source.match(/<script\s+module="mapView"\s+lang="renderjs">([\s\S]*?)<\/script>/)[1]
   const compiled = (await transformWithEsbuild(renderjs, sourcePath, {
@@ -330,7 +330,7 @@ def run_lifecycle_checks():
         runner = Path(temp) / "lifecycle-check.cjs"
         runner.write_text(LIFECYCLE_RUNNER, encoding="utf-8", newline="\n")
         env = os.environ.copy()
-        env["MAP_TEST_COMPONENT"] = str(ROOT / "src/components/AppTencentMap.vue")
+        env["MAP_TEST_COMPONENT"] = str(ROOT / "src/components/map/AppTencentMap.vue")
         env["MAP_TEST_ROOT"] = str(ROOT)
         result = subprocess.run([node, str(runner)], cwd=ROOT, env=env, text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)

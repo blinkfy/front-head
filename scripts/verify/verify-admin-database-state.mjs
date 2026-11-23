@@ -49,9 +49,18 @@ async function createPage({ getUsersList, getMessagesList, savedColumns, batchDa
   if (savedColumns) storage.set('admin-database-columns:User', savedColumns)
   globalThis.uni = {
     getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value),
-    showLoading() {}, hideLoading() {}, showToast() {}, onWindowResize() {}, offWindowResize() {}
+    showLoading() {}, hideLoading() {}, showToast() {}, onWindowResize() {}, offWindowResize() {},
+    getSystemInfoSync: () => ({ windowWidth: 375 }),
+    createSelectorQuery: () => ({
+      in() { return this },
+      selectAll() { return this }, select() { return this }, boundingClientRect() { return this },
+      exec(callback) { callback([[], []]) }
+    })
   }
-  const Grid = loadComponent('src/components/AdminDatabaseGrid.vue', { '@/api/database': { getAdminTableColumns } })
+  const Grid = loadComponent('src/pages-admin/components/AdminDatabaseGrid.vue', {
+    '@/api/database': { getAdminTableColumns },
+    '@/pages-admin/utils/field-labels': { shortFieldLabels: {} }
+  })
   Grid.render = () => null
   const Page = loadComponent('src/pages-admin/database.vue', {
     '@/utils/app-confirm-dialog.js': { showAppModal: (_page, options) => options.success({ confirm: true }) },

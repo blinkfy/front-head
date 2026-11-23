@@ -14,6 +14,7 @@ const context = vm.createContext({
   getSelectionKey: item => String(item.id),
   updateDatabaseRecord: async (item, changes, table) => { calls.push({ id: item.id, changes, table }); return item.id === 2 ? { code: 1, msg: '模拟失败' } : { code: 0 } },
   loadTableData: async () => { refreshed++ },
+  refreshAfterMutation: async () => { refreshed++ },
   uni: { showLoading() {}, hideLoading() {}, showModal(value) { modal = value } },
   showAppModal() {}, page: {}
 })

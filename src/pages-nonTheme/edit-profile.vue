@@ -270,7 +270,7 @@
 import { chooseAppImage } from '@/utils/image-picker.js'
 import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { identityStatus } from '@/api/identity.js'
+import { identityStatus } from '@/pages-nonTheme/api/identity.js'
 import * as userApi from '@/api/user.js'
 import { getCommunityTree } from '@/pages-nonTheme/api/community.js'
 import { buildCommunityRegionTree, findCommunityByAddress } from './utils/community-regions.js'
@@ -279,7 +279,7 @@ import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { baseUrl } from '@/api/settings.js'
 import { searchPlaces } from '@/api/map.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { nicknameError } from '@/utils/wechat-profile.mjs'
+import { nicknameError } from '@/utils/account/wechat-profile.mjs'
 import { getCurrentAddress, resolveLocationAddress } from '@/utils/location-address.js'
 import { getUserLocationOnce } from '@/utils/location.js'
 // #ifndef H5
@@ -288,8 +288,8 @@ import { wgs84ToGcj02 } from '@/utils/map/coordinates.mjs'
 import { chooseMiniLocation, isLocationCancelled } from '@/utils/mini-location.js'
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js'
 // #ifdef H5
-import { createPreferredWebMap } from '@/utils/preferred-web-map.js'
-import { searchMapPlaces } from '@/utils/map-place-search.js'
+import { createPreferredWebMap } from '@/utils/map/preferred-web-map.js'
+import { searchMapPlaces } from '@/utils/map/map-place-search.js'
 // #endif
 
 const isDarkTheme = ref(false)

@@ -73,3 +73,7 @@
 | `scripts/tools/` | 按需运行的资源生成和原生集成工具。圆码的工具、依赖与重建输入集中在 `scripts/tools/roundcode/`。 |
 
 部分专项校验需要编译产物、原生工具链或历史对比样本。运行前查看脚本开头和对应业务文档。
+
+- 地区模块加载检查需先构建微信小程序，运行 `node scripts/verify/test-region-module-loading.mjs <小程序输出目录>`。
+- 原生定位检查需传入 Android 构建产物，运行 `node scripts/verify/test-native-location-dex.mjs <classes.dex>`。
+- 聊天页和收运看板的拆分对照脚本需要历史快照。将 `REFACTOR_BASELINE_ROOT` 指向包含旧源码和拆分清单的快照目录。

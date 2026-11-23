@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { createPlatformQuickLogin } from '../../src/utils/platform-quick-login-core.mjs'
-import { createPasskeyAdapter } from '../../src/utils/passkey-client-core.mjs'
-import { createSoterAdapter } from '../../src/utils/soter-client-core.mjs'
+import { createPlatformQuickLogin } from '../../src/utils/account/platform-quick-login-core.mjs'
+import { createPasskeyAdapter } from '../../src/utils/account/passkey-client-core.mjs'
+import { createSoterAdapter } from '../../src/utils/account/soter-client-core.mjs'
 
 function quickFixture({ accepted = true, support = { supported: true, enrolled: true, label: '指纹登录' } } = {}) {
   const storage = new Map([['token', 'token-1']]), prompts = [], requests = [], enrollments = [], logins = []

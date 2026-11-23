@@ -17,7 +17,7 @@
 </template>
 <script>
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { realtimeActivitySummary } from '@/utils/realtime-activity.mjs'
+import { realtimeActivitySummary } from '@/utils/realtime/realtime-activity.mjs'
 export default {
   components: { ManifestIcon }, props: { card: Object, self: Boolean, recording: Object, actionable: { type: Boolean, default: true } }, emits: ['open', 'open-recording'],
   computed: {

@@ -70,10 +70,10 @@
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 // #ifdef MP-WEIXIN
-import { delegateMiniCallAlerts } from '@/utils/chat-events.js'
-import { acceptRecordingCatalog } from '@/utils/call-recording-preference.mjs'
+import { delegateMiniCallAlerts } from '@/utils/realtime/chat-events.js'
+import { acceptRecordingCatalog } from '@/utils/realtime/call-recording-preference.mjs'
 import { baseUrl } from '@/api/settings.js'
-import { registerMiniCallHost, requestWebCallTicket, stripWebCallTicket } from '@/utils/web-call-entry.mjs'
+import { registerMiniCallHost, requestWebCallTicket, stripWebCallTicket } from '@/utils/realtime/web-call-entry.mjs'
 // #endif
 const callWebview = ref(false)
 const CALL_APP_HINT = '请打开分投侠 App，登录同一账号，在聊天中进行通话。'

@@ -54,13 +54,13 @@
   </RecyclingShell>
 </template>
 <script>
-import RecyclingShell from './components/RecyclingShell.vue'
-import { identityAgeError } from '@/utils/identity-age.mjs'
-import { normalizeIdentityName, identityNameError } from '@/utils/identity-name.mjs'
-import { identityStatus, identityChallenge, submitIdentity, createIdentityWebSession, exchangeIdentityWebSession, identityWebContext, clearIdentityWebSession } from '@/api/identity.js'
+import RecyclingShell from '@/components/recycling/RecyclingShell.vue'
+import { identityAgeError } from '@/pages-nonTheme/utils/identity/identity-age.mjs'
+import { normalizeIdentityName, identityNameError } from '@/pages-nonTheme/utils/identity/identity-name.mjs'
+import { identityStatus, identityChallenge, submitIdentity, createIdentityWebSession, exchangeIdentityWebSession, identityWebContext, clearIdentityWebSession } from '@/pages-nonTheme/api/identity.js'
 import { baseUrl } from '@/api/settings.js'
-import { captureIdentityPhoto, cancelIdentityCapture, discardIdentityPhoto, ensureIdentityPhotoUsable } from '@/utils/identity-capture.js'
-import { recycleBack } from './api/recycling.js'
+import { captureIdentityPhoto, cancelIdentityCapture, discardIdentityPhoto, ensureIdentityPhotoUsable } from '@/pages-nonTheme/utils/identity/identity-capture.js'
+import { recycleBack } from '@/api/recycling.js'
 export default {
   components: { RecyclingShell },
   data: () => ({ isDark: false, identity: {}, loading: true, error: '', name: '', number: '', fieldErrors: { name: '', number: '' }, consented: false,

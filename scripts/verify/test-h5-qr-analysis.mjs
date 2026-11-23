@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createQrFrameAnalyzer } from '../../src/utils/h5-qr-analysis-core.mjs'
+import { createQrFrameAnalyzer } from '../../src/utils/scan/h5-qr-analysis-core.mjs'
 
 const pixels = () => ({ width: 24, height: 24, data: new Uint8ClampedArray(24 * 24 * 4) })
 function harness() {

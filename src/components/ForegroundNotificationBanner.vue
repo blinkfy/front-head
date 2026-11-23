@@ -17,10 +17,10 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref } from 'vue'
-import { foregroundNotifications } from '@/utils/foreground-notification.mjs'
+import { foregroundNotifications } from '@/utils/realtime/foreground-notification.mjs'
 import { ThemeManager } from '@/utils/theme.js'
 // #ifdef APP-PLUS
-import { forgetMissingChatAvatar, getCachedChatAvatar, loadChatAvatar } from '@/utils/chat-avatar-cache.mjs'
+import { forgetMissingChatAvatar, getCachedChatAvatar, loadChatAvatar } from '@/utils/realtime/chat-avatar-cache.mjs'
 // #endif
 
 const avatarSrc = ref('')

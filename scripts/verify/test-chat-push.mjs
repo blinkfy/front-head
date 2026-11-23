@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { createPushRegistration } from '../../src/utils/chat-push-registration.mjs'
-import { getOrCreatePushInstallationId, PUSH_INSTALLATION_KEY } from '../../src/utils/chat-push-installation.mjs'
+import { createPushRegistration } from '../../src/utils/realtime/chat-push-registration.mjs'
+import { getOrCreatePushInstallationId, PUSH_INSTALLATION_KEY } from '../../src/utils/realtime/chat-push-installation.mjs'
 
 const json = value => JSON.stringify(value)
 function deferred() {

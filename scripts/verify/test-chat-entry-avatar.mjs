@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { parse, compileScript } from '@vue/compiler-sfc'
-import { rememberChatEntryAvatar, readChatEntryAvatar } from '../../src/utils/chat-entry-avatar.mjs'
+import { rememberChatEntryAvatar, readChatEntryAvatar } from '../../src/utils/realtime/chat-entry-avatar.mjs'
 const { preprocess } = createRequire(import.meta.url)('@dcloudio/uni-cli-shared/lib/preprocess')
 const source = fs.readFileSync(new URL('../../src/pages-nonTheme/chat.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(source)

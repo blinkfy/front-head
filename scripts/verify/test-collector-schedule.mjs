@@ -31,7 +31,7 @@ vm.runInNewContext(executable, context)
 const options = context.module.exports
 const vmState = Object.assign(options.data(), {
   ...options.methods,
-  ...Object.fromEntries(Object.entries(options.computed).map(([key, getter]) => [key, getter.call({ me: null, scheduleDate: '2026-11-12' })]))
+  ...Object.fromEntries(Object.entries(options.computed).map(([key, getter]) => [key, getter.call({ me: null, scheduleDate: '2026-11-12', timelineDate: '2026-11-12', orders: [] })]))
 })
 vmState.me = {
   profile: { areaIds: [4] }, areas: [{ id: 4, name: '区域甲' }],

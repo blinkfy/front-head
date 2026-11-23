@@ -1,6 +1,6 @@
 import request from './index'
 // #ifdef MP-WEIXIN
-import { getWechatLoginCode, createWechatPasswordLoginFlow } from '@/utils/wechat-login.mjs'
+import { getWechatLoginCode, createWechatPasswordLoginFlow } from '@/utils/account/wechat-login.mjs'
 // #endif
 
 export async function register(data) {

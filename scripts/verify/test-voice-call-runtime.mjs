@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
-import { createVoiceCallController } from '../../src/utils/voice-call-core.mjs'
-import { sharedVoiceCallRuntime } from '../../src/utils/voice-call-runtime.mjs'
+import { createVoiceCallController } from '../../src/utils/realtime/voice-call-core.mjs'
+import { sharedVoiceCallRuntime } from '../../src/utils/realtime/voice-call-runtime.mjs'
 const require = createRequire(import.meta.url)
 const { preprocess } = require('@dcloudio/uni-cli-shared/lib/preprocess')
-const source = fs.readFileSync(new URL('../../src/utils/voice-call.js', import.meta.url), 'utf8')
+const source = fs.readFileSync(new URL('../../src/utils/realtime/voice-call.js', import.meta.url), 'utf8')
 const realm = {}, navigations = [], sent = [], opened = []
 const owner = 'runtime-test-account'
 const uni = { getStorageSync: key => key === 'token' ? owner : { id: 1 }, $emit() {}, navigateTo: options => { navigations.push(options.url); options.complete() } }

@@ -6,7 +6,7 @@
 
 import request from '@/api/index.js'
 import { baseUrl } from '@/api/settings.js'
-import { beginChatBadgeSnapshot, finishChatBadgeSnapshot } from '@/utils/app-chat-badge.js'
+import { beginChatBadgeSnapshot, finishChatBadgeSnapshot } from '@/utils/realtime/app-chat-badge.js'
 
 // 获取基础URL
 function getBaseUrl() {

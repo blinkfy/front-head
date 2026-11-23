@@ -182,15 +182,15 @@
 
 <script setup>
 import { mfaRequest } from '@/api/mfa'
-import { clearChatPush } from '@/utils/chat-push.js'
+import { clearChatPush } from '@/utils/realtime/chat-push.js'
 import { communitySocialEnabled } from '@/pages-nonTheme/utils/community-social.js'
-import { COMMUNITY_CHAT_CACHE_KEY, communityChatSettings } from '@/utils/community-chat-settings.js'
+import { COMMUNITY_CHAT_CACHE_KEY, communityChatSettings } from '@/utils/realtime/community-chat-settings.js'
 import { ensureFeaturePermission, openFeaturePermissionSettings } from '@/utils/feature-permission.js'
-import { syncChatPush } from '@/utils/chat-push.js'
+import { syncChatPush } from '@/utils/realtime/chat-push.js'
 import { androidIncomingCallPresentation, openAndroidIncomingCallSettings, androidUnlockedIncomingCallAllowed,
-    openAndroidUnlockedIncomingCallSettings, androidBackgroundPopupPermission, openAndroidBackgroundPopupSettings, syncAndroidMessagingPreference } from '@/utils/android-realtime.js'
-import { recentRecognition } from '@/utils/recent-recognition.js'
-import { clearRecognitionTask } from '@/utils/recognition-task.mjs'
+    openAndroidUnlockedIncomingCallSettings, androidBackgroundPopupPermission, openAndroidBackgroundPopupSettings, syncAndroidMessagingPreference } from '@/utils/realtime/android-realtime.js'
+import { recentRecognition } from '@/utils/recognition/recent-recognition.js'
+import { clearRecognitionTask } from '@/utils/recognition/recognition-task.mjs'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { onHide, onShow } from '@dcloudio/uni-app'
 // #ifdef APP-PLUS
@@ -200,7 +200,7 @@ import { appChatStorage } from '@/pages-nonTheme/utils/app-chat-storage-native.j
 import { ThemeManager } from '../utils/theme.js'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { areUiSoundsEnabled, setUiSoundsEnabled, primeUiSounds, playUiSound } from '@/utils/ui-sounds.js'
-import { canConfigureBackgroundMessages, readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '@/utils/background-message-preference.mjs'
+import { canConfigureBackgroundMessages, readBackgroundMessagesEnabled, writeBackgroundMessagesEnabled } from '@/utils/realtime/background-message-preference.mjs'
 
 const communityChatEnabled = computed(() => {
     // #ifdef APP-PLUS

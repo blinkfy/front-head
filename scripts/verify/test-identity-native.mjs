@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { identityPhotoFileUrl } from '../../src/utils/identity-photo-path.mjs'
-import { createIdentityNativeFlow } from '../../src/utils/identity-native-flow.mjs'
-import { createIdentityBrightness } from '../../src/utils/identity-brightness.mjs'
-import { createWeixinIdentityLandmarks } from '../../src/utils/identity-weixin-landmarks.mjs'
-import { createWeixinIdentityDetector } from '../../src/utils/identity-weixin-detector.mjs'
-import { identityImageQualityHint, identityImageQualityIssue, identityQualityRegion, measureIdentityImageQuality } from '../../src/utils/identity-image-quality.mjs'
+import { identityPhotoFileUrl } from '../../src/pages-nonTheme/utils/identity/identity-photo-path.mjs'
+import { createIdentityNativeFlow } from '../../src/pages-nonTheme/utils/identity/identity-native-flow.mjs'
+import { createIdentityBrightness } from '../../src/pages-nonTheme/utils/identity/identity-brightness.mjs'
+import { createWeixinIdentityLandmarks } from '../../src/pages-nonTheme/utils/identity/identity-weixin-landmarks.mjs'
+import { createWeixinIdentityDetector } from '../../src/pages-nonTheme/utils/identity/identity-weixin-detector.mjs'
+import { identityImageQualityHint, identityImageQualityIssue, identityQualityRegion, measureIdentityImageQuality } from '../../src/pages-nonTheme/utils/identity/identity-image-quality.mjs'
 
 const root = new URL('../../', import.meta.url)
 const video = { width: 640, height: 480 }, viewport = { width: 360, height: 640, guide: { width: .78, height: .82 } }
@@ -357,7 +357,7 @@ function conditional(source, target) {
 
 // Run the H5 adapter's actual final-canvas capture function with synthetic quality samples.
 {
-  const source = readFileSync(new URL('src/utils/identity-camera-h5.js', root), 'utf8')
+  const source = readFileSync(new URL('src/pages-nonTheme/utils/identity/identity-camera-h5.js', root), 'utf8')
   const start = source.indexOf('async function capture(points) {')
   const end = source.indexOf('\n    const sampleColor', start)
   assert.ok(start >= 0 && end > start, 'H5 final-capture implementation is present')
@@ -372,6 +372,7 @@ function conditional(source, target) {
       getContext: () => ({ drawImage() {} }), toBlob: callback => callback({ size: 100 }) }) },
     sampleQuality: (_canvas, points) => { sampledPoints = points; return sample },
     identityImageQualityIssue, identityImageQualityHint,
+    encodeIdentityCanvas: async () => ({ size: 100 }),
     showInstruction() {}, text() {},
     retryQuality(issue) { retries.push(issue); context.taking = false; context.settledFrames = 0 },
     finish(result, error) { finished.push({ result, error }); context.closed = true }
@@ -391,10 +392,11 @@ function conditional(source, target) {
   assert.equal(context.closed, true)
 }
 {
-  const source = conditional(readFileSync(new URL('src/api/identity.js', root), 'utf8'), 'APP-PLUS')
+  const source = conditional(readFileSync(new URL('src/pages-nonTheme/api/identity.js', root), 'utf8'), 'APP-PLUS')
     .replace(/^import .*$/gm, '').replace(/^export /gm, '')
   let uploadOptions, behavior
   const context = vm.createContext({ baseUrl: 'https://identity.test',
+    prepareIdentityUpload: async capture => ({ path: capture.path, cleanup() {} }),
     uni: { getStorageSync: key => key === 'token' ? 'native-fake-token' : '', uploadFile(options) {
       uploadOptions = options
       if (behavior === 'success') options.success({ data: JSON.stringify({ code: 0, data: { verified: true } }) })
@@ -496,7 +498,7 @@ function conditional(source, target) {
 }
 
 {
-  const source = conditional(readFileSync(new URL('src/utils/identity-camera-app.js', root), 'utf8'), 'APP-PLUS')
+  const source = conditional(readFileSync(new URL('src/pages-nonTheme/utils/identity/identity-camera-app.js', root), 'utf8'), 'APP-PLUS')
     .replace(/^import .*$/gm, '').replace(/^export /gm, '')
   let eventHandler, downloadSuccess, nextDownload = 'deferred', imageBehavior = 'success', imageCallback, openCount = 0, activeOptions
   const removed = [], updates = [], closes = []

@@ -7,7 +7,7 @@ import { parse, compileScript } from '@vue/compiler-sfc'
 import { transformSync } from 'esbuild'
 
 const require = createRequire(import.meta.url)
-const filename = fileURLToPath(new URL('../../src/components/AdminReadonlySql.vue', import.meta.url))
+const filename = fileURLToPath(new URL('../../src/pages-admin/components/AdminReadonlySql.vue', import.meta.url))
 const source = fs.readFileSync(filename, 'utf8')
 const { descriptor, errors } = parse(source, { filename })
 assert.equal(errors.length, 0, 'AdminReadonlySql.vue should parse')

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createWebCallRecording } from '../../src/utils/web-call-recording.mjs'
+import { createWebCallRecording } from '../../src/utils/realtime/web-call-recording.mjs'
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
 

@@ -20,7 +20,7 @@ let detectCamera, openWebCamera
 platform = 'h5'
 detectCamera = detectWebCamera
 openWebCamera = async () => {
-  const { captureRecognitionPhoto } = await import('./recognition-camera-h5.js')
+  const { captureRecognitionPhoto } = await import('./recognition/recognition-camera-h5.js')
   return captureRecognitionPhoto({ recognition: false })
 }
 // #endif

@@ -22,7 +22,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-import regions from './shop-regions.js'
+import regions from '@/utils/shop-regions.js'
 
 const value = text => String(text || '').trim()
 const placeholders = /^(市辖区|县|省直辖县级行政区划|自治区直辖县级行政区划)$/

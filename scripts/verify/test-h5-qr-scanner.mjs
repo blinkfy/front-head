@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createScanDebugAccess } from '../../src/utils/scan-debug.mjs'
-import { cameraFrame, sharpenQrImage } from '../../src/utils/h5-camera-frame.mjs'
-import { isPhoneBrowser, canShowDeviceScanEntry, canUseBrowserCamera } from '../../src/utils/h5-scan-entry.mjs'
-import { videoConstraints, candidateFrame, imageClarity, PhotoGate, ScanAutoZoom, reprojectCandidate, selectSharpFrame, sharpFrameMatches } from '../../src/utils/h5-scan-quality.mjs'
-import { preparePhotoCapture } from '../../src/utils/h5-photo-capture.mjs'
-import { createNativeQrReader } from '../../src/utils/h5-native-qr.mjs'
+import { createScanDebugAccess } from '../../src/utils/scan/scan-debug.mjs'
+import { cameraFrame, sharpenQrImage } from '../../src/utils/scan/h5-camera-frame.mjs'
+import { isPhoneBrowser, canShowDeviceScanEntry, canUseBrowserCamera } from '../../src/utils/scan/h5-scan-entry.mjs'
+import { videoConstraints, candidateFrame, imageClarity, PhotoGate, ScanAutoZoom, reprojectCandidate, selectSharpFrame, sharpFrameMatches } from '../../src/utils/scan/h5-scan-quality.mjs'
+import { preparePhotoCapture } from '../../src/utils/scan/h5-photo-capture.mjs'
+import { createNativeQrReader } from '../../src/utils/scan/h5-native-qr.mjs'
 
 for (const ua of ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', 'Mozilla/5.0 (Linux; Android 14) Mobile Safari/537.36']) {
   assert.equal(isPhoneBrowser({ userAgent: ua }), true)
@@ -33,7 +33,7 @@ for (const ua of ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Mozilla/5.0 (Mac
   assert.equal(calls, 0, 'visibility check never requests camera permission')
 }
 
-const source = (await readFile(new URL('../../src/utils/h5-qr-scanner.js', import.meta.url), 'utf8'))
+const source = (await readFile(new URL('../../src/utils/scan/h5-qr-scanner.js', import.meta.url), 'utf8'))
   .replace(/^import .*\r?\n/gm, '')
   .replace('const loadDecoder =', 'const createNativeQrReader = globalThis.createNativeQrReader\nconst loadDecoder =')
   .replace(/const loadDecoder = [\s\S]*?(?=export function scanWithH5Camera)/, 'const loadDecoder = () => Promise.resolve(globalThis.decoder)\n\n')

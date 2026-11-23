@@ -6,10 +6,10 @@ const TAB_POSITIONS = { home: 0, map: 1, shop: 2, profile: 3 }
 const TRANSITION_DURATION = 180
 let activeTabTransitions = 0
 // #ifdef APP-PLUS
-import { createAppMapTabCache } from './app-map-retention.mjs'
+import { createAppMapTabCache } from './map/app-map-retention.mjs'
 import { playAppTabEntrance, prepareAppMapTabEntrance } from './app-tab-motion.js'
 import { holdAppTabFrame } from './app-tab-handoff.js'
-import { useAppMapPreloadPage } from './use-app-map-preload-page.js'
+import { useAppMapPreloadPage } from './map/use-app-map-preload-page.js'
 import { getAppTabShell, parseAppTabUrl, useAppTabContext } from './app-tab-context.js'
 const appMapTabCache = createAppMapTabCache()
 let preparingMapTab = false

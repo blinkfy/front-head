@@ -7,6 +7,7 @@ import { normalizeChatDisposalPoints } from '../../src/pages-nonTheme/utils/ai-c
 import { normalizeChatBusinessCards, businessActionRequestId } from '../../src/pages-nonTheme/utils/ai-chat-business.mjs'
 
 const require = createRequire(import.meta.url)
+const { initPreContext, preJs } = require('@dcloudio/uni-cli-shared')
 const { parse, compileScript, compileTemplate, compileStyle } = require('@vue/compiler-sfc')
 const page = fs.readFileSync(new URL('../../src/pages-nonTheme/assistant.vue', import.meta.url), 'utf8')
 const component = fs.readFileSync(new URL('../../src/pages-nonTheme/components/ChatSearchSources.vue', import.meta.url), 'utf8')
@@ -15,13 +16,8 @@ const searching = { status: 'searching', sources: [] }
 
 // Uni conditional compilation: exercise the actual SSE and WebSocket functions separately.
 function platformCode(code, h5) {
-  const include = [true]
-  return code.split('\n').filter(line => {
-    const condition = /\/\/\s*#(ifdef|ifndef) H5/.exec(line)
-    if (condition) { include.push(include.at(-1) && (condition[1] === 'ifdef' ? h5 : !h5)); return false }
-    if (/\/\/\s*#endif/.test(line)) { include.pop(); return false }
-    return include.at(-1)
-  }).join('\n')
+  initPreContext(h5 ? 'h5' : 'mp-weixin')
+  return preJs(code)
 }
 
 function streamContext(h5, overrides = {}) {
@@ -34,7 +30,7 @@ function streamContext(h5, overrides = {}) {
   }
   vm.createContext(context)
   const start = page.indexOf('async function streamChat(')
-  const end = page.indexOf('function extractHistoryForRequest()', start)
+  const end = page.indexOf('async function extractHistoryForRequest(', start)
   vm.runInContext(`${platformCode(page.slice(start, end), h5)}\nglobalThis.run = streamChat`, context)
   return context
 }
@@ -225,14 +221,14 @@ assert.equal(explicitlyStopped.search.status, 'failed')
 const socketRuns = []
 const pushedMessages = []
 const sequential = streamContext(false, {
-  imagePreparing: { value: false }, recoveringRun: { value: '' }, activeRun: { value: null }, supportsRuns: async () => false, ensureRunLedger: () => null, sendEpoch: 0, ensureConversation: () => ({ messages: [] }), promptText: { value: '第一条' }, pickedImageDataUrl: { value: '' },
+  deletingReply: { value: false }, imagePreparing: { value: false }, recoveringRun: { value: '' }, activeRun: { value: null }, supportsRuns: async () => false, ensureRunLedger: () => null, sendEpoch: 0, ensureConversation: () => ({ messages: [] }), promptText: { value: '第一条' }, pickedImageDataUrl: { value: '' },
   pickedImageLocalPath: { value: '' }, streamingMessageId: { value: '' }, isSearchEnabled: { value: true },
   isDeepThinking: { value: false }, pendingMessagePreparation: null, createMessageId: () => 'id',
   dataUrlByteLength: () => 0, MAX_IMAGE_BYTES: 100, extractPendingPersistMessages: async () => [],
-  extractHistoryForRequest: () => [], chatEnvironment: { forRequest: async () => ({}) },
+  extractHistoryForRequest: () => [], imageUploadFields: () => ({}), chatEnvironment: { forRequest: async () => ({}) },
   pushMessageToActive: (...args) => pushedMessages.push(args), clearPickedImage() {}, markPendingPersistMessagesSaved() {},
   uni: {
-    showToast() {},
+    showToast(options) { assert.fail(options.title) },
     connectSocket() {
       const run = { callbacks: {}, closeCalls: 0 }
       const transport = {
@@ -247,7 +243,7 @@ const sequential = streamContext(false, {
 const sendStart = page.indexOf('async function onSend(options = {}) {')
 const lifecycleStart = page.indexOf('// ─── 生命周期', sendStart)
 vm.runInContext(`${platformCode(page.slice(sendStart, lifecycleStart), false)}\nglobalThis.send = onSend; globalThis.stop = onStop`, sequential)
-async function flushPreparation() { for (let i = 0; i < 8; i++) await Promise.resolve() }
+const flushPreparation = () => new Promise(resolve => setImmediate(resolve))
 const firstSend = sequential.send()
 await flushPreparation()
 assert.equal(socketRuns.length, 1)
@@ -318,8 +314,9 @@ const pushStart = page.indexOf('function pushMessageToActive(')
 const pushEnd = page.indexOf('function ensureWelcomeMessageIfEmpty()', pushStart)
 vm.runInContext(`${page.slice(pushStart, pushEnd)}\npushMessageToActive('assistant', '回答', '', '', '', '', 'local-id', null, [], [${JSON.stringify(businessCard)}])`, localContext)
 assert.equal(localConversation.messages[0].businessCards[0].id, '42', 'locally pushed messages retain business cards')
-const historyStart = page.indexOf('function extractHistoryForRequest()')
+const historyStart = page.indexOf('async function extractHistoryForRequest(')
 const historyEnd = page.indexOf('// ─── 发送消息', historyStart)
+assert.ok(historyStart >= 0 && historyEnd > historyStart, 'history builder is present')
 assert(!page.slice(historyStart, historyEnd).includes('search'), 'search metadata must not enter model history')
 assert(page.includes('const enableSearch = isSearchEnabled.value'), 'toggle is captured before asynchronous preparation')
 assert(component.includes("window.open(url, '_blank', 'noopener,noreferrer')"))

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createWebGeneratedCodeRegistrar } from '../../src/utils/h5-generated-roundcode-core.mjs'
+import { createWebGeneratedCodeRegistrar } from '../../src/utils/scan/h5-generated-roundcode-core.mjs'
 
 const baseUrl = 'https://example.test'
 const url = baseUrl + '/api/registration/sessions/r_' + 'a'.repeat(24) + '/qrcode'

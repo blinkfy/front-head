@@ -42,7 +42,7 @@ const uni = {
   }
 }
 
-const executableHandler = handler.replace(/^export\s+/gm, '') +
+const executableHandler = handler.replace(/^import .*$/gm, '').replace(/^export\s+/gm, '') +
   '\nglobalThis.__handleNativeImage = handleNativeImage;'
 const context = vm.createContext({ uni, console })
 vm.runInContext(executableHandler, context)

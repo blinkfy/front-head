@@ -382,8 +382,7 @@
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import { useAppConfirmDialog } from '@/utils/use-app-confirm-dialog.js'
 const { appConfirmDialog } = useAppConfirmDialog()
-import { recentRecognition } from '@/utils/recent-recognition.js'
-import { resolveUpcyclingImage } from '@/utils/image-download.mjs'
+import { recentRecognition } from '@/utils/recognition/recent-recognition.js'
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch, getCurrentInstance } from 'vue'
 import { trackOnboardingFocus, queryOnboardingRects, getOnboardingViewport, getOnboardingScrollTop } from '@/utils/onboarding-focus.mjs'
 import { onPageScroll, onShow, onHide, onUnload, onResize } from '@/utils/app-tab-lifecycle.js'
@@ -391,45 +390,41 @@ import { useAppTabContext } from '@/utils/app-tab-context.js'
 import { getCachedAppHomeAiEnabled, readAppHomeAiSettings } from '@/utils/app-home-ai-settings.js'
 import { appShopPoints } from '@/utils/app-shop-cache.mjs'
 import { recognizeImage } from '@/api/recognize'
-import { useRecognitionBboxes } from '@/utils/use-recognition-bboxes'
-import RecognitionImagePreview from '@/components/RecognitionImagePreview.vue'
-import { getRecognitionCompressionDecision, getRecognitionImageSize, isSmallerRecognitionImage, shouldUseCompressedRecognitionImage } from '@/utils/recognition-image.mjs'
+import { useHomeRecognition } from '@/utils/recognition/use-home-recognition.js'
+import RecognitionImagePreview from '@/components/recognition/RecognitionImagePreview.vue'
+import { getRecognitionCompressionDecision, getRecognitionImageSize, isSmallerRecognitionImage, shouldUseCompressedRecognitionImage } from '@/utils/recognition/recognition-image.mjs'
 import { compressUploadImageBlob, compressNativeUploadImage, discardUploadImage, uploadImageExtension } from '@/utils/upload-image.js'
 import { baseUrl } from '@/api/settings'
 import { useDeviceConnection } from '@/utils/useDeviceConnection'
-import { scanAndConnectDevice } from '@/utils/device-qr'
-import { canShowDeviceScanEntry } from '@/utils/h5-scan-entry.mjs'
+import { scanAndConnectDevice } from '@/utils/scan/device-qr'
+import { canShowDeviceScanEntry } from '@/utils/scan/h5-scan-entry.mjs'
 import AppOnboarding from '@/components/AppOnboarding.vue'
-import OnboardingRecognitionDemo from '@/components/OnboardingRecognitionDemo.vue'
+import OnboardingRecognitionDemo from '@/components/recognition/OnboardingRecognitionDemo.vue'
 import AchievementUnlockModal from '@/components/AchievementUnlockModal.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import WasteCategoryModal from '@/components/WasteCategoryModal.vue'
-import { wasteCategoryGuides } from '@/utils/waste-category-guides'
-import SmartSortRobot3D from '@/components/SmartSortRobot3D.vue'
+import WasteCategoryModal from '@/components/recognition/WasteCategoryModal.vue'
+import { wasteCategoryGuides } from '@/utils/recognition/waste-category-guides'
+import SmartSortRobot3D from '@/components/recognition/SmartSortRobot3D.vue'
 import { playUiSound } from '@/utils/ui-sounds.js'
-import { chooseRecognitionImage } from '@/utils/recognition-picker.js'
+import { chooseRecognitionImage } from '@/utils/recognition/recognition-picker.js'
 // #ifdef APP-PLUS
-import { useAppHomeMapPreload } from '@/utils/use-app-map-preload-page.js'
+import { useAppHomeMapPreload } from '@/utils/map/use-app-map-preload-page.js'
 // #endif
-import { getRecognitionRobotState } from '@/utils/recognition-robot-state.mjs'
-import SmartSortRecognitionVisual from '@/components/SmartSortRecognitionVisual.vue'
-import NearbyDisposalCard from '@/components/NearbyDisposalCard.vue'
+import { getRecognitionRobotState } from '@/utils/recognition/recognition-robot-state.mjs'
+import SmartSortRecognitionVisual from '@/components/recognition/SmartSortRecognitionVisual.vue'
+import NearbyDisposalCard from '@/components/map/NearbyDisposalCard.vue'
 import LocalSpeechButton from '@/components/LocalSpeechButton.vue'
 import { refreshLocalSpeech, stopLocalSpeech } from '@/utils/local-tts.js'
-import { useNearbyDisposal } from '@/utils/use-nearby-disposal'
+import { useNearbyDisposal } from '@/utils/map/use-nearby-disposal'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { navigateBottomTab, useTabPageTransition } from '@/utils/tab-page-transition.js'
-import { enqueueAchievementUnlocks, takeAchievementUnlocks } from '@/utils/achievements'
 import {
   buildExpandedUpcyclingText,
-  buildSeedFromRecognizeData,
   extractRecognizedItems,
-  parseLabelBbox,
   photoClassificationSpeech,
   recognitionSectionSpeech,
-  saveSeed,
   splitUpcyclingSections
-} from '@/utils/recognition-sync'
+} from '@/utils/recognition/recognition-sync'
 import {
   beginRecognitionTask,
   clearRecognitionTask,
@@ -440,13 +435,24 @@ import {
   subscribeRecognitionTask,
   updateRecognitionTask,
   updateRecognitionPreview
-} from '@/utils/recognition-task.mjs'
-import { getRecognitionFailureCopy } from '@/utils/recognition-failure-copy.mjs'
+} from '@/utils/recognition/recognition-task.mjs'
+import { getRecognitionFailureCopy } from '@/utils/recognition/recognition-failure-copy.mjs'
 
 const { tabPageClass } = useTabPageTransition('pages/home/home')
-const resultImage = ref('')
+let pageVisible = true
+const {
+  resultImage, resultCollapsed, resultCategory, resultConfidence, resultDesc, aiEnabled,
+  isProcessing, robotState, classificationUi, robotFeedbackActive, failedPreviewPending,
+  failureCopy, retryImagePath, retryImageFile, recognitionPreview, elapsedSeconds, processStatus,
+  recognizedItems, upcyclingSections, aiEnabledUpcyclingImage, upcyclingImageUrl, upcyclingTaskId, imageLoading,
+  rawBboxes, recognizeBBoxSpace, bboxImage, displayBboxes, queueRefreshDisplayBboxes,
+  startElapsedClock, stopElapsedClock, resetEnhancedRecognition,
+  restoreRecognitionTask, applyRecognitionResult, startUpcyclingPoll, stopUpcyclingPoll, takeUpcyclingSound
+} = useHomeRecognition({
+  isPageVisible: () => pageVisible,
+  onAchievementUnlock: showAchievementUnlockModal
+})
 const showResultImagePreview = ref(false)
-const resultCollapsed = ref(false)
 const recentResult = ref(null)
 let displayedRecentId = ''
 let homeWasHidden = false
@@ -481,7 +487,7 @@ function expandRecentResult() {
   recentResult.value = entry
   displayedRecentId = entry.id
   // Rebuild advice from the saved response; never submit another recognition/image job.
-  applyRecognitionResult(entry.result, false, true)
+  applyRecognitionResult(entry.result, false, true, entry.id)
   failedPreviewPending.value = false
   retryImagePath.value = ''
   classificationUi.value = 'complete'
@@ -498,8 +504,8 @@ function restoreRecentPresentation() {
   }
   if (isProcessing.value || getRecognitionTask()?.status === 'pending') return
   if (displayedRecentId !== entry.id || !resultImage.value || failedPreviewPending.value) {
-    applyRecognitionResult(entry.result, false, true)
     displayedRecentId = entry.id
+    applyRecognitionResult(entry.result, false, true, entry.id)
     failedPreviewPending.value = false
     retryImagePath.value = ''
     classificationUi.value = 'complete'
@@ -507,29 +513,15 @@ function restoreRecentPresentation() {
   if (!homeWasHidden || !preserveResultOnReturn) collapseRecentResult()
 }
 
-const resultCategory = ref('')
-const resultConfidence = ref('')
-const resultDesc = ref('')
 const homeAdaptiveStyle = ref({})
-const aiEnabled = ref(false)
 const appTab = useAppTabContext()
 const aiServiceEnabled = ref(appTab ? getCachedAppHomeAiEnabled() ?? false : false)
-const isProcessing = ref(false)
 const recognitionVisual = ref(null)
-const robotState = ref('idle')
-const classificationUi = ref('initial')
 const { nearbyPoints, nearbyOrigin } = useNearbyDisposal(classificationUi)
-const robotFeedbackActive = ref(false)
 const robotPageActive = ref(true)
 const robotEntryReturning = ref(false)
 const robotEntryFlying = ref(false)
 const robotAtEntry = ref(false)
-const failedPreviewPending = ref(false)
-const failureCopy = ref(getRecognitionFailureCopy())
-const retryImagePath = ref('')
-const retryImageFile = ref(null)
-const recognitionPreview = ref(null)
-const elapsedSeconds = ref(0)
 
 function onRobotReturning() {
   // 保留本次原图以便重试，机器人仍返回入口位置。
@@ -556,14 +548,10 @@ watch(robotState, state => {
   }
 })
 
-const processStatus = ref('处理中...')
 const showGuideModal = ref(false)
 const currentGuide = ref({})
 const isH5Platform = ref(false)
 const showDeviceScan = ref(canShowDeviceScanEntry())
-const targetConfidence = ref(0)
-const recognizedItems = ref([])
-const upcyclingSections = ref([])
 // Partial snapshots and final data update the same keyed blocks in place.
 const displayResultCategory = computed(() => isProcessing.value
   ? String(recognitionPreview.value?.labels?.[0]?.name || '').trim() : resultCategory.value)
@@ -581,30 +569,18 @@ const displayAdviceSections = computed(() => {
 })
 const photoSpeechText = computed(() => photoClassificationSpeech(displayResultCategory.value, displayRecognizedItems.value,
   displayAdviceSections.value, resultDesc.value))
-const upcyclingImageUrl = ref('')
-let pendingUpcyclingSound = ''
 function onUpcyclingImageLoaded() {
-  if (!pendingUpcyclingSound) return
-  const key = pendingUpcyclingSound
-  pendingUpcyclingSound = ''
-  if (pageVisible && aiServiceEnabled.value && aiEnabledUpcyclingImage.value) playUiSound('upcyclingComplete', { key, page: 'pages/home/home' })
+  const key = takeUpcyclingSound()
+  if (key && pageVisible && aiServiceEnabled.value && aiEnabledUpcyclingImage.value) {
+    playUiSound('upcyclingComplete', { key, page: 'pages/home/home' })
+  }
 }
-const upcyclingTaskId = ref('')
-let upcyclingPollTimer = 0
-let upcyclingPollRevision = 0
-const imageLoading = ref(false)
-const aiEnabledUpcyclingImage = ref(false)
-const rawBboxes = ref([])
-const recognizeBBoxSpace = ref('')
-const { bboxImage, displayBboxes, queueRefreshDisplayBboxes } = useRecognitionBboxes(resultImage, rawBboxes, recognizeBBoxSpace)
 onResize(queueRefreshDisplayBboxes)
 let activeRecognitionTaskId = ''
 let recognitionTaskUnsubscribe = null
-let pageVisible = true
 // #ifdef MP-WEIXIN
 let pendingCameraImage = null
 // #endif
-let elapsedTimer = null
 
 function updateHomeAdaptiveStyle(size = {}) {
   let windowInfo = size?.size || size || {}
@@ -718,31 +694,6 @@ function formatSemicolonNewline(text) {
   return String(text).replace(/&(?:#\d+|#x[\da-f]+|[a-z][\da-z]*);|([；;])\s*(?=\S)/gi,
     (match, separator) => separator ? separator + '\n' : match)
     .split(/\r\n?|\n/).map(escapeHtml).join('<br/>')
-}
-
-// 数字动画函数（兼容小程序：小程序无 requestAnimationFrame，用 setTimeout 模拟）
-const animateNumber = (target, duration = 800) => {
-  const start = 0
-  const startTime = Date.now()
-  // 帧间隔约 16ms（≈60fps），小程序和 H5 均兼容
-  const frameInterval = 16
-
-  const updateNumber = () => {
-    const elapsed = Date.now() - startTime
-    const progress = Math.min(elapsed / duration, 1)
-
-    // 使用 easeOutQuart 缓动函数
-    const easeProgress = 1 - Math.pow(1 - progress, 4)
-    const current = Math.round(start + (target - start) * easeProgress)
-
-    resultConfidence.value = current + '%'
-
-    if (progress < 1) {
-      setTimeout(updateNumber, frameInterval)
-    }
-  }
-
-  setTimeout(updateNumber, frameInterval)
 }
 
 const { hasConnection, connectedDevice, goToDeviceConnection, checkDeviceConnection, points } = useDeviceConnection()
@@ -1141,6 +1092,7 @@ onUnload(() => {
   pageVisible = false
   robotPageActive.value = false
   stopElapsedClock()
+  stopUpcyclingPoll()
   recognitionTaskUnsubscribe?.()
   recognitionTaskUnsubscribe = null
 })
@@ -1181,25 +1133,6 @@ function getCategoryIcon(category) {
   return 'bin_other'
 }
 
-function resetEnhancedRecognition() {
-  recognizedItems.value = []
-  upcyclingSections.value = []
-  pendingUpcyclingSound = ''
-  upcyclingImageUrl.value = ''
-  upcyclingTaskId.value = ''
-  stopUpcyclingPoll()
-  imageLoading.value = false
-  rawBboxes.value = []
-  displayBboxes.value = []
-  recognizeBBoxSpace.value = ''
-  aiEnabled.value = false
-}
-
-function stopElapsedClock() {
-  if (elapsedTimer) clearInterval(elapsedTimer)
-  elapsedTimer = null
-}
-
 function clearOtherOwnerRecognition() {
   stopElapsedClock()
   activeRecognitionTaskId = ''
@@ -1218,14 +1151,6 @@ function clearOtherOwnerRecognition() {
   robotState.value = 'idle'
   resetEnhancedRecognition()
 }
-
-function startElapsedClock(startedAt) {
-  stopElapsedClock()
-  const update = () => { elapsedSeconds.value = Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) }
-  update()
-  if (pageVisible) elapsedTimer = setInterval(update, 1000)
-}
-
 
 function retryLastImage() {
   if (isProcessing.value || !retryImagePath.value) return
@@ -1250,143 +1175,10 @@ function handleRecognitionProgress(taskId, snapshot) {
   }
 }
 
-function applyRecognitionResult(res, showSuccessToast = false, restored = false) {
-  const label = Array.isArray(res && res.labels) ? res.labels[0] : null
-  const rawImage = String((res && res.result_img_base64) || '')
-  resultImage.value = /^data:image\//i.test(rawImage)
-    ? rawImage
-    : `data:image/jpeg;base64,${rawImage}`
-  if (label) {
-    const confidenceValue = label.confidence ? Math.round(label.confidence * 100) : 0
-    resultCategory.value = label.name || '未知类别'
-    targetConfidence.value = confidenceValue
-    resultConfidence.value = '0%'
-    resultDesc.value = label.describe
-    if (restored) resultConfidence.value = confidenceValue + '%'
-    else setTimeout(() => animateNumber(confidenceValue, 800), 300)
-  } else {
-    resultCategory.value = '未识别到'
-    resultConfidence.value = ''
-    resultDesc.value = '未检测到任何标签信息'
-  }
-  applyEnhancedRecognitionData(res, restored)
-  aiEnabled.value = !!(res && res.aiSettings && res.aiSettings.aiEnabled === true)
-  processStatus.value = '识别完成！'
-  if (showSuccessToast) uni.showToast({ title: '识别完成！', icon: 'success' })
-}
-
-function restoreRecognitionTask(task = getRecognitionTask()) {
-  if (!task) return
-  retryImagePath.value = task.source?.filePath || ''
-  retryImageFile.value = task.source?.selectedFile || null
-  recognitionPreview.value = task.preview && Object.keys(task.preview).length ? task.preview : null
-  if (task.status === 'pending') {
-    resultCollapsed.value = false
-    startElapsedClock(task.startedAt || Date.now())
-    if (retryImagePath.value && !resultImage.value) resultImage.value = retryImagePath.value
-    failedPreviewPending.value = false
-    classificationUi.value = 'recognizing'
-    robotFeedbackActive.value = true
-    robotState.value = getRecognitionRobotState(task)
-    isProcessing.value = true
-    processStatus.value = task.message || '识别中...'
-    return
-  }
-  if (task.status === 'succeeded' && task.result) {
-    stopElapsedClock()
-    recognitionPreview.value = null
-    retryImagePath.value = ''
-    retryImageFile.value = null
-    failedPreviewPending.value = false
-    classificationUi.value = 'complete'
-    robotFeedbackActive.value = true
-    robotState.value = task.result.labels?.length ? 'success' : 'fail'
-    applyRecognitionResult(task.result)
-    isProcessing.value = false
-    clearRecognitionTask(task.id)
-    return
-  }
-  if (task.status === 'failed') {
-    failureCopy.value = getRecognitionFailureCopy(task.id, task.error)
-    stopElapsedClock()
-    recognitionPreview.value = null
-    if (retryImagePath.value && !resultImage.value) resultImage.value = retryImagePath.value
-    failedPreviewPending.value = true
-    classificationUi.value = 'complete'
-    robotFeedbackActive.value = true
-    robotState.value = 'fail'
-    isProcessing.value = false
-    processStatus.value = '处理中...'
-  }
-}
-
-function applyEnhancedRecognitionData(recognizeData, restored = false) {
-  if (!recognizeData || typeof recognizeData !== 'object') {
-    resetEnhancedRecognition()
-    return
-  }
-
-  // 大模型的具体建议由下方结构化内容展示，不重复分类预设文案。
-  if (recognizeData.aiSettings?.detectorMode === 'ai' && recognizeData.labels?.length) {
-    resultDesc.value = ''
-  }
-
-  recognizedItems.value = extractRecognizedItems(recognizeData)
-  const upcyclingText = buildExpandedUpcyclingText(recognizeData)
-  upcyclingSections.value = upcyclingText ? splitUpcyclingSections(upcyclingText) : []
-
-  // 处理变废为宝效果图
-  if (recognizeData.upcyclingImageUrl) {
-    upcyclingImageUrl.value = resolveUpcyclingImage(recognizeData.upcyclingImageUrl, getBaseUrl(), uni.getStorageSync('token'))
-    imageLoading.value = false
-  } else if (recognizeData.upcyclingTaskId) {
-    // 异步生成模式：启动轮询
-    upcyclingTaskId.value = recognizeData.upcyclingTaskId
-    imageLoading.value = true
-    startUpcyclingPoll()
-  } else {
-    pendingUpcyclingSound = ''
-    upcyclingImageUrl.value = ''
-    upcyclingTaskId.value = ''
-  }
-
-  // 将管理员的开关同步到前端状态
-  if (recognizeData.aiSettings && typeof recognizeData.aiSettings.enableUpcyclingImage === 'boolean') {
-    aiEnabledUpcyclingImage.value = recognizeData.aiSettings.enableUpcyclingImage
-  }
-
-  recognizeBBoxSpace.value = String(recognizeData.bbox_space || '')
-  const labels = Array.isArray(recognizeData.labels) ? recognizeData.labels : []
-  // Older YOLO servers return painted images; avoid a second set of frames.
-  const serverRendered = recognizeData.bbox_rendered === true ||
-    (recognizeData.bbox_rendered !== false && recognizeData.aiSettings?.detectorMode === 'yolo')
-  rawBboxes.value = (serverRendered ? [] : labels)
-    .map((label, index) => ({ index, label, bbox: parseLabelBbox(label) }))
-    .filter((item) => Array.isArray(item.bbox) && item.bbox.length >= 4)
-
-  const unlocks = Array.isArray(
-    recognizeData &&
-    recognizeData.achievementInfo &&
-    recognizeData.achievementInfo.newlyUnlocked
-  ) ? recognizeData.achievementInfo.newlyUnlocked : []
-  if (!restored) enqueueAchievementUnlocks(unlocks)
-  // 识别成功后如果有新成就解锁，显示弹窗提示
-  if (!restored && unlocks.length) {
-    showAchievementUnlockModal(takeAchievementUnlocks())
-  }
-
-  const seed = buildSeedFromRecognizeData(recognizeData)
-  if (seed) {
-    saveSeed(seed)
-  }
-
-  queueRefreshDisplayBboxes()
-}
-
 function goAiChatFromResult() {
   if (!aiServiceEnabled.value || !resultImage.value) return
   preserveResultOnReturn = true
-  // seed 已由 applyEnhancedRecognitionData → saveSeed 正确写入，
+  // seed 已由 applyRecognitionResult 正确写入，
   // 只需清除"已消费"标记，确保 ai-chat 能重新加载本次识别结果
   // #ifndef H5
   try { uni.removeStorageSync('ai_chat_seed_consumed_at') } catch (e) {}
@@ -1412,83 +1204,6 @@ function previewUpcyclingImage() {
   })
 }
 
-function stopUpcyclingPoll() {
-  upcyclingPollRevision++
-  if (upcyclingPollTimer) {
-    clearTimeout(upcyclingPollTimer)
-    upcyclingPollTimer = 0
-  }
-}
-
-async function startUpcyclingPoll() {
-  stopUpcyclingPoll()
-  const revision = upcyclingPollRevision
-  const resultId = displayedRecentId
-  const taskId = upcyclingTaskId.value
-  if (!taskId || !pageVisible) return
-
-  const maxRetries = 30
-  let retries = 0
-
-  const poll = async () => {
-    if (revision !== upcyclingPollRevision) return
-    if (retries >= maxRetries) {
-      console.warn('[upcycling poll] 轮询超时')
-      recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: '' })
-      upcyclingTaskId.value = ''
-      imageLoading.value = false
-      return
-    }
-    retries++
-
-    try {
-      const base = getBaseUrl()
-      const token = uni.getStorageSync('token') || ''
-      const res = await new Promise((resolve, reject) => {
-        uni.request({
-          url: `${base}/api/upcycling-image/${taskId}${token ? '?imageTransport=url' : ''}`,
-          method: 'GET',
-          header: { Authorization: token },
-          success: (r) => resolve(r.data),
-          fail: reject
-        })
-      })
-
-      if (revision !== upcyclingPollRevision) return
-      if (res && res.code === 0 && res.data) {
-        if (res.data.status === 'done' && res.data.url) {
-          const url = resolveUpcyclingImage(res.data.url, base, token)
-          recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: url })
-          pendingUpcyclingSound = pageVisible ? taskId : ''
-          upcyclingImageUrl.value = url
-          upcyclingTaskId.value = ''
-          imageLoading.value = false
-          console.log('[upcycling poll] 效果图生成成功')
-          return
-        } else if (res.data.status === 'failed') {
-          console.warn('[upcycling poll] 效果图生成失败')
-          recentRecognition.updateImage(resultId, { upcyclingTaskId: '', upcyclingImageUrl: '' })
-          upcyclingTaskId.value = ''
-          imageLoading.value = false
-          return
-        }
-        // status === 'pending'，继续轮询
-      }
-    } catch (e) {
-      console.warn('[upcycling poll] 请求失败:', e)
-    }
-
-    if (revision === upcyclingPollRevision) upcyclingPollTimer = setTimeout(poll, 2000)
-  }
-
-  poll()
-}
-
-function getBaseUrl() {
-  // 所有平台都需要完整 URL（小程序/App 不支持相对路径）
-  // 使用顶部静态导入的 baseUrl，避免 require 在小程序中无法解析 @ 别名
-  return baseUrl || ''
-}
 function compressImage(filePath, quality = 0.82, maxWidth = 800) {
   return compressUploadImageBlob(filePath, quality, maxWidth)
 }
@@ -1584,42 +1299,7 @@ async function processImage(filePath, selectedFile = null) {
     robotState.value = res.labels?.length ? 'success' : 'fail'
     playUiSound(res.labels?.length ? 'recognitionSuccess' : 'recognitionFail', { key: taskId, page: 'pages/home/home' })
     classificationUi.value = 'complete'
-    
-    if (res.labels && res.labels.length > 0) {
-      const label = res.labels[0]
-      resultCategory.value = label.name || '未知类别'
-      // 保存目标置信度并启动动画
-      const confidenceValue = label.confidence ? Math.round(label.confidence * 100) : 0
-      targetConfidence.value = confidenceValue
-      resultConfidence.value = '0%' // 先设为 0
-      resultImage.value = /^data:image\//i.test(res.result_img_base64)
-        ? res.result_img_base64
-        : 'data:image/jpeg;base64,' + res.result_img_base64
-      resultDesc.value = label.describe
-      // 延迟启动数字动画，让结果卡片先显示
-      setTimeout(() => {
-        animateNumber(confidenceValue, 800)
-      }, 300)
-    } else {
-      resultCategory.value = '未识别到'
-      resultConfidence.value = ''
-      resultDesc.value = '未检测到任何标签信息'
-      resultImage.value = /^data:image\//i.test(res.result_img_base64)
-        ? res.result_img_base64
-        : 'data:image/jpeg;base64,' + res.result_img_base64
-    }
-
-    applyEnhancedRecognitionData(res)
-
-    // 根据后端返回的 aiSettings 决定是否显示 AI对话 按钮
-    aiEnabled.value = !!(res.aiSettings && res.aiSettings.aiEnabled === true)
-
-    if (isH5Platform.value && resultImage.value && resultImage.value.startsWith('blob:')) {
-      setTimeout(() => URL.revokeObjectURL(resultImage.value), 10000)
-    }
-    
-    processStatus.value = '识别完成！'
-    uni.showToast({ title: '识别完成！', icon: 'success' })
+    applyRecognitionResult(res, true, false, taskId)
     clearRecognitionTask(taskId)
     
   } catch (err) {

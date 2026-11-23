@@ -7,9 +7,9 @@ import {
   identityFaceFrame,
   identityLightResponse,
   shuffledIdentityLights
-} from '../../src/utils/identity-camera-checks.mjs'
-import { identityBlinkScore, createIdentityBlinkTracker } from '../../src/utils/identity-blink.mjs'
-import { createIdentityActionSequence } from '../../src/utils/identity-action-sequence.mjs'
+} from '../../src/pages-nonTheme/utils/identity/identity-camera-checks.mjs'
+import { identityBlinkScore, createIdentityBlinkTracker } from '../../src/pages-nonTheme/utils/identity/identity-blink.mjs'
+import { createIdentityActionSequence } from '../../src/pages-nonTheme/utils/identity/identity-action-sequence.mjs'
 
 const video = { width: 640, height: 480 }
 // The 360x640 viewport crops the sides of the landscape camera feed with object-fit: cover.

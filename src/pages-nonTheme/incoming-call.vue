@@ -12,12 +12,12 @@
   </view>
 </template>
 <script>
-import VoiceCallIcon from '@/components/VoiceCallIcon.vue'
+import VoiceCallIcon from '@/pages-nonTheme/components/VoiceCallIcon.vue'
 import ChatCachedAvatar from './components/ChatCachedAvatar.vue'
-import { callAvatarUrl } from '@/utils/voice-call-core.mjs'
-import { recordingIdentity } from '@/utils/call-recording-preference.mjs'
+import { callAvatarUrl } from '@/utils/realtime/voice-call-core.mjs'
+import { recordingIdentity } from '@/utils/realtime/call-recording-preference.mjs'
 import { baseUrl } from '@/api/settings.js'
-import { miniIncomingState, miniIncomingCalls } from '@/utils/mini-call-incoming.js'
+import { miniIncomingState, miniIncomingCalls } from '@/utils/realtime/mini-call-incoming.js'
 export default {
   components: { VoiceCallIcon, ChatCachedAvatar },
   data: () => ({ state: miniIncomingState, avatarOwner: recordingIdentity().owner, incomingId: '', leaving: false, handingOff: false, disposed: false }),

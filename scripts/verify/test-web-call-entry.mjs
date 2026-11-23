@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import vm from 'node:vm'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { webCallTarget, webCallPath, webCallUrl, embeddedWebCallUrl, miniCallChatPath, miniCallChatReturnMode, registerMiniCallHost, pendingWebCallPath, requestWebCallTicket, redeemWebCallTicket, stripWebCallTicket } from '../../src/utils/web-call-entry.mjs'
+import { webCallTarget, webCallPath, webCallUrl, embeddedWebCallUrl, miniCallChatPath, miniCallChatReturnMode, registerMiniCallHost, pendingWebCallPath, requestWebCallTicket, redeemWebCallTicket, stripWebCallTicket } from '../../src/utils/realtime/web-call-entry.mjs'
 
 const require = createRequire(import.meta.url)
 const root = new URL('../../', import.meta.url)

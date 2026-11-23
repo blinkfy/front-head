@@ -13,6 +13,9 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '../..')
 const baselineRoot = path.resolve(process.env.REFACTOR_BASELINE_ROOT || path.join(root, '..', '.refactor-baselines', 'large-modules-20261024'))
 const baselineFile = path.join(baselineRoot, 'front-head', 'src', 'pages-nonTheme', 'chat.vue')
+if (!fs.existsSync(baselineFile)) {
+    throw new Error(`Required refactor baseline is missing: ${baselineFile}. Set REFACTOR_BASELINE_ROOT to the large-modules baseline directory to run this comparison.`)
+}
 const pageFile = path.join(root, 'src', 'pages-nonTheme', 'chat.vue')
 const moduleDir = path.join(root, 'src', 'pages-nonTheme', 'chat')
 const moduleFiles = ['audio-methods.js', 'attachment-methods.js', 'image-methods.js', 'file-methods.js', 'cache-methods.js']
@@ -326,7 +329,7 @@ for (const [index, style] of afterDescriptor.styles.entries()) {
 const deps = {
     '@/pages-nonTheme/api/chat.js': {},
     '@/api/settings.js': { baseUrl: 'https://example.test' },
-    '@/utils/chat-history-cache.js': { loadChatHistoryCache: async () => [], saveChatHistoryCache: async () => {} },
+    '@/utils/realtime/chat-history-cache.js': { loadChatHistoryCache: async () => [], saveChatHistoryCache: async () => {} },
     '@/pages-nonTheme/utils/chat-media-cache.js': {
         cacheChatOriginalImage: async () => '', removeCachedChatOriginalImage: async () => {}, restoreCachedChatOriginalImages: async () => {}
     }

@@ -9,7 +9,7 @@ assert.deepEqual(errors, [])
 compileScript(descriptor, { id: 'quota-notices' })
 assert.deepEqual(compileTemplate({ source: descriptor.template.content, filename: 'system-notifications.vue', id: 'quota-notices' }).errors, [])
 for (const style of descriptor.styles) assert.deepEqual(compileStyle({ source: style.content, id: 'quota-notices' }).errors, [])
-const routes = readFileSync(new URL('../../src/utils/user-notifications.js', import.meta.url), 'utf8').replace(/^import .*$/gm, '').replace(/^export /gm, '')
+const routes = readFileSync(new URL('../../src/utils/realtime/user-notifications.js', import.meta.url), 'utf8').replace(/^import .*$/gm, '').replace(/^export /gm, '')
 const navigation = [], reads = [], events = []
 const context = vm.createContext({ ManifestIcon: {},
   messageBus: { emit: (...args) => events.push(args) },

@@ -38,8 +38,8 @@ import { searchPlaces } from '@/api/map'
 import { getCurrentAddress, resolveLocationAddress } from '@/utils/location-address'
 import { chooseMiniLocation, chooseMiniAddress, isLocationCancelled } from '@/utils/mini-location.js'
 // #ifdef H5
-import { createPreferredWebMap } from '@/utils/preferred-web-map.js'
-import { searchMapPlaces } from '@/utils/map-place-search.js'
+import { createPreferredWebMap } from '@/utils/map/preferred-web-map.js'
+import { searchMapPlaces } from '@/utils/map/map-place-search.js'
 // #endif
 
 const props = defineProps({ modelValue: { type: String, default: '' }, disabled: Boolean, autoLocate: Boolean, autoLocateWhenFilled: Boolean })

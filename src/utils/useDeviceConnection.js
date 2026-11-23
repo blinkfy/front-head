@@ -1,6 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getConnectedDevices } from '../api/device.js'
-import { clearMockDeviceConnection, getPreferredMockDeviceConnection, normalizeDeviceMode } from './device-qr.js'
+import { clearMockDeviceConnection, getPreferredMockDeviceConnection, normalizeDeviceMode } from './scan/device-qr.js'
 import { useAppTabContext } from './app-tab-context.js'
 import { onShow, onHide } from './app-tab-lifecycle.js'
 

@@ -2,17 +2,17 @@ import {
 	createSSRApp, nextTick
 } from "vue";
 import App from "./App.vue";
-import { foregroundNotifications } from "./utils/foreground-notification.mjs";
-import { rewriteLegacyDeviceScanLocation } from "./utils/device-qr-entry.mjs";
+import { foregroundNotifications } from "./utils/realtime/foreground-notification.mjs";
+import { rewriteLegacyDeviceScanLocation } from "./utils/scan/device-qr-entry.mjs";
 import { applyStoredTheme } from "./utils/theme.js";
 import { installPageTransitions } from "./utils/page-transitions.js";
 import { markAppPageReady } from "./utils/app-page-ready.mjs";
 // #ifdef APP-PLUS || MP-WEIXIN
 import { baseUrl } from "./api/settings.js";
-import { installLoginDeviceMetadata } from "./utils/login-device-metadata.mjs";
+import { installLoginDeviceMetadata } from "./utils/account/login-device-metadata.mjs";
 // #endif
 // #ifdef H5
-import { finishH5LoginLoading } from "./utils/h5-login-loading.mjs";
+import { finishH5LoginLoading } from "./utils/account/h5-login-loading.mjs";
 // #endif
 // #ifdef APP-PLUS
 import { installAppVersionGuard } from "./utils/app-version-guard.js";

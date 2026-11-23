@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
-import { parse as parseJavaScript } from '@babel/parser'
+import { createRequire } from 'node:module'
+import { computed, ref } from 'vue'
+import { getHistoryImageState } from '../../src/utils/recognition/history-image-state.mjs'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 
+const require = createRequire(import.meta.url)
+const { initPreContext, preJs, preHtml } = require('@dcloudio/uni-cli-shared')
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const context = {}
-runInNewContext(read('../../src/utils/recognition-sync.js').replace(/^export\s+/gm, '') + '\n' +
-  read('../../src/utils/history-recognition-detail.mjs').replace(/^import .*$/gm, '').replace(/^export\s+/gm, '') +
+runInNewContext(read('../../src/utils/recognition/recognition-sync.js').replace(/^export\s+/gm, '') + '\n' +
+  read('../../src/utils/recognition/history-recognition-detail.mjs').replace(/^import .*$/gm, '').replace(/^export\s+/gm, '') +
   '\nthis.normalize = normalizeHistoryRecognitionDetail', context)
 const normalize = context.normalize
 const plain = value => JSON.parse(JSON.stringify(value))
@@ -44,57 +48,76 @@ for (const invalidImage of ['javascript:alert(1)', 'https://not-a-saved-image.ex
   assert.equal(normalize({ version: 1, upcyclingImageUrl: invalidImage }).imageUrl, '')
 }
 
-for (const pagePath of ['../../src/pages/history/history.vue', '../../src/pages-dark/history/history.vue']) {
-  const source = read(pagePath)
-  const script = parse(source).descriptor.scriptSetup.content
-  const names = new Set(['detailRecognition', 'detailExtraImageFailed', 'detailExtra', 'detailRecognitionRequest',
-    'viewDetail', 'loadDetailRecognition', 'closeDetail'])
-  const nodes = parseJavaScript(script, { sourceType: 'module' }).program.body.filter(node =>
-    (node.type === 'FunctionDeclaration' && names.has(node.id.name)) ||
-    (node.type === 'VariableDeclaration' && node.declarations.some(item => names.has(item.id.name))))
-  const pending = []
-  const imageLoads = []
-  const state = {
-    ref: value => ({ value }),
-    computed: getter => ({ get value() { return getter() } }),
-    normalizeHistoryRecognitionDetail: normalize,
-    imagePreviewVisible: { value: true }, detailItem: { value: {} }, detailVisible: { value: false },
-    detailImageFailed: { value: false }, detailImageLoading: { value: false }, detailImageRequest: 0,
-    loadDetailImage: item => imageLoads.push(item.id),
-    getHistoryRecognitionDetail: id => new Promise((resolve, reject) => pending.push({ id, resolve, reject }))
-  }
-  runInNewContext(nodes.map(node => script.slice(node.start, node.end)).join('\n') +
-    '\nthis.api = { viewDetail, closeDetail, loadDetailRecognition, read: () => detailExtra.value }', state)
-  const item = (id, hasDetails) => ({ id, hasDetails, category: '可回收垃圾', confidence: 0.9, time: '2026-10-24', source: 'online' })
-  for (const hasDetails of [undefined, false, 1, 'true']) state.api.viewDetail(item(1, hasDetails))
-  assert.equal(pending.length, 0, `${pagePath} legacy records never fetch detail`)
-  assert.equal(state.api.read().hasContent, false)
-  state.api.viewDetail(item(2, true))
-  state.api.viewDetail(item(3, true))
-  const response = name => ({ code: 0, data: { details: { version: 1, aiInsights: { items: [name] } } } })
-  pending[1].resolve(response('current'))
-  await new Promise(resolve => setImmediate(resolve))
-  pending[0].resolve(response('stale'))
-  await new Promise(resolve => setImmediate(resolve))
-  assert.deepEqual(plain(state.api.read().items), ['current'], `${pagePath} late response cannot replace selected record`)
-  state.api.viewDetail(item(4, true))
-  state.api.closeDetail()
-  pending[2].resolve(response('closed'))
-  await new Promise(resolve => setImmediate(resolve))
-  assert.equal(state.api.read().hasContent, false, `${pagePath} close invalidates outstanding requests`)
-  state.api.viewDetail(item(5, true))
-  pending[3].reject(new Error('offline'))
-  await new Promise(resolve => setImmediate(resolve))
-  assert.equal(state.detailVisible.value, true)
-  assert.equal(state.detailItem.value.category, '可回收垃圾')
-  assert.equal(state.api.read().hasContent, false, `${pagePath} fetch failure leaves basic detail intact`)
-  assert.ok(imageLoads.includes(5), 'original photo loading still runs independently')
-  state.api.viewDetail(item(6, true))
-  pending[4].resolve(response('prior'))
-  await new Promise(resolve => setImmediate(resolve))
-  state.api.viewDetail(item(7, false))
-  assert.equal(state.api.read().hasContent, false, 'switching to an ordinary record clears prior extras')
+function createDetail(platform, dependencies) {
+  initPreContext(platform)
+  const code = preJs(read('../../src/utils/recognition/use-history-detail.js'))
+    .replace(/^import .*$/gm, '')
+    .replace(/^export /gm, '')
+  const setup = runInNewContext(code + '\nuseHistoryDetail', {
+    ref, computed, getHistoryImageState, normalizeHistoryRecognitionDetail: normalize,
+    baseUrl: 'https://api.example.test', ...dependencies
+  })
+  return setup({ selectMode: ref(false), toggleSelect() {} })
 }
+
+const pending = []
+const imageLoads = []
+const detail = createDetail('h5', {
+  getHistoryImage: async id => {
+    imageLoads.push(id)
+    return { code: 0, data: { image: '/history.jpg' } }
+  },
+  getHistoryRecognitionDetail: id => new Promise((resolve, reject) => pending.push({ id, resolve, reject }))
+})
+const item = (id, hasDetails) => ({
+  id, hasDetails, hasImage: true, category: '可回收垃圾', confidence: 0.9, time: '2026-10-24', source: 'online'
+})
+const response = name => ({ code: 0, data: { details: { version: 1, aiInsights: { items: [name] } } } })
+const settle = () => new Promise(resolve => setImmediate(resolve))
+for (const hasDetails of [undefined, false, 1, 'true']) detail.viewDetail(item(1, hasDetails))
+assert.equal(pending.length, 0, 'legacy records never fetch detail')
+assert.equal(detail.detailExtra.value.hasContent, false)
+detail.viewDetail(item(2, true))
+detail.viewDetail(item(3, true))
+pending[1].resolve(response('current'))
+await settle()
+pending[0].resolve(response('stale'))
+await settle()
+assert.deepEqual(plain(detail.detailExtra.value.items), ['current'], 'late response cannot replace selected record')
+detail.viewDetail(item(4, true))
+detail.closeDetail()
+pending[2].resolve(response('closed'))
+await settle()
+assert.equal(detail.detailExtra.value.hasContent, false, 'close invalidates outstanding requests')
+detail.viewDetail(item(5, true))
+pending[3].reject(new Error('offline'))
+await settle()
+assert.equal(detail.detailVisible.value, true)
+assert.equal(detail.detailItem.value.category, '可回收垃圾')
+assert.equal(detail.detailExtra.value.hasContent, false, 'fetch failure leaves basic detail intact')
+assert.ok(imageLoads.includes(5), 'original photo loading still runs independently')
+detail.viewDetail(item(6, true))
+pending[4].resolve(response('prior'))
+await settle()
+detail.viewDetail(item(7, false))
+assert.equal(detail.detailExtra.value.hasContent, false, 'switching to an ordinary record clears prior extras')
+
+const nativeImageCalls = []
+const nativeDetail = createDetail('app', {
+  uni: { getStorageSync: () => 'token fixture' },
+  getHistoryImage: async id => {
+    nativeImageCalls.push(id)
+    return { code: 0, data: { image: '/fallback.jpg' } }
+  }
+})
+nativeDetail.viewDetail(item(8, false))
+assert.match(nativeDetail.detailItem.value.image, /image\/8\?raw=1&token=token%20fixture&retry=0$/)
+assert.deepEqual(nativeImageCalls, [])
+nativeDetail.onDetailImageError()
+await settle()
+assert.deepEqual(nativeImageCalls, [8])
+assert.equal(nativeDetail.detailItem.value.image, 'https://api.example.test/fallback.jpg')
+assert.equal(nativeDetail.detailImageLoading.value, false)
 
 const apiState = { uni: { getStorageSync: () => 'test-token' }, request: options => options }
 runInNewContext(read('../../src/api/history.js').replace(/^import .*$/gm, '').replace(/^export\s+/gm, '') +
@@ -121,11 +144,18 @@ assert.deepEqual(plain(componentState.toast), { title: '图片暂时无法预览
 
 for (const path of ['../../src/pages/history/history.vue', '../../src/pages-dark/history/history.vue', componentPath]) {
   const source = read(path)
-  for (const target of ['H5', 'APP-PLUS', 'MP-WEIXIN']) {
-    const { descriptor, errors } = parse(source, { filename: path })
+  for (const target of ['h5', 'app', 'mp-weixin']) {
+    initPreContext(target)
+    const { descriptor, errors } = parse(preJs(preHtml(source)), { filename: path })
     assert.deepEqual(errors, [], `${path} ${target} parses`)
     const id = `history-detail-${target}-${path}`
     const script = compileScript(descriptor, { id })
+    if (path !== componentPath) {
+      assert.match(script.content, /__expose\(\{ onLoad \}\)/, `${path} ${target} exposes onLoad`)
+      for (const binding of ['viewDetail', 'detailExtra', 'retryDetailImage', 'thumbUrl', 'setFilter', 'batchDelete', 'goBack']) {
+        assert.ok(script.bindings[binding], `${path} ${target} exposes template binding ${binding}`)
+      }
+    }
     const template = compileTemplate({ source: descriptor.template.content, filename: path, id,
       compilerOptions: { bindingMetadata: script.bindings } })
     assert.deepEqual(template.errors, [], `${path} ${target} template compiles`)

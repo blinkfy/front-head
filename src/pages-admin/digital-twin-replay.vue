@@ -219,7 +219,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
+import AdminScreenHeader from '@/pages-admin/components/AdminScreenHeader.vue'
 import EntityInspector from '@/pages-admin/components/digital-twin/EntityInspector.vue'
 import DecisionExplanationPanel from '@/pages-admin/components/digital-twin/DecisionExplanationPanel.vue'
 import CenterWorkflowOverlay from '@/pages-admin/components/digital-twin/CenterWorkflowOverlay.vue'

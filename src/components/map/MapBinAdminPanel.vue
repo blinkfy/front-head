@@ -1,0 +1,368 @@
+<template>
+  <view class="admin-panel mpwx-view" :class="{ dark }">
+    <view class="panel-heading mpwx-view">
+      <view class="panel-heading-copy mpwx-view">
+        <text class="panel-title">点位管理</text>
+        <text class="panel-subtitle">审核状态与点位资料</text>
+      </view>
+      <view class="status-badge mpwx-view" :class="bin.review ? 'approved' : 'pending'">
+        <view class="status-dot mpwx-view"></view>
+        <text>{{ bin.review ? '已通过审核' : '待审核' }}</text>
+      </view>
+    </view>
+    <view class="report-summary mpwx-view" :class="{ 'has-reports': reportCount }">
+      <ManifestIcon :id="reportCount ? 'dark_alert' : 'confirm'" class="summary-icon" />
+      <text>{{ reportCount ? `收到 ${reportCount} 条点位反馈` : '暂无用户反馈' }}</text>
+      <view v-if="reportCount || showReports" class="summary-action mpwx-view" @click="toggleReports">
+        {{ showReports ? '收起' : '查看' }}
+      </view>
+    </view>
+    <view class="actions mpwx-view">
+      <view class="action-btn edit-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="toggleEditing">
+        <ManifestIcon class="action-icon" :id="editing ? 'close' : 'edit_profile'" />{{ editing ? '收起编辑' : '编辑资料' }}
+      </view>
+      <view v-if="!bin.review" class="action-btn approve-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="review(true)">
+        <ManifestIcon class="action-icon" id="confirm" />审核通过
+      </view>
+      <view v-if="bin.review" class="action-btn approve-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="review(false)">
+        <ManifestIcon class="action-icon" id="restore" />撤销审核
+      </view>
+      <view class="action-btn delete-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="removeBin">
+        <ManifestIcon class="action-icon" id="delete" />删除点位
+      </view>
+    </view>
+    <view v-if="!editing && binImageSrc" class="bin-image-card mpwx-view">
+      <image class="bin-image-thumbnail" :src="binImageSrc" mode="aspectFill" @click.stop="previewBinImage" @error="handleBinImageError(binImageSrc)" />
+      <view class="bin-image-preview-action mpwx-view" @click.stop="previewBinImage">预览点位图片</view>
+    </view>
+    <scroll-view v-if="editing || showReports" scroll-y class="details">
+      <view v-if="showReports" class="reports mpwx-view">
+        <view class="reports-heading mpwx-view">
+          <view class="mpwx-view"><text class="group-title">用户反馈</text><text class="group-caption">请核实后再清理记录</text></view>
+          <view v-if="visibleReports.length" class="clear-reports mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="!busy && !imageProcessing && (confirmClearReports = true)">清空记录</view>
+        </view>
+        <view v-if="confirmClearReports" class="clear-confirm mpwx-view">
+          <text class="clear-confirm-copy">将清空此点位的 {{ reportCount }} 条反馈，点位资料不会删除。</text>
+          <view class="clear-confirm-actions mpwx-view">
+            <view class="keep-reports mpwx-view" @click="confirmClearReports = false">保留记录</view>
+            <view class="confirm-clear mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="!busy && !imageProcessing && removeReports()">{{ busy ? '清理中…' : '确认清空' }}</view>
+          </view>
+        </view>
+        <view v-if="reportsLoading" class="reports-state mpwx-view">正在加载反馈…</view>
+        <view v-else-if="reportsError" class="reports-state reports-error mpwx-view">
+          <text>{{ reportsError }}</text>
+          <view class="summary-action mpwx-view" @click="loadReports">重试</view>
+        </view>
+        <view v-else-if="reportsLoaded && !visibleReports.length" class="reports-state mpwx-view">暂无反馈记录</view>
+        <view v-for="(report, index) in visibleReports" :key="index" class="report mpwx-view">
+          <text class="report-reason">{{ report.reason || '未填写原因' }}</text>
+          <text class="muted">{{ report.createdAt || '' }} · {{ report.userId || '匿名用户' }}</text>
+          <view v-if="reportPhotoSources(report).length" class="report-photos mpwx-view">
+            <image v-for="(photo, photoIndex) in reportPhotoSources(report)" :key="photoIndex" class="report-photo-thumbnail" :src="photo.src" mode="aspectFill" @click.stop="previewReportPhoto(photo.path)" />
+          </view>
+        </view>
+      </view>
+      <view v-if="editing" class="form mpwx-view">
+        <view class="form-heading mpwx-view"><text class="group-title">点位资料</text><text class="group-caption">修改后保存即可同步到地图</text></view>
+        <view class="form-field mpwx-view">
+          <text class="field-label">名称</text>
+          <input v-model="draft.name" class="field-control" maxlength="100" placeholder="输入点位名称" />
+        </view>
+        <view class="form-field mpwx-view">
+          <text class="field-label">描述</text>
+          <textarea v-model="draft.describe" class="field-control field-textarea" maxlength="2000" auto-height placeholder="补充位置特征或点位说明" />
+        </view>
+        <view class="form-row mpwx-view">
+          <view class="form-field mpwx-view">
+            <text class="field-label">类型</text>
+            <picker :range="['普通垃圾桶', '智能垃圾桶']" :value="draft.type === 'smart' ? 1 : 0" @change="draft.type = Number($event.detail.value) === 1 ? 'smart' : 'normal'"><view class="field-control picker mpwx-view">{{ draft.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶' }}</view></picker>
+          </view>
+          <view class="form-field mpwx-view">
+            <text class="field-label">状态</text>
+            <picker :range="['离线', '在线']" :value="draft.status === 'online' ? 1 : 0" @change="draft.status = Number($event.detail.value) === 1 ? 'online' : 'offline'"><view class="field-control picker mpwx-view">{{ draft.status === 'online' ? '在线' : '离线' }}</view></picker>
+          </view>
+        </view>
+        <view class="form-row mpwx-view">
+          <view class="form-field mpwx-view">
+            <text class="field-label">纬度</text>
+            <input v-model="draft.latitude" class="field-control" type="text" placeholder="纬度" />
+          </view>
+          <view class="form-field mpwx-view">
+            <text class="field-label">经度</text>
+            <input v-model="draft.longitude" class="field-control" type="text" placeholder="经度" />
+          </view>
+        </view>
+        <view class="form-field mpwx-view" @click.stop>
+          <text class="field-label">图片</text>
+          <TrashBinImageEditor v-model="draft.imagePath" :preview-src="imageChanged ? '' : binImageSrc" :disabled="busy" @update:modelValue="imageChanged = true" @processing="imageProcessing = $event" />
+        </view>
+        <view class="form-field mpwx-view">
+          <text class="field-label">设备回调地址</text>
+          <input v-model="draft.callback_url" class="field-control" maxlength="2000" placeholder="可选" />
+        </view>
+        <view class="save-btn mpwx-view" :class="{ disabled: busy || imageProcessing }" @click="save">
+          <ManifestIcon class="action-icon" :id="busy ? 'refresh' : 'confirm'" />{{ imageProcessing ? '图片处理中…' : busy ? '提交中…' : '保存修改' }}
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+</template>
+
+<script setup>
+import { computed, ref, watch } from 'vue'
+import { approveBin, rejectBin, updateBin, deleteBin, getBinErrorReports, clearBinErrorReports } from '@/api/database'
+import { binReportCount, binReports } from '@/utils/map/map-admin-bins'
+import ManifestIcon from '@/components/ManifestIcon.vue'
+import TrashBinImageEditor from '@/components/map/TrashBinImageEditor.vue'
+import { config } from '@/api/config.js'
+import { resolveBinPointImage } from '@/utils/map/trash-bin-image-core.mjs'
+import { binPointPhotoKey, getBinPointPhoto } from '@/utils/map/bin-point-photo.js'
+import { previewTrashBinImage, resolveTrashBinImage } from '@/utils/map/trash-bin-image'
+const props = defineProps({ bin: { type: Object, required: true }, dark: Boolean })
+const emit = defineEmits(['updated'])
+const reports = ref([])
+const reportsLoaded = ref(false)
+const loadedReportCount = ref(null)
+const reportsLoading = ref(false)
+const reportsError = ref('')
+let reportsRequestId = 0
+const imageChanged = ref(false)
+const fallbackImage = ref('')
+const imageFailed = ref(false)
+const photoRequestKey = ref('')
+const binImageSrc = computed(() => imageFailed.value ? '' : fallbackImage.value || (props.bin.hasImage === false || !(props.bin.hasImage || props.bin.imagePath || props.bin.image)
+  ? '' : resolveBinPointImage(props.bin, config.baseUrl)))
+const editing = ref(false)
+const showReports = ref(false)
+const confirmClearReports = ref(false)
+const clearedReportsForId = ref(null)
+const busy = ref(false)
+const imageProcessing = ref(false)
+const draft = ref({})
+watch(() => props.bin, () => {
+  const bin = props.bin
+  editing.value = false
+  showReports.value = false
+  reportsRequestId += 1
+  reports.value = []
+  reportsLoaded.value = false
+  loadedReportCount.value = null
+  reportsLoading.value = false
+  reportsError.value = ''
+  confirmClearReports.value = false
+  clearedReportsForId.value = null
+  imageChanged.value = false
+  fallbackImage.value = ''
+  imageFailed.value = false
+  photoRequestKey.value = ''
+  draft.value = { name: bin.name || '', describe: bin.description || '', type: bin.type || 'normal', status: bin.status || 'offline', latitude: String(bin.sourceLatitude ?? bin.latitude ?? ''), longitude: String(bin.sourceLongitude ?? bin.longitude ?? ''), imagePath: bin.hasImage === false ? '' : bin.imagePath || bin.image || '', callback_url: bin.callback_url || '' }
+}, { immediate: true })
+const reportCount = computed(() => String(props.bin.id) === String(clearedReportsForId.value) ? 0 : loadedReportCount.value ?? binReportCount(props.bin))
+const visibleReports = computed(() => String(props.bin.id) === String(clearedReportsForId.value) ? [] : reports.value)
+async function loadReports() {
+  if (reportsLoading.value) return
+  const id = props.bin.id
+  const requestId = ++reportsRequestId
+  reportsLoading.value = true
+  reportsError.value = ''
+  try {
+    const result = await getBinErrorReports(id)
+    if (requestId !== reportsRequestId || String(props.bin.id) !== String(id)) return
+    if (result?.code !== 0) throw new Error(result?.msg || '反馈加载失败')
+    const data = result.data
+    const list = Array.isArray(data) ? data : Array.isArray(data?.list) ? data.list : Array.isArray(data?.errorReport) ? data.errorReport : []
+    reports.value = list
+    reportsLoaded.value = true
+    loadedReportCount.value = list.length
+  } catch (error) {
+    if (requestId === reportsRequestId && String(props.bin.id) === String(id)) reportsError.value = error.message || '反馈加载失败'
+  } finally {
+    if (requestId === reportsRequestId && String(props.bin.id) === String(id)) reportsLoading.value = false
+  }
+}
+function toggleReports() {
+  showReports.value = !showReports.value
+  if (showReports.value && !reportsLoaded.value) loadReports()
+}
+async function loadPointPhoto() {
+  const key = binPointPhotoKey(props.bin)
+  if (!props.bin.hasImage || !key || photoRequestKey.value === key) return ''
+  photoRequestKey.value = key
+  try {
+    const image = await getBinPointPhoto(props.bin)
+    if (binPointPhotoKey(props.bin) !== key) return ''
+    fallbackImage.value = image
+    imageFailed.value = false
+    return image
+  } catch (_) {
+    if (binPointPhotoKey(props.bin) === key) imageFailed.value = true
+    return ''
+  }
+}
+function handleBinImageError(failedSource) {
+  if (failedSource !== binImageSrc.value) return
+  if (fallbackImage.value) { imageFailed.value = true; return }
+  loadPointPhoto()
+}
+async function toggleEditing() {
+  if (busy.value || imageProcessing.value) return
+  editing.value = !editing.value
+  if (!editing.value || !props.bin.hasImage) return
+  const key = binPointPhotoKey(props.bin)
+  const image = await getBinPointPhoto(props.bin).catch(() => '')
+  if (image && editing.value && !imageChanged.value && binPointPhotoKey(props.bin) === key) draft.value.imagePath = image
+}
+async function previewBinImage() {
+  try {
+    const key = binPointPhotoKey(props.bin)
+    const value = props.bin.hasImage ? await getBinPointPhoto(props.bin) : binImageSrc.value
+    if (props.bin.hasImage && binPointPhotoKey(props.bin) !== key) return
+    if (!value) throw new Error('暂无图片')
+    await previewTrashBinImage(value)
+  }
+  catch (error) { uni.showToast({ title: '图片预览失败', icon: 'none' }) }
+}
+function reportPhotoSources(report) {
+  return (Array.isArray(report?.photos) ? report.photos : []).filter(path => typeof path === 'string' && /^\/?images\/bin-reports\/[^/]+\.(?:jpg|png|webp)$/i.test(path)).map(path => ({ path, src: resolveTrashBinImage(path) }))
+}
+async function previewReportPhoto(path) {
+  if (!/^\/?images\/bin-reports\/[^/]+\.(?:jpg|png|webp)$/i.test(String(path || ''))) return
+  try { await previewTrashBinImage(path) }
+  catch (_) { uni.showToast({ title: '图片预览失败', icon: 'none' }) }
+}
+async function submit(id, action, onSuccess) {
+  if (busy.value || imageProcessing.value) return
+  busy.value = true
+  try {
+    const result = await action()
+    if (result?.code !== 0) throw new Error(result?.msg || '操作失败')
+    uni.showToast({ title: '操作成功', icon: 'success' })
+    onSuccess?.()
+    emit('updated', id)
+  } catch (error) { uni.showToast({ title: error.message || '操作失败', icon: 'none' }) }
+  finally { busy.value = false }
+}
+function review(approved) {
+  const id = props.bin.id
+  if (busy.value || imageProcessing.value) return
+  uni.showModal({ title: approved ? '审核通过' : '取消通过审核', content: approved ? '确认将此垃圾桶向普通用户开放？' : '确认将此垃圾桶设为未通过审核？普通用户将不再看到它。', success: result => {
+    if (result.confirm) submit(id, () => approved ? approveBin(id) : rejectBin(id))
+  } })
+}
+function removeBin() {
+  if (busy.value || imageProcessing.value) return
+  const id = props.bin.id
+  const name = props.bin.name || '此垃圾桶'
+  uni.showModal({ title: '删除垃圾桶', content: `确认永久删除“${name}”？删除后地图不再显示此桶，关联的用户设备关系也会删除。`, success: result => {
+    if (result.confirm) submit(id, () => deleteBin(id))
+  } })
+}
+function removeReports() {
+  if (busy.value || imageProcessing.value) return
+  const id = props.bin.id
+  submit(id, () => clearBinErrorReports(id), () => {
+    clearedReportsForId.value = id
+    loadedReportCount.value = 0
+    reports.value = []
+    reportsLoaded.value = true
+    confirmClearReports.value = false
+  })
+}
+function save() {
+  if (busy.value || imageProcessing.value) return
+  const latitude = Number(draft.value.latitude)
+  const longitude = Number(draft.value.longitude)
+  if (!draft.value.name.trim() || !draft.value.latitude.trim() || !draft.value.longitude.trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    uni.showToast({ title: '请填写名称和有效经纬度', icon: 'none' }); return
+  }
+  const id = props.bin.id
+  const payload = { ...draft.value, name: draft.value.name.trim(), latitude, longitude }
+  // A thumbnail URL is only for display; only explicit replacement/deletion updates the stored image.
+  if (!imageChanged.value) delete payload.imagePath
+  submit(id, () => updateBin(id, payload))
+}
+</script>
+
+<style scoped>
+.admin-panel {
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border: 1rpx solid #e5ebef;
+  border-radius: 20rpx;
+  color: #243442;
+  background: linear-gradient(145deg, #fbfefd, #f4faf8);
+}
+.panel-heading, .reports-heading, .form-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+.panel-heading { margin-bottom: 18rpx; }
+.panel-heading-copy { display: flex; flex-direction: column; gap: 4rpx; }
+.panel-title { color: #203044; font-size: 27rpx; font-weight: 700; }
+.panel-subtitle, .group-caption { color: #8b98a7; font-size: 20rpx; }
+.status-badge { display: flex; align-items: center; gap: 8rpx; padding: 9rpx 14rpx; border-radius: 24rpx; font-size: 20rpx; font-weight: 600; }
+.status-badge.pending { color: #a66a13; background: #fff5df; }
+.status-badge.approved { color: #07825e; background: #e4f8ef; }
+.status-dot { width: 10rpx; height: 10rpx; border-radius: 50%; background: currentColor; }
+.report-summary { display: flex; align-items: center; gap: 10rpx; min-height: 58rpx; padding: 0 16rpx; border-radius: 14rpx; color: #778595; background: #f0f4f5; font-size: 21rpx; }
+.report-summary.has-reports { color: #9b5e19; background: #fff6e8; }
+.summary-icon { width: 28rpx; height: 28rpx; }
+.summary-action { margin-left: auto; color: #07825e; font-weight: 600; }
+.actions { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 16rpx; }
+.bin-image-card { display: flex; align-items: center; gap: 14rpx; margin-top: 16rpx; }
+.bin-image-thumbnail { width: 120rpx; height: 120rpx; border-radius: 12rpx; background: #edf1f4; }
+.bin-image-preview-action { color: #087d5e; font-size: 21rpx; }
+.action-btn { min-height: 66rpx; flex: 1 1 30%; display: flex; align-items: center; justify-content: center; gap: 8rpx; padding: 0 10rpx; box-sizing: border-box; border-radius: 13rpx; font-size: 21rpx; font-weight: 600; }
+.action-icon { width: 26rpx; height: 26rpx; }
+.edit-btn { color: #365f91; background: #edf4fd; }
+.approve-btn { color: #087d5e; background: #e7f7ef; }
+.delete-btn { color: #c24747; background: #fff0ef; }
+.disabled { opacity: .48; }
+.details { max-height: 540rpx; height: 540rpx; margin-top: 18rpx; padding: 18rpx; box-sizing: border-box; border: 1rpx solid #e5ebef; border-radius: 16rpx; background: #ffffff; }
+.reports-heading { margin-bottom: 12rpx; }
+.reports-state { display: flex; align-items: center; gap: 12rpx; padding: 18rpx 0; color: #8795a3; font-size: 21rpx; }
+.reports-error { color: #bd4d4d; }
+.reports-heading > .mpwx-view:first-child, .form-heading { display: flex; flex-direction: column; gap: 4rpx; }
+.group-title { color: #27384a; font-size: 23rpx; font-weight: 700; }
+.clear-reports { padding: 10rpx 16rpx; color: #bd4d4d; background: #fff0ef; border-radius: 12rpx; font-size: 20rpx; }
+.clear-confirm { margin: 12rpx 0; padding: 16rpx; border: 1rpx solid #f0d39e; border-radius: 14rpx; background: #fff8eb; }
+.clear-confirm-copy { display: block; color: #80602d; font-size: 21rpx; line-height: 1.45; }
+.clear-confirm-actions { display: flex; justify-content: flex-end; gap: 12rpx; margin-top: 14rpx; }
+.keep-reports, .confirm-clear { padding: 12rpx 18rpx; border-radius: 10rpx; font-size: 20rpx; font-weight: 600; }
+.keep-reports { color: #637184; background: #edf1f4; }
+.confirm-clear { color: #ffffff; background: #d95757; }
+.report { display: flex; flex-direction: column; gap: 8rpx; padding: 16rpx 0; border-bottom: 1rpx solid #e8edf1; word-break: break-all; }
+.report-photos { display: flex; gap: 12rpx; margin-top: 4rpx; }
+.report-photo-thumbnail { width: 112rpx; height: 112rpx; border-radius: 10rpx; background: #edf1f4; }
+.report-reason { color: #334355; font-size: 23rpx; line-height: 1.45; }
+.muted { color: #98a3af; font-size: 19rpx; }
+.form-heading { margin-bottom: 18rpx; }
+.form-field { min-width: 0; flex: 1; margin-bottom: 16rpx; }
+.field-label { display: block; margin-bottom: 8rpx; color: #5c6b7a; font-size: 21rpx; font-weight: 600; }
+.field-control { display: block; width: 100%; min-height: 66rpx; padding: 14rpx 16rpx; box-sizing: border-box; border: 1rpx solid #e2e9ed; border-radius: 12rpx; background: #f8fafb; color: #27384a; font-size: 22rpx; }
+.field-textarea { min-height: 112rpx; line-height: 1.45; }
+.picker { display: flex; align-items: center; }
+.form-row { align-items: flex-start; gap: 14rpx; }
+.save-btn { display: flex; align-items: center; justify-content: center; gap: 10rpx; height: 72rpx; margin-top: 2rpx; border-radius: 14rpx; color: #ffffff; background: linear-gradient(135deg, #12ad7b, #078b67); font-size: 23rpx; font-weight: 700; }
+.save-btn .action-icon { width: 28rpx; height: 28rpx; }
+.dark { color: #e8f1f8; border-color: rgba(107, 149, 178, .24); background: linear-gradient(145deg, rgba(13, 34, 54, .96), rgba(8, 24, 40, .96)); }
+.dark .panel-title, .dark .group-title { color: #edf7ff; }
+.dark .panel-subtitle, .dark .group-caption { color: #8099ad; }
+.dark .status-badge.pending { color: #ffd27a; background: rgba(228, 165, 70, .14); }
+.dark .status-badge.approved { color: #6ce2b4; background: rgba(64, 210, 155, .13); }
+.dark .report-summary { color: #93a9bb; background: rgba(133, 164, 188, .1); }
+.dark .report-summary.has-reports { color: #ffce82; background: rgba(227, 157, 58, .13); }
+.dark .summary-action { color: #6ce2b4; }
+.dark .edit-btn { color: #a9c9ee; background: rgba(92, 151, 216, .14); }
+.dark .approve-btn { color: #6ce2b4; background: rgba(64, 210, 155, .13); }
+.dark .delete-btn { color: #ff9999; background: rgba(241, 100, 100, .13); }
+.dark .details { border-color: rgba(107, 149, 178, .2); background: rgba(5, 17, 29, .5); }
+.dark .clear-reports { color: #ff9999; background: rgba(241, 100, 100, .13); }
+.dark .clear-confirm { border-color: rgba(238, 178, 87, .28); background: rgba(227, 157, 58, .12); }
+.dark .clear-confirm-copy { color: #e7c789; }
+.dark .keep-reports { color: #b8cada; background: rgba(135, 165, 190, .12); }
+.dark .confirm-clear { color: #2b1111; background: #ff8989; }
+.dark .report { border-color: rgba(107, 149, 178, .2); }
+.dark .report-reason { color: #d8e8f4; }
+.dark .muted { color: #7892a6; }
+.dark .field-label { color: #a9c0d2; }
+.dark .field-control { border-color: rgba(107, 149, 178, .22); background: rgba(6, 18, 30, .76); color: #e8f1f8; }
+.dark .save-btn { color: #052238; background: linear-gradient(135deg, #68e6ca, #5cc4ee); }
+</style>

@@ -21,14 +21,14 @@
       
       <view v-if="showVideo" class="video-card">
         <!-- #ifdef APP-PLUS -->
-        <view 
-          id="video-container" 
+        <GuideAppVideo
           class="promo-video"
-          :videoOptions="scenarioVideoOptions"
-          :change:videoOptions="hlsPlayer.init"
-          :playTrigger="scenarioPlayTrigger"
-          :change:playTrigger="hlsPlayer.play"
-        ></view>
+          :src="scenarioVideoUrl"
+          :poster="scenarioVideoPoster"
+          object-fit="contain"
+          :play-trigger="scenarioPlayTrigger"
+          @playing-change="showScenarioOverlay = !$event"
+        />
         <!-- #endif -->
 
         <!-- #ifndef APP-PLUS -->
@@ -42,6 +42,7 @@
           @play="showScenarioOverlay = false"
           @pause="showScenarioOverlay = true"
           @ended="showScenarioOverlay = true"
+          @error="showScenarioOverlay = true"
         ></video>
         <!-- #endif -->
         
@@ -155,14 +156,14 @@
         </view>
         <view class="video-card app-video-card">
           <!-- #ifdef APP-PLUS -->
-          <view 
-            id="video-container-app" 
+          <GuideAppVideo
             class="app-video"
-            :videoOptions="appVideoOptions"
-            :change:videoOptions="hlsPlayer.initApp"
-            :playTrigger="appPlayTrigger"
-            :change:playTrigger="hlsPlayer.playApp"
-          ></view>
+            :src="appVideoUrl"
+            :poster="appVideoPoster"
+            object-fit="contain"
+            :play-trigger="appPlayTrigger"
+            @playing-change="showAppOverlay = !$event"
+          />
           <!-- #endif -->
 
           <!-- #ifndef APP-PLUS -->
@@ -176,6 +177,7 @@
             @play="showAppOverlay = false"
             @pause="showAppOverlay = true"
             @ended="showAppOverlay = true"
+            @error="showAppOverlay = true"
           ></video>
           <!-- #endif -->
           <view v-if="showAppOverlay" class="video-overlay app-overlay" @click="requestPlay('app')">
@@ -370,106 +372,16 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
-import { config } from "@/api/config"
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { useGuideVideos } from '@/utils/use-guide-videos.js'
+// #ifdef APP-PLUS
+import GuideAppVideo from '@/components/GuideAppVideo.vue'
+// #endif
 
-const baseUrl = config.baseUrl
-
-// 视频资源
-const scenarioVideoUrl = `${baseUrl}/files/preview/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1/%E5%88%86%E6%8A%95%E4%BE%A0%E5%AE%A3%E4%BC%A0%E7%89%87/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1.m3u8`
-const appVideoUrl = `${baseUrl}/files/preview/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1/%E5%8A%9F%E8%83%BD%E5%B1%95%E7%A4%BA/%E5%8A%9F%E8%83%BD%E5%B1%95%E7%A4%BA.m3u8`
-
-const getImageUrl = (url) => {
-  if (!url) return ''
-  // #ifdef APP-PLUS
-  return `/static/app/images/${url}`
-  // #endif
-  // #ifndef APP-PLUS
-  return `${baseUrl}/images/${url}`
-  // #endif
-}
-
-const scenarioVideoPoster = getImageUrl('cover.webp')
-const appVideoPoster = getImageUrl('app.webp')
-
-const scenarioVideoOptions = computed(() => ({ src: scenarioVideoUrl, poster: scenarioVideoPoster }))
-const appVideoOptions = computed(() => ({ src: appVideoUrl, poster: appVideoPoster }))
-
-const showScenarioOverlay = ref(true) 
-const showAppOverlay = ref(true) 
-const showVideo = ref(false)
-
-function onPlayerStatusChange(status) {
-  if (status.target === 'scenario') {
-    if (!status.isPlaying) showScenarioOverlay.value = true
-  } else {
-    if (!status.isPlaying) showAppOverlay.value = true
-  }
-}
-function goScan() {
-  // #ifdef H5
-  uni.showToast({ title: "H5端暂不支持扫码连接", icon: "none" })
-  // #endif
-  // #ifndef H5
-  uni.navigateTo({ url: "/pages/home/home" })
-  // #endif
-}
-const scenarioPlayTrigger = ref(0)
-const appPlayTrigger = ref(0)
-
-function requestPlay(type) {
-  if (type === 'scenario') {
-    showScenarioOverlay.value = false
-    // #ifdef APP-PLUS
-    scenarioPlayTrigger.value = Date.now()
-    // #endif
-    // #ifndef APP-PLUS
-    uni.createVideoContext('scenarioVideo').play()
-    // #endif
-  } else {
-    showAppOverlay.value = false
-    // #ifdef APP-PLUS
-    appPlayTrigger.value = Date.now()
-    // #endif
-    // #ifndef APP-PLUS
-    uni.createVideoContext('appVideo').play()
-    // #endif
-  }
-}
-
-function getAuthToken() {
-  try {
-    return uni.getStorageSync('token') || ''
-  } catch (error) {
-    return ''
-  }
-}
-
-async function checkVideoEnabled() {
-  try {
-    const res = await uni.request({ url: `${baseUrl}/api/ai/settings` })
-    const payload = res.data
-    const settings = payload && payload.code === 0 ? payload.data : null
-    if (!settings || settings.aiEnabled !== false) {
-      showVideo.value = true
-      return
-    }
-    const token = getAuthToken()
-    if (!token) {
-      showVideo.value = false
-      return
-    }
-    const userRes = await uni.request({
-      url: `${baseUrl}/api/userinfo?avater=false`,
-      header: { Authorization: token }
-    })
-    const userPayload = userRes.data
-    showVideo.value = !!(userPayload && userPayload.code === 0 && userPayload.data && userPayload.data.isAdmin)
-  } catch (error) {
-    showVideo.value = true
-  }
-}
+const {
+  showVideo, showScenarioOverlay, showAppOverlay, scenarioPlayTrigger, appPlayTrigger,
+  getImageUrl, requestPlay, scenarioVideoUrl, appVideoUrl, scenarioVideoPoster, appVideoPoster
+} = useGuideVideos()
 
 function scrollToSteps() {
   uni.pageScrollTo({ selector: '#steps-section', duration: 300 })
@@ -492,74 +404,13 @@ function goBack() {
   }
 }
 
-onMounted(() => {
-  checkVideoEnabled()
-})
-</script>
-
-<script module="hlsPlayer" lang="renderjs">
-import Hls from 'hls.js'
-
-export default {
-  data() {
-    return {
-      hls: null,
-      video: null,
-      appHls: null,
-      appVideo: null
-    }
-  },
-  methods: {
-    init(options) {
-      this.video = document.querySelector('#video-container video') || document.createElement('video');
-      this.video.style.width = '100%';
-      this.video.style.height = '100%';
-      this.video.setAttribute('playsinline', 'true');
-      this.video.poster = options.poster;
-      document.querySelector('#video-container').appendChild(this.video);
-
-      this.video.onplay = () => this.sendStatus(true, 'scenario');
-      this.video.onpause = () => this.sendStatus(false, 'scenario');
-      this.video.onended = () => this.sendStatus(false, 'scenario');
-
-      if (Hls.isSupported()) {
-        this.hls = new Hls();
-        this.hls.loadSource(options.src);
-        this.hls.attachMedia(this.video);
-      } else if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
-        this.video.src = options.src;
-      }
-    },
-    initApp(options) {
-      this.appVideo = document.querySelector('#video-container-app video') || document.createElement('video');
-      this.appVideo.style.width = '100%';
-      this.appVideo.style.height = '100%';
-      this.appVideo.setAttribute('playsinline', 'true');
-      this.appVideo.poster = options.poster;
-      document.querySelector('#video-container-app').appendChild(this.appVideo);
-
-      this.appVideo.onplay = () => this.sendStatus(true, 'app');
-      this.appVideo.onpause = () => this.sendStatus(false, 'app');
-      this.appVideo.onended = () => this.sendStatus(false, 'app');
-
-      if (Hls.isSupported()) {
-        this.appHls = new Hls();
-        this.appHls.loadSource(options.src);
-        this.appHls.attachMedia(this.appVideo);
-      } else if (this.appVideo.canPlayType('application/vnd.apple.mpegurl')) {
-        this.appVideo.src = options.src;
-      }
-    },
-    play(trigger) {
-      if (trigger && this.video) this.video.play();
-    },
-    playApp(trigger) {
-      if (trigger && this.appVideo) this.appVideo.play();
-    },
-    sendStatus(isPlaying, target) {
-      this.$ownerInstance.callMethod('onPlayerStatusChange', { isPlaying, target });
-    }
-  }
+function goScan() {
+  // #ifdef H5
+  uni.showToast({ title: "H5端暂不支持扫码连接", icon: "none" })
+  // #endif
+  // #ifndef H5
+  uni.navigateTo({ url: "/pages/home/home" })
+  // #endif
 }
 </script>
 

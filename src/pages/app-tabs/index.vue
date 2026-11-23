@@ -31,7 +31,7 @@ import DarkProfile from '@/pages-dark/profile/profile.vue'
 import { registerAppTabShell, parseAppTabUrl } from '@/utils/app-tab-context.js'
 import { emitAppTabHook } from '@/utils/app-tab-lifecycle.js'
 import { appVersionGuard } from '@/utils/app-version-guard.js'
-import { getRecognitionTask } from '@/utils/recognition-task.mjs'
+import { getRecognitionTask } from '@/utils/recognition/recognition-task.mjs'
 
 const tabs = [
   { id: 'home', icon: 'home', label: '首页' }, { id: 'map', icon: 'map_location', label: '地图' },

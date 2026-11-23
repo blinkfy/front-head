@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createH5RegistrationRelay, createRegistrationApi } from '../../src/utils/registration-relay.mjs'
+import { createH5RegistrationRelay, createRegistrationApi } from '../../src/utils/account/registration-relay.mjs'
 
 const tick = async () => { for (let i = 0; i < 40; i++) await Promise.resolve() }
 const session = { sessionId: 'r_' + 'a'.repeat(24), pollSecret: 'b'.repeat(64), status: 'waiting', expiresAt: Date.now() + 60000,
@@ -57,8 +57,8 @@ for (const path of ['../../src/pages/index/index.vue', '../../src/pages-dark/ind
   const source = await readFile(new URL(path, import.meta.url), 'utf8')
   const app = preprocess(source, 'APP-PLUS'), mp = preprocess(source, 'MP-WEIXIN')
   assert.match(app, /<H5LoginShell[\s\S]*?@qr-login="onQrLogin"/)
-  assert.match(app, /import H5LoginShell from '@\/components\/H5LoginShell\.vue'/)
-  assert.match(app, /async function onQrLogin\(result\)/)
+  assert.match(app, /import H5LoginShell from '@\/components\/account\/H5LoginShell\.vue'/)
+  assert.match(app, /async function onQrLogin\(result(?:, mfaTicket = '')?\)/)
   assert.doesNotMatch(app, /<WechatLoginEntry/)
   assert.doesNotMatch(mp, /<H5LoginShell/)
   assert.match(mp, /<WechatLoginEntry/)
@@ -66,7 +66,7 @@ for (const path of ['../../src/pages/index/index.vue', '../../src/pages-dark/ind
 
 // Compile the platform selector in the actual runtime wrapper and verify APP create metadata.
 {
-  const wrapper = await readFile(new URL('../../src/utils/registration-relay.js', import.meta.url), 'utf8')
+  const wrapper = await readFile(new URL('../../src/utils/account/registration-relay.js', import.meta.url), 'utf8')
   const segment = /let clientPlatform = 'h5'[\s\S]*?export const registrationApi = createRegistrationApi\([^\n]+/.exec(wrapper)?.[0]
   assert.ok(segment, 'registration runtime exports the platform-specific client')
   const calls = []
@@ -84,8 +84,8 @@ for (const path of ['../../src/pages/index/index.vue', '../../src/pages-dark/ind
 
 // APP-preprocessed shell and panel setup run with fake uni and no DOM globals.
 {
-  const shellPath = new URL('../../src/components/H5LoginShell.vue', import.meta.url)
-  const panelPath = new URL('../../src/components/H5WechatLoginPanel.vue', import.meta.url)
+  const shellPath = new URL('../../src/components/account/H5LoginShell.vue', import.meta.url)
+  const panelPath = new URL('../../src/components/account/H5WechatLoginPanel.vue', import.meta.url)
   const shellSource = await readFile(shellPath, 'utf8'), panelSource = await readFile(panelPath, 'utf8')
   const shellScript = appScript(extractSetup(shellSource)), panelScript = appScript(extractSetup(panelSource))
   for (const script of [shellScript, panelScript]) assert.doesNotMatch(script, /\b(?:window|document|Image)\b/)
@@ -139,7 +139,7 @@ for (const path of ['../../src/pages/index/index.vue', '../../src/pages-dark/ind
   await tick()
   assert.equal(fallback.generated[0].value, fallbackApi.fixedQrUrl() + '?v=1', 'old backend returns to the fixed WeChat code')
   assert.match(shellSource, /<view v-show="wide \|\| mode === 'account'" class="account-column">/)
-  assert.match(shellSource, /<view v-if="wide \|\| mode === 'wechat'" ref="qrColumn"/)
+  assert.match(shellSource, /<view v-if="\(!mfa \|\| mfa\.method === 'qr'\) && \(wide \|\| mode === 'wechat'\)" ref="qrColumn"/)
   for (const dispose of fallback.life.unmount) dispose()
 }
 

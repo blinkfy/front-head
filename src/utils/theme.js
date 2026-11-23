@@ -1,5 +1,5 @@
 import { getAppCurrentPages } from '@/utils/app-tab-context.js'
-import { DEVICE_SCAN_PAGE, appendPageQuery, resolveLegacyDeviceScanUrl } from './device-qr-entry.mjs'
+import { DEVICE_SCAN_PAGE, appendPageQuery, resolveLegacyDeviceScanUrl } from './scan/device-qr-entry.mjs'
 
 // 这里的页面映射表需要跟pages.json保持一致
 const PAGE_MAPPINGS = {

@@ -4,7 +4,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createForegroundNotifications, notificationAvatarUrl } from '../../src/utils/foreground-notification.mjs'
+import { createForegroundNotifications, notificationAvatarUrl } from '../../src/utils/realtime/foreground-notification.mjs'
 
 const require = createRequire(import.meta.url)
 const { parse: parseSfc, compileScript, compileTemplate, compileStyle } = require('@vue/compiler-sfc')
@@ -110,7 +110,7 @@ function testSfcCompiles() {
     const result = compileStyle({ source: style.content, filename: chatPath, id: `chat-style-${index}`, preprocessLang: style.lang })
     assert.deepEqual(result.errors, [], `SFC style ${index + 1} compiles`)
   }
-  astFor(fs.readFileSync(path.join(root, 'src/utils/chat-events.js'), 'utf8'), 'chat-events.js')
+  astFor(fs.readFileSync(path.join(root, 'src/utils/realtime/chat-events.js'), 'utf8'), 'chat-events.js')
 }
 
 function testAdditionalSfcCompiles() {
@@ -151,7 +151,8 @@ async function testMessageActions() {
   const toasts = []
   const uni = { hideKeyboard() {}, showToast: value => toasts.push(value), showModal: options => options.success({ confirm: true }) }
   const actionModule = getMixinObject('src/pages-nonTheme/chat/message-actions-methods.js', 'messageActionsMethods', {
-    chatApi: { forwardChatMessages: async () => ({}) }, requestKey: (() => { let index = 0; return () => `batch-${++index}` })(), uni
+    chatApi: { forwardChatMessages: async () => ({}) }, requestKey: (() => { let index = 0; return () => `batch-${++index}` })(), uni,
+    showAppModal: (_page, options) => options.success({ confirm: true })
   })
   let mediaActivated = false
   const selecting = { selectingMessages: false, selectedMessageIds: [], showEmojiPanel: true, showMorePanel: true,
@@ -275,7 +276,7 @@ async function testGroupMuteAndAliasActions() {
   const toastCalls = []
   let modal
   const uni = { showModal: options => { modal = options }, showToast: options => toastCalls.push(options) }
-  const management = getMixinObject('src/pages-nonTheme/chat/group-management-methods.js', 'groupManagementMethods', { chatApi: api, uni })
+  const management = getMixinObject('src/pages-nonTheme/chat/group-management-methods.js', 'groupManagementMethods', { chatApi: api, uni, showAppModal: (_page, options) => { modal = options } })
   const aliasContext = { isGroupChat: true, groupSettingsBusy: false, groupId: 'g1',
     groupInfo: { currentMember: { userId: 4, alias: '旧名' }, Members: [{ userId: 4, alias: '旧名' }] }, getCurrentUserId: () => 4 }
   management.editGroupAlias.call(aliasContext)
@@ -294,7 +295,7 @@ async function testGroupMuteAndAliasActions() {
 
   let resolveModeration
   const moderationApi = { updateGroupModeration: (...args) => { apiCalls.push({ name: 'updateGroupModeration', args }); return new Promise(resolve => { resolveModeration = resolve }) } }
-  const moderation = getMixinObject('src/pages-nonTheme/chat/group-management-methods.js', 'groupManagementMethods', { chatApi: moderationApi, uni })
+  const moderation = getMixinObject('src/pages-nonTheme/chat/group-management-methods.js', 'groupManagementMethods', { chatApi: moderationApi, uni, showAppModal: (_page, options) => { modal = options } })
   const groupContext = { canManageGroup: true, groupSettingsBusy: false, groupId: 'g1', groupInfo: { muteAll: false } }
   const enabling = moderation.toggleGroupMuteAll.call(groupContext, { detail: { value: true } })
   assert.equal(groupContext.groupInfo.muteAll, true, 'all-mute state updates optimistically')
@@ -312,7 +313,7 @@ async function testGroupMuteAndAliasActions() {
   let memberMuteCalls = 0
   const memberApi = { updateGroupMemberMute: async () => { memberMuteCalls++; throw new Error('offline') } }
   const memberUni = { showModal: options => options.success({ confirm: true }), showToast: options => toastCalls.push(options) }
-  const memberMethods = getMixinObject('src/pages-nonTheme/chat/group-management-methods.js', 'groupManagementMethods', { chatApi: memberApi, uni: memberUni })
+  const memberMethods = getMixinObject('src/pages-nonTheme/chat/group-management-methods.js', 'groupManagementMethods', { chatApi: memberApi, uni: memberUni, showAppModal: (_page, options) => options.success({ confirm: true }) })
   const member = { userId: 8, name: '成员', mute: false }
   const memberContext = { removingGroupMemberId: '', canRemoveGroupMember: () => true, groupId: 'g1', getGroupMemberName: item => item.name }
   const muteResult = memberMethods.toggleGroupMemberMute.call(memberContext, member)
@@ -514,7 +515,7 @@ async function testHistoryCacheSnapshotCompatibility() {
     return request
   } }
   try {
-    const cacheSource = fs.readFileSync(path.join(root, 'src/utils/chat-history-cache.js'), 'utf8')
+    const cacheSource = fs.readFileSync(path.join(root, 'src/utils/realtime/chat-history-cache.js'), 'utf8')
     const cacheUrl = `data:text/javascript;base64,${Buffer.from(cacheSource).toString('base64')}`
     const cache = await import(cacheUrl)
     const messages = [{ id: 201, type: 'text', content: 'cached row', timestamp: 1, refId: 8, refUnavailable: true }]
@@ -564,7 +565,7 @@ function testMergeIdentity() {
 async function testSendIdsAndRefs() {
   const calls = []
   const api = new Proxy({}, { get: (_, name) => (...args) => { calls.push({ name, args }); return Promise.resolve({ data: {} }) } })
-  const send = getMixinMethod('src/pages-nonTheme/chat/send-methods.js', 'messageSendMethods', 'sendCreatedMessage', { chatApi: api })
+  const send = getMixinMethod('src/pages-nonTheme/chat/send-methods.js', 'messageSendMethods', 'sendCreatedMessage', { chatApi: api, uni: { showToast() {}, getStorageSync() { return '' } } })
   const types = ['text', 'image', 'voice', 'video', 'file', 'location']
   for (const isGroupChat of [false, true]) {
     for (const type of types) {
@@ -593,8 +594,8 @@ async function testSendIdsAndRefs() {
     }
   }
 
-  const createMessage = getVueMethod('createMessage')
-  const resend = getVueMethod('resendMessage')
+  const createMessage = getVueMethod('createMessage', { uni: { getStorageSync() { return '' } } })
+  const resend = getVueMethod('resendMessage', { uni: { getStorageSync() { return '' } } })
   for (const type of types) {
     const generated = createMessage.call({ refMessageId: '77' }, type, 'hello', { duration: 4, fileName: 'f.txt', fileSize: 9 })
     assert.ok(generated.clientMessageId && generated.id === generated.clientMessageId)
@@ -695,7 +696,7 @@ async function testDeletedReferences() {
 }
 
 async function testNotifications() {
-  const source = fs.readFileSync(path.join(root, 'src/utils/notification.js'), 'utf8')
+  const source = fs.readFileSync(path.join(root, 'src/utils/realtime/notification.js'), 'utf8')
     .replace(/^import .*$/gm, '')
     .replace(/^export default[\s\S]*$/m, '')
     .replace(/^export /gm, '')
@@ -729,7 +730,7 @@ async function testNotifications() {
 }
 
 async function testTransportAccountIsolation() {
-  const { createChatEventsTransport } = await import(pathToFileURL(path.join(root, 'src/utils/chat-events-transport.mjs')).href)
+  const { createChatEventsTransport } = await import(pathToFileURL(path.join(root, 'src/utils/realtime/chat-events-transport.mjs')).href)
   let token = 'old-token'
   const sockets = []
   const timers = new Map()
@@ -799,7 +800,7 @@ async function testTransportAccountIsolation() {
 }
 
 function testChatEventsReconnectNotification() {
-  const filename = path.join(root, 'src/utils/chat-events.js')
+  const filename = path.join(root, 'src/utils/realtime/chat-events.js')
   const source = fs.readFileSync(filename, 'utf8')
   astFor(source, filename)
   const emitted = []
@@ -814,13 +815,22 @@ function testChatEventsReconnectNotification() {
     baseUrl: 'https://example.test',
     messageBus: { emit: (event, payload) => emitted.push({ event, payload }) },
     triggerMessageNotification: async (message, options) => { notificationCalls.push({ message, options }) },
-    syncChatPush() {},
+    syncChatPush() {}, installMiniIncomingSender() {}, installLiveLocationSender() {}, appChatConnectionRestored() {},
     showNotification() {}, initChatNotificationNavigation() {}, userNotificationUrl: () => '',
+    connectChatEventsSocket: options => { config = options; return { onOpen() {}, onMessage() {}, onClose() {}, onError() {}, send() {}, close() {} } },
     createChatEventsTransport(options) { config = options; return { isConnected: () => false, setActive() {} } },
+    connectCommunityChatSettings() {},
+    miniIncomingCalls: { handle() { return false }, connection() {}, foreground() {} },
+    liveLocations: { handle() {}, connection() {}, setActive() {}, setVisible() {} },
+    syncAndroidMessagingPreference() {}, androidVideoVisible: () => false, androidBackgroundMask: () => 0,
+    setAndroidRealtimeForeground() {}, handleAndroidRealtimeReturn() {},
+    realtimeActivityCard() {},
+    realtimePermissionPending: () => false, webLocationAvailable: () => false, miniLocationAvailable: () => false,
+    webCallsAvailable: () => false, refreshWebCallAlert() {},
     createNotificationCatchup() { return { check() { catchupChecks.push(true) }, setActive(value) { catchupActive.push(value) }, seen() { return true } } },
     receiveChatFeedback: options => feedbackCalls.push(options), setChatFeedbackActive() {},
     voiceCalls, installVoiceCallSender() {},
-    uni: { getStorageSync: key => key === 'token' ? 'acct' : key === 'userInfo' ? { id: 'self' } : '', connectSocket() {} }, setInterval, clearInterval, console
+    uni: { getStorageSync: key => key === 'token' ? 'acct' : key === 'userInfo' ? { id: 'self' } : '', connectSocket() {}, $on() {}, $off() {} }, setInterval, clearInterval, console
   }
   vm.runInNewContext(`${executable}\nglobalThis.__testExports={isChatEventsConnected,setChatEventsActive,setActiveChatConversation,notifyChatEvent}`, context)
   config.onConnected({ reconnected: false })

@@ -38,10 +38,10 @@
   </RecyclingShell>
 </template>
 <script>
-import RecyclingShell from '@/pages-nonTheme/components/RecyclingShell.vue'
-import RecyclingServiceMap from '@/pages-nonTheme/components/RecyclingServiceMap.vue'
-import ShopRegionPicker from '@/pages-nonTheme/components/ShopRegionPicker.vue'
-import { recyclingOverview, recyclingAdmin, recyclingRequest, bookingStatusText, collectorStatusText, mutationData } from '@/pages-nonTheme/api/recycling.js'
+import RecyclingShell from '@/components/recycling/RecyclingShell.vue'
+import RecyclingServiceMap from '@/components/recycling/RecyclingServiceMap.vue'
+import ShopRegionPicker from '@/components/ShopRegionPicker.vue'
+import { recyclingOverview, recyclingAdmin, recyclingRequest, bookingStatusText, collectorStatusText, mutationData } from '@/api/recycling.js'
 export default {
   components: { RecyclingShell, ShopRegionPicker, RecyclingServiceMap },
   data: () => ({ isDark: false, loading: false, busy: false, ready: false, error: '', page: 1, loadedPage: null, tab: 'applications', tabs: [{ key: 'applications', label: '申请审核' }, { key: 'collectors', label: '回收员' }, { key: 'orders', label: '预约调度' }, { key: 'areas', label: '服务覆盖' }], overview: { areas: [], profiles: [], applications: [], orders: [], availability: [] }, catalog: { types: [] }, reasons: {}, collectorSelections: {}, areaSelections: {}, candidates: {}, rangePreviews: {}, legacyRegions: {}, writes: {} }),

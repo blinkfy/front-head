@@ -8,7 +8,7 @@ import { parse, compileTemplate } from '@vue/compiler-sfc'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const require = createRequire(import.meta.url)
-const sourcePath = path.join(root, 'src/utils/use-recognition-bboxes.js')
+const sourcePath = path.join(root, 'src/utils/recognition/use-recognition-bboxes.js')
 const source = fs.readFileSync(sourcePath, 'utf8')
 const watches = []
 const unloadCallbacks = []
@@ -59,7 +59,7 @@ const sandbox = {
     }
   }
 }
-const recognitionSyncPath = path.join(root, 'src/utils/recognition-sync.js')
+const recognitionSyncPath = path.join(root, 'src/utils/recognition/recognition-sync.js')
 let syncSource = fs.readFileSync(recognitionSyncPath, 'utf8').replace(/^export /gm, '')
 syncSource += '\nmodule.exports = { getBboxColor, mapBboxToDisplay };'
 const syncModule = { exports: {} }
@@ -235,6 +235,7 @@ class TestFormData { constructor() { this.fields = {} } append(name, value) { th
 let fetchedForm
 const h5Context = {
   baseUrl: 'https://example.test', request() {}, File: TestFile, FormData: TestFormData,
+  setTimeout, clearTimeout,
   console: { error() {}, warn() {} },
   uni: {
     getStorageSync: key => key === 'token' ? 'session-token' : '',

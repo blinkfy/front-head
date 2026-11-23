@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { parse } from '@vue/compiler-sfc'
-import { shouldReturnFromCall } from '../../src/utils/voice-call-core.mjs'
+import { shouldReturnFromCall } from '../../src/utils/realtime/voice-call-core.mjs'
 
 const OLD = 'previous_call_0001', NEW = 'incoming_call_0002'
 function loadComponent(path, context) {
@@ -94,7 +94,7 @@ for (const phase of ['incoming', 'calling', 'connecting', 'connected', 'ended'])
   const context = { voiceCallState: state, liveLocationState: { phase: 'idle' }, ManifestIcon: {},
     androidRealtimeAvailable: () => false, webCallsAvailable: () => true, webLocationAvailable: () => false,
     miniLocationAvailable: () => false, webCallNotificationsAvailable: () => false }
-  const component = loadComponent('../../src/components/RealtimeActivityEntry.vue', context)
+  const component = loadComponent('../../src/pages-nonTheme/components/RealtimeActivityEntry.vue', context)
   const entry = bind(component)
   entry.showLocation = true; entry.showNotificationSetting = false
   assert.equal(entry.callActive, phase !== 'ended')

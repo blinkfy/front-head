@@ -19,23 +19,40 @@ import {
   resolveLegacyDeviceScanUrl,
   rewriteLegacyDeviceScanLocation,
   savePendingDeviceQrScene
-} from '../../src/utils/device-qr-entry.mjs'
-import { getDeviceQrScanContent as getDeviceScanContent, normalizeDeviceMode, resolveDeviceScanTarget } from '../../src/utils/device-qr.js'
+} from '../../src/utils/scan/device-qr-entry.mjs'
 
 const scene = '0123456789abcdef0123456789abcdef'
 const path = `/pages/scan/scan?scene=${scene}`
 const darkPath = `/pages-dark/scan/scan?scene=${scene}`
 const hookFile = new URL('../../src/pages-nonTheme/utils/use-device-scan-page.js', import.meta.url)
 const hookSource = await readFile(hookFile, 'utf8')
+const deviceQrSource = await readFile(new URL('../../src/utils/scan/device-qr.js', import.meta.url), 'utf8')
+const deviceQrContext = vm.createContext({
+  DEVICE_SCAN_PAGE,
+  isLegacyDeviceScanPath,
+  resolveLegacyDeviceScanUrl,
+  resolveDeviceQrPathTarget,
+  getDeviceQrScanContent,
+  isPhoneBrowser: () => false,
+  appVersionGuard: () => ({ ensure: async () => true }),
+  handleRegistrationQrScan: () => false
+})
+const executableDeviceQrSource = deviceQrSource
+  .replace(/^import[^\r\n]*\r?\n/gm, '')
+  .replace(/^export\s+\{[^\r\n]*\}\s+from[^\r\n]*\r?\n/gm, '')
+  .replace(/^export\s+/gm, '')
+vm.runInContext(`${executableDeviceQrSource}\nglobalThis.__deviceQr = { normalizeDeviceMode, resolveDeviceScanTarget };`, deviceQrContext)
+const { normalizeDeviceMode, resolveDeviceScanTarget } = deviceQrContext.__deviceQr
+const getDeviceScanContent = getDeviceQrScanContent
 
 const scannerSources = await Promise.all([
-  ['src/utils/device-qr.js', await readFile(new URL('../../src/utils/device-qr.js', import.meta.url), 'utf8')],
+  ['src/utils/scan/device-qr.js', await readFile(new URL('../../src/utils/scan/device-qr.js', import.meta.url), 'utf8')],
   ['src/pages-nonTheme/utils/use-device-scan-page.js', hookSource],
   ['src/pages-nonTheme/scan.vue', await readFile(new URL('../../src/pages-nonTheme/scan.vue', import.meta.url), 'utf8')]
 ])
 for (const [file, scannerSource] of scannerSources) {
   assert.doesNotMatch(scannerSource, /wxCode/, `${file}: scanType must not use unsupported wxCode`)
-  if (file === 'src/utils/device-qr.js') {
+  if (file === 'src/utils/scan/device-qr.js') {
     const miniProgramScan = scannerSource.match(/\/\/ #ifdef MP-WEIXIN\s+scanDeviceQrCode\(\{([\s\S]*?)\/\/ #endif/)
     assert.ok(miniProgramScan, 'utility keeps its MP-Weixin scan branch')
     assert.doesNotMatch(miniProgramScan[1], /scanType/, 'MP-Weixin uses its default scan types')
@@ -222,6 +239,7 @@ function createScanPageHarness(dark, overrides = {}) {
     DEVICE_SCAN_PAGE,
     getDeviceAPI: () => deviceAPI,
     testDeviceAPI: () => true,
+    primeUiSounds() {},
     normalizeDeviceMode,
     resolveDeviceScanTarget,
     getDeviceQrScanContent: getDeviceScanContent,
@@ -229,7 +247,8 @@ function createScanPageHarness(dark, overrides = {}) {
     saveMockDeviceConnection: value => ({ ...value, id: value.device_id }),
     resolveWechatQrScene: async value => {
       calls.resolve.push(value)
-      return overrides.resolve ? overrides.resolve(value) : { code: 0, data: { device_id: 'device-1', token: 'device-token', device_name: 'resolved name', device_mode: 'bin' } }
+      const result = overrides.resolve ? await overrides.resolve(value) : { code: 0, data: { device_id: 'device-1', token: 'device-token', device_name: 'resolved name', device_mode: 'bin' } }
+      return result
     },
     appendPageQuery,
     clearPendingDeviceQrScene,

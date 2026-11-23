@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createWebRoundCodeResolver } from '../../src/utils/h5-roundcode-core.mjs'
+import { createWebRoundCodeResolver } from '../../src/utils/scan/h5-roundcode-core.mjs'
 
 function fixture(data, confirm = true) {
   let token = 'login-token', active = true

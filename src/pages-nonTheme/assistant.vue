@@ -1,5 +1,6 @@
 <template>
   <view :class="['shell', isDark ? 'dark-theme' : '']">
+    <template v-if="assistantPageMode === 'enabled'">
     <!-- #ifdef APP-PLUS -->
     <AppConfirmDialog ref="appConfirmDialog" />
     <!-- #endif -->
@@ -347,6 +348,34 @@
       </view>
     </view>
 
+    </template>
+    <!-- #ifdef MP-WEIXIN -->
+    <view v-else class="quiet-page" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="quiet-header"><view class="quiet-back" @tap="goBack">‹</view><text>{{ assistantPageMode === 'archive' ? '环保记录' : '环保小贴士' }}</text></view>
+      <view v-if="assistantPageMode === 'checking'" class="quiet-loading">正在加载…</view>
+      <template v-else-if="assistantPageMode === 'archive'">
+        <scroll-view v-if="archiveConversations.length > 1" class="quiet-tabs" scroll-x>
+          <view class="quiet-tab-list"><view v-for="(conversation, index) in archiveConversations" :key="conversation.id" :class="['quiet-tab', archiveIndex === index ? 'active' : '']" @tap="archiveIndex = index">记录 {{ index + 1 }}</view></view>
+        </scroll-view>
+        <scroll-view class="quiet-records" scroll-y>
+          <view v-for="(message, index) in archiveMessages" :key="index" :class="['quiet-message', message.role === 'user' ? 'mine' : '']">
+            <text class="quiet-role">{{ message.role === 'user' ? '你' : '回复' }}</text>
+            <text class="quiet-content" selectable>{{ message.content }}</text>
+          </view>
+        </scroll-view>
+      </template>
+      <scroll-view v-else class="quiet-guide-scroll" scroll-y>
+        <view class="quiet-guide">
+          <view class="guide-hero"><text class="guide-eyebrow">GREEN LIVING · 环保生活</text><text class="quiet-guide-title">今天，从一件小事开始</text><text class="guide-intro">把环保融入日常，每一次选择都算数。</text><view class="guide-orbit">🌱</view></view>
+          <view v-if="quietHistoryUnavailable" class="quiet-retry"><text>记录暂时无法加载</text><text class="quiet-retry-action" @tap="retryQuietHistory">重新尝试 ›</text></view>
+          <view class="guide-heading"><text>生活场景指南</text><text class="guide-hint">选择一个场景看看</text></view>
+          <view class="guide-tabs"><view v-for="(tip, index) in quietTips" :key="tip.title" :class="['guide-tab', quietTipIndex === index ? 'active' : '']" @tap="quietTipIndex = index">{{ tip.icon }} {{ tip.title }}</view></view>
+          <view class="guide-card"><text class="guide-card-number">{{ quietTips[quietTipIndex].number }} / 日常行动</text><text class="guide-card-title">{{ quietTips[quietTipIndex].headline }}</text><text class="guide-card-copy">{{ quietTips[quietTipIndex].description }}</text><view v-for="(step, index) in quietTips[quietTipIndex].steps" :key="index" class="guide-step"><text class="guide-step-number">{{ index + 1 }}</text><text>{{ step }}</text></view></view>
+          <view class="guide-note">💡 分类标准因地区而异，具体以当地投放要求为准。</view>
+        </view>
+      </scroll-view>
+    </view>
+    <!-- #endif -->
   </view>
 </template>
 
@@ -385,7 +414,7 @@ import { fetchAiCapabilities, fetchChatRuns, findChatRun, cancelChatRun, newActi
 import { createRunLedger, runStorageKey, applyRunSnapshot } from './utils/ai-chat-runs.mjs'
 // #ifdef APP-PLUS
 import { getChatUserList } from '@/pages-nonTheme/api/chat.js'
-import { needsRecentShareTargets } from '@/utils/app-direct-share.js'
+import { needsRecentShareTargets } from '@/utils/realtime/app-direct-share.js'
 // #endif
 
 let chatCoordinateSystem = 'gcj02'
@@ -436,6 +465,37 @@ const SEED_CONSUMED_KEY = 'ai_chat_seed_consumed_at'
 
 // ─── 主题 ────────────────────────────────────────────────
 const isDark = ref(getStorage('app_theme') === 'dark')
+const assistantPageMode = ref('enabled')
+// #ifdef MP-WEIXIN
+assistantPageMode.value = 'checking'
+// #endif
+const archiveConversations = ref([])
+const archiveIndex = ref(0)
+const archiveMessages = computed(() => archiveConversations.value[archiveIndex.value]?.messages || [])
+const quietHistoryUnavailable = ref(false)
+const quietTipIndex = ref(0)
+const quietTips = [
+  { title: '投放前', icon: '♻️', number: '01', headline: '先处理，再投放', description: '简单整理一下，让可回收物更容易被利用。', steps: ['清空包装里的残渣，简单冲洗并沥干。', '纸箱压平，瓶罐压扁后按当地要求分类。', '油污严重的纸张先查看当地投放指引。'] },
+  { title: '购物时', icon: '🛍️', number: '02', headline: '少带走一点包装', description: '从购买的那一刻，减少不必要的垃圾。', steps: ['出门带上购物袋和水杯，少用一次性用品。', '按实际需要购买食品，优先消耗已有库存。', '选择适量包装，能重复使用的容器继续使用。'] },
+  { title: '特殊物品', icon: '🔋', number: '03', headline: '特殊垃圾，单独处理', description: '有些物品需要专门的收集方式。', steps: ['过期药品、废灯管按当地有害垃圾要求投放。', '废旧充电电池单独存放，送到指定回收点。', '尖锐物先包好并标识，避免刺伤收运人员。'] }
+]
+
+function prepareQuietHistory(historyData) {
+  const groups = new Map()
+  for (const item of historyData?.items || []) {
+    if (!item || (item.role !== 'user' && item.role !== 'assistant')) continue
+    const content = String(item.content || '').trim()
+    if (!content && !item.hasImage && !item.imageAvailable && !item.recognitionHistoryId) continue
+    const id = String(item.sessionId || 'legacy_default')
+    if (!groups.has(id)) groups.set(id, { id, messages: [] })
+    // 仅调整关闭状态下的展示，原始记录不作修改。
+    const display = (content || '图片记录').replace(/人工智能|人工智慧|机器学习|深度学习|大语言模型|语言模型|智能助手|智能模型|生成式模型|神经网络|机器人|ChatGPT|DeepSeek|通义千问|文心一言|豆包|(^|[^A-Za-z])(?:AI|LLM|GPT(?:-?\d+(?:\.\d+)*)?)(?=$|[^A-Za-z])/gi, (match, prefix) => (prefix || '') + '环保服务')
+    groups.get(id).messages.push({ role: item.role, content: display })
+  }
+  archiveConversations.value = Array.from(groups.values())
+  archiveIndex.value = 0
+  assistantPageMode.value = archiveConversations.value.length ? 'archive' : 'guide'
+}
 
 // ─── 状态栏高度 ──────────────────────────────────────────
 const statusBarHeight = ref(20)
@@ -859,18 +919,44 @@ function requestJson(url, options = {}) {
       method: options.method || 'GET',
       header: options.header || {},
       data: options.data,
+      // #ifdef MP-WEIXIN
+      timeout: options.timeout || 5000,
+      // #endif
       success: (res) => resolve(res.data),
       fail: reject
     })
   })
 }
+async function guardAiChatAccess() {
+  try {
+    const payload = await requestJson(`${baseUrl}/api/ai/settings`)
+    // #ifdef MP-WEIXIN
+    return payload?.code === 0 && payload.data?.aiEnabled === true
+    // #endif
+    // #ifndef MP-WEIXIN
+    const settings = payload && payload.code === 0 ? payload.data : null
+    if (!settings || settings.aiEnabled !== false) return true
+    if (await isCurrentUserAdmin()) return true
+    goBack()
+    return false
+    // #endif
+  } catch (err) {
+    // #ifdef MP-WEIXIN
+    return false
+    // #endif
+    // #ifndef MP-WEIXIN
+    console.warn('[ai-chat] check AI settings failed:', err)
+    return true
+    // #endif
+  }
+}
+
+// #ifndef MP-WEIXIN
 async function isCurrentUserAdmin() {
   const token = getStorage('token') || ''
   if (!token) return false
   try {
-    const payload = await requestJson(`${baseUrl}/api/userinfo?avater=false`, {
-      header: buildAuthHeaders(false)
-    })
+    const payload = await requestJson(`${baseUrl}/api/userinfo?avater=false`, { header: buildAuthHeaders(false) })
     const isAdmin = !!(payload && payload.code === 0 && payload.data && payload.data.isAdmin)
     if (isAdmin) setStorage('isAdmin', true)
     else {
@@ -880,23 +966,9 @@ async function isCurrentUserAdmin() {
       // #endif
     }
     return isAdmin
-  } catch (_) {
-    return false
-  }
+  } catch (_) { return false }
 }
-async function guardAiChatAccess() {
-  try {
-    const payload = await requestJson(`${baseUrl}/api/ai/settings`)
-    const settings = payload && payload.code === 0 ? payload.data : null
-    if (!settings || settings.aiEnabled !== false) return true
-    if (await isCurrentUserAdmin()) return true
-    goBack()
-    return false
-  } catch (err) {
-    console.warn('[ai-chat] check AI settings failed:', err)
-    return true
-  }
-}
+// #endif
 
 // ─── 会话管理 ─────────────────────────────────────────────
 function measureMessagesViewport() {
@@ -1367,7 +1439,7 @@ function goBack() {
 }
 
 // ─── 历史加载 ─────────────────────────────────────────────
-async function loadHistoryItems() {
+async function loadHistoryItems(options = {}) {
   const token = getStorage('token') || ''
   if (!token) return { items: [], sessionMetas: {} }
   try {
@@ -1388,27 +1460,67 @@ async function loadHistoryItems() {
     // #endif
     // #ifndef H5
     return await new Promise((resolve) => {
-      uni.request({
-        url: `${baseUrl}/api/ai/chat/history?limit=100`,
+      const cacheKey = 'assistant_quiet_history'
+      const finishUnavailable = (allowCache) => {
+        // #ifdef MP-WEIXIN
+        if (allowCache) {
+          try {
+            const cached = uni.getStorageSync(cacheKey)
+            if (cached && cached.owner === token && Array.isArray(cached.items) && cached.items.length) {
+              resolve({ items: cached.items, sessionMetas: {}, unavailable: true })
+              return
+            }
+          } catch (_) {}
+        }
+        // #endif
+        resolve({ items: [], sessionMetas: {}, unavailable: true })
+      }
+      const requestPage = (offset = 0) => uni.request({
+        url: `${baseUrl}/api/ai/chat/history?limit=100&offset=${offset}`,
+        // #ifdef MP-WEIXIN
+        timeout: 5000,
+        // #endif
         method: 'GET',
         header: buildAuthHeaders(false),
         success: (res) => {
           const payload = res.data
+          if (res.statusCode !== 200 || !payload || payload.code !== 0 || !payload.data || !Array.isArray(payload.data.items)) {
+            finishUnavailable(res.statusCode >= 500)
+            return
+          }
           const items = payload && payload.code === 0 && payload.data && Array.isArray(payload.data.items)
             ? payload.data.items : []
           const sessionMetas = payload && payload.code === 0 && payload.data && payload.data.sessionMetas
             ? payload.data.sessionMetas : {}
-          resolve({
-            items: items.filter(item => item && (item.role === 'user' || item.role === 'assistant')),
-            sessionMetas
-          })
+          const filtered = items.filter(item => item && (item.role === 'user' || item.role === 'assistant'))
+          // 已删除的会话可能占满最近一页；继续查找较早的可见记录。
+          // #ifdef MP-WEIXIN
+          const total = Number(payload.data.pagination?.total || 0)
+          if (options.quiet && !filtered.length && offset + 100 < total) {
+            requestPage(offset + 100)
+            return
+          }
+          try { uni.setStorageSync(cacheKey, { owner: token, items: filtered }) } catch (_) {}
+          // #endif
+          resolve({ items: filtered, sessionMetas })
         },
-        fail: () => resolve({ items: [], sessionMetas: {} })
+        fail: () => finishUnavailable(true)
       })
+      requestPage()
     })
     // #endif
   } catch (_) { return { items: [], sessionMetas: {} } }
 }
+// #ifdef MP-WEIXIN
+async function retryQuietHistory() {
+  const owner = String(getStorage('token') || '')
+  assistantPageMode.value = 'checking'
+  const history = await loadHistoryItems({ quiet: true })
+  if (pageDisposed || owner !== String(getStorage('token') || '')) return
+  quietHistoryUnavailable.value = !!history.unavailable
+  prepareQuietHistory(history)
+}
+// #endif
 function hydrateConversations(historyData) {
   conversationMap = new Map()
   reasoningCollapsed.value = {}
@@ -2195,7 +2307,19 @@ onMounted(async () => {
   initSystemInfo()
   isDark.value = getStorage('app_theme') === 'dark'
   const canUseAiChat = await guardAiChatAccess()
-  if (!canUseAiChat || pageDisposed || mountOwner !== String(getStorage('token') || '')) return
+  if (pageDisposed || mountOwner !== String(getStorage('token') || '')) return
+  // #ifdef MP-WEIXIN
+  if (!canUseAiChat) {
+    const historyData = await loadHistoryItems({ quiet: true })
+    quietHistoryUnavailable.value = !!historyData.unavailable
+    if (!pageDisposed && mountOwner === String(getStorage('token') || '')) prepareQuietHistory(historyData)
+    return
+  }
+  assistantPageMode.value = 'enabled'
+  // #endif
+  // #ifndef MP-WEIXIN
+  if (!canUseAiChat) return
+  // #endif
   ensureRunLedger()
   if (getStorage('token')) void chatEnvironment.prepare()
 
@@ -2309,6 +2433,48 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
+.quiet-page { box-sizing: border-box; height: 100vh; display: flex; flex-direction: column; background: #f3f8f5; color: #233e34; }
+.quiet-header { position: relative; display: flex; align-items: center; justify-content: center; min-height: 52px; font-size: 17px; font-weight: 600; background: #fff; }
+.quiet-back { position: absolute; left: 18px; width: 36px; font-size: 30px; line-height: 36px; color: #168d69; }
+.quiet-loading { padding: 40px 20px; text-align: center; color: #71877d; }
+.quiet-guide-scroll { flex: 1; min-height: 0; }
+.quiet-guide { padding: 18px 18px 36px; }
+.guide-hero { position: relative; overflow: hidden; padding: 24px 20px 25px; border-radius: 20px; color: #fff; background: linear-gradient(130deg, #118e6c, #20b887); }
+.guide-eyebrow { display: block; font-size: 10px; letter-spacing: 2px; opacity: .8; }
+.quiet-guide-title { position: relative; display: block; margin: 14px 0 8px; font-size: 21px; font-weight: 700; }
+.guide-intro { position: relative; display: block; max-width: 78%; font-size: 13px; line-height: 1.6; opacity: .9; }
+.guide-orbit { position: absolute; right: -8px; bottom: -25px; width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,.13); text-align: center; line-height: 96px; font-size: 43px; }
+.quiet-retry { display: flex; justify-content: space-between; margin-top: 14px; padding: 12px 14px; border-radius: 12px; color: #698176; background: #e6f1eb; font-size: 12px; }
+.quiet-retry-action { color: #138f6c; font-weight: 600; }
+.guide-heading { display: flex; justify-content: space-between; align-items: center; margin: 26px 2px 14px; font-size: 16px; font-weight: 700; }
+.guide-hint { color: #91a59a; font-size: 11px; font-weight: 400; }
+.guide-tabs { display: flex; gap: 8px; }
+.guide-tab { flex: 1; padding: 10px 4px; border-radius: 12px; background: #e7f0eb; color: #668074; text-align: center; font-size: 12px; }
+.guide-tab.active { color: #087b59; background: #d0eddd; font-weight: 600; }
+.guide-card { margin-top: 12px; padding: 19px; border: 1px solid #e3eee8; border-radius: 16px; background: #fff; box-shadow: 0 5px 20px rgba(30,83,59,.04); }
+.guide-card-number { display: block; color: #26a67d; font-size: 11px; font-weight: 600; }
+.guide-card-title { display: block; margin-top: 10px; color: #254437; font-size: 17px; font-weight: 700; }
+.guide-card-copy { display: block; margin: 7px 0 16px; color: #809388; font-size: 12px; line-height: 1.6; }
+.guide-step { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; color: #4d675a; font-size: 13px; line-height: 1.6; }
+.guide-step-number { flex: none; width: 20px; height: 20px; border-radius: 50%; background: #e5f5eb; color: #168d69; text-align: center; line-height: 20px; font-size: 11px; }
+.guide-note { margin: 16px 4px 0; color: #8a9c92; font-size: 11px; line-height: 1.6; }
+.quiet-tabs { flex: none; width: 100%; white-space: nowrap; }
+.quiet-tab-list { display: flex; padding: 12px 16px; gap: 8px; }
+.quiet-tab { padding: 6px 14px; border-radius: 16px; background: #e4eee8; font-size: 13px; }
+.quiet-tab.active { background: #168d69; color: #fff; }
+.quiet-records { flex: 1; min-height: 0; box-sizing: border-box; padding: 12px 16px; }
+.quiet-message { margin-bottom: 12px; padding: 14px; border-radius: 12px; background: #fff; }
+.quiet-message.mine { background: #e4f4eb; }
+.quiet-role { display: block; margin-bottom: 6px; color: #71877d; font-size: 12px; }
+.quiet-content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
+.dark-theme .quiet-page { background: #182722; color: #e6f1eb; }
+.dark-theme .quiet-header, .dark-theme .guide-card, .dark-theme .quiet-message { background: #253a32; color: #e6f1eb; }
+.dark-theme .guide-card { border-color: #345247; }
+.dark-theme .guide-card-title, .dark-theme .guide-step { color: #dbece3; }
+.dark-theme .guide-tab, .dark-theme .quiet-retry { background: #315044; color: #d0e3d9; }
+.dark-theme .guide-tab.active { background: #1d785b; color: #fff; }
+.dark-theme .quiet-message.mine, .dark-theme .quiet-tab { background: #315044; color: #e6f1eb; }
+.dark-theme .quiet-tab.active { background: #168d69; }
 .shell .inline-suggestions-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .shell .quick-actions-toggle { margin: 0 0 4px; padding: 0 8px; line-height: 24px; font-size: 12px; color: var(--accent); background: transparent; }
 .shell .quick-actions-toggle::after { border: 0; }

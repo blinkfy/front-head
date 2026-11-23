@@ -67,7 +67,7 @@ function plainSections(sections) {
   return Array.from(sections, section => ({ title: section.title, content: section.content, renderKey: section.renderKey }))
 }
 
-const helperSource = readFileSync(new URL('../../src/utils/recognition-sync.js', import.meta.url), 'utf8')
+const helperSource = readFileSync(new URL('../../src/utils/recognition/recognition-sync.js', import.meta.url), 'utf8')
   .replace(/^export\s+/gm, '')
   .concat('\nObject.assign(this, { buildExpandedUpcyclingText, splitUpcyclingSections, photoClassificationSpeech, recognitionSectionSpeech })')
 const helperContext = {}

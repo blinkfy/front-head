@@ -4,7 +4,8 @@ import { runInNewContext } from 'node:vm'
 import { pathToFileURL } from 'node:url'
 import { parse as parseJavaScript } from '@babel/parser'
 import { compileScript, compileTemplate, parse as parseSfc } from '@vue/compiler-sfc'
-import { getRecognitionRobotState } from '../../src/utils/recognition-robot-state.mjs'
+import { resolveUpcyclingImage } from '../../src/utils/recognition/image-download.mjs'
+import { getRecognitionRobotState } from '../../src/utils/recognition/recognition-robot-state.mjs'
 
 const apiSource = readFileSync(new URL('../../src/api/recognize.js', import.meta.url), 'utf8')
   .replace(/^import .*\r?\n/gm, '')
@@ -137,7 +138,7 @@ async function verifyUnauthorizedProgressDoesNotFailRecognitionPost() {
 }
 
 async function verifyRecognitionTaskReplacementAndRecovery() {
-  const task = await import(new URL('../../src/utils/recognition-task.mjs', import.meta.url))
+  const task = await import(new URL('../../src/utils/recognition/recognition-task.mjs', import.meta.url))
   task.clearRecognitionTask()
   const notifications = []
   const unsubscribe = task.subscribeRecognitionTask(value => notifications.push(value))
@@ -183,7 +184,7 @@ async function verifyRecognitionTaskReplacementAndRecovery() {
 }
 
 async function verifyRecognitionTaskIsolationAcrossAccounts() {
-  const task = await import(new URL('../../src/utils/recognition-task.mjs', import.meta.url))
+  const task = await import(new URL('../../src/utils/recognition/recognition-task.mjs', import.meta.url))
   const originalUni = globalThis.uni
   let token = 'account-A'
   globalThis.uni = { getStorageSync: key => key === 'token' ? token : '' }
@@ -261,7 +262,7 @@ function compileAndExtractHomeFunctions(relativePath) {
   let processImageNode = null
   let onShowCallbackNode = null
   let handleRecognitionProgressNode = null
-  let restoreRecognitionTaskNode = null
+  let recognitionSetupNode = null
   visitAst(ast, node => {
     if (node.type === 'FunctionDeclaration' && node.id?.name === 'processImage') {
       processImageNode = node
@@ -269,8 +270,8 @@ function compileAndExtractHomeFunctions(relativePath) {
     if (node.type === 'FunctionDeclaration' && node.id?.name === 'handleRecognitionProgress') {
       handleRecognitionProgressNode = node
     }
-    if (node.type === 'FunctionDeclaration' && node.id?.name === 'restoreRecognitionTask') {
-      restoreRecognitionTaskNode = node
+    if (node.type === 'CallExpression' && node.callee?.name === 'useHomeRecognition') {
+      recognitionSetupNode = node
     }
     if (node.type === 'CallExpression' && node.callee?.type === 'Identifier' &&
         node.callee.name === 'onShow' && node.arguments[0]?.type === 'ArrowFunctionExpression') {
@@ -279,12 +280,12 @@ function compileAndExtractHomeFunctions(relativePath) {
   })
   assert.ok(processImageNode, relativePath + ' processImage function is required')
   assert.ok(handleRecognitionProgressNode, relativePath + ' handleRecognitionProgress function is required')
-  assert.ok(restoreRecognitionTaskNode, relativePath + ' restoreRecognitionTask function is required')
+  assert.ok(recognitionSetupNode, relativePath + ' shared recognition setup is required')
   assert.ok(onShowCallbackNode, relativePath + ' onShow callback is required')
   return {
     processImage: script.slice(processImageNode.start, processImageNode.end),
     handleRecognitionProgress: script.slice(handleRecognitionProgressNode.start, handleRecognitionProgressNode.end),
-    restoreRecognitionTask: script.slice(restoreRecognitionTaskNode.start, restoreRecognitionTaskNode.end),
+    recognitionSetup: script.slice(recognitionSetupNode.start, recognitionSetupNode.end),
     onShow: script.slice(onShowCallbackNode.start, onShowCallbackNode.end)
   }
 }
@@ -301,42 +302,34 @@ async function waitForPredicate(predicate, label, timeoutMs = 2000) {
   }
 }
 
+function utilitySource(name) {
+  return readFileSync(new URL('../../src/utils/recognition/' + name, import.meta.url), 'utf8')
+    .replace(/^import \{[^}]+\} from ['"][^'"]+['"]\n/gm, '')
+    .replace(/^export /gm, '')
+}
+
+const homeRecognitionSource = [
+  'recognition-sync.js', 'use-upcycling-image.js', 'use-home-recognition.js'
+].map(utilitySource).join('\n')
+
 function makeProcessImageContext(task, functions, options = {}) {
   const requestCalls = []
   let compressionStarted = false
-  const refs = {
-    failedPreviewPending: ref(false),
-    resultCollapsed: ref(false),
-    recentResult: ref(null),
-    retryImagePath: ref(''),
-    retryImageFile: ref(null),
-    recognitionPreview: ref(null),
-    classificationUi: ref(''),
-    robotFeedbackActive: ref(false),
-    robotState: ref(''),
-    resultImage: ref(''),
-    isProcessing: ref(false),
-    processStatus: ref(''),
-    resultCategory: ref(''),
-    targetConfidence: ref(0),
-    resultConfidence: ref(''),
-    resultDesc: ref(''),
-    aiEnabled: ref(false),
-    isH5Platform: ref(false)
-  }
   const imageResult = options.result || {
     labels: [{ class: 2, name: '可回收垃圾', confidence: 0.9, describe: 'Rinse first' }],
     result_img_base64: 'data:image/jpeg;base64,verification-image',
     aiSettings: { aiEnabled: true }
   }
   const context = {
-    ...refs,
+    ref,
+    isH5Platform: ref(false),
+    recentResult: ref(null),
     activeRecognitionTaskId: '',
     displayedRecentId: '',
-    recentRecognition: { save() {}, get() { return null } },
+    appTab: false,
+    recentRecognition: { save() {}, get() { return null }, updateImage() {} },
     // Audio is orthogonal to these lifecycle assertions; keep the new side effect inert in this VM.
     playUiSound() {},
-    pendingUpcyclingSound: '',
     pageVisible: true,
     compressionConfig: {
       h5: { quality: 0.8, maxWidth: 1920 },
@@ -347,16 +340,19 @@ function makeProcessImageContext(task, functions, options = {}) {
     completeRecognitionTask: task.completeRecognitionTask,
     failRecognitionTask: task.failRecognitionTask,
     getRecognitionTask: task.getRecognitionTask,
+    getRecognitionFailureCopy: () => ({ title: '', description: '' }),
     isRecognitionTaskCurrent: task.isRecognitionTaskCurrent,
     updateRecognitionTask: task.updateRecognitionTask,
     updateRecognitionPreview: task.updateRecognitionPreview,
     // Upload cleanup is a production side effect; keep extracted lifecycle tests isolated.
     discardUploadImage() {},
     getRecognitionRobotState,
-    startElapsedClock() {},
-    stopElapsedClock() {},
-    resetEnhancedRecognition() {},
-    applyRecognitionResult() {},
+    onScopeDispose() {},
+    enqueueAchievementUnlocks() {},
+    takeAchievementUnlocks: () => [],
+    showAchievementUnlockModal() {},
+    useRecognitionBboxes: () => ({ displayBboxes: ref([]), queueRefreshDisplayBboxes() {} }),
+    resolveUpcyclingImage,
     getRecognitionImageSize: async filePath => filePath.includes('compressed')
       ? (options.compressedSize ?? 100)
       : (options.originalSize ?? 100000),
@@ -375,16 +371,17 @@ function makeProcessImageContext(task, functions, options = {}) {
       requestCalls.push({ file, callbacks })
       return options.recognitionPromise || Promise.resolve(imageResult)
     },
-    applyEnhancedRecognitionData() {},
-    animateNumber() {},
     setTimeout() { return 1 },
+    clearTimeout() {},
+    setInterval() { return 1 },
+    clearInterval() {},
     uni: options.uni || { showToast() {}, redirectTo() {} },
     console: { warn() {}, error() {}, log() {} }
   }
   runInNewContext(
-    'this.processImage = ' + functions.processImage + '\n' +
-      'this.handleRecognitionProgress = ' + functions.handleRecognitionProgress + '\n' +
-      'this.restoreRecognitionTask = ' + functions.restoreRecognitionTask,
+    homeRecognitionSource + '\nObject.assign(this, ' + functions.recognitionSetup + ')\n' +
+      'this.processImage = ' + functions.processImage + '\n' +
+      'this.handleRecognitionProgress = ' + functions.handleRecognitionProgress,
     context,
     { filename: 'extracted-processImage.js' }
   )
@@ -414,6 +411,7 @@ function makeOnShowContext(task, functions, { pendingImage, processImage } = {})
     pendingCameraImage: null,
     robotPageActive: ref(false),
     isProcessing: ref(false),
+    failureCopy: ref({ title: '', description: '' }),
     getRecognitionTask: task.getRecognitionTask,
     updateHomeAdaptiveStyle() {},
     refreshLocalSpeech() {},
@@ -443,7 +441,7 @@ function makeOnShowContext(task, functions, { pendingImage, processImage } = {})
 }
 
 async function verifyRealHomeLifecycleGuards() {
-  const task = await import(new URL('../../src/utils/recognition-task.mjs', import.meta.url))
+  const task = await import(new URL('../../src/utils/recognition/recognition-task.mjs', import.meta.url))
   const originalUni = globalThis.uni
   const pages = [
     '../../src/pages/home/home.vue',
@@ -516,7 +514,7 @@ async function verifyRealHomeLifecycleGuards() {
 }
 
 async function verifyHomeRobotProgressMapping() {
-  const task = await import(new URL('../../src/utils/recognition-task.mjs', import.meta.url))
+  const task = await import(new URL('../../src/utils/recognition/recognition-task.mjs', import.meta.url))
   const originalUni = globalThis.uni
   const pages = ['../../src/pages/home/home.vue', '../../src/pages-dark/home/home.vue']
   try {
@@ -559,6 +557,15 @@ async function verifyHomeRobotProgressMapping() {
       assert.equal(context.robotState.value, 'success', page + ' should switch to the success state on completion')
       assert.equal(context.recognitionPreview.value, null, page + ' should clear preview data on completion')
       assert.equal(task.getRecognitionTask(), null, page + ' should clear the completed shared task')
+
+      const failedTaskId = task.beginRecognitionTask('识别中', { filePath: '/tmp/retry.png' })
+      task.failRecognitionTask(failedTaskId, { msg: '识别失败' })
+      context.resultImage.value = ''
+      context.restoreRecognitionTask()
+      assert.equal(context.robotState.value, 'fail')
+      assert.equal(context.failedPreviewPending.value, true)
+      assert.equal(context.retryImagePath.value, '/tmp/retry.png')
+      assert.equal(context.resultImage.value, '/tmp/retry.png')
     }
   } finally {
     task.clearRecognitionTask()
@@ -568,7 +575,7 @@ async function verifyHomeRobotProgressMapping() {
 }
 
 async function verifyYoloCompletionSurvivesSubscriberClear() {
-  const task = await import(new URL('../../src/utils/recognition-task.mjs', import.meta.url))
+  const task = await import(new URL('../../src/utils/recognition/recognition-task.mjs', import.meta.url))
   const originalUni = globalThis.uni
   const pages = [
     '../../src/pages/home/home.vue',
@@ -603,6 +610,9 @@ async function verifyYoloCompletionSurvivesSubscriberClear() {
           page + ' should apply the first YOLO description after a subscriber clears the shared task')
         assert.equal(harness.context.resultImage.value, resultImage,
           page + ' should preserve a PNG data URL without adding a JPEG prefix')
+        assert.equal(harness.context.resultConfidence.value, page.includes('pages-dark') ? '90.00%' : '0%')
+        harness.context.applyRecognitionResult(result, false, true, 'saved-yolo')
+        assert.equal(harness.context.resultConfidence.value, page.includes('pages-dark') ? '90.00%' : '90%')
         assert.equal(harness.context.aiEnabled.value, false,
           page + ' should keep AI disabled for a pure YOLO result')
         assert.equal(harness.context.isProcessing.value, false,
@@ -620,6 +630,98 @@ async function verifyYoloCompletionSurvivesSubscriberClear() {
   }
 }
 
+async function verifyUpcyclingImagePolling() {
+  const requests = []
+  const updates = []
+  const timers = new Map()
+  let nextTimer = 0
+  let visible = true
+  let token = 'owner'
+  const poll = runInNewContext(utilitySource('use-upcycling-image.js') + '\nuseUpcyclingImage(isVisible)', {
+    ref,
+    baseUrl: 'https://example.test',
+    resolveUpcyclingImage,
+    isVisible: () => visible,
+    recentRecognition: { updateImage: (id, patch) => updates.push({ id, ...patch }) },
+    uni: {
+      getStorageSync: () => token,
+      request: options => requests.push(options)
+    },
+    console: { warn() {} },
+    setTimeout(callback, delay) {
+      assert.equal(delay, 2000)
+      const id = ++nextTimer
+      timers.set(id, callback)
+      return id
+    },
+    clearTimeout(id) { timers.delete(id) }
+  })
+  const flush = () => new Promise(resolve => setImmediate(resolve))
+  const respond = (request, status, url) => {
+    request.success({ data: { code: 0, data: { status, url } } })
+    return flush()
+  }
+  function runScheduled() {
+    assert.equal(timers.size, 1)
+    const [[id, callback]] = timers
+    timers.delete(id)
+    void callback()
+  }
+
+  poll.setUpcyclingImage({ upcyclingTaskId: 'image-a' }, 'saved-result-a')
+  assert.equal(poll.imageLoading.value, true)
+  poll.startUpcyclingPoll()
+  assert.equal(requests.length, 1, 'onShow must reuse an already active poll')
+  assert.equal(requests[0].url, 'https://example.test/api/upcycling-image/image-a?imageTransport=url')
+  assert.equal(requests[0].header.Authorization, 'owner')
+  await respond(requests.shift(), 'pending')
+  runScheduled()
+  visible = false
+  poll.stopUpcyclingPoll()
+  await respond(requests.shift(), 'done', 'https://example.test/late.webp')
+  assert.equal(poll.upcyclingImageUrl.value, '')
+  assert.equal(updates.length, 0)
+  assert.equal(timers.size, 0)
+
+  visible = true
+  poll.startUpcyclingPoll()
+  await respond(requests.shift(), 'done', '/api/recognition_history/upcycling-image/7')
+  const imageUrl = 'https://example.test/api/recognition_history/upcycling-image/7?token=owner'
+  assert.equal(poll.upcyclingImageUrl.value, imageUrl)
+  assert.equal(poll.imageLoading.value, false)
+  assert.equal(poll.upcyclingTaskId.value, '')
+  assert.equal(updates[0].id, 'saved-result-a', 'resuming must update the original saved recognition')
+  assert.equal(updates[0].upcyclingImageUrl, imageUrl)
+  assert.equal(poll.takeUpcyclingSound(), 'image-a')
+  assert.equal(poll.takeUpcyclingSound(), '')
+
+  poll.setUpcyclingImage({ upcyclingTaskId: 'image-b' }, 'saved-result-b')
+  await respond(requests.shift(), 'failed')
+  assert.equal(updates.at(-1).id, 'saved-result-b')
+  assert.equal(updates.at(-1).upcyclingTaskId, '')
+  assert.equal(poll.imageLoading.value, false)
+
+  poll.setUpcyclingImage({ upcyclingTaskId: 'old-account' }, 'old-result')
+  token = 'another-owner'
+  await respond(requests.shift(), 'done', 'https://example.test/private.webp')
+  assert.equal(poll.upcyclingImageUrl.value, '')
+  assert.equal(updates.length, 2)
+  poll.setUpcyclingImage({ upcyclingImageUrl: 'https://example.test/direct.webp' }, 'new-result')
+  assert.equal(poll.upcyclingImageUrl.value, 'https://example.test/direct.webp')
+  assert.equal(poll.imageLoading.value, false)
+  assert.equal(requests.length, 0)
+
+  poll.setUpcyclingImage({ upcyclingTaskId: 'timeout' }, 'saved-timeout')
+  for (let attempt = 0; attempt < 30; attempt++) {
+    await respond(requests.shift(), 'pending')
+    runScheduled()
+  }
+  assert.equal(requests.length, 0)
+  assert.equal(timers.size, 0)
+  assert.equal(updates.at(-1).id, 'saved-timeout')
+  assert.equal(poll.imageLoading.value, false)
+}
+
 await verifyPollingAndPostSettleLifecycle()
 await verifyUnauthorizedProgressDoesNotFailRecognitionPost()
 await verifyRecognitionTaskReplacementAndRecovery()
@@ -627,4 +729,5 @@ await verifyRecognitionTaskIsolationAcrossAccounts()
 await verifyRealHomeLifecycleGuards()
 await verifyHomeRobotProgressMapping()
 await verifyYoloCompletionSurvivesSubscriberClear()
+await verifyUpcyclingImagePolling()
 console.log('recognition progress frontend tests passed')

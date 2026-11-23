@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { createPlatformQuickLogin } from '../../src/utils/platform-quick-login-core.mjs'
-import { createBiometricLoginManager } from '../../src/utils/biometric-login-core.mjs'
+import { createPlatformQuickLogin } from '../../src/utils/account/platform-quick-login-core.mjs'
+import { createBiometricLoginManager } from '../../src/utils/account/biometric-login-core.mjs'
 
 const user = { id: 7, username: 'alice' }
 const tick = () => new Promise(resolve => setImmediate(resolve))

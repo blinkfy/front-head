@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
-import { createChatEventsTransport } from '../../src/utils/chat-events-transport.mjs'
+import { createChatEventsTransport } from '../../src/utils/realtime/chat-events-transport.mjs'
 
 function loadAndroidRealtime(context) {
-  let source = fs.readFileSync(new URL('../../src/utils/android-realtime.js', import.meta.url), 'utf8')
+  let source = fs.readFileSync(new URL('../../src/utils/realtime/android-realtime.js', import.meta.url), 'utf8')
     .replace(/^import \{[\s\S]*?\} from '@\/uni_modules\/ftx-voice-call'\s*$/m, '')
     .replace(/^import .* from .*$/gm, '')
   const conditions = []
@@ -35,6 +35,7 @@ const calls = { opened: [], sent: [], closed: 0, watches: [], clears: [], foregr
 let socketAlive = true, socketSuspended = false, permissionRequest, routeUnderTest = '', pagesUnderTest = []
 const context = {
   'APP-PLUS': true,
+  appVersionGuard: () => ({ socketUrl: value => value, handleUpgrade() {} }),
   plus: { os: { name: 'Android' }, android: { requestPermissions(permissions, success, failure) { permissionRequest = { permissions, success, failure } } } },
   requestRealtimePermissions(permissions) {
     return new Promise((resolve, reject) => context.plus.android.requestPermissions(permissions, resolve, reject))
@@ -308,8 +309,8 @@ assert.match(nativeFile('VideoCallActivity.kt'), /MediaProjectionConfig\.createC
   'Android 14 requests whole-display consent to match the device-wide audio capture')
 assert.match(nativeScreenAudio, /addMatchingUsage\(AudioAttributes\.USAGE_MEDIA\)\.addMatchingUsage\(AudioAttributes\.USAGE_GAME\)[\s\S]*?excludeUid\(Process\.myUid\(\)\)/,
   'shared playback excludes the call app and communication or notification usages')
-assert.match(nativeBridge, /setMicrophoneMute\(s\.muted\)[\s\S]*?s\.track\?\.setEnabled\(!s\.muted \|\| s\.screenAudio != null\)/,
-  'microphone mute stays in ADM while playback can continue on the same sender')
+assert.match(nativeBridge, /setMicrophoneMute\(s\.muted \|\| s\.focusSuspended \|\| s\.handoffCandidate\)[\s\S]*?s\.track\?\.setEnabled\(\(!s\.muted \|\| s\.screenAudio != null\) && !s\.focusSuspended && !s\.handoffCandidate\)/,
+  'microphone mute stays in ADM while playback can continue on the same sender, except during focus suspension or handoff')
 assert.match(nativeBridge, /s\.screenSharing = false\s+stopScreenAudio\(s\)[\s\S]*?s\.screenCapture\?\.close\(\)/,
   'screen stop releases playback capture before the projection')
 

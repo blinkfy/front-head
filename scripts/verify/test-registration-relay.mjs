@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createH5RegistrationRelay, createMiniRegistrationRelay, createRegistrationApi,
-  normalizeRegistrationScene, commitRegistrationLogin, createRegistrationDialogs } from '../../src/utils/registration-relay.mjs'
+  normalizeRegistrationScene, commitRegistrationLogin, createRegistrationDialogs } from '../../src/utils/account/registration-relay.mjs'
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }

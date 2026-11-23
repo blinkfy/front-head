@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { createWebRingtoneDriver } from '../../src/utils/web-ringtone-driver.mjs'
-import { createIncomingRingtone } from '../../src/utils/incoming-ringtone-core.mjs'
+import { createWebRingtoneDriver } from '../../src/utils/realtime/web-ringtone-driver.mjs'
+import { createIncomingRingtone } from '../../src/utils/realtime/incoming-ringtone-core.mjs'
 
 function setup({ loadBuffer = async () => ({ decoded: true }), resume = () => Promise.resolve(), state = 'running' } = {}) {
   let now = 0, nextTimer = 1

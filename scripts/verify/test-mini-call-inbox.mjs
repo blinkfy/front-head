@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createMiniCallInbox } from '../../src/utils/mini-call-inbox.mjs'
+import { createMiniCallInbox } from '../../src/utils/realtime/mini-call-inbox.mjs'
 
 const offer = { type: 'voice.alert', callId: 'mini_incoming_1234', mode: 'video', peer: { id: 2, name: '分投侠官方' } }
 function setup() {

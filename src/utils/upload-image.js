@@ -1,4 +1,4 @@
-import { imageMimeFromBase64 } from './trash-bin-image-core.mjs'
+import { imageMimeFromBase64 } from './map/trash-bin-image-core.mjs'
 import { tryAppUploadWebp } from './app-upload-webp-core.mjs'
 // #ifdef MP-WEIXIN
 import { compressWechatUploadImage } from './mp-upload-image.js'

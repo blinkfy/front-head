@@ -44,6 +44,18 @@ export function mpMainPackageAssetsPlugin() {
         const duplicate = path.join(output, 'static/manifest.json')
         try { saved += (await fs.stat(duplicate)).size } catch (_) {}
         await fs.rm(duplicate, { force: true })
+        // static/app-map 仅供 APP/H5 的地图 WebView 使用，小程序不加载。
+        const appMapDir = path.join(output, 'static', 'app-map')
+        async function dirSize(dir) {
+          let total = 0
+          for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+            const p = path.join(dir, entry.name)
+            total += entry.isDirectory() ? await dirSize(p) : (await fs.stat(p)).size
+          }
+          return total
+        }
+        try { saved += await dirSize(appMapDir) } catch (_) {}
+        await fs.rm(appMapDir, { recursive: true, force: true })
         console.log(`[mp-assets] Moved ${tables.length} database icons and the about logo; saved ${(saved / 1024).toFixed(2)} KiB from main package.`)
       }
     }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createWebCallHandoff } from '../../src/utils/web-call-handoff.mjs'
+import { createWebCallHandoff } from '../../src/utils/realtime/web-call-handoff.mjs'
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
 

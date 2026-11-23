@@ -7,7 +7,7 @@ import {
   HISTORY_IMAGE_RETENTION_DAYS,
   getHistoryImageLabel,
   getHistoryImageState
-} from '../../src/utils/history-image-state.mjs'
+} from '../../src/utils/recognition/history-image-state.mjs'
 
 const require = createRequire(import.meta.url)
 const { compileScript, compileTemplate, parse } = require('@vue/compiler-sfc')

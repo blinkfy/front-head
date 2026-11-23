@@ -200,12 +200,12 @@ function verifyFallbackMotion(mp) {
 
 const platforms = {}
 for (const platform of ['mp-weixin', 'h5', 'app-plus']) {
-  platforms[platform] = loadForPlatform('src/components/SmartSortRobot3D.vue', platform)
+  platforms[platform] = loadForPlatform('src/components/recognition/SmartSortRobot3D.vue', platform)
 }
 const routes = {}
 for (const [key, filename] of Object.entries({
-  visual: 'src/components/SmartSortRecognitionVisual.vue',
-  demo: 'src/components/OnboardingRecognitionDemo.vue',
+  visual: 'src/components/recognition/SmartSortRecognitionVisual.vue',
+  demo: 'src/components/recognition/OnboardingRecognitionDemo.vue',
   light: 'src/pages/home/home.vue',
   dark: 'src/pages-dark/home/home.vue'
 })) routes[key] = loadForPlatform(filename, 'mp-weixin')

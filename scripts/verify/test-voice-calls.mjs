@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { callAvatarUrl, createVoiceCallController } from '../../src/utils/voice-call-core.mjs'
-import { createChatEventsTransport } from '../../src/utils/chat-events-transport.mjs'
+import { callAvatarUrl, createVoiceCallController } from '../../src/utils/realtime/voice-call-core.mjs'
+import { createChatEventsTransport } from '../../src/utils/realtime/chat-events-transport.mjs'
 
 function harness(overrides = {}) {
   let owner = 'token-a'

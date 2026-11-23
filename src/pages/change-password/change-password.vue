@@ -58,20 +58,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { changePassword, getUserProfile } from '@/api/user'
+import { onMounted } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { evaluatePassword } from '@/utils/password-strength.mjs'
-// #ifdef APP-PLUS || H5 || MP-WEIXIN
-import { quickLogin as biometricLogin } from '@/utils/quick-login.js'
-// #endif
-const username = ref('')
-const profileError = ref(false)
-const profileLoading = ref(true)
-const submitting = ref(false)
-const password = ref('')
-const newPassword = ref('')
-const confirmPassword = ref('')
+import { useChangePassword } from '@/utils/account/use-change-password.js'
 
 // 页面加载时添加鼠标光感追踪
 onMounted(() => {
@@ -89,79 +78,10 @@ onMounted(() => {
   }
 })
 
-function goBack() {
-    const pages = getCurrentPages()
-    if (pages.length > 1) {
-      uni.navigateBack()
-    } else {
-      uni.reLaunch({
-        url: '/pages/home/home'
-      })
-    }
-}
-
-async function loadUsername() {
-  profileLoading.value = true
-  profileError.value = false
-  try {
-    const res = await getUserProfile()
-    const profileUsername = res && res.data && res.data.username
-    if (res.code !== 0 || !profileUsername) throw new Error('missing username')
-    username.value = profileUsername
-  } catch (_) {
-    username.value = ''
-    profileError.value = true
-  } finally {
-    profileLoading.value = false
-  }
-}
-
-onMounted(loadUsername)
-
-async function onChangePassword() {
-  if (profileLoading.value || profileError.value || !username.value || submitting.value) return
-  if (!username.value || !password.value || !newPassword.value || !confirmPassword.value) {
-    uni.showToast({ title: '请填写完整信息', icon: 'none' }, 1500)
-    return
-  }
-  if (newPassword.value !== confirmPassword.value) {
-    uni.showToast({ title: '两次输入的新密码不一致', icon: 'none' }, 1500)
-    return
-  }
-  // 密码强度校验
-  const pwdCheck = evaluatePassword(newPassword.value, {
-    username: username.value,
-    oldPassword: password.value
-  })
-  if (!pwdCheck.valid) {
-    uni.showToast({ title: pwdCheck.message, icon: 'none' }, 1500)
-    return
-  }
-  submitting.value = true
-  try {
-    const res = await changePassword({
-      username: username.value,
-      password: password.value,
-      new_password: newPassword.value
-    })
-    if (res && res.code === 0) {
-      // #ifdef APP-PLUS || H5 || MP-WEIXIN
-      await biometricLogin.forgetBinding()
-      uni.removeStorageSync('savedUser')
-      // #endif
-      uni.showToast({ title: res.msg, icon: 'success' }, 1500)
-      setTimeout(() => {
-        uni.navigateBack()
-      }, 1500)
-    } else {
-      uni.showToast({ title: res.msg || '修改失败', icon: 'none' },1500)
-    }
-  } catch (err) {
-    uni.showToast({ title: err.msg ||'网络错误，请稍后重试', icon: 'none' },1500)
-  } finally {
-    submitting.value = false
-  }
-}
+const {
+  username, profileError, profileLoading, submitting, password, newPassword, confirmPassword,
+  goBack, loadUsername, onChangePassword
+} = useChangePassword('/pages/home/home')
 </script>
 
 <style scoped>

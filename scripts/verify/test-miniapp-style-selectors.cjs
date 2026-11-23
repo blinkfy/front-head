@@ -32,7 +32,7 @@ assert.equal(result.exitCode, 1)
 assert.match(result.output, /example\.vue:6 \[strong\]/, 'diagnostics keep original file line numbers')
 assert.doesNotMatch(result.output, /\[p\]/)
 
-const cameraCss = fs.readFileSync(path.join(__dirname, '../../src/utils/identity-camera-h5.css'), 'utf8')
+const cameraCss = fs.readFileSync(path.join(__dirname, '../../src/pages-nonTheme/utils/identity/identity-camera-h5.css'), 'utf8')
 initPreContext('mp-weixin')
 assert.equal(preCss(cameraCss).trim(), '', 'browser camera CSS is excluded from mini-program output')
 initPreContext('h5')

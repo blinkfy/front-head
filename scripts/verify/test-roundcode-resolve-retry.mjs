@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { resolveRoundCodeWithRetry } from '../../src/utils/roundcode-resolve-retry.mjs'
+import { resolveRoundCodeWithRetry } from '../../src/utils/scan/roundcode-resolve-retry.mjs'
 
 const pending = reason => Object.assign(new Error('pending'), { reason })
 const retryDelays = [400, 800]

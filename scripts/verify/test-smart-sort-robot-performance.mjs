@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { runInNewContext } from 'node:vm'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { refineRecognitionMotion } from '../../src/components/smart-sort-robot-performance.mjs'
-import { getRecognitionRobotState, ROBOT_LOOP_CLIPS, ROBOT_SEQUENCES } from '../../src/utils/recognition-robot-state.mjs'
+import { refineRecognitionMotion } from '../../src/components/recognition/smart-sort-robot-performance.mjs'
+import { getRecognitionRobotState, ROBOT_LOOP_CLIPS, ROBOT_SEQUENCES } from '../../src/utils/recognition/recognition-robot-state.mjs'
 import { bakeRobotModel, smartSortRobotAssetsPlugin } from '../build/smart-sort-robot-assets.mjs'
 
 const modelPath = new URL('../../src/static/web/robot_3d/smart_sort_robot_v34_animated.glb', import.meta.url)
@@ -81,7 +81,7 @@ for (const snapshot of [
     'reviewing should require labels and an advising/finalizing phase')
 }
 
-const xrSource = await readFile(new URL('../../src/components/smart-sort-xr-native/index.js', import.meta.url), 'utf8')
+const xrSource = await readFile(new URL('../../src/components/recognition/smart-sort-xr-native/index.js', import.meta.url), 'utf8')
 assert.match(xrSource, /ROBOT_SEQUENCES|sequences/,
   'mini-program animation player should use the shared robot sequences')
 assert.match(xrSource, /ROBOT_LOOP_CLIPS|loops/,

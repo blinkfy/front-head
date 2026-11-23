@@ -149,6 +149,11 @@ function makePage(api, storage = new Map()) {
     const liveModule = { exports: {} }
     const globals = {
         module: liveModule, chatApi: api, uni,
+        communityChatSettings: { enabled: true },
+        readCommunityChatEnabled: async () => true,
+        messageBus: { on() {}, off() {} },
+        AppConfirmDialog: {}, ManifestIcon: {}, ChatCachedAvatar: {}, RealtimeActivityEntry: {},
+        CommunityActivityEntry: {}, SystemNotificationEntry: {},
         userinfo: async () => ({ data: { isAdmin: true } }),
         baseUrl: 'https://example.test', getAvatarUrl: () => '',
         triggerMessageNotification: async () => {}, ManifestIcon: {}, getManifestIconPath: () => '',
@@ -161,6 +166,7 @@ function makePage(api, storage = new Map()) {
     vm.runInNewContext(executable, globals, { filename: pagePath })
     const liveComponent = liveModule.exports
     const liveCtx = liveComponent.data()
+    liveCtx.$refs = { appConfirmDialog: { cancelAll() {} } }
     Object.defineProperty(liveCtx, 'isSearching', { get: () => liveComponent.computed.isSearching.call(liveCtx) })
     for (const [key, getter] of Object.entries(liveComponent.computed)) {
         if (key === 'isSearching') continue
@@ -193,7 +199,7 @@ function deferred() {
     assert.equal(api.calls.length, 1)
     assert.deepEqual(api.calls[0], { page: 1, pageSize: 20 })
     assert.equal(ctx.page, 1)
-    assert.equal(ctx.totalUsers, 45)
+    assert.equal(ctx.totalConversations, 45)
     assert.equal(ctx.totalUnread, 7)
     const cached = JSON.parse(storage.get('chatlist_A'))
     assert.deepEqual({ page: cached.page, pageSize: cached.pageSize, hasMore: cached.hasMore, total: cached.total, unreadTotal: cached.unreadTotal }, {
@@ -270,7 +276,7 @@ function deferred() {
     assert.equal(ctx.page, 3)
     assert.equal(ctx.hasMore, false)
     assert.equal(ctx.userList[0].otherId, 'account-B')
-    assert.equal(ctx.totalUsers, 41)
+    assert.equal(ctx.totalConversations, 41)
     await flushMicrotasks()
     assert.equal(ctx.cacheKey, 'chatlist_B')
     assert.equal(ctx.page, 3)
@@ -365,9 +371,9 @@ function deferred() {
     assert.equal(ctx.searchHasMore, true)
     assert.equal(ctx.userList[0].otherId, 'normal')
     assert.equal(ctx.searchResults[0].otherId, 'search-1')
-    assert.equal(ctx.totalUsers, 97)
+    assert.equal(ctx.totalConversations, 97)
     assert.equal(ctx.totalUnread, 14)
-    assert.equal(ctx.onlineUsers, 1)
+    assert.equal(ctx.userList.filter(item => item.isOnline).length, 1, 'search does not alter the normal list or its online state')
     await ctx.loadMore()
     assert.equal(api.calls[2].page, 2)
     assert.equal(api.calls[2].keyword, keyword)
@@ -430,6 +436,7 @@ function deferred() {
     vm.runInNewContext(`${functionSource}; module.exports = { getChatUserList };`, {
         module,
         request: options => { requestOptions = options; return Promise.resolve(options) },
+        beginChatBadgeSnapshot: () => null, finishChatBadgeSnapshot() {},
         encodeURIComponent, Object, String
     }, { filename: apiPath })
     const keyword = 'alice &+/张三'

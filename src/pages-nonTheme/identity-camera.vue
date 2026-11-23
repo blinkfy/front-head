@@ -14,12 +14,12 @@
   </view>
 </template>
 <script>
-import { measureIdentityImageQuality, identityQualityRegion, identityImageQualityIssue, identityImageQualityHint } from '@/utils/identity-image-quality.mjs'
-import { createIdentityNativeFlow } from '@/utils/identity-native-flow.mjs'
-import { createWeixinIdentityLandmarks } from '@/utils/identity-weixin-landmarks.mjs'
-import { createIdentityBrightness } from '@/utils/identity-brightness.mjs'
+import { measureIdentityImageQuality, identityQualityRegion, identityImageQualityIssue, identityImageQualityHint } from '@/pages-nonTheme/utils/identity/identity-image-quality.mjs'
+import { createIdentityNativeFlow } from '@/pages-nonTheme/utils/identity/identity-native-flow.mjs'
+import { createWeixinIdentityLandmarks } from '@/pages-nonTheme/utils/identity/identity-weixin-landmarks.mjs'
+import { createIdentityBrightness } from '@/pages-nonTheme/utils/identity/identity-brightness.mjs'
 // #ifdef MP-WEIXIN
-import { createWeixinIdentityDetector, weixinIdentityFaces, isWeixinIdentityNoFaceError } from '@/utils/identity-weixin-detector.mjs'
+import { createWeixinIdentityDetector, weixinIdentityFaces, isWeixinIdentityNoFaceError } from '@/pages-nonTheme/utils/identity/identity-weixin-detector.mjs'
 const faceDetector = createWeixinIdentityDetector(wx)
 // #endif
 export default {

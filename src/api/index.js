@@ -1,10 +1,10 @@
 import { baseUrl } from './settings'
-import { isMfaTransition } from '@/utils/mfa-session-transition.mjs'
+import { isMfaTransition } from '@/utils/account/mfa-session-transition.mjs'
 // #ifdef APP-PLUS
 import { appVersionGuard } from '@/utils/app-version-guard.js'
 import { appOfflineSession } from '@/utils/app-offline-session.js'
 // #endif
-import { clearChatBadge } from '@/utils/app-chat-badge.js'
+import { clearChatBadge } from '@/utils/realtime/app-chat-badge.js'
 import {
   markDatabaseOffline,
   updateDatabaseStatusFromAvailability

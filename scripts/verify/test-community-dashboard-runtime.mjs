@@ -4,7 +4,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { createCanvas2DChartContext } from '../../src/utils/canvas-chart-context.mjs'
+import { createCanvas2DChartContext } from '../../src/pages-admin/utils/canvas-chart-context.mjs'
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url))
 const frontendDir = path.resolve(scriptsDir, '../..')

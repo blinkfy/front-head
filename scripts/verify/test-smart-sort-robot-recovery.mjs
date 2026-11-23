@@ -6,7 +6,7 @@ import { parse as parseSfc } from '@vue/compiler-sfc'
 import { parse as parseTemplate } from '@vue/compiler-dom'
 import { initPreContext, preHtml, preJs } from '@dcloudio/uni-cli-shared'
 
-const filename = new URL('../../src/components/SmartSortRobotApp.vue', import.meta.url)
+const filename = new URL('../../src/components/recognition/SmartSortRobotApp.vue', import.meta.url)
 const source = readFileSync(filename, 'utf8')
 const renderMatch = source.match(/<script\s+module="robotView"\s+lang="renderjs">([\s\S]*?)<\/script>/)
 assert.ok(renderMatch, 'renderjs source exists')
@@ -46,7 +46,7 @@ assert.deepEqual(appComponent.events, ['suspended', 'recovering', 'suspended'], 
 appComponent.beforeUnmount.call(appComponent)
 assert.equal(appContext.unsubscribed, appComponent.appVisibilityListener, 'APP visibility listener is removed on unmount')
 
-const robot3dSource = readFileSync(new URL('../../src/components/SmartSortRobot3D.vue', import.meta.url), 'utf8')
+const robot3dSource = readFileSync(new URL('../../src/components/recognition/SmartSortRobot3D.vue', import.meta.url), 'utf8')
 const robot3dDescriptor = parseSfc(robot3dSource, { filename: 'SmartSortRobot3D.vue' }).descriptor
 initPreContext('app-plus')
 const parentScript = preJs(robot3dDescriptor.scriptSetup.content, 'SmartSortRobot3D.vue')
@@ -88,7 +88,7 @@ const [foregroundTimerId, foregroundTimer] = [...parentTimers.entries()][0]
 foregroundTimer.fn()
 assert.equal(fallbacks.length, 1, 'a real foreground timeout triggers fallback')
 
-const engineSource = readFileSync(new URL('../../src/components/smart-sort-robot-engine.mjs', import.meta.url), 'utf8')
+const engineSource = readFileSync(new URL('../../src/components/recognition/smart-sort-robot-engine.mjs', import.meta.url), 'utf8')
 const renderStart = engineSource.indexOf('const render = timestamp => {')
 const renderEnd = engineSource.indexOf('\n  let onRenderError', renderStart)
 assert.ok(renderStart >= 0 && renderEnd > renderStart, 'engine render callback exists')

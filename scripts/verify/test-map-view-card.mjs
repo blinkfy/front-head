@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { resolveMapViewCard } from '../../src/utils/map-view-card.mjs'
+import { parse } from '@vue/compiler-sfc'
+import { resolveMapViewCard } from '../../src/utils/map/map-view-card.mjs'
 
 const latest = {
   id: '42', name: '最新点位名', description: '审核后的最新说明', latitude: '25.0412', longitude: '121.5654',
@@ -35,14 +36,27 @@ const shared = await resolveMapViewCard(
 assert.equal(genericLookupCount, 0, 'ordinary shared coordinates do not query the point API')
 assert.deepEqual(shared.point, { id: -2, latitude: 25.03, longitude: 121.52, name: '朋友的位置', description: '附近', sharedLocation: true })
 
+function findActionGuards(node, action, guardedByParent = false) {
+  const guarded = guardedByParent || node.props?.some(prop =>
+    prop.name === 'if' && prop.exp?.content === '!selectedMarker.sharedLocation') || false
+  const matchesAction = node.props?.some(prop =>
+    prop.name === 'on' && prop.arg?.content === 'click' && prop.exp?.content === action)
+  const descendants = (node.children || []).flatMap(child => findActionGuards(child, action, guarded))
+  return matchesAction ? [guarded, ...descendants] : descendants
+}
+
 for (const filename of ['../../src/pages/map/map.vue', '../../src/pages-dark/map/map.vue']) {
   const source = fs.readFileSync(new URL(filename, import.meta.url), 'utf8')
-  const template = source.slice(source.indexOf('<template>'), source.indexOf('</template>'))
+  const { descriptor, errors } = parse(source, { filename })
+  assert.deepEqual(errors, [], `${filename}: map SFC parses`)
+  const template = descriptor.template.content
   assert.match(template, /class="info-card"/, `${filename}: view card reuses the existing info card`)
   assert.doesNotMatch(template, /class="view-location-panel"/, `${filename}: old location panel is absent`)
   assert.match(template, /v-if="selectedMarker && !selectMode"/, `${filename}: selected marker controls card visibility`)
-  assert.match(template, /v-if="!selectedMarker\.sharedLocation"[^>]*@click="openHistoryImage\(selectedMarker\)"/, `${filename}: shared coordinates hide image action`)
-  assert.match(template, /v-if="!selectedMarker\.sharedLocation"[^>]*@click="reportErrorMarker\(selectedMarker\)"/, `${filename}: shared coordinates hide report action`)
+  for (const action of ['openHistoryImage(selectedMarker)', 'reportErrorMarker(selectedMarker)']) {
+    const guards = findActionGuards(descriptor.template.ast, action)
+    assert.ok(guards.length > 0 && guards.every(Boolean), `${filename}: shared coordinates hide ${action}`)
+  }
 
   const close = source.match(/function closeInfo\(\)\s*\{([^}]*)\}/)
   assert(close?.[1].includes('selectedMarker.value = null'), `${filename}: closing the card clears its selection`)

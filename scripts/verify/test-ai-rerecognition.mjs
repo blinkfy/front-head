@@ -33,6 +33,7 @@ function setup(api = {}) {
     baseUrl: 'https://example.test', businessActionRequestId,
     newActionRequestId: api.newActionRequestId || (() => `key-${(api.keyCount = (api.keyCount || 0) + 1)}`),
     uni: { showModal: options => calls.modals.push(options), showToast: x => calls.toasts.push(x) },
+    showPageModal: options => calls.modals.push(options),
     onBeforeUnmount: cb => { context.unmount = cb }
   }
   context.onBeforeUnmount(context.unmount)

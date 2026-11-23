@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { createWeixinIdentityDetector, weixinIdentityFaces, isWeixinIdentityNoFaceError } from '../../src/utils/identity-weixin-detector.mjs'
+import { createWeixinIdentityDetector, weixinIdentityFaces, isWeixinIdentityNoFaceError } from '../../src/pages-nonTheme/utils/identity/identity-weixin-detector.mjs'
 
 const root = new URL('../../', import.meta.url)
 function conditional(source, target) {
@@ -94,7 +94,7 @@ const context = vm.createContext({
     release() { detectorReleases++ }
   })
 })
-const captureSource = conditional(readFileSync(new URL('src/utils/identity-capture.js', root), 'utf8'), 'MP-WEIXIN')
+const captureSource = conditional(readFileSync(new URL('src/pages-nonTheme/utils/identity/identity-capture.js', root), 'utf8'), 'MP-WEIXIN')
   .replace(/^import .*$/gm, '').replace(/^export /gm, '')
 vm.runInContext(`${captureSource}\nglobalThis.captureApi = { captureIdentityPhoto, cancelIdentityCapture }`, context)
 

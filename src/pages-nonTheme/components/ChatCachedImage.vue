@@ -10,7 +10,7 @@
 import { getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchChatMedia, forgetChatMedia, forgetChatOriginalMedia, readChatMedia, readChatImageMedia } from '../utils/chat-local-media.js'
 // #ifdef APP-PLUS
-import { forgetMissingChatAvatar, getCachedChatAvatar, loadChatAvatar } from '@/utils/chat-avatar-cache.mjs'
+import { forgetMissingChatAvatar, getCachedChatAvatar, loadChatAvatar } from '@/utils/realtime/chat-avatar-cache.mjs'
 // #endif
 
 defineOptions({ options: { virtualHost: true } })

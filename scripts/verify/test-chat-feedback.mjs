@@ -4,7 +4,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { androidChatAlertPolicy, createChatFeedback } from '../../src/utils/chat-feedback-core.mjs'
+import { androidChatAlertPolicy, createChatFeedback } from '../../src/utils/realtime/chat-feedback-core.mjs'
 
 const require = createRequire(import.meta.url)
 const babel = require('@babel/parser')
@@ -97,9 +97,9 @@ function testAndroidPolicyAndCoreFeedback() {
 }
 
 function testNativeAndroidBridge() {
-  const source = fs.readFileSync(path.join(root, 'src/utils/chat-feedback.js'), 'utf8')
-  const coreSource = fs.readFileSync(path.join(root, 'src/utils/chat-feedback-core.mjs'), 'utf8')
-  const eventsSource = fs.readFileSync(path.join(root, 'src/utils/chat-events.js'), 'utf8')
+  const source = fs.readFileSync(path.join(root, 'src/utils/realtime/chat-feedback.js'), 'utf8')
+  const coreSource = fs.readFileSync(path.join(root, 'src/utils/realtime/chat-feedback-core.mjs'), 'utf8')
+  const eventsSource = fs.readFileSync(path.join(root, 'src/utils/realtime/chat-events.js'), 'utf8')
   for (const [name, text] of [['chat-feedback.js', source], ['chat-feedback-core.mjs', coreSource], ['chat-events.js', eventsSource]]) {
     babel.parse(text, { sourceType: 'unambiguous', plugins: ['optionalChaining', 'objectRestSpread', 'dynamicImport'] })
     const preprocessed = text.replace(/^\s*\/\/\s*#(?:if|ifdef|ifndef|else|endif).*$/gm, '')
@@ -160,7 +160,7 @@ function testNativeAndroidBridge() {
 }
 
 async function testH5AndVoiceScanGates() {
-  const raw = fs.readFileSync(path.join(root, 'src/utils/chat-feedback.js'), 'utf8')
+  const raw = fs.readFileSync(path.join(root, 'src/utils/realtime/chat-feedback.js'), 'utf8')
   const webSource = preprocess(raw, 'H5').replace(/^import .*$/gm, '').replace(/^export /gm, '') +
     '\nglobalThis.__feedbackExports={receiveChatFeedback,setChatFeedbackActive};'
   const audioContexts = []
@@ -262,7 +262,7 @@ async function testSendDispatchFeedback() {
 }
 
 function testSoundDistribution() {
-  const raw = fs.readFileSync(path.join(root, 'src/utils/chat-feedback.js'), 'utf8')
+  const raw = fs.readFileSync(path.join(root, 'src/utils/realtime/chat-feedback.js'), 'utf8')
   const urlSource = raw.slice(raw.indexOf('function soundUrl('), raw.indexOf('const android ='))
   for (const target of ['APP-PLUS', 'H5', 'MP-WEIXIN']) {
     const context = { baseUrl: 'https://api.example///' }

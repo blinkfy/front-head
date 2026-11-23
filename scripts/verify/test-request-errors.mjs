@@ -27,6 +27,9 @@ async function createHarness() {
     isDatabaseHealthEndpoint: requestUtils.isDatabaseHealthEndpoint,
     markDatabaseOffline: databaseStatus.markDatabaseOffline,
     updateDatabaseStatusFromAvailability: databaseStatus.updateDatabaseStatusFromAvailability,
+    appOfflineSession: { unavailable: false },
+    appVersionGuard: () => ({ handleUpgrade: () => false }),
+    isMfaTransition: () => false,
     baseUrl: 'https://api.example.test',
     uni: {
       request: options => {
@@ -42,10 +45,9 @@ async function createHarness() {
   }
 
   const source = fs.readFileSync(path.join(root, 'src/api/index.js'), 'utf8')
-    .replace(/^import \{ baseUrl \} from '\.\/settings'\s*/m, '')
-    .replace(/^import \{[\s\S]*?\} from '\.\/database-status\.mjs'\s*/m, '')
-    .replace(/^import \{[\s\S]*?\} from '\.\/request-utils\.mjs'\s*/m, '')
+    .replace(/^import\b[\s\S]*?from\s+['"][^'"]+['"];?\s*/gm, '')
     .replace(/export default request\s*$/, 'globalThis.__request = request')
+    .replace(/^export\s+/gm, '')
   vm.runInNewContext(source, context, { filename: 'src/api/index.js' })
 
   return {
@@ -137,7 +139,7 @@ for (const failure of [
   respond({ type: 'fail', value: failure })
   const error = await reject()
   assert.match(error.msg, /无法连接服务器/)
-  assert.match(error.msg, /后端地址/)
+  assert.match(error.msg, /检查网络|稍后重试/)
   assert.doesNotMatch(error.msg, /已取消/)
   assert.equal(error.msg, error.message)
   assert.equal(error.msg, error.errMsg)

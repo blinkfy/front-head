@@ -60,7 +60,7 @@
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { ThemeManager } from '@/utils/theme.js'
-import { getWechatLoginCode } from '@/utils/wechat-login.mjs'
+import { getWechatLoginCode } from '@/utils/account/wechat-login.mjs'
 import { mfaRequest } from '@/api/mfa.js'
 
 const scene = ref('')

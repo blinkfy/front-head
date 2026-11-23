@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
-import { createWebCallHandoff } from '../../src/utils/web-call-handoff.mjs'
+import { createWebCallHandoff } from '../../src/utils/realtime/web-call-handoff.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const sourcePath = path.join(root, 'src/utils/voice-call-media.js')
+const sourcePath = path.join(root, 'src/utils/realtime/voice-call-media.js')
 const source = fs.readFileSync(sourcePath, 'utf8')
 
 function preprocessH5(input) {

@@ -21,14 +21,15 @@
       
       <view v-if="showVideo" class="video-card">
         <!-- #ifdef APP-PLUS -->
-        <view 
-          id="video-container" 
+        <GuideAppVideo
           class="promo-video"
-          :videoOptions="scenarioVideoOptions"
-          :change:videoOptions="hlsPlayer.init"
-          :playTrigger="scenarioPlayTrigger"
-          :change:playTrigger="hlsPlayer.play"
-        ></view>
+          :src="scenarioVideoUrl"
+          :poster="scenarioVideoPoster"
+          object-fit="cover"
+          :play-trigger="scenarioPlayTrigger"
+          controls
+          @playing-change="showScenarioOverlay = !$event"
+        />
         <!-- #endif -->
 
         <!-- #ifndef APP-PLUS -->
@@ -42,6 +43,7 @@
           @play="showScenarioOverlay = false"
           @pause="showScenarioOverlay = true"
           @ended="showScenarioOverlay = true"
+          @error="showScenarioOverlay = true"
         ></video>
         <!-- #endif -->
         
@@ -147,14 +149,15 @@
         </view>
         <view class="video-card app-video-card">
           <!-- #ifdef APP-PLUS -->
-          <view 
-            id="video-container-app" 
+          <GuideAppVideo
             class="app-video"
-            :videoOptions="appVideoOptions"
-            :change:videoOptions="hlsPlayer.initApp"
-            :playTrigger="appPlayTrigger"
-            :change:playTrigger="hlsPlayer.playApp"
-          ></view>
+            :src="appVideoUrl"
+            :poster="appVideoPoster"
+            object-fit="contain"
+            :play-trigger="appPlayTrigger"
+            controls
+            @playing-change="showAppOverlay = !$event"
+          />
           <!-- #endif -->
 
           <!-- #ifndef APP-PLUS -->
@@ -168,6 +171,7 @@
             @play="showAppOverlay = false"
             @pause="showAppOverlay = true"
             @ended="showAppOverlay = true"
+            @error="showAppOverlay = true"
           ></video>
           <!-- #endif -->
           <view v-if="showAppOverlay" class="video-overlay app-overlay" @click="requestPlay('app')">
@@ -451,131 +455,16 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
-import { config } from "@/api/config"
 import ManifestIcon from '@/components/ManifestIcon.vue'
+import { useGuideVideos } from '@/utils/use-guide-videos.js'
+// #ifdef APP-PLUS
+import GuideAppVideo from '@/components/GuideAppVideo.vue'
+// #endif
 
-const baseUrl = config.baseUrl
-const getImageUrl = (url) => {
-  if (!url) return ''
-  // #ifdef APP-PLUS
-  return `/static/app/images/${url}`
-  // #endif
-  // #ifndef APP-PLUS
-  return `${baseUrl}/images/${url}`
-  // #endif
-}
-// 场景视频 (Scenario)
-const scenarioVideoUrl = `${baseUrl}/files/preview/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1/%E5%88%86%E6%8A%95%E4%BE%A0%E5%AE%A3%E4%BC%A0%E7%89%87/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1.m3u8`
-const scenarioVideoPoster = getImageUrl(`cover.webp`)
-
-// App 录屏视频 (App Screencap)
-const appVideoUrl = `${baseUrl}/files/preview/%E5%88%86%E6%8A%95%E4%BE%A0%E8%AE%BE%E8%AE%A1/%E5%8A%9F%E8%83%BD%E5%B1%95%E7%A4%BA/%E5%8A%9F%E8%83%BD%E5%B1%95%E7%A4%BA.m3u8`
-const appVideoPoster = getImageUrl(`app.webp`)
-
-// 用于传递给 renderjs 的响应式对象
-const scenarioVideoOptions = computed(() => ({
-  src: scenarioVideoUrl,
-  poster: scenarioVideoPoster
-}))
-const appVideoOptions = computed(() => ({
-  src: appVideoUrl,
-  poster: appVideoPoster
-}))
-
-const isPlaying = ref(false)
-const showScenarioOverlay = ref(true) 
-const showAppOverlay = ref(true) 
-const showVideo = ref(false)
-
-// 响应来自 renderjs 的播放状态改变
-function onPlayerStatusChange(status) {
-  // 根据 status 中的 target 区分
-  if (status.target === 'scenario') {
-    if (!status.isPlaying) showScenarioOverlay.value = true
-  } else {
-    if (!status.isPlaying) showAppOverlay.value = true
-  }
-}
-
-const scenarioPlayTrigger = ref(0)
-const appPlayTrigger = ref(0)
-
-// 通知 renderjs 播放
-function requestPlay(type) {
-  if (type === 'scenario') {
-    showScenarioOverlay.value = false
-    // #ifdef APP-PLUS
-    scenarioPlayTrigger.value = Date.now()
-    // #endif
-    // #ifndef APP-PLUS
-    uni.createVideoContext('scenarioVideo').play()
-    // #endif
-  } else {
-    showAppOverlay.value = false
-    // #ifdef APP-PLUS
-    appPlayTrigger.value = Date.now()
-    // #endif
-    // #ifndef APP-PLUS
-    uni.createVideoContext('appVideo').play()
-    // #endif
-  }
-}
-
-function getAuthToken() {
-  // #ifdef H5
-  try {
-    return localStorage.getItem('token') || ''
-  } catch (error) {
-    return ''
-  }
-  // #endif
-  // #ifndef H5
-  try {
-    return uni.getStorageSync('token') || ''
-  } catch (error) {
-    return ''
-  }
-  // #endif
-}
-
-function requestJson(url, options = {}) {
-  return new Promise((resolve, reject) => {
-    uni.request({
-      url,
-      method: options.method || 'GET',
-      header: options.header || {},
-      data: options.data,
-      success: (res) => resolve(res.data),
-      fail: reject
-    })
-  })
-}
-
-async function checkVideoEnabled() {
-  try {
-    const payload = await requestJson(`${baseUrl}/api/ai/settings`)
-    const settings = payload && payload.code === 0 ? payload.data : null
-    if (!settings || settings.aiEnabled !== false) {
-      showVideo.value = true
-      return
-    }
-
-    const token = getAuthToken()
-    if (!token) {
-      showVideo.value = false
-      return
-    }
-
-    const userPayload = await requestJson(`${baseUrl}/api/userinfo?avater=false`, {
-      header: { Authorization: token }
-    })
-    showVideo.value = !!(userPayload && userPayload.code === 0 && userPayload.data && userPayload.data.isAdmin)
-  } catch (error) {
-    console.warn('[guide] check AI settings failed:', error)
-    showVideo.value = true
-  }
-}
+const {
+  showVideo, showScenarioOverlay, showAppOverlay, scenarioPlayTrigger, appPlayTrigger,
+  getImageUrl, requestPlay, scenarioVideoUrl, appVideoUrl, scenarioVideoPoster, appVideoPoster
+} = useGuideVideos()
 
 function goHome() {
   uni.reLaunch({
@@ -623,80 +512,6 @@ function scrollToVideoCard() {
     selector: ".hero-section",
     duration: 400
   })
-}
-
-onMounted(() => {
-  checkVideoEnabled()
-})
-</script>
-
-<script module="hlsPlayer" lang="renderjs">
-import Hls from 'hls.js'
-
-export default {
-  data() {
-    return {
-      hls: null,
-      video: null
-    }
-  },
-  mounted() {
-    this.createVideo();
-  },
-  methods: {
-    createVideo(id, target) {
-      const container = document.getElementById(id);
-      if (!container) return;
-      
-      const video = document.createElement('video');
-      video.style.width = '100%';
-      video.style.height = '100%';
-      video.style.backgroundColor = '#000';
-      // 场景视频 cover，录屏视频 contain
-      video.style.objectFit = target === 'scenario' ? 'cover' : 'contain';
-      video.controls = true;
-      video.playsInline = true;
-      video.webkitPlaysinline = true;
-      
-      video.onplay = () => this.sendStatus(true, target);
-      video.onpause = () => this.sendStatus(false, target);
-      video.onended = () => this.sendStatus(false, target);
-      
-      container.appendChild(video);
-      return video;
-    },
-    init(options) {
-      if (!options || !options.src) return;
-      if (!this.video) this.video = this.createVideo('video-container', 'scenario');
-      this._initPlayer(this.video, options);
-    },
-    initApp(options) {
-      if (!options || !options.src) return;
-      if (!this.appVideo) this.appVideo = this.createVideo('video-container-app', 'app');
-      this._initPlayer(this.appVideo, options);
-    },
-    _initPlayer(video, options) {
-      const { src, poster } = options;
-      video.poster = poster;
-      
-      if (Hls.isSupported()) {
-        const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
-        hls.loadSource(src);
-        hls.attachMedia(video);
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = src;
-      }
-    },
-    play(trigger) {
-      if (trigger && this.video) this.video.play();
-    },
-    playApp(trigger) {
-      if (trigger && this.appVideo) this.appVideo.play();
-    },
-    sendStatus(isPlaying, target) {
-      this.$ownerInstance.callMethod('onPlayerStatusChange', { isPlaying, target });
-    }
-  }
 }
 </script>
 

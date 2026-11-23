@@ -102,7 +102,7 @@ async function testPermissionFailureAndTimeoutDoNotBlock() {
 
 async function testStopCancelsPendingPreparation() {
   const source = fs.readFileSync(new URL('../../src/pages-nonTheme/assistant.vue', import.meta.url), 'utf8')
-  const sendStart = source.indexOf('async function onSend() {')
+  const sendStart = source.indexOf('async function onSend(')
   const stopStart = source.indexOf('function onStop() {', sendStart)
   const lifecycleStart = source.indexOf('// ─── 生命周期', stopStart)
   assert(sendStart >= 0 && stopStart > sendStart && lifecycleStart > stopStart)
@@ -112,30 +112,36 @@ async function testStopCancelsPendingPreparation() {
   const streamed = []
   const pushed = []
   const context = {
-    isStreaming: { value: false }, imagePreparing: { value: false }, promptText: { value: 'test' },
+    isStreaming: { value: false }, imagePreparing: { value: false }, deletingReply: { value: false }, recoveringRun: { value: '' }, promptText: { value: 'test' },
     pickedImageDataUrl: { value: '' }, pickedImageLocalPath: { value: '' }, streamingMessageId: { value: '' },
     streamingText: { value: '' }, streamingReasoning: { value: '' }, isDeepThinking: { value: false },
     streamingSearch: { value: null }, isSearchEnabled: { value: true }, finalizeChatSearch: value => value, normalizeChatDisposalPoints,
     pendingMessagePreparation: null, abortCtrl: null, wsSocket: null, streamStopRequested: false,
+    activeSessionId: { value: 'session-1' }, sendEpoch: 0, pageDisposed: false,
+    activeRun: { value: null },
+    ensureRunLedger() {}, ensureConversation: () => ({ messages: [] }),
+    recognitionSelection: [],
     createMessageId: () => 'id', dataUrlByteLength: () => 0, MAX_IMAGE_BYTES: 100,
     extractPendingPersistMessages: async () => [], extractHistoryForRequest: () => [],
     getStorage: () => 'token', chatEnvironment: { forRequest: () => new Promise(resolve => pending.push(resolve)) },
     pushMessageToActive: (...args) => pushed.push(args), clearPickedImage() {},
     streamChat: async () => { streamed.push(true); return { content: 'ok', reasoning: '' } },
+    imageUploadFields: () => ({}),
+    supportsRuns: async () => false,
     markPendingPersistMessagesSaved() {}, uni: { showToast() {} }
   }
   vm.createContext(context)
   vm.runInContext(`${sendSource}\n${stopSource}\nglobalThis.runSend = onSend; globalThis.runStop = onStop;`, context)
 
   const oldRequest = context.runSend()
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+  for (let index = 0; index < 12 && pending.length < 1; index++) await Promise.resolve()
   assert.equal(pending.length, 1, 'first send reached asynchronous environment preparation')
   context.runStop()
   assert.equal(context.isStreaming.value, false)
 
   context.promptText.value = 'next request'
   const newRequest = context.runSend()
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+  for (let index = 0; index < 12 && pending.length < 2; index++) await Promise.resolve()
   assert.equal(pending.length, 2)
   pending[0]({ location: { status: 'unavailable' } })
   await oldRequest

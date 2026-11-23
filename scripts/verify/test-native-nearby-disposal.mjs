@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { createNativeDisposalController } from '../../src/utils/native-nearby-disposal.mjs'
+import { createNativeDisposalController } from '../../src/utils/map/native-nearby-disposal.mjs'
 
 const require = createRequire(import.meta.url)
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -169,8 +169,8 @@ try {
   globalThis.clearTimeout = originalClearTimeout
 }
 
-const adapterPath = path.join(src, 'components', 'AppNearbyDisposalPanel.vue')
-const contentPath = path.join(src, 'components', 'NearbyDisposalNativeContent.vue')
+const adapterPath = path.join(src, 'components', 'map', 'AppNearbyDisposalPanel.vue')
+const contentPath = path.join(src, 'components', 'map', 'NearbyDisposalNativeContent.vue')
 const lightPath = path.join(src, 'pages', 'map', 'nearby-panel.nvue')
 const darkPath = path.join(src, 'pages-dark', 'map', 'nearby-panel.nvue')
 const mapPaths = [path.join(src, 'pages', 'map', 'map.vue'), path.join(src, 'pages-dark', 'map', 'map.vue')]

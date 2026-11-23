@@ -5,8 +5,8 @@ import { compileScript, compileStyle, compileTemplate, parse } from '@vue/compil
 import { computed, nextTick, ref } from 'vue'
 import { wgs84ToGcj02 } from '../../src/utils/map/coordinates.mjs'
 
-const geometryPath = new URL('../../src/pages-nonTheme/utils/recycling-geometry.mjs', import.meta.url)
-const componentPath = new URL('../../src/pages-nonTheme/components/RecyclingServiceMap.vue', import.meta.url)
+const geometryPath = new URL('../../src/utils/recycling-geometry.mjs', import.meta.url)
+const componentPath = new URL('../../src/components/recycling/RecyclingServiceMap.vue', import.meta.url)
 const geometrySource = await readFile(geometryPath, 'utf8')
 const componentSource = await readFile(componentPath, 'utf8')
 

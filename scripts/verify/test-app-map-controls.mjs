@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { appMapControlsLayout, createAppMapControlsController, hasValidMapCoordinates } from '../../src/utils/app-map-controls.mjs'
+import { appMapControlsLayout, createAppMapControlsController, hasValidMapCoordinates } from '../../src/utils/map/app-map-controls.mjs'
 import { pageSubNVue } from '../../src/utils/page-subnvue.mjs'
 
 const pageA = { proxy: {} }

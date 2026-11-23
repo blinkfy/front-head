@@ -1,30 +1,36 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
-import { resolveH5MapAssets } from '../../src/utils/h5-map-assets.mjs'
+import { resolveH5MapAssets } from '../../src/utils/map/h5-map-assets.mjs'
 
 const moduleUrls = [
-  ['http://localhost:3000/src/components/AppTencentMap.vue?vue&type=script', 'http://localhost:3000/src/'],
+  ['http://localhost:3000/src/utils/map/h5-map-assets.mjs', 'http://localhost:3000/src/', true],
   ['https://example.test/assets/pages-nonTheme-live-location.hash.js', 'https://example.test/'],
   ['https://example.test/web/assets/pages-nonTheme-live-location.hash.js', 'https://example.test/web/']
 ]
-const source = fs.readFileSync(new URL('../../src/components/AppTencentMap.vue', import.meta.url), 'utf8')
+const source = fs.readFileSync(new URL('../../src/components/map/AppTencentMap.vue', import.meta.url), 'utf8')
 assert.match(source, /<map[\s\S]*?@updated="\$emit\('updated', \$event\)"/, 'Fallback readiness clears the page error state')
 assert.match(source, /<map[\s\S]*?@error="\$emit\('error', \$event\)"/, 'Fallback failure remains visible')
 const options = source.match(/<script>\s*([\s\S]*?)\s*<\/script>/)[1]
-function loadOptions(platform, moduleUrl) {
+function loadOptions(platform, moduleUrl, dev) {
   const compiled = options.replace(/\/\/ #ifdef (H5|APP-PLUS)\r?\n([\s\S]*?)\/\/ #endif/g,
     (_, target, content) => target === platform ? content : '')
     .replace(/^import .*\r?\n/gm, '')
-    .replaceAll('import.meta.url', 'moduleUrl').replace('export default', 'component =')
-  const context = { moduleUrl, resolveH5MapAssets, baseUrl: 'https://different-api.test', mapConfig: {}, manifest: {}, Date }
+    .replace('export default', 'component =')
+  const context = {
+    resolveH5MapAssets: componentUrl => {
+      assert.equal(componentUrl, undefined, 'resolve assets relative to the helper module')
+      return resolveH5MapAssets(moduleUrl, dev)
+    },
+    baseUrl: 'https://different-api.test', mapConfig: {}, manifest: {}, Date
+  }
   vm.runInNewContext(compiled, context)
   return context.component
 }
-for (const [url, root] of moduleUrls) {
-  const assets = resolveH5MapAssets(url)
+for (const [url, root, dev] of moduleUrls) {
+  const assets = resolveH5MapAssets(url, dev)
   assert.deepEqual(assets, { assetBase: root, frameUrl: root + 'static/app-map/index.html' })
-  const data = loadOptions('H5', url).data()
+  const data = loadOptions('H5', url, dev).data()
   assert.equal(data.frameUrl, assets.frameUrl, 'H5 iframe follows its deployed frontend instead of API host')
   assert.equal(data.assetBase, assets.assetBase)
 }

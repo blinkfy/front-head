@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-const moduleUrl = new URL('../../src/utils/chat-avatar-cache.mjs', import.meta.url)
+const moduleUrl = new URL('../../src/utils/realtime/chat-avatar-cache.mjs', import.meta.url)
 let runId = 0
 
 function setup() {

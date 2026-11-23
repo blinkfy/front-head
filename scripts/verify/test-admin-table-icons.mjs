@@ -23,7 +23,7 @@ for (const file of fs.readdirSync(path.join(root, 'src/static/icons')))
   assertWebpAsset(`icons/${file}`, `static icon ${file}`)
 const catalogSource = fs.readFileSync(path.join(root, 'src/pages-admin/database.vue'), 'utf8')
 const catalog = vm.runInNewContext(catalogSource.match(/const legacyTableCatalog = (\[[\s\S]*?\n\])/)[1])
-const newTables = ['ShopProduct', 'UserLoginLocation', 'BiometricCredential', 'BiometricChallenge',
+const newTables = ['ShopProduct', 'UserLoginEvent', 'BiometricCredential', 'BiometricChallenge',
   'PlatformLoginCredential', 'PlatformLoginChallenge', 'CollectorProfile', 'CollectorApplication',
   'CollectorScheduleDay', 'RecyclingServiceArea', 'RecyclingLock', 'BookingOrderEvent', 'BookingChatBinding',
   'RecyclingRequest', 'RecyclingDelivery', 'RecyclingDeviceDelivery', 'UserIdentity',

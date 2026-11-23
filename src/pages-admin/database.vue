@@ -1080,16 +1080,16 @@ import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import { appOfflineSession } from '@/utils/app-offline-session.js'
 // #endif
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import { shortFieldLabels } from '@/utils/field-labels'
-import TrashBinImageEditor from '@/components/TrashBinImageEditor.vue'
-import AdminDatabaseGrid from '@/components/AdminDatabaseGrid.vue'
-import AdminDatabaseRelations from '@/components/AdminDatabaseRelations.vue'
-import AdminRecordInsights from '@/components/AdminRecordInsights.vue'
-import AdminUserCostSummary from '@/components/AdminUserCostSummary.vue'
-import AdminReadonlySql from '@/components/AdminReadonlySql.vue'
+import { shortFieldLabels } from '@/pages-admin/utils/field-labels'
+import TrashBinImageEditor from '@/components/map/TrashBinImageEditor.vue'
+import AdminDatabaseGrid from '@/pages-admin/components/AdminDatabaseGrid.vue'
+import AdminDatabaseRelations from '@/pages-admin/components/AdminDatabaseRelations.vue'
+import AdminRecordInsights from '@/pages-admin/components/AdminRecordInsights.vue'
+import AdminUserCostSummary from '@/pages-admin/components/AdminUserCostSummary.vue'
+import AdminReadonlySql from '@/pages-admin/components/AdminReadonlySql.vue'
 import { parseTableSql, stripMirroredUpperFilters, projectListSql, updateTableSqlQuery } from './admin-sql-sync.mjs'
 import { withUserCostTotal } from './user-cost-summary.mjs'
-import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/trash-bin-image'
+import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/map/trash-bin-image'
 import {
     getUsersList, createUser, updateUser, deleteUser,
     getDevicesList, createDevice, updateDevice, deleteDevice,
@@ -1757,6 +1757,7 @@ const legacyTableCatalog = [
     { name: 'UserIdentity', label: '用户实名认证记录表', icon: 'user_identity_table' },
     { name: 'User', label: '用户表', icon: 'user_table' },
     { name: 'UserCost', label: '用户日成本表', icon: 'user_cost_table' },
+    { name: 'BinReport', label: '垃圾桶点位反馈表', icon: 'bin_report_photo_table' },
     { name: 'BinReportPhoto', label: '垃圾桶报错照片表', icon: 'bin_report_photo_table' },
     { name: 'RagSearchStat', label: '知识检索统计表', icon: 'rag_search_stat_table' },
     { name: 'Device', label: '设备表', icon: 'device_table' },

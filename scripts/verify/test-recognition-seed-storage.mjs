@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 
-const sourcePath = fileURLToPath(new URL('../../src/utils/recognition-sync.js', import.meta.url))
+const sourcePath = fileURLToPath(new URL('../../src/utils/recognition/recognition-sync.js', import.meta.url))
 const source = readFileSync(sourcePath, 'utf8').replace(/^export\s+/gm, '')
 const storage = new Map()
 const uni = {

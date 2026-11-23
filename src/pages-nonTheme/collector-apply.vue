@@ -62,12 +62,12 @@
   </RecyclingShell>
 </template>
 <script>
-import RecyclingShell from './components/RecyclingShell.vue'
-import ShopRegionPicker from './components/ShopRegionPicker.vue'
-import RecyclingServiceMap from './components/RecyclingServiceMap.vue'
-import { normalizeGeometry } from './utils/recycling-geometry.mjs'
-import { collectorMe, recyclingCatalog, collectorApply, collectorStatusText, openPlatformSupport, mutationData } from './api/recycling.js'
-import { identityStatus } from '@/api/identity.js'
+import RecyclingShell from '@/components/recycling/RecyclingShell.vue'
+import ShopRegionPicker from '@/components/ShopRegionPicker.vue'
+import RecyclingServiceMap from '@/components/recycling/RecyclingServiceMap.vue'
+import { normalizeGeometry } from '@/utils/recycling-geometry.mjs'
+import { collectorMe, recyclingCatalog, collectorApply, collectorStatusText, openPlatformSupport, mutationData } from '@/api/recycling.js'
+import { identityStatus } from '@/pages-nonTheme/api/identity.js'
 export default {
   components: { RecyclingShell, ShopRegionPicker, RecyclingServiceMap },
   data: () => ({ identity: {}, identityError: '', serviceName: '', formInitialized: false, isDark: false, loading: false, submitting: false, error: '', profile: null, application: null, catalog: { areas: [], types: [] }, ownAreas: [], form: { phone: '', serviceAreas: [{ name: '', region: ['', '', ''], geometry: null }], typeIds: [], notes: '' }, showRanges: false, guideExpanded: null, applicationSteps: [

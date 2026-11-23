@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { createRoundCodeAssetCache } from '../../src/utils/h5-roundcode-cache.mjs'
+import { createRoundCodeAssetCache } from '../../src/utils/scan/h5-roundcode-cache.mjs'
 
 const bytes = new TextEncoder().encode('fixed decoder bytes'), hash = createHash('sha256').update(bytes).digest('hex')
 const base = 'https://example.test/h5-roundcode/v1/'

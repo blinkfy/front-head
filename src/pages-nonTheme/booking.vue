@@ -163,13 +163,13 @@
 
 <script>
 import { createBooking, getAvailableTimeSlots, uploadBookingPhoto, bookingUnitText } from '@/pages-nonTheme/api/booking.js';
-import { recyclingCatalog, mutationData } from './api/recycling.js';
+import { recyclingCatalog, mutationData } from '@/api/recycling.js';
 import { getUserProfile, updateUserProfile } from '@/api/user.js';
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue';
 import ManifestIcon from '@/components/ManifestIcon.vue';
-import ShopRegionPicker from './components/ShopRegionPicker.vue';
-import RecyclingServiceMap from './components/RecyclingServiceMap.vue';
-import { coversServiceLocation, normalizePoint } from './utils/recycling-geometry.mjs';
+import ShopRegionPicker from '@/components/ShopRegionPicker.vue';
+import RecyclingServiceMap from '@/components/recycling/RecyclingServiceMap.vue';
+import { coversServiceLocation, normalizePoint } from '@/utils/recycling-geometry.mjs';
 import { gcj02ToWgs84 } from '@/utils/map/coordinates.mjs';
 import ShopAddressPicker from '@/pages-nonTheme/components/shop/ShopAddressPicker.vue';
 import { splitShopAddress, composeShopAddress } from './utils/shop-address.js';

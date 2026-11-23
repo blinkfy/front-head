@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const source = await readFile(new URL('../../src/components/database-relation-layout.js', import.meta.url), 'utf8')
+const source = await readFile(new URL('../../src/pages-admin/components/database-relation-layout.js', import.meta.url), 'utf8')
 const { improveCurveCrossings, improveLinkClearance, layoutTables, relationStrokes, repelNodesFromLinks, clearDenseLinkAreas, refineRelationNeighborhoods, refineRelationNeighborhoodsInSteps, dragSprings, domainIndex } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))
 const pairs = [
   { key: 'a-b', source: 'a', target: 'b', lane: 0, lanes: 1 },
@@ -125,7 +125,7 @@ assert.ok(localNodes.every((node, i) => localNodes.slice(i + 1).every(other => M
 const stableNodes = structuredClone(noCross)
 refineRelationNeighborhoods(stableNodes, pairs, 'a')
 assert.deepEqual(stableNodes, noCross, 'an uncrowded layout is not needlessly rearranged')
-const frameSource = await readFile(new URL('../../src/components/database-relation-frame-budget.js', import.meta.url), 'utf8')
+const frameSource = await readFile(new URL('../../src/pages-admin/components/database-relation-frame-budget.js', import.meta.url), 'utf8')
 const { createRelationFrameBudget } = await import('data:text/javascript;base64,' + Buffer.from(frameSource).toString('base64'))
 const budget = createRelationFrameBudget(true)
 assert.equal(budget.level, 3, 'desktop begins with a higher budget')
@@ -149,6 +149,12 @@ const springNodes = structuredClone(chunked), tick = dragSprings(springNodes, lo
 springNodes[0].x -= 30
 for (let i = 0; i < 10; i++) assert.ok(Number.isFinite(tick(3)), 'throttled avoidance stays finite')
 assert.equal(springNodes[0].x, chunked[0].x - 30, 'throttled spring keeps the dragged node pinned')
+const delayedNodes = [{ name: 'a', x: -100, y: 0 }, { name: 'b', x: 100, y: 0 }, { name: 'c', x: 0, y: 8 }]
+const delayedTick = dragSprings(delayedNodes, [{ source: 'a', target: 'b' }], 'a', { deferRepulsionFrames: 2 })
+delayedTick(); delayedTick()
+assert.equal(delayedNodes[2].y, 8, 'first frames do not run node-to-link avoidance')
+delayedTick()
+assert.ok(delayedNodes[2].y > 8, 'node-to-link avoidance resumes after the deferred frames')
 const interactiveBudget = createRelationFrameBudget(true)
 let interactiveTime = 0
 interactiveBudget.observe(interactiveTime, 30)

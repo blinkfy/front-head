@@ -4,9 +4,9 @@ import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { stripWebCallTicket } from '../../src/utils/web-call-entry.mjs'
+import { stripWebCallTicket } from '../../src/utils/realtime/web-call-entry.mjs'
 
-const sourcePath = fileURLToPath(new URL('../../src/utils/chat-events.js', import.meta.url))
+const sourcePath = fileURLToPath(new URL('../../src/utils/realtime/chat-events.js', import.meta.url))
 const source = fs.readFileSync(sourcePath, 'utf8')
 const require = createRequire(import.meta.url)
 

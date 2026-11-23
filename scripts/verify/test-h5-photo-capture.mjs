@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { photoDimensions, preparePhotoCapture } from '../../src/utils/h5-photo-capture.mjs'
+import { photoDimensions, preparePhotoCapture } from '../../src/utils/scan/h5-photo-capture.mjs'
 
 function png(width, height, length = 24) {
   const bytes = new Uint8Array(length)

@@ -4,7 +4,7 @@ import {
   identityQualityMetrics,
   identityQualityRegion,
   measureIdentityImageQuality
-} from '../../src/utils/identity-image-quality.mjs'
+} from '../../src/pages-nonTheme/utils/identity/identity-image-quality.mjs'
 
 function rgba(width, height, sample) {
   const data = new Uint8ClampedArray(width * height * 4)

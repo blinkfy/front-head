@@ -226,50 +226,50 @@
 </template>
 
 <script setup>
-import { clearChatPush } from '@/utils/chat-push.js'
-import { loginNavigationRuntime } from '@/utils/login-navigation-runtime.js'
+import { clearChatPush } from '@/utils/realtime/chat-push.js'
+import { loginNavigationRuntime } from '@/utils/account/login-navigation-runtime.js'
 // #ifdef APP-PLUS
 import { appOfflineSession, resumeRememberedAppSession } from '@/utils/app-offline-session.js'
 // #endif
 // #ifdef APP-PLUS
-import { resumeRememberedQrLogin } from '@/utils/remembered-qr-login.mjs'
+import { resumeRememberedQrLogin } from '@/utils/account/remembered-qr-login.mjs'
 // #endif
 // #ifdef APP-PLUS || H5 || MP-WEIXIN
-import { useBiometricLogin } from '@/utils/use-biometric-login.js'
+import { useBiometricLogin } from '@/utils/account/use-biometric-login.js'
 // #endif
-import MfaLoginPanel from '@/components/MfaLoginPanel.vue'
-import { useLoginMfa } from '@/utils/use-login-mfa.js'
-import QuickLoginAccountPicker from '@/components/QuickLoginAccountPicker.vue'
+import MfaLoginPanel from '@/components/account/MfaLoginPanel.vue'
+import { useLoginMfa } from '@/utils/account/use-login-mfa.js'
+import QuickLoginAccountPicker from '@/components/account/QuickLoginAccountPicker.vue'
 import { userinfoForToken } from '@/api/mfa'
 import { ref, onMounted, watch } from 'vue'
 // #ifdef H5 || APP-PLUS
-import H5LoginShell from '@/components/H5LoginShell.vue'
-import { commitRegistrationLogin } from '@/utils/registration-relay.mjs'
-import { registrationRuntime } from '@/utils/registration-relay.js'
+import H5LoginShell from '@/components/account/H5LoginShell.vue'
+import { commitRegistrationLogin } from '@/utils/account/registration-relay.mjs'
+import { registrationRuntime } from '@/utils/account/registration-relay.js'
 // #endif
 import { login,userinfo } from '@/api/user'
 // #ifdef H5 || APP-PLUS
-import WechatBindingReminder from '@/components/WechatBindingReminder.vue'
-import { useWechatBindingReminder } from '@/utils/use-wechat-binding-reminder.js'
+import WechatBindingReminder from '@/components/account/WechatBindingReminder.vue'
+import { useWechatBindingReminder } from '@/utils/account/use-wechat-binding-reminder.js'
 const { visible: bindingReminderVisible, dismiss: dismissBindingReminder, remindIfUnbound } = useWechatBindingReminder()
 // #endif
 // #ifdef MP-WEIXIN
 import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { wechatLogin } from '@/api/user'
-import { createWechatLoginFlow, rememberWechatLogin, shouldAutoWechatLogin } from '@/utils/wechat-login.mjs'
-import WechatLoginEntry from '@/components/WechatLoginEntry.vue'
-import WechatProfileCompletion from '@/components/WechatProfileCompletion.vue'
-import AccountMergeChoice from '@/components/AccountMergeChoice.vue'
-import { consumeWechatProfileCompletion } from '@/utils/wechat-profile.mjs'
-import { captureRegistrationEntry, confirmRegistrationLogin, miniRegistrationRelay } from '@/utils/registration-relay.js'
+import { createWechatLoginFlow, rememberWechatLogin, shouldAutoWechatLogin } from '@/utils/account/wechat-login.mjs'
+import WechatLoginEntry from '@/components/account/WechatLoginEntry.vue'
+import WechatProfileCompletion from '@/components/account/WechatProfileCompletion.vue'
+import AccountMergeChoice from '@/components/account/AccountMergeChoice.vue'
+import { consumeWechatProfileCompletion } from '@/utils/account/wechat-profile.mjs'
+import { captureRegistrationEntry, confirmRegistrationLogin, miniRegistrationRelay } from '@/utils/account/registration-relay.js'
 // #endif
 import { checkDB } from '@/api/health'
 import { ThemeManager } from '@/utils/theme.js'
-import { appendPageQuery, buildDeviceQrScanUrl, getPendingDeviceQrScene } from '@/utils/device-qr-entry.mjs'
-import CaptchaBox from '@/components/CaptchaBox.vue'
+import { appendPageQuery, buildDeviceQrScanUrl, getPendingDeviceQrScene } from '@/utils/scan/device-qr-entry.mjs'
+import CaptchaBox from '@/components/account/CaptchaBox.vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
-import LoginGreenPlanet from '@/components/LoginGreenPlanet.vue'
-import { navigateAfterLogin, claimLoginSplash } from '@/utils/login-navigation.mjs'
+import LoginGreenPlanet from '@/components/account/LoginGreenPlanet.vue'
+import { navigateAfterLogin, claimLoginSplash } from '@/utils/account/login-navigation.mjs'
 import AppSplash from '@/components/AppSplash.vue'
 
 const username = ref('')

@@ -3,8 +3,8 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 
 const file = name => fs.readFileSync(new URL(`../../${name}`, import.meta.url), 'utf8')
-const source = file('src/utils/app-chat-badge.js').replace(/^import .*$/gm, '').replace(/export function/g, 'function')
-const directShare = file('src/utils/app-direct-share.js').replace(/^import .*$/gm, '').replace(/export function/g, 'function')
+const source = file('src/utils/realtime/app-chat-badge.js').replace(/^import .*$/gm, '').replace(/export function/g, 'function')
+const directShare = file('src/utils/realtime/app-direct-share.js').replace(/^import .*$/gm, '').replace(/export function/g, 'function')
 let account = { token: 'one', userInfo: { id: 1 } }
 const updates = []
 const shortcuts = []
@@ -43,6 +43,6 @@ assert.deepEqual(updates.pop(), { owner: '', operation: 'clear' })
 const native = file('src/uni_modules/ftx-voice-call/utssdk/app-android/RealtimeBridge.kt')
 assert.ok(native.includes('AppChatBadge.event(it, selfId, event)'), 'native sees events before app background delivery may be dropped')
 assert.ok(file('src/uni_modules/ftx-voice-call/utssdk/app-android/AndroidManifest.xml').includes('com.huawei.android.launcher.permission.CHANGE_BADGE'))
-assert.ok(file('src/utils/chat-push.js').includes('clearChatBadge()'))
+assert.ok(file('src/utils/realtime/chat-push.js').includes('clearChatBadge()'))
 assert.ok(file('src/pages-nonTheme/api/chat.js').includes('finishChatBadgeSnapshot(badgeSnapshot, result, params)'))
 console.log('PASS app badge adapter: account isolation, existing-response reuse, search/old-backend safety and logout wiring')

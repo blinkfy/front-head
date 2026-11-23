@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
-import { createChatEventsTransport } from '../../src/utils/chat-events-transport.mjs'
+import { createChatEventsTransport } from '../../src/utils/realtime/chat-events-transport.mjs'
 
 const read = name => fs.readFileSync(new URL(`../../${name}`, import.meta.url), 'utf8')
 function setup() {
@@ -10,7 +10,7 @@ function setup() {
   const requests = []
   const context = { reactive: value => value, Date: { parse: Date.parse, now: () => now },
     request: options => new Promise((resolve, reject) => requests.push({ options, resolve, reject })) }
-  const source = read('src/utils/community-chat-settings.js').replace(/^import .*$/gm, '').replace(/\bexport /g, '')
+  const source = read('src/utils/realtime/community-chat-settings.js').replace(/^import .*$/gm, '').replace(/\bexport /g, '')
   vm.createContext(context)
   vm.runInContext(`${source}\nglobalThis.api = { communityChatSettings, applyCommunityChatSettings, connectCommunityChatSettings, readCommunityChatEnabled }`, context)
   return { ...context.api, requests, tick: () => { now += 5001 } }
@@ -73,14 +73,19 @@ for (const name of ['src/pages-nonTheme/chat.vue', 'src/pages-nonTheme/chatlist.
   assert.equal(template.errors.length, 0, `${name}: valid conditional entries`)
 }
 const chat = parse(read('src/pages-nonTheme/chat.vue')).descriptor.script.content
+const availableModesBody = chat.match(/availableCallModes\(\) \{([\s\S]*?)\n        \},/)[1].replace(/^\s*\/\/.*$/gm, '')
+const availableModes = vm.runInNewContext(`(function(){${availableModesBody}})`)
+assert.equal(availableModes.call({ communityChatSettings: { enabled: false }, chatOffline: false, embeddedCallMode: false, voiceCallState: { supported: true, videoSupported: true } }).length, 0)
+const enabledCallModes = availableModes.call({ communityChatSettings: { enabled: true }, chatOffline: false, embeddedCallMode: false, voiceCallState: { supported: true, videoSupported: true } })
+assert.ok(enabledCallModes.length > 0)
 const optionsBody = chat.match(/callMenuOptions\(\) \{([\s\S]*?)\n        \},/)[1].replace(/^\s*\/\/.*$/gm, '')
 const options = vm.runInNewContext(`(function(){${optionsBody}})`)
-assert.equal(options.call({ communityChatSettings: { enabled: false }, isGroupChat: false, voiceCallState: { supported: true, videoSupported: true } }).length, 0)
-assert.ok(options.call({ communityChatSettings: { enabled: true }, isGroupChat: false, voiceCallState: { supported: true, videoSupported: true } }).length > 0)
+assert.equal(options.call({ isGroupChat: true, availableCallModes: enabledCallModes }).length, 0)
+assert.equal(options.call({ isGroupChat: false, availableCallModes: enabledCallModes }).length, enabledCallModes.length)
 const locationBody = chat.match(/hasLiveLocationEntry\(\) \{([\s\S]*?)\n        \},/)[1]
 const locationEntry = vm.runInNewContext(`(function(){${locationBody}})`)
 assert.equal(locationEntry.call({ otherUserId: 2, liveLocationState: { offers: {}, phase: 'idle' } }), false)
 assert.equal(locationEntry.call({ otherUserId: 2, liveLocationState: { offers: { '2': {} }, phase: 'idle' } }), true)
 assert.equal(locationEntry.call({ otherUserId: 2, liveLocationState: { offers: {}, phase: 'sharing', peer: { id: 2 } } }), true)
-assert.ok(!read('src/utils/community-chat-settings.js').includes('.end('), 'entry visibility cannot stop ongoing calls/shares')
+assert.ok(!read('src/utils/realtime/community-chat-settings.js').includes('.end('), 'entry visibility cannot stop ongoing calls/shares')
 console.log('PASS community-chat setting: shared reads, live socket updates, stale replicas/HTTP, legacy fallback, hidden new entries and retained active/invited sessions')

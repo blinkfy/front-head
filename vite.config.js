@@ -7,6 +7,7 @@ import { browserRoundCodeAssetsPlugin } from './scripts/build/browser-roundcode-
 import { h5DevCompressionPlugin } from './scripts/build/h5-dev-compression.mjs'
 import { embeddedCallPlugin } from './scripts/build/embedded-call.mjs'
 import { foregroundNotificationPlugin } from './scripts/build/foreground-notification-plugin.mjs'
+import { mpSubpackageModulesPlugin } from './scripts/build/mp-subpackage-modules.mjs'
 
 // https://vitejs.dev/config/
 export default defineConfig(async ({ mode }) => {
@@ -36,6 +37,7 @@ export default defineConfig(async ({ mode }) => {
       uni({ vueOptions: { template: { compilerOptions: { isCustomElement: tag => tag === 'smart-sort-xr' } } } }),
       smartSortRobotAssetsPlugin(),
       mpMainPackageAssetsPlugin(),
+      mpSubpackageModulesPlugin(),
       officialSitePlugin(),
       embeddedCallPlugin(),
       browserRoundCodeAssetsPlugin(),
@@ -53,7 +55,7 @@ export default defineConfig(async ({ mode }) => {
     resolve: {
       alias: {
         ...(process.env.UNI_PLATFORM === 'h5' ? {
-          '../utils/app-map-local-server-app.js': resolve(__dirname, 'src/utils/app-map-local-server-h5.js')
+          '../../utils/map/app-map-local-server-app.js': resolve(__dirname, 'src/utils/map/app-map-local-server-h5.js')
         } : {}),
         '@': resolve(__dirname, 'src'),
         'mp-html': resolve(__dirname, 'node_modules/mp-html/src/uni-app/components/mp-html/mp-html.vue')

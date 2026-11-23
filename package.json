@@ -1,6 +1,6 @@
 {
   "name": "fentouxia",
-  "version": "1.4.15",
+  "version": "1.4.16",
   "scripts": {
     "check:mojibake": "node scripts/verify/check-mojibake.js",
     "check:miniapp-styles": "node scripts/verify/check-miniapp-style-selectors.js",

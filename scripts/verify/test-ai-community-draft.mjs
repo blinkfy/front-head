@@ -20,7 +20,7 @@ function makeMethods(api = {}) {
   const context = { ...api, Date, Number, Object, String, uni: {
     showToast: item => toast.push(item), showModal: item => modals.push(item),
     navigateTo: item => navigations.push(item), redirectTo: item => navigations.push(item)
-  } }
+  }, showAppModal: (_page, options) => modals.push(options) }
   runInNewContext(methodFactorySource, context)
   return { methods: context.communityDraftMethods, toast, modals, navigations }
 }
@@ -169,7 +169,7 @@ async function runCard({ supported = true, communityId = 7, mounted = true } = {
     communityPostSupported: value => value?.supported === true, fetchAiCapabilities: async () => ({ supported }),
     isCapabilityNotFound: () => false, getMyCommunity: async () => ({ code: 0, data: { id: communityId } }),
     createCommunityPostDraft: async input => { created.push(input); return { code: 0, data: { id: 'card-draft' } } }, newActionRequestId: () => 'fallback',
-    uni: { navigateTo: item => nav.push(item), showModal: item => modals.push(item) }, encodeURIComponent }
+    uni: { navigateTo: item => nav.push(item), showModal: item => modals.push(item) }, showPageModal: item => modals.push(item), encodeURIComponent }
   const source = `let alive = true, actionRequestVersion = 0, detailRequestId = 0; const props = this.props; const busyProductId = this.busyProductId; const detailOpen = this.detailOpen; const createRequestIds = this.createRequestIds; const businessActionRequestId = this.businessActionRequestId; const communityPostSupported = this.communityPostSupported; const fetchAiCapabilities = this.fetchAiCapabilities; const isCapabilityNotFound = this.isCapabilityNotFound; const getMyCommunity = this.getMyCommunity; const createCommunityPostDraft = this.createCommunityPostDraft; const newActionRequestId = this.newActionRequestId; const uni = this.uni; const encodeURIComponent = this.encodeURIComponent; const watch = (_source, callback) => { this.pageEpochWatcher = callback }; function closeDetail() { detailOpen.value = false; detailRequestId++ }\n${pageEpochWatchSource}\n${cardFunctionsSource}\nthis.run = openCommunityPost; this.unmount = () => { alive = false; actionRequestVersion++ }`
   runInNewContext(source, state)
   if (!mounted) state.unmount()
@@ -213,7 +213,7 @@ assert.equal(hidden.state.busyProductId.value, '', 'page epoch watcher releases 
 const publishPath = '../../src/pages-nonTheme/community-publish.vue'
 const publishDescriptor = parse(read(publishPath), { filename: publishPath }).descriptor
 const publishScript = publishDescriptor.script.content
-const publishContext = { ManifestIcon: {}, CommunityPostBody: {}, communityDraftMethods: {}, createPost: async () => { publishContext.plainCreates++ }, plainCreates: 0,
+const publishContext = { ManifestIcon: {}, CommunityPostBody: {}, AppConfirmDialog: {}, communityDraftMethods: {}, createPost: async () => { publishContext.plainCreates++ }, plainCreates: 0,
   setTimeout() {}, console: { error() {} }, uni: { showToast() {}, navigateBack() {} } }
 runInNewContext(`${publishScript.replace(/^import .*\r?\n/gm, '').replace('export default', 'this.component =')}`, publishContext)
 const plainState = { draftId: '', submitting: false, communityId: 7, content: '普通页面帖子', uploadedImages: [], selectedTag: '心得', isAdmin: false,

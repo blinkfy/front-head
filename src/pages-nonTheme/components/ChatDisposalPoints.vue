@@ -20,7 +20,7 @@
 <script setup>
 import { computed } from 'vue'
 import { normalizeChatDisposalPoints } from '../utils/ai-chat-disposal.mjs'
-import { formatDisposalDistance } from '../../utils/nearby-disposal.mjs'
+import { formatDisposalDistance } from '../../utils/map/nearby-disposal.mjs'
 
 const props = defineProps({ value: { type: Array, default: () => [] }, busyId: { type: String, default: '' } })
 defineEmits(['open'])

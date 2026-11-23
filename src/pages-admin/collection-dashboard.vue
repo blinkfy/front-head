@@ -554,8 +554,8 @@ import { CENTER_WORKFLOW_MASTER_VIDEO } from '@/pages-admin/config/center-workfl
 import { describeApiFailure, redirectIfAccessDenied } from '@/utils/access-guard.js'
 import { ensureAdminScreenAccess, jumpToAdminPage } from '@/utils/admin-page-nav'
 import { applyStoredTheme, bindThemeStorageSync } from '@/utils/theme'
-import AdminScreenHeader from '@/components/AdminScreenHeader.vue'
-import CompactMetricCard from '@/components/dashboard/CompactMetricCard.vue'
+import AdminScreenHeader from '@/pages-admin/components/AdminScreenHeader.vue'
+import CompactMetricCard from '@/pages-admin/components/CompactMetricCard.vue'
 import RiskAlgorithmWorkbench from '@/pages-admin/components/collection/RiskAlgorithmWorkbench.vue'
 import { getMiniProgramTopInset } from '@/utils/mp-top-inset.js'
 
