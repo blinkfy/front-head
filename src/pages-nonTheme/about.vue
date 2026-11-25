@@ -103,6 +103,9 @@
           * AI识别结果仅供参考，请结合实际情况进行分类
         </text>
       </view>
+      <view class="disclaimer">
+        <text class="disclaimer-text">福田区部分垃圾投放点数据来自深圳市政府数据开放平台。</text>
+      </view>
     </view>
   </view>
 </template>
@@ -121,10 +124,7 @@ import manifest from '@/manifest.json'
 import { ref, onMounted } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 
-let appIconSource = '/static/Icon.webp.png'
-// #ifdef MP-WEIXIN
-appIconSource = '/pages-nonTheme/static/Icon.webp.png'
-// #endif
+const appIconSource = '/static/Icon.webp.png'
 
 // 主题相关
 const appConfirmDialog = ref(null)

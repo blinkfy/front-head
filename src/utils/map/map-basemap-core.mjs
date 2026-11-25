@@ -5,7 +5,8 @@ export function isBinLocationPicker(options = {}) {
 }
 
 // Only the basemap changes. The adapter must not recreate the map or move its camera.
-export function createMapBasemapController({ apply, onChange = () => {}, onFallback = () => {}, timeoutMs = SATELLITE_LOAD_TIMEOUT_MS, setTimer = setTimeout, clearTimer = clearTimeout }) {
+export function createMapBasemapController({ apply, onChange = () => {}, onFallback = () => {},
+  timeoutMs = SATELLITE_LOAD_TIMEOUT_MS, fallbackOnTimeout = true, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let state = { satellite: false, loading: false }
   let revision = 0, timer = null, release = null, disposed = false
   const publish = patch => { state = { ...state, ...patch }; onChange({ ...state }) }
@@ -21,9 +22,12 @@ export function createMapBasemapController({ apply, onChange = () => {}, onFallb
   }
   function arm(token) {
     if (timer !== null) clearTimer(timer)
-    timer = setTimer(() => fallback(token), typeof timeoutMs === 'function' ? timeoutMs() : timeoutMs)
+    timer = setTimer(() => {
+      if (fallbackOnTimeout) fallback(token)
+      else finishLoading(token)
+    }, typeof timeoutMs === 'function' ? timeoutMs() : timeoutMs)
   }
-  function loaded(token) {
+  function finishLoading(token) {
     if (disposed || token !== revision || !state.satellite) return
     if (timer !== null) clearTimer(timer)
     timer = null
@@ -36,7 +40,7 @@ export function createMapBasemapController({ apply, onChange = () => {}, onFallb
     publish({ satellite: !!satellite, loading: !!satellite })
     if (satellite) arm(token)
     try {
-      const cleanup = apply(!!satellite, { loaded: () => loaded(token), failed: () => fallback(token) })
+      const cleanup = apply(!!satellite, { loaded: () => finishLoading(token), failed: () => fallback(token) })
       if (cleanup === false && satellite) return fallback(token)
       if (typeof cleanup === 'function') {
         if (token === revision) release = cleanup

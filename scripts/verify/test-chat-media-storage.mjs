@@ -11,6 +11,7 @@ const source = readFileSync(mediaPath, 'utf8')
 const MiB = 1024 * 1024
 const original = 'https://example.test/original.jpg'
 const video = 'https://example.test/video.mp4'
+const stickerImage = 'https://example.test/chat-stickers/v1/11.gif'
 const scope = ['9', '123']
 let moduleGeneration = 0
 
@@ -83,7 +84,7 @@ async function fixture(platform, { downloadSize = 70 * MiB, downloadSizes = {}, 
   }
 }
 
-async function h5Fixture() {
+async function h5Fixture({ responseSize = 4 } = {}) {
   const records = new Map()
   const stores = new Set()
   let fetchCount = 0
@@ -158,9 +159,9 @@ async function h5Fixture() {
   Object.defineProperty(globalThis, 'navigator', { value: { storage: {}, locks: undefined, onLine: true }, configurable: true, writable: true })
   globalThis.fetch = async url => {
     fetchCount++
-    return new Response(new Uint8Array([1, 2, 3, 4]), {
+    return new Response(new Uint8Array(responseSize), {
       status: 200,
-      headers: { 'content-type': 'image/jpeg', 'content-length': '4' }
+      headers: { 'content-type': url.endsWith('.gif') ? 'image/gif' : 'image/jpeg', 'content-length': String(responseSize) }
     })
   }
   URL.createObjectURL = () => `blob:chat-media-${++objectUrlId}`
@@ -181,6 +182,29 @@ async function h5Fixture() {
       URL.revokeObjectURL = previous.revokeObjectURL
     }
   }
+}
+
+{
+  const { api, load, setOffline, getDownloadCount } = await fixture('MP', { downloadSize: Math.floor(1.8 * MiB) })
+  const sticker = await api.fetchChatMedia('builtin-stickers', 'sticker', stickerImage)
+  assert.equal(sticker?.persistent, true)
+  setOffline(true)
+  assert.equal((await (await load()).fetchChatMedia('builtin-stickers', 'sticker', stickerImage))?.url, sticker.url)
+  assert.equal(getDownloadCount(), 1, 'mini program reuses its saved sticker file after restart offline')
+}
+
+{
+  const h5 = await h5Fixture({ responseSize: Math.floor(1.8 * MiB) })
+  try {
+    const sticker = await h5.api.fetchChatMedia('builtin-stickers', 'sticker', stickerImage)
+    assert.ok(sticker?.url.startsWith('blob:'))
+    sticker.release()
+    navigator.onLine = false
+    const restored = await (await h5.load()).fetchChatMedia('builtin-stickers', 'sticker', stickerImage)
+    assert.ok(restored?.url.startsWith('blob:'))
+    restored.release()
+    assert.equal(h5.getFetchCount(), 1, 'browser reuses the IndexedDB sticker after restart offline')
+  } finally { h5.restore() }
 }
 
 {

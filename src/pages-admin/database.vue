@@ -368,6 +368,10 @@
                                 <view class="data-content-inner">
                                 <!-- Users 表 -->
                                 <template v-if="currentTable === 'User'">
+                                    <view v-if="getFieldImages('User', 'avatar', item.avatar).length" class="data-row device-image-row">
+                                        <text class="data-label">头像:</text>
+                                        <image class="device-image-thumb" :src="resolveTrashBinImage(getFieldImages('User', 'avatar', item.avatar)[0])" mode="aspectFill" @click.stop="previewDeviceImage(getFieldImages('User', 'avatar', item.avatar)[0])" />
+                                    </view>
                                     <view class="data-row">
                                         <text class="data-label">用户:</text>
                                         <rich-text class="data-value highlight"
@@ -404,8 +408,8 @@
                                     </view>
                                     <view v-if="item.imagePath" class="data-row device-image-row">
                                         <text class="data-label">图片:</text>
-                                        <image class="device-image-thumb" :src="resolveTrashBinImage(item.imagePath)" mode="aspectFill" @click="previewDeviceImage(item.imagePath)" />
-                                        <text class="device-image-action" @click="previewDeviceImage(item.imagePath)">预览已存图片</text>
+                                        <image class="device-image-thumb" :src="resolveTrashBinImage(getFieldImages('Device', 'imagePath', item.imagePath)[0])" mode="aspectFill" @click="previewDeviceImage(getFieldImages('Device', 'imagePath', item.imagePath)[0])" />
+                                        <text class="device-image-action" @click="previewDeviceImage(getFieldImages('Device', 'imagePath', item.imagePath)[0])">预览已存图片</text>
                                     </view>
                                     <view v-else class="data-row">
                                         <text class="data-label">图片:</text><text class="data-value">暂无图片</text>
@@ -478,6 +482,7 @@
                                         <view v-if="getFieldImages('Message', 'content', item.content, item.type).length" class="admin-image-list">
                                             <image v-for="(src, index) in getFieldImages('Message', 'content', item.content, item.type)" :key="index" class="device-image-thumb" :src="resolveTrashBinImage(src)" mode="aspectFill" @click.stop="previewDeviceImage(src)" />
                                         </view>
+                                        <AdminMessageAttachment v-else-if="['voice', 'video', 'file'].includes(item.type)" :type="item.type" :content="item.content" />
                                         <rich-text v-else class="data-value"
                                             :nodes="highlightText((item.content || '').substring(0, 100))"></rich-text>
                                     </view>
@@ -534,6 +539,7 @@
                                     </view>
                                 </template>
                                 <template v-if="!isSpecialTable(currentTable)">
+                                    <view v-if="currentTable === 'GroupMessage' && ['voice', 'video', 'file'].includes(item.type)" class="data-row"><text class="data-label">附件:</text><AdminMessageAttachment :type="item.type" :content="item.content" /></view>
                                     <view class="data-row" v-for="field in getGenericImageFields(item)" :key="'image-' + field.key">
                                         <text class="data-label">{{ field.label }}:</text>
                                         <view class="admin-image-list">
@@ -543,7 +549,7 @@
                                     <view class="data-row" v-for="field in getGenericPreviewFields(item)"
                                         :key="field.key">
                                         <text class="data-label">{{ field.label }}:</text>
-                                        <rich-text class="data-value"
+                                        <rich-text v-if="!(currentTable === 'GroupMessage' && field.key === 'content' && ['voice', 'video', 'file'].includes(item.type))" class="data-value"
                                             :nodes="highlightText(String(field.value ?? '-'))"></rich-text>
                                     </view>
                                 </template>
@@ -679,7 +685,7 @@
                         </view>
                         <view class="form-item">
                             <text class="form-label">头像</text>
-                            <TrashBinImageEditor v-model="editForm.avatar" :disabled="avatarImageProcessing" @processing="avatarImageProcessing = $event" />
+                            <TrashBinImageEditor v-model="editForm.avatar" :resolve-source="resolveAdminImageSource" :disabled="avatarImageProcessing" @processing="avatarImageProcessing = $event" />
                             <input v-if="!isImageData(editForm.avatar)" class="form-input" v-model="editForm.avatar" placeholder="或输入头像URL" />
                         </view>
                         <view class="form-item">
@@ -718,7 +724,7 @@
                         </view>
                         <view class="form-item">
                             <text class="form-label">图片</text>
-                            <TrashBinImageEditor v-model="editForm.imagePath" :disabled="deviceImageProcessing" @processing="deviceImageProcessing = $event" />
+                            <TrashBinImageEditor v-model="editForm.imagePath" prefer-app-webp :resolve-source="resolveAdminImageSource" :disabled="deviceImageProcessing" @processing="deviceImageProcessing = $event" />
                         </view>
                         <view class="form-item">
                             <text class="form-label">经度</text>
@@ -853,6 +859,7 @@
                         </view>
                         <view class="form-item">
                             <text class="form-label">消息内容</text>
+                            <AdminMessageAttachment v-if="['voice', 'video', 'file'].includes(editForm.type)" :type="editForm.type" :content="editForm.content" />
                             <view v-if="getFieldImages('Message', 'content', editForm.content, editForm.type).length" class="admin-image-list">
                                 <image v-for="(src, index) in getFieldImages('Message', 'content', editForm.content, editForm.type)" :key="index" class="device-image-thumb" :src="resolveTrashBinImage(src)" mode="aspectFill" @click.stop="previewDeviceImage(src)" />
                             </view>
@@ -951,6 +958,7 @@
                                     {{ field.label }}
                                     <text v-if="field.required" class="required-mark">*</text>
                                 </text>
+                                <AdminMessageAttachment v-if="currentTable === 'GroupMessage' && field.key === 'content' && ['voice', 'video', 'file'].includes(editForm.type)" :type="editForm.type" :content="editForm.content" />
 
                                 <view v-if="getFieldImages(currentTable, field.key, editForm[field.key], editForm.type).length" class="admin-image-field">
                                     <view class="admin-image-list">
@@ -1083,6 +1091,7 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import { shortFieldLabels } from '@/pages-admin/utils/field-labels'
 import TrashBinImageEditor from '@/components/map/TrashBinImageEditor.vue'
 import AdminDatabaseGrid from '@/pages-admin/components/AdminDatabaseGrid.vue'
+import AdminMessageAttachment from '@/pages-admin/components/AdminMessageAttachment.vue'
 import AdminDatabaseRelations from '@/pages-admin/components/AdminDatabaseRelations.vue'
 import AdminRecordInsights from '@/pages-admin/components/AdminRecordInsights.vue'
 import AdminUserCostSummary from '@/pages-admin/components/AdminUserCostSummary.vue'
@@ -1090,6 +1099,8 @@ import AdminReadonlySql from '@/pages-admin/components/AdminReadonlySql.vue'
 import { parseTableSql, stripMirroredUpperFilters, projectListSql, updateTableSqlQuery } from './admin-sql-sync.mjs'
 import { withUserCostTotal } from './user-cost-summary.mjs'
 import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/map/trash-bin-image'
+import { baseUrl } from '@/api/settings'
+import { adminImageSource } from './utils/admin-image-source.mjs'
 import {
     getUsersList, createUser, updateUser, deleteUser,
     getDevicesList, createDevice, updateDevice, deleteDevice,
@@ -1361,8 +1372,10 @@ async function saveIdentityEvidence() {
 }
 
 const imageRawFields = ref({})
+function resolveAdminImageSource(value) { return adminImageSource(value, baseUrl) }
 function toggleImageRaw(key) { imageRawFields.value = { ...imageRawFields.value, [key]: !imageRawFields.value[key] } }
 const databaseImageFields = {
+    User: ['avatar'], Device: ['imagePath'], BinReport: ['photo1Url', 'photo2Url', 'photo3Url'],
     AiChatMessage: ['imageData'], ChatGroup: ['avatar'], Community: ['coverImage'],
     ChallengeQuestion: ['imageUrl'], Prize: ['image'], ShopProduct: ['image'], Post: ['images'],
     Message: ['content'], GroupMessage: ['content']
@@ -1377,9 +1390,10 @@ function getFieldImages(table, key, value, messageType) {
     const values = Array.isArray(data) ? data : [data]
     return values.map(item => {
         if (typeof item === 'string') return item
-        if (item && typeof item === 'object') return item.path || item.url || item.imageUrl || item.src || item.image || ''
+        if (item && typeof item === 'object') return item.path || item.url || item.imageUrl || item.src || item.image || item.objectKey || item.storageKey || ''
         return ''
     }).filter(item => typeof item === 'string' && item.trim())
+      .map(item => adminImageSource(item, baseUrl, { message: table === 'Message' || table === 'GroupMessage' }))
 }
 function getGenericImageFields(item) {
     return (databaseImageFields[currentTable.value] || []).map(key => ({

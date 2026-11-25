@@ -199,7 +199,7 @@
     <!-- 加载动画遮罩 -->
     <view class="loading-overlay" v-if="isLoading">
       <view class="loading-animation">
-        <image class="loading-gif" src="/static/moveable2.gif" mode="aspectFit" />
+        <view class="loading-gif"><SplashArtwork /></view>
         <text class="loading-title">正在登录</text>
         <text class="loading-desc">环保从分类开始...</text>
         <view class="progress-bar">
@@ -271,6 +271,7 @@ import ManifestIcon from '@/components/ManifestIcon.vue'
 import LoginGreenPlanet from '@/components/account/LoginGreenPlanet.vue'
 import { navigateAfterLogin, claimLoginSplash } from '@/utils/account/login-navigation.mjs'
 import AppSplash from '@/components/AppSplash.vue'
+import SplashArtwork from '@/components/SplashArtwork.vue'
 
 const username = ref('')
 const password = ref('')
@@ -1666,7 +1667,8 @@ function onRegister() {
 .loading-gif {
   width: 400rpx;
   height: 400rpx;
-  border-radius: 24rpx;
+  border-radius: 16%;
+  overflow: hidden;
   animation: gifBounce 2s ease-in-out infinite;
   box-shadow: 0 8rpx 32rpx rgba(16, 185, 129, 0.2);
 }

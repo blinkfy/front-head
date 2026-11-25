@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { encodeBinImageWithinLimit, imageDataBytes, imageMimeFromBase64, normalizeImageData, resolveBinPointImage, resolveStoredBinImage, TRASH_BIN_IMAGE_LIMIT } from '../../src/utils/map/trash-bin-image-core.mjs'
 import { prepareAppMapImage } from '../../src/utils/map-image-preview.mjs'
+import { installAppWebpEncoder, tryAppUploadWebp } from '../../src/utils/app-upload-webp-core.mjs'
 import { transformWithEsbuild } from 'vite'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -189,18 +190,19 @@ async function loadPlatformModule(platform, stubs) {
   code = code
     .replace(/^import\s+\{\s*config\s*\}\s+from\s+['"]@\/api\/config\.js['"];?\s*$/m, '')
     .replace(/^import\s+\{\s*prepareAppMapImage\s*\}\s+from\s+['"]\.\.\/map-image-preview\.mjs['"];?\s*$/m, '')
+    .replace(/^import\s+\{\s*tryAppUploadWebp\s*\}\s+from\s+['"]\.\.\/app-upload-webp-core\.mjs['"];?\s*$/m, '')
     .replace(/^import\s+\{\s*encodeBinImageWithinLimit, imageDataBytes, imageMimeFromBase64, normalizeImageData, resolveStoredBinImage, TRASH_BIN_IMAGE_LIMIT\s*\}\s+from\s+['"]\.\/trash-bin-image-core\.mjs['"];?\s*$/m, '')
     .replace(/\bexport\s+const\s+resolveTrashBinImage\b/, 'const resolveTrashBinImage')
     .replace(/\bexport\s+async\s+function\s+compressTrashBinImage\b/, 'async function compressTrashBinImage')
     .replace(/\bexport\s+async\s+function\s+previewTrashBinImage\b/, 'async function previewTrashBinImage')
   const transformed = (await transformWithEsbuild(code, `trash-bin-image-${platform}.js`, { loader: 'js', target: 'es2022' })).code
   const factory = new Function(
-    'config', 'prepareAppMapImage', 'encodeBinImageWithinLimit', 'imageDataBytes', 'imageMimeFromBase64',
+    'config', 'prepareAppMapImage', 'tryAppUploadWebp', 'encodeBinImageWithinLimit', 'imageDataBytes', 'imageMimeFromBase64',
     'normalizeImageData', 'resolveStoredBinImage', 'TRASH_BIN_IMAGE_LIMIT', 'uni', 'plus', 'my',
     `${transformed}\nreturn { compressTrashBinImage, resolveTrashBinImage, previewTrashBinImage }`
   )
   return factory(
-    { baseUrl: 'https://cdn.test' }, prepareAppMapImage, encodeBinImageWithinLimit, imageDataBytes,
+    { baseUrl: 'https://cdn.test' }, prepareAppMapImage, tryAppUploadWebp, encodeBinImageWithinLimit, imageDataBytes,
     imageMimeFromBase64, normalizeImageData, resolveStoredBinImage, TRASH_BIN_IMAGE_LIMIT,
     stubs.uni, stubs.plus, stubs.my
   )
@@ -215,7 +217,7 @@ function createPlatformHarness(platform, options = {}) {
   let readFailureTriggered = false
   const originalData = jpegData(options.originalBytes ?? TRASH_BIN_IMAGE_LIMIT + 64)
   const compressedData = jpegData(options.compressedBytes ?? 96_000)
-  const dataForPath = filePath => filePath === original ? originalData : compressedData
+  const dataForPath = filePath => options.webpFiles?.get(filePath) ?? (filePath === original ? originalData : compressedData)
   const failsRead = stage => {
     if (options.readFailure !== stage || readFailureTriggered) return false
     readFailureTriggered = true
@@ -259,6 +261,7 @@ function createPlatformHarness(platform, options = {}) {
       clear() {}
     } },
     io: {
+      convertLocalFileSystemURL: filePath => filePath.replace(/^_doc\//, '/doc/'),
       resolveLocalFileSystemURL(filePath, success, fail) {
         // Fail only the read attempt so finally can resolve and remove the temp file.
         if (filePath === compressed && failsRead('resolve')) { fail(options.readError); return }
@@ -378,6 +381,48 @@ async function testAppAlbumAndReadFailures() {
   console.log('APP album/camera OK info.path, compressed-only reads, reader.result fallback, and resolve/entry/event/empty diagnostics with cleanup')
 }
 
+async function testAppPointWebp() {
+  const webpFiles = new Map()
+  const requests = []
+  installAppWebpEncoder((raw, callback) => {
+    const request = JSON.parse(raw)
+    requests.push(request)
+    const output = Buffer.alloc(requests.length === 1 ? TRASH_BIN_IMAGE_LIMIT + 1 : 124)
+    output.write('RIFF', 0)
+    output.write('WEBP', 8)
+    webpFiles.set(request.destination, `data:application/octet-stream;base64,${output.toString('base64')}`)
+    callback(JSON.stringify({ path: request.destination, width: 100, height: 50, size: output.length }))
+  })
+  try {
+    const album = createPlatformHarness('APP_PLUS', {
+      originalPath: 'content://media/external/images/media/77', infoPath: '_doc/decoded-album.jpg',
+      originalUnreadable: true, webpFiles
+    })
+    const image = await (await album.module).compressTrashBinImage(album.original, { preferAppWebp: true })
+    assert.match(image, /^data:image\/webp;base64,/)
+    assert.equal(imageDataBytes(image), 124)
+    assert.deepEqual(requests.map(request => [request.source, request.quality, request.maxSize]), [
+      ['/doc/decoded-album.jpg', 86, 1600], ['/doc/decoded-album.jpg', 69, 1600]
+    ])
+    assert.equal(album.compressCalls(), 0)
+    assert.deepEqual(album.readPaths, requests.map(request => request.destination))
+    assert.deepEqual(album.removed, album.readPaths, 'all WebP candidates are temporary files')
+
+    const fallback = createPlatformHarness('APP_PLUS', { webpFiles, readFailure: 'event', readError: new Error('unreadable WebP') })
+    const result = await (await fallback.module).compressTrashBinImage(fallback.original, { preferAppWebp: true })
+    assert.match(result, /^data:image\/jpeg;base64,/)
+    assert.equal(fallback.compressCalls(), 1)
+    assert.deepEqual(fallback.removed, [requests.at(-1).destination, fallback.compressed])
+
+    const otherEditor = createPlatformHarness('APP_PLUS', { webpFiles })
+    const count = requests.length
+    const oldResult = await (await otherEditor.module).compressTrashBinImage(otherEditor.original)
+    assert.match(oldResult, /^data:image\/jpeg;base64,/)
+    assert.equal(requests.length, count, 'callers opt in to WebP')
+  } finally { installAppWebpEncoder(undefined) }
+  console.log('APP point WebP OK retry, MIME detection, JPEG fallback, opt-in and temporary file cleanup')
+}
+
 async function testAddModalPreview() {
   const source = fs.readFileSync(path.join(root, 'src/components/map/AddTrashBinModal.vue'), 'utf8')
   const chooseImage = source.match(/function chooseImage\(\) \{[\s\S]*?(?=\nfunction removeImage\()/)?.[0]
@@ -439,6 +484,7 @@ await testCore()
 await testSfcImageFlows()
 await testBinPointPhoto()
 await testAppAlbumAndReadFailures()
+await testAppPointWebp()
 await testAddModalPreview()
 for (const platform of ['APP_PLUS', 'MP']) {
   await testCompressionPlatform(platform)

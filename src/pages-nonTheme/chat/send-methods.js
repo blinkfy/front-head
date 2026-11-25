@@ -9,6 +9,11 @@ export const messageSendMethods = {
         const options = { ...(clientMessageId ? { clientMessageId } : {}), ...(refId ? { refId } : {}) }
         const account = uni.getStorageSync('token') || ''
         const dispatch = () => {
+            if (message.stickerId) {
+                return this.isGroupChat
+                    ? chatApi.sendGroupTextMessage(this.groupId, '', refId, clientMessageId, message.stickerId)
+                    : chatApi.sendTextMessage({ chatId: this.chatId, targetUserId: this.otherUserId, stickerId: message.stickerId, ...options })
+            }
             if (this.isGroupChat) {
                 switch (message.type) {
                     case 'text': return chatApi.sendGroupTextMessage(this.groupId, message.content, refId, clientMessageId)

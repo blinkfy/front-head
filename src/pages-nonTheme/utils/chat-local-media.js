@@ -2,6 +2,7 @@
 const MiB = 1024 * 1024
 const buckets = {
   avatar: { entries: 160, total: 12 * MiB, item: MiB },
+  sticker: { entries: 36, total: 12 * MiB, item: 2 * MiB },
   preview: { entries: 180, total: 12 * MiB, item: MiB },
   community: { entries: 120, total: 40 * MiB, item: 5 * MiB },
   original: { entries: 100, total: 80 * MiB, item: 20 * MiB },
@@ -638,7 +639,7 @@ export async function fetchChatMedia(owner, kind, url, expectedSize = 0, scope, 
           return nativeMediaHandle(temporary, false)
         }
       }
-      if ((kind === 'original' || kind === 'preview' || kind === 'community') && await isChatImageOffline()) return null
+      if ((kind === 'original' || kind === 'preview' || kind === 'community' || kind === 'sticker') && await isChatImageOffline()) return null
       // #ifdef H5
       if (largeMedia(kind) && navigator.storage?.estimate && navigator.locks?.request &&
           globalThis.FileSystemFileHandle?.prototype?.createWritable && globalThis.crypto?.randomUUID) {

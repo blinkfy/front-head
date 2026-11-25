@@ -1,5 +1,8 @@
 import { config } from '@/api/config.js'
 import { prepareAppMapImage } from '../map-image-preview.mjs'
+// #ifdef APP-PLUS
+import { tryAppUploadWebp } from '../app-upload-webp-core.mjs'
+// #endif
 // #ifdef MP-WEIXIN
 import { compressWechatUploadImage } from '../mp-upload-image.js'
 // #endif
@@ -94,7 +97,7 @@ async function compressNativeImage(src, dimensions, info = dimensions) {
   }
 }
 
-export async function compressTrashBinImage(filePath) {
+export async function compressTrashBinImage(filePath, { preferAppWebp = false } = {}) {
   if (!filePath) throw new Error('请先选择图片')
   // #ifdef H5
   return new Promise((resolve, reject) => {
@@ -128,8 +131,25 @@ export async function compressTrashBinImage(filePath) {
   // #ifdef APP-PLUS
   // Album files can be readable by the native image decoder but not by FileReader.
   // Read Base64 only from our own compressed temporary file, never the album original.
-  return encodeBinImageWithinLimit(info.width, info.height,
-    dimensions => compressNativeImage(info.path || filePath, dimensions, info))
+  const source = info.path || filePath
+  let useWebp = preferAppWebp
+  return encodeBinImageWithinLimit(info.width, info.height, async dimensions => {
+    if (useWebp) {
+      const quality = Math.round(dimensions.quality * 100)
+      const longestSide = Math.max(dimensions.width, dimensions.height)
+      const path = await tryAppUploadWebp(source, quality, longestSide, false, plus.io)
+      if (path) {
+        try {
+          // Some App runtimes label a WebP file as application/octet-stream.
+          const data = normalizeImageData((await readImageData(path)).split(',').pop())
+          if (data.startsWith('data:image/webp;')) return data
+        } catch (_) { /* Use the existing JPEG encoder if the WebP copy cannot be read. */ }
+        finally { discardCompressedFile(path, source) }
+      }
+      useWebp = false
+    }
+    return compressNativeImage(source, dimensions, info)
+  })
   // #endif
   // #ifndef APP-PLUS
   const original = normalizeImageData(await readImageData(filePath))

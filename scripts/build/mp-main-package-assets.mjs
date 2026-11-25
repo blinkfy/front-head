@@ -21,7 +21,6 @@ export function mpMainPackageAssetsPlugin() {
         const manifest = JSON.parse(await fs.readFile(path.join(root, 'src/static/manifest.json'), 'utf8'))
         const tables = manifest.filter(icon => icon.id.endsWith('_table') && !['lottery_record_table', 'reservation_order_table'].includes(icon.id))
         const resources = tables.map(icon => ({ file: icon.mp_file || icon.file, package: 'pages-admin' }))
-        resources.push({ file: 'Icon.webp.png', package: 'pages-nonTheme' })
         const nonThemeIds = new Set(NON_THEME_ONLY_ICON_IDS)
         for (const icon of manifest) {
           if (nonThemeIds.has(icon.id)) resources.push({ file: icon.mp_file || icon.file, package: 'pages-nonTheme' })
@@ -56,7 +55,7 @@ export function mpMainPackageAssetsPlugin() {
         }
         try { saved += await dirSize(appMapDir) } catch (_) {}
         await fs.rm(appMapDir, { recursive: true, force: true })
-        console.log(`[mp-assets] Moved ${tables.length} database icons and the about logo; saved ${(saved / 1024).toFixed(2)} KiB from main package.`)
+        console.log(`[mp-assets] Moved subpackage assets, including ${tables.length} database icons; saved ${(saved / 1024).toFixed(2)} KiB from main package.`)
       }
     }
   }

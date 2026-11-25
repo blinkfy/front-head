@@ -18,10 +18,10 @@
     </view>
 
     <!-- 地图容器 -->
-    <view class="map-container tab-page-motion">
+    <view class="map-container tab-page-motion walking-map-viewport">
       <div v-if="isH5" :id="mapContainerId" class="map-canvas"></div>
       <!-- #ifdef APP-PLUS -->
-      <AppTencentMap :covered="showAddModal" ref="appMapRef" class="map-canvas" :latitude="center.latitude" :longitude="center.longitude" :scale="mapScale" :enable-satellite="satellite" :markers="markers" :user-location="userLocation" @updated="onNativeMapUpdated" @error="onNativeMapError" @markertap="onMarkerTap" @tap="onMapTap" @regionchange="onRegionChange" />
+      <AppTencentMap :covered="showAddModal" ref="appMapRef" class="map-canvas" :latitude="center.latitude" :longitude="center.longitude" :scale="mapScale" :enable-satellite="satellite" :markers="markers" :user-location="walkingPosition || userLocation" :walking-route="walkingOverlay" :walking-polyline="walkingPolyline" @updated="onNativeMapUpdated" @error="onNativeMapError" @markertap="onMarkerTap" @tap="onMapTap" @regionchange="onRegionChange" />
       <!-- #endif -->
       <!-- #ifndef APP-PLUS -->
       <map v-if="!isH5 && !showAddModal"
@@ -29,11 +29,12 @@
         class="map-canvas"
         :latitude="center.latitude"
         :longitude="center.longitude"
-        :scale="mapScale"
+        :scale="mapCameraScale"
         :enable-satellite="satellite"
         @updated="onNativeMapUpdated"
         @error="onNativeMapError"
-        :markers="markers"
+        :markers="nativeWalkingMarkers"
+        :polyline="walkingPolyline"
         show-location
         @markertap="onMarkerTap"
         @tap="onMapTap"
@@ -43,7 +44,7 @@
         <!-- App/小程序端控件：必须使用 cover-view 放在 map 内部 -->
         <!-- #ifndef APP-PLUS -->
         <!-- #ifndef MP-WEIXIN -->
-        <NearbyDisposalPanel v-if="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" :native="true" @select="selectNearbyDisposal" @navigate="point => goNavigate({ ...point, title: point.name, desc: point.address || point.description })" />
+        <NearbyDisposalPanel v-if="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" :native="true" @select="selectNearbyDisposal" @navigate="previewNearbyWalkingRoute" />
         <!-- #endif -->
         <!-- #endif -->
         <!-- #ifndef APP-PLUS -->
@@ -77,6 +78,7 @@
               <cover-view class="nearby-location-cover-title">选择发送地点</cover-view>
               <cover-image class="nearby-location-cover-close" :src="getManifestIconPath('close')" @click="closeNearbyLocationPicker" />
             </cover-view>
+            <cover-view class="nearby-location-cover-search" @click="promptNearbyLocationSearch">搜索附近地点</cover-view>
             <cover-view v-if="nearbyLocationLoading" class="nearby-location-cover-state">正在加载附近地点...</cover-view>
             <cover-view v-else>
               <cover-view v-if="nearbyLocationError" class="nearby-location-cover-state">{{ nearbyLocationError }}</cover-view>
@@ -89,8 +91,8 @@
                 <cover-view class="nearby-location-cover-name">{{ item.name || '位置分享' }}</cover-view>
                 <cover-view class="nearby-location-cover-address">{{ item.address || '无详细地址' }}</cover-view>
               </cover-view>
-              <cover-view class="nearby-location-cover-send" @click="sendPendingLocation">直接发送当前点</cover-view>
             </cover-view>
+            <cover-view class="nearby-location-cover-send" @click="sendPendingLocation">直接发送当前点</cover-view>
           </cover-view>
         </cover-view>
       </map>
@@ -106,11 +108,11 @@
 
     <!-- #ifdef APP-PLUS -->
     <AppMapControls control-id="map-controls-light" :visible="!showAddModal && !showReportModal && !nearbyLocationModalVisible" :select-mode="selectMode" :top="statusBarHeight + (selectMode ? 88 : 108)" :satellite="satellite" :loading="basemapLoading" :latitude="selectedLocation?.latitude" :longitude="selectedLocation?.longitude" @basemap="setBasemap" @cancel="cancelSelect" @confirm="confirmSelect" @center="pickCenterLocation" @locate="moveToMyLocation" />
-    <AppNearbyDisposalPanel panel-id="nearby-disposal-light" :visible="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" @select="selectNearbyDisposal" @navigate="point => goNavigate({ ...point, title: point.name, desc: point.address || point.description })" />
+    <AppNearbyDisposalPanel panel-id="nearby-disposal-light" :visible="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" @select="selectNearbyDisposal" @navigate="previewNearbyWalkingRoute" />
     <!-- #endif -->
 
     <!-- #ifdef H5 || MP-WEIXIN -->
-    <NearbyDisposalPanel v-if="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" @select="selectNearbyDisposal" @navigate="point => goNavigate({ ...point, title: point.name, desc: point.address || point.description })" />
+    <NearbyDisposalPanel v-if="showNearbyDisposal" :points="nearbyDisposal" @heightchange="nearbyPanelHeight = $event" @closingchange="nearbyPanelClosing = $event" @select="selectNearbyDisposal" @navigate="previewNearbyWalkingRoute" />
     <!-- #endif -->
 
     <view v-if="nearbyLocationModalVisible && (isH5 || appMapRef)" class="nearby-location-overlay" @click.self="closeNearbyLocationPicker">
@@ -118,6 +120,10 @@
         <view class="nearby-location-header">
           <text class="nearby-location-title">选择发送地点</text>
           <ManifestIcon class="nearby-location-close" id="close" :scale="1" @click="closeNearbyLocationPicker" />
+        </view>
+        <view class="nearby-location-search">
+          <input v-model="nearbyLocationKeyword" class="nearby-location-search-input" placeholder="搜索附近地点" confirm-type="search" @confirm="searchNearbyLocation" />
+          <button class="nearby-location-search-button" @click="searchNearbyLocation">搜索</button>
         </view>
         <view class="nearby-location-body">
           <view v-if="nearbyLocationLoading" class="nearby-location-state">正在加载附近地点...</view>
@@ -145,7 +151,7 @@
 
     <view v-if="isMapAdmin && !selectMode && !viewMode" class="admin-map-legend">{{ isH5 ? '灰：未通过 · 蓝：普通桶 · 绿：智能桶 · 橙色提示：有报错' : '灰色：未通过审核 · 橙色提示：有报错' }}</view>
     <!-- 地图点选与聊天跳转共用同一张点位信息卡。 -->
-    <view v-if="selectedMarker && !selectMode" class="info-card" :class="{ 'admin-info-card': isMapAdmin && !viewMode }">
+    <view v-if="selectedMarker && !selectMode" class="info-card" :class="{ 'admin-info-card': isMapAdmin && !viewMode && !walkingRoute, 'walking-info-card': walkingRoute }">
       <view class="info-header">
         <view class="info-title-wrapper">
           <view class="info-icon" :class="selectedMarker.type === 'smart' ? 'smart' : 'normal'">
@@ -155,31 +161,32 @@
           </view>
           <view class="info-title-content">
             <text class="info-title">{{ selectedMarker.title }}</text>
-            <text class="info-distance">{{ selectedMarker.distance || (viewMode ? '地点详情' : '附近') }}</text>
+            <text v-if="!walkingRoute" class="info-distance">{{ selectedMarker.distance || (viewMode ? '地点详情' : '附近') }}</text>
           </view>
         </view>
         <ManifestIcon class="info-close" id="close" @click="closeInfo" />
       </view>
       
       <view class="info-body">
-        <text v-if="!selectedMarker.sharedLocation" class="info-name">{{ selectedMarker.name }}</text>
+        <text v-if="!selectedMarker.sharedLocation" class="info-name">{{ selectedMarker.sourceKey?.startsWith('futian:') ? '位置：' : '' }}{{ selectedMarker.name }}</text>
         <text class="info-desc" v-if="selectedMarker.desc">{{ selectedMarker.desc }}</text>
       </view>
       
-      <view class="info-actions">
-        <button class="info-btn primary" @click="goNavigate(selectedMarker)">
+      <WalkingRoutePreview v-if="walkingRoute" :route="walkingRoute" :can-locate="!!walkingPosition" @locate="locateOnWalkingMap" @navigate="openWalkingNavigation" @photo="openHistoryImage(selectedMarker)" @close="closeWalkingRoute" />
+      <view v-else class="info-actions">
+        <button class="info-btn primary" @click="viewMode || selectedMarker.sharedLocation ? goNavigate(selectedMarker) : showWalkingRoute(selectedMarker)">
           <ManifestIcon class="btn-icon" id="dark_navigation" />
-          <text>导航</text>
+          <text>{{ viewMode || selectedMarker.sharedLocation ? '导航' : '步行路线' }}</text>
         </button>
         <button v-if="!selectedMarker.sharedLocation" class="info-btn secondary" @click="openHistoryImage(selectedMarker)">
           <ManifestIcon class="btn-icon" id="camera_scan" />
           <text>查看</text>
         </button>
       </view>
-      <view v-if="!selectedMarker.sharedLocation" class="info-feedback">
+      <view v-if="!selectedMarker.sharedLocation && !walkingRoute" class="info-feedback">
         <button class="info-feedback-link" @click="reportErrorMarker(selectedMarker)">信息有误？点我报错</button>
       </view>
-      <MapBinAdminPanel v-if="isMapAdmin && !viewMode" :bin="selectedMarker" @updated="refreshAdminMarker" />
+      <MapBinAdminPanel v-if="isMapAdmin && !viewMode && !walkingRoute" :bin="selectedMarker" @updated="refreshAdminMarker" />
     </view>
 
     <!-- 垃圾桶问题上报弹窗 -->
@@ -250,7 +257,7 @@
     </view>
     <!-- 右下角扫码和新增连体按钮 -->
     <view
-      v-if="!selectMode && !viewMode && !showAddModal"
+      v-if="!selectMode && !viewMode && !showAddModal && !walkingRoute"
       :class="[isH5 && !showDeviceScan ? 'add-btn-container' : 'floating-actions-container', { dragging: isDraggingFloatingActions }]"
       :style="{ transform: `translate3d(${floatingActionsOffset.x}px, ${floatingActionsOffset.y}px, 0)` }"
       @touchstart="startFloatingActionsDrag"
@@ -309,7 +316,7 @@ import { getUserLocationOnce as getSharedUserLocationOnce } from '@/utils/locati
 import { ensureFeaturePermission } from '@/utils/feature-permission.js'
 import { getManifestIconPath } from '../../utils/manifest-icons.js'
 import { resolveTrashBinImage, previewTrashBinImage } from '../../utils/map/trash-bin-image'
-import { ref, onMounted, onBeforeUnmount, computed, getCurrentInstance, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, getCurrentInstance, nextTick, watch } from 'vue'
 import { onLoad, onReady, onShow, onHide, onUnload } from '@/utils/app-tab-lifecycle.js'
 import { mapConfig } from '../../api/map-config.js'
 import { reportDeviceError, reverseGeocoder, searchPlaces, getTrashBinImage } from '../../api/map.js'
@@ -318,6 +325,12 @@ import ManifestIcon from '../../components/ManifestIcon.vue'
 import MapBinAdminPanel from '@/components/map/MapBinAdminPanel.vue'
 import ReportPhotoPicker from '@/components/map/ReportPhotoPicker.vue'
 import NearbyDisposalPanel from '@/components/map/NearbyDisposalPanel.vue'
+import WalkingRoutePreview from '@/components/map/WalkingRoutePreview.vue'
+import { useMapWalkingPosition } from '@/utils/map/use-map-walking-position.js'
+import { useMapWalkingRoute, walkingRouteCoordinates, walkingDestinationMarker } from '@/utils/map/use-map-walking-route.js'
+// #ifdef H5
+import { createTencentPositionLayer, createTencentWalkingLayer, getTencentFocusCenter } from '@/static/app-map/renderer.mjs'
+// #endif
 // #ifdef APP-PLUS
 import AppNearbyDisposalPanel from '@/components/map/AppNearbyDisposalPanel.vue'
 import AppMapControls from '@/components/map/AppMapControls.vue'
@@ -325,14 +338,20 @@ import AppTencentMap from '@/components/map/AppTencentMap.vue'
 // #endif
 import { nearbyDisposalPoints, validDisposalLocation } from '@/utils/map/nearby-disposal.mjs'
 import { isBinLocationPicker } from '@/utils/map/map-basemap-core.mjs'
-import { getPointFocusCenter } from '@/utils/map/map-point-focus.mjs'
+import { getPointFocusCenter, getWalkingMapLift } from '@/utils/map/map-point-focus.mjs'
+// #ifdef MP-WEIXIN
+import { offsetMapCenter } from '@/utils/map/map-point-focus.mjs'
+// #endif
 import { getViewLocationMarkers } from '@/utils/map/map-view-location.mjs'
 import { resolveMapViewCard } from '@/utils/map/map-view-card.mjs'
+import { mapPointDescription } from '@/utils/map/map-display-point.mjs'
 import request from '@/api/index.js'
 import { getLastMapLocation, saveLastMapLocation } from '@/utils/map/map-last-location.mjs'
 import { useMapBasemap } from '@/utils/map/use-map-basemap'
 import { useMapAdminBins, binMapLabel, binReportCount } from '@/utils/map/map-admin-bins'
-import { createMapPointList } from '@/utils/map/point-list.mjs'
+import { createMapPointList, createMapZoomSetter } from '@/utils/map/point-list.mjs'
+import { clusterMapMarkers } from '@/utils/map/marker-clusters.mjs'
+import { createClusterMarker, clusterIcon, chooseClusterPoint, nativeBinMarkerStyle } from '@/utils/map/cluster-markers-ui.mjs'
 import { useMapPointReport } from '@/utils/map/point-report.mjs'
 import { scanAndConnectDevice } from '@/utils/scan/device-qr'
 import { canShowDeviceScanEntry } from '@/utils/scan/h5-scan-entry.mjs'
@@ -354,6 +373,8 @@ const nearbyLocationLoading = ref(false)
 const nearbyLocationOptions = ref([])
 const pendingLocationData = ref(null)
 const nearbyLocationError = ref('')
+const nearbyLocationKeyword = ref('')
+let nearbyLocationRequestId = 0
 const visibleNearbyLocationOptions = computed(() => nearbyLocationOptions.value.slice(0, 8))
 
 // 查看位置模式（从聊天消息点击进入）
@@ -390,6 +411,19 @@ const suppressFloatingActionClick = ref(false)
 // 垃圾箱点位数据（从后端API获取，不再硬编码）
 const trashPoints = ref([])
 const selectedMarker = ref(null)
+const { walkingRoute, walkingOverlay, walkingPolyline, closeWalkingRoute, showWalkingRoute } =
+  useMapWalkingRoute()
+const { position: walkingPosition } = useMapWalkingPosition(walkingRoute)
+watch([selectMode, viewMode, () => selectedMarker.value?.id, () => selectedMarker.value?.latitude, () => selectedMarker.value?.longitude],
+  closeWalkingRoute, { flush: 'sync' })
+const nativeWalkingMarkers = computed(() => walkingOverlay.value
+  ? [...markers.value, walkingDestinationMarker(walkingOverlay.value.destination)] : markers.value)
+
+function previewNearbyWalkingRoute(point) {
+  if (!validDisposalLocation(point)) return
+  onH5MarkerClicked(0, point)
+  void showWalkingRoute(selectedMarker.value)
+}
 const nearbyPanelHeight = ref(0)
 const nearbyPanelClosing = ref(false)
 const nearbyDisposal = computed(() => nearbyDisposalPoints(trashPoints.value, userLocation.value))
@@ -399,12 +433,11 @@ const showNearbyDisposal = computed(() => !selectMode.value && !viewMode.value &
 async function selectNearbyDisposal(point) {
   if (!validDisposalLocation(point)) return
   onH5MarkerClicked(0, point)
-  selectedMarker.value.title = point.name
   await nextTick()
   const location = await getPointFocusCenter(point, 16, instance)
   if (String(selectedMarker.value?.id) !== String(point.id)) return
   center.value = location
-  mapScale.value = 16
+  setMapZoom(16)
   if (isH5 && tmapInstance && window.TMap) {
     tmapInstance.setCenter(new window.TMap.LatLng(location.latitude, location.longitude))
     tmapInstance.setZoom?.(16)
@@ -426,17 +459,15 @@ function appSelectionMarkers() {
   return []
 }
 
+const mapPointGroups = computed(() => clusterMapMarkers(trashPoints.value, mapScale.value))
 const markers = computed(() => {
   if (viewMode.value) return getViewLocationMarkers(viewLocationInfo.value)
-  const list = selectMode.value ? appSelectionMarkers() : trashPoints.value.map(p => ({
+  const list = selectMode.value ? appSelectionMarkers() : mapPointGroups.value.map((group, index) => group.type === 'cluster' ? createClusterMarker(group, index) : ((p) => ({
     id: p.id,
     latitude: typeof p.latitude === 'number' ? p.latitude : parseFloat(p.latitude),
     longitude: typeof p.longitude === 'number' ? p.longitude : parseFloat(p.longitude),
     title: binMapLabel(p),
-  iconPath: p.adminRecord && !p.review ? '/static/pending-bin-marker.png' : (p.type === 'smart' ? '/static/smart-marker.png' : '/static/normal-marker.png'),
-    width: 42,
-    height: 46,
-    anchor: { x: 0.5, y: 1 },
+    ...nativeBinMarkerStyle(p),
     callout: {
       content: binMapLabel(p),
       color: '#ffffff',
@@ -445,18 +476,54 @@ const markers = computed(() => {
       borderRadius: 6,
       display: p.adminRecord && binReportCount(p) ? 'ALWAYS' : 'BYCLICK'
     }
-  }));
+  }))(group.point));
 
   return list;
 })
 
 const mapContainerId = `trash-map-${Math.random().toString(36).slice(2)}`
 let tmapInstance = null
+// #ifdef H5
+let h5WalkingLayer, h5PositionLayer
+function syncH5WalkingPosition(point) {
+  if (!tmapInstance || !window.TMap || (!h5PositionLayer && !point)) return
+  h5PositionLayer ||= createTencentPositionLayer({ sdk: window.TMap, map: tmapInstance })
+  h5PositionLayer.update(point)
+}
+watch(walkingPosition, syncH5WalkingPosition, { flush: 'post' })
+function syncH5WalkingRoute(route) {
+  if (!tmapInstance || !window.TMap || (!h5WalkingLayer && !route)) return
+  h5WalkingLayer ||= createTencentWalkingLayer({
+    sdk: window.TMap, map: tmapInstance, container: document.getElementById(mapContainerId)
+  })
+  h5WalkingLayer.update(route)
+}
+// #endif
+
+watch(walkingOverlay, route => {
+  // #ifdef H5
+  syncH5WalkingRoute(route)
+  // #endif
+  // #ifndef H5 || APP-PLUS
+  if (!route) return
+  nextTick(() => {
+    if (walkingOverlay.value !== route) return
+    ensureMapContext()
+    mapContext.value?.includePoints?.({ points: [...route.points, route.destination], padding: [56, 32, 208, 32] })
+  })
+  // #endif
+}, { flush: 'post' })
 let h5SdkScript = null, h5LogoStyle = null, h5Disposed = false, tmapSelectionMarker = null
 function disposeH5Map() {
   if (!isH5 || h5Disposed) return
   h5Disposed = true
   if (h5SdkScript) { h5SdkScript.onload = h5SdkScript.onerror = null; h5SdkScript.remove() }
+  // #ifdef H5
+  h5WalkingLayer?.update(null)
+  h5WalkingLayer = null
+  h5PositionLayer?.update(null)
+  h5PositionLayer = null
+  // #endif
   try { tmapInstance?.destroy() } finally {
     h5LogoStyle?.remove()
     tmapInstance = tmapBinLayer = tmapSelectionMarker = null
@@ -480,16 +547,28 @@ function mapViewScope() { return `${mapViewEpoch}|${mapViewOwner()}` }
 onHide(() => { mapViewEpoch++ })
 function disposeMapPage() {
   mapPageDisposed = true
+  closeWalkingRoute()
   cancelViewportReload()
 }
 onUnload(disposeMapPage)
 onBeforeUnmount(disposeMapPage)
 const mapScale = ref(14)
-const { cancelViewportReload, scheduleViewportReload, loadTrashBinList, refreshAdminMarker: refreshSelectedPoint } = createMapPointList({
+let isWechatDevtools = false
+// #ifdef MP-WEIXIN
+isWechatDevtools = (uni.getDeviceInfo?.().platform || uni.getSystemInfoSync().platform) === 'devtools'
+// #endif
+// The simulator can replay an old scale if gesture readings are bound back to the map.
+const mapCameraScale = isWechatDevtools ? ref(mapScale.value) : mapScale
+const setMapZoom = createMapZoomSetter(mapScale, mapCameraScale, nextTick)
+const { cancelViewportReload, scheduleViewportReload, syncNativeViewport, watchDevtoolsZoom, loadTrashBinList, refreshAdminMarker: refreshSelectedPoint } = createMapPointList({
   points: trashPoints,
   userLocation,
   mapScale,
   getWebMap: () => isH5 ? tmapInstance : null,
+  getNativeMap: () => {
+    ensureMapContext()
+    return mapContext.value
+  },
   isNavigationMode: () => selectMode.value || viewMode.value,
   loadMapBins,
   resolveImage: resolveTrashBinImage,
@@ -500,13 +579,28 @@ const { cancelViewportReload, scheduleViewportReload, loadTrashBinList, refreshA
     uni.showToast({ title: '加载垃圾桶信息失败', icon: 'none', duration: 2000 })
   }
 })
+// #ifdef MP-WEIXIN
+let stopDevtoolsZoom
+onShow(() => {
+  if (!isWechatDevtools || stopDevtoolsZoom) return
+  stopDevtoolsZoom = watchDevtoolsZoom(() => !mapPageDisposed && !showAddModal.value)
+})
+function stopDevtoolsZoomWatch() {
+  if (!stopDevtoolsZoom) return
+  stopDevtoolsZoom()
+  stopDevtoolsZoom = null
+  cancelViewportReload()
+}
+onHide(stopDevtoolsZoomWatch)
+onBeforeUnmount(stopDevtoolsZoomWatch)
+// #endif
 const { satellite, basemapLoading, setBasemap, bindH5Map, getSatelliteReference, onNativeMapUpdated, onNativeMapError, onNativeMapRegionChange } = useMapBasemap({ isH5, options: pageOptions, appWebMap: true, suspended: () => showAddModal.value })
 
 // 小程序 setup 阶段可能还没有路由参数，以 onLoad 收到的参数为准。
 onLoad(options => {
   Object.assign(pageOptions, options || {})
   if (isBinLocationPicker(pageOptions)) {
-    mapScale.value = 18
+    setMapZoom(18)
     setBasemap(true)
   }
   if (pageOptions.mode === 'select') {
@@ -557,11 +651,8 @@ function onRegionChange(e) {
     }
     return
   }
-  // 普通模式：视野变化结束后按视野防抖加载点位
-  const loc = detail.centerLocation || detail.center
-  if (loc && (e.type === 'end' || detail.type === 'end')) {
-    scheduleViewportReload({ latitude: Number(loc.latitude), longitude: Number(loc.longitude) }, detail.scale)
-  }
+  const epoch = mapViewEpoch
+  syncNativeViewport(e, () => epoch === mapViewEpoch && !mapPageDisposed && !showAddModal.value)
 }
 
 function updateCenterLocation() {
@@ -717,11 +808,10 @@ async function moveToMyLocation() {
   }
 }
 
-function extractReverseLocation(res) {
+function extractReverseLocation(res, preferPoi = true) {
   const data = res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res
   const result = data && data.result ? data.result : data
-  const pois = extractReversePois(res)
-  const poi = pois[0] || null
+  const poi = preferPoi ? extractReversePois(res)[0] : null
   return {
     name: (poi && (poi.title || poi.name)) || (result && result.formatted_addresses && result.formatted_addresses.recommend) || '位置分享',
     address: (poi && poi.address) || (result && result.address) || ''
@@ -734,18 +824,23 @@ function extractReversePois(res) {
   return Array.isArray(result && result.pois) ? result.pois : []
 }
 
-async function buildSelectedLocationData() {
+function selectedLocationData() {
   const source = selectedLocation.value || {}
-  const locationData = {
+  return {
     latitude: source.latitude,
     longitude: source.longitude,
     name: source.name || '位置分享',
     address: source.address || ''
   }
+}
+
+function hasSelectedLocationAddress(locationData) {
   const addressIsCoords = /^[-+]?\d+\.?\d+,\s*[-+]?\d+\.?\d+$/.test(String(locationData.address || '').trim())
-  if (locationData.name !== '位置分享' && locationData.name !== '选中的位置' && locationData.address && !addressIsCoords) {
-    return locationData
-  }
+  return locationData.name !== '位置分享' && locationData.name !== '选中的位置' && Boolean(locationData.address) && !addressIsCoords
+}
+
+async function resolveBinLocationData(locationData) {
+  if (hasSelectedLocationAddress(locationData)) return
   try {
     uni.showLoading({ title: '解析位置...' })
     const resolved = extractReverseLocation(await reverseGeocoder(locationData.latitude, locationData.longitude))
@@ -756,7 +851,6 @@ async function buildSelectedLocationData() {
   } finally {
     uni.hideLoading()
   }
-  return locationData
 }
 
 function normalizePoiLocation(item, fallback) {
@@ -790,35 +884,76 @@ function buildNearbyLocationOptions(baseLocation, places) {
 }
 
 async function openNearbyLocationPicker(baseLocation) {
+  const requestId = ++nearbyLocationRequestId
   pendingLocationData.value = baseLocation
+  nearbyLocationKeyword.value = ''
   nearbyLocationOptions.value = [baseLocation]
   nearbyLocationError.value = ''
   nearbyLocationModalVisible.value = true
   nearbyLocationLoading.value = true
 
   try {
-    const [reverseResult, searchResult] = await Promise.allSettled([
-      reverseGeocoder(baseLocation.latitude, baseLocation.longitude),
-      searchPlaces('小区', baseLocation.latitude, baseLocation.longitude, 1500)
-    ])
-    const reversePois = reverseResult.status === 'fulfilled' ? extractReversePois(reverseResult.value) : []
-    const searchData = searchResult.status === 'fulfilled' ? searchResult.value : null
-    const searchPlacesList = Array.isArray(searchData && searchData.data) ? searchData.data : []
-    const places = reversePois.concat(searchPlacesList)
+    const reverseResult = await reverseGeocoder(baseLocation.latitude, baseLocation.longitude, { includePois: true, poiPolicy: 5, silent: true })
+    if (requestId !== nearbyLocationRequestId || !nearbyLocationModalVisible.value) return
+    if (!hasSelectedLocationAddress(baseLocation)) {
+      const resolved = extractReverseLocation(reverseResult, false)
+      baseLocation = {
+        ...baseLocation,
+        name: resolved.name || baseLocation.name,
+        address: resolved.address || baseLocation.address
+      }
+      pendingLocationData.value = baseLocation
+    }
+    const places = extractReversePois(reverseResult)
     nearbyLocationOptions.value = buildNearbyLocationOptions(baseLocation, places)
     if (places.length === 0) {
       nearbyLocationError.value = '未找到附近地点，可直接发送当前点'
     }
   } catch (error) {
+    if (requestId !== nearbyLocationRequestId || !nearbyLocationModalVisible.value) return
     console.warn('load nearby locations failed:', error)
     nearbyLocationError.value = '附近地点加载失败，可直接发送当前点'
   } finally {
-    nearbyLocationLoading.value = false
+    if (requestId === nearbyLocationRequestId) nearbyLocationLoading.value = false
+  }
+}
+
+function promptNearbyLocationSearch() {
+  uni.showModal({
+    title: '搜索附近地点',
+    content: nearbyLocationKeyword.value,
+    editable: true,
+    placeholderText: '输入地点名称',
+    success: result => { if (result.confirm) searchNearbyLocation(result.content) }
+  })
+}
+
+async function searchNearbyLocation(eventOrKeyword) {
+  const keyword = String(typeof eventOrKeyword === 'string' ? eventOrKeyword : nearbyLocationKeyword.value || '').trim()
+  if (!keyword || !pendingLocationData.value) return
+  nearbyLocationKeyword.value = keyword
+  const requestId = ++nearbyLocationRequestId
+  const base = pendingLocationData.value
+  nearbyLocationLoading.value = true
+  nearbyLocationError.value = ''
+  try {
+    const result = await searchPlaces(keyword, base.latitude, base.longitude, 1000)
+    if (requestId !== nearbyLocationRequestId || !nearbyLocationModalVisible.value) return
+    const places = Array.isArray(result && result.data) ? result.data : []
+    nearbyLocationOptions.value = buildNearbyLocationOptions(base, places)
+    if (!places.length) nearbyLocationError.value = '未找到附近地点，可直接发送当前点'
+  } catch (error) {
+    if (requestId !== nearbyLocationRequestId || !nearbyLocationModalVisible.value) return
+    nearbyLocationError.value = '附近地点搜索失败，可直接发送当前点'
+  } finally {
+    if (requestId === nearbyLocationRequestId) nearbyLocationLoading.value = false
   }
 }
 
 function closeNearbyLocationPicker() {
   nearbyLocationModalVisible.value = false
+  pendingLocationData.value = null
+  nearbyLocationRequestId++
 }
 
 function emitSelectedLocation(locationData) {
@@ -882,8 +1017,9 @@ async function confirmSelect() {
   
   console.log('确认选择位置:', selectedLocation.value)
   
-  const locationData = await buildSelectedLocationData()
+  const locationData = selectedLocationData()
   if (pageOptions.purpose === 'bin' && /^bin-location-[\w-]+$/.test(pageOptions.returnEvent || '')) {
+    await resolveBinLocationData(locationData)
     const reference = getSatelliteReference(locationData, mapContainerId)
     if (reference) locationData.satelliteReference = reference
     uni.$emit(pageOptions.returnEvent, locationData)
@@ -1155,6 +1291,11 @@ function initTMap() {
     // 视野变化后按视野防抖加载点位（中心移动 >500m 或缩放变化时）
     if (!selectMode.value && !viewMode.value) {
       const reloadFromView = () => {
+        const zoom = Number(tmapInstance?.getZoom?.())
+        if (Number.isFinite(zoom) && zoom > 0 && zoom !== mapScale.value) {
+          mapScale.value = zoom
+          renderH5BinMarkers()
+        }
         const c = tmapInstance && typeof tmapInstance.getCenter === 'function' ? tmapInstance.getCenter() : null
         if (!c) return
         scheduleViewportReload({
@@ -1164,6 +1305,7 @@ function initTMap() {
       }
       map.on('dragend', reloadFromView)
       map.on('zoom', reloadFromView)
+      map.on('bounds_changed', reloadFromView)
     }
 
     // 监听地图点击事件（用于位置选择）
@@ -1188,6 +1330,10 @@ function initTMap() {
       onMapClick(point.latitude, point.longitude)
     }
     bindH5Map(map, document.getElementById(mapContainerId))
+    // #ifdef H5
+    syncH5WalkingRoute(walkingOverlay.value)
+    syncH5WalkingPosition(walkingPosition.value)
+    // #endif
     initH5Markers()
   } catch (error) {
     tmapInstance?.destroy()
@@ -1215,14 +1361,43 @@ function onH5MarkerClicked(index, point) {
     type: point.type,
     latitude: point.latitude,
     longitude: point.longitude,
-    desc: point.description || '',
+    desc: mapPointDescription(point),
     imageUrl: point.image
   }
+}
+
+function handleClusterTap(group) {
+  if (group.expansionZoom != null && mapScale.value < group.expansionZoom) {
+    const zoom = Math.min(20, Math.max(mapScale.value + 1, group.expansionZoom))
+    const location = { latitude: group.latitude, longitude: group.longitude }
+    center.value = location
+    setMapZoom(zoom)
+    if (isH5 && tmapInstance && window.TMap) {
+      tmapInstance.setCenter(new window.TMap.LatLng(location.latitude, location.longitude))
+      tmapInstance.setZoom(zoom)
+      renderH5BinMarkers()
+    } else {
+      // #ifdef MP-WEIXIN
+      // DevTools only uses the bound center and scale for this camera change.
+      if (isWechatDevtools) return
+      // #endif
+      ensureMapContext()
+      mapContext.value?.moveToLocation(location)
+    }
+    return
+  }
+  chooseClusterPoint(group, point => point.name || binMapLabel(point), point => onH5MarkerClicked(0, point))
 }
 
 function onMarkerTap(e) {
   if (viewMode.value && viewPoint.value) { onH5MarkerClicked(0, viewPoint.value); return }
   const markerId = e && (e.markerId || e.markerId === 0 ? e.markerId : e.detail?.markerId);
+  const clusterIndex = -2 - Number(markerId)
+  if (Number.isInteger(clusterIndex) && clusterIndex >= 0) {
+    const group = mapPointGroups.value[clusterIndex]
+    if (group?.type === 'cluster') handleClusterTap(group)
+    return
+  }
   const point = trashPoints.value.find(p => String(p.id) === String(markerId));
   if (!point) return;
   selectedMarker.value = {
@@ -1233,7 +1408,7 @@ function onMarkerTap(e) {
     type: point.type,
     latitude: point.latitude,
     longitude: point.longitude,
-    desc: point.description || '',
+    desc: mapPointDescription(point),
     imageUrl: point.image
   };
 }
@@ -1265,6 +1440,55 @@ function navigateToLocation() {
   
   goNavigate(location)
 }
+let walkingLocateRequest = 0
+async function locateOnWalkingMap() {
+  const origin = walkingRoute.value?.from
+  if (!origin) return
+  const epoch = mapViewEpoch
+  const requestId = ++walkingLocateRequest
+  const isCurrent = () => epoch === mapViewEpoch && requestId === walkingLocateRequest && walkingRoute.value?.from === origin
+  // #ifdef MP-WEIXIN
+  const nativePoint = await getSharedUserLocationOnce('gcj02', { isCurrent }).catch(() => origin)
+  // #endif
+  const lift = await getWalkingMapLift(instance)
+  if (!isCurrent()) return
+  // #ifdef H5
+  if (tmapInstance && window.TMap) {
+    tmapInstance.setCenter(getTencentFocusCenter(window.TMap, tmapInstance, walkingPosition.value, lift))
+  }
+  // #endif
+  // #ifdef APP-PLUS
+  ensureMapContext()
+  mapContext.value?.moveToLocation({ ...walkingPosition.value, lift })
+  // #endif
+  // #ifdef MP-WEIXIN
+  ensureMapContext()
+  mapContext.value?.moveToLocation(offsetMapCenter(nativePoint, mapScale.value, lift))
+  // #endif
+  // #ifndef H5 || APP-PLUS || MP-WEIXIN
+  ensureMapContext()
+  mapContext.value?.moveToLocation({})
+  // #endif
+}
+
+function openWalkingNavigation() {
+  const marker = selectedMarker.value
+  const destination = walkingRouteCoordinates(marker)
+  if (!destination) {
+    uni.showToast({ title: '点位坐标暂不可用', icon: 'none' })
+    return
+  }
+  // #ifdef H5
+  const from = walkingRoute.value?.from
+  const fromParam = from ? '&from=' + [from.longitude, from.latitude].join(',') : ''
+  const to = [destination.longitude, destination.latitude, encodeURIComponent(marker.title || '投放点')].join(',')
+  window.open('https://uri.amap.com/navigation?mode=walk&callnative=1&src=fentouxia&to=' + to + fromParam, '_blank', 'noopener,noreferrer')
+  // #endif
+  // #ifndef H5
+  goNavigate(marker)
+  // #endif
+}
+
 function goNavigate(m) {
   if (!m) return
   if (isH5) {
@@ -1278,7 +1502,7 @@ function goNavigate(m) {
     uni.showToast({ title: '位置信息无效', icon: 'none' })
     return
   }
-  uni.openLocation({ latitude, longitude, name: m.title, address: m.desc || '' })
+  uni.openLocation({ latitude, longitude, name: m.title, address: mapPointDescription(m, m.desc) })
 }
 
 const imagePreviewLoading = ref(false)
@@ -1453,13 +1677,28 @@ function renderH5BinMarkers() {
   }
   const styles = {}
   const geometries = []
-  trashPoints.value.forEach((p) => {
+  const targets = new Map()
+  mapPointGroups.value.forEach((group, index) => {
+    if (group.type === 'cluster') {
+      const sample = group.members[0]
+      const color = isMapAdmin.value && sample.adminRecord && !sample.review ? '#9ca3af' : sample.type === 'smart' ? '#10b981' : '#3b82f6'
+      const styleKey = `cluster-${Math.min(group.count, 1000)}-${color}`
+      if (!styles[styleKey]) styles[styleKey] = new window.TMap.MarkerStyle({
+        width: 40, height: 40, anchor: { x: 18, y: 36 }, src: clusterIcon(group.count, color)
+      })
+      const id = `cluster-${index}`
+      geometries.push({ id, styleId: styleKey, position: new window.TMap.LatLng(group.latitude, group.longitude), title: `${group.count} 个点位` })
+      targets.set(id, { group })
+      return
+    }
+    const p = group.point
+    targets.set('trash-geo-' + p.id, { point: p })
     const pending = isMapAdmin.value && p.adminRecord && !p.review
     const reported = isMapAdmin.value && p.adminRecord && binReportCount(p) > 0
     const styleKey = `${p.type === 'smart' ? 'smart' : 'normal'}-${pending ? 'pending' : 'ok'}-${reported ? 'reported' : 'plain'}`
     if (!styles[styleKey]) {
       styles[styleKey] = new window.TMap.MarkerStyle({
-        width: 36, height: 36, anchor: { x: 18, y: 35 },
+        width: 34, height: 34, anchor: { x: 17, y: 33 },
         src: getH5Icon(p.type, pending, reported)
       })
     }
@@ -1467,7 +1706,7 @@ function renderH5BinMarkers() {
       id: 'trash-geo-' + p.id,
       styleId: styleKey,
       position: new window.TMap.LatLng(p.latitude, p.longitude),
-      title: isMapAdmin.value ? binMapLabel(p) : (p.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶')
+      title: binMapLabel(p)
     })
   })
   if (!geometries.length) return
@@ -1482,8 +1721,9 @@ function renderH5BinMarkers() {
       tmapBinLayer.on('click', (evt) => {
         // GeometryOverlayEvent：点位数据在 evt.geometry（PointGeometry），几何 id 为 evt.geometry.id
         const gid = evt && evt.geometry ? evt.geometry.id : null
-        const point = trashPoints.value.find(p => 'trash-geo-' + p.id === gid)
-        if (point) onH5MarkerClicked(0, point)
+        const target = targets.get(gid)
+        if (target?.group) handleClusterTap(target.group)
+        else if (target?.point) onH5MarkerClicked(0, target.point)
       })
     }
   } catch (e) {
@@ -2008,6 +2248,8 @@ function goProfile() {
 }
 /* 底部信息卡 */
 .admin-map-legend { position: fixed; top: 180rpx; left: 24rpx; z-index: 50; padding: 10rpx 18rpx; border-radius: 12rpx; background: rgba(255,255,255,.92); color: #374151; font-size: 22rpx; pointer-events: none; }
+.walking-info-card .info-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.info-card.walking-info-card { bottom: calc(140rpx + env(safe-area-inset-bottom)); z-index: 101; animation: none; }
 .info-card.admin-info-card { bottom: calc(140rpx + env(safe-area-inset-bottom)); max-height: 60vh; overflow-y: auto; }
 .info-card {
   position: fixed;
@@ -2408,6 +2650,10 @@ function goProfile() {
   font-size: 28rpx;
 }
 
+.nearby-location-search { display: flex; gap: 12rpx; padding: 8rpx 0 18rpx; }
+.nearby-location-search-input { flex: 1; min-width: 0; height: 72rpx; padding: 0 20rpx; box-sizing: border-box; border-radius: 12rpx; background: #f3f4f6; color: #111827; font-size: 26rpx; }
+.nearby-location-search-button { width: 112rpx; height: 72rpx; line-height: 72rpx; padding: 0; border: 0; border-radius: 12rpx; background: #ecfdf5; color: #059669; font-size: 26rpx; }
+
 .nearby-location-item {
   display: flex;
   flex-direction: column;
@@ -2490,6 +2736,8 @@ function goProfile() {
   font-size: 26rpx;
   padding: 16rpx 0;
 }
+
+.nearby-location-cover-search { padding: 16rpx 20rpx; margin-bottom: 8rpx; border-radius: 12rpx; background: #f3f4f6; color: #374151; font-size: 26rpx; }
 
 .nearby-location-cover-item {
   padding: 18rpx 0;

@@ -553,11 +553,11 @@ export function getGroupHistory(groupId, params = {}, requestOptions = {}) {
   })
 }
 
-export function sendGroupTextMessage(groupId, content, refId = null, clientMessageId) {
+export function sendGroupTextMessage(groupId, content, refId = null, clientMessageId, stickerId) {
   return request({
     url: `/api/chat/groups/${groupId}/messages/text`,
     method: 'POST',
-    data: { content, refId, clientMessageId },
+    data: { content, refId, clientMessageId, ...(stickerId ? { stickerId } : {}) },
     needAuth: true
   })
 }

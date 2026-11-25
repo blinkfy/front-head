@@ -5,7 +5,9 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createAppTencentMap, getTencentBasemapOptions, createSatelliteDetailController } from '../../src/utils/map/app-tencent-map.mjs'
+import {
+  createAppTencentMap, getTencentBasemapOptions, createSatelliteDetailController, satelliteViewKey, watchSatelliteTile
+} from '../../src/utils/map/app-tencent-map.mjs'
 
 const require = createRequire(import.meta.url)
 const { parse: parseSfc, compileTemplate, compileStyle } = require('@vue/compiler-sfc')
@@ -40,6 +42,22 @@ function fakeClock() {
     },
     get pending() { return tasks.size }
   }
+}
+function makeProbeContainer(clock, valid = true) {
+  const tiles = []
+  const data = new Uint8ClampedArray(64 * 64 * 4)
+  if (valid) for (let i = 0; i < data.length; i += 4) data[i] = 128
+  const view = {
+    setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
+    Image: class {
+      constructor() { tiles.push(this); this.naturalWidth = this.naturalHeight = 256 }
+      removeAttribute() { this.src = '' }
+    }
+  }
+  const container = { ownerDocument: { defaultView: view, createElement: () => ({
+    getContext: () => ({ drawImage() {}, getImageData: () => ({ data }) })
+  }) } }
+  return { tiles, container }
 }
 function makeSdk() {
   const maps = [], layers = []
@@ -207,6 +225,16 @@ check(rendererTests, 'renderer repeatedly switches fresh basemaps without moving
     layer.fire('click', { geometry: { id: 'point-0' } })
     assert.deepEqual(events.filter(e => e.type === 'markertap').at(-1), { type: 'markertap', detail: { markerId: 'asset-77' } })
   })
+  check(rendererTests, 'cluster keeps its pin and both pin and badge open the same cluster', () => {
+    renderer.update({ ...base, markers: [{ id: -2, latitude: 24, longitude: 120, iconPath: '/static/pin.png', width: 38, height: 42, clusterCount: 12 }] })
+    const layer = layers.at(-1)
+    assert.equal(layer.styles['point-0'].src, '/asset//static/pin.png')
+    assert.match(decodeURIComponent(layer.styles['cluster-12'].src), />12<\/text>/)
+    for (const id of ['point-0', 'badge-0']) {
+      layer.fire('click', { geometry: { id } })
+      assert.equal(events.filter(e => e.type === 'markertap').at(-1).detail.markerId, -2)
+    }
+  })
   check(rendererTests, 'renderer repeats explicit moves with unchanged props and keeps center-query commands', () => {
     const map = maps[0]
   const props = { ...base, latitude: 24.6, longitude: 120.4 }
@@ -264,10 +292,10 @@ function newHookHarness({ platform = 'app-plus', isH5 = false, options = { mode:
   const app = ['app', 'app-plus'].includes(platform)
   let code = preprocess(source, { H5: isH5, MP: mp, MP_WEIXIN: mp, APP_PLUS: app }, { type: 'js' })
   code = code.replace(/^import .*?\r?\n/gm, '').replace('export function useMapBasemap', 'function useMapBasemap')
-  const run = new Function('getCurrentInstance','nextTick','onBeforeUnmount','onMounted','ref','watch','onReady','onUnload','onShow','onHide','createMapBasemapController','isBinLocationPicker','captureSatelliteReference','getTencentBasemapOptions','createSatelliteDetailController','appManifest','uni','process','plus','console','setTimeout','clearTimeout', `${code}\nreturn useMapBasemap`)
+  const run = new Function('getCurrentInstance','nextTick','onBeforeUnmount','onMounted','ref','watch','onReady','onUnload','onShow','onHide','createMapBasemapController','isBinLocationPicker','captureSatelliteReference','getTencentBasemapOptions','createSatelliteDetailController','satelliteViewKey','watchSatelliteTile','appManifest','uni','process','plus','console','setTimeout','clearTimeout', `${code}\nreturn useMapBasemap`)
   const use = run(vue.getCurrentInstance, vue.nextTick, vue.onBeforeUnmount, vue.onMounted, vue.ref, vue.watch,
     fn => { ready = fn }, fn => { unload = fn }, fn => { show = fn }, fn => { hide = fn }, args => createMapBasemapController({ ...args, setTimer: clock.setTimeout, clearTimer: clock.clearTimeout }), isBinLocationPicker, captureSatelliteReference, getTencentBasemapOptions, createSatelliteDetailController,
-    { 'app-plus': { distribute: { sdkConfigs: { maps: { tencent: true } } } } }, uni,
+    satelliteViewKey, watchSatelliteTile, { 'app-plus': { distribute: { sdkConfigs: { maps: { tencent: true } } } } }, uni,
     { env: { UNI_PLATFORM: platform } }, {}, { warn: (...args) => warnings.push(args) }, clock.setTimeout, clock.clearTimeout)
   const api = use({ isH5, options, suspended: () => suspendedState, appWebMap })
   return {
@@ -297,7 +325,7 @@ check(hookTests, 'H5 repeatedly switches fresh satellite/vector options and pres
       assert.equal(method, 'basemap')
       assert.deepEqual(options, satellite ? satelliteBasemap : { type: 'vector' })
       assert.equal(h.api.satellite.value, satellite)
-      assert.equal(h.api.basemapLoading.value, satellite)
+      assert.equal(h.api.basemapLoading.value, false, 'same-view return reuses confirmed satellite coverage')
       assert.strictEqual(map.getCenter(), center)
       assert.equal(map.getZoom(), 11)
       map.fire('tilesloaded')
@@ -310,6 +338,82 @@ check(hookTests, 'H5 repeatedly switches fresh satellite/vector options and pres
   assert.equal(h.clock.pending, 0)
   assert.equal(map.handlerCount(), 0)
 })
+check(hookTests, 'H5 movements and repeated clicks do not restart a successful satellite switch', () => {
+  const h = newHookHarness({ platform: 'h5', isH5: true })
+  const { sdk } = makeSdk()
+  const map = new sdk.Map({}, { center: new sdk.LatLng(24.5, 120.3), zoom: 11 })
+  h.api.bindH5Map(map)
+  map.fire('tilesloaded')
+  map.fire('bounds_changed')
+  const callCount = map.calls.length
+  h.api.setBasemap(true)
+  assert.equal(map.calls.length, callCount)
+  assert.equal(h.api.basemapLoading.value, false)
+  h.clock.tick(10001)
+  assert.equal(h.api.satellite.value, true)
+  assert.equal(h.toasts.length, 0)
+  h.dispose()
+})
+for (const valid of [true, false]) {
+  check(hookTests, `H5 incomplete viewport with ${valid ? 'real imagery' : 'placeholder imagery'}`, () => {
+    const h = newHookHarness({ platform: 'h5', isH5: true })
+    const { sdk } = makeSdk()
+    const map = new sdk.Map({}, { center: new sdk.LatLng(31.23, 121.47), zoom: 10 })
+    const { container, tiles } = makeProbeContainer(h.clock, valid)
+    h.api.bindH5Map(map, container)
+    h.clock.tick(3000)
+    const [tile] = tiles
+    assert.match(tile.src, /\/sateTiles\/10\//)
+    tile.onload()
+    assert.equal(h.api.basemapLoading.value, !valid)
+    h.clock.tick(7000)
+    assert.equal(h.api.satellite.value, valid)
+    assert.equal(h.toasts.length, valid ? 0 : 1)
+    h.dispose()
+    assert.equal(h.clock.pending, 0)
+  })
+}
+for (const valid of [true, false]) {
+  check(hookTests, `App renderer and watchdog with ${valid ? 'real' : 'placeholder'} satellite tile and no tilesloaded`, () => {
+    const h = newHookHarness({ options: { mode: 'browse' } })
+    const clock = h.clock, { sdk, maps } = makeSdk()
+    const { container, tiles } = makeProbeContainer(clock, valid)
+    const base = { latitude: 31.23, longitude: 121.47, scale: 10, satellite: false, markers: [] }
+    const renderer = createAppTencentMap({ sdk, container, setTimer: clock.setTimeout, clearTimer: clock.clearTimeout, emit(event) {
+      if (event.type === 'updated') h.api.onNativeMapUpdated(event)
+      if (event.type === 'error') h.api.onNativeMapError(event)
+    } })
+    try {
+      h.ready()
+      renderer.update(base)
+      const [map] = maps
+      map.fire('tilesloaded')
+      h.api.setBasemap(true)
+      renderer.update({ ...base, satellite: true })
+      h.api.setBasemap(true)
+      map.fire('error', { message: 'one tile failed' })
+      clock.tick(3000)
+      assert.equal(h.api.basemapLoading.value, true)
+      tiles[0].onload()
+      assert.equal(h.api.basemapLoading.value, !valid)
+      clock.tick(7000)
+      assert.equal(h.api.satellite.value, valid)
+      assert.equal(h.toasts.length, valid ? 0 : 1)
+      if (valid) {
+        h.api.setBasemap(false); renderer.update(base)
+        h.api.setBasemap(true); renderer.update({ ...base, satellite: true })
+        assert.equal(h.api.basemapLoading.value, false, 'cached same-view return requires no additional probe')
+        assert.equal(clock.pending, 0)
+        map.fire('context_lost')
+        assert.equal(h.api.satellite.value, false, 'render context loss still falls back')
+      }
+    } finally {
+      renderer.destroy()
+      h.dispose()
+    }
+    assert.equal(clock.pending, 0)
+  })
+}
 check(hookTests, 'App Web cold start waits 40s before vector fallback', () => {
   const h = newHookHarness(); h.ready()
   assert.equal(h.api.satellite.value, true); assert.equal(h.api.basemapLoading.value, true)
@@ -421,6 +525,31 @@ check(hookTests, 'non-App mounted/native updated flow remains operational', () =
   h.api.setBasemap(true); assert.equal(h.api.basemapLoading.value, true)
   h.api.onNativeMapUpdated(); assert.equal(h.api.basemapLoading.value, false)
   h.dispose(); assert.equal(h.clock.pending, 0)
+})
+check(hookTests, 'WeChat native camera movement and missing updated do not imply a satellite failure', () => {
+  const h = newHookHarness({ platform: 'mp-weixin', options: { mode: 'browse' } }); h.mounted()
+  h.api.setBasemap(true); h.api.onNativeMapUpdated()
+  h.api.onNativeMapRegionChange({ detail: { type: 'begin' } })
+  h.clock.tick(10000)
+  assert.equal(h.api.satellite.value, true)
+  assert.equal(h.toasts.length, 0)
+  h.api.setBasemap(false); h.api.setBasemap(true)
+  h.clock.tick(2000); h.api.setBasemap(true)
+  h.clock.tick(8000)
+  assert.equal(h.api.basemapLoading.value, false)
+  assert.equal(h.api.satellite.value, true)
+  assert.equal(h.toasts.length, 0)
+  h.api.onNativeMapError({ detail: { errMsg: 'native render error' } })
+  assert.equal(h.api.satellite.value, false)
+  assert.equal(h.toasts.length, 1)
+  h.dispose()
+})
+check(hookTests, 'WeChat still falls back if its native map reports satellite is unsupported', () => {
+  const h = newHookHarness({ platform: 'mp-weixin', canIUse: false, options: { mode: 'browse' } }); h.mounted()
+  h.api.setBasemap(true)
+  assert.equal(h.api.satellite.value, false)
+  assert.equal(h.toasts.length, 1)
+  h.dispose()
 })
 
 check(sfcTests, 'AppTencentMap template/styles compile; options and renderjs scripts parse separately', () => {
@@ -613,11 +742,14 @@ async function verifyHostLifecycle() {
     assert.equal(Number.isFinite(detail?.elapsedMs), true, `${name} includes a numeric elapsedMs in the VM`)
     assert.ok(detail.elapsedMs >= 0, `${name} elapsedMs is non-negative`)
   }
+  rendererEmits[0]({ type: 'updated', detail: { satellite: true, confirmation: 'center_tile' } })
+  assert.equal(phase('first_tiles_loaded'), undefined, 'probe confirmation does not count as the complete-viewport metric')
+  assert.ok(posted.some(message => message.event?.detail?.confirmation === 'center_tile'), 'probe confirmation still reaches App logic')
   rendererEmits[0]({ type: 'updated', detail: { satellite: false } })
   const firstTiles = phase('first_tiles_loaded')
   assert.equal(Number.isFinite(firstTiles?.elapsedMs), true, 'first_tiles_loaded includes a numeric elapsedMs in the VM')
   assert.ok(firstTiles.elapsedMs >= 0, 'first_tiles_loaded elapsedMs is non-negative')
-  const updated = posted.find(message => message.event?.type === 'updated')?.event.detail
+  const updated = posted.findLast(message => message.event?.type === 'updated')?.event.detail
   assert.deepEqual(Object.keys(updated).sort(), ['satellite'], 'updated payload remains unchanged')
   assert.equal(updated.satellite, false)
   assert.equal(posted.some(message => message.event?.type === 'error'), false, 'old SDK rejection after pagehide emits no error')

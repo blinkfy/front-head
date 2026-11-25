@@ -3,7 +3,7 @@
   <!-- #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ -->
   <view v-if="showAppSplash" class="app-splash" :class="{ 'app-splash-fading': appSplashFading }">
     <view class="app-splash-content">
-      <image class="app-splash-image" src="/static/moveable2.gif" mode="aspectFit" />
+      <view class="app-splash-image"><SplashArtwork /></view>
       <view class="app-splash-title">分投侠</view>
       <view class="app-splash-subtitle">智能垃圾分类助手</view>
       <view class="app-splash-progress">
@@ -15,6 +15,9 @@
 </template>
 
 <script>
+// #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ
+import SplashArtwork from '@/components/SplashArtwork.vue'
+// #endif
 import { ThemeManager } from '@/utils/theme.js'
 import { initGlobalMessageBus } from '@/utils/realtime/message-event-bus.js'
 import { setChatEventsActive } from '@/utils/realtime/chat-events.js'
@@ -70,6 +73,9 @@ const PAGE_MAPPINGS = {
 }
 
 export default {
+  // #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ
+  components: { SplashArtwork },
+  // #endif
 // #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ
 // 小程序和App端：使用Vue组件形式的启动页
   data() {
@@ -405,7 +411,8 @@ html[data-app-map-tab-entry] .app-tab-map-root :is(.tab-page-motion, .map-stage)
 .app-splash-image {
   width: 250px;
   height: 250px;
-  border-radius: 16px;
+  border-radius: 16%;
+  overflow: hidden;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
   animation: splash-pulse 1.5s ease-in-out infinite;
 }

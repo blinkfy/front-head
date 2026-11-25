@@ -1,3 +1,5 @@
+import { mapPointDescription } from './map-display-point.mjs'
+
 export const NATIVE_DISPOSAL_DURATION = 280
 
 export function nativeDisposalLayout(info, count, collapsed = false, requestedHeight) {
@@ -49,8 +51,9 @@ export function createNativeDisposalController(options) {
     nativeWindow.setStyle({ left: `${layout.left}px`, top: `${layout.top}px`, width: `${layout.width}px`, height: `${layout.height}px`, background: 'transparent' })
     // Send only list fields across the renderer bridge, especially avoiding a duplicate Base64 imagePath.
     const listPoints = includePoints ? points.map(point => ({
-      id: point.id, name: point.name, distance: point.distance, address: point.address,
-      description: point.description, type: point.type, image: point.image
+      id: point.id, name: point.name, distance: point.distance,
+      address: point.address && mapPointDescription(point, point.address),
+      description: mapPointDescription(point), type: point.type, mapType: point.mapType, image: point.image
     })) : undefined
     options.publish({ layout, collapsed, dark, ...(includePoints ? { points: listPoints } : {}) })
     if (!shown || animation !== 'none') nativeWindow.show(animation, animation === 'none' ? 0 : NATIVE_DISPOSAL_DURATION)

@@ -48,9 +48,12 @@
                 <input v-else class="grid-inline-input" v-model="editorValue" :maxlength="-1" :type="editor.field.inputType || 'text'" :focus="true" @blur="saveCellDraft" @confirm="saveCellDraft" @click.stop />
               </template>
               <template v-else>
+                <AdminMessageAttachment v-if="['Message', 'GroupMessage'].includes(table) && column.key === 'content' && ['voice', 'video', 'file'].includes(item.type)" :type="item.type" :content="item.content" />
+                <template v-else>
                 <image v-if="images(item, column.key).length" class="grid-thumbnail" :src="resolveTrashBinImage(images(item, column.key)[0])" mode="aspectFill" />
                 <text v-if="images(item, column.key).length > 1" class="grid-image-count">{{ images(item, column.key).length }}张</text>
                 <text v-else-if="!images(item, column.key).length" class="grid-value">{{ displayValue(item, column.key) }}</text>
+                </template>
               </template>
             </view>
           </view>
@@ -153,6 +156,7 @@
 <script setup>
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import { resolveTrashBinImage, previewTrashBinImage } from '@/utils/map/trash-bin-image'
+import AdminMessageAttachment from './AdminMessageAttachment.vue'
 import { shortFieldLabels as labels } from '@/pages-admin/utils/field-labels'
 import { getAdminHistoryImage, getAdminTableColumns } from '@/api/database'
 
@@ -591,7 +595,6 @@ function toggleColumn(key) {
 function resetColumns() { selectedColumns.value = defaults(); columnWidths.value = {}; saveColumns(); try { uni.removeStorageSync(columnWidthStorageKey()) } catch {}; measureGridScroll() }
 function images(item, key) {
   if (props.sqlColumns) return []
-  if ((props.table === 'Device' && key === 'imagePath') || (props.table === 'User' && key === 'avatar')) return item[key] ? [item[key]] : []
   return props.imageFields?.(props.table, key, item[key], item.type) || []
 }
 function displayValue(item, key) {

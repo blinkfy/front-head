@@ -112,7 +112,7 @@ export const historyCacheMethods = {
     async restoreCachedOriginalImages() {
             const owner = this.getCurrentUserId(), conversationId = this.chatId
             const originalMessages = this.messages.filter((message) => (
-                message?.type === 'image' && message.content && !message.isWithdraw
+                message?.type === 'image' && !message.stickerId && message.content && !message.isWithdraw
             ))
             if (originalMessages.length === 0) return
 

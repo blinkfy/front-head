@@ -3,7 +3,7 @@ import { onReady, onUnload, onShow, onHide } from '@/utils/app-tab-lifecycle.js'
 import { createMapBasemapController, isBinLocationPicker } from './map-basemap-core.mjs'
 // #ifdef H5
 import { captureSatelliteReference } from './bin-satellite-reference.mjs'
-import { getTencentBasemapOptions, createSatelliteDetailController } from './app-tencent-map.mjs'
+import { getTencentBasemapOptions, createSatelliteDetailController, satelliteViewKey, watchSatelliteTile } from './app-tencent-map.mjs'
 // #endif
 // #ifdef APP-PLUS
 import appManifest from '../../manifest.json'
@@ -13,9 +13,10 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
   const satellite = ref(isBinLocationPicker(options))
   const basemapLoading = ref(false)
   let h5Map = null, nativeCallbacks = null, disposed = false
-  let h5Detail = null
+  let h5Detail = null, h5Container = null, h5SatelliteView = null
   const page = getCurrentInstance()?.root
   const isApp = ['app', 'app-plus'].includes(process.env.UNI_PLATFORM)
+  const isWechat = process.env.UNI_PLATFORM === 'mp-weixin'
   let appReady = false
   let appPageHidden = false
   let lastAppWebUpdate = null
@@ -24,7 +25,7 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
   function nativeSupported() {
     // App capability reporting can return false even when its map SDK supports switching.
     if (isApp) return true
-    if (process.env.UNI_PLATFORM === 'mp-weixin') {
+    if (isWechat) {
       try { return typeof uni.canIUse !== 'function' || uni.canIUse('map.enable-satellite') } catch (_) { return false }
     }
     try { return typeof uni.canIUse === 'function' && uni.canIUse('map.enable-satellite') } catch (_) { return false }
@@ -47,6 +48,8 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
   const controller = createMapBasemapController({
     // A cold App start first loads the HTTP frame and its SDK.
     ...(isApp && appWebMap ? { timeoutMs: () => appRendererReady ? 10000 : 40000 } : {}),
+    // WeChat's generic updated event does not reliably report a basemap change.
+    fallbackOnTimeout: !isWechat,
     onChange: state => { satellite.value = state.satellite; basemapLoading.value = state.loading },
     onFallback: () => {
       if (isApp) console.warn('[app-map-basemap] fallback', { reason: 'load_failed_or_timeout' })
@@ -57,22 +60,32 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
       if (isH5) {
         if (!h5Map || typeof h5Map.setBaseMap !== 'function') return false
         const map = h5Map
-        const loaded = () => callbacks.loaded()
-        const failed = () => callbacks.failed()
-        const changed = () => controller.refresh()
+        let stopProbe
+        const loaded = () => {
+          h5SatelliteView = satelliteViewKey(map, h5Container)
+          stopProbe?.()
+          callbacks.loaded()
+        }
+        const failed = () => { h5SatelliteView = null; callbacks.failed() }
         const cleanup = () => {
+          stopProbe?.()
           map.off?.('tilesloaded', loaded)
-          map.off?.('error', failed)
-          map.off?.('bounds_changed', changed)
+          map.off?.('context_lost', failed)
         }
         try {
           if (enabled) {
             map.on('tilesloaded', loaded)
-            map.on('error', failed)
-            map.on('bounds_changed', changed)
+            map.on('context_lost', failed)
+          } else {
+            const leftView = satelliteViewKey(map, h5Container)
+            if (h5SatelliteView !== leftView) h5SatelliteView = null
           }
           h5Detail?.setActive(enabled)
           map.setBaseMap(getTencentBasemapOptions(enabled))
+          if (enabled && basemapLoading.value) {
+            if (h5SatelliteView && h5SatelliteView === satelliteViewKey(map, h5Container)) loaded()
+            else stopProbe = watchSatelliteTile(map, h5Container, loaded)
+          }
           return cleanup
         } catch (error) { cleanup(); throw error }
       }
@@ -92,12 +105,15 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
     if (disposed) return
     // The SDK is still loading; keep the requested type until bindH5Map runs.
     if (isH5 && !h5Map) { satellite.value = !!enabled; return }
+    if ((isH5 || isWechat || (isApp && appWebMap)) && controller.getState().satellite === !!enabled) return
     if (isApp && satellite.value !== !!enabled) { lastAppWebUpdate = null; lastAppWebError = null }
     controller.request(enabled)
   }
   function bindH5Map(map, container) {
     // #ifdef H5
     h5Map = map
+    h5Container = container
+    h5SatelliteView = null
     h5Detail = createSatelliteDetailController({ sdk: container?.ownerDocument?.defaultView?.TMap, map, container })
     controller.request(satellite.value)
     // #endif
@@ -136,7 +152,7 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
   }
   function onNativeMapRegionChange(event) {
     // Panning is not a basemap request; cached tiles may produce no new load event.
-    if (isApp && appWebMap) return
+    if (isWechat || (isApp && appWebMap)) return
     if (event?.type === 'begin' || event?.detail?.type === 'begin') controller.refresh()
   }
   onMounted(() => { if (!isH5 && !isApp && !suspended?.()) controller.request(satellite.value) })
@@ -165,7 +181,7 @@ export function useMapBasemap({ isH5, options, suspended, appWebMap = false }) {
   }, { flush: 'post' })
   function dispose() {
     if (disposed) return
-    disposed = true; controller.dispose(); h5Detail?.destroy(); h5Detail = null; nativeCallbacks = null; h5Map = null
+    disposed = true; controller.dispose(); h5Detail?.destroy(); h5Detail = null; nativeCallbacks = null; h5Map = h5Container = null
   }
   onBeforeUnmount(dispose)
   onUnload(dispose)

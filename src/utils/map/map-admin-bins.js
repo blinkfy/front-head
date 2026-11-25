@@ -3,6 +3,7 @@ import { userinfo } from '@/api/user'
 import { getBinsList } from '@/api/database'
 import { getTrashBinList } from '@/api/map'
 import { toMapDisplayPoint } from '@/utils/map/map-display-point.mjs'
+import { binFacilityLabel } from '@/utils/map/bin-facility-label.mjs'
 
 export function binReports(bin) {
   const value = bin?.errorReport
@@ -20,7 +21,7 @@ export function binReportCount(bin) {
 }
 
 export function binMapLabel(bin) {
-  const name = bin.type === 'smart' ? '智能垃圾桶' : '普通垃圾桶'
+  const name = binFacilityLabel(bin)
   return `${name}${bin.adminRecord && bin.review !== true ? ' · 未通过审核' : ''}${binReportCount(bin) ? ' · 有报错' : ''}`
 }
 

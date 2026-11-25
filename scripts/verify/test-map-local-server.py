@@ -128,19 +128,28 @@ const { transformWithEsbuild } = projectRequire('@dcloudio/uni-cli-shared')
 '''
 
 
-LIFECYCLE_RUNNER = r'''const assert = require('node:assert/strict')
-const fs = require('node:fs')
-const vm = require('node:vm')
+LIFECYCLE_RUNNER = r'''import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import vm from 'node:vm'
+import path from 'node:path'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+
+const root = process.env.MAP_TEST_ROOT
+const require = createRequire(path.join(root, 'package.json'))
+const { preprocess } = require('@dcloudio/uni-cli-shared/lib/preprocess')
+const { createAppMapRetention } = await import(pathToFileURL(path.join(root, 'src/utils/map/app-map-retention.mjs')))
 const source = fs.readFileSync(process.env.MAP_TEST_COMPONENT, 'utf8')
-assert.match(source, /<map v-if="rendererFallback" v-show="!covered"/, 'covered only hides the native-map fallback')
+const nativeMapTag = source.match(/<map\b[^>]*>/)?.[0]
+assert.ok(nativeMapTag, 'the native-map fallback is present')
+assert.match(nativeMapTag, /\bv-show="!covered"/, 'a covered fallback stays mounted and is hidden')
+assert.match(nativeMapTag, /\bv-if="rendererFallback\s*&&\s*!mapExpired"/, 'an expired fallback is no longer rendered')
 assert.match(source, /<view v-else :id="hostId" class="app-tencent-map" :map-packet="packet"/, 'HTTP map host remains mounted')
 assert.match(source, /active:\s*this\.mapActive/)
-assert.match(source, /disposed:\s*this\.mapDisposed/)
 assert.match(source, /enableSatellite:\s*Boolean,\s*covered:\s*Boolean/)
 assert.match(source, /\.app-tencent-map\s*\{\s*width:\s*100%;\s*height:\s*100%;\s*\}/, 'covered does not change the map host dimensions')
-const root = process.env.MAP_TEST_ROOT
 for (const pagePath of ['src/pages/map/map.vue', 'src/pages-dark/map/map.vue']) {
-  const page = fs.readFileSync(require('node:path').join(root, pagePath), 'utf8')
+  const page = fs.readFileSync(path.join(root, pagePath), 'utf8')
   const appMapTag = page.match(/<AppTencentMap\b[^>]*>/)?.[0]
   assert.ok(appMapTag, pagePath + ' has an AppTencentMap element')
   assert.match(appMapTag, /:covered="showAddModal"/, pagePath + ' passes the modal cover state')
@@ -149,21 +158,31 @@ for (const pagePath of ['src/pages/map/map.vue', 'src/pages-dark/map/map.vue']) 
   assert.doesNotMatch(appMapTag, /(?:covered|showAddModal)[^>]*(?:width|height)|(?:width|height)[^>]*(?:covered|showAddModal)/,
     pagePath + ' does not resize the map frame when covered')
 }
-const optionSource = source.match(/<script>([\s\S]*?)<\/script>/)[1]
+const optionScript = source.match(/<script>([\s\S]*?)<\/script>/)[1]
+const optionSource = preprocess(optionScript, { APP_PLUS: true, H5: false }, { type: 'js' })
   .replace(/^import\s+[^\r\n]*\r?\n/gm, '').replace(/export\s+default\s+/, 'return ')
 const hookSets = []
 const starts = []
 const stops = []
 let platform = 'android'
 let startResults = []
+const retentionTimers = new Set()
 const component = new Function('mapConfig', 'manifest', 'baseUrl', 'getCurrentInstance',
-  'onHide', 'onShow', 'onUnload', 'startLocalMapServer', 'stopLocalMapServer', 'uni', 'console', optionSource)(
+  'onHide', 'onShow', 'onUnload', 'startLocalMapServer', 'stopLocalMapServer', 'createAppMapRetention',
+  'pauseAppMapPreload', 'markAppMapSdkReady', 'uni', 'console', optionSource)(
   { qqMapKey: '' }, {}, 'https://app.example', () => ({ root: {} }),
   callback => hookSets.at(-1).hide = callback,
   callback => hookSets.at(-1).show = callback,
   callback => hookSets.at(-1).unload = callback,
   () => { starts.push(platform); return startResults.shift() },
   url => stops.push(url),
+  options => createAppMapRetention({
+    ...options,
+    setTimer: callback => { retentionTimers.add(callback); return callback },
+    clearTimer: callback => retentionTimers.delete(callback)
+  }),
+  () => {},
+  () => {},
   { getSystemInfoSync: () => ({ platform }) },
   { info() {}, warn() {} }
 )
@@ -240,6 +259,21 @@ assert.equal(empty.instance.mapActive, true)
 assert.equal(empty.instance.frameUrl, onlineFrame)
 assert.deepEqual(empty.events, [['error', { detail: { code: 'local_server_unavailable', satellite: true } }]])
 console.log('PASS [options] empty native start result immediately selects normal fallback and emits local_server_unavailable')
+
+empty.hooks.hide()
+assert.equal(retentionTimers.size, 1)
+const [expire] = retentionTimers
+expire()
+assert.equal(retentionTimers.size, 0)
+assert.equal(empty.instance.rendererFallback, true)
+assert.equal(empty.instance.mapExpired, true)
+assert.equal(component.computed.packet.call(empty.instance).disposed, true)
+startResults = ['']
+empty.hooks.show()
+assert.equal(empty.instance.rendererFallback, true)
+assert.equal(empty.instance.mapExpired, false)
+assert.equal(component.computed.packet.call(empty.instance).disposed, false)
+console.log('PASS [options] idle expiry disposes the map; showing the page restores the fallback')
 
 const renderSource = source.match(/<script\s+module="mapView"\s+lang="renderjs">([\s\S]*?)<\/script>/)[1]
 let currentHost
@@ -327,7 +361,7 @@ def run_lifecycle_checks():
     if not node:
         raise RuntimeError("Node.js required for lifecycle mock checks")
     with tempfile.TemporaryDirectory(prefix="map-lifecycle-mock-") as temp:
-        runner = Path(temp) / "lifecycle-check.cjs"
+        runner = Path(temp) / "lifecycle-check.mjs"
         runner.write_text(LIFECYCLE_RUNNER, encoding="utf-8", newline="\n")
         env = os.environ.copy()
         env["MAP_TEST_COMPONENT"] = str(ROOT / "src/components/map/AppTencentMap.vue")

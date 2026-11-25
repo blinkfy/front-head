@@ -30,9 +30,9 @@ export const liveLocationTracker = {
   managesTimeout() { return webLocationAvailable() || androidRealtimeAvailable() || miniLocationAvailable() },
   canResume() { return webLocationAvailable() || miniLocationAvailable() },
   initialTimeout() { return webLocationAvailable() ? 45000 : 20000 },
-  supported() {
+  supported({ systemOnly = false } = {}) {
     // #ifdef APP-PLUS
-    return androidRealtimeAvailable() || (typeof plus !== 'undefined' && !!plus.geolocation?.watchPosition)
+    return (!systemOnly && androidRealtimeAvailable()) || (typeof plus !== 'undefined' && !!plus.geolocation?.watchPosition)
     // #endif
     // #ifdef H5
     return webLocationAvailable()
@@ -44,7 +44,7 @@ export const liveLocationTracker = {
     return false
     // #endif
   },
-  watch(success, failure) {
+  watch(success, failure, { systemOnly = false } = {}) {
     // #ifdef MP-WEIXIN
     return watchMiniLocation(success, failure)
     // #endif
@@ -52,10 +52,11 @@ export const liveLocationTracker = {
     const toPoint = result => {
       const coords = result?.coords || result || {}
       return { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy, coordinateSystem: 'wgs84',
-        ...(coords.provisional === true ? { provisional: true } : {}) }
+        ...(coords.provisional === true ? { provisional: true } : {}),
+        ...(Number.isFinite(coords.heading) && coords.speed !== 0 ? { heading: coords.heading } : {}) }
     }
     // #ifdef APP-PLUS
-    if (androidRealtimeAvailable()) return watchAndroidRealtimeLocation(result => success(toPoint(result)), failure)
+    if (!systemOnly && androidRealtimeAvailable()) return watchAndroidRealtimeLocation(result => success(toPoint(result)), failure)
     const geo = plus.geolocation
     const options = { provider: 'system', coordsType: 'gps', enableHighAccuracy: true, maximumAge: 0, timeout: 15000, geocode: false }
     // #endif
@@ -96,7 +97,7 @@ export const liveLocationTracker = {
       if (stopped) return
       stopped = true; refreshRevision++
       if (refreshTimer !== null) clearTimeout(refreshTimer)
-      geo.clearWatch(id)
+      if (id != null) geo.clearWatch(id)
     }
     // #endif
   }

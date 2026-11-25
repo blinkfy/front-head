@@ -3,6 +3,7 @@ import { queueBusinessNotification } from './business-notification.js'
 import { foregroundNotifications, notificationAvatarUrl } from './foreground-notification.mjs'
 import { baseUrl } from '@/api/settings.js'
 import { rememberChatEntryAvatar } from './chat-entry-avatar.mjs'
+import { chatStickerPreview } from './chat-sticker.mjs'
 
 /**
  * 前台统一使用可点击的顶部横幅，小程序由页面组件承载。
@@ -112,7 +113,7 @@ export async function notifyNewMessage(msgData, options = {}) {
   // 格式化消息内容
   let displayContent = content
   if (type === 'image') {
-    displayContent = '[图片]'
+    displayContent = chatStickerPreview(msgData) || '[图片]'
   } else if (type === 'voice') {
     displayContent = '[语音]'
   } else if (type === 'video') {

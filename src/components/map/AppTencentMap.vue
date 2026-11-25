@@ -1,6 +1,7 @@
 <template>
   <map v-if="rendererFallback && !mapExpired" v-show="!covered" :id="hostId + '-normal'" class="app-tencent-map"
-    :latitude="latitude" :longitude="longitude" :scale="scale" :markers="markers" show-location
+    :latitude="latitude" :longitude="longitude" :scale="scale" :markers="fallbackMarkers" show-location
+    :polyline="walkingPolyline" :include-points="walkingRoute?.points || []"
     @updated="$emit('updated', $event)" @error="$emit('error', $event)"
     @regionchange="$emit('regionchange', $event)" @markertap="$emit('markertap', $event)" @tap="$emit('tap', $event)" />
   <view v-else :id="hostId" class="app-tencent-map" :map-packet="packet" :change:map-packet="mapView.update" />
@@ -12,6 +13,8 @@ import manifest from '../../manifest.json'
 import { baseUrl } from '@/api/settings.js'
 import { getCurrentInstance } from 'vue'
 import { createAppMapRetention } from '../../utils/map/app-map-retention.mjs'
+import { walkingDestinationMarker } from '../../utils/map/use-map-walking-route.js'
+import { offsetMapCenter } from '../../utils/map/map-point-focus.mjs'
 import { onHide, onShow, onUnload } from '@/utils/app-tab-lifecycle.js'
 // #ifdef H5
 import { resolveH5MapAssets } from '../../utils/map/h5-map-assets.mjs'
@@ -25,6 +28,7 @@ export default {
   props: {
     latitude: [Number, String], longitude: [Number, String], scale: [Number, String],
     enableSatellite: Boolean, covered: Boolean, markers: { type: Array, default: () => [] },
+    walkingRoute: Object, walkingPolyline: { type: Array, default: () => [] },
     userLocation: { type: Object, default: () => ({}) }
   },
   emits: ['updated', 'error', 'regionchange', 'tap', 'markertap'],
@@ -42,6 +46,9 @@ export default {
     }
   },
   computed: {
+    fallbackMarkers() {
+      return this.walkingRoute ? [...this.markers, walkingDestinationMarker(this.walkingRoute.destination)] : this.markers
+    },
     packet() {
       const key = mapConfig.qqMapKey || mapConfig.qqMapKeyBackup || manifest['app-plus']?.distribute?.sdkConfigs?.maps?.tencent?.key
       return { hostId: this.hostId, active: this.mapActive, generation: this.frameGeneration, disposed: this.mapDisposed || this.mapExpired, key, assetBase: this.assetBase, frameUrl: this.frameUrl,
@@ -49,7 +56,8 @@ export default {
         prioritizeFirstTiles: true,
         // #endif
         latitude: this.latitude, longitude: this.longitude, scale: this.scale,
-        satellite: this.enableSatellite, markers: this.markers, userLocation: this.userLocation, command: this.command }
+        satellite: this.enableSatellite, markers: this.markers, userLocation: this.userLocation,
+        walkingRoute: this.walkingRoute, command: this.command }
     }
   },
   created() {
@@ -113,8 +121,10 @@ export default {
       // #endif
     },
     moveToLocation(options = {}) {
+      const { lift } = options
       if (this.rendererFallback) {
-        uni.createMapContext(this.hostId + '-normal', this).moveToLocation(options)
+        const target = lift > 0 ? { ...options, ...offsetMapCenter(options, this.scale, lift) } : options
+        uni.createMapContext(this.hostId + '-normal', this).moveToLocation(target)
         return
       }
       const latitude = Number(options.latitude ?? this.userLocation?.latitude)
@@ -123,8 +133,15 @@ export default {
         options.fail?.({ errMsg: 'invalid location' })
         return
       }
-      this.command = { id: ++this.querySerial, type: 'move', latitude, longitude }
+      this.command = { id: ++this.querySerial, type: 'move', latitude, longitude, ...(lift > 0 ? { lift } : {}) }
       options.success?.({ errMsg: 'moveToLocation:ok' })
+    },
+    getScale(options = {}) {
+      if (this.rendererFallback) {
+        uni.createMapContext(this.hostId + '-normal', this).getScale(options)
+      } else {
+        options.success?.({ scale: Number(this.scale) })
+      }
     },
     getCenterLocation(options = {}) {
       if (this.rendererFallback) {

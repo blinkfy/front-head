@@ -19,16 +19,44 @@ import { toMapDisplayPoint } from '@/utils/map/map-display-point.mjs'
     })
   }
 
+  export function suggestPlaces(keyword, { latitude, longitude, region, policy = 1 } = {}) {
+    return request({
+      url: '/api/map/place-suggestions',
+      method: 'GET',
+      data: {
+        keyword,
+        policy,
+        ...(latitude != null && longitude != null ? { latitude, longitude } : {}),
+        ...(region ? { region } : {})
+      },
+      needAuth: true,
+      silent: true
+    })
+  }
+
+  export function getWalkingRoute(from, to) {
+    return request({
+      url: '/api/map/walking-route',
+      method: 'POST',
+      data: { from, to },
+      needAuth: true,
+      silent: true,
+      timeout: 15000
+    })
+  }
+
   // 逆地址解析API（兼容H5跨域问题）
-  export function reverseGeocoder(latitude, longitude) {
+  export function reverseGeocoder(latitude, longitude, { includePois = false, poiPolicy = 5, silent = false } = {}) {
     return request({
       url: '/api/map/reverse-geocoder',
       method: 'GET',
       data: {
         latitude,
-        longitude
+        longitude,
+        ...(includePois ? { includePois: 1, poiPolicy } : {})
       },
-      needAuth: true
+      needAuth: true,
+      silent
     })
   }
 

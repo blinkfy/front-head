@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import uni from '@dcloudio/vite-plugin-uni'
 import { resolve } from 'path'
+import { rm } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { officialSitePlugin } from './scripts/build/official-site.mjs'
 import { browserRoundCodeAssetsPlugin } from './scripts/build/browser-roundcode-assets.mjs'
@@ -38,6 +39,18 @@ export default defineConfig(async ({ mode }) => {
       smartSortRobotAssetsPlugin(),
       mpMainPackageAssetsPlugin(),
       mpSubpackageModulesPlugin(),
+      {
+        name: 'app-only-chat-stickers',
+        writeBundle: {
+          order: 'post',
+          sequential: true,
+          async handler({ dir }) {
+            if (['app', 'app-plus', 'app-android', 'app-ios'].includes(process.env.UNI_PLATFORM)) return
+            const output = dir || process.env.UNI_OUTPUT_DIR
+            if (output) await rm(resolve(output, 'static/app/chat-stickers'), { recursive: true, force: true })
+          }
+        }
+      },
       officialSitePlugin(),
       embeddedCallPlugin(),
       browserRoundCodeAssetsPlugin(),

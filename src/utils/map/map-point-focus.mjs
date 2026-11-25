@@ -33,3 +33,22 @@ export async function getPointFocusCenter(point, zoom, page) {
     })
   } catch (_) { return fallback() }
 }
+
+export async function getWalkingMapLift(page) {
+  try {
+    return await new Promise(resolve => {
+      const query = uni.createSelectorQuery().in(page?.proxy)
+      query.select('.walking-map-viewport').boundingClientRect()
+      query.select('.walking-info-card').boundingClientRect()
+      query.exec(rects => {
+        const [map, card] = rects || []
+        if (!(map?.height > 0) || !(card?.height > 0) || !Number.isFinite(map.top) || !Number.isFinite(card.top)) {
+          resolve(0)
+          return
+        }
+        const covered = map.top + map.height - card.top
+        resolve(Math.max(0, Math.min(map.height, covered)) / 2)
+      })
+    })
+  } catch (_) { return 0 }
+}

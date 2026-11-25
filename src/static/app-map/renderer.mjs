@@ -1,15 +1,37 @@
 // Runs in the App render layer; the logic layer never accesses DOM or SDK objects.
 export function createAppTencentMap({ sdk, container, emit, assetUrl = value => value, initialMarkerDelayMs = 0,
   setTimer = setTimeout, clearTimer = clearTimeout }) {
-  let map, layer, detail, state, markerKey, basemap, boundsTimer, destroyed = false
+  let map, layer, walkingLayer, positionLayer, detail, state, markerKey, basemap, boundsTimer, destroyed = false
   let markerTimer = null
+  let satelliteReady = false, satelliteView = null, stopSatelliteProbe = null
   const listeners = []
+  const clusterIconUrls = new Map()
   const location = () => {
     const center = map.getCenter()
     return { latitude: Number(center.getLat()), longitude: Number(center.getLng()) }
   }
   const send = (type, detail) => { if (!destroyed) emit({ type, detail }) }
   function listen(type, handler) { map.on(type, handler); listeners.push([type, handler]) }
+  function cancelSatelliteProbe() {
+    stopSatelliteProbe?.()
+    stopSatelliteProbe = null
+  }
+  function reportBasemapReady(confirmation) {
+    if (basemap) {
+      satelliteReady = true
+      satelliteView = satelliteViewKey(map, container)
+      cancelSatelliteProbe()
+    }
+    send('updated', { satellite: basemap, ...(confirmation && { confirmation }) })
+  }
+  function waitForSatellite() {
+    if (!basemap || satelliteReady) return
+    if (satelliteView && satelliteView === satelliteViewKey(map, container)) {
+      reportBasemapReady('cached_view')
+      return
+    }
+    stopSatelliteProbe = watchSatelliteTile(map, container, () => reportBasemapReady('center_tile'))
+  }
   function update(next) {
     if (destroyed) return
     const previous = state
@@ -23,15 +45,17 @@ export function createAppTencentMap({ sdk, container, emit, assetUrl = value => 
       })
       if (!basemap && initialMarkerDelayMs > 0) markerTimer = setTimer(releaseInitialMarkers, initialMarkerDelayMs)
       listen('tilesloaded', () => {
-        send('updated', { satellite: basemap === true })
+        reportBasemapReady()
         if (markerTimer !== null) {
           clearTimer(markerTimer)
           markerTimer = setTimer(releaseInitialMarkers, 0)
         }
       })
-      listen('error', event => {
-        const message = String(event?.message || event?.error?.message || event?.msg || '').replace(/https?:\/\/[^\s]+/g, '[url]').slice(0, 160)
-        send('error', { code: 'sdk_error', sdkCode: event?.code || event?.error?.code, message, satellite: basemap === true })
+      listen('context_lost', () => {
+        satelliteView = null
+        satelliteReady = false
+        cancelSatelliteProbe()
+        send('error', { code: 'sdk_context_lost', satellite: basemap })
       })
       listen('click', event => {
         if (event.latLng) send('tap', { latitude: event.latLng.getLat(), longitude: event.latLng.getLng() })
@@ -46,6 +70,9 @@ export function createAppTencentMap({ sdk, container, emit, assetUrl = value => 
       })
       detail = createSatelliteDetailController({ sdk, map, container })
       detail.setActive(basemap)
+      waitForSatellite()
+      walkingLayer = createTencentWalkingLayer({ sdk, map, container })
+      positionLayer = createTencentPositionLayer({ sdk, map })
     } else {
       if (previous.latitude !== state.latitude || previous.longitude !== state.longitude) {
         map.setCenter(new sdk.LatLng(Number(state.latitude), Number(state.longitude)))
@@ -54,33 +81,57 @@ export function createAppTencentMap({ sdk, container, emit, assetUrl = value => 
     }
     if (basemap !== !!state.satellite) {
       basemap = !!state.satellite
-      // Completion is reported by tilesloaded, never by a successful setter alone.
+      cancelSatelliteProbe()
+      satelliteReady = false
+      if (!basemap && satelliteView !== satelliteViewKey(map, container)) satelliteView = null
       detail.setActive(basemap)
       map.setBaseMap(getTencentBasemapOptions(basemap))
       send('switching', { satellite: basemap })
+      waitForSatellite()
     }
-    if (markerTimer === null) updateMarkers()
+    if (markerTimer === null) {
+      updateMarkers()
+      positionLayer.update(state.userLocation)
+    }
     if (state.command && state.command.id !== previous?.command?.id) {
       if (state.command.type === 'move') {
-        const { latitude, longitude } = state.command
+        const { latitude, longitude, lift } = state.command
         if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
           const center = location()
-          if (Math.abs(center.latitude - latitude) > 1e-7 || Math.abs(center.longitude - longitude) > 1e-7) {
-            map.setCenter(new sdk.LatLng(latitude, longitude))
+          const target = getTencentFocusCenter(sdk, map, { latitude, longitude }, lift)
+          if (Math.abs(center.latitude - target.getLat()) > 1e-7 || Math.abs(center.longitude - target.getLng()) > 1e-7) {
+            map.setCenter(target)
           }
         }
       } else {
         send('center', { requestId: state.command.id, ...location() })
       }
     }
+    walkingLayer.update(state.walkingRoute)
   }
   function releaseInitialMarkers() {
     markerTimer = null
     if (destroyed) return
-    try { updateMarkers() } catch (_) { send('error', { code: 'map_render_failed', stage: 'render', satellite: basemap === true }) }
+    try {
+      updateMarkers()
+      positionLayer.update(state.userLocation)
+    } catch (_) { send('error', { code: 'map_render_failed', stage: 'render', satellite: basemap === true }) }
+  }
+  function createClusterStyle(label) {
+    let src = clusterIconUrls.get(label)
+    if (!src) {
+      const fontSize = label.length > 3 ? 8 : label.length > 2 ? 9 : 11
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="18">
+        <rect x="1" y="1" width="20" height="16" rx="8" fill="#1d4ed8" stroke="white" stroke-width="1.5"/>
+        <text x="11" y="9" dy=".35em" fill="white" font-family="sans-serif" font-size="${fontSize}" font-weight="700" text-anchor="middle">${label}</text>
+      </svg>`
+      src = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
+      clusterIconUrls.set(label, src)
+    }
+    return new sdk.MarkerStyle({ width: 22, height: 18, anchor: { x: -3, y: 44 }, src })
   }
   function updateMarkers() {
-    const key = JSON.stringify([state.markers || [], state.userLocation])
+    const key = JSON.stringify(state.markers || [])
     if (key !== markerKey) {
       markerKey = key
       const styles = {}, geometries = [], ids = new Map()
@@ -91,15 +142,17 @@ export function createAppTencentMap({ sdk, container, emit, assetUrl = value => 
           width: marker.width || 32, height: marker.height || 40, src: assetUrl(marker.iconPath),
           anchor: { x: (marker.width || 32) * (marker.anchor?.x ?? .5), y: (marker.height || 40) * (marker.anchor?.y ?? 1) }
         })
-        geometries.push({ id, styleId: id, position: new sdk.LatLng(Number(marker.latitude), Number(marker.longitude)) })
+        const position = new sdk.LatLng(Number(marker.latitude), Number(marker.longitude))
+        geometries.push({ id, styleId: id, position })
+        if (Number.isInteger(marker.clusterCount) && marker.clusterCount > 1) {
+          const count = Math.min(marker.clusterCount, 1000)
+          const styleId = `cluster-${count}`
+          if (!styles[styleId]) styles[styleId] = createClusterStyle(count === 1000 ? '999+' : String(count))
+          const badgeId = `badge-${index}`
+          ids.set(badgeId, marker.id)
+          geometries.push({ id: badgeId, styleId, position })
+        }
       })
-      const user = state.userLocation
-      if (user?.latitude !== null && user?.latitude !== undefined && user?.longitude !== null && user?.longitude !== undefined &&
-          Number.isFinite(Number(user.latitude)) && Number.isFinite(Number(user.longitude))) {
-        styles.user = new sdk.MarkerStyle({ width: 24, height: 24, anchor: { x: 12, y: 12 },
-          src: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="#3989fa" stroke="white" stroke-width="3"/></svg>') })
-        geometries.push({ id: 'user', styleId: 'user', position: new sdk.LatLng(Number(user.latitude), Number(user.longitude)) })
-      }
       if (layer) layer.setMap(null)
       layer = null
       if (geometries.length) {
@@ -115,10 +168,129 @@ export function createAppTencentMap({ sdk, container, emit, assetUrl = value => 
       destroyed = true
       if (boundsTimer) clearTimer(boundsTimer)
       if (markerTimer !== null) clearTimer(markerTimer)
+      cancelSatelliteProbe()
       if (layer) layer.setMap(null)
+      walkingLayer?.update(null)
+      positionLayer?.update(null)
+      clusterIconUrls.clear()
       detail?.destroy()
       if (map) { listeners.forEach(([type, handler]) => map.off(type, handler)); map.destroy() }
       map = layer = null
+    }
+  }
+}
+
+export function getTencentFocusCenter(sdk, map, { latitude, longitude }, lift) {
+  const target = new sdk.LatLng(latitude, longitude)
+  if (!(lift > 0) || !sdk.Point || !map.projectToContainer || !map.unprojectFromContainer) return target
+  try {
+    const center = map.getCenter()
+    const pixel = map.projectToContainer(center)
+    const x = pixel.getX?.() ?? pixel.x
+    const y = pixel.getY?.() ?? pixel.y
+    const visibleCenter = map.unprojectFromContainer(new sdk.Point(x, y - lift))
+    const radians = Math.PI / 180
+    const mercator = lat => Math.asinh(Math.tan(lat * radians))
+    // Translate the camera by the projected ground distance, keeping its zoom and rotation.
+    const centerY = mercator(latitude) + mercator(center.getLat()) - mercator(visibleCenter.getLat())
+    const lng = longitude + center.getLng() - visibleCenter.getLng()
+    if (Number.isFinite(centerY) && Number.isFinite(lng)) {
+      return new sdk.LatLng(Math.atan(Math.sinh(centerY)) / radians, ((lng + 180) % 360 + 360) % 360 - 180)
+    }
+  } catch (_) { /* The map may still be initializing. */ }
+  return target
+}
+
+const positionDot = '<circle cx="18" cy="18" r="10" fill="#3989fa" fill-opacity=".23"/><circle cx="18" cy="18" r="6.5" fill="#2276f4" stroke="white" stroke-width="2.5"/>'
+function positionIcon(showHeading) {
+  const pointer = showHeading ? '<path d="M18 2 26 17H10Z" fill="#2276f4" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>' : ''
+  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">${pointer}${positionDot}</svg>`
+  )
+}
+const positionIcons = [positionIcon(false), positionIcon(true)]
+
+export function createTencentPositionLayer({ sdk, map }) {
+  let layer, last
+  return {
+    update(point) {
+      const { latitude, longitude, heading } = point || {}
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        layer?.setMap(null)
+        layer = last = null
+        return
+      }
+      const bearing = Number.isFinite(heading) ? Math.round(heading / 3) * 3 % 360 : null
+      const moved = !last || latitude !== last.latitude || longitude !== last.longitude
+      const turned = !last || bearing !== last.bearing
+      if (!moved && !turned) return
+      last = { latitude, longitude, bearing }
+      const styles = () => ({ position: new sdk.MarkerStyle({
+        width: 36, height: 36, anchor: { x: 18, y: 18 }, faceTo: 'map',
+        // SDK rotation is counterclockwise. GPS and compass headings are clockwise.
+        rotate: bearing === null ? 0 : (360 - bearing) % 360, src: positionIcons[Number(bearing !== null)]
+      }) })
+      const geometries = () => [{
+        id: 'user-position', styleId: 'position', position: new sdk.LatLng(latitude, longitude)
+      }]
+      if (!layer) {
+        layer = new sdk.MultiMarker({ id: 'user-position-layer', zIndex: 30, map, styles: styles(), geometries: geometries() })
+      } else {
+        if (turned) layer.setStyles(styles())
+        if (moved) layer.setGeometries(geometries())
+      }
+    }
+  }
+}
+
+const walkingOriginIcon = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="7" fill="#ffffff" stroke="#526980" stroke-width="2.5"/></svg>'
+)
+const walkingDestinationIcon = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="43" viewBox="0 0 36 43"><path d="M18 40C15 37 3 25 3 17a15 15 0 1 1 30 0c0 8-12 20-15 23Z" fill="#183a85" stroke="#fff" stroke-width="2.5"/><path d="M12 23V10m1 1h10l-2.6 3.5 2.6 3.5H13" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+)
+
+export function createTencentWalkingLayer({ sdk, map, container }) {
+  let routeId = null, polyline, routeMarkers
+  const latLng = ({ latitude, longitude }) => new sdk.LatLng(latitude, longitude)
+  return {
+    update(route) {
+      const id = route?.id ?? null
+      if (routeId === id) return
+      routeId = id
+      polyline?.setMap(null)
+      routeMarkers?.setMap(null)
+      polyline = routeMarkers = null
+      if (!route) return
+
+      const paths = route.points.map(latLng)
+      const destination = latLng(route.destination)
+      polyline = new sdk.MultiPolyline({
+        id: 'walking-route', map,
+        styles: { walking: new sdk.PolylineStyle({
+          color: '#2259df', width: 8, borderColor: '#ffffff', borderWidth: 3,
+          lineCap: 'round', lineJoin: 'round', showArrow: true, arrowOptions: { space: 54 }
+        }) },
+        geometries: [{ id: 'walking-route-path', styleId: 'walking', paths }]
+      })
+      routeMarkers = new sdk.MultiMarker({
+        id: 'walking-route-markers', map, zIndex: 20,
+        styles: {
+          origin: new sdk.MarkerStyle({ width: 22, height: 22, anchor: { x: 11, y: 11 }, src: walkingOriginIcon }),
+          destination: new sdk.MarkerStyle({ width: 36, height: 43, anchor: { x: 18, y: 40 }, src: walkingDestinationIcon })
+        },
+        geometries: [
+          { id: 'walking-route-origin', styleId: 'origin', position: paths[0] },
+          { id: 'walking-route-destination', styleId: 'destination', position: destination }
+        ]
+      })
+      if (map.fitBounds && sdk.LatLngBounds) {
+        const bounds = new sdk.LatLngBounds()
+        paths.forEach(point => bounds.extend(point))
+        bounds.extend(destination)
+        const bottom = Math.min(270, Math.round((container?.clientHeight || 460) * 0.47))
+        map.fitBounds(bounds, { padding: { top: 42, bottom, left: 42, right: 42 }, maxZoom: 18 })
+      }
     }
   }
 }
@@ -159,6 +331,84 @@ export function getSatelliteDetailTiles(x, y, z, highResolution = true) {
   }
 }
 
+export function validateSatelliteTileImage(image, context) {
+  if ((image.naturalWidth || image.width) !== 256 || (image.naturalHeight || image.height) !== 256) throw new Error('invalid_tile')
+  context.drawImage(image, 0, 0, 64, 64)
+  const data = context.getImageData(0, 0, 64, 64).data, bins = new Uint16Array(4096)
+  let dominant = 0, most = 0
+  for (let i = 0; i < data.length; i += 4) {
+    const bin = (data[i] >> 4) * 256 + (data[i + 1] >> 4) * 16 + (data[i + 2] >> 4)
+    if (++bins[bin] > most) { dominant = bin; most = bins[bin] }
+  }
+  const colors = [dominant >> 8, dominant >> 4 & 15, dominant & 15]
+  if (most >= 4096 * .8 && Math.max(...colors) - Math.min(...colors) <= 3) throw new Error('imagery_unavailable')
+}
+
+function centerTileUrl(map) {
+  const center = map.getCenter?.()
+  const latitude = center?.getLat()
+  const longitude = center?.getLng()
+  const zoom = map.getZoom?.()
+  if (![latitude, longitude, zoom].every(Number.isFinite)) return null
+  const level = Math.floor(zoom)
+  if (level < 3 || level > 18) return null
+  const count = 2 ** level
+  const radians = Math.max(-85.05112878, Math.min(85.05112878, latitude)) * Math.PI / 180
+  const x = Math.floor((longitude + 180) / 360 * count)
+  const y = Math.max(0, Math.min(count - 1, Math.floor((1 - Math.asinh(Math.tan(radians)) / Math.PI) / 2 * count)))
+  return getSatelliteDetailTiles(x, y, level, false)?.children[0].url
+}
+
+export function satelliteViewKey(map, container) {
+  const center = map.getCenter?.()
+  if (!center) return null
+  return JSON.stringify([
+    center.getLat(), center.getLng(), map.getZoom?.(), map.getRotation?.(), map.getPitch?.(),
+    container?.clientWidth, container?.clientHeight
+  ])
+}
+
+// The SDK can draw imagery without reporting that every visible tile is loaded.
+export function watchSatelliteTile(map, container, onAvailable) {
+  const doc = container?.ownerDocument
+  const view = doc?.defaultView
+  if (!view?.Image) return () => {}
+  let image = null
+  const timer = view.setTimeout(() => {
+    const url = centerTileUrl(map)
+    if (!url) return
+    image = new view.Image()
+    image.crossOrigin = 'anonymous'
+    image.onerror = stop
+    image.onload = () => {
+      const canvas = doc.createElement('canvas')
+      canvas.width = canvas.height = 64
+      let available = false
+      try {
+        const baseMap = map.getBaseMap?.()
+        const layers = Array.isArray(baseMap) ? baseMap : [baseMap]
+        if ((baseMap && !layers.some(layer => layer?.type === 'satellite')) || centerTileUrl(map) !== url) return
+        const context = canvas.getContext('2d', { willReadFrequently: true })
+        if (context) {
+          validateSatelliteTileImage(image, context)
+          available = true
+        }
+      } catch (_) { /* A placeholder or inaccessible image cannot confirm coverage. */ }
+      finally { canvas.width = canvas.height = 0; stop() }
+      if (available) onAvailable()
+    }
+    image.src = url
+  }, 3000)
+  function stop() {
+    view.clearTimeout(timer)
+    if (!image) return
+    image.onload = image.onerror = null
+    image.removeAttribute('src')
+    image = null
+  }
+  return stop
+}
+
 export function createSatelliteDetailLoader({ loadImage, createCanvas, empty, highResolution = true, onEvent = () => {} }) {
   const cache = new Map(), pending = new Map(), queue = []
   let active = 0, disposed = false, reported = false, reportedFailure = false, reportedParent = false
@@ -179,16 +429,7 @@ export function createSatelliteDetailLoader({ loadImage, createCanvas, empty, hi
             const image = await loadImage(source.url)
             images.push(image)
             if (disposed) throw new Error('cancelled')
-            if ((image.naturalWidth || image.width) !== 256 || (image.naturalHeight || image.height) !== 256) throw new Error('invalid_tile')
-            check.drawImage(image, 0, 0, 64, 64)
-            const data = check.getImageData(0, 0, 64, 64).data, bins = new Uint16Array(4096)
-            let dominant = 0, most = 0
-            for (let i = 0; i < data.length; i += 4) {
-              const bin = (data[i] >> 4) * 256 + (data[i + 1] >> 4) * 16 + (data[i + 2] >> 4)
-              if (++bins[bin] > most) { dominant = bin; most = bins[bin] }
-            }
-            const colors = [dominant >> 8, dominant >> 4 & 15, dominant & 15]
-            if (most >= 4096 * .8 && Math.max(...colors) - Math.min(...colors) <= 3) throw new Error('imagery_unavailable')
+            validateSatelliteTileImage(image, check)
             sources.set(source.url, { image })
           } catch (error) { sources.set(source.url, { error }) }
         }

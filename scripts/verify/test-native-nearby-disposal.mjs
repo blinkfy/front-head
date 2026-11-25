@@ -47,7 +47,7 @@ function createHarness(id, windowInfo = { windowWidth: 390, windowHeight: 844, s
   controller.attach(nativeWindow)
   controller.activate(true)
   controller.update({ visible: true, dark: id.endsWith('dark'), points: [
-    { id: 'one', name: 'Point One', distance: '100m', address: 'First address', description: 'First desc', type: 'smart', image: 'resolved-image', imagePath: 'A'.repeat(4096), adminOnly: true },
+    { id: 'one', name: 'Point One', distance: '100m', address: 'First address', description: 'First desc', type: 'smart', mapType: 'waste_disposal', image: 'resolved-image', imagePath: 'A'.repeat(4096), adminOnly: true },
     { id: 'two', name: 'Point Two', distance: '200m', address: 'Second address', description: 'Second desc', type: 'normal', image: 'second-image' }
   ] })
   return { controller, nativeWindow, calls }
@@ -71,12 +71,13 @@ globalThis.clearTimeout = handle => {
 try {
   check('native frame stays within sheet and pill bounds; select and navigate remain distinct', () => {
     const { controller, calls } = createHarness('nearby-disposal-light')
-    const point = { id: 'one', name: 'Point One', distance: '100m', address: 'First address', description: 'First desc', type: 'smart', image: 'resolved-image', imagePath: 'A'.repeat(4096), adminOnly: true }
+    const point = { id: 'one', name: 'Point One', distance: '100m', address: 'First address', description: 'First desc', type: 'smart', mapType: 'waste_disposal', image: 'resolved-image', imagePath: 'A'.repeat(4096), adminOnly: true }
     controller.action({ type: 'select', id: 'one' })
     controller.action({ type: 'navigate', id: 'one' })
     assert.deepEqual(calls.selected, [point])
     assert.deepEqual(calls.navigated, [point])
-    assert.deepEqual(Object.keys(calls.published.at(-1).points[0]).sort(), ['id', 'name', 'distance', 'address', 'description', 'type', 'image'].sort())
+    assert.deepEqual(Object.keys(calls.published.at(-1).points[0]).sort(), ['id', 'name', 'distance', 'address', 'description', 'type', 'mapType', 'image'].sort())
+    assert.equal(calls.published.at(-1).points[0].mapType, 'waste_disposal')
 
     const sheet = calls.styles.at(-1)
     assert.equal(sheet.width, '390px')

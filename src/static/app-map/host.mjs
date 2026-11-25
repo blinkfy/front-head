@@ -115,7 +115,7 @@ async function initialize() {
         return value
       },
       emit: event => {
-        if (event?.type === 'updated' && !firstTilesReported) {
+        if (event?.type === 'updated' && !event.detail?.confirmation && !firstTilesReported) {
           firstTilesReported = true
           send('phase', { phase: 'first_tiles_loaded', satellite: !!latestPacket?.satellite })
         }

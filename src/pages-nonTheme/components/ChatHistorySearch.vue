@@ -21,6 +21,7 @@
 <script>
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getChatHistory, getGroupHistory } from '@/pages-nonTheme/api/chat.js'
+import { chatStickerPreview } from '@/utils/realtime/chat-sticker.mjs'
 export default {
     components: { ManifestIcon },
     props: { groupId: String, chatId: String }, emits: ['close', 'select'],
@@ -54,6 +55,8 @@ export default {
         },
         preview(message) {
             if (message.isWithdraw) return '[消息已撤回]'
+            const sticker = chatStickerPreview(message)
+            if (sticker) return sticker
             if (message.type === 'text' || message.type === 'ai') return String(message.content || '')
             let metadata = {}
             try { metadata = JSON.parse(message.content) } catch (_) {}

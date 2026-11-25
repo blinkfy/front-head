@@ -113,6 +113,7 @@
                             <text v-else-if="msg.type === 'text'" class="text-content">{{ msg.content }}</text>
 
                             <!-- 图片消息 -->
+                            <ChatSticker v-else-if="msg.stickerId" :sticker-id="msg.stickerId" :active="isChatPageActive" animated />
                             <view v-else-if="msg.type === 'image'" class="image-content" @click="previewImage(msg)">
                                 <!-- 原图已预加载时直接复用；未缓存时仍优先使用缩略图以节省首次流量 -->
                                 <ChatCachedImage :src="getImageDisplaySrc(msg)" :owner="avatarCacheOwner"
@@ -304,17 +305,34 @@
                         :class="{ 'composer-panel-closing': !showEmojiPanel && composerPanelHandoff !== 'emoji', 'composer-panel-inactive': !showEmojiPanel }"
                         :aria-hidden="!showEmojiPanel">
                         <scroll-view scroll-y class="emoji-scroll">
-                            <view class="emoji-grid">
-                                <view v-for="(emoji, index) in emojiList" :key="index" class="emoji-item"
-                                    @click="insertEmoji(emoji)">
-                                    <text>{{ emoji }}</text>
+                            <view class="emoji-scroll-content">
+                                <view v-if="emojiDrawerOpened">
+                                    <view class="emoji-section-heading">
+                                        <text>分投侠大表情</text>
+                                    </view>
+                                    <view class="sticker-grid">
+                                        <view v-for="sticker in chatStickers" :key="sticker.id" class="sticker-item" @click="sendSticker(sticker.id)">
+                                            <ChatSticker :sticker-id="sticker.id" />
+                                            <text class="sticker-item-label">{{ sticker.label }}</text>
+                                        </view>
+                                    </view>
+                                </view>
+                                <view class="emoji-standard-section">
+                                    <view class="emoji-section-heading">
+                                        <text>普通表情</text>
+                                        <view class="emoji-delete-btn" aria-label="删除最后一个字符" @click="deleteLastChar">
+                                            <ManifestIcon id="delete" size="36rpx" />
+                                        </view>
+                                    </view>
+                                    <view class="emoji-grid">
+                                        <view v-for="(emoji, index) in emojiList" :key="index" class="emoji-item"
+                                            @click="insertEmoji(emoji)">
+                                            <text>{{ emoji }}</text>
+                                        </view>
+                                    </view>
                                 </view>
                             </view>
                         </scroll-view>
-                        <!-- 退格按钮 - 悬浮在右侧 -->
-                        <view class="emoji-delete-btn" @click="deleteLastChar">
-                            <ManifestIcon class="delete-icon" id="delete" :scale="1" />
-                        </view>
                     </view>
 
                     <!-- 更多功能面板 -->
@@ -692,6 +710,8 @@ import { communityChatSettings, readCommunityChatEnabled } from '@/utils/realtim
 import { getAvatarUrl } from '@/utils/avatar-handler.js'
 import { readChatEntryAvatar } from '@/utils/realtime/chat-entry-avatar.mjs'
 import ChatCachedImage from '@/pages-nonTheme/components/ChatCachedImage.vue'
+import ChatSticker from '@/pages-nonTheme/components/ChatSticker.vue'
+import { chatSticker, chatStickers, messageChatStickerId, chatStickerPreview } from '@/utils/realtime/chat-sticker.mjs'
 import ChatFileName from '@/pages-nonTheme/components/ChatFileName.vue'
 import ChatCachedAvatar from '@/pages-nonTheme/components/ChatCachedAvatar.vue'
 import ChatImagePreview from '@/pages-nonTheme/components/ChatImagePreview.vue'
@@ -734,6 +754,7 @@ const chatRelationshipLabels = {
 export default {
     components: { AppConfirmDialog, RealtimeActivityEntry, BookingChatContext,
         ChatCachedImage,
+        ChatSticker,
         ChatFileName,
         ChatCachedAvatar,
         ChatImagePreview,
@@ -820,6 +841,8 @@ export default {
             inputTextLineCount: 1,
             isVoiceMode: false,
             showEmojiPanel: false,
+            emojiDrawerOpened: false,
+            chatStickers,
             showMorePanel: false,
             composerPanelsMounted: false,
             composerPanelHandoff: '',
@@ -1961,6 +1984,7 @@ export default {
                 id: serverMsg.id || serverMsg.messageId,
                 clientMessageId: serverMsg.clientMessageId || null,
                 type: activity || postCard ? 'others' : serverMsg.type || 'text',
+                stickerId: messageChatStickerId(serverMsg.type, parsedContent),
                 content: activity ? JSON.stringify(activity) : postCard ? JSON.stringify(postCard) : content,
                 isSelf: isSelf,
                 isAi: !!serverMsg.isAi,
@@ -2492,9 +2516,11 @@ export default {
             let content = msgData.content
             let voiceText = ''
             let duration = msgData.duration
+            let stickerId = ''
             if (typeof content === 'string' && content.startsWith('{')) {
                 try {
                     const parsed = JSON.parse(content)
+                    stickerId = messageChatStickerId(msgData.type, parsed)
                     if (msgData.type === 'voice' && parsed.path) {
                         content = `${baseUrl}/files/download/${String(parsed.path).replace(/\\/g, '/')}`
                         voiceText = parsed.toText || ''
@@ -2513,7 +2539,8 @@ export default {
                 status: 'sent',
                 voiceText,
                 duration,
-                ...msgData
+                ...msgData,
+                stickerId
             }
             if (msg.type === 'image') {
                 msg.thumbnail = this.buildReviewUrl(content)
@@ -2533,6 +2560,7 @@ export default {
                 senderName: senderName,
                 content: msgData.content,
                 type: msgData.type || 'text',
+                stickerId,
                 fileName: msgData.fileName
             }, {
                 playSound: !this.contactSettings.mute,
@@ -2730,6 +2758,21 @@ export default {
         ...fileAccessMethods,
 
         // ==================== 表情 ====================
+        async sendSticker(stickerId) {
+            if (!chatSticker(stickerId)) return
+            if (this.chatOffline) return this.showChatOfflineToast()
+            if (this.groupSendBlockReason) return
+            const msg = this.createMessage('image', '', { stickerId })
+            this.addMessage(msg)
+            try {
+                const response = await this.sendCreatedMessage(msg)
+                this.updateMessageStatus(msg.id, 'sent', this.getServerMessageId(response.data))
+            } catch (error) {
+                console.error('发送表情失败', error)
+                this.updateMessageStatus(msg.id, 'failed')
+            }
+        },
+
         insertEmoji(emoji) {
             this.inputText += emoji
         },
@@ -3270,6 +3313,7 @@ export default {
             if (open) this.composerPanelsMounted = true
             // #endif
             this.showEmojiPanel = open && panel === 'emoji'
+            if (this.showEmojiPanel) this.emojiDrawerOpened = true
             this.showMorePanel = open && panel === 'more'
             // #ifdef APP-PLUS
             if (hideKeyboard) uni.hideKeyboard()
@@ -3454,7 +3498,7 @@ export default {
                 case 'text':
                     return refMsg.content.substring(0, 50) + (refMsg.content.length > 50 ? '...' : '')
                 case 'image':
-                    return '[图片]'
+                    return chatStickerPreview(refMsg) || '[图片]'
                 case 'video':
                     return '[视频]'
                 case 'voice':
@@ -4736,6 +4780,8 @@ page {
 
 // 表情面板
 .emoji-panel {
+    display: flex;
+    flex-direction: column;
     height: 500rpx;
     background: var(--bg-secondary);
     border-top: 1rpx solid var(--border-color);
@@ -4743,8 +4789,55 @@ page {
 }
 
 .emoji-scroll {
-    height: 100%;
-    padding: 20rpx;
+    flex: 1;
+    height: 0;
+    min-height: 0;
+    box-sizing: border-box;
+}
+
+.emoji-scroll-content {
+    padding: 14rpx 20rpx 20rpx;
+}
+
+.emoji-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 36rpx;
+    margin: 0 8rpx 6rpx;
+    font-size: 25rpx;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.emoji-standard-section {
+    margin-top: 12rpx;
+    padding-top: 6rpx;
+    border-top: 1rpx solid var(--border-color);
+}
+
+.sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10rpx 8rpx;
+}
+
+.sticker-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5rpx;
+    padding: 4rpx 0;
+    border-radius: 14rpx;
+
+    &:active { background: var(--hover-bg); }
+}
+
+.sticker-item-label {
+    color: var(--text-secondary);
+    font-size: 23rpx;
+    line-height: 1.4;
+    text-align: center;
 }
 
 .emoji-grid {
@@ -4767,33 +4860,16 @@ page {
     }
 }
 
-// 退格按钮 - 悬浮在表情面板右侧
 .emoji-delete-btn {
-    position: absolute;
-    right: 0;
-    top: 20%;
-    transform: translateY(-50%);
-    width: 80rpx;
-    height: 60rpx;
-    background: #e9eeeb;
-    border-radius: 40rpx 0 0 40rpx;
+    width: 60rpx;
+    height: 52rpx;
+    margin-left: auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: -4rpx 4rpx 12rpx rgba(0, 0, 0, 0.15);
-    transition: all 0.2s ease;
-    z-index: 10;
+    border-radius: 14rpx;
 
-    &:active {
-        transform: translateY(-50%) scale(0.95);
-        box-shadow: -2rpx 2rpx 8rpx rgba(0, 0, 0, 0.1);
-    }
-}
-
-.delete-icon {
-    font-size: 44rpx;
-    color: white;
-    font-weight: bold;
+    &:active { background: var(--hover-bg); }
 }
 
 // 更多功能面板
@@ -4837,10 +4913,6 @@ page {
     opacity: 1;
     visibility: visible;
     transition: opacity 140ms ease, visibility 0s;
-}
-
-.composer-panel-slot .emoji-scroll {
-    box-sizing: border-box;
 }
 
 .composer-panel-slot .more-panel {

@@ -94,7 +94,7 @@
         </view>
         <view class="form-field mpwx-view" @click.stop>
           <text class="field-label">图片</text>
-          <TrashBinImageEditor v-model="draft.imagePath" :preview-src="imageChanged ? '' : binImageSrc" :disabled="busy" @update:modelValue="imageChanged = true" @processing="imageProcessing = $event" />
+          <TrashBinImageEditor v-model="draft.imagePath" prefer-app-webp :preview-src="imageChanged ? '' : binImageSrc" :disabled="busy" @update:modelValue="imageChanged = true" @processing="imageProcessing = $event" />
         </view>
         <view class="form-field mpwx-view">
           <text class="field-label">设备回调地址</text>

@@ -3,7 +3,7 @@
     "appid" : "__UNI__0B093BC",
     "description" : "",
     "versionName" : "1.4.16",
-    "versionCode" : 147,
+    "versionCode" : 148,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -17,6 +17,7 @@
         },
         "modules" : {
             "Maps" : {},
+            "Geolocation" : {},
             "Camera" : {},
             "Barcode" : {},
             "VideoPlayer" : {},
@@ -60,6 +61,11 @@
                 }
             },
             "sdkConfigs" : {
+                "geolocation" : {
+                    "system" : {
+                        "__platform__" : [ "ios", "android" ]
+                    }
+                },
                 "maps" : {
                     "tencent" : {
                         "key" : "RZPBZ-AXLY3-ENO3Q-O3AZU-JGX4Q-KTFZU"

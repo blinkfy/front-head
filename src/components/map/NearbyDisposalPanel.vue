@@ -14,12 +14,12 @@
           <cover-image class="disposal-photo" :src="pointImage(point)" @error="markImageFailed(point, pointImage(point))" />
           <cover-view class="disposal-details">
             <cover-view class="disposal-name">{{ point.name }}</cover-view>
-            <cover-view class="disposal-address">{{ point.distance }} · {{ point.address || point.description || '暂无详细地址' }}</cover-view>
-            <cover-view class="disposal-type">{{ point.type === 'smart' ? '智能分类投放点' : '生活垃圾投放点' }}</cover-view>
+            <cover-view class="disposal-address">{{ point.distance }} · {{ mapPointDescription(point, point.address || point.description) || '暂无详细地址' }}</cover-view>
+            <cover-view class="disposal-type">{{ binFacilityLabel(point) }}</cover-view>
           </cover-view>
           <cover-view class="disposal-nav" @click.stop="$emit('navigate', point)">
             <cover-image class="disposal-nav-icon" :src="getManifestIconPath('dark_navigation')" />
-            <cover-view>导航</cover-view>
+            <cover-view>路线</cover-view>
           </cover-view>
         </cover-view>
       </cover-view>
@@ -41,12 +41,12 @@
           <image class="disposal-photo" :src="pointImage(point)" mode="aspectFill" @error="markImageFailed(point, pointImage(point))" />
           <view class="disposal-details">
             <text class="disposal-name">{{ point.name }}</text>
-            <text class="disposal-address">{{ point.distance }} · {{ point.address || point.description || '暂无详细地址' }}</text>
-            <text class="disposal-type">{{ point.type === 'smart' ? '智能分类投放点' : '生活垃圾投放点' }}</text>
+            <text class="disposal-address">{{ point.distance }} · {{ mapPointDescription(point, point.address || point.description) || '暂无详细地址' }}</text>
+            <text class="disposal-type">{{ binFacilityLabel(point) }}</text>
           </view>
           <button class="disposal-nav" @click.stop="$emit('navigate', point)">
             <ManifestIcon id="dark_navigation" class="disposal-nav-icon" />
-            <text>导航</text>
+            <text>路线</text>
           </button>
         </view>
       </view>
@@ -61,6 +61,8 @@ import ManifestIcon from '../ManifestIcon.vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
 import { config } from '@/api/config.js'
 import { resolveBinPointImage } from '@/utils/map/trash-bin-image-core.mjs'
+import { binFacilityLabel } from '@/utils/map/bin-facility-label.mjs'
+import { mapPointDescription } from '@/utils/map/map-display-point.mjs'
 import { binPointPhotoKey, getBinPointPhotoSource } from '@/utils/map/bin-point-photo.js'
 const props = defineProps({ points: { type: Array, required: true }, dark: Boolean, native: Boolean })
 const emit = defineEmits(['select', 'navigate', 'heightchange', 'closingchange'])

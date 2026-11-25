@@ -20,11 +20,17 @@ import { chooseAppImage } from '@/utils/image-picker.js'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { compressTrashBinImage, resolveTrashBinImage, previewTrashBinImage } from '@/utils/map/trash-bin-image'
 
-const props = defineProps({ modelValue: { type: String, default: '' }, previewSrc: { type: String, default: '' }, disabled: Boolean })
+const props = defineProps({
+  modelValue: { type: String, default: '' }, previewSrc: { type: String, default: '' },
+  resolveSource: Function, disabled: Boolean, preferAppWebp: Boolean
+})
 const emit = defineEmits(['update:modelValue', 'processing'])
 const processing = ref(false)
 let operationId = 0
-const imageSrc = computed(() => resolveTrashBinImage(props.modelValue || props.previewSrc))
+const imageSrc = computed(() => {
+  const value = props.modelValue || props.previewSrc
+  return resolveTrashBinImage(props.resolveSource ? props.resolveSource(value) : value)
+})
 
 watch(() => props.modelValue, () => { operationId += 1 })
 onBeforeUnmount(() => { operationId += 1; setProcessing(false) })
@@ -43,7 +49,7 @@ function chooseImage() {
       if (!filePath || currentOperation !== operationId) return
       setProcessing(true)
       try {
-        const compressed = await compressTrashBinImage(filePath)
+        const compressed = await compressTrashBinImage(filePath, { preferAppWebp: props.preferAppWebp })
         if (currentOperation === operationId) emit('update:modelValue', compressed)
       } catch (error) {
         if (currentOperation === operationId) uni.showToast({ title: '图片处理失败，请重试', icon: 'none' })

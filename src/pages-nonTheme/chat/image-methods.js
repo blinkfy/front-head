@@ -107,7 +107,7 @@ export const imageSourceMethods = {
 export const imagePreviewMethods = {
     previewImage(msg) {
             // 构建所有图片消息列表（过滤出图片消息）
-            this.previewImageList = this.messages.filter(m => m.type === 'image' && !m.isWithdraw && m.content)
+            this.previewImageList = this.messages.filter(m => m.type === 'image' && !m.stickerId && !m.isWithdraw && m.content)
             
             // 找到当前点击的图片在列表中的索引
             const index = this.previewImageList.findIndex(m => m.id === msg.id)

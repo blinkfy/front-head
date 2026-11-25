@@ -11,6 +11,7 @@ import { invalidateAppHomeAiSettings } from '../app-home-ai-settings.js'
 import { syncChatPush } from './chat-push.js'
 import { messageBus, triggerMessageNotification } from './message-event-bus.js'
 import { initChatNotificationNavigation } from './notification.js'
+import { messageChatStickerId } from './chat-sticker.mjs'
 import { createChatEventsTransport } from './chat-events-transport.mjs'
 import { showNotification } from './notification.js'
 import { userNotificationUrl } from '@/utils/realtime/user-notifications.js'
@@ -81,6 +82,7 @@ export function notifyChatEvent(event) {
         senderAvatar: event.sender?.avatar || '',
         senderLabel: event.groupId ? (event.sender?.nickname || event.sender?.username || '群成员') : '',
         content: realtimeActivityCard(message) ? (event.notificationBody || message.content) : typeof content === 'string' ? content : '', type: message.type,
+        stickerId: messageChatStickerId(message.type, content),
         fileName: content?.fileName || content?.name,
         conversationId: event.conversationId, groupId: event.groupId, otherId: event.otherId
     }, { showNotification: !inConversation, vibrate: !inConversation, quiet: inConversation }).catch(() => {})

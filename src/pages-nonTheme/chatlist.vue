@@ -103,6 +103,7 @@
 
 <script>
 import { realtimeActivityCard, realtimeActivitySummary } from '@/utils/realtime/realtime-activity.mjs'
+import { chatStickerPreview } from '@/utils/realtime/chat-sticker.mjs'
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import { showAppModal } from '@/utils/app-confirm-dialog.js'
 import * as chatApi from '@/pages-nonTheme/api/chat'
@@ -1186,6 +1187,8 @@ computed: {
 		formatLastMessage(message) {
             if (message?.isWithdraw) return '[消息已撤回]'
 			if (!message) return '暂无消息'
+            const sticker = chatStickerPreview(message)
+            if (sticker) return sticker
             const activity = realtimeActivityCard(message)
             if (activity) return realtimeActivitySummary(activity, String(message.senderId) === String(this.getCurrentUserId()))
 

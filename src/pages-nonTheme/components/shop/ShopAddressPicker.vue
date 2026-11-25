@@ -11,6 +11,9 @@
       <view class="address-modal">
         <view class="address-modal-heading"><text>选择收货位置</text><button class="address-action" @click="close">取消</button></view>
         <view class="address-search"><input v-model="query" class="address-search-input" placeholder="搜索小区、学校或街道" maxlength="100" @confirm="search" /><button class="address-action" :disabled="searching || initializing" @click="search">搜索</button></view>
+        <scroll-view v-if="suggestions.length" class="address-suggestions" :style="{ height: `${suggestions.length * 108}rpx` }" scroll-y>
+          <view v-for="(place, index) in suggestions" :key="place.id || index" class="address-place" @click="selectSuggestion(place)"><text>{{ place.title || place.name }}</text><text class="address-hint">{{ place.address || place.addr }}</text></view>
+        </scroll-view>
         <!-- #ifdef H5 -->
         <view :id="mapId" class="address-map"></view>
         <!-- #endif -->
@@ -34,10 +37,11 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import ManifestIcon from '@/components/ManifestIcon.vue'
 import { getUserLocationOnce } from '@/utils/location'
 import { locationErrorMessage } from '@/utils/location-error.mjs'
-import { searchPlaces } from '@/api/map'
+import { searchPlaces, suggestPlaces } from '@/api/map'
 import { getCurrentAddress, resolveLocationAddress } from '@/utils/location-address'
 import { chooseMiniLocation, chooseMiniAddress, isLocationCancelled } from '@/utils/mini-location.js'
 // #ifdef H5
+import { wgs84ToGcj02, gcj02ToWgs84 } from '@/utils/map/coordinates.mjs'
 import { createPreferredWebMap } from '@/utils/map/preferred-web-map.js'
 import { searchMapPlaces } from '@/utils/map/map-place-search.js'
 // #endif
@@ -46,7 +50,7 @@ const props = defineProps({ modelValue: { type: String, default: '' }, disabled:
 const emit = defineEmits(['update:modelValue', 'busy-change', 'select'])
 const locating = ref(false), searching = ref(false), opened = ref(false)
 const initializing = ref(false)
-const query = ref(''), selected = ref(''), error = ref(''), places = ref([])
+const query = ref(''), selected = ref(''), error = ref(''), places = ref([]), suggestions = ref([])
 const selectedParts = ref({})
 const busy = computed(() => locating.value || opened.value)
 const isWeixinMiniProgram = computed(() => {
@@ -56,8 +60,43 @@ const mapId = `shop-address-map-${Math.random().toString(36).slice(2)}`
 let map, mapAbort, marker, coords, selectedCoordinates = null, revision = 0, disposed = false
 let mapLibrary
 let autoLocateAttempted = false
+let suggestionTimer = null, suggestionRevision = 0
 watch(busy, value => emit('busy-change', value), { flush: 'sync' })
 watch(() => props.disabled, value => { if (value) close() })
+watch(query, value => {
+  clearTimeout(suggestionTimer)
+  const token = ++suggestionRevision
+  suggestions.value = []
+  const keyword = String(value || '').trim()
+  if (!opened.value || keyword.length < 2) return
+  suggestionTimer = setTimeout(async () => {
+    let center
+    let requestCenter
+    // #ifdef H5
+    const mapCenter = map?.getCenter()
+    if (mapCenter) center = { latitude: mapCenter.lat, longitude: mapCenter.lng }
+    if (center) requestCenter = wgs84ToGcj02(center.latitude, center.longitude)
+    // #endif
+    // #ifndef H5
+    if (coords) center = { latitude: coords.latitude, longitude: coords.longitude }
+    requestCenter = center
+    // #endif
+    try {
+      const response = await suggestPlaces(keyword, { ...(requestCenter || {}), policy: 1 })
+      if (token === suggestionRevision && opened.value && keyword === query.value.trim()) {
+        let rows = Array.isArray(response?.data) ? response.data : []
+        // #ifdef H5
+        rows = rows.map(place => {
+          const latitude = Number(place.location?.lat), longitude = Number(place.location?.lng)
+          const point = gcj02ToWgs84(latitude, longitude)
+          return point ? { ...place, mapLatitude: point.latitude, mapLongitude: point.longitude } : place
+        })
+        // #endif
+        suggestions.value = rows
+      }
+    } catch (_) { /* 旧后端或建议服务不可用时，保留显式搜索入口。 */ }
+  }, 400)
+}, { flush: 'sync' })
 const active = token => !disposed && !props.disabled && token === revision
 const joinAddress = place => {
   const address = String(place?.address || place?.addr || '').trim()
@@ -127,7 +166,9 @@ async function choose() {
     const current = await nearbyLocation
     if (!active(token) || !opened.value) return
     initializing.value = false
-    if (current) {
+    if (selected.value) {
+      if (selectedCoordinates) showSuggestionOnMap(selectedCoordinates)
+    } else if (current) {
       map.setView([current.latitude, current.longitude], 16)
       await pickPoint(current.latitude, current.longitude, current.accuracy)
     } else if (props.modelValue) {
@@ -186,6 +227,11 @@ function placeMarker(latitude, longitude) {
   marker = mapLibrary.marker([latitude, longitude], { draggable: true }).addTo(map)
   marker.on('dragend', () => { const point = marker.getLatLng(); pickPoint(point.lat, point.lng) })
 }
+function showSuggestionOnMap({ latitude, longitude }) {
+  if (!map) return
+  map.setView([latitude, longitude], 16)
+  placeMarker(latitude, longitude)
+}
 async function pickPoint(latitude, longitude, accuracy) {
   const token = ++revision
   initializing.value = false
@@ -201,6 +247,7 @@ async function pickPoint(latitude, longitude, accuracy) {
 // #endif
 async function search() {
   if (props.disabled || !opened.value || searching.value || initializing.value) return
+  clearTimeout(suggestionTimer); ++suggestionRevision; suggestions.value = []
   const token = ++revision
   initializing.value = false
   searching.value = true; selected.value = ''; selectedParts.value = {}; error.value = ''
@@ -230,12 +277,32 @@ async function search() {
   } catch (reason) { if (active(token)) showError(reason, stage) }
   finally { if (token === revision) searching.value = false }
 }
-function selectPlace(place) { selected.value = joinAddress(place); selectedParts.value = place.ad_info || {}; selectedCoordinates = place.location ? { latitude: Number(place.location.lat), longitude: Number(place.location.lng) } : null }
+function selectSuggestion(place) {
+  clearTimeout(suggestionTimer)
+  ++suggestionRevision
+  suggestions.value = []
+  if (!initializing.value) ++revision
+  searching.value = false
+  error.value = ''
+  selectPlace(place)
+  // #ifdef H5
+  if (!initializing.value && selectedCoordinates) showSuggestionOnMap(selectedCoordinates)
+  // #endif
+}
+function selectPlace(place) {
+  selected.value = joinAddress(place)
+  selectedParts.value = place.ad_info || { province: place.province, city: place.city, district: place.district }
+  const location = place.location || {}
+  const latitude = Number(place.mapLatitude ?? location.lat ?? location.latitude ?? place.latitude)
+  const longitude = Number(place.mapLongitude ?? location.lng ?? location.longitude ?? place.longitude)
+  selectedCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null
+}
 function confirm() {
   if (props.disabled || searching.value) return
   try { update({ address: selected.value, parts: selectedParts.value, ...(selectedCoordinates || {}) }); close() } catch (reason) { showError(reason) }
 }
 function close() {
+  clearTimeout(suggestionTimer); ++suggestionRevision; suggestions.value = []
   mapAbort?.abort(); mapAbort = null
   ++revision; opened.value = false; searching.value = false; locating.value = false; initializing.value = false
   if (map) map.remove()
@@ -263,4 +330,5 @@ onBeforeUnmount(() => { disposed = true; close() })
 .address-confirm { margin: 0; padding: 18rpx; line-height: 1.5; font-size: 28rpx; color: #fff; background: var(--shop-green); border-radius: 16rpx; }
 .address-places { height: 32vh; }
 .address-place { padding: 20rpx 0; border-bottom: 1rpx solid var(--shop-line); font-size: 26rpx; }
+.address-suggestions { max-height: 24vh; margin-bottom: 16rpx; }
 </style>

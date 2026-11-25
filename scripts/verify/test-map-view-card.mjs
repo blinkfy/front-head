@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { parse } from '@vue/compiler-sfc'
 import { resolveMapViewCard } from '../../src/utils/map/map-view-card.mjs'
+import { mapPointDescription } from '../../src/utils/map/map-display-point.mjs'
 
 const latest = {
   id: '42', name: '最新点位名', description: '审核后的最新说明', latitude: '25.0412', longitude: '121.5654',
@@ -36,6 +37,17 @@ const shared = await resolveMapViewCard(
 assert.equal(genericLookupCount, 0, 'ordinary shared coordinates do not query the point API')
 assert.deepEqual(shared.point, { id: -2, latitude: 25.03, longitude: 121.52, name: '朋友的位置', description: '附近', sharedLocation: true })
 
+const address = '地址：山东省青岛市崂山区北宅街道崂山景区旅游专用路'
+const importedDescription = address + '\r\n来源：腾讯地图（青岛公益试点）'
+const legacyPoint = await resolveMapViewCard({ pointId: '42' }, async () => ({
+  code: 0, data: { ...latest, description: importedDescription }
+}))
+assert.equal(legacyPoint.location.address, address)
+assert.equal(legacyPoint.point.description, importedDescription)
+assert.equal(mapPointDescription({ sourceKey: 'futian:test',
+  description: '地址：小区东门\n点位来源：开放平台\n请按现场标识投放' }), '地址：小区东门\n请按现场标识投放')
+assert.equal(mapPointDescription({ description: '来源：小区公示牌\n全天开放' }), '来源：小区公示牌\n全天开放')
+
 function findActionGuards(node, action, guardedByParent = false) {
   const guarded = guardedByParent || node.props?.some(prop =>
     prop.name === 'if' && prop.exp?.content === '!selectedMarker.sharedLocation') || false
@@ -62,6 +74,9 @@ for (const filename of ['../../src/pages/map/map.vue', '../../src/pages-dark/map
   assert(close?.[1].includes('selectedMarker.value = null'), `${filename}: closing the card clears its selection`)
   const markerTap = source.match(/function onMarkerTap\(e\)\s*\{([\s\S]*?)\n\}/)?.[1] || ''
   assert.match(markerTap, /onH5MarkerClicked\(0, viewPoint\.value\)/, `${filename}: marker tap can reselect the viewed point after close`)
+  assert.match(markerTap, /desc: mapPointDescription\(point\)/, `${filename}: native marker details hide data attribution`)
+  const webCard = source.match(/function onH5MarkerClicked\([^)]*\)\s*\{([\s\S]*?)\n\}/)?.[1] || ''
+  assert.match(webCard, /desc: mapPointDescription\(point\)/, `${filename}: web marker details hide data attribution`)
   assert.match(source, /function onH5MarkerClicked\([\s\S]*?selectedMarker\.value\s*=\s*\{/, `${filename}: marker selection reopens the info card`)
 }
 

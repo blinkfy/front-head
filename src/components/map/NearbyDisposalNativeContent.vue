@@ -18,11 +18,11 @@
           <view class="details">
             <text class="name" :class="{ 'light-text': dark }" lines="1">{{ point.name }}</text>
             <text class="address" lines="2">{{ point.distance }} · {{ point.address || point.description || '暂无详细地址' }}</text>
-            <text class="type">{{ point.type === 'smart' ? '智能分类投放点' : '生活垃圾投放点' }}</text>
+            <text class="type">{{ binFacilityLabel(point) }}</text>
           </view>
           <view class="navigate" @click.stop="send('navigate', point.id)">
             <image class="nav-icon" :src="navigationImage" />
-            <text class="nav-text">导航</text>
+            <text class="nav-text">路线</text>
           </view>
         </view>
       </scroll-view>
@@ -36,6 +36,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { getManifestIconPath } from '@/utils/manifest-icons.js'
+import { binFacilityLabel } from '@/utils/map/bin-facility-label.mjs'
 
 const props = defineProps({ panelId: { type: String, required: true } })
 const topic = `nearby-disposal:${props.panelId}`

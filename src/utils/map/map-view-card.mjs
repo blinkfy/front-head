@@ -1,4 +1,5 @@
 import { validDisposalLocation } from './nearby-disposal.mjs'
+import { mapPointDescription } from './map-display-point.mjs'
 
 function decodeText(value) {
   const text = typeof value === 'string' ? value : ''
@@ -25,6 +26,6 @@ export async function resolveMapViewCard(options, loadPoint) {
     point,
     reportRequested: options.report === '1' && !point.sharedLocation,
     reportReason: decodeText(options.reason).trim().slice(0, 200),
-    location: { latitude: point.latitude, longitude: point.longitude, name: point.name || '投放点', address: point.description || '' }
+    location: { latitude: point.latitude, longitude: point.longitude, name: point.name || '投放点', address: mapPointDescription(point) }
   }
 }

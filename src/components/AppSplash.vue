@@ -2,7 +2,7 @@
   <!-- #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ -->
   <view class="app-splash" v-show="showAppSplash" :class="{ 'fade-out': appSplashFading }">
     <view class="app-splash-content">
-      <image class="app-splash-gif" src="/static/moveable2.gif" mode="aspectFit" />
+      <view class="app-splash-gif"><SplashArtwork /></view>
       <text class="app-splash-title">分投侠</text>
       <text class="app-splash-subtitle">智能垃圾分类助手</text>
       <view class="app-splash-progress">
@@ -16,8 +16,11 @@
 <script>
 import { onAppPageReady } from '@/utils/app-page-ready.mjs'
 // #ifdef APP-PLUS || MP-WEIXIN || MP-ALIPAY || MP-BAIDU || MP-TOUTIAO || MP-QQ
+import SplashArtwork from './SplashArtwork.vue'
+
 export default {
   name: 'AppSplash',
+  components: { SplashArtwork },
   data() {
     return {
       showAppSplash: true,
@@ -103,7 +106,8 @@ export default {
 .app-splash-gif {
   width: 500rpx;
   height: 500rpx;
-  border-radius: 32rpx;
+  border-radius: 16%;
+  overflow: hidden;
   box-shadow: 0 16rpx 60rpx rgba(0, 0, 0, 0.2);
   animation: appGifPulse 1.5s ease-in-out infinite;
 }

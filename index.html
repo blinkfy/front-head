@@ -50,14 +50,20 @@
         }
       }
       
-      .loading-gif {
-        width: 250px;
-        height: 250px;
-        border-radius: 16px;
+      .loading-artwork {
+        position: absolute;
+        inset: 0;
+        border-radius: 16%;
+        overflow: hidden;
         box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
         animation: gifPulse 1.5s ease-in-out infinite;
-        object-fit: contain;
-        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .loading-artwork-layer {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
       }
       
       @keyframes gifPulse {
@@ -126,9 +132,9 @@
         cursor: pointer;
       }
       .loading-visual { position: relative; width: 250px; height: 250px; }
-      .loading-visual .loading-gif { opacity: 0; }
+      .loading-visual .loading-artwork { opacity: 0; }
       .loading-visual .loading-spinner { display: block; position: absolute; left: 85px; top: 85px; }
-      .loading-visual.is-loaded .loading-gif { opacity: 1; }
+      .loading-visual.is-loaded .loading-artwork { opacity: 1; }
       .loading-visual.is-loaded .loading-spinner { display: none; }
 
       /* 淡出动画 */
@@ -167,7 +173,10 @@
     <div id="app-loading">
       <div class="loading-content">
         <div class="loading-visual">
-          <img class="loading-gif" src="/static/moveable2.gif" alt="加载中" decoding="async" fetchpriority="low" onload="this.parentNode.classList.add('is-loaded')" />
+          <div class="loading-artwork">
+            <img class="loading-artwork-layer" src="/static/Icon.webp.png" alt="加载中" decoding="async" onload="this.closest('.loading-visual').classList.add('is-loaded')" />
+            <img class="loading-artwork-layer" src="/static/web/splash-foreground.webp" alt="" decoding="async" fetchpriority="low" onerror="this.hidden=true" />
+          </div>
           <div class="loading-spinner" aria-hidden="true"></div>
         </div>
         <div class="loading-title">分投侠</div>
