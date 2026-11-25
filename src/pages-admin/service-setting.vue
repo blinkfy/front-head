@@ -258,6 +258,28 @@
         </button>
         <view v-else class="diagnostic-toggle diagnostic-heading">开发与诊断</view>
         <view v-if="diagnosticsExpanded || publicOfflineMode">
+        <section class="card">
+          <view class="card-h">
+            <text>运行状态</text>
+            <button class="diagnostic-link" type="button" :disabled="runtimeLoading && !publicOfflineMode"
+              @click="refreshRuntimeStatus">{{ runtimeLoading && !publicOfflineMode ? '检测中…' : '重新检测' }}</button>
+          </view>
+          <view v-if="publicOfflineMode" class="runtime-note runtime-warning">数据库降级 · 恢复连接后可查看版本和配置</view>
+          <view v-else-if="runtimeLoading" class="runtime-note">正在读取当前实例的状态…</view>
+          <view v-else-if="runtimeError" class="runtime-note runtime-warning">{{ runtimeError }}</view>
+          <view v-else-if="runtimeStatus" class="runtime-body">
+            <view class="runtime-facts">
+              <view class="runtime-fact"><text class="runtime-label">后端版本</text><text>{{ runtimeStatus.revision ? runtimeStatus.revision.slice(0, 8) : '版本未记录' }}</text></view>
+              <view class="runtime-fact"><text class="runtime-label">数据库</text><text :class="runtimeStatus.database === 'online' ? 'runtime-ok' : 'runtime-warning'">{{ runtimeStatus.database === 'online' ? '正常' : runtimeStatus.database === 'degraded' ? '降级' : '暂时无法检测' }}</text></view>
+              <view class="runtime-fact"><text class="runtime-label">识别模式</text><text>{{ runtimeStatus.detectorMode === 'ai' ? 'AI 大模型' : runtimeStatus.detectorMode === 'yolo' ? 'YOLO' : '未知' }}</text></view>
+              <view class="runtime-fact"><text class="runtime-label">每个账号每日额度</text><text>{{ runtimeStatus.dailyCostLimitCny == null ? '额度配置异常' : runtimeStatus.dailyCostLimitCny + ' 元' }}</text></view>
+            </view>
+          </view>
+          <view v-if="runtimeCheckedAt && (publicOfflineMode || !runtimeLoading)" class="runtime-footer">
+            <text v-if="adminVerified && runtimeStatus">响应实例 {{ runtimeStatus.instanceId }}</text>
+            <text>最近检测 {{ formatCheckedAt(runtimeCheckedAt) }}</text>
+          </view>
+        </section>
         <section v-if="publicOfflineMode" class="retirement-card retirement-blocked">
           <div class="retirement-title">暂缓销毁</div>
           <div class="retirement-reason">数据库离线，暂时无法确认实例是否可以销毁。</div>
@@ -329,6 +351,11 @@ const currentTheme = ref('light')
 const loading = ref(false)
 const statusText = ref('')
 const statusCls = ref('')
+const runtimeStatus = ref(null)
+const runtimeLoading = ref(false)
+const runtimeError = ref('')
+const runtimeCheckedAt = ref('')
+let runtimeRequestId = 0
 
 const DEFAULT_FORM = {
   provider: 'qwen',
@@ -495,6 +522,44 @@ const retirementStatusText = computed(() => {
   if (status === 'blocked') return '暂缓销毁'
   return retirementCheck.value ? '无法确认' : '尚未检查'
 })
+
+function refreshRuntimeStatus() {
+  if (publicOfflineMode.value) return retryAdminAuth()
+  checkRuntimeStatus()
+}
+
+function checkRuntimeStatus() {
+  if (!canOpenDiagnostics()) return
+  const requestId = ++runtimeRequestId
+  const session = authVersion
+  const current = () => requestId === runtimeRequestId && session === authVersion && canOpenDiagnostics()
+  runtimeStatus.value = null
+  runtimeError.value = ''
+  runtimeLoading.value = true
+  uni.request({
+    url: baseUrl.replace(/\/$/, '') + '/api/admin/runtime-status',
+    method: 'GET',
+    header: authHeaders(),
+    timeout: 10000,
+    success(res) {
+      if (!current()) return
+      const body = res.data
+      if (body?.code === 0 && body.data?.checkedAt && body.data?.instanceId) {
+        runtimeStatus.value = body.data
+      } else if (body?.code === 2 && body.data?.database?.online === false) {
+        runtimeError.value = '数据库降级 · 恢复连接后可查看版本和配置'
+      } else {
+        runtimeError.value = res.statusCode === 404 ? '当前后端未提供运行状态接口' : body?.msg || '暂时无法检测，请重试'
+      }
+    },
+    fail() { if (current()) runtimeError.value = '未能连接后端，请重试' },
+    complete() {
+      if (!current()) return
+      runtimeCheckedAt.value = runtimeStatus.value?.checkedAt || new Date().toISOString()
+      runtimeLoading.value = false
+    }
+  })
+}
 const retirementCardClass = computed(() => {
   const status = retirementCheck.value?.status
   return status === 'ready' ? 'retirement-ready' : status === 'blocked' ? 'retirement-blocked' : ''
@@ -616,6 +681,7 @@ function saveSettings() {
       }
       applyData(json.data)
       setStatus('保存成功', 'ok')
+      checkRuntimeStatus()
       // #ifdef APP-PLUS
       invalidateAppHomeAiSettings()
       // #endif
@@ -719,7 +785,9 @@ function checkPublicDatabaseOffline() {
       method: 'GET',
       success(res) {
         const health = res.data
-        resolve(!!(health && health.database && health.database.online === false))
+        const offline = health?.database?.online === false
+        if (offline) runtimeCheckedAt.value = health.time || new Date().toISOString()
+        resolve(offline)
       },
       fail() { resolve(false) }
     })
@@ -730,13 +798,17 @@ async function retryAdminAuth() {
   publicOfflineMode.value = false
   if (await adminAuth()) {
     loadSettings()
+    checkRuntimeStatus()
     diagnosticsExpanded.value = true
     checkRetirement()
   }
 }
 
 onShow(async () => {
-  if (await adminAuth()) loadSettings()
+  if (await adminAuth()) {
+    loadSettings()
+    checkRuntimeStatus()
+  }
 })
 onHide(() => {
   adminVerified.value = false
@@ -758,6 +830,13 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.runtime-body, .runtime-note { padding: 14px 18px; }
+.runtime-facts { display: flex; flex-wrap: wrap; gap: 14px 22px; }
+.runtime-fact { flex: 1 1 120px; display: flex; flex-direction: column; gap: 3px; font-weight: 600; }
+.runtime-label, .runtime-footer, .runtime-note { color: var(--muted); font-size: 12px; font-weight: 400; }
+.runtime-footer { padding: 0 18px 14px; display: flex; flex-wrap: wrap; gap: 4px 16px; overflow-wrap: anywhere; }
+.runtime-ok { color: var(--green); }
+.runtime-warning { color: var(--warn); }
 .diagnostic-tools { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 12px; }
 .retirement-card { margin: 14px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,0.04); }
 .retirement-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
